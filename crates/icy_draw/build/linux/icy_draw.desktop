@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=0.0.1
+Type=Application
+Name=Icy Draw
+Comment=An ANSI drawing tool
+Categories=Graphics;
+Icon=icy_draw
+Exec=/usr/bin/icy_draw
+StartupWMClass=icy_draw
+Terminal=false

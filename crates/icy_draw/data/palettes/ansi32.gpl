@@ -1,0 +1,36 @@
+GIMP Palette
+#Palette Name: ANSI32
+#Description: All 16 original EGA ANSI art colors and 16 more in-between. I averaged these to find 8 darker and 8 lighter colors to complement the originals.
+#Colors: 32
+0	0	0	000000
+0	0	163	0000a3
+0	55	209	0037d1
+75	76	255	4b4cff
+145	164	240	91a4f0
+76	255	255	4cffff
+172	255	255	acffff
+0	163	163	00a3a3
+0	71	70	004746
+12	56	12	0c380c
+0	119	1	007701
+76	255	77	4cff4d
+197	255	197	c5ffc5
+223	223	223	dfdfdf
+202	202	202	cacaca
+163	163	163	a3a3a3
+112	112	112	707070
+76	76	76	4c4c4c
+41	41	41	292929
+119	56	0	773800
+220	106	0	dc6a00
+255	163	0	ffa300
+254	71	70	fe4746
+194	0	0	c20000
+119	0	0	770000
+118	41	121	762979
+204	41	204	cc29cc
+255	76	254	ff4cfe
+255	157	255	ff9dff
+239	187	187	efbbbb
+255	242	140	fff28c
+255	255	255	ffffff

@@ -1,0 +1,40 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+   <?define PackageName="IcyDraw" ?>
+   <?define ExeName="icy_draw" ?>
+   <?define Guid1="b25aaa07-d2ce-45b4-a33c-ebe276535eed" ?>
+   <?define Guid2="c1b92781-2e48-49ec-bb39-7790f9a66300" ?>
+   
+   <Package Name="$(PackageName)" UpgradeCode="$(Guid1)" Language="1033" Codepage="1252" Version="$(var.VERSION)" Manufacturer="GitHub" InstallerVersion="200">
+      <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+      <Icon Id="app.ico" SourceFile=".\build\windows\app.ico" />
+      <Property Id="ARPPRODUCTICON" Value="app.ico" />
+      <WixVariable Id="WixUILicenseRtf" Value=".\build\license.rtf" />
+      <MediaTemplate EmbedCab="yes" />
+      <ui:WixUI Id="WixUI_Minimal" />
+      <Binary Id="MyCertificate.Binary" SourceFile="$(var.PATH)" />
+      <Feature Id="ProductFeature" Title="ConsoleApp" Level="1">
+         <ComponentRef Id="$(PackageName)Exe" />
+         <ComponentRef Id="$(PackageName)Shortcut" />
+      </Feature>
+      <!-- Application binaries -->
+      <DirectoryRef Id="$(PackageName)ProgramFiles">
+         <Component Id="$(PackageName)Exe">
+            <File Id="$(PackageName)ExeFile" Source=".\target\release\$(ExeName).exe" Name="$(ExeName).exe" KeyPath="yes" />
+         </Component>
+      </DirectoryRef>
+      <DirectoryRef Id="$(PackageName)ProgramMenu">
+         <!-- Application shortcut -->
+         <Component Id="$(PackageName)Shortcut" Guid="$(Guid2)">
+            <Shortcut Id="$(PackageName)ShortcutFile" Name="$(PackageName)" Description="A cross-platform CP437, Petscii, Atascii, ViewData terminal emulator" Target="[$(PackageName)ProgramFiles]$(ExeName).exe" />
+            <RemoveFolder Id="$(PackageName)ProgramMenu" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\Microsoft\$(PackageName)" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+         </Component>
+      </DirectoryRef>
+      <StandardDirectory Id="ProgramFiles64Folder">
+         <Directory Id="$(PackageName)ProgramFiles" Name="$(PackageName)" />
+      </StandardDirectory>
+      <StandardDirectory Id="ProgramMenuFolder">
+         <Directory Id="$(PackageName)ProgramMenu" Name="$(PackageName)" />
+      </StandardDirectory>
+   </Package>
+</Wix>

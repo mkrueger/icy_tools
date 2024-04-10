@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Icy View
+Comment=A fast ansi art viewer.
+Categories=Network;Utility;
+Icon=icy_view
+Exec=/usr/bin/icy_view
+StartupWMClass=icy_view
+Terminal=false

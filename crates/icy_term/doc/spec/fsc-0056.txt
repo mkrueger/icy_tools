@@ -1,0 +1,1064 @@
+Document: FSC-0056
+Version:  001
+Date:     03-May-1991
+
+
+
+
+
+                      EMSI/IEMSI Protocol Definitions
+                          Joaquim H. Homrighausen
+                               May 3, 1991
+ 
+
+
+
+    Status of this document:
+
+     This FSC suggests a proposed protocol for the FidoNet(r) community,
+     and requests discussion and suggestions for improvements.
+     Distribution of this document is subject to the restrictions
+     specified on the next page.
+
+     Fido and FidoNet are registered marks of Tom Jennings and Fido
+     Software.
+
+
+
+
+      (Also known as EMSC-001; Electronic Mail Standards Document #001)
+    ---------------------------------------------------------------------
+      Copyright 1989-1991 Joaquim H. Homrighausen. All rights reserved.
+    ---------------------------------------------------------------------
+
+
+    Notice
+    =====================================================================
+    This document obsoletes EMSI_003 and any previous document describing
+    the EMSI, UZAP, and/or IEMSI handshake protocol. I apologize for the
+    lack of proper state charts. I am currently under a fairly heavy
+    work-load and thought it would be better to release something half-
+    decent than not to release anything at all.
+
+    Restrictions
+    =====================================================================
+    EMSI/IEMSI may be used by any developer as long as these
+    specifications are followed exactly. The IEMSI and EMSI specifications
+    may be implemented independently of each other.
+
+    EMSI/IEMSI may be used free-of-charge by any developer for any
+    purpose, commercially or otherwise. In creating EMSI/IEMSI, we are
+    taking the first step towards developing a clear protocol definition
+    for state-of-the-art E-Mail systems to follow.
+
+    This document and its NOTES file (EMSI.NOT) may be freely copied and
+    distributed, but must NEVER be distributed in a modified form. If you
+    have an enhancement request, please contact the author of this
+    document; do not change it yourself.
+
+    Permission is hereby granted to the FTSC (Fidonet Technical Standards
+    Committee) and other technical organisations to republish this
+    document in its entirety. Librarians may change the title page and
+    page headers to match their library format as long as all copyrights
+    and body text remain unaltered. The original document name and source
+    (EMSC) must be mentioned in any republished versions of this
+    document.
+
+    No organization, company, person, or other being may impose any fees
+    for any reason for providing this document. This document may not be
+    sold or otherwise transferred for personal or company gain under any
+    circumstances.
+
+    Layout
+    =====================================================================
+    This document consists of four major parts; A short introduction and
+    explanation of the EMSI/IEMSI handshake protocol, the EMSI
+    definitions, the IEMSI definitions, and finally various notes and
+    credits.
+
+
+    PART I
+
+    Introduction
+    =====================================================================
+    The EMSI/IEMSI handshake protocol allows for maximum flexibility in
+    E-Mail session start-up and control. The YooHoo (FTS-6) standard,
+    designed by Wynn Wagner III, was a good idea, but did not allow
+    sufficient room for growth and cannot be used in 7-bit environments.
+    EMSI/IEMSI should provide for virtually unlimited growth and
+    expansion of its own scope. By providing variable-length packets,
+    EMSI/IEMSI is capable of being as simple or as complex as necessary
+    and entirely backwards compatible when new features and/or protocols
+    are added.
+
+    All EMSI/IEMSI packets and sequences consists of 7-bit printable
+    ASCII characters. This format allows us to establish a universal
+    handshake between "PCs" and "mainframes" alike. The more complicated
+    the computer system, the more restrictions affect its I/O; there are
+    many I/O channels that cannot transmit control characters such as XON
+    and XOFF; for this, we have created a universal handshake protocol
+    that uses all printable characters.
+
+    EMSI/IEMSI does allow control and 8-bit ASCII characters to be
+    transmitted. This is, however, accomplished by escaping the data
+    and converting it to 7-bit printable ASCII characters.
+
+    Data layer
+    =====================================================================
+    EMSI/IEMSI is a protocol based on multi-character sequences rather
+    than single character flow control. There are several advantages of
+    using several characters rather than just one, but there is also a
+    drawback. On very poor-quality telephone lines, EMSI will most likely
+    require several retransmissions of packets since line noise usually
+    come in bursts. That aside, there is little advantage in using a
+    protocol based on single characters.
+
+    All EMSI/IEMSI sequences are terminated by a single <CR> unless
+    otherwise specified. This is necessary to force some data collection
+    equipment to flush their buffers. Appending <CR> to EMSI/IEMSI
+    sequences in a FidoNet environment is a delicate matter and it is
+    important that you follow the notes regarding this.
+
+    Note regarding file requests
+    ---------------------------------------------------------------------
+    The file request concept mentioned in the EMSI document refers to
+    WaZOO style file requests as specified in FTS-6. No other file
+    request mechanism is supported in the EMSI specifications.
+
+
+    Separator usage
+    ---------------------------------------------------------------------
+    To designate the fields within the EMSI/IEMSI packets and retain
+    complete transparency, both start and stop characters are used.
+
+    The ASCII1 type is used for all fields within the packet. This uses
+    the brace characters to delimit the fields. The '{' (ASCII 123)
+    character is the start byte and '}' (ASCII 125) is the stop byte.
+    If a stop byte is used as literal data within a field, it must be
+    transmitted twice. The end of a field is designated by a stop byte
+    that is not followed by another identical stop byte.
+
+    The ASCII2 fields are delimited in exactly the same way, but use the
+    square brackets as delimiters. The '[' (ASCII 91) is the start byte
+    and ']' (ASCII 93) is the stop byte. ASCII2 is used to delimit data
+    within the ASCII1 extra_field information.
+
+    7-bit data restriction
+    ---------------------------------------------------------------------
+    It is the developer's responsibility to ensure that the software
+    generates EMSI/IEMSI packets and sequences containing only 7-bit
+    (00H through 7eH) printable ASCII characters.
+
+    It is recommended that all EMSI/IEMSI implementations strip the high-
+    order bit of all received characters prior to processing the packet/
+    sequence and prior to calculating CRC values.
+
+    CRC values
+    ---------------------------------------------------------------------
+    The polynomial used to calculate a 16-bit CRC is the same polynomial
+    used in the Xmodem file transfer protocol. The polynomial used to
+    calculate a 32-bit CRC is the same polynomial used in the Zmodem file
+    transfer protocol.
+
+    Binary values
+    ---------------------------------------------------------------------
+    Since the EMSI environment specifies only 7-bit printable ASCII
+    characters to be used, binary values, such as CRC and length
+    descriptors are expressed as a four character hexadecimal string. The
+    only exception to this is a 32-bit CRC value which is expressed as an
+    eight character hexadecimal string.
+
+    The application must treat them case insensitive, eg. ffaa should be
+    treated identical to FFAA. 
+
+
+    Handling 8-bit data
+    ---------------------------------------------------------------------
+    Although EMSI only uses 7-bit printable ASCII characters, there is an
+    escape mechanism that allows systems to transmit control and 8-bit
+    ASCII characters without the requirement of an 8-bit data link. The
+    escape character is a backslash character ('\') and is followed by two
+    characters in hexadecimal notation. Eg. "\80" is the ASCII character
+    128. To insert an actual backslash character, two backslashes are used
+    ("\\"), or a backslash followed by the hexadecimal code for a
+    backslash, eg. "\5c".
+
+    The hexadecimal code following a backslash MUST always be two
+    characters, ie. to insert ASCII 15 (hexadecimail 'f'), the result
+    would be "0f". All hexadecimal sequences must be treated case
+    insensitively.
+
+
+    PART II - Electronic Mail Standard Idenfitication
+
+    Connecting two EMSI capable systems
+    =====================================================================
+    This assumes that the two systems are connected and that no data
+    has been transmitted by the Caller.
+
+    It should be mentioned that sending/monitoring for the "YooHoo",
+    "TSYNC", and other protocol start characters is optional and not
+    required for a strict EMSI implementation.
+
+    STEP 1, EMSI INIT    
+
+        Calling system                   Answering system
+    +-+-------------------------------+----------------------------------+
+    :1: Send <CR> until ANY character : Send EMSI_REQ and possible       :
+    : : is received.                  : banner, etc.                     :
+    +-+-------------------------------+----------------------------------+
+    :2: Receive banner, etc. Monitor  : Monitor line for the EMSI_INQ    :
+    : : line for the EMSI_REQ         : sequence and if received,        :
+    : : sequence and if received,     : attempt to handshake immediately.:
+    : : transmit EMSI_INQ and attempt :                                  :
+    : : to handshake immediately.     :                                  :
+    +-+-------------------------------+----------------------------------+
+    :3: No EMSI_REQ sequence received,: Monitor line for EMSI_INQ and    :
+    : : send EMSI_INQ twice followed  : possible other protocol start    :
+    : : by possible other protocol    : characters and if received,      :
+    : : start characters.             : attempt to handshake immediately.:
+    : :                               :                                  :
+    : : Transmit <CR>                 : Go to step 3.                    :
+    +-+-------------------------------+----------------------------------+
+    :4: If EMSI_REQ sequence received,:
+    : : send EMSI_INQ and attempt to  :
+    : : handshake immediately,        :
+    : : otherwise repeat step 3.      :
+    +-+-------------------------------+
+
+    In steps 1 and 2, both the Calling and Answering system terminate all
+    sequences with <CR>. In step 3, the Calling system does not terminate
+    sequences with <CR> as it is explicitly transmitted after possible
+    protocol start characters. In step 4, the Calling system once again
+    terminate all sequences with a <CR>.
+
+
+    STEP 2A, RECEIVE EMSI HANDSHAKE
+
+    At this point, all sequences are terminated with a <CR>.
+
+    +-+------------------------------------------------------------------+
+    :1: Tries=0, T1=20 seconds, T2=60 seconds                            :
+    +-+------------------------------------------------------------------+
+    :2: Increment Tries                                                  :
+    : :                                                                  :
+    : : Tries>6?                      Terminate, and report failure.     :
+    : +------------------------------------------------------------------+
+    : : Are we answering system?      Transmit EMSI_REQ, go to step 3.   :
+    : +------------------------------------------------------------------+
+    : : Tries>1?                      Transmit EMSI_NAK, go to step 3.   :
+    : +------------------------------------------------------------------+
+    : : Go to step 4.                                                    :
+    +-+------------------------------------------------------------------+
+    :3: T1=20 seconds                                                    :
+    +-+------------------------------------------------------------------+
+    :4: Wait for EMSI sequence until EMSI_HBT or EMSI_DAT or any of the  :
+    : : timers have expired.                                             :
+    : :                                                                  :
+    : : If T2 has expired, terminate call and report failure.            :
+    : +------------------------------------------------------------------+
+    : : If T1 has expired, go to step 2.                                 :
+    : +------------------------------------------------------------------+
+    : : If EMSI_HBT received, go to step 3.                              :
+    : +------------------------------------------------------------------+
+    : : If EMSI_DAT received, go to step 5.                              :
+    : +------------------------------------------------------------------+
+    : : Go to step 4.                                                    :
+    +-+------------------------------------------------------------------+
+    :5: Receive EMSI_DAT packet                                          :
+    : +------------------------------------------------------------------+
+    : : Packet received OK?                Transmit EMSI_ACK twice, and  :
+    : :                                    go to step 6.                 :
+    : +------------------------------------------------------------------+
+    : : Go to step 2.                                                    :
+    +-+------------------------------------------------------------------+
+    :6: Received EMSI_DAT packet OK, exit.                               :
+    +-+------------------------------------------------------------------+
+
+    All processing of the information in the EMSI_DAT packet must be done
+    after transmitting EMSI_ACK twice to the remote system. It is
+    recommended that an EMSI_HBT sequence is issued once every seven
+    seconds while such processing is taking place to avoid unnecessary
+    handshake collissions. Emitting EMSI_HBT should only be done when
+    it is obvious that the remote system is waiting for the second phase
+    of the EMSI handshake to take place.
+
+
+
+    STEP 2B, TRANSMIT EMSI HANDSHAKE
+
+    At this point, all sequences are terminated with a <CR>.
+
+    +-+------------------------------------------------------------------+
+    :1: Tries=0, T1=60 seconds                                           :
+    +-+------------------------------------------------------------------+
+    :2: Transmit EMSI_DAT packet and increment Tries                     :
+    : :                                                                  :
+    : +------------------------------------------------------------------+
+    : : Tries>6?                        Terminate, and report failure.   :
+    : +------------------------------------------------------------------+
+    : : Go to step 3.                                                    :
+    +-+------------------------------------------------------------------+
+    :3: T2=20 seconds                                                    :
+    +-+------------------------------------------------------------------+
+    :4: Wait for EMSI sequence until T1 has expired                      :
+    : :                                                                  :
+    : : If T1 has expired, terminate call and report failure.            :
+    : +------------------------------------------------------------------+
+    : : If T2 has expired, go to step 2.                                 :
+    : +------------------------------------------------------------------+
+    : : If EMSI_REQ received, go to step 4.                              :
+    : +------------------------------------------------------------------+
+    : : If EMSI_ACK received, go to step 5.                              :
+    : +------------------------------------------------------------------+
+    : : If any other sequence received, go to step 2.                    :             :
+    +-+------------------------------------------------------------------+
+    :5: Received EMSI_ACK, exit.                                         :
+    +-+------------------------------------------------------------------+
+
+
+    EMSI packet and sequence definitions
+    =====================================================================
+
+    =====================================================================
+    EMSI Inquiry                                    **EMSI_INQ<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI Inquiry is transmitted by the calling system to identify it as
+    EMSI capable. If an EMSI_REQ sequence is received in response, it is
+    safe to assume the answering system to be EMSI capable.
+
+    =====================================================================
+    EMSI Request                                    **EMSI_REQ<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI Request is transmitted by the answering system in response to an
+    EMSI Inquiry sequence. It should also be transmitted prior to or
+    immediately following the answering system has identified itself by
+    transmitting its program name and/or banner. If the calling system
+    receives an EMSI Request sequence, it can safely assume that the
+    answering system is EMSI capable.
+    
+    =====================================================================
+    EMSI Client                                     **EMSI_CLI<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI Client is used by terminal emulation software to force a mailer
+    front-end to bypass any unnecessary mail session negotiation and
+    treat the call as an incoming human caller. The EMSI_CLI sequence may
+    not be issued by any software attempting to establish a mail session
+    between two systems and must only be acted upon by an answering
+    system.
+
+    =====================================================================
+    EMSI Heartbeat                                  **EMSI_HBT<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI Heartbeat is used to prevent unnecessary timeouts from occurring
+    while attempting to handshake. It is most commonly used when the
+    answering system turns around to transmit its EMSI_DAT packet. It is
+    quite normal that any of the timers of the calling system (which at
+    this stage is waiting for an EMSI_DAT packet) expires while the
+    answering system is processing the recently received EMSI_DAT packet.
+
+    =====================================================================
+    EMSI Data                      **EMSI_DAT<len16><data_pkt><crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI Data is transmitted by both the calling and answering system at
+    the appropriate time to exchange system information. Following the
+    header is a four byte number representing the length of <data_pkt>
+    excluding the CRC and terminating <CR>.
+
+    The EMSI_DAT packet is a variable length packet. Since this is a
+    synchronous protocol, the inbound data buffer should be purged
+    between transmission of the <data_pkt> and <crc16> fields to prevent
+    accidental EMSI_NAK sequences, etc.
+
+
+    =====================================================================
+    EMSI ACK                                        **EMSI_ACK<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI ACK is transmitted by either system as a positive
+    acknowledgement of the valid receipt of a EMSI_DAT packet. This should
+    only be used as a response to EMSI_DAT and not any other packet.
+    Redundant EMSI_ACK sequences should be ignored.
+
+    =====================================================================
+    EMSI NAK                                        **EMSI_NAK<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI NAK is transmitted by either system as a negative
+    acknowledgement of the valid receipt of a EMSI_DAT packet. This
+    should only be used as a response to EMSI_DAT and not any other
+    packet. Redundant EMSI_NAK packets should be ignored.
+
+    The EMSI_DAT packet
+    =====================================================================
+    The EMSI_DAT packet is the core of an EMSI negotiated session. It
+    contains information vital to the mail session. The following pseudo
+    structure shows the layout of the EMSI_DAT packet.
+
+    EMSI_DAT
+        fingerprint,            "EMSI"
+        system_address_list,
+        password,
+        link_codes,
+        compatibility_codes,
+        mailer_product_code,
+        mailer_name,
+        mailer_version,
+        mailer_serial_number:    ASCII1;
+        extra_field_1,
+            ..
+            ..
+        extra_field_n:            EMSI_addon; (optional fields)
+    end;
+
+    The EMSI_addon structure is defined as follows:
+
+    EMSI_addon
+        product_ID,
+        specific_data:            ASCII1;
+    end;
+
+
+    Following is an example of the actual data transmitted as an EMSI_DAT
+    packet:
+
+    {EMSI}{2:270/17}{}{8N1,PUA}{ZAP,ZMO,ARC,XMA}{44}{AirMail}{0.10}
+    {Beta-2}{IDENT}{[Advanced Engineering S.A.R.L.][Luxembourg]
+    [Joaquim Homrighausen][-Unpublished-][9600][MO,XA,HST,V32B,V42B]}
+
+    EMSI_DAT field definitions
+    ---------------------------------------------------------------------
+    
+    =====================================================================
+    Fingerprint                                                      EMSI
+    ---------------------------------------------------------------------
+    The constant "EMSI". There is no need for a revision level since this    
+    basic format cannot change and remain backward compatible.
+
+    =====================================================================
+    System address list
+    ---------------------------------------------------------------------
+    The system address list is a list of system-specific identifiers for
+    the E-Mail system separated by spaces.
+
+    For FidoNet-technology based networks, it is required that
+    Zone:Net/Node be presented, and .Point be omitted if zero. Zone and
+    Net must not be zero.
+
+    In other networks, an address such as "jhom@csource.oz.au" should be
+    considered valid.
+
+    =====================================================================
+    Password
+    ---------------------------------------------------------------------
+    For systems using a session level password, it would be passed in
+    this field. Note that the same password is used for all presented
+    addresses and that it must be treated case insensitive.
+
+    =====================================================================
+    Link codes
+    ---------------------------------------------------------------------
+    Link codes is a string of flags that specify desired connect
+    conditions. These codes are separated by commas. New codes may be
+    added with prior approval from the author of this document.
+
+    Calling system/answering system options:
+
+        8N1,
+        7E1,
+        7O2,
+        etc.       Communication parameters.
+
+    Calling system options:
+
+        PUA        Pickup mail for all presented addresses.
+        PUP        Pickup mail for primary address only.
+        NPU        No mail pickup desired.
+
+
+    Answering system options:
+
+        HAT        Hold ALL traffic.
+        HXT        Hold compressed mail traffic.
+        HRQ        Hold file requests (not processed at this time).
+
+    =====================================================================
+    Compatibility codes
+    ---------------------------------------------------------------------
+    Compatibility codes is a string of flags that specifies the
+    capabilities and enabled features of the mailer. These codes are
+    separated by commas. New codes may be added with prior approval from
+    the author of this document.
+     
+    The calling system must list supported protocols first and descending
+    order of preference (the most desirable protocol should be listed
+    first). The answering system should only present one protocol and it
+    should be the first item in the compatibility_codes field.
+
+        Protocols
+        -----------------------------------------------------------------
+        DZA*    DirectZAP (Zmodem variant).
+        ZAP     ZedZap (Zmodem variant).
+        ZMO**   Zmodem w/1,024 byte data packets.
+        JAN     Janus.
+        KER     Kermit.
+
+        Other codes
+        -----------------------------------------------------------------
+        NCP     No compatible protocols (failure).
+        NRQ     No file requests accepted by this system.
+        ARC     ARCmail 0.60-capable, as defined by the FTSC.
+        XMA     Supports other forms of compressed mail.
+        FNC     Filename conversion. This indicates that any transmitted
+                files must follow the MS-DOS restrictions of an eight
+                character file name followed by a three character
+                extension; eg. FILENAME.EXT
+
+    (*) DirectZAP is a variant of ZedZap. The difference is that the
+    transmitter only escapes CAN (18H). It is not recommended to use the
+    DirectZAP protocol when two systems are connected via a packet
+    switching network, or via another layer sensitive to control
+    characters such as XON and XOFF.
+
+    (**) The minimum protocol requirement for an EMSI implementation is
+    to support plain Zmodem (16- or 32-bit CRC, 1,024 byte packets) which
+    is represented by the ZMO flag in EMSI.
+
+    =====================================================================
+    Mailer product code
+    ---------------------------------------------------------------------
+    The hexadecimal representation of the EMSC product code assigned to
+    the mailer. Currently, the EMSC codes are the same as the FTSC
+    assigned codes.
+
+    =====================================================================
+    Mailer name
+    ---------------------------------------------------------------------
+    Specifies the name of the E-Mail system sending the EMSI packet.
+
+    =====================================================================
+    Mailer version
+    ---------------------------------------------------------------------
+    The version number of the mailer software, ie. "1.10", "2.00".
+
+
+    =====================================================================
+    Mailer serial number
+    ---------------------------------------------------------------------
+    The serial number, distribution source, version information, etc.
+    This field is usually displayed like:
+
+        Name<sp>Version/Serial_number
+
+    eg.
+
+        AirMail 0.10/Beta-2
+
+    =====================================================================
+    Extra fields
+    ---------------------------------------------------------------------
+    The extra fields make the EMSI handshake protocol extremely flexible.
+    Any program or mailer may add fields to the end of the pre-defined
+    structure so that program-specific data may be passed without the
+    concern of interferring with other systems.
+
+    There may be any number of extra fields added to the end of this
+    structure. Each EXTRA_FIELD contains two ASCII1 strings:
+
+    PRODUCT_IDENTIFIER      A unique "tag" that defines a specific
+                            program (such as a mailer or a utility).
+
+    SPECIFIC_DATA           ASCII text that is specific data to the
+                            program defined in PRODUCT_IDENTIFIER. With
+                            this structure, any program can add its own
+                            data to the EMSI packet without affecting
+                            other applications.
+
+    It is recommended that you contact the author of this document should
+    you have any EXTRA_FIELDS that you may think worthwhile for other
+    developers to implement and support.
+
+    Predefined extra fields
+    ---------------------------------------------------------------------
+    The following extra fields have been defined to date.
+
+    PRODUCT_IDENTIFIER   :  IDENT
+
+    Purpose              :  General identification of system that
+                            includes all information to generate a St.
+                            Louis-format nodelist entry.
+
+    SPECIFIC_DATA        :  system_name,
+                            city,
+                            operator_name,
+                            phone_number,
+                            baud_rate,
+                            flags:            ASCII2;
+
+
+        SYSTEM_NAME         The name of the system given by the user.
+                            This would normally be a company name, BBS
+                            name or other identifying text.
+
+        CITY                The geographical location of the system.
+
+        OPERATOR_NAME       The name of the person primarily responsible
+                            for the system.
+
+        PHONE_NUMBER        The telephone number of the system, or
+                            "-Unpublished-" if the telephone number is
+                            unpublished. This MUST be in the standard
+                            format COUNTRY-CITY-NUMBER. Leading zeros
+                            should be stripped from the city code,
+                            ie. Stockholm (Sweden) has a city code of 08,
+                            included in an EMSI packet, it would read
+                            46-8-<number>.
+
+        BAUD_RATE           The maximum baud rate supported by the
+                            system. This is NOT necessarily the same as
+                            the highest DTE rate.
+
+        FLAGS               The St. Louis (FTSC) nodelist flags
+                            associated with the system.
+
+
+    PART III - Interactive Electronic Mail Standard Idenfitication
+
+    Connecting two IEMSI capable systems
+    =====================================================================
+    Two specific labels are used when discussing the IEMSI definitions.
+    The Client, which in this case is the Terminal software, and the
+    Server, which in this case is the interactive on-line software,
+    such as a BBS package or database system. It is assumed that the
+    Client and the Server have established a data link and that no
+    data has been transmitted by the Server.
+
+    STEP 1, IEMSI INIT    
+
+    There is no specific sequence of events in the IEMSI definition. The
+    Client must monitor incoming data and if the EMSI_IRQ sequence is
+    detected, it attempts to negotiate an IEMSI session with the Server.
+    Under no circumstances is the Client allowed to transmit an EMSI_ICI
+    packet prior to receiving the EMSI_IRQ sequence from the Server.
+    All IEMSI sequences and EMSI sequences used during an IEMSI session
+    are terminated by a single <CR>. There are no exceptions to this.
+
+
+    STEP 2A, Server
+
+    +-+------------------------------------------------------------------+
+    :1: Tries=0, T2=60 seconds                                           :
+    +-+------------------------------------------------------------------+
+    :2: Transmit EMSI_IRQ sequence                                       :
+    +-+------------------------------------------------------------------+
+    :3: T1=20 seconds, increment Tries                                   :
+    : :                                                                  :
+    : : Tries>3?                        Discontinue IEMSI negotiation.   :
+    +-+------------------------------------------------------------------+
+    :4: Wait for EMSI_ICI packet until any of the timers have expired.   :
+    : :                                                                  :
+    : : If T2 has expired, discontinue IEMSI negotiation.                :
+    : +------------------------------------------------------------------+
+    : : If T1 has expired, go to step 2.                                 :
+    : +------------------------------------------------------------------+
+    : : If EMSI_ICI seen, go to step 5.                                  :
+    : +------------------------------------------------------------------+
+    : : Go to step 4.                                                    :
+    +-+------------------------------------------------------------------+
+    :5: Receive EMSI_ICI packet                                          :
+    : +------------------------------------------------------------------+
+    : : Packet received OK?             Transmit EMSI_ISI packet, and    :
+    : :                                 go to step 6.                    :
+    : +------------------------------------------------------------------+
+    : : Packet not received OK?         Transmit EMSI_NAK and go to step :
+    : :                                 3.                               :
+    +-+------------------------------------------------------------------+
+    :6: Tries=0                                                          :
+    +-+------------------------------------------------------------------+
+    :7: T1=20 seconds, increment Tries                                   :
+    : :                                                                  :
+    : : Tries>3?                        Discontinue IEMSI negotiation.   :
+    +-+------------------------------------------------------------------+
+    :8: Wait for EMSI_ACK/EMSI_NAK until any of the timers have expired. :
+    : :                                                                  :
+    : : If T2 has expired, discontinue IEMSI negotiation.                :
+    : +------------------------------------------------------------------+
+    : : If T1 has expired or EMSI_NAK received, transmit EMSI_ISI packet :
+    : : again and go to step 7.                                          :
+    : +------------------------------------------------------------------+
+    : : If EMSI_ACK received, go to step 9.                              :
+    : +------------------------------------------------------------------+
+    : : Go to step 8.                                                    :
+    +-+------------------------------------------------------------------+
+    :9: IEMSI session successfully established, exit.                    :
+    +-+------------------------------------------------------------------+
+
+    The Server must monitor its incoming data channel for 'normal' data,
+    ie. data not transmitted as IEMSI sequences, to detect if the user is
+    attempting to log-in without the use of IEMSI. The only basic
+    restriction this imposes on the Server is that user names and/or IDs
+    may not start with the character '*' since all EMSI/IEMSI sequences
+    start with this character.
+
+    All processing of the information in the EMSI_ICI packet must be done
+    after transmitting the EMSI_ISI packet and receiving two EMSI_ACK
+    sequences in return.
+
+
+    STEP 2B, Client
+
+    Note that this assumes that the Client has seen the EMSI_IRQ sequence
+    transmitted by the Server and that the negotiation is ready to take
+    place.
+
+    +-+------------------------------------------------------------------+
+    :1: Tries=0, T2=60 seconds                                           :
+    +-+------------------------------------------------------------------+
+    :2: Transmit EMSI_ICI packet                                         :
+    +-+------------------------------------------------------------------+
+    :3: T1=20 seconds, increment Tries                                   :
+    +-+------------------------------------------------------------------+
+    :5: Tries>3 or T2 expired?            Discontinue IEMSI negotiation. :
+    : +------------------------------------------------------------------+
+    : : If T1 has expired, go to step 2.                                 :
+    : +------------------------------------------------------------------+
+    : : If EMSI_ISI seen, go to step 6.                                  :
+    : +------------------------------------------------------------------+
+    : : Go to step 5.                                                    :
+    +-+------------------------------------------------------------------+
+    :6: Receive EMSI_ISI packet                                          :
+    : +------------------------------------------------------------------+
+    : : Packet received OK?              Transmit EMSI_ACK packet twice, :
+    : :                                  and go to step 7.               :
+    : +------------------------------------------------------------------+
+    : : Packet not received OK?          Transmit EMSI_NAK and go to step:
+    : :                                  3.                              :
+    +-+------------------------------------------------------------------+
+    :7: IEMSI session successfully established, exit.                    :
+    +-+------------------------------------------------------------------+
+
+    All processing of the information in the EMSI_ISI packet must be done
+    after transmitting two EMSI_ACK sequences in return.
+
+    If either of the ICI or ISI packets are NAK'd three consecutive times,
+    the session negotiation attempt is terminated and the Client proceeds
+    as it would have done should the Server not have supported IEMSI.
+
+
+    IEMSI packet and sequence definitions
+    =====================================================================
+
+    =====================================================================
+    EMSI ACK                                        **EMSI_ACK<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI ACK is transmitted by either Client or Server as a positive
+    acknowledgement of the valid receipt of an IEMSI packet such as
+    EMSI_ISI and EMSI_ICI. During an IEMSI session, this sequence can,
+    however, be used as a positive acknowledgement for other IEMSI
+    packets. Redundant EMSI_ACK sequences should be ignored.
+
+    =====================================================================
+    EMSI NAK                                        **EMSI_NAK<crc16><CR>
+    ---------------------------------------------------------------------
+    EMSI NAK is transmitted by either Client or Server as a negative
+    acknowledgement of the valid receipt of an IEMSI packet such as
+    EMSI_ISI and EMSI_ICI. During an IEMSI session, this sequence can,
+    however, be used as a negative acknowledgement for other IEMSI
+    packets. Redundant EMSI_NAK sequences should be ignored.
+
+    =====================================================================
+    EMSI IRQ                                        **EMSI_IRQ<crc16><CR>
+    ---------------------------------------------------------------------
+    Similar to EMSI_REQ which is used by mailer software to negotiate a
+    mail session. IRQ identifies the Server as being capable of
+    negotiating an IEMSI session. When the Client detects an IRQ sequence
+    in its inbound data stream, it attempts to negotiate an IEMSI
+    session.
+
+    =====================================================================
+    EMSI IIR                                        **EMSI_IIR<crc16><CR>
+    ---------------------------------------------------------------------
+    The IIR (Interactive Interrupt Request) sequence is used by either
+    Client or Server to abort the current negotiation. This could be
+    during the initial IEMSI handshake or during other interactions
+    between the Client and the Server.
+
+    =====================================================================
+    EMSI ICI                             **EMSI_ICI<len><data><crc32><CR>
+    ---------------------------------------------------------------------
+    The ICI packet is used by the Client to transmit its configuration
+    and Server-related information to the Server. It contains Server
+    parameters, Client options, and Client capabilities.
+
+    =====================================================================
+    EMSI ISI                             **EMSI_ISI<len><data><crc32><CR>
+    ---------------------------------------------------------------------
+    The ISI packet is used by the Server to transmit its configuration
+    and Client-related information to the Client. It contains Server data
+    and capabilities.
+
+
+    =====================================================================
+    EMSI ISM                             **EMSI_ISM<len><data><crc32><CR>
+    ---------------------------------------------------------------------
+    The ISM packet is used to transfer ASCII images from the Server to
+    the Client. These images can then be recalled by the Client when
+    the Server needs to display a previously displayed image. This will
+    be further described in future revisions of this document.
+
+    =====================================================================
+    EMSI CHT                                        **EMSI_CHT<crc16><CR>
+    ---------------------------------------------------------------------
+    The CHT sequence is used by the Server to instruct the Client
+    software to enter its full-screen conversation mode function (CHAT).
+    Whether or not the Client software supports this is indicated in the
+    ICI packet.
+
+    If the Server transmits this sequence to the Client, it must wait for
+    an EMSI_ACK prior to engaging its conversation mode. If no EMSI_ACK
+    sequence is received with ten seconds, it is safe to assume that the
+    Client does not support EMSI_CHT. If, however, an EMSI_NAK sequence
+    is received from the Client, the Server must re-transmit the
+    EMSI_CHT sequence. Once the on-line conversation function has been
+    sucessfully activated, the Server must not echo any received
+    characters back to the Client.
+
+    =====================================================================
+    EMSI TCH                                        **EMSI_TCH<crc16><CR>
+    ---------------------------------------------------------------------
+    The TCH sequence is used by the Server to instruct the Client
+    software to terminate its full-screen conversation mode function
+    (CHAT).
+
+    If the Server transmits this sequence to the Client, it must wait for
+    an EMSI_ACK prior to leaving its conversation mode. If no EMSI_ACK
+    sequence is received with ten seconds, a second EMSI_TCH sequence
+    should be issued before the Server resumes operation. If, however, an
+    EMSI_NAK sequence is received from the Client, the Server must
+    re-transmit the EMSI_TCH sequence.
+
+
+    The EMSI_ICI packet
+    =====================================================================
+    The following pseudo structure shows the layout of the EMSI_ICI
+    packet. Note that the information in the EMSI_ICI packet may not
+    exceed 2,048 bytes.
+
+    EMSI_ICI
+        name,
+        alias,
+        location,
+        data#,
+        voice#,
+        password,
+        birthdate,
+        crtdef,
+        protocols,
+        capabilities,
+        requests,
+        software,
+        xlattabl:                ASCII1;
+    end;
+
+    EMSI_ICI field definitions
+    ---------------------------------------------------------------------
+    
+    =====================================================================
+    Name and Alias (or Handle)
+    ---------------------------------------------------------------------
+    The name and possible alias (AKA) of the user (Client). This must be
+    treated case insensitively by the Server.
+
+    =====================================================================
+    Location
+    ---------------------------------------------------------------------
+    The geographical location of the user, ie. Stockholm, Sweden.
+
+    =====================================================================
+    data# and voice#
+    ---------------------------------------------------------------------
+    Unformatted data and voice telephone numbers of the user. Unformatted
+    is defined as the full telephone number, including country and local
+    area code. Eg. 46-8-90510 is a telephone number in Stockholm, Sweden.
+
+    =====================================================================
+    Password
+    ---------------------------------------------------------------------
+    The password for the user. This must be treated case insensitively by
+    the Server.
+
+
+    =====================================================================
+    Birthdate
+    ---------------------------------------------------------------------
+    Hexadecimal string representing a long integer containing the birth-
+    date of the user in UNIX notation (number of seconds since midnight,
+    Jan 1 1970). This must be treated case insensitively by the Server.
+
+    =====================================================================
+    CrtDef
+    ---------------------------------------------------------------------
+    Consisting of four sub-fields separated by commas, this field
+    contains from left to right: The requested terminal emulation
+    protocol, the number of rows of the user's CRT, the number of columns
+    of the user's CRT, and the number of ASCII NUL (00H) characters the
+    user's software requires to be transmitted between each line of text.
+
+    The following terminal emulation protocols are defined:
+
+        AVT0    AVATAR/0+. Used in conjunction with ANSI. If AVT0 is
+                specified by the Client, support for ANSI X3.64 emulation
+                should be assumed to be present.
+        ANSI    ANSI X3.64
+        VT52    DEC VT52
+        VT100   DEC VT100
+        TTY     No terminal emulation, also referred to as RAW mode.
+
+    =====================================================================
+    Protocols
+    ---------------------------------------------------------------------
+    The file transfer protocol option specifies the preferred method of
+    transferring files between the Client and the Server in either
+    direction. The Client presents all transfer protocols it is capable
+    of supporting and the Server chooses the most appropriate protocol.
+
+        DZA*    DirectZAP (Zmodem variant)
+        ZAP     ZedZap (Zmodem variant)
+        ZMO     Zmodem w/1,024 byte data packets
+        SLK     SEAlink
+        KER     Kermit
+    
+    (*) DirectZAP is a variant of ZedZap. The difference is that the
+    transmitter only escapes CAN (18H). It is not recommended to use the
+    DirectZAP protocol when the Client and the Server are connected via a
+    packet switching network, or via another layer sensitive to control
+    characters such as XON and XOFF.
+
+
+    =====================================================================
+    Capabilities
+    ---------------------------------------------------------------------
+    The capabilities of the user's software. If more than one capability
+    is listed, each capability is separated by a comma.
+
+    The following capability codes are defined:
+
+        CHT     Can do full-screen on-line conversation (CHAT).
+        MNU     Can do ASCII image download (see ISM packet).
+        TAB     Can handle TAB (ASCII 09H) characters.
+        ASCII8  Can handle 8-bit IBM PC ASCII characters.
+
+    =====================================================================
+    Requests
+    ---------------------------------------------------------------------
+    The requests field specifies what the user wishes to do once the
+    initial IEMSI negotiation has been successfully completed. If more
+    than one capability is listed, each capability is separated by a
+    comma.
+
+    The following request codes are defined:
+
+        NEWS    Show bulletins, announcements, etc.
+        MAIL    Check for new mail.
+        FILE    Check for new files.
+        HOT     Hot-Keys.
+        CLR     Screen clearing.
+        HUSH    Do not disturb.
+        MORE    Page pausing, often referred to as "More".
+        FSED*   Full-screen editor.
+        XPRS    <reserved>.
+
+    (*) Note that this allows the Client to request use of a full-screen
+    editor without requiring that it also supports a full-screen terminal
+    emulation protocol.
+
+    =====================================================================
+    Software
+    ---------------------------------------------------------------------
+    The name, version number, and optionally the serial number of the
+    user's software. Eg. {FrontDoor,2.00,AE000001}.
+
+    =====================================================================
+    XlatTabl
+    ---------------------------------------------------------------------
+    Used for character translation between the Server and the Client.
+    This field has not been completely defined yet and should always be
+    transmitted as {} (empty).
+
+
+    The EMSI_ISI packet
+    =====================================================================
+    The following pseudo structure shows the layout of the EMSI_ISI
+    packet. Note that the information in the EMSI_ISI packet may not
+    exceed 2,048 bytes.
+
+    EMSI_ISI
+        id,
+        name,
+        location,
+        operator,
+        localtime,
+        notice,
+        wait,
+        capabilities:            ASCII1;
+    end;
+
+    EMSI_ISI field definitions
+    ---------------------------------------------------------------------
+    
+    =====================================================================
+    ID
+    ---------------------------------------------------------------------
+    The name, version number, and optionally the serial number of the
+    Server software. Eg. {RemoteAccess,1.10/b5,CS000001}.
+
+    =====================================================================
+    Name
+    ---------------------------------------------------------------------
+    The name of the Server system. Eg. {Advanced Engineering S.A.R.L.}.
+
+    =====================================================================
+    Location
+    ---------------------------------------------------------------------
+    The geographical location of the user, ie. Stockholm, Sweden.
+
+    =====================================================================
+    Operator
+    ---------------------------------------------------------------------
+    The name of the primary operator of the Server software. Eg. {Joaquim
+    H. Homrighausen}.
+
+
+
+    =====================================================================
+    Localtime
+    ---------------------------------------------------------------------
+    Hexadecimal string representing a long integer containing the current
+    time of the Server in UNIX notation (number of seconds since midnight,
+    Jan 1 1970). This must be treated case insensitively by the Client.
+
+    =====================================================================
+    Notice
+    ---------------------------------------------------------------------
+    May contain copyright notices, system information, etc. This field
+    may optionally be displayed by the Client.
+
+    =====================================================================
+    Wait
+    ---------------------------------------------------------------------
+    A single character used by the Server to indicate that the user
+    has to press the <Enter> key to resume operation. This is used in
+    conjunction with ASCII Image Downloads (see ISM packet).
+
+    =====================================================================
+    Capabilities
+    ---------------------------------------------------------------------
+    The capabilities of the Server software. No Server software
+    capabilities have currently been defined.
+
+    Credits and other notes
+    =====================================================================
+    The original EMSI specifications were designed by Chris Irwin and
+    Joaquim H. Homrighausen. The original IEMSI specifications were
+    designed by Joaquim H. Homrighausen and Andrew Milner.
+
+    --- end of "emsi.doc" ---
+

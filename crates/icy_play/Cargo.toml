@@ -1,0 +1,20 @@
+[package]
+name = "icy_play"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "Plays icy_anim files for bbs systems."
+repository = "https://github.com/mkrueger/icy_draw"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+icy_engine = { workspace = true }
+icy_engine_gui = { workspace = true }
+clap = { version="4.4.0", features = ["derive"] }
+anyhow = "1.0.75"
+
+[profile.release]
+strip = "symbols"

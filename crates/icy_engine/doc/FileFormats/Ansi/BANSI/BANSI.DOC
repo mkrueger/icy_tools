@@ -1,0 +1,563 @@
+copyright (c) 1994 by Paul Wheaton, Banana Programming
+
+The ANSI-BBS industry is riddled with conflicts.  Since the true ANSI
+standard has not been strictly followed, a variety of variations have
+evolved.  Some have become popular.
+
+This document spells out what BananaCom uses for it's terminal emulation: A
+mish-mash of ANSI, VT100, pseudo-ANSI and pseudo-VT100 that tries to follow
+what most modem services expect and use. Perhaps this will help to make
+BBS's and COM programs work together with a little less research and
+programming effort.
+
+Terminal sends:
+
+  All ASCII characters from 1 to 127 are sent as is.  If somebody wants to
+  feed a special character that comes through as a character 128 through
+  255, send that through too.
+
+  ANSI terminal emulation is supposed to be a superset of the escape
+  sequences used by the DEC VT100 terminal.  These required that an escape
+  (ASCII 27) be sent followed by some other characters.  The following
+  keystrokes are well established:
+
+        Keystroke             Sent
+
+        left arrow key        ESC [ D
+        right arrow key       ESC [ C
+        up arrow key          ESC [ A
+        down arrow key        ESC [ B
+        home key              ESC [ H
+        end key               ESC [ K
+        ^home key             ESC [ L
+        ^page up              ESC [ M
+
+        F1 key                ESC O P
+        F2 key                ESC O Q
+        F3 key                ESC O w
+        F4 key                ESC O x
+
+                                  ^capital "oh", not a zero
+
+  All other keys send a zero and then the BIOS scan code.  Note that most
+  com programs will use Alt-A through Alt-Z and Alt-1 through Alt-9 and
+  Alt-0.  If there happens to be keys left they will be passed through.
+
+  Function keys are your best bet and are all passed through
+
+              Alone     Shift      Ctrl      Alt
+
+        F1              0  84     0  94     0 104
+        F2              0  85     0  95     0 105
+        F3              0  86     0  96     0 106
+        F4              0  87     0  97     0 107
+        F5    0  59     0  88     0  98     0 108
+        F6    0  60     0  89     0  99     0 109
+        F7    0  61     0  90     0 100     0 110
+        F8    0  62     0  91     0 101     0 111
+        F9    0  63     0  92     0 102     0 112
+        F10   0  64     0  93     0 103     0 113
+
+   Some com programs use the Page Up and Page Down keys to initiate a file
+   transfer although this seems to be changing - these keys are of great
+   use to BBS's.
+
+        Page Up           0  73
+        Page Down         0  81
+        Insert            0  82
+
+   Note that when you press control-page-down with some terminal programs,
+   they send   ESC [ H ESC [ 2 J   and a lot of BBS's simply ignore that.
+
+        ctrl-page-down    0 118
+        ctrl-end          0 117
+        ctrl-left-arrow   0 115
+        ctrl-right-arrow  0 116
+        shift-tab         0 15
+
+Terminal receives:
+
+  Most ANSI terminals use a screen 80x24 - with the last line reserved for
+  reporting the current status of the terminal program.  BananaCom uses
+  this standard.
+
+  There are a few ASCII characters that have a special effect on on the
+  terminal:
+
+      Dec  Hex  char   function
+
+       7    7    ^G    beep
+       8    8    ^H    destructive backspace
+       9    9    ^I    tab - move to next tab column (8,16,24,32,40...)
+      10    A    ^J    line feed - move down one. Scroll up if needed
+      12    C    ^L    clear screen (normal attribute) & home cursor (1,1)
+      13    D    ^M    return - move cursor to column 1
+
+
+  Escape sequences do not have spaces in them.  Spaces have been added
+  here for readability.
+
+  Anything appearing in angle brackets is an escape sequnce variable.  The
+  angle brackets are not sent.
+
+
+  ESC D    scroll up
+  ~~~~~~~~~~~~~~~~~~
+    All of the text on the screen (or the scrolling region, if one is
+    defined) is scrolled up one line.  The bottom line is filled with
+    spaces colored according to the current attribute.
+
+    Note that there is no left bracket "[" between the ESC and the 'D'.
+
+    Example:  ESC D              scroll all text up one line
+
+
+  ESC M    scroll down
+  ~~~~~~~~~~~~~~~~~~~~
+    All of the text on the screen (or the scrolling region, if one is
+    defined) is scrolled down one line.  The top line is filled with spaces
+    colored according to the current attribute.
+
+    Note that there is no left bracket "[" between the ESC and the 'M'.
+
+    Example:  ESC M              scroll all text down one line
+
+
+  ESC [ @    insert char
+  ~~~~~~~~~~~~~~~~~~~~~~
+    Insert a space into the current line at the current cursor position.
+    The character at column 80 is thrown out.  The current attribute is
+    used for the new space.
+
+
+  ESC [ <NumLines> A    cursor up
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Move the cursor up specified number of lines (default is one).
+
+    If "ESC [ ? 6 h" has been received since last "ESC [ <var> ; <var> r"
+    then the cursor will not be allowed to move beyond the top of the
+    scrolling region.
+
+    Example:  ESC [ 1 0 A        move up ten lines
+
+    Example:  ESC [ A            move up one line
+
+
+  ESC [ <NumLines> B    cursor down
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Move the cursor down specified number of lines (default is one).
+
+    If "ESC [ ? 6 h" has been received since last "ESC [ <var> ; <var> r"
+    then the cursor will not be allowed to move beyond the bottom of the
+    scrolling region.
+
+    Example:  ESC [ 1 0 B        move down ten lines
+
+    Example:  ESC [ B            move down one line
+
+
+  ESC [ <NumCols> C    cursor right
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Move the cursor right specified number of lines (default is one).
+
+    Example:  ESC [ 1 0 C        move right ten columns
+
+    Example:  ESC [ C            move right one column
+
+
+  ESC [ <NumCols> D    cursor left
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Move the cursor left specified number of lines (default is one).  Cannot
+    move beyond left of screen.
+
+    Example:  ESC [ 1 0 D        move left ten columns
+
+    Example:  ESC [ D            move left one column
+
+
+  ESC [ <Num> E    line feed
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Convert to specified number of line feeds.  If the cursor is at the
+    bottom of the screen (or scrolling region if one is defined) text will
+    be scrolled up and the bottom line will be cleared.
+
+    Example:  ESC [ 1 0 E        convert and process as ten linefeeds
+
+    Example:  ESC [ E            convert and process as onr linefeed
+                                 (why not just send ^J ?)
+
+
+  ESC [ F    undefined
+  ESC [ G    undefined
+
+
+  ESC [ <row> ; <col> H    move to
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Move cursor to this position.
+
+    If "ESC [ ? 6 h" has been received since the last
+    "ESC [ <var> ; <var> r" then the cursor will be positioned relative to
+    the scrolling region.
+
+    This will perform exactly the same as "ESC [ <row> ; <col> f".
+
+    Example:  ESC [ 1 0 ; 5 H    The cursor will be positioned at row 10
+                                 and column 5.
+
+    Example:  ESC [ 10 H         The cursor will be positioned at row 10
+                                 and column 1.
+
+    Example:  ESC [ H            The cursor will be positioned at row 1
+                                 and column 1.
+
+
+  ESC [ I    undefined
+
+
+  ESC [ <type> J    clear all or part of display
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Clear all or part of the screen (or scrolling region if one is
+    defined).
+
+    The cleared region will always be the "normal attribute" although
+    future text will use the last set attribute.
+
+    Cursor does not move.
+
+    Example:  ESC [ 0 J          Clear from cursor to end of screen
+
+    Example:  ESC [ 1 J          Clear from beginning of screen to cursor
+
+    Example:  ESC [ 2 J          Clear whole screen
+                                 (note that sending ^L does the same thing)
+
+    Example:  ESC [ J            same as "ESC [ 0 J"
+
+
+  ESC [ <type> K    clear all or part of current line
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    The cleared region will always be the "normal attribute" although
+    future text will use the last set attribute.
+
+    Cursor does not move.
+
+    Example:  ESC [ 0 K          Clear from cursor to end of line
+
+    Example:  ESC [ 1 K          Clear from beginning of line to cursor
+
+    Example:  ESC [ 2 K          Clear whole line
+
+    Example:  ESC [ K            same as "ESC [ 0 K"
+
+
+  ESC [ <num> L    insert line
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    "<num>" blank lines will be inserted at the current cursor location.
+    These lines will have the color of the current attribute.  The previous
+    current line and all of the lines below will be moved down.  Lines that
+    are scrolled beyone the bottom of the screen (or scrolling region, if
+    one is defined) will be lost.
+
+    Example:  ESC [ 1 0 K        insert ten lines
+
+    Example:  ESC [ K            insert one line
+
+
+  ESC [ M    ANSI Music / delete line
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    This is the biggest conflict in ANSI emulation.  The actual ANSI
+    standard clearly states that this sequence is to be used for "delete
+    line".  The person that came up with "ANSI music" must not have known
+    this.  There are still many modem services and mainframe computers that
+    depend on this being "delete line" - however, far more people are
+    served by systems that depend on this being "ANSI music".
+
+    What this means is that as a programmer, you cannot depend on ESC [ M.
+    Some modem service and com programs will lock up when they expect one
+    thing and receive another.
+
+    Here is a solution:
+
+        a)  A modem service can send "ESC [ b" to the terminal.  If the
+        emulation outlined in this document is supported, 000 will be sent
+        back.  If it is not, the terminal will most likely not show the
+        escape sequence and you can then know that ESC [ M should be
+        avoided since its interpretation is unknown and could cause a
+        lockup.
+
+        b)  Use "ESC [ N" for music and "ESC [ Y" for delete line.
+
+    What BananaCom supports for ESC [ M may change although at the time of
+    this writing, it is used for ANSI music.  See "ESC [ N" and "ESC [ Y"
+    for information on how to use ANSI music and delete line.
+
+
+  ESC [ N <music codes> <^N>  ANSI music
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    This command is provided with BananaCom as a substitute to the
+    traditional ANSI music sequence of "ESC [ M" since that sequence has
+    conflicts.
+
+    For complete information on how to use ANSI music, look for the file
+    BBSAMT*.* (BBS ANSI Music Tutor) by Linda Bloom.  This file is
+    available on the Montana Banana BBS (406)543-8234 and Bloomunit BBS
+    (407)687-8712.
+
+    Example:  ESC [ N E 8 G 8 G 8 G 8 F 4 E 8 G 2 ^N    this will belt out
+    the first few notes of "Popeye the Sailor".  "ESC [ N" starts the music
+    sequence and the control-N character finishes.  What's in between are
+    all of the notes and how long each note lasts.  Further details of the
+    music may be provided as specified in BBSAMT.
+
+    Note that this is not an ANSI standard, but something that is in
+    BananaCom.  Other COM program folks are welcome to do the same.
+
+
+  ESC [ O    undefined
+
+
+  ESC [ <num> P    delete char
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Delete the character at the current cursor position.  All characters to
+    the right of the cursor will be shifted one to the left.  The right
+    most character on the screen will be converted to a space and will have
+    the same attribute as the character that used to be there.
+
+    Example:  ESC [ 1 0 P        delete ten characters
+
+    Example:  ESC [ P            delete one character
+
+
+  ESC [ Q    undefined
+  ESC [ R    undefined
+
+
+  ESC [ S    scroll up
+  ~~~~~~~~~~~~~~~~~~~~
+    see ESC D
+
+
+  ESC [ T    scroll down
+  ~~~~~~~~~~~~~~~~~~~~~~
+    see ESC M
+
+
+  ESC [ U    clear
+  ~~~~~~~~~~~~~~~~
+    Clear the screen with the "normal" attribute and home the cursor.
+    New text will use the previously defined attribute.
+
+
+  ESC [ V    undefined
+  ESC [ W    undefined
+  ESC [ X    undefined
+
+
+  ESC [ <num> Y    delete line
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    This command is provided with BananaCom as a substitute to the
+    traditional delete line sequence of "ESC [ M" since that sequence has
+    conflicts.
+
+    "<num>" lines will be deleted at the current cursor location.
+    Lines from below will be scrolled up.  The blank lines inserted at the
+    bottom of the screen (or scrolling region, if one is defined) will be
+    colored with the current attribute.
+
+    Example:  ESC [ 1 0 Y        delete ten lines
+
+    Example:  ESC [ Y            delete one line
+
+    Note that this is not an ANSI standard, but something that is in
+    BananaCom.  Other COM program folks are welcome to do the same.
+
+
+  ESC [ Z    back tab
+  ~~~~~~~~~~~~~~~~~~~
+    Relocate the cursor to the previous tab.  Tabs are located at columns
+    1, 8, 16, 24, 32, 40, 48, 56, 64, 72 and 80.  So, if your cursor is
+    currently located at column 10 and a "ESC [ Z" is received, the cursor
+    will be moved to column 8.
+
+
+  ESC [ a    undefined
+
+
+  ESC [ b    Banana ANSI?
+  ~~~~~~~~~~~~~~~~~~~~~~~
+    If a terminal uses everything listed in this document, it will send
+    back
+
+          000
+
+    later versions may return  001  or  002  or  003   etc.
+
+    Note that this is not an ANSI standard, but something that is in
+    BananaCom.  Other COM program folks are welcome to do the same.
+
+
+  ESC [ c    VT100 query response
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Some modem services use anal retentive computers that send this and are
+    looking for some unique response or they will assume your terminal is
+    brain dead.  BananaCom sends back "ESC [ ? 1 ; 2 c" and that seems to
+    keep most machines happy.
+
+
+  ESC [ d    undefined
+  ESC [ e    undefined
+  ESC [ f    undefined
+  ESC [ g    undefined
+
+
+  ESC [ h    set options
+  ~~~~~~~~~~~~~~~~~~~~~~
+    There are only two options here, both include sending an actual
+    question mark as part of the sequence:
+
+       ESC [ ? 6 h     certain functions which normally ignore the
+                       scrolling region, will now operate relative to the
+                       scrolling region.  Note that those functions will
+                       again ignore the scrolling region the next time the
+                       scrolling region is changed.
+
+       ESC [ ? 7 h     Auto word wrap is turned on (it is normally on -
+                       this is provided in case you turn it off).
+
+
+  ESC [ i    undefined
+  ESC [ j    undefined
+  ESC [ k    undefined
+
+
+  ESC [ l    set options
+  ~~~~~~~~~~~~~~~~~~~~~~
+    There are only two options here, both include sending an actual
+    question mark as part of the sequence.  These compliment the "ESC [ h"
+    sequences.  Note that these seqences end with a lowercase L:
+
+       ESC [ ? 6 l     Negates "ESC [ ? 6 h".  This is the default.
+
+       ESC [ ? 7 l     Auto word wrap is turned off.  Note that the next
+                       time you change the scrolling region, word wrap will
+                       be turned on again.
+
+
+  ESC [ <num> ; <num> ; ... m    set video attributes
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Set the foreground color, background color and blink attributes for
+    future text.  Note that each number may overwrite or enhance a previous
+    number.  There are four basic attributes:
+
+         Foreground color:  8 colors
+
+                   Bright:  On or off
+
+         Background color:  8 colors
+
+                 Blinking:  On or off
+                                                 Effects
+
+    Possible numbers to pass:                  FC Br BC Bl
+
+       0  "normal": gray on black, no blink     x  x  x  x
+       1  bright foreground                        x
+       2  regular (non-bright) foreground          x
+       4  underscore if available               x
+       5  Blink on                                       x
+       6  Blink on (yup, same as 5)                      x
+       7  reverse                               x     x
+       8  invisible text (fore=back)            x  x     x
+      30  black (+Br=dark gray)                 x
+      31  red (+Br=bright red)                  x
+      32  green (+Br=bright green)              x
+      33  brown (+Br=yellow)                    x
+      34  blue (+Br=bright blue)                x
+      35  magenta (+Br=bright magenta)          x
+      36  cyan (+Br=bright cyan)                x
+      37  gray (+Br=white)                      x
+      40  black                                       x
+      41  red                                         x
+      42  green                                       x
+      43  brown                                       x
+      44  blue                                        x
+      45  magenta                                     x
+      46  cyan                                        x
+      47  gray                                        x
+
+    Examples:
+
+      ESC [ 0 ; 1 ; 3 3 m        yellow on black with no blink
+
+      ESC [ 3 3 m                use same background as before.
+                                 no change to blink attribute.
+                                 foreground is either brown or yellow
+                                 depending on the bright attribute.
+
+      ESC [ m                    use "normal" attribute - gray on black,
+                                 no blink.
+
+
+  ESC [ 6 n    report current cursor location
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    If the cursor is located in the lower-right corner of the screen,
+    BananaCom will respond "ESC 2 4 ; 8 0 R".  Many modem services will
+    send "ESC [ 6 n" before asking a user what their name is.  When the
+    response is given, the modem service knows that the calling computer
+    supports ANSI terminal emulation.
+
+
+  ESC [ o    undefined
+  ESC [ p    undefined
+  ESC [ q    undefined
+
+
+  ESC [ <top> ; <bottom> r    set scroll region
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Define a region of the screen for scrolling.  This is usually used for
+    full screen text editors.  Some information can be stored on some parts
+    of the screen that will remain for the entire editing session - such as
+    what keys you push to indicate that you are done editing.  The scroll
+    region will be where the user types the text of their message.  Some
+    commands (escape sequences) always ignore the scrolling region; some
+    default to ignoring the scrolling region, but can work relative to the
+    scrolling region when the "ESC [ ? 6 h" sequence is sent; some always
+    work relative to the scrolling region if one is defined.
+
+    Example:  ESC [ 2 ; 2 3 r    leave the first and last lines out of
+                                 the scrolling region.
+
+    Example:  ESC [ 5 r          the first four lines are left out of the
+                                 scrolling region.
+
+    Example:  ESC [ r            turn off scrolling region
+
+
+  ESC [ s    save current cursor position
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    The current cursor position is stored and can be reset with
+    "ESC [ u"
+
+
+  ESC [ t    undefined
+
+
+  ESC [ u    restore cursor position from last save
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Restores the cursor position that was stored with "ESC [ s"
+
+
+  ESC [ v    undefined
+  ESC [ w    undefined
+  ESC [ x    undefined
+  ESC [ y    undefined
+  ESC [ z    undefined
+
+
+The information in this document is for programmers writing all sorts of
+communications software - whether BBS's, door programs, or terminal
+emulation programs.  If you use this, I hope you mention "Banana ANSI" in
+your documentation.
+
+
+

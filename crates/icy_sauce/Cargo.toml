@@ -1,0 +1,17 @@
+[package]
+name = "icy_sauce"
+version = "0.1.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "Library for handling SAUCE – Standard Architecture for Universal Comment Extensions"
+homepage = "https://www.github.com/mkrueger/icy_sauce"
+repository = "https://www.github.com/mkrueger/icy_sauce"
+license-file = "LICENSE"
+keywords = ["ansi", "ansiart", "sauce"]
+
+[dependencies]
+thiserror = "1.0.58"
+bstr = "1.9.1"
+chrono = "0.4.37"

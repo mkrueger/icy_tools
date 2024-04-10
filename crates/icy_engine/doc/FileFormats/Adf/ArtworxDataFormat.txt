@@ -1,0 +1,99 @@
+.ADF - ARTWORX DATA FORMAT                                              [7.2]
+
+The .ADF specification is a essentially a single file which contains VGA font
+data, the RGB registers for the text palette (registers 0-63), and an
+unlimited amount of binary screen data.  It is intended primarily for
+programmers who would like to add a unique look to any textmode program.
+
+The control structure for the .ADF file is simple:
+
+    BYTE                  : Version #
+    Array of BYTES [192]  : Binary Palette Data in 3-byte triplets.  These
+                            values correspond to the RGB data passed to
+                            the VGA card.
+    Array of BYTES [4096] : VGA Font Data.  Regardless of the screen mode, 
+                            4096 bytes is written to the file.  This is the
+                            binary data passed to the VGA card to generate
+                            fonts.
+    Array of BYTES [....] : (Unknown/Undefined Size) Screen Data.  This is
+                            the actual screen data in the binary, two-byte
+                            (character/attribute) format.  This data can
+                            be directly copied to the screen and should not
+                            go through the bios or console.
+
+HOW TO CREATE AN .ADF VIEWER                                            [7.4]
+
+The following is an pseudo-code algorythm to read, display, and scroll
+through an .ADF file.  For specific programming examples of C++ code to 
+accomplish specific tasks, please see the Figures at the end of this 
+document.
+
+   CHAR version         // Version of .ADF specification
+   CHAR palette[192]    // VGA palette information
+   CHAR old_pal[192]    // OLD VGA palette information
+   CHAR vga_font[4096]  // VGA font information
+   CHAR vbuffer[4000]   // VGA text screen buffer
+
+   main :
+      CHAR key=0        // Key pressed
+      CHAR ext=0        // Extended key code
+      INT  exit_stat=0  // When to exit the program
+      INT  pointer=0    // Top line of ANSI being displayed
+      INT  max_lines=0  // Maximum number of ANSI lines
+      
+      fopen <filename> as binary
+      max_lines=(filesize(filename)-4298)/160   // Figure out exactly how
+                                                // many lines of screen
+                                                // data are in the file
+
+      read version (1 byte)
+      read palette (192 bytes)
+      read vga_font (4096 bytes)
+
+      for x=0 to 63                             // Capture the existing
+        get_vga_palette (x, old_pal[x])         // palette so it can be
+      next x                                    // restored on exiting
+
+      call set_ice_color ()
+      call set_character_width ()
+      call set_palette_registers (palette)
+      call set_vga_font (vga_font)
+
+      do while (exit_stat=0)
+        seek (pointer*160+4289)         // Goto the right place in the file
+                                        // and not read the header.  Since 
+                                        // pointer is a line, pointer * 160
+                                        // is the byte position for that
+                                        // line.
+        
+        read vbuffer (4000 bytes)       // Read the screen data
+        
+        memory_copy vbuffer 
+          to screen (4000 bytes)        // Copy the data read to the actual
+                                        // screen to be displayed
+
+        key=get_key()                   // reads the keystroke
+        if (key=0) then ext=get_key()   // reads the extended key stroke
+        
+        if (ext="H") pointer=pointer-1  // Up
+        if (ext="P") pointer=pointer+1  // Down
+        if (key=27) exit_stat=1         // Escape exits/quits
+
+        if (pointer > 
+           max_lines-25 ) then 
+           pointer=max_lines-25         // Make sure you are not trying to 
+                                        // read past the end of the file
+
+        if (pointer < 0) then
+           pointer=0                    // Make sure that you don't try to
+                                        // display the header as part of the
+                                        // picture
+
+      end while
+
+      set_vga_palette (old_palette)
+      set_normal_color ()
+      screenmode (80x50)                // This will reset the default font
+      screenmode (80x25)                // Returns to the normal screen mode
+
+   end of program

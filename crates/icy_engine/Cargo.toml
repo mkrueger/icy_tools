@@ -1,0 +1,38 @@
+[package]
+name = "icy_engine"
+version = "0.4.0"
+authors.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["clipboard", "minimal"]
+clipboard = ["arboard"]
+minimal = []
+
+
+[dependencies]
+lazy_static = "1.4.0"
+base64 = "0.22.0"
+log = "0.4.20"
+rfind_url = "0.4.4"
+chrono = "0.4.19"
+png = "0.17.10"
+regex = "1.10.4"
+thiserror = "1.0"
+anyhow = "1.0.80"
+serde = { version = "1", features = ["derive"] }
+byteorder = "1"
+bstr = "1.9.1"
+
+i18n-embed = { version = "0.14.0", features = ["fluent-system", "desktop-requester"]} 
+i18n-embed-fl = "0.8.0"
+rust-embed = "8.0.0"
+once_cell = "1.16.0"
+arboard = { version = "3.2.1", optional = true }
+icy_sauce = { workspace = true }
+icy_sixel = { workspace = true }
+
+[dev-dependencies]
+walkdir = "2.3.2"

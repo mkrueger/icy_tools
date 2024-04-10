@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+	"crates/icy_draw", 
+	"crates/icy_engine",
+	"crates/icy_engine_gui",
+	"crates/icy_play", 
+	"crates/icy_sauce", 
+	"crates/icy_sixel", 
+	"crates/icy_term",
+	"crates/icy_view",
+	"crates/icy_view_gui",
+]
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+authors = ["Mike Krüger <mkrueger@posteo.de>"]
+license = "MIT or Apache-2.0"
+
+[workspace.dependencies]
+icy_engine = { path = "crates/icy_engine" }
+icy_engine_gui = { path = "crates/icy_engine_gui" }
+icy_sauce = { path = "crates/icy_sauce" }
+icy_sixel = { path = "crates/icy_sixel" }
+icy_view_gui = { path = "crates/icy_view_gui" }
+
+[profile.release]
+opt-level = 'z'     # Optimize for size
+lto = true          # Enable link-time optimization
+codegen-units = 1   # Reduce number of codegen units to increase optimizations
+panic = 'abort'     # Abort on panic
+strip = true        # Strip symbols from binary*

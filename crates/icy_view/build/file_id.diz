@@ -1,0 +1,12 @@
+         -* ICY VIEW #VERSION *-
+
+A cross platform ansi art viewer.
+
+- Supports Ansi, Ascii, Artworx ADF,
+  Avatar, BIN, XBIN, PCBoard, iCE, 
+  Tundra Draw
+- Various picture formats
+- Can open zip files directly
+
+For latest builds
+GitHub https://github.com/mkrueger/icy_view

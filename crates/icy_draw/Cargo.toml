@@ -1,0 +1,92 @@
+[package]
+name = "icy_draw"
+version = "0.2.2"
+edition = "2021"
+authors = ["Mike Krüger <mkrueger@posteo.de>"]
+description = "A drawing program for ANSI & ASCII art and other text-based art forms."
+license = "Apache-2.0"
+repository = "https://github.com/mkrueger/icy_draw"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eframe = "0.27.2"
+egui = { version = "0.27.2" }
+egui_extras = { version="0.27.2", features = ["all_loaders"] }
+egui_glow = "0.27.2"
+egui-modal = "0.3.3"
+glow = "0.13.0"
+egui_file = "0.17.0"
+egui_tiles = { git ="https://github.com/mkrueger/egui_tiles"}
+#egui_tiles = { path = "../egui_tiles"  }
+egui-bind = "0.12.0"
+egui-notify = "0.14.0"
+log = "0.4.20"
+log4rs = "1.2.0"
+open = "5.0.0"
+dark-light = "1.0.0"
+zip = "0.6.6"
+notify = "6.1.1"
+gifski = { version="1.12.2", features=["gifsicle"], default-features = false}
+imgref = "1.9.4"
+rgb = "0.8.36"
+thiserror = "1.0"
+anyhow = "1.0.75"
+clap = { version="4.4.0", features = ["derive"] }
+github_release_check = "0.2.1"
+
+icy_engine = { workspace = true }
+icy_engine_gui = { workspace = true }
+icy_view_gui = { workspace = true }
+icy_sauce = { workspace = true }
+
+bstr = "1.9.1"
+
+egui_code_editor = "0.2.2"
+mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
+regex = "1.9.5"
+
+walkdir = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.80"
+lazy_static = "1.4.0"
+directories = "5.0.1"
+image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
+semver = "1.0.20"
+
+i18n-embed = { version = "0.14.0", features = ["fluent-system", "desktop-requester"]} 
+i18n-embed-fl = "0.8.0"
+rust-embed = "8.0.0"
+once_cell = "1.16.0"
+
+[features]
+default = []
+
+[build-dependencies]
+winres = "0.1"
+
+[profile.release]
+opt-level = 'z'     # Optimize for size
+lto = true          # Enable link-time optimization
+codegen-units = 1   # Reduce number of codegen units to increase optimizations
+panic = 'abort'     # Abort on panic
+strip = true        # Strip symbols from binary*
+
+[package.metadata.bundle]
+name = "Icy Draw"
+identifier = "com.github.icy_draw"
+icon = [ "build/mac/128x128@2x.png" ]
+resources = []
+copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
+
+[package.metadata.deb]
+section="Network"
+copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
+revision=""
+license-file="build/license.rtf"
+assets = [
+    ["target/release/icy_draw", "/usr/bin/", "755"],
+    ["build/linux/icy_draw.desktop", "/usr/share/applications/", "644"],
+    ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_draw.png", "644"],
+    ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_draw.png", "644"],
+]

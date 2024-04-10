@@ -1,0 +1,18 @@
+         -* ICY TERM #VERSION *-
+
+A modern terminal program for BBS systems.
+
+- Written in pure rust - fast & secure
+- Multi platform Windows, OSX, Linux
+- X/Y/Z Modem + variants
+- 3D accelerated
+- Copy & Paste
+- IEMSI support
+- Supports CP437, PETSCII, ATASCII, 
+  VIEWDATA
+
+For latest builds
+Visit Crazy Paradise BBS WHQ: cpbbs.de:2323
+
+Development
+GitHub https://github.com/mkrueger/icy_term

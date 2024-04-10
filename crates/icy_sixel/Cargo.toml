@@ -1,0 +1,13 @@
+[package]
+name = "icy_sixel"
+version = "0.1.2"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "A 100% rust sixel library."
+homepage = "https://github.com/mkrueger/icy_sixel"
+repository = "https://github.com/mkrueger/icy_sixel"
+keywords = ["sixel"]
+
+[dependencies]
