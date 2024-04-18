@@ -15,7 +15,7 @@ egui_glow = "0.27.2"
 glow = "0.13.1"
 memmap = "0.7.0"
 clap = { version="4.4.0", features = ["derive"] }
-zip = "0.6.6"
+zip = { workspace = true }
 directories = "5.0.1"
 log = "0.4"
 env_logger = "0.11.1"
@@ -36,13 +36,6 @@ icy_view_gui = { workspace = true }
 
 github_release_check = "0.2.1"
 semver = "1.0.20"
-
-[profile.release]
-opt-level = 'z'     # Optimize for size
-lto = true          # Enable link-time optimization
-codegen-units = 1   # Reduce number of codegen units to increase optimizations
-panic = 'abort'     # Abort on panic
-strip = true        # Strip symbols from binary*
 
 [build-dependencies]
 winres = "0.1"

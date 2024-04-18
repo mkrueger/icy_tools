@@ -25,7 +25,7 @@ log = "0.4.20"
 log4rs = "1.2.0"
 open = "5.0.0"
 dark-light = "1.0.0"
-zip = "0.6.6"
+zip = { workspace = true }
 notify = "6.1.1"
 gifski = { version="1.12.2", features=["gifsicle"], default-features = false}
 imgref = "1.9.4"
@@ -64,13 +64,6 @@ default = []
 
 [build-dependencies]
 winres = "0.1"
-
-[profile.release]
-opt-level = 'z'     # Optimize for size
-lto = true          # Enable link-time optimization
-codegen-units = 1   # Reduce number of codegen units to increase optimizations
-panic = 'abort'     # Abort on panic
-strip = true        # Strip symbols from binary*
 
 [package.metadata.bundle]
 name = "Icy Draw"

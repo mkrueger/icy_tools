@@ -18,6 +18,7 @@ pub struct Modem {
     pub init_string: String,
     pub dial_string: String,
 }
+
 impl Modem {
     pub(crate) fn write_modem_settings(&self, file: &mut std::fs::File) -> TerminalResult<()> {
         // currently unused

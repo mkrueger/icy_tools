@@ -23,6 +23,7 @@ icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = { path = "crates/icy_sauce" }
 icy_sixel = { path = "crates/icy_sixel" }
 icy_view_gui = { path = "crates/icy_view_gui" }
+zip = { version = "0.6.6"}
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
