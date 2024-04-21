@@ -61,6 +61,8 @@ pub enum ControlCharHandling {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SaveOptions {
+    pub format_type: i32,
+
     pub screen_preparation: ScreenPreperation,
     pub modern_terminal_output: bool,
     pub save_sauce: bool,
@@ -104,6 +106,7 @@ pub struct SaveOptions {
 impl SaveOptions {
     pub const fn new() -> Self {
         SaveOptions {
+            format_type: 0,
             longer_terminal_output: false,
             screen_preparation: ScreenPreperation::None,
             modern_terminal_output: false,

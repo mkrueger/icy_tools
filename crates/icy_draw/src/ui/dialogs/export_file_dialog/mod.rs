@@ -76,7 +76,7 @@ fn get_format_type(buf: BufferType, path: &std::path::Path) -> i32 {
             }
         }
     }
-    0
+    unsafe { SETTINGS.save_options.format_type }
 }
 
 impl ModalDialog for ExportFileDialog {
@@ -208,6 +208,7 @@ impl ModalDialog for ExportFileDialog {
         }
         unsafe {
             editor.save_content(self.file_name.as_path(), &SETTINGS.save_options)?;
+            SETTINGS.save_options.format_type = self.format_type;
         }
         Ok(None)
     }
