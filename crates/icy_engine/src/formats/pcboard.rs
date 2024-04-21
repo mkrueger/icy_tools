@@ -2,7 +2,7 @@ use std::path::Path;
 
 use icy_sauce::SauceInformation;
 
-use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
+use crate::{ascii::CP437_TO_UNICODE, parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
 
 use super::SaveOptions;
 
@@ -34,6 +34,11 @@ impl OutputFormat for PCBoard {
         let height = buf.get_line_count();
         let mut first_char = true;
 
+        if options.modern_terminal_output {
+            // write UTF-8 BOM as unicode indicator.
+            result.extend([0xEF, 0xBB, 0xBF]);
+        }
+
         match options.screen_preparation {
             super::ScreenPreperation::None | super::ScreenPreperation::Home => {} // home not supported
             super::ScreenPreperation::ClearScreen => {
@@ -54,7 +59,16 @@ impl OutputFormat for PCBoard {
                     last_attr = ch.attribute;
                 }
 
-                result.push(if ch.ch == '\0' { b' ' } else { ch.ch as u8 });
+                if options.modern_terminal_output {
+                    if ch.ch == '\0' {
+                        result.push(b' ')
+                    } else {
+                        let uni_ch = CP437_TO_UNICODE[ch.ch as usize].to_string();
+                        result.extend(uni_ch.as_bytes().to_vec());
+                    }
+                } else {
+                    result.push(if ch.ch == '\0' { b' ' } else { ch.ch as u8 });
+                }
                 first_char = false;
                 pos.x += 1;
             }

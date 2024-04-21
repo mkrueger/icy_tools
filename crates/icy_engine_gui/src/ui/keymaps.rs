@@ -18,7 +18,7 @@ pub static ANSI_KEY_MAP: &[(u32, &[u8])] = &[
     (Key::Delete as u32 | SHIFT_MOD, &[127]),
     (Key::Insert as u32, b"\x1b[@"),
     (Key::End as u32, b"\x1b[K"),
-    (Key::End as u32| CTRL_MOD, &[11]),
+    (Key::End as u32 | CTRL_MOD, &[11]),
     (Key::PageUp as u32, b"\x1b[V"),
     (Key::PageDown as u32, b"\x1b[U"),
     (Key::F1 as u32, b"\x1b[OP"),
