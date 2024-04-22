@@ -8,25 +8,20 @@ license.workspace = true
 repository = "https://github.com/mkrueger/icy_term"
 
 [dependencies]
-egui = "0.27.2"
-eframe = { version = "0.27.2", default-features = false, features = [
-    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
-    "default_fonts", # Embed the default egui fonts.
-    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
-    "persistence",   # Enable restoring app state when restarting the app.
-] }
-egui_extras = { version="0.27.2", features = ["all_loaders"] }
-egui_glow = "0.27.2"
-egui-modal = "0.3.3"
-egui-bind = "0.12.0"
-egui_file = "0.17.0"
-glow = "0.13.0"
+egui = { workspace = true }
+eframe = { workspace = true }
+egui_extras = { workspace = true }
+egui_glow = { workspace = true }
+egui-modal = { workspace = true }
+egui-bind = { workspace = true }
+egui_file = { workspace = true }
+glow = { workspace = true }
 dark-light = "1.0.0"
-serde = "1.0.185"
+serde = { workspace = true }
 versions = "6.1.0"
-regex = "1.5.4"
+regex = { workspace = true }
 github_release_check = "0.2.1"
-semver = "1.0.20"
+semver = { workspace = true }
 serial = "0.4.0"
 
 #sound
@@ -34,23 +29,23 @@ rodio = { version = "0.17.1" , default-features = false, features = [] }
 icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
 
-walkdir = "2"
-toml = "0.8.1"
+walkdir = { workspace = true }
+toml = { workspace = true }
 
-lazy_static = "1.4.0"
+lazy_static = { workspace = true }
 notify = "6.0.0"
 gabi = "0.2.6"
 arboard = { version = "3.2.1" }
-chrono = "0.4.26"  # Utc hanldung
-thiserror = "1.0"
+chrono = { workspace = true }  # Utc hanldung
+thiserror = { workspace = true }
 anyhow = "1.0.75"
 
-i18n-embed-fl = "0.8.0"
+i18n-embed-fl = { workspace = true }
 # currently disabled because there needs to be a fix for wasm32:
-#rust-embed = "6.8.1"
-once_cell = "1.18.0"
+#rust-embed = { workspace = true }
+once_cell = { workspace = true }
 
-log = "0.4"
+log = { workspace = true }
 log4rs = "1.2.0"
 web-time = "1.0.0"
 
@@ -70,7 +65,7 @@ webpki-roots = "0.26.0"
 getrandom =  { version = "0.2.10", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-directories = "5.0.1"
+directories = { workspace = true }
 open = "5.0.0"
 i18n-embed = { version = "0.14.0", features = ["fluent-system", "desktop-requester"]}
 tracing-subscriber = "0.3"

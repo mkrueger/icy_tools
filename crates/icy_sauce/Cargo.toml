@@ -12,6 +12,6 @@ license-file = "LICENSE"
 keywords = ["ansi", "ansiart", "sauce"]
 
 [dependencies]
-thiserror = "1.0.58"
-bstr = "1.9.1"
-chrono = "0.4.37"
+thiserror = { workspace = true }
+bstr = { workspace = true }
+chrono = { workspace = true }

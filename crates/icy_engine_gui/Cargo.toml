@@ -14,25 +14,21 @@ animations = []
 
 [dependencies]
 icy_engine = { workspace = true }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
-egui = { version = "0.27.2", optional = true }
-egui_glow =  { version = "0.27.2", optional = true }
+egui= { workspace = true }
+egui_glow = { workspace = true }
 image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"], optional = true }
-eframe = { version = "0.27.2", default-features = false, features = [
-    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
-    "default_fonts", # Embed the default egui fonts.
-    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
-    "persistence",   # Enable restoring app state when restarting the app.
-], optional = true }
-lazy_static = "1.4.0"
+eframe = { workspace = true }
 
-glow =  { version = "0.13.0", optional = true }
+lazy_static = { workspace = true }
+
+glow= { workspace = true }
 web-time = "1.0.0"
-log = "0.4"
+log = { workspace = true }
 
-i18n-embed = { version = "0.14.0", features = ["fluent-system", "desktop-requester"] , optional = true} 
-i18n-embed-fl = { version = "0.8.0" , optional = true} 
-rust-embed = { version = "8.0.0", optional = true} 
-once_cell = { version = "1.16.0", optional = true} 
-regex = "1.9.5"
+i18n-embed = { workspace = true }
+i18n-embed-fl= { workspace = true }
+rust-embed = { workspace = true } 
+once_cell = { workspace = true } 
+regex = { workspace = true }

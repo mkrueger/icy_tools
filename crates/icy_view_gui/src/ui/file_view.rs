@@ -481,7 +481,7 @@ impl FileView {
 
                                     let entry = FileEntry {
                                         file_info: FileInfo {
-                                            path: file.enclosed_name().unwrap_or(Path::new("unknown")).to_path_buf(),
+                                            path: file.enclosed_name().unwrap_or(PathBuf::from("unknown")).to_path_buf(),
                                             dir: file.is_dir(),
                                         },
                                         file_data: Some(data),
