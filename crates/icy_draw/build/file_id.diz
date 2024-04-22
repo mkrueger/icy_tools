@@ -1,8 +1,26 @@
          -* ICY DRAW #VERSION *-
 
 ANSI drawing tool.
-Supports: Everything, if it doesn't support
-something it'll get implemented :).
+
+- Written in pure rust
+- Own new file fomat: .icy 
+  based on .png (previews in file browser)
+- Supports Ansi, Ascii, Artworx ADF,
+  Avatar, BIN, XBIN, PCBoard, iCE, 
+  Tundra Draw, CtrlA & Renegade files
+- Multi platform Windows, OSX, Linux
+- Supports multiple drawing layers
+- Brushes, fills, rectangles, halfblock support
+- Palette support
+- Multi window
+- 3D accelerated
+- Own animation system + animated GIF output
+- TheDraw Font support
+- Multiple Bitfont support
+- PNG export
+- Sauce
+- Color modes from classic to full RGB/iCE
+- Plugin support
 
 Development
 GitHub https://github.com/mkrueger/icy_tools

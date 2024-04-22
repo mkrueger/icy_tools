@@ -4,7 +4,8 @@ A cross platform ansi art viewer.
 
 - Supports Ansi, Ascii, Artworx ADF,
   Avatar, BIN, XBIN, PCBoard, iCE, 
-  Tundra Draw
+  Tundra Draw, RipScript, C64 SEQ,
+  IcyDraw
 - Various picture formats
 - Can open zip files directly
 
