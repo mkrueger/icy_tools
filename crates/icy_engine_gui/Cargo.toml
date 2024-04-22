@@ -7,18 +7,13 @@ license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[features]
-default = ["ui", "animations"]
-ui = ["egui", "egui_glow", "glow", "eframe", "image", "i18n-embed", "i18n-embed-fl", "rust-embed", "once_cell"]
-animations = []
-
 [dependencies]
 icy_engine = { workspace = true }
 serde = { workspace = true }
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
 egui= { workspace = true }
 egui_glow = { workspace = true }
-image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"], optional = true }
+image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
 eframe = { workspace = true }
 
 lazy_static = { workspace = true }

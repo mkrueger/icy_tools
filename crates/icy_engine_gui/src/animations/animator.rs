@@ -8,10 +8,8 @@ use icy_engine::{attribute, AttributedChar, Buffer, Caret, Position, TextPane, U
 use mlua::{Lua, UserData, Value};
 use regex::Regex;
 
-#[cfg(feature = "ui")]
 use web_time::Instant;
 
-#[cfg(feature = "ui")]
 use crate::BufferView;
 
 use crate::MonitorSettings;
@@ -34,7 +32,6 @@ pub struct Animator {
     is_playing: bool,
     delay: u32,
 
-    #[cfg(feature = "ui")]
     instant: Instant,
 
     run_thread: Option<thread::JoinHandle<()>>,
@@ -52,7 +49,6 @@ impl Default for Animator {
             is_loop: Default::default(),
             is_playing: Default::default(),
             delay: DEFAULT_SPEEED,
-            #[cfg(feature = "ui")]
             instant: Instant::now(),
             run_thread: None,
             error: String::new(),
@@ -673,7 +669,6 @@ impl Animator {
         self.delay = delay;
     }
 
-    #[cfg(feature = "ui")]
     pub fn update_frame(&mut self, buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>) -> MonitorSettings {
         if self.is_playing && self.instant.elapsed().as_millis() > self.delay as u128 {
             self.next_frame();
@@ -683,14 +678,12 @@ impl Animator {
         self.current_monitor_settings.clone()
     }
 
-    #[cfg(feature = "ui")]
     pub fn start_playback(&mut self, buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>) -> MonitorSettings {
         self.is_playing = true;
         self.instant = Instant::now();
         self.display_frame(buffer_view)
     }
 
-    #[cfg(feature = "ui")]
     pub fn display_frame(&self, buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>) -> MonitorSettings {
         if let Some((scene, settings, _next_frame)) = self.frames.get(self.cur_frame) {
             let mut frame = Buffer::new(scene.get_size());
