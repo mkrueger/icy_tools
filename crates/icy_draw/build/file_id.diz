@@ -1,7 +1,8 @@
          -* ICY DRAW #VERSION *-
 
-ANSI drawing tool nobody should use
-(yet).
+ANSI drawing tool.
+Supports: Everything, if it doesn't support
+something it'll get implemented :).
 
 Development
-GitHub https://github.com/mkrueger/icy_draw
+GitHub https://github.com/mkrueger/icy_tools

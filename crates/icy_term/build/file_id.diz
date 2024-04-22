@@ -9,10 +9,7 @@ A modern terminal program for BBS systems.
 - Copy & Paste
 - IEMSI support
 - Supports CP437, PETSCII, ATASCII, 
-  VIEWDATA
+  VIEWDATA and RIPSCRIPT
 
-For latest builds
-Visit Crazy Paradise BBS WHQ: cpbbs.de:2323
-
-Development
-GitHub https://github.com/mkrueger/icy_term
+For latest builds/development visit:
+GitHub https://github.com/mkrueger/icy_tools

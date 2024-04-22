@@ -1,0 +1,60 @@
+name: Build
+on:
+  workflow_run:
+    workflows: ["Run Tests"]
+    branches: [main]
+    types: 
+      - completed
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build_windows:
+    strategy:
+    matrix:
+      APP_NAME: [icy_term, icy_draw, icy_view, icy_play]
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build exe
+      run: |
+        cd .\crates\${{ matrix.APP_NAME }}
+        cargo build --release
+    - name: Install WiX
+      run: dotnet tool install --global wix --version 4.0.1
+    - name: Create PFX certificate
+      id: create-pfx
+      shell: pwsh
+      env:
+        PFX_CONTENT: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      run: |
+        $encodedBytes=[System.Convert]::FromBase64String($env:PFX_CONTENT);
+        Set-Content "./cert.pfx" -Value $encodedBytes
+        $VERSION=$(cargo pkgid | foreach-object { $_ -replace '(.*)#','' })
+        echo "Version: $VERSION"
+        Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
+        get-content .\crates\${{ matrix.APP_NAME }}\build\file_id.diz | %{$_ -replace "#VERSION","$VERSION"} >file_id.diz        
+    - name: Build MSI installer.
+      exclude:
+        -APP_NAME: icy_play
+      run: |
+        echo "Building ${{ env.VERSION }} installer…"
+        wix extension add WixToolset.UI.wixext WixToolset.Util.wixext
+        wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -d "PATH=./cert.pfx" -d "VERSION=${{ env.VERSION }}"  -out "./${{ env.APP_NAME }}-${{ env.VERSION }}-installer.msi" "build/windows/installer.wxs"
+    - name: Delete PFX certificate
+      run: del "./cert.pfx"
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      exclude:
+        -APP_NAME: icy_play
+      with:
+        name: ${{ matrix.APP_NAME }}_${{ env.VERSION }}_windows_msi
+        path: |
+          ${{ matrix.APP_NAME }}-${{ env.VERSION }}-installer.msi
+          file_id.diz
+    - name: 'Upload Artifact 2'
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.APP_NAME }}_${{ env.VERSION }}_windows_exe
+        path: |
+          .\target\release\${{ matrix.APP_NAME }}.exe
+          file_id.diz

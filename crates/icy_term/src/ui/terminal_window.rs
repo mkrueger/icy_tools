@@ -125,7 +125,7 @@ impl MainWindow {
                     if *VERSION < *LATEST_VERSION {
                         ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string()),
-                            "https://github.com/mkrueger/icy_term/releases/latest",
+                            "https://github.com/mkrueger/icy_tools/releases/latest",
                         );
                     }
 
@@ -141,21 +141,21 @@ impl MainWindow {
                     ui.menu_image_button(MENU.clone().tint(crate::ui::button_tint(ui)), |ui| {
                         let r = ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-item-discuss"),
-                            "https://github.com/mkrueger/icy_term/discussions",
+                            "https://github.com/mkrueger/icy_tools/discussions",
                         );
                         if r.clicked() {
                             ui.close_menu();
                         }
                         let r = ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-item-report-bug"),
-                            "https://github.com/mkrueger/icy_term/issues/new",
+                            "https://github.com/mkrueger/icy_tools/issues/new",
                         );
                         if r.clicked() {
                             ui.close_menu();
                         }
                         let r = ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-item-check-releases"),
-                            "https://github.com/mkrueger/icy_term/releases/latest",
+                            "https://github.com/mkrueger/icy_tools/releases/latest",
                         );
                         if r.clicked() {
                             ui.close_menu();

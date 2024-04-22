@@ -340,7 +340,7 @@ end"#;
 
     fn show_ui(&mut self, ui: &mut Ui) {
         ui.label(fl!(crate::LANGUAGE_LOADER, "new-file-template-ansimation-ui-label"));
-        ui.hyperlink("https://github.com/mkrueger/icy_draw/blob/main/doc/lua_api.md");
+        ui.hyperlink("https://github.com/mkrueger/icy_tools/blob/master/crates/icy_draw/doc/lua_api.md");
     }
 }
 

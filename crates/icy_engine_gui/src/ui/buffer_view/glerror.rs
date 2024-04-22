@@ -33,7 +33,7 @@ pub fn check_for_gl_error_impl(gl: &glow::Context, file: &str, line: u32, contex
 
         if context.is_empty() {
             log::error!(
-                "GL error, at {}:{}: {} (0x{:X}). Please file a bug at https://github.com/mkrueger/icy_term/issues",
+                "GL error, at {}:{}: {} (0x{:X}). Please file a bug at https://github.com/mkrueger/icy_tools/issues",
                 file,
                 line,
                 error_str,
@@ -41,7 +41,7 @@ pub fn check_for_gl_error_impl(gl: &glow::Context, file: &str, line: u32, contex
             );
         } else {
             log::error!(
-                "GL error, at {}:{} ({}): {} (0x{:X}). Please file a bug at https://github.com/mkrueger/icy_term/issues",
+                "GL error, at {}:{} ({}): {} (0x{:X}). Please file a bug at https://github.com/mkrueger/icy_tools/issues",
                 file,
                 line,
                 context,

@@ -555,13 +555,13 @@ impl<'a> MainWindow<'a> {
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-help"), |ui| {
                 ui.style_mut().wrap = Some(false);
                 ui.set_min_width(170.0);
-                let r = ui.hyperlink_to(fl!(crate::LANGUAGE_LOADER, "menu-discuss"), "https://github.com/mkrueger/icy_draw/discussions");
+                let r = ui.hyperlink_to(fl!(crate::LANGUAGE_LOADER, "menu-discuss"), "https://github.com/mkrueger/icy_tools/discussions");
                 if r.clicked() {
                     ui.close_menu();
                 }
                 let r = ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-report-bug"),
-                    "https://github.com/mkrueger/icy_draw/issues/new",
+                    "https://github.com/mkrueger/icy_tools/issues/new",
                 );
                 if r.clicked() {
                     ui.close_menu();
@@ -597,7 +597,7 @@ impl<'a> MainWindow<'a> {
             if *VERSION < *LATEST_VERSION {
                 ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string()),
-                    "https://github.com/mkrueger/icy_draw/releases/latest",
+                    "https://github.com/mkrueger/icy_tools/releases/latest",
                 );
             }
         });

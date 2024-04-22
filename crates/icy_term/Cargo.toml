@@ -5,7 +5,7 @@ authors.workspace = true
 edition.workspace = true
 description = "A terminal program supporting CP437, PetScii and ViewData"
 license.workspace = true
-repository = "https://github.com/mkrueger/icy_term"
+repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
 egui = { workspace = true }

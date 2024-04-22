@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 description = "A drawing program for ANSI & ASCII art and other text-based art forms."
 license = "Apache-2.0"
-repository = "https://github.com/mkrueger/icy_draw"
+repository = "https://github.com/mkrueger/icy_tools"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
