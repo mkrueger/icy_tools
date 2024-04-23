@@ -49,6 +49,9 @@ pub trait UndoHandler {
 }
 
 pub trait Document: UndoHandler + ClipboardHandler {
+    fn has_tool_switched(&self) -> bool;
+    fn set_tool_switch(&mut self, switched: bool);
+
     fn undo_stack_len(&self) -> usize;
 
     fn default_extension(&self) -> &'static str;

@@ -31,7 +31,7 @@ IcyDraw is a full features ansi drawing tool doing things a bit different than o
  - Many display options, guides, grids, line numbers
  - Full SAUCE support including 9px & aspect ratio display
  - 3d accelerated output & output filters
-
+ - BBS Tag support.
 
 # Get binaries
 

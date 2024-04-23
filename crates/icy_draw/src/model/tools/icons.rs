@@ -18,4 +18,5 @@ lazy_static::lazy_static! {
     pub static ref RECTANGLE_OUTLINE_SVG: Image<'static> = Image::new(egui::include_image!("../../../data/icons/rectangle_outline.svg"));
     pub static ref SELECT_SVG: Image<'static> = Image::new(egui::include_image!("../../../data/icons/select.svg"));
     pub static ref FLIP_TOOL_SVG: Image<'static> = Image::new(egui::include_image!("../../../data/icons/flip_tool.svg"));
+    pub static ref TAG_SVG: Image<'static> = Image::new(egui::include_image!("../../../data/icons/tag.svg"));
 }

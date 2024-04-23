@@ -22,6 +22,9 @@ pub use about_dialog::*;
 mod edit_layer_dialog;
 pub use edit_layer_dialog::*;
 
+mod edit_tag_dialog;
+pub use edit_tag_dialog::*;
+
 mod save_file_dialog;
 pub use save_file_dialog::*;
 

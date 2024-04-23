@@ -54,6 +54,7 @@ pub struct AnsiEditor {
     //pub attr_changed: std::boxed::Box<dyn Fn(TextAttribute)>
     pub request_focus: bool,
     pub color_mode: ColorMode,
+    pub tool_switch: bool,
 }
 
 impl UndoHandler for AnsiEditor {
@@ -130,6 +131,12 @@ const ICED_EXT: &str = "icy";
 impl Document for AnsiEditor {
     fn default_extension(&self) -> &'static str {
         ICED_EXT
+    }
+    fn has_tool_switched(&self) -> bool {
+        self.tool_switch
+    }
+    fn set_tool_switch(&mut self, switched: bool) {
+        self.tool_switch = switched;
     }
 
     fn undo_stack_len(&self) -> usize {
@@ -244,6 +251,7 @@ impl AnsiEditor {
             last_selected_tool: 0,
             request_focus: false,
             color_mode: ColorMode::Both,
+            tool_switch: true,
         }
     }
 

@@ -182,6 +182,8 @@ tool-pipette_name=Farbpipette
 tool-pipette_tooltip=Farben von einer Position aufnehmen
 tool-select_name=Auswahl
 tool-select_tooltip=Mehrfachauswahl oder nicht rechteckige Auswahl
+tool-tag_name=Tag Tool
+tool-tag_tooltip=Tags werden im Output ersetzt
 
 toolbar-new=Neu
 
@@ -500,3 +502,15 @@ settings-guide-label=Hilfslinienfarbe:
 settings-set-label=Set { $set }
 settings-key_filter_preview_text=Tastenzuweisung filtern
 settings-char_set_list_label=Zeichnsatzliste:
+
+edit-tag-title=Tag
+edit-tag-filter=Tags filtern
+edit-tag-preview-label=Vorschau:
+edit-tag-replacement-label=Ersatz:
+edit-tag-alignment-label=Ausrichtung:
+edit-tag-length-label=Länge:
+edit-tag-alignment-left=Links
+edit-tag-alignment-right=Rechts
+edit-tag-alignment-center=Zentriert
+add_tag_tooltip=Tag hinzufügen
+delete_tag_tooltip=Tag löschen

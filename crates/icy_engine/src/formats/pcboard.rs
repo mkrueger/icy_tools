@@ -45,11 +45,16 @@ impl OutputFormat for PCBoard {
                 result.extend(b"@CLS@");
             }
         }
-
         while pos.y < height {
             let line_length = buf.get_line_length(pos.y);
 
             while pos.x < line_length {
+                if let Some(tag) = buf.get_tag_at(pos) {
+                    result.extend(tag.replacement_value.as_bytes());
+                    pos.x += tag.len() as i32;
+                    continue;
+                }
+
                 let ch = buf.get_char(pos);
 
                 if first_char || ch.attribute != last_attr {

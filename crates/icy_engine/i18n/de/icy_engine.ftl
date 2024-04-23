@@ -46,6 +46,8 @@ undo-change_font_slot=Fontslot ändern
 undo-update_layer_properties=Ebeneneigenschaften ändern
 undo-set_use_letter_spacing=9 Pixel Modus geändert
 undo-set_use_aspect_ratio=Seitenverhältnis geändert
+undo-edit-tag=Tag bearbeitet
+undo-remove-tag=Tag gelöscht
 
 layer-duplicate-name={ $name }-Kopie
 layer-new-name=Ebene

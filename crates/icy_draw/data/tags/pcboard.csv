@@ -1,0 +1,129 @@
+# Action Related Macros
+
+,@AUTOMORE@, Subsequent more prompts are treated as @PAUSE@.
+,@BEEP@, Send a beep to the caller.
+,@CLREOL@, Clear all text on the current line to the right of the cursor.
+,@CLS@, Clear the screen.
+,@DELAY:nn@, Pause for the nn tenths of a second.
+,@HANGUP@, Disconnect the caller.
+,@MORE@, Interrupt display asking caller if they wish to see more.
+,@PAUSE@, Same as @MORE@ but continues after 10 seconds.
+,@POFF@, Disable normal more prompts when screen fills up.
+,@PON@, Enable normal more prompting usage.
+,@POS:nn@, Advance cursor to position nn.
+,@QOFF@, Do not allow the display of the file to be aborted.
+,@QON@, Allow the file display to be aborted.
+,@WAIT@, Interrupt display of file with a Press Enter prompt.
+,@XOFF@, Turn graphics off
+,@XON@, Turn graphics on
+
+# File Transfer Related Macros
+
+10000000,@BYTELIMIT@, Number of bytes that can be downloaded on a daily basis.
+1.0,@BYTERATIO@, Current byte ratio of caller.
+10000000,@BYTESLEFT@, Number of bytes user can download during current call.
+2000000,@DAYBYTES@, Number of bytes downloaded today.
+1000000000, @DLBYTES@, Total number of bytes downloaded by the caller.
+1000, @DLFILES@, Total number of files download by the caller.
+1.0, @FILERATIO@, Current file ratio of the caller.
+4096, @KBLEFT@, @BYTESLEFT@ expressed in kilobytes.
+4096, @KBLIMIT@, @BYTELIMIT@ expressed in kilobytes.
+12, @NUMDIR@, Number of file directories in current conference.
+Z Modem (Batch), @PRODESC@, Description of the default protocol selected.
+Z, @PROLTR@, Default protocol selected by the current caller.
+1000000000, @UPBYTES@, Total number of bytes uploaded by the caller.
+1000, @UPFILES@, Total number of files uploaded by the caller.
+1023, @BICPS@, Last upload & download cps
+1023, @RCPS@, Download cps
+100000, @RBYTES@, Received bytes
+100, @RFILES@, Received files
+1023, @SCPS@, Upload cps
+100000, @SBYTES@, Uploaded bytes
+100, @SFILES@, Uploaded files
+
+
+# Message Related Macros
+
+4095, @CURMSGNUM@, Current message number being read.
+8123, @HIGHMSGNUM@, High message number in message base.
+2032, @LMR@, Last message read by user in the current conference.
+1, @LOWMSGNUM@, Low message number in the message base.
+42, @MSGLEFT@, Total number of messages entered by the user.
+9009, @MSGREAD@, Total number of messages read by the user.
+
+# Miscellaneous Related Macros
+
+Coolest PCBoard in the world, @BOARDNAME@, The name of the bulletin board system.
+Main Board, @CONFNAME@, The name of the current conference.
+0, @CONFNUM@, The number of the current conference.
+Erase Disk, @EVENT@, The time that the next event is scheduled to take place.
+123124231, @FREESPACE@, Bytes available for uploading in the current conference.
+0 Main Board, @INCONF@, Current conference number and name.
+Dude, @LASTCALLERNODE@, The last user that called the current node.
+Dude, @LASTCALLERSYSTEM@, The last user that called the system.
+1, @NODE@, The current node number.
+5, @NUMBLT@, The number of bulletins defined in the current conference.
+3244, @NUMCALLS@, Total number of calls answered by the BBS.
+10, @OFFHOURS@, Hours that lower speed callers can call into the system.
+1-2, @OPTEXT@, Used in PCBTEXT to transfer information by PCBoard.
+04/23/24, @SYSDATE@, The current system date.
+00:00, @SYSOPIN@, Beginning time when the SysOp is available for chat.
+24:00, @SYSOPOUT@, Ending time when the SysOp is available for chat.
+07:11, @SYSTIME@, The current system time.
+,@WHO@, Prints a list of who is currently online.
+
+# User Related Macros
+
+9600, @BPS@, Carrier speed of caller as reported by PCBoard.
+9600, @CARRIER@, Carrier speed of caller as reported by the modem.
+Gotham,@CITY@, Information entered in the city field of user's record.
+001,@DATAPHONE@, Information entered in the data phone field of user's record.
+09/09/99, @EXPDATE@, Expiration date of the caller.
+999, @EXPDAYS@, Number of days until the user's subscription will expire
+John,@FIRST@, First name of caller displayed in mixed case.
+JOHN,@FIRSTU@, First name of caller displayed in all upper case.
+001, @HOMEPHONE@, Information entered in the home phone field of user record.
+01/01/23, @LASTDATEON@, Last date the caller called the system.
+21:11, @LASTTIMEON@, Last time the caller called the system.
+400, @MINLEFT@, Minutes left on system (includes download time estimates).
+129, @NUMTIMESON@, Number of times user has called the system.
+10, @SECURITY@, Current security level of the caller.
+1000, @TIMELEFT@, Minutes left on system (excludes download time estimates).
+1000, @TIMELIMIT@, The daily/session time limit of the caller.
+3232, @TIMEUSED@, Total number of minutes used during current call.
+1223, @TOTALTIME@, Total number of minutes used during current day.
+JOHN DOE,@USER@, The caller's name displayed in uppercase.
+Janne Doe,@ALIAS@, The caller's alias
+John Doe, @REAL@, The caller's real name
+
+12, @NUMCONF@, The number of conferences
+
+
+100, @BYTECREDIT@, Byte credit
+100, @CREDLEFT@, Credits left
+100, @CREDNOW@, Credits now
+100, @CREDSTART@, Credits start
+100, @CREDUSED@, Credits used
+
+0-Day WareZ, @DIRNAME@, Name of current Directory
+0, @DIRNUM@, Number of current Directory
+
+100, @FBYTES@, TODO
+100, @FFBYTES@, TODO
+100, @FILECREDIT@, TODO
+1.0, @RATIOBYTES@, TODO
+1.0, @RATIOFILES@, TODO
+1, @FNUM@, TODO
+Name, @INAME@, TODO
+01/01/01, @LOGDATE@, TODO
+10:10, @LOGTIME@, TODO
+1100, @MAXBYTES@, TODO
+100, @MAXFILES@, TODO
+01/01/01, @PWXDATE@, TODO
+
+N, @NOCHAR@, Char for 'No'
+Y, @YESCHAR@, Char for 'Yes'
+
+Ansi, @GFXMODE@, IcyBoard specfic - current graphics mode
+Main Msgboard, @AREA@, IcyBoard specfic - name of current message area
+10, @NUMAREA@,IcyBoard specfic - number of message areas in current conference

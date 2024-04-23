@@ -64,7 +64,7 @@ jobs:
           sips -z 32 32 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_32x32.png
           sips -z 64 64 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_32x32@2.png
           sips -z 128 128 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_128x128.png
-          cp crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_128x128@2.png
+          cp crates/${{ matrix.app }}/build/mac/128x128@2x.png AppIcon.iconset/icon_128x128@2.png
           iconutil -c icns AppIcon.iconset
           cp AppIcon.icns "${{ matrix.app }}.app/Contents/Resources"
           

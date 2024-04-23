@@ -1,4 +1,4 @@
-use std::{error::Error, path::Path};
+use std::{error::Error, fmt::Alignment, path::Path};
 
 use base64::{engine::general_purpose, Engine};
 use icy_sauce::SauceInformation;
@@ -306,6 +306,64 @@ impl OutputFormat for IcyDraw {
             }
         }
 
+        if !buf.tags.is_empty() {
+            let mut data = Vec::new();
+            data.extend(u16::to_le_bytes(buf.tags.len() as u16));
+            for tag in &buf.tags {
+                write_utf8_encoded_string(&mut data, &tag.preview);
+                write_utf8_encoded_string(&mut data, &tag.replacement_value);
+                data.extend(i32::to_le_bytes(tag.position.x as i32));
+                data.extend(i32::to_le_bytes(tag.position.y as i32));
+                data.extend(u16::to_le_bytes(tag.length as u16));
+                if tag.is_enabled {
+                    data.push(1);
+                } else {
+                    data.push(0);
+                }
+                match tag.alignment {
+                    Alignment::Left => data.push(0),
+                    Alignment::Center => data.push(1),
+                    Alignment::Right => data.push(2),
+                }
+                match tag.tag_placement {
+                    crate::TagPlacement::InText => data.push(0),
+                    crate::TagPlacement::WithGotoXY => data.push(1),
+                }
+                match tag.tag_role {
+                    crate::TagRole::Displaycode => data.push(0),
+                    crate::TagRole::Hyperlink => data.push(1),
+                }
+                let mut attr = tag.attribute.attr;
+
+                let is_short = if tag.attribute.foreground_color <= 255 && tag.attribute.background_color <= 255 && tag.attribute.font_page <= 255 {
+                    attr |= attribute::SHORT_DATA;
+                    true
+                } else {
+                    false
+                };
+                data.extend(u16::to_le_bytes(attr));
+                if is_short {
+                    data.push(tag.attribute.foreground_color as u8);
+                    data.push(tag.attribute.background_color as u8);
+                    data.push(tag.attribute.font_page as u8);
+                } else {
+                    data.extend(u32::to_le_bytes(tag.attribute.foreground_color));
+                    data.extend(u32::to_le_bytes(tag.attribute.background_color));
+                    data.extend(u16::to_le_bytes(tag.attribute.font_page as u16));
+                }
+                // unused data for future use
+                data.extend(&[0, 0, 0, 0]);
+                data.extend(&[0, 0, 0, 0]);
+                data.extend(&[0, 0, 0, 0]);
+                data.extend(&[0, 0, 0, 0]);
+            }
+
+            let tag_data = general_purpose::STANDARD.encode(&data);
+            if let Err(err) = encoder.add_ztxt_chunk("TAG".to_string(), tag_data) {
+                return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
+            }
+        }
+
         if let Err(err) = encoder.add_ztxt_chunk("END".to_string(), String::new()) {
             return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
         }
@@ -401,6 +459,97 @@ impl OutputFormat for IcyDraw {
                                         result.load_sauce(sauce);
                                     }
                                 }
+
+                                "TAG" => {
+                                    let mut bytes = &bytes[..];
+                                    let tag_len = u16::from_le_bytes(bytes[..2].try_into().unwrap());
+                                    bytes = &bytes[2..];
+                                    for _ in 0..tag_len {
+                                        let (preview, len) = read_utf8_encoded_string(&bytes);
+                                        bytes = &bytes[len..];
+                                        let (replacement_value, len) = read_utf8_encoded_string(&bytes);
+                                        bytes = &bytes[len..];
+                                        let x = i32::from_le_bytes(bytes[..4].try_into().unwrap());
+                                        bytes = &bytes[4..];
+                                        let y = i32::from_le_bytes(bytes[..4].try_into().unwrap());
+                                        bytes = &bytes[4..];
+                                        let length = u16::from_le_bytes(bytes[..2].try_into().unwrap());
+                                        bytes = &bytes[2..];
+                                        let is_enabled = bytes[0] == 1;
+                                        bytes = &bytes[1..];
+                                        let alignment = match bytes[0] {
+                                            0 => Alignment::Left,
+                                            1 => Alignment::Center,
+                                            2 => Alignment::Right,
+                                            _ => {
+                                                return Err(anyhow::anyhow!("unsupported alignment"));
+                                            }
+                                        };
+                                        bytes = &bytes[1..];
+                                        let tag_placement = match bytes[0] {
+                                            0 => crate::TagPlacement::InText,
+                                            1 => crate::TagPlacement::WithGotoXY,
+                                            _ => {
+                                                return Err(anyhow::anyhow!("unsupported tag placement"));
+                                            }
+                                        };
+                                        bytes = &bytes[1..];
+
+                                        let tag_role = match bytes[0] {
+                                            0 => crate::TagRole::Displaycode,
+                                            1 => crate::TagRole::Hyperlink,
+                                            _ => {
+                                                return Err(anyhow::anyhow!("unsupported tag role"));
+                                            }
+                                        };
+
+                                        bytes = &bytes[1..];
+
+                                        let mut attr = u16::from_le_bytes(bytes[..2].try_into().unwrap());
+                                        bytes = &bytes[2..];
+                                        let is_short = if (attr & attribute::SHORT_DATA) == 0 {
+                                            false
+                                        } else {
+                                            attr &= !attribute::SHORT_DATA;
+                                            true
+                                        };
+                                        let (fg, bg, font_page) = if is_short {
+                                            let r = (bytes[0] as u32, bytes[1] as u32, bytes[2] as u16);
+                                            bytes = &bytes[3..];
+                                            r
+                                        } else {
+                                            let r = (
+                                                u32::from_le_bytes(bytes[..4].try_into().unwrap()),
+                                                u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+                                                u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
+                                            );
+                                            bytes = &bytes[10..];
+                                            r
+                                        };
+                                        bytes = &bytes[4..]; // skip unused data
+                                        bytes = &bytes[4..]; // skip unused data
+                                        bytes = &bytes[4..]; // skip unused data
+                                        bytes = &bytes[4..]; // skip unused data
+
+                                        result.tags.push(crate::Tag {
+                                            preview,
+                                            replacement_value,
+                                            position: Position::new(x, y),
+                                            length: length as usize,
+                                            is_enabled,
+                                            alignment,
+                                            tag_placement,
+                                            tag_role,
+                                            attribute: crate::TextAttribute {
+                                                foreground_color: fg,
+                                                background_color: bg,
+                                                font_page: font_page as usize,
+                                                attr,
+                                            },
+                                        });
+                                    }
+                                }
+
                                 text => {
                                     if let Some(font_slot) = text.strip_prefix("FONT_") {
                                         match font_slot.parse() {

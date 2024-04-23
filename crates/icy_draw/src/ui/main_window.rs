@@ -90,6 +90,7 @@ impl<'a> MainWindow<'a> {
             Box::new(crate::model::fill_imp::FillTool::new()),
             Box::new(fnt),
             Box::<crate::model::move_layer_imp::MoveLayer>::default(),
+            Box::<crate::model::tag_imp::TagTool>::default(),
         ];
 
         let ctx: &egui::Context = &cc.egui_ctx;

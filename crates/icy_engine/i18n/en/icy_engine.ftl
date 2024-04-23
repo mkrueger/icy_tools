@@ -46,6 +46,8 @@ undo-change_font_slot=Change Font Slot
 undo-update_layer_properties=Update Layer Properties
 undo-set_use_letter_spacing=Set Use Letter Spacing
 undo-set_use_aspect_ratio=Set Use Aspect Ratio
+undo-edit-tag=Edit Tag
+undo-remove-tag=Remove Tag
 
 layer-duplicate-name={ $name } copy
 layer-new-name=Layer

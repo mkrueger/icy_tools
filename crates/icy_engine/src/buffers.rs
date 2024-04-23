@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Alignment;
 use std::{
     cmp::max,
     fs::File,
@@ -91,6 +92,62 @@ pub enum PaletteMode {
     Free16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TagPlacement {
+    InText,
+    WithGotoXY,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TagRole {
+    Displaycode,
+    Hyperlink,
+}
+
+#[derive(Clone)]
+pub struct Tag {
+    pub is_enabled: bool,
+    pub preview: String,
+    pub replacement_value: String,
+
+    pub position: Position,
+    pub length: usize,
+    pub alignment: Alignment,
+    pub tag_placement: TagPlacement,
+    pub tag_role: TagRole,
+
+    pub attribute: TextAttribute,
+}
+
+impl Tag {
+    pub fn contains(&self, cur: Position) -> bool {
+        self.position.y == cur.y && self.position.x <= cur.x && cur.x < self.position.x + self.len() as i32
+    }
+
+    pub fn len(&self) -> usize {
+        if self.length == 0 {
+            return self.preview.len();
+        }
+        self.length
+    }
+
+    fn get_char_at(&self, x: i32) -> AttributedChar {
+        let ch = match self.alignment {
+            Alignment::Left => self.preview.chars().nth(x as usize).unwrap_or(' '),
+            Alignment::Right => self.preview.chars().nth(self.len() as usize - x as usize - 1).unwrap_or(' '),
+            Alignment::Center => {
+                let half = self.len() as usize / 2;
+                if (x as usize) < half {
+                    self.preview.chars().nth(x as usize).unwrap_or(' ')
+                } else {
+                    self.preview.chars().nth(self.len() as usize - x as usize - 1).unwrap_or(' ')
+                }
+            }
+        };
+        AttributedChar::new(ch, self.attribute)
+    }
+}
+
 impl PaletteMode {
     pub fn from_byte(b: u8) -> Self {
         match b {
@@ -176,6 +233,8 @@ pub struct Buffer {
     // pub redo_stack: Vec<Box<dyn UndoOperation>>,
     use_letter_spacing: bool,
     use_aspect_ratio: bool,
+
+    pub tags: Vec<Tag>,
 }
 
 impl std::fmt::Debug for Buffer {
@@ -308,6 +367,7 @@ impl Buffer {
         for f in self.font_iter() {
             frame.set_font(*f.0, f.1.clone());
         }
+        frame.tags = self.tags.clone();
         frame
     }
 
@@ -401,6 +461,7 @@ impl Buffer {
             sixel_threads: VecDeque::new(), // file_name_changed: Box::new(|| {}),
             use_letter_spacing: false,
             use_aspect_ratio: false,
+            tags: Vec::new(),
         }
     }
 
@@ -879,6 +940,16 @@ impl Buffer {
         }
         transparent_char
     }
+
+    pub fn get_tag_at(&self, pos: impl Into<Position>) -> Option<&Tag> {
+        let pos = pos.into();
+        for tag in &self.tags {
+            if tag.is_enabled && tag.position == pos {
+                return Some(tag);
+            }
+        }
+        None
+    }
 }
 
 impl Default for Buffer {
@@ -906,6 +977,12 @@ impl TextPane for Buffer {
 
     fn get_char(&self, pos: impl Into<Position>) -> AttributedChar {
         let pos = pos.into();
+
+        for tag in &self.tags {
+            if tag.is_enabled && tag.contains(pos) {
+                return tag.get_char_at(pos.x - tag.position.x);
+            }
+        }
 
         let mut ch_opt = None;
         let mut attr_opt = None;
@@ -994,7 +1071,6 @@ impl TextPane for Buffer {
         ch.attribute.set_font_page(default_font_page);
         ch
     }
-
     fn get_line_length(&self, line: i32) -> i32 {
         let mut length = 0;
         let mut pos = Position::new(0, line);

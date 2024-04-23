@@ -7,7 +7,7 @@ use icy_sauce::SauceInformation;
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::ascii::CP437_TO_UNICODE;
 use crate::{
-    analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
+    analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
     XTERM_256_PALETTE,
 };
 use crate::{Color, TextAttribute};
@@ -38,6 +38,8 @@ impl OutputFormat for Ansi {
         let mut result = Vec::new();
 
         let mut gen = StringGenerator::new(options.clone());
+        gen.tags = buf.tags.clone();
+
         gen.screen_prep(buf);
         gen.generate(buf, buf);
         gen.screen_end(buf);
@@ -84,6 +86,7 @@ pub struct StringGenerator {
     extended_color_hash: HashMap<(u8, u8, u8), u8>,
 
     pub line_offsets: Vec<usize>,
+    pub tags: Vec<Tag>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +131,7 @@ impl StringGenerator {
             max_output_line_length,
             extended_color_hash,
             line_offsets: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
@@ -324,7 +328,7 @@ impl StringGenerator {
                 }
             }
 
-            let len = if self.options.compress && !self.options.preserve_line_length {
+            let mut len = if self.options.compress && !self.options.preserve_line_length {
                 let mut last = area.get_width() - 1;
                 let last_attr = layer.get_char((last, y)).attribute;
                 if last_attr.background_color == 0 {
@@ -350,8 +354,38 @@ impl StringGenerator {
             } else {
                 area.get_width()
             };
+
+            // previewlen == 0 tags are invisible, so they need to be checked.
+            for t in self.tags.iter() {
+                if t.is_enabled && t.position.y == y as i32 {
+                    len = len.max(t.position.x + t.len() as i32);
+                }
+            }
+            println!("tags : {}", self.tags.len());
             let mut x = 0;
             while x < len {
+                println!("x: {x}, len: {y}");
+                let mut found_tag = false;
+                for t in self.tags.iter() {
+                    if t.is_enabled && t.position.y == y as i32 && t.position.x == x as i32 {
+                        for ch in t.replacement_value.chars() {
+                            line.push(CharCell {
+                                ch,
+                                sgr: Vec::new(),
+                                sgr_tc: Vec::new(),
+                                font_page: 0,
+                                cur_state: state.clone(),
+                            });
+                        }
+                        x += t.len() as i32;
+                        found_tag = true;
+                        break;
+                    }
+                }
+                if found_tag {
+                    continue;
+                }
+
                 let ch = layer.get_char((x, y));
                 if ch.is_visible() {
                     let (new_state, sgr, sgr_tc) = self.get_color(buf, ch.attribute, state);

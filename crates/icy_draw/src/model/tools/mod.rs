@@ -14,6 +14,7 @@ pub mod paste_tool;
 pub mod pencil_imp;
 pub mod pipette_imp;
 pub mod select_imp;
+pub mod tag_imp;
 
 mod icons;
 

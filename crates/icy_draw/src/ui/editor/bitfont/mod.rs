@@ -35,6 +35,7 @@ pub struct BitFontEditor {
     old_data: Option<Vec<u8>>,
 
     send_update_message: bool,
+    tool_switch: bool,
 }
 
 pub enum DrawGlyphStyle {
@@ -65,6 +66,7 @@ impl BitFontEditor {
             redo_stack: Vec::new(),
             old_data: None,
             send_update_message: false,
+            tool_switch: true,
         }
     }
 
@@ -495,6 +497,13 @@ impl UndoHandler for BitFontEditor {
 impl Document for BitFontEditor {
     fn default_extension(&self) -> &'static str {
         "psf"
+    }
+
+    fn has_tool_switched(&self) -> bool {
+        self.tool_switch
+    }
+    fn set_tool_switch(&mut self, switched: bool) {
+        self.tool_switch = switched;
     }
 
     fn undo_stack_len(&self) -> usize {

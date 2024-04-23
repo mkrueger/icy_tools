@@ -7,7 +7,8 @@ use i18n_embed_fl::fl;
 use icy_sauce::SauceMetaInformation;
 
 use crate::{
-    AddType, AttributedChar, BitFont, EngineResult, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Selection, SelectionMask, Size, TextPane,
+    AddType, AttributedChar, BitFont, EngineResult, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Selection, SelectionMask, Size, Tag,
+    TextPane,
 };
 
 use super::{EditState, EditorError, OperationType, UndoOperation};
@@ -1671,6 +1672,131 @@ impl UndoOperation for SetUseAspectRatio {
 
     fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
         edit_state.buffer.set_use_aspect_ratio(!self.new_ar);
+        Ok(())
+    }
+}
+
+pub struct AddTag {
+    new_tag: Tag,
+}
+
+impl AddTag {
+    pub fn new(new_ar: Tag) -> Self {
+        Self { new_tag: new_ar }
+    }
+}
+
+impl UndoOperation for AddTag {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio")
+    }
+
+    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        edit_state.buffer.tags.pop();
+        Ok(())
+    }
+
+    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        edit_state.buffer.tags.push(self.new_tag.clone());
+        Ok(())
+    }
+}
+
+pub struct EditTag {
+    tag_index: usize,
+    old_tag: Tag,
+    new_tag: Tag,
+}
+
+impl EditTag {
+    pub fn new(tag_index: usize, old_tag: Tag, new_tag: Tag) -> Self {
+        Self { tag_index, old_tag, new_tag }
+    }
+}
+
+impl UndoOperation for EditTag {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-edit-tag")
+    }
+
+    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag_index) {
+            *tag = self.old_tag.clone();
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("tag not found"))
+        }
+    }
+
+    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag_index) {
+            *tag = self.new_tag.clone();
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("tag not found"))
+        }
+    }
+}
+
+pub struct MoveTag {
+    tag: usize,
+    new_pos: Position,
+    old_pos: Position,
+}
+
+impl MoveTag {
+    pub fn new(tag: usize, old_pos: Position, new_pos: Position) -> Self {
+        Self { tag, new_pos, old_pos }
+    }
+}
+
+impl UndoOperation for MoveTag {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio")
+    }
+
+    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag) {
+            tag.position = self.old_pos;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("tag not found"))
+        }
+    }
+
+    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag) {
+            tag.position = self.new_pos;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("tag not found"))
+        }
+    }
+}
+
+pub struct RemoveTag {
+    tag_index: usize,
+    tag: Tag,
+}
+
+impl RemoveTag {
+    pub fn new(tag_index: usize, tag: Tag) -> Self {
+        Self { tag_index, tag }
+    }
+}
+
+impl UndoOperation for RemoveTag {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-remove-tag")
+    }
+
+    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        edit_state.buffer.tags.insert(self.tag_index, self.tag.clone());
+        Ok(())
+    }
+
+    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        edit_state.buffer.tags.remove(self.tag_index);
         Ok(())
     }
 }

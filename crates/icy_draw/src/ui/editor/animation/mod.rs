@@ -50,6 +50,8 @@ pub struct AnimationEditor {
     cur_encoding_frame: usize,
     encoding_frames: usize,
     encoding_error: String,
+
+    tool_switch: bool,
 }
 
 impl AnimationEditor {
@@ -84,6 +86,7 @@ impl AnimationEditor {
             encoding_frames: 0,
             cursor_index: 0,
             encoding_error: String::new(),
+            tool_switch: true,
         }
     }
 
@@ -144,6 +147,12 @@ impl UndoHandler for AnimationEditor {
 impl Document for AnimationEditor {
     fn default_extension(&self) -> &'static str {
         "icyanim"
+    }
+    fn has_tool_switched(&self) -> bool {
+        self.tool_switch
+    }
+    fn set_tool_switch(&mut self, switched: bool) {
+        self.tool_switch = switched;
     }
 
     fn undo_stack_len(&self) -> usize {

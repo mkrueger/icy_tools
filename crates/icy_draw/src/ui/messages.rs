@@ -6,11 +6,11 @@ use eframe::{
     epaint::Vec2,
 };
 use egui::mutex::Mutex;
-use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, Layer, PaletteMode, Size, TextPane, TheDrawFont};
+use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, Layer, PaletteMode, Size, Tag, TextPane, TheDrawFont};
 
 use crate::{
-    util::autosave::{self},
-    AnsiEditor, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, MRU_FILES, PLUGINS, SETTINGS,
+    util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, MRU_FILES, PLUGINS,
+    SETTINGS,
 };
 
 #[derive(Clone)]
@@ -153,6 +153,11 @@ pub enum Message {
     ToggleGrid,
     KeySwitchForeground(usize),
     KeySwitchBackground(usize),
+    AddNewTag(Box<Tag>),
+    UpdateTag(Box<Tag>, usize),
+    RemoveTag(usize),
+    SelectCurrentTag(usize),
+    ShowEditTagDialog(Box<Tag>, i32),
 }
 
 pub const CTRL_SHIFT: egui::Modifiers = egui::Modifiers {
@@ -311,6 +316,39 @@ impl<'a> MainWindow<'a> {
                     }
                 }
             }
+
+            Message::AddNewTag(tag) => {
+                self.run_editor_command(tag, |_, editor, tag| {
+                    let mut lock = editor.buffer_view.lock();
+                    to_message(lock.get_edit_state_mut().add_new_tag(*tag))
+                });
+            }
+
+            Message::RemoveTag(index) => {
+                self.run_editor_command(index, |_, editor, index| {
+                    let mut lock = editor.buffer_view.lock();
+                    to_message(lock.get_edit_state_mut().remove_tag(index))
+                });
+            }
+
+            Message::UpdateTag(tag, index) => {
+                self.run_editor_command((tag, index), |_, editor, (tag, index)| {
+                    let mut lock = editor.buffer_view.lock();
+                    to_message(lock.get_edit_state_mut().update_tag(*tag, index))
+                });
+            }
+
+            Message::SelectCurrentTag(tag) => {
+                self.run_editor_command(tag, |_, editor, tag| {
+                    let mut lock = editor.buffer_view.lock();
+                    lock.get_edit_state_mut().set_current_tag(tag);
+                    None
+                });
+            }
+            Message::ShowEditTagDialog(tag, index) => {
+                self.open_dialog(crate::EditTagDialog::new(*tag, index));
+            }
+
             Message::AddNewLayer(cur_layer) => {
                 self.run_editor_command(cur_layer, |_, editor, cur_layer| {
                     let mut lock = editor.buffer_view.lock();
@@ -434,6 +472,10 @@ impl<'a> MainWindow<'a> {
             }
 
             Message::SelectTool(tool) => {
+                self.run_editor_command((), |_, editor, _| {
+                    editor.set_tool_switch(true);
+                    None
+                });
                 self.document_behavior.set_selected_tool(tool);
             }
 

@@ -32,6 +32,7 @@ pub struct CharFontEditor {
     outline_selection: crate::SelectOutlineDialog,
     draw_outline_bg: bool,
     opt_cheat_sheet: Option<TextureHandle>,
+    tool_switch: bool,
 }
 
 impl ClipboardHandler for CharFontEditor {
@@ -90,6 +91,12 @@ impl UndoHandler for CharFontEditor {
 impl Document for CharFontEditor {
     fn default_extension(&self) -> &'static str {
         "tdf"
+    }
+    fn has_tool_switched(&self) -> bool {
+        self.tool_switch
+    }
+    fn set_tool_switch(&mut self, switched: bool) {
+        self.tool_switch = switched;
     }
 
     fn undo_stack_len(&self) -> usize {
@@ -452,6 +459,7 @@ impl CharFontEditor {
             opt_cheat_sheet: None,
             draw_outline_bg: true,
             last_update_preview_attr: TextAttribute::default(),
+            tool_switch: true,
         };
         res.show_selected_char();
         res

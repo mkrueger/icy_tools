@@ -179,6 +179,8 @@ tool-pipette_name=Color picker
 tool-pipette_tooltip=Pick up a color
 tool-select_name=Select Tool
 tool-select_tooltip=Mutliple and non rectangular selections
+tool-tag_name=Tag Tool
+tool-tag_tooltip=Tags are used to expand strings in output
 
 toolbar-new=New
 
@@ -493,3 +495,15 @@ settings-guide-label=Guide color:
 settings-set-label=Set { $set }
 settings-key_filter_preview_text=Filter key bindings
 settings-char_set_list_label=Character sets:
+
+edit-tag-title=Tag
+edit-tag-filter=Filter Tags
+edit-tag-preview-label=Preview:
+edit-tag-replacement-label=Replacement:
+edit-tag-alignment-label=Alignment:
+edit-tag-length-label=Length:
+edit-tag-alignment-left=Left
+edit-tag-alignment-right=Right
+edit-tag-alignment-center=Center
+add_tag_tooltip=Add Tag
+delete_tag_tooltip=Delete Tag

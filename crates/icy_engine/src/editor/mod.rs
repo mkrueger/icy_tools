@@ -15,6 +15,7 @@ mod edit_operations;
 pub use area_operations::*;
 mod font_operations;
 mod selection_operations;
+mod tag_operations;
 
 use crate::{
     ascii, overlay_mask::OverlayMask, AttributedChar, Buffer, Caret, EngineResult, Layer, Position, Selection, SelectionMask, Shape, TextPane, UnicodeConverter,
@@ -29,6 +30,8 @@ pub struct EditState {
     unicode_converter: Box<dyn UnicodeConverter>,
 
     current_layer: usize,
+    current_tag: usize,
+
     outline_style: usize,
     mirror_mode: bool,
 
@@ -99,6 +102,7 @@ impl Default for EditState {
             undo_stack: Arc::new(Mutex::new(Vec::new())),
             redo_stack: Vec::new(),
             current_layer: 0,
+            current_tag: 0,
             outline_style: 0,
             mirror_mode: false,
             selection_mask,
@@ -307,6 +311,21 @@ impl EditState {
 
     pub fn set_current_layer(&mut self, layer: usize) {
         self.current_layer = layer.clamp(0, self.buffer.layers.len().saturating_sub(1));
+    }
+
+    pub fn get_current_tag(&self) -> EngineResult<usize> {
+        let len = self.buffer.tags.len();
+        if len > 0 {
+            Ok(self.current_tag.clamp(0, len - 1))
+        } else {
+            Ok(0)
+        }
+    }
+
+    pub fn set_current_tag(&mut self, tag: usize) {
+        let len = self.buffer.tags.len();
+        self.current_tag = tag.clamp(0, len.saturating_sub(1));
+        self.caret.attribute = self.buffer.tags[self.current_tag].attribute;
     }
 
     pub fn get_outline_style(&self) -> usize {
