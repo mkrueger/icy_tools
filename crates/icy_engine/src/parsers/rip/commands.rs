@@ -1971,7 +1971,6 @@ impl Command for LoadIcon {
 
     fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let file_name = lookup_cache_file(bgi, &self.file_name)?;
-        // println!("Loading icon: {}", file_name.to_str().unwrap());
         if !file_name.exists() {
             log::error!("File not found: {}", self.file_name);
             return Ok(CallbackAction::NoUpdate);
@@ -1987,8 +1986,6 @@ impl Command for LoadIcon {
         let height = br.read_u16::<LittleEndian>()? as i32 + 1;
 
         // let _tmp = br.read_u16::<LittleEndian>()? + 1;
-
-        // println!("Icon size: {}x{} at {}x{} mode:{}", width, height, self.x, self.y, self.mode);
 
         /*
         00    Paste the image on-screen normally                   (COPY)

@@ -1,21 +1,22 @@
 #![allow(unsafe_code, clippy::wildcard_imports)]
 
-use core::panic;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use directories::UserDirs;
 use eframe::egui::{self};
 use egui::{mutex::Mutex, FontId};
 use icy_engine::Position;
+use icy_net::{
+    telnet::{TermCaps, TerminalEmulation},
+    ConnectionType,
+};
+use web_time::Instant;
 
 use crate::{
     check_error,
     features::AutoFileTransfer,
-    ui::{
-        buffer_update_thread::BufferUpdateThread,
-        dialogs::{self},
-        BufferView, MainWindowState, ScreenMode,
-    },
+    get_unicode_converter,
+    ui::{buffer_update_thread::BufferUpdateThread, connect::OpenConnectionData, dialogs, BufferView, MainWindowState, ScreenMode},
     util::SoundThread,
     AddressBook, Options,
 };
@@ -39,7 +40,7 @@ impl MainWindow {
 
         let mut view = BufferView::new(gl);
         view.interactive = true;
-        view.get_edit_state_mut().set_unicode_converter(crate::Terminal::Ansi.get_unicode_converter());
+        view.get_edit_state_mut().set_unicode_converter(get_unicode_converter(&TerminalEmulation::Ansi));
 
         let addresses: AddressBook = match crate::addresses::start_read_book() {
             Ok(addresses) => addresses,
@@ -48,10 +49,7 @@ impl MainWindow {
                 AddressBook::default()
             }
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        let connection = MainWindow::start_com_thread();
-        #[cfg(target_arch = "wasm32")]
-        let (connection, poll_thread) = MainWindow::start_poll_thead();
+
         //  #[cfg(not(target_arch = "wasm32"))]
         // let is_fullscreen_mode = cc.integration_info.window_info.fullscreen;
         //  #[cfg(target_arch = "wasm32")]
@@ -73,10 +71,7 @@ impl MainWindow {
         }
         let buffer_update_view = Arc::new(eframe::epaint::mutex::Mutex::new(view));
 
-        let connection = Arc::new(Mutex::new(Some(Box::new(connection))));
-
         let buffer_update_thread = Arc::new(Mutex::new(BufferUpdateThread {
-            connection: connection.clone(),
             buffer_view: buffer_update_view.clone(),
             capture_dialog: dialogs::capture_dialog::DialogState::default(),
             auto_file_transfer: AutoFileTransfer::default(),
@@ -87,18 +82,33 @@ impl MainWindow {
             terminal_type: None,
             mouse_field: Vec::new(),
             cache_directory: PathBuf::new(),
+            is_connected: false,
+            connection_time: Instant::now(),
         }));
 
-        let update_thread_handle = crate::ui::buffer_update_thread::run_update_thread(&cc.egui_ctx, buffer_update_thread.clone());
+        let data = OpenConnectionData {
+            address: "".to_string(),
+            user_name: "".to_string(),
+            password: "".to_string(),
+            connection_type: ConnectionType::Telnet,
+            timeout: Duration::from_secs(1000),
+            use_ansi_music: icy_engine::ansi::MusicOption::Off,
+            baud_emulation: icy_engine::ansi::BaudEmulation::Off,
+            term_caps: TermCaps {
+                window_size: (0, 0),
+                terminal: TerminalEmulation::Ascii,
+            },
+            modem: None,
+        };
+
+        let (update_thread_handle, tx, rx) = crate::ui::buffer_update_thread::start_update_thread(&cc.egui_ctx, data, buffer_update_thread.clone());
 
         let mut view = MainWindow {
-            connection,
             buffer_view: buffer_update_view.clone(),
             //address_list: HoverList::new(),
             state: MainWindowState { options, ..Default::default() },
             initial_upload_directory,
             screen_mode: ScreenMode::default(),
-            current_file_transfer: None,
             #[cfg(target_arch = "wasm32")]
             poll_thread,
             is_fullscreen_mode,
@@ -109,7 +119,8 @@ impl MainWindow {
             last_pos: Position::default(),
             buffer_update_thread,
             update_thread_handle: Some(update_thread_handle),
-            is_disconnected: true,
+            tx,
+            rx,
             show_find_dialog: false,
             find_dialog: dialogs::find_dialog::DialogState::default(),
             shift_pressed_during_selection: false,
@@ -117,7 +128,7 @@ impl MainWindow {
         };
 
         #[cfg(not(target_arch = "wasm32"))]
-        parse_command_line(&mut view);
+        parse_command_line(&ctx, &mut view);
 
         let mut style: egui::Style = (*ctx.style()).clone();
         style.spacing.window_margin = egui::Margin::same(8.0);
@@ -137,6 +148,7 @@ impl MainWindow {
     }
 
     fn get_connection_back(&mut self) {
+        /*
         if let Some(fts) = &mut self.current_file_transfer {
             if let Some(handle) = fts.join_handle.take() {
                 if let Ok(join) = handle.join() {
@@ -150,16 +162,16 @@ impl MainWindow {
             }
         } else {
             panic!("Error joining file transfer thread - no current file transfer.");
-        }
+        }*/
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn parse_command_line(view: &mut MainWindow) {
+fn parse_command_line(ctx: &egui::Context, view: &mut MainWindow) {
     let args: Vec<String> = std::env::args().collect();
     if let Some(arg) = args.get(1) {
         view.dialing_directory_dialog.addresses.addresses[0].address = arg.clone();
-        view.call_bbs(0);
+        view.call_bbs(ctx, 0);
     }
 }
 
@@ -198,7 +210,7 @@ impl eframe::App for MainWindow {
 
             MainWindowMode::FileTransfer(download) => {
                 self.update_terminal_window(ctx, frame, false);
-
+                /*
                 let mut join_thread = false;
                 if let Some(fts) = &mut self.current_file_transfer {
                     let state = if let Ok(state) = fts.current_transfer.lock() {
@@ -223,7 +235,7 @@ impl eframe::App for MainWindow {
                 }
                 if join_thread {
                     self.get_connection_back();
-                }
+                }*/
                 ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowCaptureDialog => {

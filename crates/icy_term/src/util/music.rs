@@ -87,7 +87,7 @@ impl SoundThread {
                     TryRecvError::Empty => break,
                     TryRecvError::Disconnected => {
                         self.restart_background_thread();
-                        return Err(anyhow::anyhow!("rx.try_recv error: {err}"));
+                        return Err(anyhow::anyhow!("rx.try_recv error: {err}").into());
                     }
                 },
             }
@@ -112,7 +112,7 @@ impl SoundThread {
             if self.restart_background_thread() {
                 return self.send_data(data);
             }
-            return Err(anyhow::anyhow!("Sound thread crashed too many times."));
+            return Err(anyhow::anyhow!("Sound thread crashed too many times.").into());
         }
         Ok(())
     }

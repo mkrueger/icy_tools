@@ -947,10 +947,8 @@ mod tests {
                             }
                             num += 1;/*
                             if num < 53430 {
-                                println!("skipping {num}:{path:?}");
                                 continue;
                             }*/
-        println!("testing {num}:{path:?}");
                             if let Ok(mut buf) = Buffer::load_buffer(path, true) {
                                 let draw = IcyDraw::default();
                                 let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
@@ -973,13 +971,9 @@ mod tests {
             .unwrap();
             let draw = IcyDraw::default();
             let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
-            println!("SAVED!");
             let buf2 = draw
                 .load_buffer(Path::new("test.icy"), &bytes, None)
                 .unwrap();
-            println!("{buf}");
-            println!("------------");
-            println!("{buf2}");
             compare_buffers(&buf, &buf2);
         }
     */

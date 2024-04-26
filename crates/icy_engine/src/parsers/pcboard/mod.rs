@@ -1,7 +1,6 @@
 use super::{ansi, BufferParser};
 use crate::{Buffer, CallbackAction, Caret, EngineResult, TextAttribute};
 
-#[derive(Default)]
 pub struct Parser {
     ansi_parser: ansi::Parser,
 
@@ -10,6 +9,21 @@ pub struct Parser {
     pub pcb_color: bool,
     pub pcb_value: u8,
     pub pcb_pos: i32,
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        let mut p = super::ansi::Parser::default();
+        p.bs_is_ctrl_char = true;
+
+        Self {
+            ansi_parser: p,
+            pcb_code: Default::default(),
+            pcb_color: Default::default(),
+            pcb_value: Default::default(),
+            pcb_pos: Default::default(),
+        }
+    }
 }
 
 impl BufferParser for Parser {

@@ -6,8 +6,7 @@ use egui::{Label, Layout, ScrollArea};
 use egui_extras::{Column, TableBuilder};
 use gabi::BytesConfig;
 use i18n_embed_fl::fl;
-
-use crate::protocol::{OutputLogMessage, TransferState};
+use icy_net::protocol::{OutputLogMessage, TransferState};
 
 #[derive(Default)]
 pub struct FileTransferDialog {
@@ -91,10 +90,10 @@ impl FileTransferDialog {
                     ui.label(RichText::new(file_name));
                 });
                 ui.add(
-                    ProgressBar::new(transfer_info.bytes_transfered as f32 / transfer_info.file_size as f32).text(RichText::new(format!(
+                    ProgressBar::new(transfer_info.total_bytes_transfered as f32 / transfer_info.file_size as f32).text(RichText::new(format!(
                         "{}% {}/{}",
-                        (transfer_info.bytes_transfered * 100) / max(1, transfer_info.file_size),
-                        bb.bytes(transfer_info.bytes_transfered as u64),
+                        (transfer_info.total_bytes_transfered * 100) / max(1, transfer_info.file_size),
+                        bb.bytes(transfer_info.total_bytes_transfered as u64),
                         bb.bytes(transfer_info.file_size as u64)
                     ))),
                 );

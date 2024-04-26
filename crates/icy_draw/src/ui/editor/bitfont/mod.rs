@@ -154,14 +154,11 @@ impl BitFontEditor {
                 if let Some(pos) = response.hover_pos() {
                     if let Some(number) = self.selected_char_opt {
                         if let Some(glyph) = self.font.get_glyph_mut(number) {
-                            println!("click!");
                             let y = ((pos.y - stroke_rect.top()) / (scale + border)) as usize;
                             let x = ((pos.x - stroke_rect.left()) / (scale + border)) as usize;
                             if glyph.data[y] & (128 >> x) != 0 {
-                                println!("unset!");
                                 glyph.data[y] &= !(128 >> x);
                             } else {
-                                println!("set!");
                                 glyph.data[y] |= 128 >> x;
                             }
                             self.is_dirty = true;

@@ -419,18 +419,6 @@ fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, char> {
                 continue;
             }
             let cmp_glyphs = generate_y_variants(cmp_glyph);
-            /*
-            if *ch as u8 == 212 && *ch2 as u8 == 213 {
-                println!(">>>>>>>>>>> 220");
-                for x in &flipped_glyhps {
-                    println!("{x}");
-                }
-                println!(">>>>>>>>>>> 223");
-                for x in &cmp_glyphs {
-                    println!("{x}");
-                }
-            }*/
-
             for cmp_glyph in cmp_glyphs {
                 if flipped_glyhps.iter().any(|g| g.data == cmp_glyph.data) {
                     flip_table.insert(*ch, *ch2);
@@ -678,9 +666,6 @@ mod tests {
             (33 as char, 173 as char),
             (173 as char, 33 as char),
         ]);
-        /*   for (k, v) in &table {
-            println!("{k}({}) -> {v}({})", *k as u32, *v as u32);
-        }*/
         for k in table.keys() {
             assert!(cp437_table.contains_key(k), "invalid key in flip table {}", *k as u32);
         }

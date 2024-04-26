@@ -126,7 +126,6 @@ impl Loop {
             } else {
                 match p.parse::<i32>() {
                     Err(_) => {
-                        println!("error parsing parameter: {p}");
                         continue;
                     }
                     Ok(i) => i,

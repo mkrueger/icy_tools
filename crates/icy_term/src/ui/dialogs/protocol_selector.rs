@@ -1,50 +1,53 @@
 use eframe::egui::{self, RichText};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-
-use crate::protocol::TransferType;
+use icy_net::protocol::TransferProtocolType;
 
 use crate::ui::{MainWindow, MainWindowMode};
 
 use lazy_static::lazy_static;
 lazy_static! {
-    static ref PROTOCOL_TABLE: [(TransferType, String, String); 8] = [
+    static ref PROTOCOL_TABLE: [(TransferProtocolType, String, String); 8] = [
         (
-            TransferType::ZModem,
+            TransferProtocolType::ZModem,
             "Zmodem".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-zmodem-description")
         ),
         (
-            TransferType::ZedZap,
+            TransferProtocolType::ZModem8k,
             "ZedZap".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-zmodem8k-description"),
         ),
         (
-            TransferType::XModem,
+            TransferProtocolType::XModem,
             "Xmodem".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-xmodem-description")
         ),
         (
-            TransferType::XModem1k,
+            TransferProtocolType::XModem1k,
             "Xmodem 1k".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1k-description")
         ),
         (
-            TransferType::XModem1kG,
+            TransferProtocolType::XModem1kG,
             "Xmodem 1k-G".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description")
         ),
         (
-            TransferType::YModem,
+            TransferProtocolType::YModem,
             "Ymodem".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description")
         ),
         (
-            TransferType::YModemG,
+            TransferProtocolType::YModemG,
             "Ymodem-G".to_string(),
             fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description")
         ),
-        (TransferType::Text, "Text".to_string(), fl!(crate::LANGUAGE_LOADER, "protocol-text-description"))
+        (
+            TransferProtocolType::ASCII,
+            "Text".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-text-description")
+        )
     ];
 }
 
@@ -72,12 +75,13 @@ pub fn view_selector(window: &mut MainWindow, ctx: &egui::Context, _frame: &mut 
                 .min_row_height(24.)
                 .show(ui, |ui| {
                     for (protocol, title, descr) in &*PROTOCOL_TABLE {
-                        if download && matches!(*protocol, TransferType::Text) {
+                        if download && matches!(*protocol, TransferProtocolType::ASCII) {
                             continue;
                         }
                         ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
                             if ui.selectable_label(false, RichText::new(title).strong()).clicked() {
-                                window.initiate_file_transfer(*protocol, download);
+                                // TODO:
+                                //  window.initiate_file_transfer(*protocol, download);
                             }
                         });
                         ui.label(RichText::new(descr));

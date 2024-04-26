@@ -94,7 +94,6 @@ impl Parser {
     }
 
     fn record_rip_command(&mut self, buf: &mut Buffer, caret: &mut Caret, cmd: Box<dyn Command>) -> EngineResult<CallbackAction> {
-        //println!("RIP: {:?}", cmd.to_rip_string());
         self.rip_counter = self.rip_counter.wrapping_add(1);
         let result = cmd.run(buf, caret, &mut self.bgi);
         if !self.record_rip_commands {
@@ -150,7 +149,6 @@ static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
 
 impl Parser {
     pub fn start_command(&mut self, cmd: Box<dyn Command>) {
-        // println!("---- start_command: {:?}", cmd.to_rip_string());
         self.command = Some(cmd);
         self.parameter_state = 0;
         self.state = State::ReadParams;
@@ -162,7 +160,6 @@ impl Parser {
     ///
     /// This function will return an error if .
     pub fn push_command(&mut self, buf: &mut Buffer, caret: &mut Caret, cmd: Box<dyn Command>) -> EngineResult<CallbackAction> {
-        // println!("push rip command ! {:?}", cmd.to_rip_string());
         self.state = State::GotRipStart;
         self.record_rip_command(buf, caret, cmd)
     }
@@ -170,8 +167,6 @@ impl Parser {
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
-        // println!("state:  {:?}, ch: {}, ch#:{}", self.state, ch, ch as u32);
-
         if buf.terminal_state.cleared_screen {
             buf.terminal_state.cleared_screen = false;
             self.bgi.graph_defaults();

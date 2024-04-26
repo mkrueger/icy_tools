@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use codepages::tables::CP437_TO_UNICODE;
 use icy_sauce::char_caps::ContentType;
 use icy_sauce::SauceInformation;
 
 use crate::ansi::constants::COLOR_OFFSETS;
-use crate::ascii::CP437_TO_UNICODE;
 use crate::{
     analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
     XTERM_256_PALETTE,
@@ -361,10 +361,8 @@ impl StringGenerator {
                     len = len.max(t.position.x + t.len() as i32);
                 }
             }
-            println!("tags : {}", self.tags.len());
             let mut x = 0;
             while x < len {
-                println!("x: {x}, len: {y}");
                 let mut found_tag = false;
                 for t in self.tags.iter() {
                     if t.is_enabled && t.position.y == y as i32 && t.position.x == x as i32 {
@@ -723,10 +721,8 @@ mod tests {
             }
             num += 1;
             if num < 0 {
-                //     println!("skipping {num}:{path:?}");
                 continue;
             }
-            println!("testing {num}:{path:?}");
 
             let orig_bytes = fs::read(path).unwrap();
 

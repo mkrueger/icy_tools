@@ -167,7 +167,6 @@ impl EditState {
     }
 
     pub fn set_is_buffer_dirty(&mut self) {
-        // println!("-------------{}", std::backtrace::Backtrace::force_capture());
         self.is_buffer_dirty = true;
     }
 

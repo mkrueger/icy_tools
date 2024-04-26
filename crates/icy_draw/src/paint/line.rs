@@ -81,11 +81,9 @@ pub fn draw_line(buffer_view: &mut BufferView, from: impl Into<Position>, to: im
         let role = if point.x > next.x {
             // Left side
             if ny2 < cy2 {
-                println!("plot ne corner above");
                 plot_point(buffer_view, point + Position::new(0, -1), mode.clone(), color_mode, PointRole::NECorner);
                 PointRole::SWCorner
             } else if ny2 > cy2 {
-                println!("plot se corner below");
                 plot_point(buffer_view, point + Position::new(0, 2), mode.clone(), color_mode, PointRole::SECorner);
                 PointRole::NWCorner
             } else {
@@ -94,36 +92,29 @@ pub fn draw_line(buffer_view: &mut BufferView, from: impl Into<Position>, to: im
         } else if point.x < next.x {
             // Right Side
             if ny2 < cy2 {
-                println!("plot nw corner above");
                 plot_point(buffer_view, point + Position::new(0, -1), mode.clone(), color_mode, PointRole::NWCorner);
                 PointRole::SECorner
             } else if ny2 > cy2 {
-                println!("plot sw corner below");
                 plot_point(buffer_view, point + Position::new(0, 2), mode.clone(), color_mode, PointRole::SWCorner);
                 PointRole::NECorner
             } else {
                 // telel
                 if point.x < next.x {
                     if point.y == next.y {
-                        println!("top side right 1");
                         PointRole::TopSide
                     } else {
-                        println!("plot ne corner right");
                         i += 1;
                         plot_point(buffer_view, point + Position::new(1, 0), mode.clone(), color_mode, PointRole::NECorner);
                         PointRole::SWCorner
                     }
                 } else if point.x > next.x {
-                    println!("plot nw corner left");
                     plot_point(buffer_view, point + Position::new(-1, 0), mode.clone(), color_mode, PointRole::NWCorner);
                     PointRole::SECorner
                 } else {
                     // case 4
                     if last.y == point.y {
-                        println!("top side right 2");
                         PointRole::TopSide
                     } else {
-                        println!("plot ne corner right");
                         plot_point(buffer_view, point + Position::new(1, 0), mode.clone(), color_mode, PointRole::NECorner);
                         PointRole::SWCorner
                     }

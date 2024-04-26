@@ -76,7 +76,6 @@ fn main() {
     let args = Cli::parse();
 
     let mut io: Box<dyn Com> = if let Some(port) = args.port {
-        println!("connect to : {}", "127.0.0.1:".to_string() + port.as_str());
         Box::new(com::SocketCom::connect("127.0.0.1:".to_string() + port.as_str()).unwrap())
     } else {
         Box::new(com::StdioCom::start().unwrap())
@@ -143,7 +142,6 @@ fn main() {
                                             }
                                         }
                                     }
-                                    //println!("skip lines: {:?}", skip_lines );
                                     show_buffer(&mut io, buffer, false, args.utf8, &term, skip_lines).unwrap();
                                     checksums = new_checksums;
                                     std::thread::sleep(Duration::from_millis(*delay as u64));

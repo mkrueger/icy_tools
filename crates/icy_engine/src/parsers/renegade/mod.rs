@@ -9,10 +9,21 @@ enum State {
     ParseSecondColor(u8),
 }
 
-#[derive(Default)]
 pub struct Parser {
     ansi_parser: ansi::Parser,
     state: State,
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        let mut p = super::ansi::Parser::default();
+        p.bs_is_ctrl_char = true;
+
+        Self {
+            ansi_parser: p,
+            state: Default::default(),
+        }
+    }
 }
 
 impl BufferParser for Parser {

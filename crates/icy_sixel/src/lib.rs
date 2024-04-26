@@ -622,10 +622,4 @@ pub fn sixel_string(
     sixel_output.encode(&mut bytes, width, height, 0, &mut sixel_dither)?;
 
     Ok(String::from_utf8_lossy(&sixel_data).to_string())
-} /*
-  pub fn main() {
-      let bytes = vec![
-  ];
-
-      println!("{}", sixel_string(&bytes, 128, 128, PixelFormat::RGB888, DiffusionMethod::Stucki, MethodForLargest::Auto, MethodForRep::Auto, Quality::AUTO).unwrap());
-  }*/
+}

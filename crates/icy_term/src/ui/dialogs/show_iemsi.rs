@@ -5,6 +5,7 @@ use i18n_embed_fl::fl;
 use crate::ui::{MainWindow, MainWindowMode};
 
 pub fn show_iemsi(window: &mut MainWindow, ctx: &egui::Context) {
+    /*
     use egui::{Frame, Layout};
 
     let mut open = true;
@@ -87,5 +88,5 @@ pub fn show_iemsi(window: &mut MainWindow, ctx: &egui::Context) {
 
     if !open || close_dialog {
         window.set_mode(MainWindowMode::ShowTerminal);
-    }
+    }*/
 }

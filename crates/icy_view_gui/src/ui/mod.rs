@@ -126,7 +126,6 @@ impl<'a> App for MainWindow<'a> {
     }
 
     fn on_exit(&mut self, _gl: Option<&glow::Context>) {
-        println!("store options: {}", self.store_options);
         if self.store_options {
             self.file_view.options.store_options();
         }

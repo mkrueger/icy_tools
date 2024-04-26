@@ -1,4 +1,6 @@
-use crate::{protocol::TransferType, util::PatternRecognizer};
+use icy_net::protocol::TransferProtocolType;
+
+use crate::util::PatternRecognizer;
 
 pub struct AutoFileTransfer {
     zmodem_dl: PatternRecognizer,
@@ -11,12 +13,12 @@ impl AutoFileTransfer {
         self.zmodem_ul.reset();
     }
 
-    pub fn try_transfer(&mut self, ch: u8) -> Option<(TransferType, bool)> {
+    pub fn try_transfer(&mut self, ch: u8) -> Option<(TransferProtocolType, bool)> {
         if self.zmodem_dl.push_ch(ch) {
-            return Some((TransferType::ZModem, true));
+            return Some((TransferProtocolType::ZModem, true));
         }
         if self.zmodem_ul.push_ch(ch) {
-            return Some((TransferType::ZModem, false));
+            return Some((TransferProtocolType::ZModem, false));
         }
         None
     }

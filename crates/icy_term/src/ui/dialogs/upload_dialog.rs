@@ -1,20 +1,17 @@
 use eframe::egui::{self};
 use egui_file::FileDialog;
+use icy_net::protocol::TransferProtocolType;
 
-use crate::{
-    check_error,
-    protocol::FileDescriptor,
-    ui::{connect::DataConnection, MainWindow, MainWindowMode},
-};
+use crate::ui::{MainWindow, MainWindowMode};
 
 #[derive(Default)]
 pub struct DialogState {
     open_file_dialog: Option<FileDialog>,
-    protocol_type: crate::protocol::TransferType,
+    protocol_type: TransferProtocolType,
 }
 
 impl MainWindow {
-    pub fn init_upload_dialog(&mut self, protocol_type: crate::protocol::TransferType) {
+    pub fn init_upload_dialog(&mut self, protocol_type: TransferProtocolType) {
         let mut dialog: FileDialog = FileDialog::open_file(self.initial_upload_directory.clone());
         dialog.open();
         self.upload_dialog.open_file_dialog = Some(dialog);
@@ -23,6 +20,7 @@ impl MainWindow {
     }
 
     pub fn show_upload_dialog(&mut self, ctx: &egui::Context) {
+        /*
         if ctx.input(|i: &egui::InputState| i.key_down(egui::Key::Escape)) {
             self.set_mode(MainWindowMode::ShowTerminal);
         }
@@ -30,7 +28,7 @@ impl MainWindow {
         if let Some(dialog) = &mut self.upload_dialog.open_file_dialog {
             if dialog.show(ctx).selected() {
                 if let Some(path) = dialog.path() {
-                    if matches!(self.upload_dialog.protocol_type, crate::protocol::TransferType::Text) {
+                    if matches!(self.upload_dialog.protocol_type, TransferProtocolType::ASCII) {
                         match std::fs::read(path) {
                             Ok(bytes) => {
                                 if let Some(con) = self.connection.lock().as_mut() {
@@ -47,13 +45,13 @@ impl MainWindow {
                     }
                     if let Some(parent) = path.parent() {
                         self.initial_upload_directory = Some(parent.to_path_buf());
-                    }
+                    }/*
                     let fd = FileDescriptor::from_paths(&vec![path.to_path_buf()]);
                     if let Ok(files) = fd {
                         self.start_file_transfer(self.upload_dialog.protocol_type, false, Some(files));
-                    }
+                    }*/
                 }
             }
-        }
+        }*/
     }
 }

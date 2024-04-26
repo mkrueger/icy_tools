@@ -10,7 +10,6 @@ use icy_engine::{Position, Selection, TextPane};
 use crate::{
     check_error,
     icons::{CALL, DOWNLOAD, KEY, LOGOUT, MENU, UPLOAD},
-    ui::connect::DataConnection,
     LATEST_VERSION, VERSION,
 };
 
@@ -567,15 +566,9 @@ impl MainWindow {
         }
         for (k, m) in key_map {
             if *k == key_code {
-                let mut print = true;
-                if let Some(con) = self.connection.lock().as_mut() {
-                    if con.is_connected() {
-                        let res = con.send(m.to_vec());
-                        check_error!(self, res, true);
-                        print = false;
-                    }
-                }
-                if print {
+                if self.buffer_update_thread.lock().is_connected {
+                    self.send_data(m.to_vec());
+                } else {
                     for c in *m {
                         self.print_char(*c);
                     }

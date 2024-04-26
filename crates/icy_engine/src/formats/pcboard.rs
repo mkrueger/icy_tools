@@ -1,8 +1,9 @@
 use std::path::Path;
 
+use codepages::tables::CP437_TO_UNICODE;
 use icy_sauce::SauceInformation;
 
-use crate::{ascii::CP437_TO_UNICODE, parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
+use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
 
 use super::SaveOptions;
 

@@ -4,6 +4,8 @@ use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_engine::igs::CommandExecutor;
 use icy_engine::{ansi, ascii, atascii, avatar, mode7, petscii, rip, viewdata, BufferParser, UnicodeConverter};
+use icy_net::telnet::TerminalEmulation;
+use icy_net::ConnectionType;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use std::fs::File;
@@ -11,134 +13,106 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::{
-    fmt::Display,
     fs::{self},
     path::PathBuf,
 };
 use toml::Value;
 use versions::Versioning;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Terminal {
-    #[default]
-    Ansi,
-    Avatar,
-    Ascii,
-    PETscii,
-    ATAscii,
-    ViewData,
-    Mode7,
-    Rip,
-    IGS,
+pub const ALL_TERMINALS: [TerminalEmulation; 9] = [
+    TerminalEmulation::Ansi,
+    TerminalEmulation::Avatar,
+    TerminalEmulation::Ascii,
+    TerminalEmulation::PETscii,
+    TerminalEmulation::ATAscii,
+    TerminalEmulation::ViewData,
+    TerminalEmulation::Rip,
+    TerminalEmulation::IGS,
+    TerminalEmulation::Mode7,
+];
+
+pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
+    match emulator {
+        TerminalEmulation::Ansi => "ANSI",
+        TerminalEmulation::Avatar => "AVATAR",
+        TerminalEmulation::Ascii => "Raw (ASCII)",
+        TerminalEmulation::PETscii => "PETSCII",
+        TerminalEmulation::ATAscii => "ATASCII",
+        TerminalEmulation::ViewData => "VIEWDATA",
+        TerminalEmulation::Mode7 => "Mode7",
+        TerminalEmulation::Rip => "RIPscrip",
+        TerminalEmulation::IGS => "IGS (Experimental)",
+    }
 }
 
-impl Terminal {
-    pub const ALL: [Terminal; 9] = [
-        Terminal::Ansi,
-        Terminal::Avatar,
-        Terminal::Ascii,
-        Terminal::PETscii,
-        Terminal::ATAscii,
-        Terminal::ViewData,
-        Terminal::Rip,
-        Terminal::IGS,
-        Terminal::Mode7,
-    ];
-
-    #[must_use]
-    pub fn get_parser(&self, use_ansi_music: MusicOption, cache_directory: PathBuf) -> Box<dyn BufferParser> {
-        match self {
-            Terminal::Ansi => {
-                let mut parser = ansi::Parser::default();
-                parser.ansi_music = use_ansi_music;
-                parser.bs_is_ctrl_char = true;
-                Box::new(parser)
-            }
-            Terminal::Avatar => Box::<avatar::Parser>::default(),
-            Terminal::Ascii => Box::<ascii::Parser>::default(),
-            Terminal::PETscii => Box::<petscii::Parser>::default(),
-            Terminal::ATAscii => Box::<atascii::Parser>::default(),
-            Terminal::ViewData => Box::<viewdata::Parser>::default(),
-            Terminal::Mode7 => Box::<mode7::Parser>::default(),
-            Terminal::Rip => {
-                let mut parser = ansi::Parser::default();
-                parser.ansi_music = use_ansi_music;
-                parser.bs_is_ctrl_char = true;
-                let parser = rip::Parser::new(Box::new(parser), cache_directory);
-                Box::new(parser)
-            }
-            Terminal::IGS => {
-                let ig_executor: Arc<std::sync::Mutex<Box<dyn CommandExecutor>>> =
-                    Arc::new(std::sync::Mutex::new(Box::<icy_engine::parsers::igs::DrawExecutor>::default()));
-                Box::new(icy_engine::igs::Parser::new(ig_executor))
-            }
+#[must_use]
+pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cache_directory: PathBuf) -> Box<dyn BufferParser> {
+    match emulator {
+        TerminalEmulation::Ansi => {
+            let mut parser = ansi::Parser::default();
+            parser.ansi_music = use_ansi_music;
+            parser.bs_is_ctrl_char = true;
+            Box::new(parser)
         }
-    }
-
-    #[must_use]
-    pub fn get_unicode_converter(&self) -> Box<dyn UnicodeConverter> {
-        match self {
-            Terminal::Ansi | Terminal::Avatar | Terminal::Ascii | Terminal::Rip | Terminal::IGS => Box::<ascii::CP437Converter>::default(),
-            Terminal::PETscii => Box::<petscii::CharConverter>::default(),
-            Terminal::ATAscii => Box::<atascii::CharConverter>::default(),
-            Terminal::ViewData => Box::<viewdata::CharConverter>::default(),
-            Terminal::Mode7 => Box::<mode7::CharConverter>::default(),
+        TerminalEmulation::Avatar => Box::<avatar::Parser>::default(),
+        TerminalEmulation::Ascii => Box::<ascii::Parser>::default(),
+        TerminalEmulation::PETscii => Box::<petscii::Parser>::default(),
+        TerminalEmulation::ATAscii => Box::<atascii::Parser>::default(),
+        TerminalEmulation::ViewData => Box::<viewdata::Parser>::default(),
+        TerminalEmulation::Mode7 => Box::<mode7::Parser>::default(),
+        TerminalEmulation::Rip => {
+            let mut parser = ansi::Parser::default();
+            parser.ansi_music = use_ansi_music;
+            parser.bs_is_ctrl_char = true;
+            let parser = rip::Parser::new(Box::new(parser), cache_directory);
+            Box::new(parser)
+        }
+        TerminalEmulation::IGS => {
+            let ig_executor: Arc<std::sync::Mutex<Box<dyn CommandExecutor>>> =
+                Arc::new(std::sync::Mutex::new(Box::<icy_engine::parsers::igs::DrawExecutor>::default()));
+            Box::new(icy_engine::igs::Parser::new(ig_executor))
         }
     }
 }
 
-impl Display for Terminal {
+#[must_use]
+pub fn get_unicode_converter(emulator: &TerminalEmulation) -> Box<dyn UnicodeConverter> {
+    match emulator {
+        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii | TerminalEmulation::Rip | TerminalEmulation::IGS => {
+            Box::<ascii::CP437Converter>::default()
+        }
+        TerminalEmulation::PETscii => Box::<petscii::CharConverter>::default(),
+        TerminalEmulation::ATAscii => Box::<atascii::CharConverter>::default(),
+        TerminalEmulation::ViewData => Box::<viewdata::CharConverter>::default(),
+        TerminalEmulation::Mode7 => Box::<mode7::CharConverter>::default(),
+    }
+}
+
+/**/
+
+/*
+impl Display for ConnectionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Terminal::Ansi => write!(f, "ANSI"),
-            Terminal::Avatar => write!(f, "AVATAR"),
-            Terminal::Ascii => write!(f, "Raw (ASCII)"),
-            Terminal::PETscii => write!(f, "PETSCII"),
-            Terminal::ATAscii => write!(f, "ATASCII"),
-            Terminal::ViewData => write!(f, "VIEWDATA"),
-            Terminal::Mode7 => write!(f, "Mode7"),
-            Terminal::Rip => write!(f, "RIPscrip"),
-            Terminal::IGS => write!(f, "IGS (Experimental)"),
+            ConnectionType::Ssh => write!(f, "SSH"),
+            ConnectionType::Raw => write!(f, "Raw"),
+            ConnectionType::Telnet => write!(f, "Telnet"),
+            ConnectionType::Modem => write!(f, "Modem"),
+            ConnectionType::Serial => write!(f, "Serial"),
+            ConnectionType::Websocket => write!(f, "WebSocket"),
+            ConnectionType::SecureWebsocket => write!(f, "Secure WebSocket"),
         }
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Protocol {
-    #[default]
-    Telnet,
-    Raw,
-    Modem,
-    Ssh,
-    WebSocket(bool), // true=secure
-}
-
-impl Display for Protocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ssh => write!(f, "SSH"),
-            Self::WebSocket(is_secure) => match is_secure {
-                true => write!(f, "Secure WebSocket"),
-                false => write!(f, "WebSocket"),
-            },
-            _ => write!(f, "{self:?}"),
-        }
-    }
-}
-
-impl Protocol {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub const ALL: [Protocol; 6] = [
-        Protocol::Telnet,
-        Protocol::Raw,
-        Protocol::Modem,
-        Protocol::Ssh,
-        Protocol::WebSocket(true),
-        Protocol::WebSocket(false),
-    ];
-    #[cfg(target_arch = "wasm32")]
-    pub const ALL: [Protocol; 3] = [Protocol::Telnet, Protocol::Raw, Protocol::WebSocket(true)];
-}
+*/
+pub const ALL: [ConnectionType; 6] = [
+    ConnectionType::Telnet,
+    ConnectionType::Raw,
+    ConnectionType::Modem,
+    ConnectionType::SSH,
+    ConnectionType::SecureWebsocket,
+    ConnectionType::Websocket,
+];
 
 #[derive(Debug, Clone)]
 pub struct AddressBook {
@@ -182,11 +156,11 @@ pub struct Address {
     pub user_name: String,
     pub password: String,
     pub comment: String,
-    pub terminal_type: Terminal,
+    pub terminal_type: TerminalEmulation,
 
     pub address: String,
     pub auto_login: String,
-    pub protocol: Protocol,
+    pub protocol: ConnectionType,
 
     pub ice_mode: bool,
     pub ansi_music: MusicOption,
@@ -280,12 +254,12 @@ impl Address {
             user_name: String::new(),
             password: String::new(),
             comment: String::new(),
-            terminal_type: Terminal::default(),
+            terminal_type: TerminalEmulation::default(),
             font_name: None,
             screen_mode: ScreenMode::default(),
             auto_login: String::new(),
             address: String::new(),
-            protocol: Protocol::default(),
+            protocol: ConnectionType::Telnet,
             ansi_music: MusicOption::default(),
             ice_mode: true,
             id: unsafe { current_id },
@@ -433,7 +407,7 @@ impl AddressBook {
         match input_text.parse::<Value>() {
             Ok(value) => self.parse_addresses(&value),
             Err(err) => {
-                return Err(anyhow::anyhow!("Error parsing dialing_directory: {err}"));
+                return Err(anyhow::anyhow!("Error parsing dialing_directory: {err}").into());
             }
         }
         Ok(())
@@ -567,11 +541,11 @@ fn parse_address(value: &Value) -> Address {
 
         if let Some(Value::String(value)) = table.get("protocol") {
             match value.to_lowercase().as_str() {
-                "telnet" => result.protocol = Protocol::Telnet,
-                "ssh" => result.protocol = Protocol::Ssh,
-                "raw" => result.protocol = Protocol::Raw,
-                "websocket(true)" => result.protocol = Protocol::WebSocket(true),
-                "websocket(false)" => result.protocol = Protocol::WebSocket(false),
+                "telnet" => result.protocol = ConnectionType::Telnet,
+                "ssh" => result.protocol = ConnectionType::SSH,
+                "raw" => result.protocol = ConnectionType::Raw,
+                "websocket(true)" => result.protocol = ConnectionType::Websocket,
+                "websocket(false)" => result.protocol = ConnectionType::SecureWebsocket,
                 _ => {}
             }
         }
@@ -587,15 +561,15 @@ fn parse_address(value: &Value) -> Address {
 
         if let Some(Value::String(value)) = table.get("terminal_type") {
             match value.to_lowercase().as_str() {
-                "ansi" => result.terminal_type = Terminal::Ansi,
-                "avatar" => result.terminal_type = Terminal::Avatar,
-                "ascii" => result.terminal_type = Terminal::Ascii,
-                "petscii" => result.terminal_type = Terminal::PETscii,
-                "atascii" => result.terminal_type = Terminal::ATAscii,
-                "viewdata" => result.terminal_type = Terminal::ViewData,
-                "rip" => result.terminal_type = Terminal::Rip,
-                "igs" => result.terminal_type = Terminal::IGS,
-                "mode7" => result.terminal_type = Terminal::Mode7,
+                "ansi" => result.terminal_type = TerminalEmulation::Ansi,
+                "avatar" => result.terminal_type = TerminalEmulation::Avatar,
+                "ascii" => result.terminal_type = TerminalEmulation::Ascii,
+                "petscii" => result.terminal_type = TerminalEmulation::PETscii,
+                "atascii" => result.terminal_type = TerminalEmulation::ATAscii,
+                "viewdata" => result.terminal_type = TerminalEmulation::ViewData,
+                "rip" => result.terminal_type = TerminalEmulation::Rip,
+                "igs" => result.terminal_type = TerminalEmulation::IGS,
+                "mode7" => result.terminal_type = TerminalEmulation::Mode7,
                 _ => {}
             }
         }
@@ -671,7 +645,7 @@ fn store_address(file: &mut File, addr: &Address) -> TerminalResult<()> {
         file.write_all(format!("is_favored = {}\n", addr.is_favored).as_bytes())?;
     }
     file.write_all(format!("address = \"{}\"\n", escape(&addr.address)).as_bytes())?;
-    if addr.protocol != Protocol::default() {
+    if addr.protocol != ConnectionType::default() {
         file.write_all(format!("protocol = \"{:?}\"\n", addr.protocol).as_bytes())?;
     }
     if !addr.user_name.is_empty() {
@@ -684,7 +658,7 @@ fn store_address(file: &mut File, addr: &Address) -> TerminalResult<()> {
         file.write_all(format!("auto_login = \"{}\"\n", escape(&addr.auto_login)).as_bytes())?;
     }
 
-    if addr.terminal_type != Terminal::default() {
+    if addr.terminal_type != TerminalEmulation::default() {
         file.write_all(format!("terminal_type = \"{:?}\"\n", addr.terminal_type).as_bytes())?;
     }
 
@@ -749,17 +723,17 @@ fn parse_legacy_address(value: &Value) -> Address {
         }
         if let Some(Value::String(value)) = table.get("connection_type") {
             match value.as_str() {
-                "Telnet" => result.protocol = Protocol::Telnet,
-                "SSH" => result.protocol = Protocol::Ssh,
-                "Raw" => result.protocol = Protocol::Raw,
+                "Telnet" => result.protocol = ConnectionType::Telnet,
+                "SSH" => result.protocol = ConnectionType::SSH,
+                "Raw" => result.protocol = ConnectionType::Raw,
                 _ => {}
             }
         }
 
         if let Some(Value::String(value)) = table.get("terminal_type") {
             match value.as_str() {
-                "Ansi" => result.terminal_type = Terminal::Ansi,
-                "Avatar" => result.terminal_type = Terminal::Avatar,
+                "Ansi" => result.terminal_type = TerminalEmulation::Ansi,
+                "Avatar" => result.terminal_type = TerminalEmulation::Avatar,
                 _ => {}
             }
         }
@@ -772,27 +746,27 @@ fn parse_legacy_address(value: &Value) -> Address {
                     }
                     "C64" | "C128" => {
                         result.screen_mode = ScreenMode::Vic;
-                        result.terminal_type = Terminal::PETscii;
+                        result.terminal_type = TerminalEmulation::PETscii;
                     }
                     "Atari" | "AtariXep80" => {
                         result.screen_mode = ScreenMode::Antic;
-                        result.terminal_type = Terminal::ATAscii;
+                        result.terminal_type = TerminalEmulation::ATAscii;
                     }
                     "Viewdata" => {
                         result.screen_mode = ScreenMode::Videotex;
-                        result.terminal_type = Terminal::ViewData;
+                        result.terminal_type = TerminalEmulation::ViewData;
                     }
                     "Mode7" => {
                         result.screen_mode = ScreenMode::Mode7;
-                        result.terminal_type = Terminal::Mode7;
+                        result.terminal_type = TerminalEmulation::Mode7;
                     }
                     "Rip" => {
                         result.screen_mode = ScreenMode::Rip;
-                        result.terminal_type = Terminal::Rip;
+                        result.terminal_type = TerminalEmulation::Rip;
                     }
                     "Igs" => {
                         result.screen_mode = ScreenMode::Igs;
-                        result.terminal_type = Terminal::IGS;
+                        result.terminal_type = TerminalEmulation::IGS;
                     }
                     _ => {}
                 }

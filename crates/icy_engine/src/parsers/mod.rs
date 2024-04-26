@@ -1,5 +1,8 @@
 use crate::{EngineResult, Line, Size, TextPane};
-use std::cmp::{max, min};
+use std::{
+    backtrace::Backtrace,
+    cmp::{max, min},
+};
 
 use self::{ansi::sound::AnsiMusic, rip::bgi::MouseField};
 

@@ -1,4 +1,6 @@
-use crate::protocol::{FileDescriptor, TransferState};
+/*
+use icy_net::protocol::TransferProtocolType;
+
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -12,7 +14,7 @@ pub struct FileTransferThread {
 }
 
 impl FileTransferThread {
-    pub fn new(mut connection: Box<Connection>, protocol_type: crate::protocol::TransferType, download: bool, files_opt: Option<Vec<FileDescriptor>>) -> Self {
+    pub fn new(mut connection: Box<Connection>, protocol_type: TransferProtocolType, download: bool, files_opt: Option<Vec<FileDescriptor>>) -> Self {
         let current_transfer = Arc::new(Mutex::new(TransferState::default()));
 
         let current_transfer2 = current_transfer.clone();
@@ -32,7 +34,7 @@ impl FileTransferThread {
                 log::error!("{err}");
                 return connection;
             }
-
+/*
             if let Ok(mut storage_handler) = crate::protocol::DiskStorageHandler::new() {
                 loop {
                     if let Err(err) = connection.update_state() {
@@ -65,7 +67,7 @@ impl FileTransferThread {
                         }
                     }
                 }
-            }
+            }*/
             if protocol.use_raw_transfer() {
                 if let Err(err) = connection.set_raw_mode(false) {
                     log::error!("Error setting raw mode on file transfer thread: {err}");
@@ -86,3 +88,4 @@ impl FileTransferThread {
         }
     }
 }
+*/

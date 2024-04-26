@@ -18,7 +18,7 @@ use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use ui::MainWindow;
 use web_time::Instant;
-pub type TerminalResult<T> = anyhow::Result<T>;
+pub type TerminalResult<T> = Res<T>;
 use i18n_embed::fluent::{fluent_language_loader, FluentLanguageLoader};
 use log::LevelFilter;
 use log4rs::{
@@ -32,14 +32,13 @@ use log4rs::{
 };
 use semver::Version;
 
-mod com;
 pub mod data;
 pub use data::*;
 
 mod features;
 mod icons;
-mod protocol;
 mod util;
+pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();

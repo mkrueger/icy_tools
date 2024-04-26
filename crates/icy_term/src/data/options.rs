@@ -284,7 +284,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             scaling: Scaling::default(),
-            connect_timeout: Duration::default(),
+            connect_timeout: Duration::from_secs(1000),
             monitor_settings: MonitorSettings::default(),
             iemsi: IEMSISettings::default(),
             console_beep: true,

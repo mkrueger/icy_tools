@@ -7,13 +7,15 @@ use eframe::{
 use egui::{Align, Id, ImageButton, Key, Rect};
 use i18n_embed_fl::fl;
 use icy_engine::ansi::{BaudEmulation, MusicOption};
+use icy_net::telnet::TerminalEmulation;
 
 use crate::{
-    addresses::{self, Address, Terminal},
+    addresses::{self, Address},
+    fmt_terminal_emulation,
     icons::{ADD, CLOSE, DELETE, STAR, UNSTAR, VISIBILITY, VISIBILITY_OFF},
     ui::{MainWindow, MainWindowMode, ScreenMode, DEFAULT_MODES},
     util::Rng,
-    AddressBook,
+    AddressBook, ALL, ALL_TERMINALS,
 };
 
 #[derive(Default)]
@@ -124,11 +126,11 @@ impl DialogState {
                 });
 
                 egui::ComboBox::from_id_source("combobox1")
-                    .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).protocol)))
+                    .selected_text(RichText::new(format!("{:?}", self.get_address_mut(self.selected_bbs).protocol)))
                     .width(PROTOCOL_COMBOBOX_WIDTH)
                     .show_ui(ui, |ui| {
-                        for prot in &addresses::Protocol::ALL {
-                            let label = RichText::new(format!("{prot}"));
+                        for prot in &addresses::ALL {
+                            let label = RichText::new(format!("{prot:?}"));
                             ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).protocol, *prot, label);
                         }
                     });
@@ -159,11 +161,11 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
                 });
                 egui::ComboBox::from_id_source("combobox3")
-                    .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).terminal_type)))
+                    .selected_text(RichText::new(fmt_terminal_emulation(&self.get_address_mut(self.selected_bbs).terminal_type)))
                     .width(250.)
                     .show_ui(ui, |ui| {
-                        for t in &Terminal::ALL {
-                            let label = RichText::new(format!("{t}"));
+                        for t in &ALL_TERMINALS {
+                            let label = RichText::new(fmt_terminal_emulation(t));
                             ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).terminal_type, *t, label);
                         }
                     });
@@ -459,16 +461,16 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
                 });
                 egui::ComboBox::from_id_source("combobox3")
-                    .selected_text(RichText::new(format!("{}", adr.terminal_type)))
+                    .selected_text(RichText::new(fmt_terminal_emulation(&adr.terminal_type)))
                     .width(250.)
                     .show_ui(ui, |ui| {
-                        for t in &Terminal::ALL {
-                            let label = RichText::new(format!("{t}"));
+                        for t in &ALL_TERMINALS {
+                            let label = RichText::new(fmt_terminal_emulation(t));
                             ui.selectable_value(&mut adr.terminal_type, *t, label);
                         }
                     });
 
-                if adr.terminal_type == Terminal::Rip && ui.button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-open_cache_button")).clicked() {
+                if adr.terminal_type == TerminalEmulation::Rip && ui.button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-open_cache_button")).clicked() {
                     if let Some(path) = adr.get_rip_cache() {
                         if let Err(err) = open::that(path) {
                             log::error!("Failed to open RIP cache: {err}");
@@ -477,7 +479,7 @@ impl DialogState {
                 }
                 ui.end_row();
 
-                if adr.terminal_type == Terminal::Ansi {
+                if adr.terminal_type == TerminalEmulation::Ansi {
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")));
                     });
@@ -622,11 +624,11 @@ impl DialogState {
                 });
 
                 egui::ComboBox::from_id_source("combobox1")
-                    .selected_text(RichText::new(format!("{}", adr.protocol)))
+                    .selected_text(RichText::new(format!("{:?}", adr.protocol)))
                     .width(PROTOCOL_COMBOBOX_WIDTH)
                     .show_ui(ui, |ui| {
-                        for prot in &addresses::Protocol::ALL {
-                            let label = RichText::new(format!("{prot}"));
+                        for prot in &addresses::ALL {
+                            let label = RichText::new(format!("{prot:?}"));
                             ui.selectable_value(&mut adr.protocol, *prot, label);
                         }
                     });
@@ -732,7 +734,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
 
     if !matches!(window.dialing_directory_dialog.address_category, AddressCategory::Notes) {
         if ctx.input(|i| i.key_pressed(Key::Enter)) {
-            window.call_bbs_uuid(window.dialing_directory_dialog.selected_bbs);
+            window.call_bbs_uuid(ctx, window.dialing_directory_dialog.selected_bbs);
         }
         if ctx.input(|i| i.key_pressed(Key::ArrowUp)) {
             if let Some(selected) = window.dialing_directory_dialog.selected_bbs {
@@ -823,7 +825,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                 });
                 ui.add_space(8.);
                 if let Some(uuid) = window.dialing_directory_dialog.render_list(ui) {
-                    window.call_bbs_uuid(Some(uuid));
+                    window.call_bbs_uuid(ctx, Some(uuid));
                 }
                 ui.add_space(8.);
                 if !window.dialing_directory_dialog.addresses.write_lock {
@@ -879,7 +881,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
 
                     let r: egui::Response = ui.add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")));
                     if r.clicked() {
-                        window.call_bbs_uuid(window.dialing_directory_dialog.selected_bbs);
+                        window.call_bbs_uuid(ctx, window.dialing_directory_dialog.selected_bbs);
                     }
                 });
             });
