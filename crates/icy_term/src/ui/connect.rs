@@ -1,6 +1,6 @@
 use crate::{Address, Modem, TerminalResult};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_net::{telnet::TermCaps, ConnectionType};
+use icy_net::{protocol::TransferProtocolType, telnet::TermCaps, ConnectionType};
 use std::{collections::VecDeque, path::PathBuf, sync::mpsc};
 use web_time::{Duration, Instant};
 
@@ -44,12 +44,12 @@ impl OpenConnectionData {
 /// Data that is sent to the connection thread
 #[derive(Debug)]
 pub enum SendData {
-    ConnectionError(String),
-
     Data(Vec<u8>),
     Disconnect,
-    EndTransfer,
-    CancelTransfer,
+    
     SetBaudRate(u32),
-    SetRawMode(bool),
+    
+    Upload(TransferProtocolType, Vec<PathBuf>),
+    Download(TransferProtocolType),
+    CancelTransfer,
 }

@@ -80,8 +80,7 @@ pub fn view_selector(window: &mut MainWindow, ctx: &egui::Context, _frame: &mut 
                         }
                         ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
                             if ui.selectable_label(false, RichText::new(title).strong()).clicked() {
-                                // TODO:
-                                //  window.initiate_file_transfer(*protocol, download);
+                                window.initiate_file_transfer(protocol.clone(), download);
                             }
                         });
                         ui.label(RichText::new(descr));

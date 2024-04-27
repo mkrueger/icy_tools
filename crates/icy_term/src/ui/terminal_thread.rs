@@ -1,31 +1,27 @@
 use crate::{
     features::{AutoFileTransfer, AutoLogin},
-    get_parser, modem,
-    util::SoundThread,
+    get_parser, util::SoundThread,
     Res, TerminalResult,
 };
+use directories::UserDirs;
 use egui::mutex::Mutex;
 use glow::CW;
 use icy_engine::{
-    ansi::{self, MusicOption},
+    ansi::MusicOption,
     rip::bgi::MouseField,
     BufferParser, Caret,
 };
 use icy_engine_gui::BufferView;
 use icy_net::{
     modem::{ModemConfiguration, ModemConnection, Serial},
-    protocol::TransferProtocolType,
+    protocol::{TransferProtocolType, TransferState},
     raw::RawConnection,
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TerminalEmulation},
     Connection, NullConnection,
 };
 use std::{
-    collections::VecDeque,
-    mem,
-    path::PathBuf,
-    sync::{mpsc, Arc},
-    thread,
+    collections::VecDeque, error::Error, mem, path::PathBuf, sync::{mpsc, Arc}, thread
 };
 use web_time::{Duration, Instant};
 
@@ -36,10 +32,12 @@ use super::{
 };
 const BITS_PER_BYTE: u32 = 8;
 
-pub struct BufferUpdateThread {
+pub struct TerminalThread {
     pub capture_dialog: dialogs::capture_dialog::DialogState,
 
     pub buffer_view: Arc<Mutex<BufferView>>,
+
+    pub current_transfer: TransferState,
 
     pub auto_file_transfer: AutoFileTransfer,
     pub auto_login: Option<AutoLogin>,
@@ -58,7 +56,7 @@ pub struct BufferUpdateThread {
     pub connection_time: Instant,
 }
 
-impl BufferUpdateThread {
+impl TerminalThread {
     pub fn update_state(
         &mut self,
         ctx: &egui::Context,
@@ -79,7 +77,6 @@ impl BufferUpdateThread {
         {
             let mut caret: Caret = Caret::default();
             mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-
             loop {
                 let Some(act) = buffer_parser.get_next_action(self.buffer_view.lock().get_buffer_mut(), &mut caret, 0) else {
                     break;
@@ -99,7 +96,15 @@ impl BufferUpdateThread {
         let mut idx = 0;
         for ch in data {
             let ch = *ch;
-
+            if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch) {
+                self.auto_transfer = Some((protocol_type, download));
+            }
+            if let Some(autologin) = &mut self.auto_login {
+                if let Ok(Some(data)) = autologin.try_login(ch)  {
+                    connection.com.write_all(&data).unwrap();
+                    autologin.logged_in = true;
+                }
+            }
             self.capture_dialog.append_data(ch);
             let (p, ms) = self.print_char(connection, &mut self.buffer_view.lock(), buffer_parser, ch);
             idx += 1;
@@ -108,9 +113,6 @@ impl BufferUpdateThread {
                 self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
                 ctx.request_repaint();
                 return (ms as u64, idx);
-            }
-            if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch) {
-                self.auto_transfer = Some((protocol_type, download));
             }
         }
 
@@ -217,7 +219,7 @@ impl BufferUpdateThread {
 pub fn start_update_thread(
     ctx: &egui::Context,
     connection_data: OpenConnectionData,
-    update_thread: Arc<Mutex<BufferUpdateThread>>,
+    update_thread: Arc<Mutex<TerminalThread>>,
 ) -> (thread::JoinHandle<()>, mpsc::Sender<SendData>, mpsc::Receiver<SendData>) {
     let ctx = ctx.clone();
     let (tx, rx) = mpsc::channel::<SendData>();
@@ -237,11 +239,7 @@ pub fn start_update_thread(
                 Ok(com) => com,
                 Err(err) => {
                     let _ = tx.send(SendData::Disconnect);
-
-                    let _ = update_thread.lock().buffer_view.lock().print_char('\n');
-                    for c in format!("{err}").chars() {
-                        let _ = update_thread.lock().buffer_view.lock().print_char(c);
-                    }
+                    println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
                     update_thread.lock().is_connected = false;
                     return;
                 }
@@ -270,11 +268,12 @@ pub fn start_update_thread(
                 }
                 if idx < data.len() {
                     {
-                        let lock = &mut update_thread.lock();
+                        let _lock = &mut update_thread.lock();
                     }
                     let update_state = update_thread.lock().update_state(&ctx, &mut connection, &mut *buffer_parser, &data[idx..]);
                     match update_state {
                         Err(err) => {
+                            println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
                             log::error!("run_update_thread::update_state: {err}");
                             idx = data.len();
                         }
@@ -295,14 +294,29 @@ pub fn start_update_thread(
                     thread::sleep(Duration::from_millis(10));
                 }
 
-                if let Err(err) = handle_receive(&mut connection) {
-                    log::error!("run_update_thread::handle_receive: {err}");
+                if let Err(_err) = handle_receive(&mut connection, &update_thread) {
+                    println(&update_thread, &mut buffer_parser, &format!("\nNO CARRIER\n"));
+                    update_thread.lock().is_connected = false;
+                    return;
                 }
             }
         }),
         tx2,
         rx,
     )
+}
+
+fn println(update_thread: &Arc<Mutex<TerminalThread>>, buffer_parser: &mut Box<dyn BufferParser>, str: &str) {
+    let ut = update_thread.lock();
+    let mut bv = ut.buffer_view.lock();
+    let mut caret: Caret = Caret::default();
+    mem::swap(&mut caret, bv.get_caret_mut());
+    let state = bv.get_edit_state_mut();
+    let buffer = state.get_buffer_mut();
+    for c in str.chars() {
+        let _ = buffer_parser.print_char(buffer, 0, &mut caret, c);
+    }
+    mem::swap(&mut caret, bv.get_caret_mut());
 }
 
 fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Connection>> {
@@ -350,7 +364,7 @@ fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Connecti
     }
 }
 
-fn handle_receive(c: &mut ConnectionThreadData) -> Res<()> {
+fn handle_receive(c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
     match c.rx.try_recv() {
         Ok(SendData::Data(buf)) => {
             c.com.write_all(&buf)?;
@@ -363,7 +377,90 @@ fn handle_receive(c: &mut ConnectionThreadData) -> Res<()> {
         Ok(SendData::Disconnect) => {
             c.com.shutdown()?;
         }
+
+        Ok(SendData::Upload(protocol, files)) => {
+            upload(c, protocol, files, update_thread)?;
+        }
+
+        Ok(SendData::Download(protocol)) => {
+            download(c, protocol,update_thread)?;
+        }
+
+        
+
         _ => {}
     }
+    Ok(())
+}
+
+fn download(c: &mut ConnectionThreadData, protocol: TransferProtocolType, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+    let mut prot = protocol.create();
+    let mut transfer_state = prot.initiate_recv(&mut *c.com)?;
+    while !transfer_state.is_finished {
+        prot.update_transfer(&mut *c.com, &mut transfer_state)?;
+        update_thread.lock().current_transfer = transfer_state.clone();
+        match c.rx.try_recv() {
+            Ok(SendData::CancelTransfer) => {
+                prot.cancel_transfer(&mut *c.com)?;
+                break;
+            }
+            _ => {}
+        }
+    }
+    copy_downloaded_files(&mut transfer_state)?;
+    update_thread.lock().current_transfer = transfer_state.clone();
+    Ok(())
+}
+
+fn upload(c: &mut ConnectionThreadData, protocol: TransferProtocolType, files: Vec<PathBuf>, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+    let mut prot = protocol.create();
+    let mut transfer_state = prot.initiate_send(&mut *c.com, &files)?;
+    while !transfer_state.is_finished {
+        prot.update_transfer(&mut *c.com, &mut transfer_state)?;
+        update_thread.lock().current_transfer = transfer_state.clone();
+        match c.rx.try_recv() {
+            Ok(SendData::CancelTransfer) => {
+                prot.cancel_transfer(&mut *c.com)?;
+                break;
+            }
+            _ => {}
+        }
+    }
+    // needed for potential bi-directional protocols
+    copy_downloaded_files(&mut transfer_state)?;
+    update_thread.lock().current_transfer = transfer_state.clone();
+    Ok(())
+}
+
+fn copy_downloaded_files(transfer_state: &mut TransferState)-> Res<()>  {
+    if let Some(dirs) = UserDirs::new() {
+        if let Some(upload_location) = dirs.download_dir() {
+            let mut lines = Vec::new();
+            for (name, path) in &transfer_state.recieve_state.finished_files {
+                let mut dest = upload_location.join(name);
+
+                let mut i = 1;
+                let new_name = PathBuf::from(name);
+                while dest.exists() {
+                    dest = dest.with_file_name(format!("{}.{}.{}", new_name.file_stem().unwrap().to_string_lossy(), i, new_name.extension().unwrap().to_string_lossy()));
+                    i += 1;
+                }
+                std::fs::copy(&path, &dest)?;
+                std::fs::remove_file(&path)?;
+                lines.push(format!("File copied to: {}", dest.display()));
+            }
+            for line in lines {
+                transfer_state.recieve_state.log_info(line);
+            }
+
+        } else {
+            log::error!("Failed to get user download directory");
+        }
+    } else {
+        log::error!("Failed to get user directories");
+    }
+
+ 
+
     Ok(())
 }

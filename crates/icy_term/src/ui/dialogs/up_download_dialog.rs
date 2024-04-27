@@ -13,16 +13,22 @@ pub struct FileTransferDialog {
     pub selected_log: usize,
 }
 
+pub enum FileTransferDialogAction {
+    Run,
+    CancelTransfer,
+    Close,
+}
+
+
 impl FileTransferDialog {
     pub fn new() -> Self {
         Self { selected_log: 0 }
     }
 
-    pub fn show_dialog(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, transfer_state: &TransferState, download: bool) -> bool {
-        let mut open = true;
-        let mut close_dialog = false;
+    pub fn show_dialog(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, transfer_state: &TransferState, download: bool) -> FileTransferDialogAction {
+        let mut res = FileTransferDialogAction::Run;
         if ctx.input(|i: &egui::InputState| i.key_down(egui::Key::Escape)) {
-            open = false;
+            return FileTransferDialogAction::Close;
         }
 
         let title: RichText = RichText::new(if download {
@@ -30,7 +36,7 @@ impl FileTransferDialog {
         } else {
             fl!(crate::LANGUAGE_LOADER, "transfer-upload")
         });
-
+        let mut open = true;
         egui::Window::new(title)
             .open(&mut open)
             .collapsible(false)
@@ -169,10 +175,15 @@ impl FileTransferDialog {
                         fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")
                     };
                     if ui.button(button_label).clicked() {
-                        close_dialog = true;
+                        res = FileTransferDialogAction::CancelTransfer;
                     }
                 });
             });
-        open && !close_dialog
+        if open {
+            res
+        } else {
+            FileTransferDialogAction::Close
+        }
+
     }
 }

@@ -1,7 +1,7 @@
 use icy_net::iemsi::IEmsi;
 use web_time::Instant;
 
-use crate::util::PatternRecognizer;
+use crate::{util::PatternRecognizer, Res};
 
 pub struct AutoLogin {
     pub logged_in: bool,
@@ -105,8 +105,9 @@ impl AutoLogin {
 
             Ok(true)
         }
-
-        pub fn try_login(&mut self, connection: &mut Connection, ch: u8) -> Res<()> {
+*/
+        pub fn try_login(&mut self, ch: u8) -> Res<Option<Vec<u8>>> {
+            /*
             if self.logged_in || self.disabled {
                 return Ok(());
             }
@@ -122,13 +123,10 @@ impl AutoLogin {
             self.last_char_recv = Instant::now();
             self.got_name |= self.name_recognizer.push_ch(ch) | self.login_recognizer.push_ch(ch);
 
-            if let Some(data) =  self.iemsi.try_login(&self.user_name, &self.password, ch)? {
-                connection.send(data)?;
-                self.logged_in = true;
-            }
-            Ok(())
+           */
+            Ok(self.iemsi.try_login(&self.user_name, &self.password, ch)?)
         }
-
+/* 
         pub fn run_autologin(&mut self, con: &mut Connection) -> TerminalResult<()> {
             if self.logged_in && self.cur_expr_idx >= self.login_expr.len() || self.disabled {
                 return Ok(());

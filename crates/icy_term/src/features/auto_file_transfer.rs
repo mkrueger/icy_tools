@@ -8,11 +8,6 @@ pub struct AutoFileTransfer {
 }
 
 impl AutoFileTransfer {
-    pub fn reset(&mut self) {
-        self.zmodem_dl.reset();
-        self.zmodem_ul.reset();
-    }
-
     pub fn try_transfer(&mut self, ch: u8) -> Option<(TransferProtocolType, bool)> {
         if self.zmodem_dl.push_ch(ch) {
             return Some((TransferProtocolType::ZModem, true));

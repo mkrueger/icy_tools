@@ -8,7 +8,6 @@ use i18n_embed_fl::fl;
 use icy_engine::{Position, Selection, TextPane};
 
 use crate::{
-    check_error,
     icons::{CALL, DOWNLOAD, KEY, LOGOUT, MENU, UPLOAD},
     LATEST_VERSION, VERSION,
 };
@@ -217,6 +216,11 @@ impl MainWindow {
         if show_dialing_directory {
             dialogs::dialing_directory_dialog::view_dialing_directory(self, ctx);
         }
+
+        let take = self.buffer_update_thread.lock().auto_transfer.take();
+        if let Some((protocol_type, download)) = take {
+            self.initiate_file_transfer(protocol_type, download);
+        }
     }
 
     fn show_terminal_area(&mut self, ui: &mut egui::Ui) {
@@ -394,7 +398,6 @@ impl MainWindow {
                 }
             }
             if self.use_rip {
-                let fields = &self.buffer_update_thread.lock().mouse_field;
                 if response.clicked_by(PointerButton::Primary) {
                     if let Some(mouse_pos) = response.hover_pos() {
                         let mouse_pos = mouse_pos.to_vec2() - calc.buffer_rect.left_top().to_vec2();
@@ -402,7 +405,7 @@ impl MainWindow {
                         let x = (mouse_pos.x / calc.buffer_rect.width() * 640.0) as i32;
                         let y = (mouse_pos.y / calc.buffer_rect.height() * 350.0) as i32;
                         let mut found_field = None;
-                        for mouse_field in fields {
+                        for mouse_field in &self.buffer_update_thread.lock().mouse_field {
                             if !mouse_field.style.is_mouse_button() {
                                 continue;
                             }
@@ -426,6 +429,7 @@ impl MainWindow {
                                     buffer.get_buffer_mut().terminal_state.cleared_screen = true;
                                 }
                                 self.output_string(cmd);
+                                return;
                             }
                         }
                     }
@@ -438,6 +442,7 @@ impl MainWindow {
 
                         let x = (hover_pos.x / calc.buffer_rect.width() * 640.0) as i32;
                         let y = (hover_pos.y / calc.buffer_rect.height() * 350.0) as i32;
+                        let fields = &self.buffer_update_thread.lock().mouse_field;
                         for mouse_field in fields {
                             if !mouse_field.style.is_mouse_button() {
                                 continue;

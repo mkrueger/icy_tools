@@ -5,10 +5,9 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use directories::UserDirs;
 use eframe::egui::{self};
 use egui::{mutex::Mutex, FontId};
-use icy_engine::Position;
+use icy_engine::{ascii, Position};
 use icy_net::{
-    telnet::{TermCaps, TerminalEmulation},
-    ConnectionType,
+    protocol::TransferState, telnet::{TermCaps, TerminalEmulation}, ConnectionType
 };
 use web_time::Instant;
 
@@ -16,7 +15,7 @@ use crate::{
     check_error,
     features::AutoFileTransfer,
     get_unicode_converter,
-    ui::{buffer_update_thread::BufferUpdateThread, connect::OpenConnectionData, dialogs, BufferView, MainWindowState, ScreenMode},
+    ui::{terminal_thread::TerminalThread, connect::OpenConnectionData, dialogs, BufferView, MainWindowState, ScreenMode},
     util::SoundThread,
     AddressBook, Options,
 };
@@ -71,7 +70,7 @@ impl MainWindow {
         }
         let buffer_update_view = Arc::new(eframe::epaint::mutex::Mutex::new(view));
 
-        let buffer_update_thread = Arc::new(Mutex::new(BufferUpdateThread {
+        let buffer_update_thread = Arc::new(Mutex::new(TerminalThread {
             buffer_view: buffer_update_view.clone(),
             capture_dialog: dialogs::capture_dialog::DialogState::default(),
             auto_file_transfer: AutoFileTransfer::default(),
@@ -84,6 +83,7 @@ impl MainWindow {
             cache_directory: PathBuf::new(),
             is_connected: false,
             connection_time: Instant::now(),
+            current_transfer: TransferState::new(String::new())
         }));
 
         let data = OpenConnectionData {
@@ -101,8 +101,10 @@ impl MainWindow {
             modem: None,
         };
 
-        let (update_thread_handle, tx, rx) = crate::ui::buffer_update_thread::start_update_thread(&cc.egui_ctx, data, buffer_update_thread.clone());
-
+        let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(&cc.egui_ctx, data, buffer_update_thread.clone());
+        let mut parser  = icy_engine::ansi::Parser::default();
+        parser.bs_is_ctrl_char = true;
+        let buffer_parser = Box::new(parser);
         let mut view = MainWindow {
             buffer_view: buffer_update_view.clone(),
             //address_list: HoverList::new(),
@@ -125,6 +127,7 @@ impl MainWindow {
             find_dialog: dialogs::find_dialog::DialogState::default(),
             shift_pressed_during_selection: false,
             use_rip: false,
+            buffer_parser
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -163,21 +166,15 @@ impl eframe::App for MainWindow {
         self.update_title(ctx);
         match self.get_mode() {
             MainWindowMode::ShowTerminal => {
-                let res = self.update_state(ctx);
                 self.handle_terminal_key_binds(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowDialingDirectory => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, true);
-                check_error!(self, res, false);
             }
             MainWindowMode::ShowSettings => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 self.state.show_settings(ctx, frame);
             }
             MainWindowMode::DeleteSelectedAddress(uuid) => {
@@ -192,69 +189,54 @@ impl eframe::App for MainWindow {
 
             MainWindowMode::FileTransfer(download) => {
                 self.update_terminal_window(ctx, frame, false);
-                /*
-                let mut join_thread = false;
-                if let Some(fts) = &mut self.current_file_transfer {
-                    let state = if let Ok(state) = fts.current_transfer.lock() {
-                        Some(state.clone())
-                    } else {
-                        log::error!("In file transfer but can't lock state.");
-                        join_thread = true;
-                        None
-                    };
 
-                    if let Some(state) = state {
+                let state = self.buffer_update_thread.lock().current_transfer.clone();
+
+                // auto close uploads.
+                if !download && state.is_finished {
+                    self.set_mode(MainWindowMode::ShowTerminal);
+                }
+                match dialogs::up_download_dialog::FileTransferDialog::new().show_dialog(ctx, frame, &state, download) {
+                    dialogs::up_download_dialog::FileTransferDialogAction::Run => {
+                    }
+                    dialogs::up_download_dialog::FileTransferDialogAction::CancelTransfer => {
                         if state.is_finished {
-                            join_thread = true;
-                        } else if !fts.file_transfer_dialog.show_dialog(ctx, frame, &state, download) {
-                            fts.current_transfer.lock().unwrap().request_cancel = true;
-                            join_thread = true;
+                            self.set_mode(MainWindowMode::ShowTerminal);
+                        } else {
+                            let _ = self.tx.send(super::connect::SendData::CancelTransfer);
                         }
                     }
-                } else {
-                    log::error!("In file transfer but no current protocol.");
-                    join_thread = true;
+                    dialogs::up_download_dialog::FileTransferDialogAction::Close => {
+                        self.set_mode(MainWindowMode::ShowTerminal);
+                    }
                 }
-                if join_thread {
-                    self.get_connection_back();
-                }*/
                 ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowCaptureDialog => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 if !self.buffer_update_thread.lock().capture_dialog.show_caputure_dialog(ctx) {
                     self.set_mode(MainWindowMode::ShowTerminal);
                 }
                 ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowExportDialog => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 self.show_export_dialog(ctx);
                 ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowUploadDialog => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 self.show_upload_dialog(ctx);
                 ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowIEMSI => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 dialogs::show_iemsi::show_iemsi(self, ctx);
                 ctx.request_repaint_after(Duration::from_millis(150));
             } // MainWindowMode::AskDeleteEntry => todo!(),
 
             MainWindowMode::ShowDisconnectedMessage(time, system) => {
-                let res = self.update_state(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                check_error!(self, res, false);
                 dialogs::show_disconnected_message::show_disconnected(self, ctx, time, system);
                 ctx.request_repaint_after(Duration::from_millis(150));
             }

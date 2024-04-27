@@ -4,7 +4,7 @@ use chrono::Utc;
 use egui::Vec2;
 use egui_bind::BindTarget;
 use i18n_embed_fl::fl;
-use icy_engine::{AttributedChar, Caret, Position};
+use icy_engine::{BufferParser, Caret, Position};
 use icy_engine_gui::BufferView;
 use icy_net::protocol::TransferProtocolType;
 use icy_net::telnet::TerminalEmulation;
@@ -18,7 +18,7 @@ use eframe::egui::Key;
 
 use crate::features::AutoLogin;
 use crate::ui::connect::OpenConnectionData;
-use crate::{get_unicode_converter, Options, Res};
+use crate::{get_parser, get_unicode_converter, Options, Res};
 
 pub mod app;
 pub mod com_thread;
@@ -29,14 +29,12 @@ pub mod terminal_window;
 pub mod util;
 pub use util::*;
 
-use self::buffer_update_thread::BufferUpdateThread;
+use self::terminal_thread::TerminalThread;
 use self::connect::SendData;
 
 pub mod dialogs;
 
-pub mod file_transfer_thread;
-
-pub mod buffer_update_thread;
+pub mod terminal_thread;
 
 #[macro_export]
 macro_rules! check_error {
@@ -109,7 +107,7 @@ pub struct MainWindow {
     shift_pressed_during_selection: bool,
     use_rip: bool,
 
-    buffer_update_thread: Arc<egui::mutex::Mutex<BufferUpdateThread>>,
+    buffer_update_thread: Arc<egui::mutex::Mutex<TerminalThread>>,
     update_thread_handle: Option<JoinHandle<()>>,
     pub tx: mpsc::Sender<SendData>,
     pub rx: mpsc::Receiver<SendData>,
@@ -123,6 +121,8 @@ pub struct MainWindow {
 
     pub show_find_dialog: bool,
     pub find_dialog: dialogs::find_dialog::DialogState,
+
+    buffer_parser: Box<dyn BufferParser>,
     #[cfg(target_arch = "wasm32")]
     poll_thread: com_thread::ConnectionThreadData,
 }
@@ -145,15 +145,12 @@ impl MainWindow {
             if ch as u32 > 255 {
                 continue;
             }
-            if let Err(err) = self.buffer_view.lock().print_char(ch) {
-                log::error!("{err}");
-            }
+            self.print_char(ch as u8);
         }
     }
 
     pub fn output_char(&mut self, ch: char) {
         let translated_char = self.buffer_view.lock().get_unicode_converter().convert_from_unicode(ch, 0);
-        let mut print = true;
         if self.buffer_update_thread.lock().is_connected {
             self.send_data(vec![translated_char as u8]);
         } else {
@@ -161,7 +158,7 @@ impl MainWindow {
         }
     }
 
-    pub fn output_string(&self, str: &str) {
+    pub fn output_string(&mut self, str: &str) {
         if self.buffer_update_thread.lock().is_connected {
             let mut v = Vec::new();
             for ch in str.chars() {
@@ -177,15 +174,12 @@ impl MainWindow {
         }
     }
 
-    pub fn print_char(&self, c: u8) {
+    pub fn print_char(&mut self, c: u8) {
         let buffer_view = &mut self.buffer_view.lock();
         buffer_view.get_edit_state_mut().set_is_buffer_dirty();
-        let attribute = buffer_view.get_caret().get_attribute();
         let mut caret = Caret::default();
         mem::swap(&mut caret, buffer_view.get_caret_mut());
-        buffer_view
-            .get_buffer_mut()
-            .print_char(0, &mut caret, AttributedChar::new(c as char, attribute));
+        let _ = self.buffer_parser.print_char(buffer_view.get_buffer_mut(), 0,&mut caret, c as char);
         mem::swap(&mut caret, buffer_view.get_caret_mut());
     }
 
@@ -196,25 +190,23 @@ impl MainWindow {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn start_file_transfer(&mut self, protocol_type: TransferProtocolType, download: bool, files_opt: Option<Vec<PathBuf>>) {
-        /*
-
-        self.set_mode(MainWindowMode::FileTransfer(download));
-
-        let r = crate::protocol::DiskStorageHandler::new();
+    fn upload(&mut self, protocol_type: TransferProtocolType, files: Vec<PathBuf>) {
+        self.set_mode(MainWindowMode::FileTransfer(false));
+        let r = self.tx.send(SendData::Upload(protocol_type, files));
         check_error!(self, r, false);
-        if let Some(mut con) = self.connection.lock().take() {
-            con.start_transfer();
-            self.current_file_transfer = Some(FileTransferThread::new(con, protocol_type, download, files_opt));
-        }*/
+    }
+
+    fn download(&mut self, protocol_type: TransferProtocolType) {
+        self.set_mode(MainWindowMode::FileTransfer(true));
+        let r = self.tx.send(SendData::Download(protocol_type));
+        check_error!(self, r, false);
     }
 
     pub(crate) fn initiate_file_transfer(&mut self, protocol_type: TransferProtocolType, download: bool) {
         self.set_mode(MainWindowMode::ShowTerminal);
         if download {
-            self.start_file_transfer(protocol_type, download, None);
+            self.download(protocol_type);
         } else {
-            #[cfg(not(target_arch = "wasm32"))]
             self.init_upload_dialog(protocol_type);
         }
     }
@@ -278,7 +270,6 @@ impl MainWindow {
 
             self.use_rip = matches!(address.terminal_type, TerminalEmulation::Rip);
             self.buffer_update_thread.lock().terminal_type = Some((address.terminal_type, address.ansi_music));
-            self.buffer_update_thread.lock().auto_file_transfer.reset();
             self.buffer_view.lock().clear_reference_image();
             self.buffer_view.lock().get_buffer_mut().layers[0].clear();
             self.buffer_view.lock().get_buffer_mut().stop_sixel_threads();
@@ -306,40 +297,19 @@ impl MainWindow {
         if let Some(_handle) = self.update_thread_handle.take() {
             let _ = self.tx.send(SendData::Disconnect);
         }
+        self.buffer_parser = get_parser(
+            &data.term_caps.terminal,
+            data.use_ansi_music,
+            PathBuf::new(),
+        );
+        let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
 
-        let (update_thread_handle, tx, rx) = crate::ui::buffer_update_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
-
+    
         self.update_thread_handle = Some(update_thread_handle);
         self.tx = tx;
         self.rx = rx;
 
         self.tx.send(SendData::SetBaudRate(cloned_addr.baud_emulation.get_baud_rate())).unwrap();
-    }
-
-    pub fn update_state(&mut self, ctx: &egui::Context) -> Res<()> {
-        #[cfg(target_arch = "wasm32")]
-        self.poll_thread.poll();
-
-        /*
-        if self.update_thread_handle.as_ref().unwrap().is_finished() {
-            if let Err(err) = &self.update_thread_handle.take().unwrap().join() {
-                let msg = if let Some(msg) = err.downcast_ref::<&'static str>() {
-                    (*msg).to_string()
-                } else if let Some(msg) = err.downcast_ref::<String>() {
-                    msg.clone()
-                } else {
-                    format!("?{err:?}")
-                };
-                log::error!("Error during update thread: {:?}", msg);
-                self.update_thread_handle = Some(start_update_thread(ctx, self.buffer_update_thread.clone()));
-            }
-        }*/
-
-        let take = self.buffer_update_thread.lock().auto_transfer.take();
-        if let Some((protocol_type, download)) = take {
-            self.initiate_file_transfer(protocol_type, download);
-        }
-        Ok(())
     }
 
     pub fn hangup(&mut self) {
@@ -386,16 +356,14 @@ impl MainWindow {
         if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.to_string()));
         } else {
-            let mut show_disconnect = false;
-            let mut connection_time = String::new();
-            let mut system_name = String::new();
+            let show_disconnect = false;
             let d = Instant::now().duration_since(self.buffer_update_thread.lock().connection_time);
             let sec = d.as_secs();
             let minutes = sec / 60;
             let hours = minutes / 60;
             let cur = &self.dialing_directory_dialog.addresses.addresses[self.dialing_directory_dialog.cur_addr];
-            connection_time = format!("{:02}:{:02}:{:02}", hours, minutes % 60, sec % 60);
-            system_name = if cur.system_name.is_empty() {
+            let connection_time = format!("{:02}:{:02}:{:02}", hours, minutes % 60, sec % 60);
+            let system_name = if cur.system_name.is_empty() {
                 cur.address.clone()
             } else {
                 cur.system_name.clone()
@@ -475,8 +443,13 @@ impl MainWindow {
         }
     }
 
-    fn send_data(&self, to_vec: Vec<u8>) {
+    fn send_data(&mut self, to_vec: Vec<u8>) {
+        if !self.buffer_update_thread.lock().is_connected {
+            return;
+        }
+
         if let Err(err) = self.tx.send(SendData::Data(to_vec)) {
+            self.buffer_update_thread.lock().is_connected = false;
             log::error!("{err}");
             self.output_string(&format!("\n{err}"));
         }
