@@ -1,8 +1,8 @@
-use crate::{Address, Modem, TerminalResult};
+use crate::{Address, Modem};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{protocol::TransferProtocolType, telnet::TermCaps, ConnectionType};
-use std::{collections::VecDeque, path::PathBuf, sync::mpsc};
-use web_time::{Duration, Instant};
+use std::path::PathBuf;
+use web_time::Duration;
 
 /// A more lightweight version of `Address` that is used for the connection
 ///Using Addreess in `SendData` makes just the enum larger without adding any value.

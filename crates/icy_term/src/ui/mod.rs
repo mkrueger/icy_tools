@@ -18,7 +18,7 @@ use eframe::egui::Key;
 
 use crate::features::AutoLogin;
 use crate::ui::connect::OpenConnectionData;
-use crate::{get_parser, get_unicode_converter, Options, Res};
+use crate::{get_parser, get_unicode_converter, Options};
 
 pub mod app;
 pub mod com_thread;

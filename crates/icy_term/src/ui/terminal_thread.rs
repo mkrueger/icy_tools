@@ -5,7 +5,6 @@ use crate::{
 };
 use directories::UserDirs;
 use egui::mutex::Mutex;
-use glow::CW;
 use icy_engine::{
     ansi::MusicOption,
     rip::bgi::MouseField,
@@ -21,7 +20,7 @@ use icy_net::{
     Connection, NullConnection,
 };
 use std::{
-    collections::VecDeque, error::Error, mem, path::PathBuf, sync::{mpsc, Arc}, thread
+    collections::VecDeque, mem, path::PathBuf, sync::{mpsc, Arc}, thread
 };
 use web_time::{Duration, Instant};
 
@@ -150,7 +149,7 @@ impl TerminalThread {
                 if let Err(r) = r {
                     log::error!("callbackaction::SendString: {r}");
                 }
-                connection.com.flush();
+                let _ = connection.com.flush();
             }
             icy_engine::CallbackAction::PlayMusic(music) => {
                 let r = self.sound_thread.lock().play_music(music);
@@ -379,14 +378,16 @@ fn handle_receive(c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<Termin
         }
 
         Ok(SendData::Upload(protocol, files)) => {
-            upload(c, protocol, files, update_thread)?;
+            if let Err(err) = upload(c, protocol, files, update_thread) {
+                log::error!("Failed to upload files: {err}");
+            }
         }
 
         Ok(SendData::Download(protocol)) => {
-            download(c, protocol,update_thread)?;
+            if let Err(err) = download(c, protocol,update_thread) {
+                log::error!("Failed to download files: {err}");
+            }
         }
-
-        
 
         _ => {}
     }

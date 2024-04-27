@@ -5,14 +5,13 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use directories::UserDirs;
 use eframe::egui::{self};
 use egui::{mutex::Mutex, FontId};
-use icy_engine::{ascii, Position};
+use icy_engine::Position;
 use icy_net::{
     protocol::TransferState, telnet::{TermCaps, TerminalEmulation}, ConnectionType
 };
 use web_time::Instant;
 
 use crate::{
-    check_error,
     features::AutoFileTransfer,
     get_unicode_converter,
     ui::{terminal_thread::TerminalThread, connect::OpenConnectionData, dialogs, BufferView, MainWindowState, ScreenMode},
