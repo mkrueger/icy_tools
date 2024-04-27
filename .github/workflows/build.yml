@@ -114,7 +114,8 @@ jobs:
             --icon-size 128 \
             --hide-extension "${{ matrix.app }}.app" \
             --app-drop-link 600 185 \
-            "${{ matrix.app }}-${{ env.VERSION }}-universal.dmg"
+            "${{ matrix.app }}-${{ env.VERSION }}-universal.dmg" \
+            "${{ matrix.app }}.app"
 #      - name: Clean up keychain and provisioning profile
 #        run: |
 #          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db

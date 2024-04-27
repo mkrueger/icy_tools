@@ -70,14 +70,16 @@ fn main() {
 
     let args = Cli::parse();
 
+    use eframe::icon_data::from_png_bytes;
+
     use crate::plugins::Plugin;
-    let options = eframe::NativeOptions {
-        //initial_window_size: Some(egui::vec2(1280., 841.)),
+    let mut native_options = eframe::NativeOptions {
         multisampling: 0,
         renderer: eframe::Renderer::Glow,
-        //icon_data: Some(IconData::try_from_png_bytes(&include_bytes!("../build/linux/256x256.png")[..]).unwrap()),
         ..Default::default()
     };
+    let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
+    native_options.viewport = native_options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
 
     if let Ok(log_file) = Settings::get_log_file() {
         // delete log file when it is too big
@@ -172,7 +174,7 @@ fn main() {
     Plugin::read_plugin_directory();
     if let Err(err) = eframe::run_native(
         &DEFAULT_TITLE,
-        options,
+        native_options,
         Box::new(|cc| {
             let mut window = MainWindow::new(cc);
             if let Some(mut path) = args.path {

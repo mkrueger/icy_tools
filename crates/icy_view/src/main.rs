@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use eframe::{egui, icon_data::from_png_bytes};
 use icy_view_gui::{options::Options, MainWindow};
 use semver::Version;
 
@@ -38,14 +39,14 @@ fn main() {
         options.auto_scroll_enabled = true;
     }
 
-    let native_options = eframe::NativeOptions {
-        //initial_window_size: Some(egui::vec2(1284. + 8., 839.)),
+    let mut native_options = eframe::NativeOptions {
         multisampling: 0,
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
+    let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
+    native_options.viewport = native_options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
 
-    //  options.viewport.icon = Some(IconData::from( &include_bytes!("../build/linux/256x256.png")[..]).unwrap());
     eframe::run_native(
         &DEFAULT_TITLE,
         native_options,
