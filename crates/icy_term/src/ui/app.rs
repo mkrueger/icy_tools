@@ -7,14 +7,16 @@ use eframe::egui::{self};
 use egui::{mutex::Mutex, FontId};
 use icy_engine::Position;
 use icy_net::{
-    protocol::TransferState, telnet::{TermCaps, TerminalEmulation}, ConnectionType
+    protocol::TransferState,
+    telnet::{TermCaps, TerminalEmulation},
+    ConnectionType,
 };
 use web_time::Instant;
 
 use crate::{
     features::AutoFileTransfer,
     get_unicode_converter,
-    ui::{terminal_thread::TerminalThread, connect::OpenConnectionData, dialogs, BufferView, MainWindowState, ScreenMode},
+    ui::{connect::OpenConnectionData, dialogs, terminal_thread::TerminalThread, BufferView, MainWindowState, ScreenMode},
     util::SoundThread,
     AddressBook, Options,
 };
@@ -82,7 +84,7 @@ impl MainWindow {
             cache_directory: PathBuf::new(),
             is_connected: false,
             connection_time: Instant::now(),
-            current_transfer: TransferState::new(String::new())
+            current_transfer: TransferState::new(String::new()),
         }));
 
         let data = OpenConnectionData {
@@ -101,7 +103,7 @@ impl MainWindow {
         };
 
         let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(&cc.egui_ctx, data, buffer_update_thread.clone());
-        let mut parser  = icy_engine::ansi::Parser::default();
+        let mut parser = icy_engine::ansi::Parser::default();
         parser.bs_is_ctrl_char = true;
         let buffer_parser = Box::new(parser);
         let mut view = MainWindow {
@@ -126,7 +128,7 @@ impl MainWindow {
             find_dialog: dialogs::find_dialog::DialogState::default(),
             shift_pressed_during_selection: false,
             use_rip: false,
-            buffer_parser
+            buffer_parser,
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -196,8 +198,7 @@ impl eframe::App for MainWindow {
                     self.set_mode(MainWindowMode::ShowTerminal);
                 }
                 match dialogs::up_download_dialog::FileTransferDialog::new().show_dialog(ctx, frame, &state, download) {
-                    dialogs::up_download_dialog::FileTransferDialogAction::Run => {
-                    }
+                    dialogs::up_download_dialog::FileTransferDialogAction::Run => {}
                     dialogs::up_download_dialog::FileTransferDialogAction::CancelTransfer => {
                         if state.is_finished {
                             self.set_mode(MainWindowMode::ShowTerminal);

@@ -19,7 +19,6 @@ pub enum FileTransferDialogAction {
     Close,
 }
 
-
 impl FileTransferDialog {
     pub fn new() -> Self {
         Self { selected_log: 0 }
@@ -184,6 +183,5 @@ impl FileTransferDialog {
         } else {
             FileTransferDialogAction::Close
         }
-
     }
 }

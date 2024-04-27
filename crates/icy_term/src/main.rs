@@ -104,13 +104,15 @@ fn get_log_file() -> anyhow::Result<PathBuf> {
 fn main() {
     use std::fs;
 
-    let options = eframe::NativeOptions {
-        // initial_window_size: Some(egui::vec2(1284. + 8., 839.)),
+    use eframe::icon_data::from_png_bytes;
+
+    let mut options = eframe::NativeOptions {
         multisampling: 0,
         renderer: eframe::Renderer::Glow,
-        // icon_data: Some(eframe::IconData::try_from_png_bytes(&include_bytes!("../build/linux/256x256.png")[..]).unwrap()),
         ..Default::default()
     };
+    let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
+    options.viewport = options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big

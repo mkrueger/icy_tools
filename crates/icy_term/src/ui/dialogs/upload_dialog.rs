@@ -35,7 +35,7 @@ impl MainWindow {
                                     let _ = self.tx.send(crate::ui::connect::SendData::Data(bytes));
                                 }
                                 r => {
-                                    log::error!("Error reading file: {:?}", r); 
+                                    log::error!("Error reading file: {:?}", r);
                                 }
                             }
                         }

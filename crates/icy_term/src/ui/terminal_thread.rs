@@ -1,15 +1,12 @@
 use crate::{
     features::{AutoFileTransfer, AutoLogin},
-    get_parser, util::SoundThread,
+    get_parser,
+    util::SoundThread,
     Res, TerminalResult,
 };
 use directories::UserDirs;
 use egui::mutex::Mutex;
-use icy_engine::{
-    ansi::MusicOption,
-    rip::bgi::MouseField,
-    BufferParser, Caret,
-};
+use icy_engine::{ansi::MusicOption, rip::bgi::MouseField, BufferParser, Caret};
 use icy_engine_gui::BufferView;
 use icy_net::{
     modem::{ModemConfiguration, ModemConnection, Serial},
@@ -20,7 +17,11 @@ use icy_net::{
     Connection, NullConnection,
 };
 use std::{
-    collections::VecDeque, mem, path::PathBuf, sync::{mpsc, Arc}, thread
+    collections::VecDeque,
+    mem,
+    path::PathBuf,
+    sync::{mpsc, Arc},
+    thread,
 };
 use web_time::{Duration, Instant};
 
@@ -99,7 +100,7 @@ impl TerminalThread {
                 self.auto_transfer = Some((protocol_type, download));
             }
             if let Some(autologin) = &mut self.auto_login {
-                if let Ok(Some(data)) = autologin.try_login(ch)  {
+                if let Ok(Some(data)) = autologin.try_login(ch) {
                     connection.com.write_all(&data).unwrap();
                     autologin.logged_in = true;
                 }
@@ -384,7 +385,7 @@ fn handle_receive(c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<Termin
         }
 
         Ok(SendData::Download(protocol)) => {
-            if let Err(err) = download(c, protocol,update_thread) {
+            if let Err(err) = download(c, protocol, update_thread) {
                 log::error!("Failed to download files: {err}");
             }
         }
@@ -433,7 +434,7 @@ fn upload(c: &mut ConnectionThreadData, protocol: TransferProtocolType, files: V
     Ok(())
 }
 
-fn copy_downloaded_files(transfer_state: &mut TransferState)-> Res<()>  {
+fn copy_downloaded_files(transfer_state: &mut TransferState) -> Res<()> {
     if let Some(dirs) = UserDirs::new() {
         if let Some(upload_location) = dirs.download_dir() {
             let mut lines = Vec::new();
@@ -443,7 +444,12 @@ fn copy_downloaded_files(transfer_state: &mut TransferState)-> Res<()>  {
                 let mut i = 1;
                 let new_name = PathBuf::from(name);
                 while dest.exists() {
-                    dest = dest.with_file_name(format!("{}.{}.{}", new_name.file_stem().unwrap().to_string_lossy(), i, new_name.extension().unwrap().to_string_lossy()));
+                    dest = dest.with_file_name(format!(
+                        "{}.{}.{}",
+                        new_name.file_stem().unwrap().to_string_lossy(),
+                        i,
+                        new_name.extension().unwrap().to_string_lossy()
+                    ));
                     i += 1;
                 }
                 std::fs::copy(&path, &dest)?;
@@ -453,15 +459,12 @@ fn copy_downloaded_files(transfer_state: &mut TransferState)-> Res<()>  {
             for line in lines {
                 transfer_state.recieve_state.log_info(line);
             }
-
         } else {
             log::error!("Failed to get user download directory");
         }
     } else {
         log::error!("Failed to get user directories");
     }
-
- 
 
     Ok(())
 }

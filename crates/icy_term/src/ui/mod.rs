@@ -29,8 +29,8 @@ pub mod terminal_window;
 pub mod util;
 pub use util::*;
 
-use self::terminal_thread::TerminalThread;
 use self::connect::SendData;
+use self::terminal_thread::TerminalThread;
 
 pub mod dialogs;
 
@@ -179,7 +179,7 @@ impl MainWindow {
         buffer_view.get_edit_state_mut().set_is_buffer_dirty();
         let mut caret = Caret::default();
         mem::swap(&mut caret, buffer_view.get_caret_mut());
-        let _ = self.buffer_parser.print_char(buffer_view.get_buffer_mut(), 0,&mut caret, c as char);
+        let _ = self.buffer_parser.print_char(buffer_view.get_buffer_mut(), 0, &mut caret, c as char);
         mem::swap(&mut caret, buffer_view.get_caret_mut());
     }
 
@@ -297,14 +297,9 @@ impl MainWindow {
         if let Some(_handle) = self.update_thread_handle.take() {
             let _ = self.tx.send(SendData::Disconnect);
         }
-        self.buffer_parser = get_parser(
-            &data.term_caps.terminal,
-            data.use_ansi_music,
-            PathBuf::new(),
-        );
+        self.buffer_parser = get_parser(&data.term_caps.terminal, data.use_ansi_music, PathBuf::new());
         let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
 
-    
         self.update_thread_handle = Some(update_thread_handle);
         self.tx = tx;
         self.rx = rx;

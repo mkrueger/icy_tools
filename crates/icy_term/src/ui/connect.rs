@@ -46,9 +46,9 @@ impl OpenConnectionData {
 pub enum SendData {
     Data(Vec<u8>),
     Disconnect,
-    
+
     SetBaudRate(u32),
-    
+
     Upload(TransferProtocolType, Vec<PathBuf>),
     Download(TransferProtocolType),
     CancelTransfer,
