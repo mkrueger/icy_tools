@@ -146,24 +146,6 @@ impl MainWindow {
 
         view
     }
-
-    fn get_connection_back(&mut self) {
-        /*
-        if let Some(fts) = &mut self.current_file_transfer {
-            if let Some(handle) = fts.join_handle.take() {
-                if let Ok(join) = handle.join() {
-                    self.buffer_update_thread.lock().connection = Arc::new(Mutex::new(Some(join)));
-                    self.set_mode(MainWindowMode::ShowTerminal);
-                } else {
-                    panic!("Error joining file transfer thread.");
-                }
-            } else {
-                panic!("Error joining file transfer thread - no join handle.");
-            }
-        } else {
-            panic!("Error joining file transfer thread - no current file transfer.");
-        }*/
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

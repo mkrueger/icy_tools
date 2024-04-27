@@ -303,6 +303,10 @@ impl MainWindow {
 
         let data = OpenConnectionData::from(&cloned_addr, timeout, window_size, Some(self.get_options().modem.clone()));
 
+        if let Some(_handle) = self.update_thread_handle.take() {
+            let _ = self.tx.send(SendData::Disconnect);
+        }
+
         let (update_thread_handle, tx, rx) = crate::ui::buffer_update_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
 
         self.update_thread_handle = Some(update_thread_handle);
@@ -339,7 +343,8 @@ impl MainWindow {
     }
 
     pub fn hangup(&mut self) {
-        self.tx.send(SendData::Disconnect);
+        let _ = self.tx.send(SendData::Disconnect);
+        self.update_thread_handle = None;
         self.buffer_update_thread.lock().sound_thread.lock().clear();
         self.set_mode(MainWindowMode::ShowDialingDirectory);
     }

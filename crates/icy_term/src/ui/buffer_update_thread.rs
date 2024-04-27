@@ -5,6 +5,7 @@ use crate::{
     Res, TerminalResult,
 };
 use egui::mutex::Mutex;
+use glow::CW;
 use icy_engine::{
     ansi::{self, MusicOption},
     rip::bgi::MouseField,
@@ -147,6 +148,7 @@ impl BufferUpdateThread {
                 if let Err(r) = r {
                     log::error!("callbackaction::SendString: {r}");
                 }
+                connection.com.flush();
             }
             icy_engine::CallbackAction::PlayMusic(music) => {
                 let r = self.sound_thread.lock().play_music(music);

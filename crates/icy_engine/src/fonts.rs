@@ -469,9 +469,9 @@ fonts![
     (AMIGA_P0T_NOODLE, "Amiga/P0T-NOoDLE.psf", "P0T NOoDLE (Amiga)", 8, 16, 37),
     (AMIGA_MOSOUL, "Amiga/mOsOul.psf", "mO'sOul (Amiga)", 8, 16, 38),
     (AMIGA_MICROKNIGHTP, "Amiga/MicroKnight+.psf", "MicroKnight Plus (Amiga)", 8, 16, 39),
-    (AMIGA_TOPAZ_1P, "Amiga/Topaz1+.psf", "Topaz Plus (Amiga)", 8, 16, 40),
+    (AMIGA_TOPAZ_2P, "Amiga/Topaz2+.psf", "Topaz Plus (Amiga)", 8, 16, 40),
     (AMIGA_MICROKNIGHT, "Amiga/MicroKnight.psf", "MicroKnight (Amiga)", 8, 16, 41),
-    (AMIGA_TOPAZ_1, "Amiga/Topaz1.psf", "Topaz (Amiga)", 8, 16, 42),
+    (AMIGA_TOPAZ_2, "Amiga/Topaz2.psf", "Topaz (Amiga)", 8, 16, 42),
     (VIEWDATA, "Viewdata/saa5050.psf", "Viewdata", 6, 16),
 ];
 

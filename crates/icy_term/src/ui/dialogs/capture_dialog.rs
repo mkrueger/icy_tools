@@ -128,9 +128,11 @@ impl DialogState {
             }
             Some(Message::StopCapture) => {
                 self.capture_session = false;
+                return false;
             }
             Some(Message::StartCapture) => {
                 self.capture_session = true;
+                return false;
             }
             Some(Message::CloseDialog) => {
                 return false;
