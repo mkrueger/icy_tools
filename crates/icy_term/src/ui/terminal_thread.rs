@@ -65,7 +65,9 @@ impl TerminalThread {
         data: &[u8],
     ) -> TerminalResult<(u64, usize)> {
         self.sound_thread.lock().update_state()?;
-        Ok(self.update_buffer(ctx, connection, buffer_parser, data))
+        let res = self.update_buffer(ctx, connection, buffer_parser, data);
+        self.buffer_view.lock().get_buffer_mut().update_hyperlinks();
+        Ok(res)
     }
 
     fn update_buffer(&mut self, ctx: &egui::Context, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, data: &[u8]) -> (u64, usize) {
@@ -117,7 +119,6 @@ impl TerminalThread {
         }
 
         if has_data {
-            self.buffer_view.lock().get_buffer_mut().update_hyperlinks();
             (0, data.len())
         } else {
             (10, data.len())

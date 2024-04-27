@@ -17,7 +17,7 @@ impl Buffer {
     }
 
     pub fn parse_hyperlinks(&self) -> Vec<HyperLink> {
-        let mut result = Vec::new();
+        let mut result: Vec<HyperLink> = Vec::new();
 
         let mut pos = Position::new(self.get_width() - 1, self.get_height() - 1);
         let mut parser = rfind_url::Parser::new();
@@ -42,7 +42,6 @@ impl Buffer {
                 pos.x -= 1;
             }
         }
-
         result
     }
 
@@ -82,15 +81,11 @@ impl Buffer {
         }
     }
 
-    pub fn join_hyperlinks(&mut self, hyperlinks: Vec<HyperLink>) {
-        self.layers[0].hyperlinks.retain(|l| l.url.is_none());
-        for hl in &hyperlinks {
+    pub fn update_hyperlinks(&mut self) {
+        let links = self.parse_hyperlinks();
+        for hl in &links {
             self.underline(hl.position, hl.length);
         }
-        self.layers[0].hyperlinks.extend(hyperlinks);
-    }
-
-    pub fn update_hyperlinks(&mut self) {
-        self.join_hyperlinks(self.parse_hyperlinks());
+        self.layers[0].hyperlinks = links;
     }
 }

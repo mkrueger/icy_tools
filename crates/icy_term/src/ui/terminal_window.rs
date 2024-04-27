@@ -542,7 +542,9 @@ impl MainWindow {
                                 });
                                 hovered_link = true;
 
-                                if response.clicked_by(PointerButton::Primary) && response.is_pointer_button_down_on() {
+                                if response.clicked_by(PointerButton::Primary)
+                                /* && response.is_pointer_button_down_on() */
+                                {
                                     ui.ctx().output_mut(|o| {
                                         o.open_url = Some(egui::output::OpenUrl { url, new_tab: false });
                                     });
