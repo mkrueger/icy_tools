@@ -14,7 +14,7 @@ jobs:
         app: [icy_term, icy_draw, icy_view, icy_play]
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Prepare FILE_ID.DIZ
       run: |
         $VERSION=$(python tools\prep_diz.py ".\crates\${{ matrix.app }}\" "file_id.diz")
@@ -29,7 +29,7 @@ jobs:
         cd ..\..
         move .\target\release\${{ matrix.app }}.exe .
     - name: 'Upload executable'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.app }}_${{ env.VERSION }}_windows
         path: |
@@ -41,7 +41,7 @@ jobs:
         app: [icy_term, icy_draw, icy_view]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install cargo bundle & get
         run: |
           rustup target add aarch64-apple-darwin
@@ -50,12 +50,14 @@ jobs:
           brew install create-dmg
       - name: Build dmg
         run: |
+          cd crates/${{ matrix.app }}
           cargo build --release --target aarch64-apple-darwin
           cargo build --release --target x86_64-apple-darwin
+          cd ../..
 
           mkdir -p "${{ matrix.app }}.app/Contents/MacOS"
           mkdir -p "${{ matrix.app }}.app/Contents/Resources"
-          
+
           cp crates/${{ matrix.app }}/build/mac/Info.plist "${{ matrix.app }}.app/Contents/Info.plist"
 
           mkdir -p AppIcon.iconset
@@ -64,17 +66,17 @@ jobs:
           sips -z 32 32 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_32x32.png
           sips -z 64 64 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_32x32@2.png
           sips -z 128 128 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_128x128.png
-          cp crates/${{ matrix.app }}/build/mac/128x128@2x.png AppIcon.iconset/icon_128x128@2.png
+          cp crates/${{ matrix.app }}/build/mac/128x128@2x.png AppIcon.iconset/icon_128x128@2x.png
           iconutil -c icns AppIcon.iconset
           cp AppIcon.icns "${{ matrix.app }}.app/Contents/Resources"
           
-          $version=$(python tools/prep_diz.py "crates/${{ matrix.app }}/" "file_id.diz")
+          export version=$(python3 tools/prep_diz.py "crates/${{ matrix.app }}/" "file_id.diz")
           echo "VERSION=$version" >> $GITHUB_ENV
           echo "Version: $version"
 
           lipo "target/x86_64-apple-darwin/release/${{ matrix.app }}" \
                "target/aarch64-apple-darwin/release/${{ matrix.app }}" \
-               -create -output "${{ matrix.app }}_${{ env.VERSION }}.app/Contents/MacOS/${{ matrix.app }}"
+               -create -output "${{ matrix.app }}.app/Contents/MacOS/${{ matrix.app }}"
 #      - name: Install the Apple certificate and provisioning profile
 #        env:
 #          BUILD_CERTIFICATE_BASE64: ${{ secrets.OSX_CERTIFICATE_BASE64 }}
@@ -105,7 +107,7 @@ jobs:
           #codesign --force --deep --verbose --sign "mkrueger@posteo.de" "target/x86_64-apple-darwin/release/bundle/osx/${MAC_APP}.app/"
           #codesign --force --deep --verbose --sign "mkrueger@posteo.de" "target/aarch64-apple-darwin/release/bundle/osx/${MAC_APP}.app/"
           create-dmg \
-            --volname "${{ matrix.app }}} Installer" \
+            --volname "${{ matrix.app }} Installer" \
             --volicon "AppIcon.icns" \
             --window-pos 200 120 \
             --window-size 800 400 \
@@ -118,9 +120,9 @@ jobs:
 #          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
 #          # rm ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision       
       - name: 'Upload dmg'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}_osx_${{ env.VERSION }}_${{ matrix.target }}
+          name: ${{ matrix.app }}_osx_${{ env.VERSION }}_${{ matrix.target }}
           path: |
             ${{ matrix.app }}-${{ env.VERSION }}-universal.dmg
             file_id.diz
