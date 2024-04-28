@@ -221,6 +221,15 @@ impl MainWindow {
         if let Some((protocol_type, download)) = take {
             self.initiate_file_transfer(protocol_type, download);
         }
+
+        if self.update_thread_handle.is_some() && self.update_thread_handle.as_ref().unwrap().is_finished() {
+            let handle = self.update_thread_handle.take().unwrap();
+            if let Err(err) = handle.join() {
+                let err = format!("Error update thread crashed: {:?}", err.downcast_ref::<&str>());
+                log::error!("{err}");
+                self.output_string(&err);
+            }
+        }
     }
 
     fn show_terminal_area(&mut self, ui: &mut egui::Ui) {
