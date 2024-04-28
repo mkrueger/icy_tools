@@ -27,15 +27,15 @@ jobs:
        echo "Version: $version"
        cd crates/${{ matrix.app }}
        export DEB=$(cargo deb)
-       echo "Copy $DEB to ${{ matrix.app }}_${{ env.VERSION }}_amd64.deb"
-       mv $DEB ../../${{ matrix.app }}_${{ env.VERSION }}_amd64.deb
+       echo "Copy $DEB to ${{ matrix.app }}.deb"
+       mv $DEB "../../${{ matrix.app }}.deb"
        cd ../..
    - name: 'Upload deb'
      uses: actions/upload-artifact@v4
      with:
        name: ${{ matrix.app }}_linux_${{ env.VERSION }}
        path: |
-         ${{ matrix.app }}_${{ env.VERSION }}_amd64.deb
+         ${{ matrix.app }}.deb
          file_id.diz
   build_windows:
     strategy:
