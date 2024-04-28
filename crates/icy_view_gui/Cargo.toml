@@ -18,7 +18,7 @@ directories = { workspace = true }
 
 
 log = { workspace = true }
-env_logger = "0.11.1"
+env_logger = "0.11"
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 once_cell = { workspace = true }
