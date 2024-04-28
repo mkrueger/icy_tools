@@ -3,8 +3,8 @@ name = "icy_term"
 version = "0.7.5"
 authors.workspace = true
 edition.workspace = true
-description = "A terminal program supporting CP437, PetScii and ViewData"
 license.workspace = true
+description = "A terminal program supporting CP437, PetScii and ViewData"
 repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
@@ -96,7 +96,6 @@ copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 section="Network"
 copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 revision=""
-license-file="build/license.rtf"
 depends = "libasound2"
 assets = [
     ["target/release/icy_term", "/usr/bin/", "755"],

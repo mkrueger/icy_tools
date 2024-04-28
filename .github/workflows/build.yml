@@ -8,6 +8,35 @@ on:
 env:
   CARGO_TERM_COLOR: always
 jobs:
+  build_linux:
+   strategy:
+     matrix:
+       app: [icy_term, icy_draw, icy_view]
+   runs-on: ubuntu-latest
+   steps:
+   - uses: actions/checkout@v4
+   - name: Install required libraries
+     run: |
+       sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
+   - name: Build deb
+     id: build-deb
+     run: |
+       cargo install cargo-deb
+       export version=$(python3 tools/prep_diz.py "crates/${{ matrix.app }}/" "file_id.diz")
+       echo "VERSION=$version" >> $GITHUB_ENV
+       echo "Version: $version"
+       cd crates/${{ matrix.app }}
+       export DEB=$(cargo deb)
+       echo "Copy $DEB to ${{ matrix.app }}_${{ env.VERSION }}_amd64.deb"
+       mv $DEB ../../${{ matrix.app }}_${{ env.VERSION }}_amd64.deb
+       cd ../..
+   - name: 'Upload deb'
+     uses: actions/upload-artifact@v4
+     with:
+       name: ${{ matrix.app }}_linux_${{ env.VERSION }}
+       path: |
+         ${{ matrix.app }}_${{ env.VERSION }}_amd64.deb
+         file_id.diz
   build_windows:
     strategy:
       matrix:
@@ -77,35 +106,10 @@ jobs:
           lipo "target/x86_64-apple-darwin/release/${{ matrix.app }}" \
                "target/aarch64-apple-darwin/release/${{ matrix.app }}" \
                -create -output "${{ matrix.app }}.app/Contents/MacOS/${{ matrix.app }}"
-#      - name: Install the Apple certificate and provisioning profile
-#        env:
-#          BUILD_CERTIFICATE_BASE64: ${{ secrets.OSX_CERTIFICATE_BASE64 }}
-#          P12_PASSWORD: ${{ secrets.OSX_CERTIFICATE_PASSWORD }}
-#          KEYCHAIN_PASSWORD: ${{ secrets.OSX_CERTIFICATE_PASSWORD }}
-#        run: |
-#          # create variables
-#          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-#          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-#          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-#
-#          # import certificate and provisioning profile from secrets
-#          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-#
-#          # create temporary keychain
-#          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-#          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-#          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-#
-#          # import certificate to keychain
-#          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-#          security list-keychain -d user -s $KEYCHAIN_PATH
-#
+
       - name: Sign dmg
         id: sign-bundle
         run: |
-
-          #codesign --force --deep --verbose --sign "mkrueger@posteo.de" "target/x86_64-apple-darwin/release/bundle/osx/${MAC_APP}.app/"
-          #codesign --force --deep --verbose --sign "mkrueger@posteo.de" "target/aarch64-apple-darwin/release/bundle/osx/${MAC_APP}.app/"
           create-dmg \
             --volname "${{ matrix.app }} Installer" \
             --volicon "AppIcon.icns" \
@@ -116,10 +120,6 @@ jobs:
             --app-drop-link 600 185 \
             "${{ matrix.app }}-${{ env.VERSION }}-universal.dmg" \
             "${{ matrix.app }}.app"
-#      - name: Clean up keychain and provisioning profile
-#        run: |
-#          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
-#          # rm ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision       
       - name: 'Upload dmg'
         uses: actions/upload-artifact@v4
         with:

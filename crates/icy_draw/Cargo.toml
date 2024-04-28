@@ -76,7 +76,6 @@ copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 section="Network"
 copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 revision=""
-license-file="build/license.rtf"
 assets = [
     ["target/release/icy_draw", "/usr/bin/", "755"],
     ["build/linux/icy_draw.desktop", "/usr/share/applications/", "644"],

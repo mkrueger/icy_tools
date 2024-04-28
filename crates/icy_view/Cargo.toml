@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/mkrueger/icy_tools"
+description = "An file viewer for ANSI & ASCII art and other text-based art forms."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -51,7 +52,6 @@ copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
 section="utils"
 copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
 revision=""
-license-file="build/license.rtf"
 depends = "libasound2"
 assets = [
     ["target/release/icy_view", "/usr/bin/", "755"],
