@@ -338,6 +338,7 @@ fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Connecti
             Credentials {
                 user_name: connection_data.user_name.clone(),
                 password: connection_data.password.clone(),
+                proxy_command: connection_data.proxy_command.clone(),
             },
         )?)),
         icy_net::ConnectionType::Modem => {

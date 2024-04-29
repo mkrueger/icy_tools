@@ -95,6 +95,7 @@ impl MainWindow {
             timeout: Duration::from_secs(1000),
             use_ansi_music: icy_engine::ansi::MusicOption::Off,
             baud_emulation: icy_engine::ansi::BaudEmulation::Off,
+            proxy_command: None,
             term_caps: TermCaps {
                 window_size: (0, 0),
                 terminal: TerminalEmulation::Ascii,

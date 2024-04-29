@@ -17,6 +17,7 @@ pub struct OpenConnectionData {
     pub use_ansi_music: MusicOption,
     pub term_caps: TermCaps,
     pub modem: Option<Modem>,
+    pub proxy_command: Option<String>,
 }
 
 impl OpenConnectionData {
@@ -31,6 +32,11 @@ impl OpenConnectionData {
             user_name: call_adr.user_name.clone(),
             password: call_adr.password.clone(),
             use_ansi_music: call_adr.ansi_music,
+            proxy_command: if call_adr.proxy_command.is_empty() {
+                None
+            } else {
+                Some(call_adr.proxy_command.clone())
+            },
             timeout,
             term_caps: TermCaps {
                 window_size: (window_size.width as u16, window_size.height as u16),

@@ -161,6 +161,7 @@ pub struct Address {
     pub address: String,
     pub auto_login: String,
     pub protocol: ConnectionType,
+    pub proxy_command: String,
 
     pub ice_mode: bool,
     pub ansi_music: MusicOption,
@@ -259,6 +260,7 @@ impl Address {
             screen_mode: ScreenMode::default(),
             auto_login: String::new(),
             address: String::new(),
+            proxy_command: String::new(),
             protocol: ConnectionType::Telnet,
             ansi_music: MusicOption::default(),
             ice_mode: true,
