@@ -42,6 +42,7 @@ toml = "0.8.12"
 bstr = "1.9.1"
 regex = "1.9.5"
 directories = "5.0.1"
+tokio = { version = "1.37.0", features = ["full"] }
 
 egui = "0.27.2"
 eframe = "0.27.2"

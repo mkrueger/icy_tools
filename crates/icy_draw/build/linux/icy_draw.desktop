@@ -8,3 +8,4 @@ Icon=icy_draw
 Exec=/usr/bin/icy_draw
 StartupWMClass=icy_draw
 Terminal=false
+MimeType=image/png

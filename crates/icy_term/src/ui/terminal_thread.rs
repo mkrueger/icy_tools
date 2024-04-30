@@ -9,12 +9,13 @@ use egui::mutex::Mutex;
 use icy_engine::{ansi::MusicOption, rip::bgi::MouseField, BufferParser, Caret};
 use icy_engine_gui::BufferView;
 use icy_net::{
-    modem::{ModemConfiguration, ModemConnection, Serial},
+    // modem::{ModemConfiguration, ModemConnection, Serial},
     protocol::{TransferProtocolType, TransferState},
     raw::RawConnection,
-    ssh::{Credentials, SSHConnection},
+    // ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TerminalEmulation},
-    Connection, NullConnection,
+    Connection,
+    NullConnection,
 };
 use std::{
     collections::VecDeque,
@@ -23,6 +24,7 @@ use std::{
     sync::{mpsc, Arc},
     thread,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use web_time::{Duration, Instant};
 
 use super::{
@@ -57,7 +59,7 @@ pub struct TerminalThread {
 }
 
 impl TerminalThread {
-    pub fn update_state(
+    pub async fn update_state(
         &mut self,
         ctx: &egui::Context,
         connection: &mut ConnectionThreadData,
@@ -65,12 +67,18 @@ impl TerminalThread {
         data: &[u8],
     ) -> TerminalResult<(u64, usize)> {
         self.sound_thread.lock().update_state()?;
-        let res = self.update_buffer(ctx, connection, buffer_parser, data);
+        let res = self.update_buffer(ctx, connection, buffer_parser, data).await;
         self.buffer_view.lock().get_buffer_mut().update_hyperlinks();
         Ok(res)
     }
 
-    fn update_buffer(&mut self, ctx: &egui::Context, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, data: &[u8]) -> (u64, usize) {
+    async fn update_buffer(
+        &mut self,
+        ctx: &egui::Context,
+        connection: &mut ConnectionThreadData,
+        buffer_parser: &mut dyn BufferParser,
+        data: &[u8],
+    ) -> (u64, usize) {
         let has_data = !data.is_empty();
         if !self.enabled {
             return (10, 0);
@@ -83,7 +91,7 @@ impl TerminalThread {
                 let Some(act) = buffer_parser.get_next_action(self.buffer_view.lock().get_buffer_mut(), &mut caret, 0) else {
                     break;
                 };
-                let (p, ms) = self.handle_action(act, connection, &mut self.buffer_view.lock());
+                let (p, ms) = self.handle_action(act, connection).await;
                 if p {
                     self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
                     ctx.request_repaint();
@@ -103,12 +111,12 @@ impl TerminalThread {
             }
             if let Some(autologin) = &mut self.auto_login {
                 if let Ok(Some(data)) = autologin.try_login(ch) {
-                    connection.com.write_all(&data).unwrap();
+                    connection.com.write_all(&data).await.unwrap();
                     autologin.logged_in = true;
                 }
             }
             self.capture_dialog.append_data(ch);
-            let (p, ms) = self.print_char(connection, &mut self.buffer_view.lock(), buffer_parser, ch);
+            let (p, ms) = self.print_char(connection, buffer_parser, ch).await;
             idx += 1;
 
             if p {
@@ -125,16 +133,15 @@ impl TerminalThread {
         }
     }
 
-    pub fn print_char(&self, connection: &mut ConnectionThreadData, buffer_view: &mut BufferView, buffer_parser: &mut dyn BufferParser, c: u8) -> (bool, u32) {
+    pub async fn print_char(&self, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, c: u8) -> (bool, u32) {
         let mut caret: Caret = Caret::default();
-        mem::swap(&mut caret, buffer_view.get_caret_mut());
-        let buffer = buffer_view.get_buffer_mut();
-        let result = buffer_parser.print_char(buffer, 0, &mut caret, c as char);
-        mem::swap(&mut caret, buffer_view.get_caret_mut());
+        mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
+        let result = buffer_parser.print_char(self.buffer_view.lock().get_buffer_mut(), 0, &mut caret, c as char);
+        mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
 
         match result {
             Ok(action) => {
-                return self.handle_action(action, connection, buffer_view);
+                return self.handle_action(action, connection).await;
             }
 
             Err(err) => {
@@ -144,10 +151,10 @@ impl TerminalThread {
         (false, 0)
     }
 
-    fn handle_action(&self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData, buffer_view: &mut BufferView) -> (bool, u32) {
+    async fn handle_action(&self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData) -> (bool, u32) {
         match result {
             icy_engine::CallbackAction::SendString(result) => {
-                let r = connection.com.write_all(result.as_bytes());
+                let r = connection.com.write_all(result.as_bytes()).await;
                 if let Err(r) = r {
                     log::error!("callbackaction::SendString: {r}");
                 }
@@ -169,7 +176,7 @@ impl TerminalThread {
                 connection.baud_rate = baud_emulation.get_baud_rate();
             }
             icy_engine::CallbackAction::ResizeTerminal(_, _) => {
-                buffer_view.redraw_view();
+                return (true, 0);
             }
 
             icy_engine::CallbackAction::NoUpdate => {
@@ -186,35 +193,6 @@ impl TerminalThread {
         }
         (false, 0)
     }
-
-    pub fn read_data(&mut self, connection: &mut ConnectionThreadData, output: &mut Vec<u8>) -> bool {
-        if connection.data_buffer.is_empty() {
-            let mut data = [0; 1024 * 64];
-            match connection.com.read(&mut data) {
-                Ok(bytes) => {
-                    connection.data_buffer.extend(&data[0..bytes]);
-                }
-                Err(err) => {
-                    log::error!("connection_thread::read_data2: {err}");
-                    return false;
-                }
-            }
-        }
-
-        if connection.baud_rate == 0 {
-            output.extend(connection.data_buffer.drain(..));
-        } else {
-            let cur_time = Instant::now();
-            let bytes_per_sec = connection.baud_rate / BITS_PER_BYTE;
-            let elapsed_ms = cur_time.duration_since(connection.last_send_time).as_millis() as u32;
-            let bytes_to_send: usize = ((bytes_per_sec.saturating_mul(elapsed_ms)) / 1000).min(connection.data_buffer.len() as u32) as usize;
-            if bytes_to_send > 0 {
-                output.extend(connection.data_buffer.drain(..bytes_to_send));
-                connection.last_send_time = cur_time;
-            }
-        }
-        true
-    }
 }
 
 pub fn start_update_thread(
@@ -228,83 +206,111 @@ pub fn start_update_thread(
 
     (
         thread::spawn(move || {
-            let mut data = Vec::new();
-            let mut idx = 0;
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(4)
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let mut idx = 0;
 
-            let mut buffer_parser = get_parser(
-                &connection_data.term_caps.terminal,
-                connection_data.use_ansi_music,
-                update_thread.lock().cache_directory.clone(),
-            );
-            let com: Box<dyn Connection> = match open_connection(&connection_data) {
-                Ok(com) => com,
-                Err(err) => {
-                    let _ = tx.send(SendData::Disconnect);
-                    println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
-                    update_thread.lock().is_connected = false;
-                    return;
-                }
-            };
-            update_thread.lock().is_connected = true;
-            update_thread.lock().connection_time = Instant::now();
-
-            let mut connection = ConnectionThreadData {
-                is_connected: false,
-                com,
-                baud_rate: connection_data.baud_emulation.get_baud_rate(),
-                data_buffer: VecDeque::new(),
-                thread_is_running: true,
-                tx: tx,
-                last_send_time: Instant::now(),
-                rx: rx2,
-            };
-            loop {
-                if idx >= data.len() {
-                    data.clear();
-                    let lock = &mut update_thread.lock();
-                    if !lock.read_data(&mut connection, &mut data) {
-                        break;
-                    }
-                    idx = 0;
-                }
-                if idx < data.len() {
-                    {
-                        let _lock = &mut update_thread.lock();
-                    }
-                    let update_state = update_thread.lock().update_state(&ctx, &mut connection, &mut *buffer_parser, &data[idx..]);
-                    match update_state {
+                    let mut buffer_parser = get_parser(
+                        &connection_data.term_caps.terminal,
+                        connection_data.use_ansi_music,
+                        update_thread.lock().cache_directory.clone(),
+                    );
+                    let com: Box<dyn Connection> = match open_connection(&connection_data).await {
+                        Ok(com) => com,
                         Err(err) => {
+                            let _ = tx.send(SendData::Disconnect);
                             println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
-                            log::error!("run_update_thread::update_state: {err}");
-                            idx = data.len();
+                            update_thread.lock().is_connected = false;
+                            return;
                         }
-                        Ok((sleep_ms, parsed_data)) => {
-                            let data = buffer_parser.get_picture_data();
-                            if data.is_some() {
-                                update_thread.lock().mouse_field = buffer_parser.get_mouse_fields();
-                                update_thread.lock().buffer_view.lock().set_reference_image(data);
-                            }
-                            if sleep_ms > 0 {
-                                thread::sleep(Duration::from_millis(sleep_ms));
-                            }
-                            idx += parsed_data;
-                        }
-                    }
-                } else {
-                    data.clear();
-                    thread::sleep(Duration::from_millis(10));
-                }
+                    };
+                    update_thread.lock().is_connected = true;
+                    update_thread.lock().connection_time = Instant::now();
 
-                if let Err(_err) = handle_receive(&mut connection, &update_thread) {
-                    println(&update_thread, &mut buffer_parser, &format!("\nNO CARRIER\n"));
-                    update_thread.lock().is_connected = false;
-                    return;
-                }
-            }
+                    let mut connection = ConnectionThreadData {
+                        is_connected: false,
+                        com,
+                        baud_rate: connection_data.baud_emulation.get_baud_rate(),
+                        data_buffer: VecDeque::new(),
+                        thread_is_running: true,
+                        tx: tx,
+                        last_send_time: Instant::now(),
+                        rx: rx2,
+                    };
+                    let mut data = [0; 1024 * 64];
+
+                    loop {
+                        tokio::select! {
+
+                            Ok(size) = connection.com.read(&mut data) => {
+                                let mut idx = 0;
+                                while idx < size {
+                                    let update_state = update_thread.lock().update_state(&ctx, &mut connection, &mut *buffer_parser, &data[idx..]).await;
+                                    match &update_state {
+                                        Err(err) => {
+                                            println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
+                                            log::error!("run_update_thread::update_state: {err}");
+                                            idx = size;
+                                        }
+                                        Ok((sleep_ms, parsed_data)) => {
+                                            let data = buffer_parser.get_picture_data();
+                                            if data.is_some() {
+                                                update_thread.lock().mouse_field = buffer_parser.get_mouse_fields();
+                                                update_thread.lock().buffer_view.lock().set_reference_image(data);
+                                            }
+                                            if *sleep_ms > 0 {
+                                                thread::sleep(Duration::from_millis(*sleep_ms));
+                                            }
+                                            idx += parsed_data;
+                                        }
+                                    }
+                                }
+                            }
+                            else => {
+                                if let Ok(data) = connection.rx.try_recv() {
+                                    handle_receive(&mut connection, data, &update_thread).await;
+                                }
+                            }
+                        };
+                    }
+                });
         }),
         tx2,
         rx,
     )
+}
+
+pub async fn read_data(connection: &mut ConnectionThreadData, output: &mut Vec<u8>) -> bool {
+    if connection.data_buffer.is_empty() {
+        let mut data = [0; 1024 * 64];
+        match connection.com.read(&mut data).await {
+            Ok(bytes) => {
+                connection.data_buffer.extend(&data[0..bytes]);
+            }
+            Err(err) => {
+                log::error!("connection_thread::read_data: {err}");
+                return false;
+            }
+        }
+    }
+
+    if connection.baud_rate == 0 {
+        output.extend(connection.data_buffer.drain(..));
+    } else {
+        let cur_time = Instant::now();
+        let bytes_per_sec = connection.baud_rate / BITS_PER_BYTE;
+        let elapsed_ms = cur_time.duration_since(connection.last_send_time).as_millis() as u32;
+        let bytes_to_send: usize = ((bytes_per_sec.saturating_mul(elapsed_ms)) / 1000).min(connection.data_buffer.len() as u32) as usize;
+        if bytes_to_send > 0 {
+            output.extend(connection.data_buffer.drain(..bytes_to_send));
+            connection.last_send_time = cur_time;
+        }
+    }
+    true
 }
 
 fn println(update_thread: &Arc<Mutex<TerminalThread>>, buffer_parser: &mut Box<dyn BufferParser>, str: &str) {
@@ -320,74 +326,73 @@ fn println(update_thread: &Arc<Mutex<TerminalThread>>, buffer_parser: &mut Box<d
     mem::swap(&mut caret, bv.get_caret_mut());
 }
 
-fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Connection>> {
+async fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Connection>> {
     if connection_data.term_caps.window_size.0 == 0 {
         return Ok(Box::new(NullConnection {}));
     }
 
     match connection_data.connection_type {
-        icy_net::ConnectionType::Raw => Ok(Box::new(RawConnection::open(&connection_data.address, connection_data.timeout.clone())?)),
-        icy_net::ConnectionType::Telnet => Ok(Box::new(TelnetConnection::open(
-            &connection_data.address,
-            connection_data.term_caps.clone(),
-            connection_data.timeout.clone(),
-        )?)),
-        icy_net::ConnectionType::SSH => Ok(Box::new(SSHConnection::open(
-            &connection_data.address,
-            connection_data.term_caps.clone(),
-            Credentials {
-                user_name: connection_data.user_name.clone(),
-                password: connection_data.password.clone(),
-                proxy_command: connection_data.proxy_command.clone(),
-            },
-        )?)),
-        icy_net::ConnectionType::Modem => {
-            let Some(m) = &connection_data.modem else {
-                return Err("Modem configuration is required for modem connections".into());
-            };
-            let serial = Serial {
-                device: m.device.clone(),
-                baud_rate: m.baud_rate,
-                char_size: m.char_size,
-                parity: m.parity,
-                stop_bits: m.stop_bits,
-                flow_control: m.flow_control,
-            };
-            let modem = ModemConfiguration {
-                init_string: m.init_string.clone(),
-                dial_string: m.dial_string.clone(),
-            };
-            Ok(Box::new(ModemConnection::open(serial, modem, connection_data.address.clone())?))
-        }
-        icy_net::ConnectionType::Websocket => Ok(Box::new(icy_net::websocket::connect(&connection_data.address, false)?)),
-        icy_net::ConnectionType::SecureWebsocket => Ok(Box::new(icy_net::websocket::connect(&connection_data.address, true)?)),
-
+        icy_net::ConnectionType::Raw => Ok(Box::new(RawConnection::open(&connection_data.address, connection_data.timeout.clone()).await?)),
+        icy_net::ConnectionType::Telnet => Ok(Box::new(
+            TelnetConnection::open(&connection_data.address, connection_data.term_caps.clone(), connection_data.timeout.clone()).await?,
+        )),
+        /*
+                icy_net::ConnectionType::SSH => Ok(Box::new(SSHConnection::open(
+                    &connection_data.address,
+                    connection_data.term_caps.clone(),
+                    Credentials {
+                        user_name: connection_data.user_name.clone(),
+                        password: connection_data.password.clone(),
+                        proxy_command: connection_data.proxy_command.clone(),
+                    },
+                ).await?)),
+                icy_net::ConnectionType::Modem => {
+                    let Some(m) = &connection_data.modem else {
+                        return Err("Modem configuration is required for modem connections".into());
+                    };
+                    let serial = Serial {
+                        device: m.device.clone(),
+                        baud_rate: m.baud_rate,
+                        char_size: m.char_size,
+                        parity: m.parity,
+                        stop_bits: m.stop_bits,
+                        flow_control: m.flow_control,
+                    };
+                    let modem = ModemConfiguration {
+                        init_string: m.init_string.clone(),
+                        dial_string: m.dial_string.clone(),
+                    };
+                    Ok(Box::new(ModemConnection::open(serial, modem, connection_data.address.clone())?))
+                }
+                icy_net::ConnectionType::Websocket => Ok(Box::new(icy_net::websocket::connect(&connection_data.address, false).await?)),
+                icy_net::ConnectionType::SecureWebsocket => Ok(Box::new(icy_net::websocket::connect(&connection_data.address, true).await?)),
+        */
         _ => Ok(Box::new(NullConnection {})),
     }
 }
 
-fn handle_receive(c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
-    match c.rx.try_recv() {
-        Ok(SendData::Data(buf)) => {
-            c.com.write_all(&buf)?;
+async fn handle_receive(c: &mut ConnectionThreadData, data: SendData, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+    match data {
+        SendData::Data(buf) => {
+            c.com.write_all(&buf).await?;
         }
 
-        Ok(SendData::SetBaudRate(baud)) => {
+        SendData::SetBaudRate(baud) => {
             c.baud_rate = baud;
         }
 
-        Ok(SendData::Disconnect) => {
-            c.com.shutdown()?;
+        SendData::Disconnect => {
+            c.com.shutdown().await?;
         }
 
-        Ok(SendData::Upload(protocol, files)) => {
-            if let Err(err) = upload(c, protocol, files, update_thread) {
+        SendData::Upload(protocol, files) => {
+            if let Err(err) = upload(c, protocol, files, update_thread).await {
                 log::error!("Failed to upload files: {err}");
             }
         }
 
-        Ok(SendData::Download(protocol)) => {
-            if let Err(err) = download(c, protocol, update_thread) {
+        SendData::Download(protocol) => {
+            if let Err(err) = download(c, protocol, update_thread).await {
                 log::error!("Failed to download files: {err}");
             }
         }
@@ -397,15 +402,15 @@ fn handle_receive(c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<Termin
     Ok(())
 }
 
-fn download(c: &mut ConnectionThreadData, protocol: TransferProtocolType, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+async fn download(c: &mut ConnectionThreadData, protocol: TransferProtocolType, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
     let mut prot = protocol.create();
-    let mut transfer_state = prot.initiate_recv(&mut *c.com)?;
+    let mut transfer_state = prot.initiate_recv(&mut *c.com).await?;
     while !transfer_state.is_finished {
-        prot.update_transfer(&mut *c.com, &mut transfer_state)?;
+        prot.update_transfer(&mut *c.com, &mut transfer_state).await?;
         update_thread.lock().current_transfer = transfer_state.clone();
         match c.rx.try_recv() {
             Ok(SendData::CancelTransfer) => {
-                prot.cancel_transfer(&mut *c.com)?;
+                prot.cancel_transfer(&mut *c.com).await?;
                 break;
             }
             _ => {}
@@ -416,15 +421,15 @@ fn download(c: &mut ConnectionThreadData, protocol: TransferProtocolType, update
     Ok(())
 }
 
-fn upload(c: &mut ConnectionThreadData, protocol: TransferProtocolType, files: Vec<PathBuf>, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+async fn upload(c: &mut ConnectionThreadData, protocol: TransferProtocolType, files: Vec<PathBuf>, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
     let mut prot = protocol.create();
-    let mut transfer_state = prot.initiate_send(&mut *c.com, &files)?;
+    let mut transfer_state = prot.initiate_send(&mut *c.com, &files).await?;
     while !transfer_state.is_finished {
-        prot.update_transfer(&mut *c.com, &mut transfer_state)?;
+        prot.update_transfer(&mut *c.com, &mut transfer_state).await?;
         update_thread.lock().current_transfer = transfer_state.clone();
         match c.rx.try_recv() {
             Ok(SendData::CancelTransfer) => {
-                prot.cancel_transfer(&mut *c.com)?;
+                prot.cancel_transfer(&mut *c.com).await?;
                 break;
             }
             _ => {}
