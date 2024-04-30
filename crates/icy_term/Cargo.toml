@@ -8,8 +8,8 @@ description = "A terminal program supporting CP437, PetScii and ViewData"
 repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
-#icy_net = { git ="https://github.com/mkrueger/icy_board" }
-icy_net = { path ="../../../icy_board/crates/icy_net" }
+icy_net = { git ="https://github.com/mkrueger/icy_board" }
+#icy_net = { path ="../../../icy_board/crates/icy_net" }
 
 egui = { workspace = true }
 eframe = { workspace = true }

@@ -17,14 +17,8 @@ use icy_net::{
     Connection,
     NullConnection,
 };
-use std::{
-    collections::VecDeque,
-    mem,
-    path::PathBuf,
-    sync::{mpsc, Arc},
-    thread,
-};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::{collections::VecDeque, mem, path::PathBuf, sync::Arc, thread};
+use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
 
 use super::{
@@ -32,8 +26,6 @@ use super::{
     connect::{OpenConnectionData, SendData},
     dialogs,
 };
-const BITS_PER_BYTE: u32 = 8;
-
 pub struct TerminalThread {
     pub capture_dialog: dialogs::capture_dialog::DialogState,
 
@@ -68,7 +60,6 @@ impl TerminalThread {
     ) -> TerminalResult<(u64, usize)> {
         self.sound_thread.lock().update_state()?;
         let res = self.update_buffer(ctx, connection, buffer_parser, data).await;
-        self.buffer_view.lock().get_buffer_mut().update_hyperlinks();
         Ok(res)
     }
 
@@ -87,19 +78,24 @@ impl TerminalThread {
         {
             let mut caret: Caret = Caret::default();
             mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
+            let mut update = false;
+            let mut ms = 0;
             loop {
                 let Some(act) = buffer_parser.get_next_action(self.buffer_view.lock().get_buffer_mut(), &mut caret, 0) else {
                     break;
                 };
-                let (p, ms) = self.handle_action(act, connection).await;
-                if p {
-                    self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
-                    ctx.request_repaint();
-                    mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-
-                    return (ms as u64, 0);
-                }
+                let (p, _ms) = self.handle_action(act, connection).await;
+                update |= p;
+                ms = _ms.max(ms);
             }
+
+            if update {
+                self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
+                ctx.request_repaint();
+                mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
+                return (ms as u64, 0);
+            }
+
             mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
         }
 
@@ -111,7 +107,7 @@ impl TerminalThread {
             }
             if let Some(autologin) = &mut self.auto_login {
                 if let Ok(Some(data)) = autologin.try_login(ch) {
-                    connection.com.write_all(&data).await.unwrap();
+                    connection.com.send(&data).await.unwrap();
                     autologin.logged_in = true;
                 }
             }
@@ -154,11 +150,10 @@ impl TerminalThread {
     async fn handle_action(&self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData) -> (bool, u32) {
         match result {
             icy_engine::CallbackAction::SendString(result) => {
-                let r = connection.com.write_all(result.as_bytes()).await;
+                let r = connection.com.send(result.as_bytes()).await;
                 if let Err(r) = r {
                     log::error!("callbackaction::SendString: {r}");
                 }
-                let _ = connection.com.flush();
             }
             icy_engine::CallbackAction::PlayMusic(music) => {
                 let r = self.sound_thread.lock().play_music(music);
@@ -201,9 +196,8 @@ pub fn start_update_thread(
     update_thread: Arc<Mutex<TerminalThread>>,
 ) -> (thread::JoinHandle<()>, mpsc::Sender<SendData>, mpsc::Receiver<SendData>) {
     let ctx = ctx.clone();
-    let (tx, rx) = mpsc::channel::<SendData>();
-    let (tx2, rx2) = mpsc::channel::<SendData>();
-
+    let (tx, rx) = mpsc::channel(32);
+    let (tx2, rx2) = mpsc::channel(32);
     (
         thread::spawn(move || {
             tokio::runtime::Builder::new_multi_thread()
@@ -212,8 +206,6 @@ pub fn start_update_thread(
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let mut idx = 0;
-
                     let mut buffer_parser = get_parser(
                         &connection_data.term_caps.terminal,
                         connection_data.use_ansi_music,
@@ -245,11 +237,10 @@ pub fn start_update_thread(
 
                     loop {
                         tokio::select! {
-
-                            Ok(size) = connection.com.read(&mut data) => {
+                            Ok(size) = connection.com.receive(&mut data) => {
                                 let mut idx = 0;
                                 while idx < size {
-                                    let update_state = update_thread.lock().update_state(&ctx, &mut connection, &mut *buffer_parser, &data[idx..]).await;
+                                    let update_state = update_thread.lock().update_state(&ctx, &mut connection, &mut *buffer_parser, &data[idx..size]).await;
                                     match &update_state {
                                         Err(err) => {
                                             println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
@@ -265,15 +256,14 @@ pub fn start_update_thread(
                                             if *sleep_ms > 0 {
                                                 thread::sleep(Duration::from_millis(*sleep_ms));
                                             }
-                                            idx += parsed_data;
+                                            idx += *parsed_data;
                                         }
                                     }
                                 }
+                                update_thread.lock().buffer_view.lock().get_buffer_mut().update_hyperlinks();
                             }
-                            else => {
-                                if let Ok(data) = connection.rx.try_recv() {
-                                    handle_receive(&mut connection, data, &update_thread).await;
-                                }
+                            Some(data) = connection.rx.recv() => {
+                                let _ = handle_receive(&mut connection, data, &update_thread).await;
                             }
                         };
                     }
@@ -282,35 +272,6 @@ pub fn start_update_thread(
         tx2,
         rx,
     )
-}
-
-pub async fn read_data(connection: &mut ConnectionThreadData, output: &mut Vec<u8>) -> bool {
-    if connection.data_buffer.is_empty() {
-        let mut data = [0; 1024 * 64];
-        match connection.com.read(&mut data).await {
-            Ok(bytes) => {
-                connection.data_buffer.extend(&data[0..bytes]);
-            }
-            Err(err) => {
-                log::error!("connection_thread::read_data: {err}");
-                return false;
-            }
-        }
-    }
-
-    if connection.baud_rate == 0 {
-        output.extend(connection.data_buffer.drain(..));
-    } else {
-        let cur_time = Instant::now();
-        let bytes_per_sec = connection.baud_rate / BITS_PER_BYTE;
-        let elapsed_ms = cur_time.duration_since(connection.last_send_time).as_millis() as u32;
-        let bytes_to_send: usize = ((bytes_per_sec.saturating_mul(elapsed_ms)) / 1000).min(connection.data_buffer.len() as u32) as usize;
-        if bytes_to_send > 0 {
-            output.extend(connection.data_buffer.drain(..bytes_to_send));
-            connection.last_send_time = cur_time;
-        }
-    }
-    true
 }
 
 fn println(update_thread: &Arc<Mutex<TerminalThread>>, buffer_parser: &mut Box<dyn BufferParser>, str: &str) {
@@ -374,7 +335,7 @@ async fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Co
 async fn handle_receive(c: &mut ConnectionThreadData, data: SendData, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
     match data {
         SendData::Data(buf) => {
-            c.com.write_all(&buf).await?;
+            c.com.send(&buf).await?;
         }
 
         SendData::SetBaudRate(baud) => {
@@ -425,15 +386,19 @@ async fn upload(c: &mut ConnectionThreadData, protocol: TransferProtocolType, fi
     let mut prot = protocol.create();
     let mut transfer_state = prot.initiate_send(&mut *c.com, &files).await?;
     while !transfer_state.is_finished {
-        prot.update_transfer(&mut *c.com, &mut transfer_state).await?;
-        update_thread.lock().current_transfer = transfer_state.clone();
-        match c.rx.try_recv() {
-            Ok(SendData::CancelTransfer) => {
-                prot.cancel_transfer(&mut *c.com).await?;
-                break;
+        tokio::select! {
+            Ok(()) = prot.update_transfer(&mut *c.com, &mut transfer_state) => {
             }
-            _ => {}
-        }
+            data = c.rx.recv() => {
+                match data {
+                    Some(SendData::CancelTransfer) => {
+                        prot.cancel_transfer(&mut *c.com).await?;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        };
     }
     // needed for potential bi-directional protocols
     copy_downloaded_files(&mut transfer_state)?;

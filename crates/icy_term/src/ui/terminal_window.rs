@@ -578,7 +578,7 @@ impl MainWindow {
         for (k, m) in key_map {
             if *k == key_code {
                 if self.buffer_update_thread.lock().is_connected {
-                    self.send_data(m.to_vec());
+                    self.send_vec(m.to_vec());
                 } else {
                     for c in *m {
                         self.print_char(*c);

@@ -10,9 +10,11 @@ use icy_net::protocol::TransferProtocolType;
 use icy_net::telnet::TerminalEmulation;
 use std::mem;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use std::thread::{sleep, JoinHandle};
 use std::time::Instant;
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc;
 
 use eframe::egui::Key;
 
@@ -39,16 +41,16 @@ pub mod terminal_thread;
 #[macro_export]
 macro_rules! check_error {
     ($main_window: expr, $res: expr, $terminate_connection: expr) => {{
-        if let Err(err) = $res {
+        /*   if let Err(err) = $res {
             log::error!("{err}");
             $main_window.output_string(format!("\n\r{err}\n\r").as_str());
-            /*
+
             if $terminate_connection {
                 if let Some(con) = $main_window.buffer_update_thread.lock().connection.lock().as_mut() {
                     con.disconnect().unwrap_or_default();
                 }
-            }*/
-        }
+            }
+        }*/
     }};
 }
 
@@ -152,7 +154,7 @@ impl MainWindow {
     pub fn output_char(&mut self, ch: char) {
         let translated_char = self.buffer_view.lock().get_unicode_converter().convert_from_unicode(ch, 0);
         if self.buffer_update_thread.lock().is_connected {
-            self.send_data(vec![translated_char as u8]);
+            self.send_vec(vec![translated_char as u8]);
         } else {
             self.print_char(translated_char as u8);
         }
@@ -165,7 +167,7 @@ impl MainWindow {
                 let translated_char = self.buffer_view.lock().get_unicode_converter().convert_from_unicode(ch, 0);
                 v.push(translated_char as u8);
             }
-            self.send_data(v);
+            self.send_vec(v);
         } else {
             for ch in str.chars() {
                 let translated_char = self.buffer_view.lock().get_unicode_converter().convert_from_unicode(ch, 0);
@@ -192,13 +194,16 @@ impl MainWindow {
     #[cfg(not(target_arch = "wasm32"))]
     fn upload(&mut self, protocol_type: TransferProtocolType, files: Vec<PathBuf>) {
         self.set_mode(MainWindowMode::FileTransfer(false));
-        let r = self.tx.send(SendData::Upload(protocol_type, files));
-        check_error!(self, r, false);
+        self.send_data(SendData::Upload(protocol_type, files));
+
+        //        check_error!(self, r, false);
     }
 
     fn download(&mut self, protocol_type: TransferProtocolType) {
         self.set_mode(MainWindowMode::FileTransfer(true));
-        let r = self.tx.send(SendData::Download(protocol_type));
+        self.send_data(SendData::Download(protocol_type));
+
+        //let r = self.tx.send(SendData::Download(protocol_type));
         check_error!(self, r, false);
     }
 
@@ -284,7 +289,7 @@ impl MainWindow {
             self.buffer_view.lock().clear();
         }
         self.set_screen_mode(cloned_addr.screen_mode);
-        let r = self.dialing_directory_dialog.addresses.store_phone_book();
+        let _r = self.dialing_directory_dialog.addresses.store_phone_book();
         check_error!(self, r, false);
 
         self.println(&fl!(crate::LANGUAGE_LOADER, "connect-to", address = cloned_addr.address.clone()));
@@ -295,7 +300,7 @@ impl MainWindow {
         let data = OpenConnectionData::from(&cloned_addr, timeout, window_size, Some(self.get_options().modem.clone()));
 
         if let Some(_handle) = self.update_thread_handle.take() {
-            let _ = self.tx.send(SendData::Disconnect);
+            self.send_data(SendData::Disconnect);
         }
         self.buffer_parser = get_parser(&data.term_caps.terminal, data.use_ansi_music, PathBuf::new());
         let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
@@ -303,12 +308,18 @@ impl MainWindow {
         self.update_thread_handle = Some(update_thread_handle);
         self.tx = tx;
         self.rx = rx;
+        self.send_data(SendData::SetBaudRate(cloned_addr.baud_emulation.get_baud_rate()));
+    }
 
-        self.tx.send(SendData::SetBaudRate(cloned_addr.baud_emulation.get_baud_rate())).unwrap();
+    pub fn send_data(&mut self, data: SendData) {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async move {
+            let _res = self.tx.send(data).await;
+        });
     }
 
     pub fn hangup(&mut self) {
-        let _ = self.tx.send(SendData::Disconnect);
+        self.send_data(SendData::Disconnect);
         self.update_thread_handle = None;
         self.buffer_update_thread.lock().sound_thread.lock().clear();
         self.set_mode(MainWindowMode::ShowDialingDirectory);
@@ -340,10 +351,10 @@ impl MainWindow {
         }
 
         self.output_string(&user_name);
-        self.send_data(cr.clone());
+        self.send_vec(cr.clone());
         sleep(std::time::Duration::from_millis(350));
         self.output_string(&password);
-        self.send_data(cr);
+        self.send_vec(cr);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -438,16 +449,18 @@ impl MainWindow {
         }
     }
 
-    fn send_data(&mut self, to_vec: Vec<u8>) {
+    fn send_vec(&mut self, to_vec: Vec<u8>) {
         if !self.buffer_update_thread.lock().is_connected {
             return;
         }
+        self.send_data(SendData::Data(to_vec));
 
+        /*
         if let Err(err) = self.tx.send(SendData::Data(to_vec)) {
             self.buffer_update_thread.lock().is_connected = false;
             log::error!("{err}");
             self.output_string(&format!("\n{err}"));
-        }
+        }*/
     }
 }
 
