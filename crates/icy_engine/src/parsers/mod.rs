@@ -47,7 +47,7 @@ pub trait UnicodeConverter: Send + Sync {
 
 const EMPTY_MOUSE_FIELD: Vec<MouseField> = Vec::new();
 
-pub trait BufferParser {
+pub trait BufferParser: Send {
     fn get_next_action(&mut self, _buffer: &mut Buffer, _caret: &mut Caret, _current_layer: usize) -> Option<CallbackAction> {
         None
     }

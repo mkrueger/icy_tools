@@ -237,7 +237,7 @@ pub fn start_update_thread(
 
                     loop {
                         tokio::select! {
-                            Ok(size) = connection.com.receive(&mut data) => {
+                            Ok(size) = connection.com.read(&mut data) => {
                                 let mut idx = 0;
                                 while idx < size {
                                     let update_state = update_thread.lock().update_state(&ctx, &mut connection, &mut *buffer_parser, &data[idx..size]).await;

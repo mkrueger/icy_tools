@@ -29,7 +29,7 @@ pub enum WriteMode {
     Xor,
 }
 
-pub trait Command {
+pub trait Command: Send {
     /// .
     ///
     /// # Errors
