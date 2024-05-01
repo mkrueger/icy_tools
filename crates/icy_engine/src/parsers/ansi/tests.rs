@@ -1144,3 +1144,27 @@ fn test_load_palette_case2() {
     assert_eq!(buf.palette.get_rgb(17), (0x00, 0x11, 0x22));
     assert_eq!(buf.palette.get_rgb(255), (0x01, 0xef, 0x2d));
 }
+
+#[test]
+fn test_ff_resize() {
+    let mut parser = ansi::Parser::default();
+    let (mut buf, mut caret) = create_buffer(&mut parser, b"");
+    for _i in 0..99 {
+        update_buffer(&mut buf, &mut caret, &mut parser, b"\r\n");
+    }
+    assert_eq!(100, buf.get_height());
+    update_buffer(&mut buf, &mut caret, &mut parser, b"\x0C");
+    assert_eq!(25, buf.get_height());
+}
+
+#[test]
+fn test_clr_scr_resize() {
+    let mut parser = ansi::Parser::default();
+    let (mut buf, mut caret) = create_buffer(&mut parser, b"");
+    for _i in 0..99 {
+        update_buffer(&mut buf, &mut caret, &mut parser, b"\r\n");
+    }
+    assert_eq!(100, buf.get_height());
+    update_buffer(&mut buf, &mut caret, &mut parser, b"\x1B[2J");
+    assert_eq!(25, buf.get_height());
+}

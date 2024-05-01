@@ -229,7 +229,7 @@ pub struct SoundBackgroundThreadData {
     thread_is_running: bool,
 
     music: VecDeque<SoundData>,
-    last_beep: Instant
+    last_beep: Instant,
 }
 
 impl SoundBackgroundThreadData {

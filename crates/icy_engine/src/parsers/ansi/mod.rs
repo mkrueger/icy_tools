@@ -1483,7 +1483,6 @@ pub fn parse_next_number(x: i32, ch: u8) -> i32 {
     x.saturating_mul(10).saturating_add(ch as i32).saturating_sub(b'0' as i32)
 }
 
-
 pub fn fmt_error_string(input: &str) -> String {
     input.chars().take(40).collect::<String>()
 }

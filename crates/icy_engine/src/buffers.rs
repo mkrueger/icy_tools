@@ -208,6 +208,7 @@ impl FontMode {
 }
 
 pub struct Buffer {
+    original_size: Size,
     size: Size,
     pub file_name: Option<PathBuf>,
 
@@ -441,6 +442,7 @@ impl Buffer {
         let size = size.into();
         Buffer {
             file_name: None,
+            original_size: size,
             size,
             terminal_state: TerminalState::from(size),
             sauce_data: SauceMetaInformation::default(),
@@ -592,7 +594,12 @@ impl Buffer {
     }
 
     pub fn reset_terminal(&mut self) {
-        self.terminal_state = TerminalState::from(self.terminal_state.get_size());
+        if self.is_terminal_buffer {
+            self.terminal_state = TerminalState::from(self.original_size);
+            self.size = self.original_size;
+        } else {
+            self.terminal_state = TerminalState::from(self.size);
+        }
     }
 
     /// Sets the buffer size of this [`Buffer`].

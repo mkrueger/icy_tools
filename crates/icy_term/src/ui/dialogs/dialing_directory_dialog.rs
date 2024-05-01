@@ -633,7 +633,7 @@ impl DialogState {
                         }
                     });
                 ui.end_row();
-/* Currenlty unsupported by the ssh backend :(
+                /* Currenlty unsupported by the ssh backend :(
                 if adr.protocol == ConnectionType::SSH {
                     // Port row
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {

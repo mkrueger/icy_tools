@@ -197,8 +197,7 @@ impl eframe::App for MainWindow {
                 }
                 match dialogs::up_download_dialog::FileTransferDialog::new().show_dialog(ctx, frame, &state, download) {
                     dialogs::up_download_dialog::FileTransferDialogAction::Run => {}
-                    dialogs::up_download_dialog::FileTransferDialogAction::Close |
-                    dialogs::up_download_dialog::FileTransferDialogAction::CancelTransfer => {
+                    dialogs::up_download_dialog::FileTransferDialogAction::Close | dialogs::up_download_dialog::FileTransferDialogAction::CancelTransfer => {
                         if state.is_finished {
                             self.set_mode(MainWindowMode::ShowTerminal);
                         } else {

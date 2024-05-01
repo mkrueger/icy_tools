@@ -10,7 +10,14 @@ use icy_engine::{ansi::MusicOption, rip::bgi::MouseField, BufferParser, Caret};
 use icy_engine_gui::BufferView;
 use icy_net::{
     // modem::{ModemConfiguration, ModemConnection, Serial},
-    modem::{ModemConfiguration, ModemConnection}, protocol::{Protocol, TransferProtocolType, TransferState}, raw::RawConnection, serial::Serial, ssh::{Credentials, SSHConnection}, telnet::{TelnetConnection, TerminalEmulation}, Connection, NullConnection
+    modem::{ModemConfiguration, ModemConnection},
+    protocol::{Protocol, TransferProtocolType, TransferState},
+    raw::RawConnection,
+    serial::Serial,
+    ssh::{Credentials, SSHConnection},
+    telnet::{TelnetConnection, TerminalEmulation},
+    Connection,
+    NullConnection,
 };
 use std::{collections::VecDeque, mem, path::PathBuf, sync::Arc, thread};
 use tokio::sync::mpsc;
@@ -45,28 +52,18 @@ pub struct TerminalThread {
 }
 
 impl TerminalThread {
-    pub async fn update_state(
-        &mut self,
-        connection: &mut ConnectionThreadData,
-        buffer_parser: &mut dyn BufferParser,
-        data: &[u8],
-    )  -> Res<()> {
+    pub async fn update_state(&mut self, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, data: &[u8]) -> Res<()> {
         self.sound_thread.lock().update_state()?;
-        self.update_buffer( connection, buffer_parser, data).await
+        self.update_buffer(connection, buffer_parser, data).await
     }
 
-    async fn update_buffer(
-        &mut self,
-        connection: &mut ConnectionThreadData,
-        buffer_parser: &mut dyn BufferParser,
-        data: &[u8],
-    ) -> Res<()> {
+    async fn update_buffer(&mut self, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, data: &[u8]) -> Res<()> {
         let mut caret: Caret = Caret::default();
         mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
         let mut lock = self.buffer_view.lock();
         let buffer = lock.get_buffer_mut();
         self.capture_dialog.append_data(&data);
-        
+
         for ch in data {
             let ch = *ch;
             if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch) {
@@ -81,7 +78,7 @@ impl TerminalThread {
             let result = buffer_parser.print_char(buffer, 0, &mut caret, ch as char);
             match result {
                 Ok(action) => {
-                    let res =  self.handle_action(action, connection).await;
+                    let res = self.handle_action(action, connection).await;
                 }
                 Err(err) => {
                     log::error!("print_char: {err}");
@@ -93,7 +90,6 @@ impl TerminalThread {
         lock.redraw_view();
         Ok(())
     }
-
 
     async fn handle_action(&self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData) -> (bool, u32) {
         match result {
@@ -249,36 +245,39 @@ async fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Co
         icy_net::ConnectionType::Telnet => Ok(Box::new(
             TelnetConnection::open(&connection_data.address, connection_data.term_caps.clone(), connection_data.timeout.clone()).await?,
         )),
-        icy_net::ConnectionType::SSH => Ok(Box::new(SSHConnection::open(
-            &connection_data.address,
-            connection_data.term_caps.clone(),
-            Credentials {
-                user_name: connection_data.user_name.clone(),
-                password: connection_data.password.clone(),
-                proxy_command: connection_data.proxy_command.clone(),
-            },
-        ).await?)), 
-                icy_net::ConnectionType::Modem => {
-                    let Some(m) = &connection_data.modem else {
-                        return Err("Modem configuration is required for modem connections".into());
-                    };
-                    let serial = Serial {
-                        device: m.device.clone(),
-                        baud_rate: m.baud_rate,
-                        char_size: m.char_size,
-                        parity: m.parity,
-                        stop_bits: m.stop_bits,
-                        flow_control: m.flow_control,
-                    };
-                    let modem = ModemConfiguration {
-                        init_string: m.init_string.clone(),
-                        dial_string: m.dial_string.clone(),
-                    };
-                    Ok(Box::new(ModemConnection::open(serial, modem, connection_data.address.clone()).await?))
-                } 
+        icy_net::ConnectionType::SSH => Ok(Box::new(
+            SSHConnection::open(
+                &connection_data.address,
+                connection_data.term_caps.clone(),
+                Credentials {
+                    user_name: connection_data.user_name.clone(),
+                    password: connection_data.password.clone(),
+                    proxy_command: connection_data.proxy_command.clone(),
+                },
+            )
+            .await?,
+        )),
+        icy_net::ConnectionType::Modem => {
+            let Some(m) = &connection_data.modem else {
+                return Err("Modem configuration is required for modem connections".into());
+            };
+            let serial = Serial {
+                device: m.device.clone(),
+                baud_rate: m.baud_rate,
+                char_size: m.char_size,
+                parity: m.parity,
+                stop_bits: m.stop_bits,
+                flow_control: m.flow_control,
+            };
+            let modem = ModemConfiguration {
+                init_string: m.init_string.clone(),
+                dial_string: m.dial_string.clone(),
+            };
+            Ok(Box::new(ModemConnection::open(serial, modem, connection_data.address.clone()).await?))
+        }
         icy_net::ConnectionType::Websocket => Ok(Box::new(icy_net::websocket::connect(&connection_data.address, false).await?)),
         icy_net::ConnectionType::SecureWebsocket => Ok(Box::new(icy_net::websocket::connect(&connection_data.address, true).await?)),
-      
+
         _ => panic!("Unsupported connection type"),
     }
 }
@@ -321,14 +320,26 @@ async fn download(ctx: &egui::Context, c: &mut ConnectionThreadData, protocol: T
     Ok(())
 }
 
-async fn upload(ctx: &egui::Context, c: &mut ConnectionThreadData, protocol: TransferProtocolType, files: Vec<PathBuf>, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+async fn upload(
+    ctx: &egui::Context,
+    c: &mut ConnectionThreadData,
+    protocol: TransferProtocolType,
+    files: Vec<PathBuf>,
+    update_thread: &Arc<Mutex<TerminalThread>>,
+) -> Res<()> {
     let mut prot = protocol.create();
     let transfer_state = prot.initiate_send(&mut *c.com, &files).await?;
     file_transfer(ctx, transfer_state, &mut *prot, c, update_thread).await?;
     Ok(())
 }
 
-async fn file_transfer(ctx: &egui::Context, mut transfer_state: TransferState, prot: &mut dyn Protocol, c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+async fn file_transfer(
+    ctx: &egui::Context,
+    mut transfer_state: TransferState,
+    prot: &mut dyn Protocol,
+    c: &mut ConnectionThreadData,
+    update_thread: &Arc<Mutex<TerminalThread>>,
+) -> Res<()> {
     ctx.request_repaint();
     let instant = Instant::now();
     while !transfer_state.is_finished {
