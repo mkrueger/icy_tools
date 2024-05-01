@@ -26,10 +26,10 @@ pub enum Message {
 }
 
 impl DialogState {
-    pub(crate) fn append_data(&mut self, data: u8) {
+    pub(crate) fn append_data(&mut self, data: &[u8]) {
         if self.capture_session {
             if let Ok(mut data_file) = std::fs::OpenOptions::new().create(true).append(true).open(&self.capture_filename) {
-                if let Err(err) = data_file.write_all(&[data]) {
+                if let Err(err) = data_file.write_all(data) {
                     if !self.show_capture_error {
                         self.show_capture_error = true;
                         log::error!("{err}");

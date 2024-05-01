@@ -139,7 +139,6 @@ impl MainWindow {
     }
 
     pub fn set_mode(&mut self, mode: MainWindowMode) {
-        println!("Setting mode: {:?}", mode);
         self.state.mode = mode;
     }
 

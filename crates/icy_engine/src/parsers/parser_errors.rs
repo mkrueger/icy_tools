@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use crate::ansi::fmt_error_string;
+
 #[derive(Debug, Clone)]
 pub enum ParserError {
     InvalidChar(char),
@@ -30,13 +32,13 @@ impl std::fmt::Display for ParserError {
         match self {
             ParserError::InvalidChar(ch) => write!(f, "invalid character {ch}"),
             ParserError::UnsupportedEscapeSequence(seq) => {
-                write!(f, "unsupported escape sequence {seq}")
+                write!(f, "unsupported escape sequence {}", fmt_error_string(&seq))
             }
             ParserError::UnsupportedDCSSequence(seq) => {
-                write!(f, "unsupported DCS sequence {seq}")
+                write!(f, "unsupported DCS sequence {}", fmt_error_string(&seq))
             }
             ParserError::UnsupportedOSCSequence(seq) => {
-                write!(f, "unsupported OSC sequence {seq}")
+                write!(f, "unsupported OSC sequence {}", fmt_error_string(&seq))
             }
             ParserError::Description(str) => write!(f, "{str}"),
             ParserError::UnsupportedControlCode(code) => {

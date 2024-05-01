@@ -2,7 +2,7 @@ use regex::Regex;
 
 use crate::{Buffer, CallbackAction, Caret, EngineResult, ParserError};
 
-use super::{parse_next_number, Parser};
+use super::{fmt_error_string, parse_next_number, Parser};
 lazy_static::lazy_static! {
     static ref OSC_PALETTE: Regex = Regex::new(r"(\d+)?;[rR][gG][bB]:([0-9a-fA-F]{2})/([0-9a-fA-F]{2})/([0-9a-fA-F]{2})").unwrap();
 }
@@ -48,7 +48,7 @@ impl Parser {
             return Ok(CallbackAction::NoUpdate);
         }
 
-        Err(ParserError::UnsupportedOSCSequence(self.parse_string.clone()).into())
+        Err(ParserError::UnsupportedOSCSequence(fmt_error_string(&self.parse_string)).into())
     }
 
     fn handle_osc_hyperlinks(&mut self, parse_string: impl Into<String>, buf: &mut Buffer, caret: &mut Caret) {

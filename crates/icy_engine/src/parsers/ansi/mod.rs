@@ -263,7 +263,10 @@ impl BufferParser for Parser {
                             buf.print_char(current_layer, caret, ch);
                             Ok(CallbackAction::Update)
                         }
-                        _ => Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into()),
+                        _ => {
+                            self.state = EngineState::Default;
+                            Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into())
+                        }
                     }
                 };
             }
@@ -602,6 +605,7 @@ impl BufferParser for Parser {
                     }
                     'r' => return self.reset_margins(buf),
                     'm' => {
+                        self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 2 {
                             return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
                         }
@@ -1105,6 +1109,7 @@ impl BufferParser for Parser {
 
                     '?' => {
                         if !is_start {
+                            self.state = EngineState::Default;
                             return Err(ParserError::UnsupportedEscapeSequence(
                                 self.current_escape_sequence.clone(),
                             ).into());
@@ -1115,6 +1120,7 @@ impl BufferParser for Parser {
                     }
                     '=' => {
                         if !is_start {
+                            self.state = EngineState::Default;
                             return Err(ParserError::UnsupportedEscapeSequence(
                                 self.current_escape_sequence.clone(),
                             ).into());
@@ -1125,6 +1131,7 @@ impl BufferParser for Parser {
                     }
                     '!' => {
                         if !is_start {
+                            self.state = EngineState::Default;
                             return Err(ParserError::UnsupportedEscapeSequence(
                                 self.current_escape_sequence.clone(),
                             ).into());
@@ -1135,6 +1142,7 @@ impl BufferParser for Parser {
                     }
                     '<' => {
                         if !is_start {
+                            self.state = EngineState::Default;
                             return Err(ParserError::UnsupportedEscapeSequence(
                                 self.current_escape_sequence.clone(),
                             ).into());
@@ -1445,13 +1453,14 @@ impl Parser {
         };
         for ch in m.chars() {
             if let Err(err) = self.print_char(buf, current_layer, caret, ch) {
+                self.state = EngineState::Default;
                 log::error!("Error during macro invocation: {}", err);
             }
         }
     }
 
     fn execute_aps_command(&self, _buf: &mut Buffer, _caret: &mut Caret) {
-        log::warn!("TODO execute APS command: {}", self.parse_string);
+        log::warn!("TODO execute APS command: {}", fmt_error_string(&self.parse_string));
     }
 }
 
@@ -1472,4 +1481,9 @@ fn set_font_selection_success(buf: &mut Buffer, caret: &mut Caret, slot: usize) 
 
 pub fn parse_next_number(x: i32, ch: u8) -> i32 {
     x.saturating_mul(10).saturating_add(ch as i32).saturating_sub(b'0' as i32)
+}
+
+
+pub fn fmt_error_string(input: &str) -> String {
+    input.chars().take(40).collect::<String>()
 }

@@ -128,6 +128,7 @@ impl SoundThread {
             tx: tx2,
             music: VecDeque::new(),
             thread_is_running: true,
+            last_beep: Instant::now(),
         };
 
         if let Err(err) = std::thread::Builder::new().name("music_thread".to_string()).spawn(move || {
@@ -228,6 +229,7 @@ pub struct SoundBackgroundThreadData {
     thread_is_running: bool,
 
     music: VecDeque<SoundData>,
+    last_beep: Instant
 }
 
 impl SoundBackgroundThreadData {
@@ -262,20 +264,23 @@ impl SoundBackgroundThreadData {
         };
         match data {
             SoundData::PlayMusic(music) => self.play_music(&music),
-            SoundData::Beep => SoundBackgroundThreadData::beep(),
+            SoundData::Beep => self.beep(),
             _ => {}
         }
     }
 
-    fn beep() {
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink = rodio::Sink::try_new(&stream_handle).unwrap();
-        sink.set_volume(0.1);
+    fn beep(&mut self) {
+        if self.last_beep.elapsed().as_millis() > 500 {
+            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+            let sink = rodio::Sink::try_new(&stream_handle).unwrap();
+            sink.set_volume(0.1);
 
-        let source = rodio::source::SineWave::new(880.);
-        sink.append(source);
+            let source = rodio::source::SineWave::new(880.);
+            sink.append(source);
 
-        thread::sleep(std::time::Duration::from_millis(200));
+            thread::sleep(std::time::Duration::from_millis(200));
+        }
+        self.last_beep = Instant::now();
     }
 
     fn play_music(&mut self, music: &AnsiMusic) {

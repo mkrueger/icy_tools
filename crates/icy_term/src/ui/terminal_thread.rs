@@ -33,7 +33,6 @@ pub struct TerminalThread {
     pub sound_thread: Arc<Mutex<SoundThread>>,
 
     pub auto_transfer: Option<(TransferProtocolType, bool)>,
-    pub enabled: bool,
 
     pub terminal_type: Option<(TerminalEmulation, MusicOption)>,
 
@@ -51,10 +50,9 @@ impl TerminalThread {
         connection: &mut ConnectionThreadData,
         buffer_parser: &mut dyn BufferParser,
         data: &[u8],
-    ) -> TerminalResult<(u64, usize)> {
+    )  -> Res<()> {
         self.sound_thread.lock().update_state()?;
-        let res = self.update_buffer( connection, buffer_parser, data).await;
-        Ok(res)
+        self.update_buffer( connection, buffer_parser, data).await
     }
 
     async fn update_buffer(
@@ -62,36 +60,13 @@ impl TerminalThread {
         connection: &mut ConnectionThreadData,
         buffer_parser: &mut dyn BufferParser,
         data: &[u8],
-    ) -> (u64, usize) {
-        let has_data = !data.is_empty();
-        if !self.enabled {
-            return (10, 0);
-        }
-
-        {
-            let mut caret: Caret = Caret::default();
-            mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-            let mut update = false;
-            let mut ms = 0;
-            loop {
-                let Some(act) = buffer_parser.get_next_action(self.buffer_view.lock().get_buffer_mut(), &mut caret, 0) else {
-                    break;
-                };
-                let (p, _ms) = self.handle_action(act, connection).await;
-                update |= p;
-                ms = _ms.max(ms);
-            }
-
-            if update {
-                self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
-                mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-                return (ms as u64, 0);
-            }
-
-            mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-        }
-
-        let mut idx = 0;
+    ) -> Res<()> {
+        let mut caret: Caret = Caret::default();
+        mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
+        let mut lock = self.buffer_view.lock();
+        let buffer = lock.get_buffer_mut();
+        self.capture_dialog.append_data(&data);
+        
         for ch in data {
             let ch = *ch;
             if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch) {
@@ -99,44 +74,26 @@ impl TerminalThread {
             }
             if let Some(autologin) = &mut self.auto_login {
                 if let Ok(Some(data)) = autologin.try_login(ch) {
-                    connection.com.send(&data).await.unwrap();
+                    connection.com.send(&data).await?;
                     autologin.logged_in = true;
                 }
             }
-            self.capture_dialog.append_data(ch);
-            let (p, ms) = self.print_char(connection, buffer_parser, ch).await;
-            idx += 1;
-
-            if p {
-                self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
-                return (ms as u64, idx);
+            let result = buffer_parser.print_char(buffer, 0, &mut caret, ch as char);
+            match result {
+                Ok(action) => {
+                    let res =  self.handle_action(action, connection).await;
+                }
+                Err(err) => {
+                    log::error!("print_char: {err}");
+                }
             }
         }
-
-        if has_data {
-            (0, data.len())
-        } else {
-            (10, data.len())
-        }
+        mem::swap(&mut caret, lock.get_caret_mut());
+        lock.get_buffer_mut().update_hyperlinks();
+        lock.redraw_view();
+        Ok(())
     }
 
-    pub async fn print_char(&self, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, c: u8) -> (bool, u32) {
-        let mut caret: Caret = Caret::default();
-        mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-        let result = buffer_parser.print_char(self.buffer_view.lock().get_buffer_mut(), 0, &mut caret, c as char);
-        mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-
-        match result {
-            Ok(action) => {
-                return self.handle_action(action, connection).await;
-            }
-
-            Err(err) => {
-                log::error!("print_char: {err}");
-            }
-        }
-        (false, 0)
-    }
 
     async fn handle_action(&self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData) -> (bool, u32) {
         match result {
@@ -238,30 +195,21 @@ pub fn start_update_thread(
                                     }
                                     Ok(size) => {
                                         if size > 0 {
-                                            let mut idx = 0;
-                                            while idx < size {
-                                                let update_state = update_thread.lock().update_state(&mut connection, &mut *buffer_parser, &data[idx..size]).await;
-                                                match &update_state {
-                                                    Err(err) => {
-                                                        println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
-                                                        log::error!("run_update_thread::update_state: {err}");
-                                                        idx = size;
-                                                    }
-                                                    Ok((sleep_ms, parsed_data)) => {
-                                                        let data = buffer_parser.get_picture_data();
-                                                        if data.is_some() {
-                                                            update_thread.lock().mouse_field = buffer_parser.get_mouse_fields();
-                                                            update_thread.lock().buffer_view.lock().set_reference_image(data);
-                                                        }
-                                                        if *sleep_ms > 0 {
-                                                            thread::sleep(Duration::from_millis(*sleep_ms));
-                                                        }
-                                                        idx += *parsed_data;
+                                            let update_state = update_thread.lock().update_state(&mut connection, &mut *buffer_parser, &data[0..size]).await;
+                                            match &update_state {
+                                                Err(err) => {
+                                                    println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
+                                                    log::error!("run_update_thread::update_state: {err}");
+                                                }
+                                                Ok(()) => {
+                                                    let data = buffer_parser.get_picture_data();
+                                                    if data.is_some() {
+                                                        update_thread.lock().mouse_field = buffer_parser.get_mouse_fields();
+                                                        update_thread.lock().buffer_view.lock().set_reference_image(data);
                                                     }
                                                 }
                                             }
                                             ctx.request_repaint();
-                                            update_thread.lock().buffer_view.lock().get_buffer_mut().update_hyperlinks();
                                         }
                                     }
                                 }
@@ -295,7 +243,6 @@ async fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Co
     if connection_data.term_caps.window_size.0 == 0 {
         return Ok(Box::new(NullConnection {}));
     }
-    println!("Opening connection: {:?}", connection_data.connection_type);
 
     match connection_data.connection_type {
         icy_net::ConnectionType::Raw => Ok(Box::new(RawConnection::open(&connection_data.address, connection_data.timeout.clone()).await?)),
@@ -351,19 +298,15 @@ async fn handle_receive(ctx: &egui::Context, c: &mut ConnectionThreadData, data:
         }
 
         SendData::Upload(protocol, files) => {
-            println!("upload !");
             if let Err(err) = upload(ctx, c, protocol, files, update_thread).await {
                 log::error!("Failed to upload files: {err}");
             }
-            println!("upload done !");
         }
 
         SendData::Download(protocol) => {
-            println!("download !");
             if let Err(err) = download(ctx, c, protocol, update_thread).await {
                 log::error!("Failed to download files: {err}");
             }
-            println!("download done !");
         }
 
         _ => {}
@@ -387,15 +330,19 @@ async fn upload(ctx: &egui::Context, c: &mut ConnectionThreadData, protocol: Tra
 
 async fn file_transfer(ctx: &egui::Context, mut transfer_state: TransferState, prot: &mut dyn Protocol, c: &mut ConnectionThreadData, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
     ctx.request_repaint();
+    let instant = Instant::now();
     while !transfer_state.is_finished {
         tokio::select! {
             Ok(()) = prot.update_transfer(&mut *c.com, &mut transfer_state) => {
-                update_thread.lock().current_transfer = transfer_state.clone();
+                if instant.elapsed() > Duration::from_millis(500) {
+                    update_thread.lock().current_transfer = transfer_state.clone();
+                    ctx.request_repaint();
+                }
             }
             data = c.rx.recv() => {
                 match data {
                     Some(SendData::CancelTransfer) => {
-                        ctx.request_repaint();
+                        transfer_state.is_finished = true;
                         prot.cancel_transfer(&mut *c.com).await?;
                         break;
                     }
@@ -406,6 +353,7 @@ async fn file_transfer(ctx: &egui::Context, mut transfer_state: TransferState, p
     }
     copy_downloaded_files(&mut transfer_state)?;
     update_thread.lock().current_transfer = transfer_state.clone();
+    ctx.request_repaint();
     Ok(())
 }
 

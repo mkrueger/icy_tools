@@ -78,7 +78,6 @@ impl MainWindow {
             auto_transfer: None,
             auto_login: None,
             sound_thread: Arc::new(eframe::epaint::mutex::Mutex::new(SoundThread::new())),
-            enabled: true,
             terminal_type: None,
             mouse_field: Vec::new(),
             cache_directory: PathBuf::new(),
@@ -191,28 +190,24 @@ impl eframe::App for MainWindow {
 
             MainWindowMode::FileTransfer(download) => {
                 self.update_terminal_window(ctx, frame, false);
-
                 let state = self.buffer_update_thread.lock().current_transfer.clone();
-
                 // auto close uploads.
                 if !download && state.is_finished {
                     self.set_mode(MainWindowMode::ShowTerminal);
                 }
                 match dialogs::up_download_dialog::FileTransferDialog::new().show_dialog(ctx, frame, &state, download) {
                     dialogs::up_download_dialog::FileTransferDialogAction::Run => {}
+                    dialogs::up_download_dialog::FileTransferDialogAction::Close |
                     dialogs::up_download_dialog::FileTransferDialogAction::CancelTransfer => {
                         if state.is_finished {
                             self.set_mode(MainWindowMode::ShowTerminal);
                         } else {
-                            println!("send cancel transfer") ;
                             self.send_data(super::connect::SendData::CancelTransfer);
+                            self.set_mode(MainWindowMode::ShowTerminal);
+                            ctx.request_repaint_after(Duration::from_millis(150));
                         }
                     }
-                    dialogs::up_download_dialog::FileTransferDialogAction::Close => {
-                        self.set_mode(MainWindowMode::ShowTerminal);
-                    }
                 }
-                ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowCaptureDialog => {
                 self.update_terminal_window(ctx, frame, false);
