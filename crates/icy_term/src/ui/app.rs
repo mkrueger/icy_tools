@@ -204,7 +204,8 @@ impl eframe::App for MainWindow {
                         if state.is_finished {
                             self.set_mode(MainWindowMode::ShowTerminal);
                         } else {
-                            let _ = self.tx.send(super::connect::SendData::CancelTransfer);
+                            println!("send cancel transfer") ;
+                            self.send_data(super::connect::SendData::CancelTransfer);
                         }
                     }
                     dialogs::up_download_dialog::FileTransferDialogAction::Close => {

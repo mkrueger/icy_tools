@@ -1,17 +1,17 @@
 use std::io::Write;
 
-use serial::{CharSize, FlowControl, StopBits};
+use icy_net::serial::{CharSize, FlowControl, Parity, StopBits};
 
 use crate::TerminalResult;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Modem {
     pub device: String,
-    pub baud_rate: usize,
+    pub baud_rate: u32,
 
     pub char_size: CharSize,
     pub stop_bits: StopBits,
-    pub parity: serial::Parity,
+    pub parity: Parity,
 
     pub flow_control: FlowControl,
 
@@ -35,22 +35,22 @@ impl Modem {
         file.write_all(format!("char_size = {cs}\n").as_bytes())?;
 
         let cs = match self.stop_bits {
-            StopBits::Stop1 => 1,
-            StopBits::Stop2 => 2,
+            StopBits::One => 1,
+            StopBits::Two => 2,
         };
         file.write_all(format!("stop_bits = {cs}\n").as_bytes())?;
 
         let cs = match self.parity {
-            serial::Parity::ParityNone => "None",
-            serial::Parity::ParityOdd => "Odd",
-            serial::Parity::ParityEven => "Even",
+            Parity::None => "None",
+            Parity::Odd => "Odd",
+            Parity::Even => "Even",
         };
         file.write_all(format!("parity = \"{cs}\"\n").as_bytes())?;
 
         let cs = match self.flow_control {
-            FlowControl::FlowNone => "None",
-            FlowControl::FlowSoftware => "Software",
-            FlowControl::FlowHardware => "Hardware",
+            FlowControl::None => "None",
+            FlowControl::XonXoff => "Software",
+            FlowControl::RtsCts => "Hardware",
         };
         file.write_all(format!("flow_control = \"{cs}\"\n").as_bytes())?;
         file.write_all(format!("init_string = \"{}\"\n", self.init_string).as_bytes())?;
@@ -70,7 +70,7 @@ impl Modem {
                 }
                 "baud_rate" => {
                     if let toml::Value::Integer(i) = v {
-                        result.baud_rate = *i as usize;
+                        result.baud_rate = *i as u32;
                     }
                 }
                 "char_size" => {
@@ -79,7 +79,6 @@ impl Modem {
                             5 => CharSize::Bits5,
                             6 => CharSize::Bits6,
                             7 => CharSize::Bits7,
-                            //8 => CharSize::Bits8,
                             _ => CharSize::Bits8,
                         };
                     }
@@ -87,29 +86,26 @@ impl Modem {
                 "stop_bits" => {
                     if let toml::Value::Integer(i) = v {
                         result.stop_bits = match i {
-                            //1 => StopBits::Stop1,
-                            2 => StopBits::Stop2,
-                            _ => StopBits::Stop1,
+                            2 => StopBits::Two,
+                            _ => StopBits::One,
                         };
                     }
                 }
                 "parity" => {
                     if let toml::Value::String(s) = v {
                         result.parity = match s.as_str() {
-                            //"None" => serial::Parity::ParityNone,
-                            "Odd" => serial::Parity::ParityOdd,
-                            "Even" => serial::Parity::ParityEven,
-                            _ => serial::Parity::ParityNone,
+                            "Odd" => Parity::Odd,
+                            "Even" => Parity::Even,
+                            _ => Parity::None,
                         };
                     }
                 }
                 "flow_control" => {
                     if let toml::Value::String(s) = v {
                         result.flow_control = match s.as_str() {
-                            // "None" => FlowControl::FlowNone,
-                            "Software" => FlowControl::FlowSoftware,
-                            "Hardware" => FlowControl::FlowHardware,
-                            _ => FlowControl::FlowNone,
+                            "Software" => FlowControl::XonXoff,
+                            "Hardware" => FlowControl::RtsCts,
+                            _ => FlowControl::None,
                         };
                     }
                 }
@@ -139,9 +135,9 @@ impl Default for Modem {
             device: "/dev/ttyS0".to_string(),
             baud_rate: 9600,
             char_size: CharSize::Bits8,
-            stop_bits: StopBits::Stop1,
-            parity: serial::Parity::ParityNone,
-            flow_control: FlowControl::FlowNone,
+            stop_bits: StopBits::One,
+            parity: Parity::None,
+            flow_control: FlowControl::None,
             init_string: "ATZ".to_string(),
             dial_string: "ATDT".to_string(),
         }

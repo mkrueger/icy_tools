@@ -27,7 +27,6 @@ versions = "6.1.0"
 regex = { workspace = true }
 github_release_check = "0.2.1"
 semver = { workspace = true }
-serial = "0.4.0"
 
 #sound
 rodio = { version = "0.17.1" , default-features = false, features = [] }

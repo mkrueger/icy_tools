@@ -2,6 +2,7 @@ use eframe::egui::{self, RichText};
 use egui::{Layout, TextEdit, Vec2};
 use i18n_embed_fl::fl;
 use icy_engine_gui::show_monitor_settings;
+use icy_net::serial::{CharSize, Parity, StopBits};
 
 use crate::{
     ui::{MainWindowMode, MainWindowState},
@@ -285,35 +286,35 @@ fn show_modem_settings(state: &MainWindowState, ui: &mut egui::Ui) -> Option<Mes
 
             ui.horizontal(|ui| {
                 let txt = match modem.char_size {
-                    serial::CharSize::Bits5 => "5",
-                    serial::CharSize::Bits6 => "6",
-                    serial::CharSize::Bits7 => "7",
-                    serial::CharSize::Bits8 => "8",
+                    CharSize::Bits5 => "5",
+                    CharSize::Bits6 => "6",
+                    CharSize::Bits7 => "7",
+                    CharSize::Bits8 => "8",
                 };
                 egui::ComboBox::from_id_source("combobox1").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut modem.char_size, serial::CharSize::Bits5, "5");
-                    ui.selectable_value(&mut modem.char_size, serial::CharSize::Bits6, "6");
-                    ui.selectable_value(&mut modem.char_size, serial::CharSize::Bits7, "7");
-                    ui.selectable_value(&mut modem.char_size, serial::CharSize::Bits8, "8");
+                    ui.selectable_value(&mut modem.char_size, CharSize::Bits5, "5");
+                    ui.selectable_value(&mut modem.char_size, CharSize::Bits6, "6");
+                    ui.selectable_value(&mut modem.char_size, CharSize::Bits7, "7");
+                    ui.selectable_value(&mut modem.char_size, CharSize::Bits8, "8");
                 });
 
                 let txt = match modem.stop_bits {
-                    serial::StopBits::Stop1 => "1",
-                    serial::StopBits::Stop2 => "2",
+                    StopBits::One => "1",
+                    StopBits::Two => "2",
                 };
                 egui::ComboBox::from_id_source("combobox2").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut modem.stop_bits, serial::StopBits::Stop1, "1");
-                    ui.selectable_value(&mut modem.stop_bits, serial::StopBits::Stop2, "2");
+                    ui.selectable_value(&mut modem.stop_bits, StopBits::One, "1");
+                    ui.selectable_value(&mut modem.stop_bits, StopBits::Two, "2");
                 });
                 let txt = match modem.parity {
-                    serial::Parity::ParityNone => "None",
-                    serial::Parity::ParityOdd => "Odd",
-                    serial::Parity::ParityEven => "Even",
+                    Parity::None => "None",
+                    Parity::Odd => "Odd",
+                    Parity::Even => "Even",
                 };
                 egui::ComboBox::from_id_source("combobox3").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut modem.parity, serial::Parity::ParityNone, "None");
-                    ui.selectable_value(&mut modem.parity, serial::Parity::ParityOdd, "Odd");
-                    ui.selectable_value(&mut modem.parity, serial::Parity::ParityEven, "Even");
+                    ui.selectable_value(&mut modem.parity, Parity::None, "None");
+                    ui.selectable_value(&mut modem.parity, Parity::Odd, "Odd");
+                    ui.selectable_value(&mut modem.parity, Parity::Even, "Even");
                 });
             });
             ui.end_row();

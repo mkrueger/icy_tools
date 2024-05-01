@@ -7,7 +7,7 @@ use eframe::{
 use egui::{Align, Id, ImageButton, Key, Rect};
 use i18n_embed_fl::fl;
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_net::{telnet::TerminalEmulation, ConnectionType};
+use icy_net::telnet::TerminalEmulation;
 
 use crate::{
     addresses::{self, Address},
@@ -633,7 +633,7 @@ impl DialogState {
                         }
                     });
                 ui.end_row();
-
+/* Currenlty unsupported by the ssh backend :(
                 if adr.protocol == ConnectionType::SSH {
                     // Port row
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
@@ -641,7 +641,7 @@ impl DialogState {
                     });
                     ui.add(TextEdit::singleline(&mut adr.proxy_command.to_string()));
                     ui.end_row();
-                }
+                }*/
             });
     }
 

@@ -54,7 +54,7 @@ macro_rules! check_error {
     }};
 }
 
-#[derive(Clone, PartialEq, Eq, Default)]
+#[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
     ShowTerminal,
     #[default]
@@ -139,6 +139,7 @@ impl MainWindow {
     }
 
     pub fn set_mode(&mut self, mode: MainWindowMode) {
+        println!("Setting mode: {:?}", mode);
         self.state.mode = mode;
     }
 
@@ -304,7 +305,6 @@ impl MainWindow {
         }
         self.buffer_parser = get_parser(&data.term_caps.terminal, data.use_ansi_music, PathBuf::new());
         let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
-
         self.update_thread_handle = Some(update_thread_handle);
         self.tx = tx;
         self.rx = rx;
