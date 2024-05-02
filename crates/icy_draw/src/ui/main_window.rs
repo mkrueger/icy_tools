@@ -30,6 +30,7 @@ pub struct MainWindow<'a> {
     pub document_behavior: DocumentBehavior,
     pub tool_behavior: ToolBehavior,
     pub gl: Arc<Context>,
+    title: String,
 
     dialog_open: bool,
     modal_dialog: Option<Box<dyn ModalDialog>>,
@@ -158,6 +159,7 @@ impl<'a> MainWindow<'a> {
             settings_dialog,
             last_command_update: Instant::now(),
             current_id: None,
+            title: String::new()
         }
     }
 
@@ -479,14 +481,14 @@ impl<'a> MainWindow<'a> {
         } else {
             if self.current_id.is_some() {
                 self.current_id = None;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
+                self.set_title(ctx, crate::DEFAULT_TITLE.clone());
             }
             return;
         }
 
         if let Some((_, doc)) = self.get_active_pane() {
             if let Some(path) = doc.get_path() {
-                if let Some(mut parent) = path.parent() {
+                let title =  if let Some(mut parent) = path.parent() {
                     let directory = if let Some(user) = UserDirs::new() {
                         let home_dir = user.home_dir();
                         let mut parents = Vec::new();
@@ -511,20 +513,28 @@ impl<'a> MainWindow<'a> {
                     } else {
                         parent.to_string_lossy().to_string()
                     };
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                    format!(
                         "{}{} - iCY DRAW {}",
                         directory,
                         path.file_name().unwrap_or_default().to_str().unwrap_or_default(),
                         *crate::VERSION
-                    )));
+                    )
                 } else {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                    format!(
                         "{} - iCY DRAW {}",
                         path.file_name().unwrap_or_default().to_str().unwrap_or_default(),
                         *crate::VERSION
-                    )));
-                }
+                    )
+                };
+                self.set_title(ctx, title);
             }
+        }
+    }
+
+    fn set_title(&mut self, ctx: &egui::Context, title: String) {
+        if self.title != title {
+            self.title = title.clone();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
     }
 }
