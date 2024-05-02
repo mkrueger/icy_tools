@@ -128,11 +128,10 @@ fn parse_key_binding(str: impl Into<String>) -> KeyType {
         alt: parts[1].contains("Alt"),
         ctrl: parts[1].contains("Ctrl"),
         shift: parts[1].contains("Shift"),
-        mac_cmd:  parts[1].contains("Command"),
+        mac_cmd: parts[1].contains("Command"),
         command: parts[1].contains("Ctrl") | parts[1].contains("Command"),
     };
     Some((KeyOrPointer::Key(key), m))
-
 }
 
 // Generated from "egui::Key::name()"
@@ -221,7 +220,8 @@ fn convert_to_string(key: KeyType) -> String {
     match key {
         Some((key, modifier)) => {
             if let KeyOrPointer::Key(key) = key {
-                let m = format!("{}{}{}{}",
+                let m = format!(
+                    "{}{}{}{}",
                     if modifier.command { "Command" } else { "" },
                     if modifier.ctrl { "Ctrl" } else { "" },
                     if modifier.alt { "Alt" } else { "" },

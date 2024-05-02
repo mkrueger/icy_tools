@@ -124,7 +124,7 @@ impl MainWindow {
                     if *VERSION < *LATEST_VERSION {
                         ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string()),
-                            "https://github.com/mkrueger/icy_tools/releases/latest",
+                            "https://github.com/mkrueger/icy_tools/releases",
                         );
                     }
 
