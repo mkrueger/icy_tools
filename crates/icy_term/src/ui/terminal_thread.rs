@@ -2,7 +2,7 @@ use crate::{
     features::{AutoFileTransfer, AutoLogin},
     get_parser,
     util::SoundThread,
-    Res
+    Res,
 };
 use directories::UserDirs;
 use egui::mutex::Mutex;

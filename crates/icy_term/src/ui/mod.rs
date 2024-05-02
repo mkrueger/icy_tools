@@ -396,7 +396,6 @@ impl MainWindow {
             self.title = title.clone();
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
-
     }
 
     fn handle_terminal_key_binds(&mut self, ctx: &egui::Context) {

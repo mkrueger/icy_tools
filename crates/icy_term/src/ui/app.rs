@@ -129,7 +129,7 @@ impl MainWindow {
             shift_pressed_during_selection: false,
             use_rip: false,
             buffer_parser,
-            title: String::new()
+            title: String::new(),
         };
 
         #[cfg(not(target_arch = "wasm32"))]

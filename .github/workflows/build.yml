@@ -68,7 +68,7 @@ jobs:
     strategy:
       matrix:
         app: [icy_term, icy_draw, icy_view]
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo bundle & get

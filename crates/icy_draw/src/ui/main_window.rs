@@ -159,7 +159,7 @@ impl<'a> MainWindow<'a> {
             settings_dialog,
             last_command_update: Instant::now(),
             current_id: None,
-            title: String::new()
+            title: String::new(),
         }
     }
 
@@ -488,7 +488,7 @@ impl<'a> MainWindow<'a> {
 
         if let Some((_, doc)) = self.get_active_pane() {
             if let Some(path) = doc.get_path() {
-                let title =  if let Some(mut parent) = path.parent() {
+                let title = if let Some(mut parent) = path.parent() {
                     let directory = if let Some(user) = UserDirs::new() {
                         let home_dir = user.home_dir();
                         let mut parents = Vec::new();
