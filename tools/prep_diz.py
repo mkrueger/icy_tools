@@ -17,11 +17,10 @@ cargo.close()
 file_id = open(os.path.join("crates", sys.argv[1], "build", "file_id.diz"), "r")
 lines = file_id.readlines()
 file_id.close()
- 
 new_lines = list(map(lambda line: line.replace("#VERSION", version), lines))
 
 f = open(sys.argv[2], "w")
-f.writelines(new_lines)    
+f.writelines(new_lines)
 f.close()
 
 print(version)

@@ -1,5 +1,4 @@
 import sys
-import os
 
 if len(sys.argv) != 2:
     print("need 1 arguments")
