@@ -53,7 +53,7 @@ lazy_static! {
 
 pub fn view_selector(window: &mut MainWindow, ctx: &egui::Context, _frame: &mut eframe::Frame, download: bool) {
     if ctx.input(|i| i.key_down(egui::Key::Escape)) {
-        window.set_mode(MainWindowMode::ShowTerminal);
+        window.set_mode(ctx, MainWindowMode::ShowTerminal);
     }
 
     let title = RichText::new(if download {
@@ -80,7 +80,7 @@ pub fn view_selector(window: &mut MainWindow, ctx: &egui::Context, _frame: &mut 
                         }
                         ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
                             if ui.selectable_label(false, RichText::new(title).strong()).clicked() {
-                                window.initiate_file_transfer(protocol.clone(), download);
+                                window.initiate_file_transfer(ctx, protocol.clone(), download);
                             }
                         });
                         ui.label(RichText::new(descr));
@@ -90,7 +90,7 @@ pub fn view_selector(window: &mut MainWindow, ctx: &egui::Context, _frame: &mut 
         });
         modal.buttons(ui, |ui| {
             if modal.button(ui, fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).clicked() {
-                window.set_mode(MainWindowMode::ShowTerminal);
+                window.set_mode(ctx, MainWindowMode::ShowTerminal);
             }
         });
     });

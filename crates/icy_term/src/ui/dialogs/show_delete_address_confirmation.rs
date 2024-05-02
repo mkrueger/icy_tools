@@ -6,7 +6,7 @@ use crate::ui::{MainWindow, MainWindowMode};
 
 pub fn show_dialog(window: &mut MainWindow, ctx: &egui::Context, uuid: usize) {
     if ctx.input(|i| i.key_down(egui::Key::Escape)) {
-        window.set_mode(MainWindowMode::ShowDialingDirectory);
+        window.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
     }
     let modal = Modal::new(ctx, "my_modal");
     modal.show(|ui| {
@@ -24,11 +24,11 @@ pub fn show_dialog(window: &mut MainWindow, ctx: &egui::Context, uuid: usize) {
         modal.buttons(ui, |ui| {
             if modal.button(ui, fl!(crate::LANGUAGE_LOADER, "delete-bbs-delete-button")).clicked() {
                 window.dialing_directory_dialog.delete_bbs(uuid);
-                window.set_mode(MainWindowMode::ShowDialingDirectory);
+                window.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
             }
 
             if modal.button(ui, fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).clicked() {
-                window.set_mode(MainWindowMode::ShowDialingDirectory);
+                window.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
             }
         });
     });

@@ -138,8 +138,12 @@ impl MainWindow {
         self.state.mode.clone()
     }
 
-    pub fn set_mode(&mut self, mode: MainWindowMode) {
+    pub fn set_mode(&mut self, ctx: &egui::Context, mode: MainWindowMode) {
+        if self.state.mode == mode {
+            return;
+        }
         self.state.mode = mode;
+        ctx.request_repaint()
     }
 
     pub fn println(&mut self, str: &str) {
@@ -192,41 +196,33 @@ impl MainWindow {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn upload(&mut self, protocol_type: TransferProtocolType, files: Vec<PathBuf>) {
-        self.set_mode(MainWindowMode::FileTransfer(false));
+    fn upload(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, files: Vec<PathBuf>) {
+        self.set_mode(ctx, MainWindowMode::FileTransfer(false));
         self.send_data(SendData::Upload(protocol_type, files));
 
         //        check_error!(self, r, false);
     }
 
-    fn download(&mut self, protocol_type: TransferProtocolType) {
-        self.set_mode(MainWindowMode::FileTransfer(true));
+    fn download(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType) {
+        self.set_mode(ctx, MainWindowMode::FileTransfer(true));
         self.send_data(SendData::Download(protocol_type));
 
         //let r = self.tx.send(SendData::Download(protocol_type));
         check_error!(self, r, false);
     }
 
-    pub(crate) fn initiate_file_transfer(&mut self, protocol_type: TransferProtocolType, download: bool) {
-        self.set_mode(MainWindowMode::ShowTerminal);
+    pub(crate) fn initiate_file_transfer(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, download: bool) {
+        self.set_mode(ctx, MainWindowMode::ShowTerminal);
         if download {
-            self.download(protocol_type);
+            self.download(ctx, protocol_type);
         } else {
-            self.init_upload_dialog(protocol_type);
+            self.init_upload_dialog(ctx, protocol_type);
         }
     }
 
     pub fn set_screen_mode(&mut self, mode: ScreenMode) {
         self.screen_mode = mode;
         mode.set_mode(self);
-    }
-
-    pub fn show_terminal(&mut self) {
-        self.set_mode(MainWindowMode::ShowTerminal);
-    }
-
-    pub fn show_dialing_directory(&mut self) {
-        self.set_mode(MainWindowMode::ShowDialingDirectory);
     }
 
     pub fn call_bbs_uuid(&mut self, ctx: &egui::Context, uuid: Option<usize>) {
@@ -245,7 +241,7 @@ impl MainWindow {
     }
 
     pub fn call_bbs(&mut self, ctx: &egui::Context, i: usize) {
-        self.set_mode(MainWindowMode::ShowTerminal);
+        self.set_mode(ctx, MainWindowMode::ShowTerminal);
         let cloned_addr = self.dialing_directory_dialog.addresses.addresses[i].clone();
 
         {
@@ -317,11 +313,11 @@ impl MainWindow {
         });
     }
 
-    pub fn hangup(&mut self) {
+    pub fn hangup(&mut self, ctx: &egui::Context) {
         self.send_data(SendData::Disconnect);
         self.update_thread_handle = None;
         self.buffer_update_thread.lock().sound_thread.lock().clear();
-        self.set_mode(MainWindowMode::ShowDialingDirectory);
+        self.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
     }
 
     pub fn send_login(&mut self) {
@@ -386,7 +382,7 @@ impl MainWindow {
                 fl!(crate::LANGUAGE_LOADER, "title-offline", version = crate::VERSION.to_string())
             };
             if show_disconnect {
-                self.set_mode(MainWindowMode::ShowDisconnectedMessage(system_name.clone(), connection_time.clone()));
+                self.set_mode(ctx, MainWindowMode::ShowDisconnectedMessage(system_name.clone(), connection_time.clone()));
                 self.output_string("\nNO CARRIER\n");
             }
             title
@@ -405,11 +401,11 @@ impl MainWindow {
         }
         if self.get_options().bind.dialing_directory.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
-            self.set_mode(MainWindowMode::ShowDialingDirectory);
+            self.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
         }
         if self.get_options().bind.hangup.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
-            self.hangup();
+            self.hangup(ctx);
         }
         if self.get_options().bind.send_login_pw.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
@@ -417,11 +413,11 @@ impl MainWindow {
         }
         if self.get_options().bind.show_settings.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
-            self.set_mode(MainWindowMode::ShowSettings);
+            self.set_mode(ctx, MainWindowMode::ShowSettings);
         }
         if self.get_options().bind.show_capture.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
-            self.set_mode(MainWindowMode::ShowCaptureDialog);
+            self.set_mode(ctx, MainWindowMode::ShowCaptureDialog);
         }
         if self.get_options().bind.quit.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
@@ -436,11 +432,11 @@ impl MainWindow {
         }
         if self.get_options().bind.upload.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
-            self.set_mode(MainWindowMode::SelectProtocol(false));
+            self.set_mode(ctx, MainWindowMode::SelectProtocol(false));
         }
         if self.get_options().bind.download.pressed(ctx) {
             ctx.input_mut(|i| i.events.clear());
-            self.set_mode(MainWindowMode::SelectProtocol(true));
+            self.set_mode(ctx, MainWindowMode::SelectProtocol(true));
         }
 
         if self.get_options().bind.show_find.pressed(ctx) {

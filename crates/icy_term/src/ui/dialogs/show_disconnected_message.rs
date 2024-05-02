@@ -43,6 +43,6 @@ pub fn show_disconnected(window: &mut MainWindow, ctx: &egui::Context, system: S
         });
 
     if !open || close_dialog {
-        window.set_mode(MainWindowMode::ShowTerminal);
+        window.set_mode(ctx, MainWindowMode::ShowTerminal);
     }
 }

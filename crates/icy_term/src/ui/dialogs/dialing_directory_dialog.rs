@@ -871,7 +871,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
 
                     if r.clicked() {
                         if let Some(uuid) = window.dialing_directory_dialog.selected_bbs {
-                            window.set_mode(MainWindowMode::DeleteSelectedAddress(uuid));
+                            window.set_mode(ctx, MainWindowMode::DeleteSelectedAddress(uuid));
                         }
                     }
 
@@ -885,7 +885,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
 
                     let r: egui::Response = ui.add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")));
                     if r.clicked() {
-                        window.show_terminal();
+                        window.set_mode(ctx, MainWindowMode::ShowTerminal);
                     }
 
                     let r: egui::Response = ui.add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")));
@@ -901,6 +901,6 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
     });
 
     if !open {
-        window.show_terminal();
+        window.set_mode(ctx, MainWindowMode::ShowTerminal);
     }
 }

@@ -40,7 +40,7 @@ impl MainWindow {
                     });
 
                     if r.clicked() {
-                        self.set_mode(MainWindowMode::SelectProtocol(false));
+                        self.set_mode(ctx, MainWindowMode::SelectProtocol(false));
                     }
 
                     let r = ui.add(ImageButton::new(DOWNLOAD.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
@@ -48,7 +48,7 @@ impl MainWindow {
                     });
 
                     if r.clicked() {
-                        self.set_mode(MainWindowMode::SelectProtocol(true));
+                        self.set_mode(ctx, MainWindowMode::SelectProtocol(true));
                     }
                     let mut send_login = false;
                     if let Some(auto_login) = &mut self.buffer_update_thread.lock().auto_login {
@@ -72,7 +72,7 @@ impl MainWindow {
                     });
 
                     if r.clicked() {
-                        self.show_dialing_directory();
+                        self.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
                     }
 
                     let mut mode = None;
@@ -95,7 +95,7 @@ impl MainWindow {
                     }
 
                     if let Some(mode) = mode {
-                        self.set_mode(mode);
+                        self.set_mode(ctx, mode);
                     }
 
                     if self.buffer_update_thread.lock().sound_thread.lock().is_playing() {
@@ -135,7 +135,7 @@ impl MainWindow {
                         ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).small());
                     });
                     if r.clicked() {
-                        self.hangup();
+                        self.hangup(ctx);
                     }
                     ui.menu_image_button(MENU.clone().tint(crate::ui::button_tint(ui)), |ui| {
                         let r = ui.hyperlink_to(
@@ -162,12 +162,12 @@ impl MainWindow {
                         ui.separator();
                         #[cfg(not(target_arch = "wasm32"))]
                         if ui.button(fl!(crate::LANGUAGE_LOADER, "menu-item-capture-dialog")).clicked() {
-                            self.set_mode(MainWindowMode::ShowCaptureDialog);
+                            self.set_mode(ctx, MainWindowMode::ShowCaptureDialog);
                             ui.close_menu();
                         }
 
                         if ui.button(fl!(crate::LANGUAGE_LOADER, "menu-item-settings")).clicked() {
-                            self.set_mode(MainWindowMode::ShowSettings);
+                            self.set_mode(ctx, MainWindowMode::ShowSettings);
                             ui.close_menu();
                         }
                     });
@@ -220,7 +220,7 @@ impl MainWindow {
 
         let take = self.buffer_update_thread.lock().auto_transfer.take();
         if let Some((protocol_type, download)) = take {
-            self.initiate_file_transfer(protocol_type, download);
+            self.initiate_file_transfer(ctx, protocol_type, download);
         }
 
         if self.update_thread_handle.is_some() && self.update_thread_handle.as_ref().unwrap().is_finished() {
@@ -655,7 +655,7 @@ fn terminal_context_menu(ui: &mut egui::Ui, window: &mut MainWindow) {
             .add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "terminal-menu-export")).wrap(false))
             .clicked()
         {
-            window.init_export_dialog();
+            window.init_export_dialog(ui.ctx());
             ui.close_menu();
         }
     }

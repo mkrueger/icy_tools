@@ -11,17 +11,17 @@ pub struct DialogState {
 }
 
 impl MainWindow {
-    pub fn init_upload_dialog(&mut self, protocol_type: TransferProtocolType) {
+    pub fn init_upload_dialog(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType) {
         let mut dialog: FileDialog = FileDialog::open_file(self.initial_upload_directory.clone()).multi_select(true);
         dialog.open();
         self.upload_dialog.open_file_dialog = Some(dialog);
         self.upload_dialog.protocol_type = protocol_type;
-        self.set_mode(MainWindowMode::ShowUploadDialog);
+        self.set_mode(ctx, MainWindowMode::ShowUploadDialog);
     }
 
     pub fn show_upload_dialog(&mut self, ctx: &egui::Context) {
         if ctx.input(|i: &egui::InputState| i.key_down(egui::Key::Escape)) {
-            self.set_mode(MainWindowMode::ShowTerminal);
+            self.set_mode(ctx, MainWindowMode::ShowTerminal);
         }
 
         if let Some(dialog) = &mut self.upload_dialog.open_file_dialog {
@@ -39,14 +39,14 @@ impl MainWindow {
                                 }
                             }
                         }
-                        self.set_mode(MainWindowMode::ShowTerminal);
+                        self.set_mode(ctx, MainWindowMode::ShowTerminal);
                         return;
                     }
                     if let Some(parent) = files[0].parent() {
                         self.initial_upload_directory = Some(parent.to_path_buf());
                     }
                     let files = files.iter().map(|p| p.to_path_buf()).collect();
-                    self.upload(self.upload_dialog.protocol_type.clone(), files);
+                    self.upload(ctx, self.upload_dialog.protocol_type.clone(), files);
                 }
             }
         }

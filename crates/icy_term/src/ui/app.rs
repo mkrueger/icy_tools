@@ -194,16 +194,16 @@ impl eframe::App for MainWindow {
                 let state = self.buffer_update_thread.lock().current_transfer.clone();
                 // auto close uploads.
                 if !download && state.is_finished {
-                    self.set_mode(MainWindowMode::ShowTerminal);
+                    self.set_mode(ctx, MainWindowMode::ShowTerminal);
                 }
                 match dialogs::up_download_dialog::FileTransferDialog::new().show_dialog(ctx, frame, &state, download) {
                     dialogs::up_download_dialog::FileTransferDialogAction::Run => {}
                     dialogs::up_download_dialog::FileTransferDialogAction::Close | dialogs::up_download_dialog::FileTransferDialogAction::CancelTransfer => {
                         if state.is_finished {
-                            self.set_mode(MainWindowMode::ShowTerminal);
+                            self.set_mode(ctx, MainWindowMode::ShowTerminal);
                         } else {
                             self.send_data(super::connect::SendData::CancelTransfer);
-                            self.set_mode(MainWindowMode::ShowTerminal);
+                            self.set_mode(ctx, MainWindowMode::ShowTerminal);
                         }
                     }
                 }
@@ -211,7 +211,7 @@ impl eframe::App for MainWindow {
             MainWindowMode::ShowCaptureDialog => {
                 self.update_terminal_window(ctx, frame, false);
                 if !self.buffer_update_thread.lock().capture_dialog.show_caputure_dialog(ctx) {
-                    self.set_mode(MainWindowMode::ShowTerminal);
+                    self.set_mode(ctx, MainWindowMode::ShowTerminal);
                 }
             }
             MainWindowMode::ShowExportDialog => {

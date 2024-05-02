@@ -346,12 +346,6 @@ async fn file_transfer(
     let instant = Instant::now();
     while !transfer_state.is_finished {
         tokio::select! {
-            Ok(()) = prot.update_transfer(&mut *c.com, &mut transfer_state) => {
-                if instant.elapsed() > Duration::from_millis(500) {
-                    update_thread.lock().current_transfer = transfer_state.clone();
-                    ctx.request_repaint();
-                }
-            }
             data = c.rx.recv() => {
                 match data {
                     Some(SendData::CancelTransfer) => {
@@ -360,6 +354,12 @@ async fn file_transfer(
                         break;
                     }
                     _ => {}
+                }
+            }
+            Ok(()) = prot.update_transfer(&mut *c.com, &mut transfer_state) => {
+                if instant.elapsed() > Duration::from_millis(500) {
+                    update_thread.lock().current_transfer = transfer_state.clone();
+                    ctx.request_repaint();
                 }
             }
         };
