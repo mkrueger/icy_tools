@@ -129,6 +129,7 @@ impl MainWindow {
             shift_pressed_during_selection: false,
             use_rip: false,
             buffer_parser,
+            title: String::new()
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -165,11 +166,11 @@ impl eframe::App for MainWindow {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(not(target_arch = "wasm32"))]
         self.update_title(ctx);
+
         match self.get_mode() {
             MainWindowMode::ShowTerminal => {
                 self.handle_terminal_key_binds(ctx);
                 self.update_terminal_window(ctx, frame, false);
-                ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowDialingDirectory => {
                 self.update_terminal_window(ctx, frame, true);
@@ -203,7 +204,6 @@ impl eframe::App for MainWindow {
                         } else {
                             self.send_data(super::connect::SendData::CancelTransfer);
                             self.set_mode(MainWindowMode::ShowTerminal);
-                            ctx.request_repaint_after(Duration::from_millis(150));
                         }
                     }
                 }
@@ -213,28 +213,23 @@ impl eframe::App for MainWindow {
                 if !self.buffer_update_thread.lock().capture_dialog.show_caputure_dialog(ctx) {
                     self.set_mode(MainWindowMode::ShowTerminal);
                 }
-                ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowExportDialog => {
                 self.update_terminal_window(ctx, frame, false);
                 self.show_export_dialog(ctx);
-                ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowUploadDialog => {
                 self.update_terminal_window(ctx, frame, false);
                 self.show_upload_dialog(ctx);
-                ctx.request_repaint_after(Duration::from_millis(150));
             }
             MainWindowMode::ShowIEMSI => {
                 self.update_terminal_window(ctx, frame, false);
                 dialogs::show_iemsi::show_iemsi(self, ctx);
-                ctx.request_repaint_after(Duration::from_millis(150));
             } // MainWindowMode::AskDeleteEntry => todo!(),
 
             MainWindowMode::ShowDisconnectedMessage(time, system) => {
                 self.update_terminal_window(ctx, frame, false);
                 dialogs::show_disconnected_message::show_disconnected(self, ctx, time, system);
-                ctx.request_repaint_after(Duration::from_millis(150));
             }
         }
     }

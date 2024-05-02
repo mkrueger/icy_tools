@@ -2,7 +2,7 @@ use crate::{
     features::{AutoFileTransfer, AutoLogin},
     get_parser,
     util::SoundThread,
-    Res, TerminalResult,
+    Res
 };
 use directories::UserDirs;
 use egui::mutex::Mutex;
@@ -206,6 +206,8 @@ pub fn start_update_thread(
                                                 }
                                             }
                                             ctx.request_repaint();
+                                        } else {
+                                            thread::sleep(std::time::Duration::from_millis(20));
                                         }
                                     }
                                 }

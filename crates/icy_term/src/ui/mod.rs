@@ -123,7 +123,7 @@ pub struct MainWindow {
 
     pub show_find_dialog: bool,
     pub find_dialog: dialogs::find_dialog::DialogState,
-
+    title: String,
     buffer_parser: Box<dyn BufferParser>,
     #[cfg(target_arch = "wasm32")]
     poll_thread: com_thread::ConnectionThreadData,
@@ -358,8 +358,8 @@ impl MainWindow {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn update_title(&mut self, ctx: &egui::Context) {
-        if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.to_string()));
+        let title = if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
+            crate::DEFAULT_TITLE.to_string()
         } else {
             let show_disconnect = false;
             let d = Instant::now().duration_since(self.buffer_update_thread.lock().connection_time);
@@ -385,12 +385,18 @@ impl MainWindow {
             } else {
                 fl!(crate::LANGUAGE_LOADER, "title-offline", version = crate::VERSION.to_string())
             };
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
             if show_disconnect {
                 self.set_mode(MainWindowMode::ShowDisconnectedMessage(system_name.clone(), connection_time.clone()));
                 self.output_string("\nNO CARRIER\n");
             }
+            title
+        };
+
+        if self.title != title {
+            self.title = title.clone();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
+
     }
 
     fn handle_terminal_key_binds(&mut self, ctx: &egui::Context) {

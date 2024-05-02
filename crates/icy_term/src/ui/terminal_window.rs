@@ -6,6 +6,7 @@ use eframe::{
 use egui::{ImageButton, Margin, Modifiers, RichText};
 use i18n_embed_fl::fl;
 use icy_engine::{Position, Selection, TextPane};
+use web_time::Duration;
 
 use crate::{
     icons::{CALL, DOWNLOAD, KEY, LOGOUT, MENU, UPLOAD},
@@ -230,6 +231,7 @@ impl MainWindow {
                 self.output_string(&err);
             }
         }
+        ctx.request_repaint_after(Duration::from_millis(250));
     }
 
     fn show_terminal_area(&mut self, ui: &mut egui::Ui) {
