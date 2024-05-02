@@ -78,7 +78,7 @@ impl TerminalThread {
             let result = buffer_parser.print_char(buffer, 0, &mut caret, ch as char);
             match result {
                 Ok(action) => {
-                    let res = self.handle_action(action, connection).await;
+                    self.handle_action(action, connection).await;
                 }
                 Err(err) => {
                     log::error!("print_char: {err}");

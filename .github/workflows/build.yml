@@ -22,7 +22,7 @@ jobs:
      id: build-deb
      run: |
        cargo install cargo-deb
-       export version=$(python3 tools/prep_diz.py "crates/${{ matrix.app }}/" "file_id.diz")
+       export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
        echo "VERSION=$version" >> $GITHUB_ENV
        echo "Version: $version"
        cd crates/${{ matrix.app }}
@@ -46,7 +46,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Prepare FILE_ID.DIZ
       run: |
-        $VERSION=$(python tools\prep_diz.py ".\crates\${{ matrix.app }}\" "file_id.diz")
+        $VERSION=$(python tools\prep_diz.py "${{ matrix.app }}" "file_id.diz")
         echo "Version: $VERSION"
         
         Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
@@ -83,18 +83,7 @@ jobs:
           cargo build --release --target aarch64-apple-darwin
           cargo build --release --target x86_64-apple-darwin
           cd ../..
-
-          if #[${{ matrix.app }} == 'icy_term']
-          then
-            export APP="Icy Term"
-          elif #[${{ matrix.app }} == 'icy_draw']
-          then
-            export APP="Icy Draw"
-          elif #[${{ matrix.app }} == 'icy_view']
-          then
-            export APP="Icy View"
-          fi
-
+          export APP=$(python3 tools/get_app_name.py "${{ matrix.app }}")
           echo "APP=$APP" >> $GITHUB_ENV
 
           mkdir -p "${{ env.APP }}.app/Contents/MacOS"
@@ -112,7 +101,7 @@ jobs:
           iconutil -c icns AppIcon.iconset
           cp AppIcon.icns "${{ env.APP }}.app/Contents/Resources"
           
-          export version=$(python3 tools/prep_diz.py "crates/${{ matrix.app }}/" "file_id.diz")
+          export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
           echo "VERSION=$version" >> $GITHUB_ENV
           echo "Version: $version"
 

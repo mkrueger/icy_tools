@@ -1,11 +1,12 @@
 import sys
+import os
 
 if len(sys.argv) != 3:
     print("need 2 arguments")
     sys.exit(1)
 
 version=""
-cargo = open(sys.argv[1] + "Cargo.toml", "r")
+cargo = open(os.path.join("crates", sys.argv[1], "Cargo.toml"), "r")
 for line in cargo.readlines():
     if line.startswith("version"):
         m = line.index('"')
@@ -13,7 +14,7 @@ for line in cargo.readlines():
         break
 cargo.close()
 
-file_id = open(sys.argv[1] + "/build/file_id.diz", "r")
+file_id = open(os.path.join("crates", sys.argv[1], "build", "file_id.diz"), "r")
 lines = file_id.readlines()
 file_id.close()
  

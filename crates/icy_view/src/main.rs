@@ -15,7 +15,7 @@ lazy_static::lazy_static! {
 lazy_static::lazy_static! {
     static ref LATEST_VERSION: Version = {
         let github = github_release_check::GitHub::new().unwrap();
-        for ver in github.get_all_versions("mkrueger/icy_tools") {
+        if let Ok(ver) = github.get_all_versions("mkrueger/icy_tools") {
             for v in ver {
                 if v.starts_with("IcyView") {
                     return Version::parse(&v[7..]).unwrap();
