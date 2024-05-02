@@ -23,7 +23,7 @@ Features supported so far:
 # Get binaries
 
 Get the latest release here:
-https://github.com/mkrueger/icy_tools/releases/latest
+https://github.com/mkrueger/icy_tools/releases
 
 
 ## Requires

@@ -36,7 +36,7 @@ IcyDraw is a full features ansi drawing tool doing things a bit different than o
 # Get binaries
 
 Get the latest release here:
-https://github.com/mkrueger/icy_tools/releases/latest
+https://github.com/mkrueger/icy_tools/releases
 
 ## Requires
 

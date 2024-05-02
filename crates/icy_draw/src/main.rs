@@ -37,11 +37,14 @@ lazy_static::lazy_static! {
 lazy_static::lazy_static! {
     static ref LATEST_VERSION: Version = {
         let github = github_release_check::GitHub::new().unwrap();
-        if let Ok(latest) = github.get_latest_version("mkrueger/icy_draw") {
-            latest
-        } else {
-            VERSION.clone()
+        for ver in github.get_all_versions("mkrueger/icy_tools") {
+            for v in ver {
+                if v.starts_with("IcyDraw") {
+                    return Version::parse(&v[7..]).unwrap();
+                }
+            }
         }
+        VERSION.clone()
     };
 }
 

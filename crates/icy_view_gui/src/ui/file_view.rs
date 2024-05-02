@@ -177,7 +177,7 @@ impl FileView {
             if let Some(ver) = &self.upgrade_version {
                 ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = ver.clone()),
-                    "https://github.com/mkrueger/icy_tools/releases/latest",
+                    "https://github.com/mkrueger/icy_tools/releases",
                 );
             }
         });
@@ -222,7 +222,7 @@ impl FileView {
                 }
                 let r = ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-item-check-releases"),
-                    "https://github.com/mkrueger/icy_tools/releases/latest",
+                    "https://github.com/mkrueger/icy_tools/releases",
                 );
                 if r.clicked() {
                     ui.close_menu();

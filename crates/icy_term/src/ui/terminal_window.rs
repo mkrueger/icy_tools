@@ -154,7 +154,7 @@ impl MainWindow {
                         }
                         let r = ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-item-check-releases"),
-                            "https://github.com/mkrueger/icy_tools/releases/latest",
+                            "https://github.com/mkrueger/icy_tools/releases",
                         );
                         if r.clicked() {
                             ui.close_menu();
