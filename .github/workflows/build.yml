@@ -60,7 +60,7 @@ jobs:
     - name: 'Upload executable'
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.app }}_${{ env.VERSION }}_windows
+        name: ${{ matrix.app }}_windows_${{ env.VERSION }}
         path: |
           ${{ matrix.app }}.exe
           file_id.diz
@@ -79,15 +79,28 @@ jobs:
           brew install create-dmg
       - name: Build dmg
         run: |
-          cd crates/${{ matrix.app }}
+          cd crates/${{ env.APP }}
           cargo build --release --target aarch64-apple-darwin
           cargo build --release --target x86_64-apple-darwin
           cd ../..
 
-          mkdir -p "${{ matrix.app }}.app/Contents/MacOS"
-          mkdir -p "${{ matrix.app }}.app/Contents/Resources"
+          if #[${{ matrix.app }} == 'icy_term']
+          then
+            export APP="Icy Term"
+          elif #[${{ matrix.app }} == 'icy_draw']
+          then
+            export APP="Icy Draw"
+          elif #[${{ matrix.app }} == 'icy_view']
+          then
+            export APP="Icy View"
+          fi
 
-          cp crates/${{ matrix.app }}/build/mac/Info.plist "${{ matrix.app }}.app/Contents/Info.plist"
+          echo "APP=$APP" >> $GITHUB_ENV
+
+          mkdir -p "${{ env.APP }}.app/Contents/MacOS"
+          mkdir -p "${{ env.APP }}.app/Contents/Resources"
+
+          cp crates/${{ matrix.app }}/build/mac/Info.plist "${{ env.APP }}.app/Contents/Info.plist"
 
           mkdir -p AppIcon.iconset
           sips -z 16 16 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_16x16.png
@@ -97,7 +110,7 @@ jobs:
           sips -z 128 128 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_128x128.png
           cp crates/${{ matrix.app }}/build/mac/128x128@2x.png AppIcon.iconset/icon_128x128@2x.png
           iconutil -c icns AppIcon.iconset
-          cp AppIcon.icns "${{ matrix.app }}.app/Contents/Resources"
+          cp AppIcon.icns "${{ env.APP }}.app/Contents/Resources"
           
           export version=$(python3 tools/prep_diz.py "crates/${{ matrix.app }}/" "file_id.diz")
           echo "VERSION=$version" >> $GITHUB_ENV
@@ -105,21 +118,21 @@ jobs:
 
           lipo "target/x86_64-apple-darwin/release/${{ matrix.app }}" \
                "target/aarch64-apple-darwin/release/${{ matrix.app }}" \
-               -create -output "${{ matrix.app }}.app/Contents/MacOS/${{ matrix.app }}"
+               -create -output "${{ env.APP }}.app/Contents/MacOS/${{ matrix.app }}"
 
       - name: Sign dmg
         id: sign-bundle
         run: |
           create-dmg \
-            --volname "${{ matrix.app }} Installer" \
+            --volname "${{ env.APP }} Installer" \
             --volicon "AppIcon.icns" \
             --window-pos 200 120 \
             --window-size 800 400 \
             --icon-size 128 \
-            --hide-extension "${{ matrix.app }}.app" \
+            --hide-extension "${{ env.APP }}.app" \
             --app-drop-link 600 185 \
-            "${{ matrix.app }}-${{ env.VERSION }}-universal.dmg" \
-            "${{ matrix.app }}.app"
+            "${{ env.APP }}-${{ env.VERSION }}-universal.dmg" \
+            "${{ env.APP }}.app"
       - name: 'Upload dmg'
         uses: actions/upload-artifact@v4
         with:
