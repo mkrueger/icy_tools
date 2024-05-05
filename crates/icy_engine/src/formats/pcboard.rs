@@ -3,7 +3,7 @@ use std::path::Path;
 use codepages::tables::CP437_TO_UNICODE;
 use icy_sauce::SauceInformation;
 
-use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
+use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
 
 use super::SaveOptions;
 
@@ -69,7 +69,11 @@ impl OutputFormat for PCBoard {
                     if ch.ch == '\0' {
                         result.push(b' ')
                     } else {
-                        let uni_ch = CP437_TO_UNICODE[ch.ch as usize].to_string();
+                        let uni_ch = if buf.buffer_type == BufferType::Unicode {
+                            ch.ch.to_string()
+                        } else {
+                            CP437_TO_UNICODE[ch.ch as usize].to_string()
+                        };
                         result.extend(uni_ch.as_bytes().to_vec());
                     }
                 } else {
