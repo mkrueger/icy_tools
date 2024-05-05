@@ -10,7 +10,7 @@ use super::SaveOptions;
 pub(crate) const HEX_TABLE: &[u8; 16] = b"0123456789ABCDEF";
 
 #[derive(Default)]
-pub(super) struct PCBoard {}
+pub struct PCBoard {}
 
 impl OutputFormat for PCBoard {
     fn get_file_extension(&self) -> &str {

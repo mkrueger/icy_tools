@@ -46,7 +46,7 @@ pub use parsers::*;
 mod caret;
 pub use caret::*;
 
-mod formats;
+pub mod formats;
 pub use formats::*;
 
 mod tdf_font;

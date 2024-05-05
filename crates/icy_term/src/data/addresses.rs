@@ -548,6 +548,8 @@ fn parse_address(value: &Value) -> Address {
                 "raw" => result.protocol = ConnectionType::Raw,
                 "websocket(true)" => result.protocol = ConnectionType::Websocket,
                 "websocket(false)" => result.protocol = ConnectionType::SecureWebsocket,
+                "modem" => result.protocol = ConnectionType::Modem,
+                "serial" => result.protocol = ConnectionType::Serial,
                 _ => {}
             }
         }
@@ -648,7 +650,18 @@ fn store_address(file: &mut File, addr: &Address) -> TerminalResult<()> {
     }
     file.write_all(format!("address = \"{}\"\n", escape(&addr.address)).as_bytes())?;
     if addr.protocol != ConnectionType::default() {
-        file.write_all(format!("protocol = \"{:?}\"\n", addr.protocol).as_bytes())?;
+        let protocol = match addr.protocol {
+            ConnectionType::Telnet => "Telnet",
+            ConnectionType::SSH => "SSH",
+            ConnectionType::Raw => "Raw",
+            ConnectionType::Websocket => "WebSocket(true)",
+            ConnectionType::SecureWebsocket => "WebSocket(false)",
+            ConnectionType::Modem => "Modem",
+            ConnectionType::Serial => "Serial",
+            _ => "",
+        };
+
+        file.write_all(format!("protocol = \"{}\"\n", protocol).as_bytes())?;
     }
     if !addr.user_name.is_empty() {
         file.write_all(format!("user_name = \"{}\"\n", escape(&addr.user_name)).as_bytes())?;
