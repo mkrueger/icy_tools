@@ -24,7 +24,7 @@ anyhow = "1.0.80"
 serde = { workspace = true }
 byteorder = "1"
 bstr = { workspace = true }
-codepages = { git ="https://github.com/mkrueger/icy_board" }
+codepages = { workspace = true }
 
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }

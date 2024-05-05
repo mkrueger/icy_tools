@@ -23,6 +23,7 @@ icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = { path = "crates/icy_sauce" }
 icy_sixel = { path = "crates/icy_sixel" }
 icy_view_gui = { path = "crates/icy_view_gui" }
+codepages = { git ="https://github.com/mkrueger/icy_board" }
 
 zip = { version = "1.1.1"}
 lazy_static = "1.4.0"

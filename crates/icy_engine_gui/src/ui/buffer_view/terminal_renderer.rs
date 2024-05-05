@@ -1,11 +1,13 @@
 #![allow(clippy::float_cmp)]
 use std::cmp::max;
 
+use codepages::tables::UNICODE_TO_CP437_NO_CTRL_CODES;
 use egui::epaint::ahash::HashMap;
 use egui::Vec2;
 use glow::HasContext as _;
 use icy_engine::editor::EditState;
 use icy_engine::Buffer;
+use icy_engine::BufferType;
 use icy_engine::Size;
 use icy_engine::TextAttribute;
 use icy_engine::TextPane;
@@ -345,7 +347,15 @@ impl TerminalRenderer {
                 if ch.attribute.is_concealed() {
                     buffer_data.push(b' ');
                 } else {
-                    buffer_data.push(ch.ch as u8);
+                    if buf.buffer_type == BufferType::Unicode {
+                        if let Some(code) = UNICODE_TO_CP437_NO_CTRL_CODES.get(&ch.ch) {
+                            buffer_data.push(*code);
+                        } else {
+                            buffer_data.push(b'?');
+                        }
+                    } else {
+                        buffer_data.push(ch.ch as u8);
+                    }
                 }
                 if !use_fg {
                     ch.attribute.set_foreground(7);

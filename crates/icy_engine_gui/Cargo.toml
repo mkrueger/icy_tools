@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 icy_engine = { workspace = true }
+codepages = { workspace = true }
 serde = { workspace = true }
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
 egui= { workspace = true }

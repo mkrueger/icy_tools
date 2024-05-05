@@ -586,7 +586,7 @@ pub(crate) fn compare_buffers(buf_old: &Buffer, buf_new: &Buffer, compare_option
 
 pub fn convert_ansi_to_utf8(data: &[u8]) -> (String, bool) {
     if data.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        if let Ok(result) = String::from_utf8(data.to_vec()) {
+        if let Ok(result) = String::from_utf8(data[3..].to_vec()) {
             return (result, true);
         }
     }

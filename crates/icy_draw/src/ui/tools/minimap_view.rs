@@ -49,6 +49,7 @@ impl MinimapToolWindow {
             let buffer = bv.get_buffer();
             self.buffer_view.lock().get_buffer_mut().set_size(buffer.get_size());
             self.buffer_view.lock().get_buffer_mut().layers = buffer.layers.clone();
+            self.buffer_view.lock().get_buffer_mut().buffer_type = buffer.buffer_type;
             self.buffer_view.lock().get_buffer_mut().palette = buffer.palette.clone();
             self.buffer_view.lock().get_buffer_mut().set_font_table(buffer.get_font_table());
             self.palette_hash = cur_palette_hash;
