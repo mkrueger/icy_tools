@@ -59,9 +59,7 @@ impl OutputFormat for PCBoard {
                 let ch = buf.get_char(pos);
 
                 if first_char || ch.attribute != last_attr {
-                    result.extend_from_slice(b"@X");
-                    result.push(HEX_TABLE[ch.attribute.get_background() as usize]);
-                    result.push(HEX_TABLE[ch.attribute.get_foreground() as usize]);
+                    result.extend_from_slice(format!("@X{:02X}", ch.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
                     last_attr = ch.attribute;
                 }
 
