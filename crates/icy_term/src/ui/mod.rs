@@ -197,6 +197,9 @@ impl MainWindow {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn upload(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, files: Vec<PathBuf>) {
+        use icy_net::protocol::TransferState;
+        self.buffer_update_thread.lock().current_transfer = TransferState::new(String::new());
+
         self.set_mode(ctx, MainWindowMode::FileTransfer(false));
         self.send_data(SendData::Upload(protocol_type, files));
 
@@ -204,6 +207,9 @@ impl MainWindow {
     }
 
     fn download(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType) {
+        use icy_net::protocol::TransferState;
+        self.buffer_update_thread.lock().current_transfer = TransferState::new(String::new());
+
         self.set_mode(ctx, MainWindowMode::FileTransfer(true));
         self.send_data(SendData::Download(protocol_type));
 
