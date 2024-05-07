@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use icy_engine::{BitFont, Color, Palette, Size, ATARI, ATARI_DEFAULT_PALETTE, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, CP437, VIEWDATA, VIEWDATA_PALETTE};
+use icy_engine::{
+    BitFont, Color, Palette, Size, ATARI, ATARI_DEFAULT_PALETTE, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, CP437, IBM_VGA50_SAUCE, VIEWDATA, VIEWDATA_PALETTE,
+};
 use icy_engine_gui::BufferInputMode;
 
 use crate::ui::MainWindow;
@@ -100,11 +102,21 @@ impl ScreenMode {
     }
 
     pub fn set_mode(&self, main_window: &MainWindow) {
+        main_window.buffer_view.lock().get_buffer_mut().set_default_size(self.get_window_size());
         main_window.buffer_view.lock().get_buffer_mut().set_size(self.get_window_size());
         main_window.buffer_view.lock().get_buffer_mut().terminal_state.set_size(self.get_window_size());
         match self {
             // ScreenMode::Cga(_, h) | ScreenMode::Ega(_, h) |
-            ScreenMode::Vga(_, _) | ScreenMode::Default => {
+            ScreenMode::Vga(_x, y) => {
+                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
+                main_window
+                    .buffer_view
+                    .lock()
+                    .get_buffer_mut()
+                    .set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
+                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::dos_default();
+            }
+            ScreenMode::Default => {
                 main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
                 main_window
                     .buffer_view

@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use egui::Modifiers;
+use egui::{Modifiers, Rect};
 use egui_bind::KeyOrPointer;
 use i18n_embed_fl::fl;
 use icy_engine::Color;
@@ -284,6 +284,8 @@ pub struct Options {
     pub bind: KeyBindings,
     pub iemsi: IEMSISettings,
 
+    pub window_rect: Option<Rect>,
+
     pub modem: Modem,
 }
 
@@ -297,6 +299,7 @@ impl Default for Options {
             console_beep: true,
             bind: KeyBindings::default(),
             is_dark_mode: None,
+            window_rect: None,
             modem: Modem::default(),
         }
     }
@@ -340,6 +343,10 @@ impl Options {
 
             let mut file = File::create(&write_name)?;
             file.write_all(b"version = \"1.1\"\n")?;
+
+            if let Some(rect) = self.window_rect {
+                file.write_all(format!("window_coord = \"{}/{}-{}/{}\"\n", rect.min.x, rect.min.y, rect.max.x, rect.max.y).as_bytes())?;
+            }
 
             file.write_all(format!("scaling = \"{:?}\"\n", self.scaling).as_bytes())?;
             if let Some(dark_mode) = self.is_dark_mode {
@@ -436,6 +443,18 @@ fn parse_value(options: &mut Options, value: &Value) {
         Value::Table(table) => {
             for (k, v) in table {
                 match k.as_str() {
+                    "window_coord" => {
+                        if let Value::String(str) = v {
+                            let mut minmax = str.split('-');
+                            let min = minmax.next().unwrap().split('/').collect::<Vec<&str>>();
+                            let max = minmax.next().unwrap().split('/').collect::<Vec<&str>>();
+
+                            options.window_rect = Some(Rect::from_min_max(
+                                egui::Pos2::new(min[0].parse::<f32>().unwrap(), min[1].parse::<f32>().unwrap()),
+                                egui::Pos2::new(max[0].parse::<f32>().unwrap(), max[1].parse::<f32>().unwrap()),
+                            ));
+                        }
+                    }
                     "scaling" => {
                         if let Value::String(str) = v {
                             match str.as_str() {

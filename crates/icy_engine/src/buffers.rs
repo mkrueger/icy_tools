@@ -611,6 +611,11 @@ impl Buffer {
         let size = size.into();
         self.size = size;
     }
+    
+    pub fn set_default_size(&mut self, size: impl Into<Size>) {
+        let size = size.into();
+        self.original_size = size;
+    }
 
     pub fn set_width(&mut self, width: i32) {
         self.size.width = width;

@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use directories::UserDirs;
 use eframe::egui::{self};
-use egui::{mutex::Mutex, FontId};
+use egui::{mutex::Mutex, FontId, Rect};
 use icy_engine::Position;
 use icy_net::{
     protocol::TransferState,
@@ -24,20 +24,12 @@ use crate::{
 use super::{MainWindow, MainWindowMode};
 
 impl MainWindow {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, options: Options) -> Self {
         use egui::FontFamily::Proportional;
         use egui::TextStyle::{Body, Button, Heading, Monospace, Small};
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
         let gl = cc.gl.as_ref().expect("You need to run eframe with the glow backend");
-        let options = match Options::load_options() {
-            Ok(options) => options,
-            Err(e) => {
-                log::error!("Error reading dialing_directory: {e}");
-                Options::default()
-            }
-        };
-
         let mut view = BufferView::new(gl);
         view.interactive = true;
         view.get_edit_state_mut().set_unicode_converter(get_unicode_converter(&TerminalEmulation::Ansi));
@@ -148,7 +140,6 @@ impl MainWindow {
         ]
         .into();
         ctx.set_style(style);
-
         view
     }
 }
@@ -166,6 +157,21 @@ impl eframe::App for MainWindow {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(not(target_arch = "wasm32"))]
         self.update_title(ctx);
+
+        ctx.input(|i| {
+            if let Some(or) = i.viewport().outer_rect {
+                if let Some(ir) = i.viewport().inner_rect {
+                    let rect = Rect {
+                        min: or.min,
+                        max: (ir.max - ir.min).to_pos2(),
+                    };
+                    if self.state.options.window_rect != Some(rect) {
+                        self.state.options.window_rect = Some(rect);
+                        self.state.store_options();
+                    }
+                }
+            }
+        });
 
         match self.get_mode() {
             MainWindowMode::ShowTerminal => {

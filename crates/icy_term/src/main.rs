@@ -109,13 +109,29 @@ fn main() {
 
     use eframe::icon_data::from_png_bytes;
 
+    let options = match Options::load_options() {
+        Ok(options) => options,
+        Err(e) => {
+            log::error!("Error reading dialing_directory: {e}");
+            Options::default()
+        }
+    };
+
     let mut native_options = eframe::NativeOptions {
         multisampling: 0,
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
-    native_options.viewport = native_options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
+    if let Some(rect) = options.window_rect {
+        native_options.viewport = native_options
+            .viewport
+            .with_inner_size(rect.max.to_vec2())
+            .with_icon(icon_data)
+            .with_position(rect.min);
+    } else {
+        native_options.viewport = native_options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
+    }
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big
@@ -158,7 +174,7 @@ fn main() {
 
     log::info!("Starting iCY TERM {}", *VERSION);
 
-    if let Err(err) = eframe::run_native(&DEFAULT_TITLE, native_options, Box::new(|cc| Box::new(MainWindow::new(cc)))) {
+    if let Err(err) = eframe::run_native(&DEFAULT_TITLE, native_options, Box::new(|cc| Box::new(MainWindow::new(cc, options)))) {
         log::error!("Error returned by run_native: {}", err);
     }
     log::info!("shutting down.");
