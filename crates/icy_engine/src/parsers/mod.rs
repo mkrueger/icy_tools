@@ -19,6 +19,7 @@ pub mod pcboard;
 pub mod petscii;
 pub mod renegade;
 pub mod rip;
+pub mod skypix;
 pub mod viewdata;
 
 pub const BEL: char = '\x07';
@@ -32,6 +33,7 @@ pub enum CallbackAction {
     Update,
     NoUpdate,
     Beep,
+    RunSkypixSequence(Vec<i32>),
     SendString(String),
     PlayMusic(AnsiMusic),
     ChangeBaudEmulation(ansi::BaudEmulation),

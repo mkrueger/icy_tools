@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
 use icy_engine::{
-    BitFont, Color, Palette, Size, ATARI, ATARI_DEFAULT_PALETTE, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, CP437, IBM_VGA50_SAUCE, VIEWDATA, VIEWDATA_PALETTE,
+    BitFont, Color, Palette, Size, ATARI, ATARI_DEFAULT_PALETTE, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, CP437, IBM_VGA50_SAUCE, SKYPIX_PALETTE, VIEWDATA,
+    VIEWDATA_PALETTE,
 };
 use icy_engine_gui::BufferInputMode;
 
@@ -20,6 +21,7 @@ pub enum ScreenMode {
     Videotex,
     Mode7,
     Rip,
+    SkyPix,
     Igs,
 }
 
@@ -38,7 +40,7 @@ impl ScreenMode {
     }
 }
 
-pub const DEFAULT_MODES: [ScreenMode; 14] = [
+pub const DEFAULT_MODES: [ScreenMode; 15] = [
     ScreenMode::Vga(80, 25),
     ScreenMode::Vga(80, 50),
     ScreenMode::Vga(132, 37),
@@ -51,6 +53,7 @@ pub const DEFAULT_MODES: [ScreenMode; 14] = [
     ScreenMode::Default,
     ScreenMode::Rip,
     ScreenMode::Videotex,
+    ScreenMode::SkyPix,
     ScreenMode::Igs,
     ScreenMode::Mode7,
 ];
@@ -72,6 +75,7 @@ impl Display for ScreenMode {
             ScreenMode::Videotex => write!(f, "VIDEOTEX"),
             ScreenMode::Default => write!(f, "Default"),
             ScreenMode::Rip => write!(f, "RIPscrip"),
+            ScreenMode::SkyPix => write!(f, "SkyPix"),
             ScreenMode::Igs => write!(f, "Igs"),
             ScreenMode::Mode7 => write!(f, "Mode7"),
         }
@@ -82,7 +86,7 @@ impl ScreenMode {
     pub fn get_input_mode(&self) -> BufferInputMode {
         match self {
             //ScreenMode::Cga(_, _) | ScreenMode::Ega(_, _) |
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::Igs => BufferInputMode::CP437,
+            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix | ScreenMode::Igs => BufferInputMode::CP437,
             ScreenMode::Vic => BufferInputMode::PETscii,
             ScreenMode::Antic => BufferInputMode::ATAscii,
             ScreenMode::Videotex => BufferInputMode::ViewData,
@@ -98,6 +102,7 @@ impl ScreenMode {
             ScreenMode::Antic | ScreenMode::Videotex => Size::new(40, 24),
             ScreenMode::Default => Size::new(80, 25),
             ScreenMode::Rip => Size::new(80, 44),
+            ScreenMode::SkyPix => Size::new(80, 25),
         }
     }
 
@@ -168,6 +173,18 @@ impl ScreenMode {
                     .get_buffer_mut()
                     .set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
                 main_window.buffer_view.lock().get_buffer_mut().palette = Palette::dos_default();
+                main_window.buffer_view.lock().get_buffer_mut().is_terminal_buffer = true;
+            }
+
+            ScreenMode::SkyPix => {
+                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
+                main_window
+                    .buffer_view
+                    .lock()
+                    .get_buffer_mut()
+                    .set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
+                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&SKYPIX_PALETTE);
+                main_window.buffer_view.lock().get_buffer_mut().is_terminal_buffer = true;
             }
 
             ScreenMode::Igs => {
@@ -188,7 +205,7 @@ impl ScreenMode {
     #[allow(clippy::match_same_arms)]
     pub(crate) fn get_selection_fg(&self) -> Color {
         match self {
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip => Color::new(0xAA, 0x00, 0xAA),
+            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0x00, 0xAA),
             ScreenMode::Vic => Color::new(0x37, 0x39, 0xC4),
             ScreenMode::Antic => Color::new(0x09, 0x51, 0x83),
             ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0, 0, 0),
@@ -199,7 +216,7 @@ impl ScreenMode {
     #[allow(clippy::match_same_arms)]
     pub(crate) fn get_selection_bg(&self) -> Color {
         match self {
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip => Color::new(0xAA, 0xAA, 0xAA),
+            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0xAA, 0xAA),
             ScreenMode::Vic => Color::new(0xB0, 0x3F, 0xB6),
             ScreenMode::Antic => Color::new(0xFF, 0xFF, 0xFF),
             ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0xFF, 0xFF, 0xFF),

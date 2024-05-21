@@ -3,7 +3,7 @@ use crate::TerminalResult;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_engine::igs::CommandExecutor;
-use icy_engine::{ansi, ascii, atascii, avatar, mode7, petscii, rip, viewdata, BufferParser, UnicodeConverter};
+use icy_engine::{ansi, ascii, atascii, avatar, mode7, petscii, rip, skypix, viewdata, BufferParser, UnicodeConverter};
 use icy_net::telnet::TerminalEmulation;
 use icy_net::ConnectionType;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
@@ -19,7 +19,7 @@ use std::{
 use toml::Value;
 use versions::Versioning;
 
-pub const ALL_TERMINALS: [TerminalEmulation; 9] = [
+pub const ALL_TERMINALS: [TerminalEmulation; 10] = [
     TerminalEmulation::Ansi,
     TerminalEmulation::Avatar,
     TerminalEmulation::Ascii,
@@ -27,6 +27,7 @@ pub const ALL_TERMINALS: [TerminalEmulation; 9] = [
     TerminalEmulation::ATAscii,
     TerminalEmulation::ViewData,
     TerminalEmulation::Rip,
+    TerminalEmulation::Skypix,
     TerminalEmulation::IGS,
     TerminalEmulation::Mode7,
 ];
@@ -41,6 +42,7 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
         TerminalEmulation::ViewData => "VIEWDATA",
         TerminalEmulation::Mode7 => "Mode7",
         TerminalEmulation::Rip => "RIPscrip",
+        TerminalEmulation::Skypix => "Skypix",
         TerminalEmulation::IGS => "IGS (Experimental)",
     }
 }
@@ -67,6 +69,13 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cac
             let parser = rip::Parser::new(Box::new(parser), cache_directory);
             Box::new(parser)
         }
+        TerminalEmulation::Skypix => {
+            let mut parser = ansi::Parser::default();
+            parser.ansi_music = use_ansi_music;
+            parser.bs_is_ctrl_char = true;
+            let parser = skypix::Parser::new(Box::new(parser), cache_directory);
+            Box::new(parser)
+        }
         TerminalEmulation::IGS => {
             let ig_executor: Arc<std::sync::Mutex<Box<dyn CommandExecutor>>> =
                 Arc::new(std::sync::Mutex::new(Box::<icy_engine::parsers::igs::DrawExecutor>::default()));
@@ -78,9 +87,12 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cac
 #[must_use]
 pub fn get_unicode_converter(emulator: &TerminalEmulation) -> Box<dyn UnicodeConverter> {
     match emulator {
-        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii | TerminalEmulation::Rip | TerminalEmulation::IGS => {
-            Box::<ascii::CP437Converter>::default()
-        }
+        TerminalEmulation::Ansi
+        | TerminalEmulation::Avatar
+        | TerminalEmulation::Ascii
+        | TerminalEmulation::Rip
+        | TerminalEmulation::Skypix
+        | TerminalEmulation::IGS => Box::<ascii::CP437Converter>::default(),
         TerminalEmulation::PETscii => Box::<petscii::CharConverter>::default(),
         TerminalEmulation::ATAscii => Box::<atascii::CharConverter>::default(),
         TerminalEmulation::ViewData => Box::<viewdata::CharConverter>::default(),
@@ -572,6 +584,7 @@ fn parse_address(value: &Value) -> Address {
                 "atascii" => result.terminal_type = TerminalEmulation::ATAscii,
                 "viewdata" => result.terminal_type = TerminalEmulation::ViewData,
                 "rip" => result.terminal_type = TerminalEmulation::Rip,
+                "skypix" => result.terminal_type = TerminalEmulation::Skypix,
                 "igs" => result.terminal_type = TerminalEmulation::IGS,
                 "mode7" => result.terminal_type = TerminalEmulation::Mode7,
                 _ => {}
@@ -596,6 +609,7 @@ fn parse_address(value: &Value) -> Address {
                 "antic" => result.screen_mode = ScreenMode::Antic,
                 "videotex" => result.screen_mode = ScreenMode::Videotex,
                 "rip" => result.screen_mode = ScreenMode::Rip,
+                "skypix" => result.screen_mode = ScreenMode::SkyPix,
                 "igs" => result.screen_mode = ScreenMode::Igs,
                 "mode7" => result.screen_mode = ScreenMode::Mode7,
                 _ => {

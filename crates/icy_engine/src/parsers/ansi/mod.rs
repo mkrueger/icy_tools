@@ -143,6 +143,7 @@ pub struct Parser {
     pub parse_string: String,
     pub macro_dcs: String,
     pub bs_is_ctrl_char: bool,
+    pub got_skypix_sequence: bool,
 }
 
 impl Default for Parser {
@@ -165,6 +166,7 @@ impl Default for Parser {
             last_char: '\0',
             hyper_links: Vec::new(),
             bs_is_ctrl_char: false,
+            got_skypix_sequence: false,
         }
     }
 }
@@ -1132,9 +1134,7 @@ impl BufferParser for Parser {
                     '!' => {
                         if !is_start {
                             self.state = EngineState::Default;
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return Ok(CallbackAction::RunSkypixSequence(self.parsed_numbers.clone()));
                         }
                         // read custom command
                         self.state = EngineState::ReadRIPSupportRequest;

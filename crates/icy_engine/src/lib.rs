@@ -34,6 +34,7 @@ pub use position::*;
 mod buffers;
 pub use buffers::*;
 
+#[macro_use]
 mod palette_handling;
 pub use palette_handling::*;
 

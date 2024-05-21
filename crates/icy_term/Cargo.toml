@@ -8,8 +8,8 @@ description = "A terminal program supporting CP437, PetScii and ViewData"
 repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
-icy_net = { git ="https://github.com/mkrueger/icy_board" }
-#icy_net = { path ="../../../icy_board/crates/icy_net" }
+#icy_net = { git ="https://github.com/mkrueger/icy_board" }
+icy_net = { path ="../../../icy_board/crates/icy_net" }
 
 egui = { workspace = true }
 eframe = { workspace = true }
@@ -73,7 +73,6 @@ directories = { workspace = true }
 open = "5.0.0"
 i18n-embed = { version = "0.14.0", features = ["fluent-system", "desktop-requester"]}
 tracing-subscriber = "0.3"
-libssh-rs =  { version = "0.2.0", features = ["vendored", "vendored-openssl"] }
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]

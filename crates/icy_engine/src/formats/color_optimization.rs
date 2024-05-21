@@ -40,17 +40,17 @@ impl ColorOptimizer {
                     let map = self.shape_map.get(&attr_ch.get_font_page()).unwrap();
                     let mut ch = attr_ch.ch;
                     let mut attribute = attr_ch.attribute;
-                    match *map.get(&attr_ch.ch).unwrap() {
-                        GlyphShape::Whitespace => {
+                    match map.get(&attr_ch.ch) {
+                        Some(&GlyphShape::Whitespace) => {
                             attribute.set_foreground(cur_attr.get_foreground());
                             if self.normalize_whitespace && map.contains_key(&' ') {
                                 ch = ' ';
                             }
                         }
-                        GlyphShape::Block => {
+                        Some(&GlyphShape::Block) => {
                             attribute.set_background(cur_attr.get_background());
                         }
-                        GlyphShape::Mixed => {}
+                        _ => {}
                     }
                     layer.set_char((x, y), crate::AttributedChar { ch, attribute });
                     cur_attr = attribute;

@@ -30,9 +30,9 @@ lazy_static::lazy_static! {
 pub struct Color {
     #[serde(skip_serializing)]
     pub name: Option<String>,
-    r: u8,
-    g: u8,
-    b: u8,
+    pub(crate) r: u8,
+    pub(crate) g: u8,
+    pub(crate) b: u8,
 }
 
 impl Display for Color {
@@ -3997,6 +3997,55 @@ pub const VIEWDATA_PALETTE: [Color; 16] = [
         g: 0xFF,
         b: 0xFF,
     }, // white
+];
+
+macro_rules! amiga_color {
+    ($r:expr, $g:expr, $b:expr) => {
+        Color {
+            name: None,
+            r: (($r as usize * 255) / 15) as u8,
+            g: (($g as usize * 255) / 15) as u8,
+            b: (($b as usize * 255) / 15) as u8,
+        }
+    };
+}
+
+pub const AMIGA_PALETTE: [Color; 16] = [
+    amiga_color!(00, 00, 00), // Black
+    amiga_color!(10, 00, 00), // Red
+    amiga_color!(00, 10, 00), // Green
+    amiga_color!(10, 06, 00), // Orange
+    amiga_color!(00, 00, 10), // Dark Blue
+    amiga_color!(10, 00, 10), // Violet
+    amiga_color!(00, 10, 10), // Cyan
+    amiga_color!(11, 11, 11), // Light Gray
+    amiga_color!(06, 06, 06), // Dark Gray
+    amiga_color!(15, 00, 00), // Bright Red
+    amiga_color!(00, 15, 00), // Bright Green
+    amiga_color!(15, 15, 00), // Yellow
+    amiga_color!(00, 00, 15), // Bright Blue
+    amiga_color!(15, 00, 15), // Bright Violet
+    amiga_color!(00, 15, 00), // Bright Cyan
+    amiga_color!(15, 15, 15), // White
+];
+
+pub const SKYPIX_PALETTE: [Color; 16] = [
+    amiga_color!(00, 00, 00),
+    amiga_color!(01, 01, 15),
+    amiga_color!(13, 13, 13),
+    amiga_color!(15, 00, 00),
+    amiga_color!(00, 15, 01),
+    amiga_color!(03, 10, 15),
+    amiga_color!(15, 15, 02),
+    amiga_color!(12, 00, 14),
+    amiga_color!(00, 11, 06),
+    amiga_color!(00, 13, 13),
+    amiga_color!(00, 10, 15),
+    amiga_color!(00, 07, 12),
+    amiga_color!(00, 00, 15),
+    amiga_color!(07, 00, 15),
+    amiga_color!(12, 00, 14),
+    amiga_color!(12, 00, 08),
 ];
 
 fn convert_vector(temp2: f32, temp1: f32, mut x: f32) -> u8 {

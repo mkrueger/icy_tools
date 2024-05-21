@@ -118,6 +118,11 @@ impl TerminalThread {
                 return (true, 0);
             }
 
+            icy_engine::CallbackAction::RunSkypixSequence(seq) => {
+                log::error!("unsupported skypix sequence: {:?}", seq);
+                return (false, 0);
+            }
+
             icy_engine::CallbackAction::NoUpdate => {
                 return (false, 0);
             }

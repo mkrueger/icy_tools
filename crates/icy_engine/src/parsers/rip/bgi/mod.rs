@@ -255,8 +255,6 @@ impl FontType {
     }
 }
 
-const SCREEN_SIZE: Size = Size { width: 640, height: 350 };
-
 const DEFAULT_USER_PATTERN: [u8; 8] = [0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55];
 const RAD2DEG: f64 = 180.0 / consts::PI;
 const DEG2RAD: f64 = consts::PI / 180.0;
@@ -520,7 +518,7 @@ impl MouseField {
 }
 
 impl Bgi {
-    pub fn new(file_path: PathBuf) -> Bgi {
+    pub fn new(screen_size: Size, file_path: PathBuf) -> Bgi {
         Bgi {
             color: 7,
             bkcolor: 0,
@@ -532,11 +530,11 @@ impl Bgi {
             fill_color: 0,
             direction: Direction::Horizontal,
             font: FontType::Default,
-            window: SCREEN_SIZE,
-            viewport: Rectangle::from(0, 0, SCREEN_SIZE.width, SCREEN_SIZE.height),
+            window: screen_size,
+            viewport: Rectangle::from(0, 0, screen_size.width, screen_size.height),
             palette: Palette::dos_default(),
             line_thickness: 1,
-            screen: vec![0; (SCREEN_SIZE.width * SCREEN_SIZE.height) as usize],
+            screen: vec![0; (screen_size.width * screen_size.height) as usize],
             current_pos: Position::new(0, 0),
             char_size: 4,
             rip_image: None,
@@ -1704,6 +1702,25 @@ impl Bgi {
             for ix in 0..image.width {
                 let col = image.data[pos];
                 pos += 1;
+
+                let x = x + ix;
+                let y = y + iy;
+                if !self.viewport.contains(x, y) {
+                    continue;
+                }
+                self.put_pixel(x, y, col);
+            }
+        }
+
+        self.set_write_mode(old_wm);
+    }
+    pub fn put_image2(&mut self, src_x: i32, src_y: i32, width: i32, height: i32, x: i32, y: i32, image: &Image, op: WriteMode) {
+        let old_wm = self.get_write_mode();
+        self.set_write_mode(op);
+
+        for iy in src_y..src_y + height {
+            for ix in src_x..src_x + width {
+                let col = image.data[ix as usize + (iy * image.width) as usize];
 
                 let x = x + ix;
                 let y = y + iy;
