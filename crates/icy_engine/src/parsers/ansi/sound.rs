@@ -2,7 +2,7 @@ use crate::{CallbackAction, EngineResult, ParserError};
 
 use super::{parse_next_number, EngineState, Parser};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MusicState {
     Default,
     ParseMusicStyle,

@@ -594,12 +594,16 @@ impl Buffer {
     }
 
     pub fn reset_terminal(&mut self) {
+        println!("RESET TERM!");
         if self.is_terminal_buffer {
+            let fixed = self.terminal_state.fixed_size;
             self.terminal_state = TerminalState::from(self.original_size);
             self.size = self.original_size;
+            self.terminal_state.fixed_size = fixed;
         } else {
             self.terminal_state = TerminalState::from(self.size);
         }
+        self.terminal_state.cleared_screen = true;
     }
 
     /// Sets the buffer size of this [`Buffer`].

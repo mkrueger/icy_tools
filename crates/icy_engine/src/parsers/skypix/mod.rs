@@ -1,9 +1,11 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use super::{ansi, BufferParser};
 use crate::{
+    ansi::EngineState,
+    load_amiga_fonts,
     rip::bgi::{Bgi, Image, WriteMode},
-    Buffer, CallbackAction, Caret, Color, EngineResult, Palette, Size, SKYPIX_PALETTE,
+    BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Palette, Position, Size, Spacing, SKYPIX_PALETTE,
 };
 const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
@@ -28,10 +30,15 @@ pub struct Parser {
     parameter: String,
     last_cmd_update: i32,
     cmd_counter: i32,
+
+    graphic_cursor: Position,
+    font: Option<BitFont>,
+    fonts: Vec<(String, usize, &'static str)>,
 }
 
 impl Parser {
     pub fn new(fallback_parser: Box<ansi::Parser>, file_path: PathBuf) -> Self {
+        let fonts = load_amiga_fonts();
         Self {
             fallback_parser,
             bgi: Bgi::new(SKYPIX_SCREEN_SIZE, file_path),
@@ -40,6 +47,9 @@ impl Parser {
             parameter: String::new(),
             last_cmd_update: -1,
             cmd_counter: 0,
+            fonts,
+            font: None,
+            graphic_cursor: Position::default(),
             brush: Image {
                 width: 0,
                 height: 0,
@@ -48,9 +58,60 @@ impl Parser {
         }
     }
 
+    fn print_char(&mut self, ch: char) {
+        if let Some(font) = &self.font {
+            let Some(glyph) = font.get_glyph(ch) else {
+                return;
+            };
+            let x = self.graphic_cursor.x;
+            let y = self.graphic_cursor.y;
+
+            let lb = glyph.left_bearing;
+
+            for i in 0..glyph.data.len() {
+                for j in 0..glyph.width {
+                    if (glyph.data[i] & (1 << (glyph.width - j - 1))) != 0 {
+                        self.bgi.put_pixel(
+                            lb - glyph.shift_left - font.shift_left + x + j as i32,
+                            glyph.top_bearing - glyph.shift_up - font.shift_up + y + i as i32,
+                            self.bgi.get_color(),
+                        );
+                    } /* else {
+                          self.bgi
+                              .put_pixel(glyph.left_bearing + x + j as i32, glyph.top_bearing + y + i as i32, self.bgi.get_bk_color());
+                      }*/
+                }
+            }
+            match font.spacing {
+                Spacing::Proportional => {
+                    self.graphic_cursor.x += lb + glyph.width as i32 + glyph.right_bearing as i32;
+                }
+                Spacing::CharacterCell => {
+                    self.graphic_cursor.x += font.cell_size.width as i32;
+                }
+                Spacing::Monospace => {
+                    self.graphic_cursor.x += font.size.width as i32;
+                }
+                Spacing::MultiCell => {
+                    self.graphic_cursor.x += font.cell_size.width as i32;
+                }
+            }
+            if self.graphic_cursor.x >= SKYPIX_SCREEN_SIZE.width {
+                self.graphic_cursor.x = 0;
+                let h = font.cell_size.height.max(font.raster_size.height).max(font.size.height);
+                self.graphic_cursor.y += h;
+
+                if self.graphic_cursor.y > SKYPIX_SCREEN_SIZE.height {
+                    self.scroll_down(self.graphic_cursor.y - SKYPIX_SCREEN_SIZE.height);
+                    self.graphic_cursor.y = SKYPIX_SCREEN_SIZE.height;
+                }
+            }
+        }
+    }
+
     fn run_skypix_sequence(&mut self, cmd: i32, parameters: &[i32], buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
         self.cmd_counter += 1;
-        println!(" run cmd {cmd} = par {parameters:?}");
+        //println!("run cmd {cmd} = par {parameters:?}");
         match cmd {
             1 => {
                 // SET_PIXEL
@@ -163,8 +224,6 @@ impl Parser {
                 let size = parameters[0];
                 self.parameter.clear();
                 self.parse_mode = SkypixParseMode::ParseFont(size);
-
-                log::warn!("todo: SET_FONT");
                 return Ok(CallbackAction::NoUpdate);
             }
             11 => {
@@ -270,7 +329,8 @@ impl Parser {
                 }
                 let x = (parameters[0] * 80) / SKYPIX_SCREEN_SIZE.width;
                 let y = (parameters[1] * 25) / SKYPIX_SCREEN_SIZE.height;
-                caret.set_position_xy(x, y);
+                self.graphic_cursor = (parameters[0], parameters[1]).into();
+                caret.set_position_xy(x + 1, y + 1);
                 return Ok(CallbackAction::NoUpdate);
             }
 
@@ -300,14 +360,56 @@ impl Parser {
                 log::warn!("todo: SKYPIX GADGET");
                 return Ok(CallbackAction::NoUpdate);
             }
+
+            99 => {
+                // RESET_FONT?
+                self.font = None;
+                let x = (self.graphic_cursor.x * 80) / SKYPIX_SCREEN_SIZE.width;
+                let y = (self.graphic_cursor.y * 25) / SKYPIX_SCREEN_SIZE.height;
+                caret.set_position_xy(x + 1, y + 1);
+
+                return Ok(CallbackAction::NoUpdate);
+            }
             _ => {
                 return Err(anyhow::Error::msg(format!("unknown skypix command {cmd}")));
             }
         }
     }
 
-    fn load_font(&self, parameter: &str, size: i32) {
-        log::warn!("todo: load_font {parameter} with size {size}");
+    fn load_font(&mut self, parameter: &str, size: i32) {
+        let mut index = None;
+        let mut old_size = 0;
+        println!("load font {parameter} with size {size}");
+        for (i, fonts) in self.fonts.iter().enumerate() {
+            if fonts.0.eq_ignore_ascii_case(parameter) {
+                if index.is_none() {
+                    old_size = fonts.1;
+                    index = Some(i);
+                }
+                if fonts.1 == size as usize {
+                    self.font = Some(BitFont::from_str(fonts.2).unwrap());
+                    return;
+                }
+                if fonts.1 > old_size && (fonts.1 < size as usize || old_size > size as usize) {
+                    old_size = fonts.1;
+                    index = Some(i);
+                }
+            }
+        }
+        if let Some(i) = index {
+            log::warn!("can't load amiga font {parameter} with size {size}, fallback to {}", self.fonts[i].1);
+            self.font = Some(BitFont::from_str(self.fonts[i].2).unwrap());
+        } else {
+            log::error!("unknown font: amiga_load_font {parameter} with size {size}");
+            self.font = None;
+        }
+    }
+
+    fn scroll_down(&mut self, lines: i32) {
+        let img = self.bgi.get_image(0, lines, SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height - lines);
+        self.bgi.clear_viewport();
+        self.bgi.put_image(0, 0, &img, WriteMode::Copy);
+        self.cmd_counter += 1;
     }
 }
 
@@ -315,11 +417,18 @@ impl Parser {}
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+        if buf.terminal_state.cleared_screen {
+            self.font = None;
+            buf.terminal_state.cleared_screen = false;
+            self.bgi.graph_defaults();
+            self.cmd_counter += 1;
+        }
+
         match self.parse_mode {
             SkypixParseMode::ParseFont(size) => {
                 if ch == '!' || self.parameter.len() > 32 {
-                    self.load_font(&self.parameter, size);
                     self.parse_mode = SkypixParseMode::Default;
+                    self.load_font(&self.parameter.clone(), size);
                     return Ok(CallbackAction::NoUpdate);
                 }
                 self.parameter.push(ch);
@@ -328,24 +437,34 @@ impl BufferParser for Parser {
             SkypixParseMode::ParseXModemTransfer(m, a, b) => {
                 if ch == '!' || self.parameter.len() > 32 {
                     self.parse_mode = SkypixParseMode::Default;
-                    // For what exactly is this?
-                    // Skypix looks like a half baked standard
-                    // As long as it's not defined/unclear I'm not implementing transferring unknown files to the users system
-                    log::warn!("todo: SKYPIX_XMODEM_TRANSFER {m} {a} {b} {}", self.parameter);
-                    return Ok(CallbackAction::NoUpdate);
+                    log::warn!("initiate: SKYPIX_XMODEM_TRANSFER {m} {a} {b} {}", self.parameter);
+                    return Ok(CallbackAction::XModemTransfer(self.parameter.clone()));
                 }
                 self.parameter.push(ch);
                 return Ok(CallbackAction::NoUpdate);
             }
-            _ => match self.fallback_parser.print_char(buf, current_layer, caret, ch) {
-                Ok(CallbackAction::RunSkypixSequence(sequence)) => {
-                    if sequence.len() == 0 {
-                        return Err(anyhow::Error::msg("Empty sequence"));
-                    }
-                    return self.run_skypix_sequence(sequence[0], &sequence[1..], buf, caret);
+            _ => {
+                if self.font.is_some() && self.fallback_parser.state == EngineState::Default && ch >= ' ' && ch <= '~' {
+                    self.print_char(ch);
+                    return Ok(CallbackAction::NoUpdate);
                 }
-                x => x,
-            },
+
+                match self.fallback_parser.print_char(buf, current_layer, caret, ch) {
+                    Ok(CallbackAction::RunSkypixSequence(sequence)) => {
+                        if sequence.len() == 0 {
+                            return Err(anyhow::Error::msg("Empty sequence"));
+                        }
+                        return self.run_skypix_sequence(sequence[0], &sequence[1..], buf, caret);
+                    }
+                    Ok(CallbackAction::ScrollDown(x)) => {
+                        let lines = x * 8;
+                        self.scroll_down(lines);
+
+                        return Ok(CallbackAction::Update);
+                    }
+                    x => x,
+                }
+            }
         }
     }
 

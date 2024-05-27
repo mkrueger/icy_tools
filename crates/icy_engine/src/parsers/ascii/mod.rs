@@ -37,7 +37,7 @@ impl BufferParser for Parser {
             BEL => {
                 return Ok(CallbackAction::Beep);
             }
-            LF => caret.lf(buf, current_layer),
+            LF => return Ok(caret.lf(buf, current_layer)),
             FF => caret.ff(buf, current_layer),
             CR => caret.cr(buf),
             BS => caret.bs(buf, current_layer),

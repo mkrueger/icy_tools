@@ -110,6 +110,7 @@ impl ScreenMode {
         main_window.buffer_view.lock().get_buffer_mut().set_default_size(self.get_window_size());
         main_window.buffer_view.lock().get_buffer_mut().set_size(self.get_window_size());
         main_window.buffer_view.lock().get_buffer_mut().terminal_state.set_size(self.get_window_size());
+        main_window.buffer_view.lock().get_buffer_mut().terminal_state.fixed_size = false;
         match self {
             // ScreenMode::Cga(_, h) | ScreenMode::Ega(_, h) |
             ScreenMode::Vga(_x, y) => {
@@ -185,6 +186,7 @@ impl ScreenMode {
                     .set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
                 main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&SKYPIX_PALETTE);
                 main_window.buffer_view.lock().get_buffer_mut().is_terminal_buffer = true;
+                main_window.buffer_view.lock().get_buffer_mut().terminal_state.fixed_size = true;
             }
 
             ScreenMode::Igs => {

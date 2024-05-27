@@ -25,7 +25,7 @@ mod sixel_tests;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EngineState {
     Default,
     ReadEscapeSequence,
@@ -1409,8 +1409,7 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::NoUpdate);
                 }
                 LF => {
-                    caret.lf(buf, current_layer);
-                    return Ok(CallbackAction::Update);
+                    return Ok(caret.lf(buf, current_layer));
                 }
                 FF => {
                     caret.ff(buf, current_layer);

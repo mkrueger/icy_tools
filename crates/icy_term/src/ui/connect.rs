@@ -56,6 +56,6 @@ pub enum SendData {
     SetBaudRate(u32),
 
     Upload(TransferProtocolType, Vec<PathBuf>),
-    Download(TransferProtocolType),
+    Download(TransferProtocolType, Option<String>),
     CancelTransfer,
 }

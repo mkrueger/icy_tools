@@ -8,6 +8,7 @@ use std::{
     fs::File,
     io::Read,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use super::Size;
@@ -19,9 +20,22 @@ pub enum BitFontType {
     Custom,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Glyph {
-    pub data: Vec<u8>,
+    pub data: Vec<u32>,
+    pub width: usize,
+    /// Horizontal offset (in direction of writing) between leftward origin and left raster edge.
+    pub left_bearing: i32,
+    /// Horizontal offset (in direction of writing) between rightward origin and right raster edge.
+    pub right_bearing: i32,
+    /// Vertical offset (in direction of writing) between upward origin and top raster edge.
+    pub top_bearing: i32,
+    /// Vertical offset (in direction of writing) between downward origin and bottom raster edge.
+    pub bottom_bearing: i32,
+    /// Upward shift from baseline to raster bottom edge.
+    pub shift_up: i32,
+    /// Leftward shift from baseline to central vertical axis of raster.
+    pub shift_left: i32,
 }
 
 impl Display for Glyph {
@@ -53,10 +67,20 @@ impl Glyph {
         let height = u16::from_le_bytes(data[2..4].try_into().unwrap());
         let mut glyph = Glyph {
             data: vec![0; height as usize],
+            width: width as usize,
+            ..Default::default()
         };
-        glyph.data = data[4..].to_vec();
+        glyph.data = data[4..].iter().map(|d| *d as u32).collect();
         ((width, height).into(), glyph)
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Spacing {
+    Monospace,
+    Proportional,
+    CharacterCell,
+    MultiCell,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,10 +89,17 @@ pub struct BitFont {
     pub name: String,
     pub path_opt: Option<PathBuf>,
     pub size: Size,
+    pub raster_size: Size,
+    pub cell_size: Size,
     pub length: i32,
     font_type: BitFontType,
     pub glyphs: HashMap<char, Glyph>,
+    pub default_char: Option<Glyph>,
     pub checksum: u32,
+
+    pub shift_up: i32,
+    pub shift_left: i32,
+    pub spacing: Spacing,
 }
 
 impl Default for BitFont {
@@ -91,7 +122,7 @@ impl BitFont {
         let mut data = Vec::new();
         data.extend_from_slice(&u16::to_le_bytes(self.size.width as u16));
         data.extend_from_slice(&u16::to_le_bytes(self.size.height as u16));
-        data.extend_from_slice(&glyph.data);
+        data.extend_from_slice(&glyph.data.iter().map(|d| *d as u8).collect::<Vec<u8>>());
         Some(data)
     }
 
@@ -104,7 +135,7 @@ impl BitFont {
         for ch in 0..self.length {
             if let Some(glyph) = self.get_glyph(unsafe { char::from_u32_unchecked(ch as u32) }) {
                 for b in &glyph.data {
-                    crc = update_crc32(crc, *b);
+                    crc = update_crc32(crc, *b as u8);
                 }
             }
         }
@@ -123,7 +154,7 @@ impl BitFont {
         let mut result = Vec::new();
         for ch in 0..self.length {
             if let Some(glyph) = self.get_glyph(unsafe { char::from_u32_unchecked(ch as u32) }) {
-                result.extend_from_slice(&glyph.data);
+                result.extend_from_slice(&glyph.data.iter().map(|d| *d as u8).collect::<Vec<u8>>());
             } else {
                 log::error!("Glyph not found for char: {}", ch);
                 result.extend_from_slice(vec![0; self.size.height as usize].as_slice());
@@ -133,7 +164,11 @@ impl BitFont {
     }
 
     pub fn get_glyph(&self, ch: char) -> Option<&Glyph> {
-        self.glyphs.get(&ch)
+        if let Some(ch) = self.glyphs.get(&ch) {
+            Some(ch)
+        } else {
+            self.default_char.as_ref()
+        }
     }
 
     pub fn get_glyph_mut(&mut self, ch: char) -> Option<&mut Glyph> {
@@ -149,6 +184,12 @@ impl BitFont {
             font_type: BitFontType::Custom,
             glyphs: glyphs_from_u8_data(height as usize, data),
             checksum: 0,
+            default_char: None,
+            shift_left: 0,
+            shift_up: 0,
+            spacing: Spacing::Monospace,
+            raster_size: (width, height).into(),
+            cell_size: (width, height).into(),
         };
         res.calculate_checksum();
         res
@@ -163,6 +204,12 @@ impl BitFont {
             font_type: BitFontType::Custom,
             glyphs: glyphs_from_u8_data(height as usize, data),
             checksum: 0,
+            default_char: None,
+            shift_left: 0,
+            shift_up: 0,
+            spacing: Spacing::Monospace,
+            raster_size: (width, height).into(),
+            cell_size: (width, height).into(),
         };
         res.calculate_checksum();
         res
@@ -187,6 +234,12 @@ impl BitFont {
             font_type: BitFontType::BuiltIn,
             glyphs: glyphs_from_u8_data(charsize as usize, &data[4..]),
             checksum: 0,
+            default_char: None,
+            shift_left: 0,
+            shift_up: 0,
+            spacing: Spacing::Monospace,
+            raster_size: (8, charsize).into(),
+            cell_size: (8, charsize).into(),
         };
         res.calculate_checksum();
         res
@@ -206,6 +259,12 @@ impl BitFont {
             font_type: BitFontType::BuiltIn,
             glyphs: glyphs_from_u8_data(char_height, data),
             checksum: 0,
+            default_char: None,
+            shift_left: 0,
+            shift_up: 0,
+            spacing: Spacing::Monospace,
+            raster_size: (8, char_height as i32).into(),
+            cell_size: (8, char_height as i32).into(),
         };
         res.calculate_checksum();
         Ok(res)
@@ -243,6 +302,12 @@ impl BitFont {
             font_type: BitFontType::BuiltIn,
             glyphs: glyphs_from_u8_data(height, &data[headersize..]),
             checksum: 0,
+            default_char: None,
+            shift_left: 0,
+            shift_up: 0,
+            spacing: Spacing::Monospace,
+            raster_size: (width, height).into(),
+            cell_size: (width, height).into(),
         };
         r.calculate_checksum();
         Ok(r)
@@ -271,7 +336,15 @@ impl BitFont {
 
         // glyphs
         for i in 0..self.length {
-            data.extend(&self.get_glyph(unsafe { char::from_u32_unchecked(i as u32) }).unwrap().data);
+            data.extend(
+                &self
+                    .get_glyph(unsafe { char::from_u32_unchecked(i as u32) })
+                    .unwrap()
+                    .data
+                    .iter()
+                    .map(|d| *d as u8)
+                    .collect::<Vec<u8>>(),
+            );
         }
 
         Ok(data)
@@ -327,6 +400,289 @@ impl BitFont {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum YaffParseState {
+    Header,
+    NextChar,
+    Data,
+    CharAttributes,
+}
+
+impl FromStr for BitFont {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let _path = Path::new(s);
+        let mut state = YaffParseState::Header;
+        let mut result = BitFont {
+            name: String::new(),
+            path_opt: None,
+            size: Size::new(0, 0),
+            length: 0,
+            font_type: BitFontType::Library,
+            glyphs: HashMap::new(),
+            checksum: 0,
+            default_char: None,
+            shift_left: 0,
+            shift_up: 0,
+            spacing: Spacing::Monospace,
+            raster_size: (0, 0).into(),
+            cell_size: (0, 0).into(),
+        };
+        let mut cur_char = '\0';
+        let mut is_default = false;
+        let mut got_first = false;
+        for line in s.lines() {
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
+            if !got_first {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                got_first = true;
+            }
+            match state {
+                YaffParseState::Header => {
+                    if line.is_empty() {
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    let mut split = line.split(':');
+                    let Some(property) = split.next() else {
+                        log::error!("Error parsing key in line: {}", line);
+                        continue;
+                    };
+                    let property = property.trim();
+                    let Some(value) = split.next() else {
+                        log::error!("Error parsing value in line: {}", line);
+                        continue;
+                    };
+                    let value = value.trim();
+                    match property {
+                        "name" => result.name = value.to_string(),
+                        "bounding-box" => {
+                            let mut split = value.split('x');
+                            let width = split.next().unwrap().parse::<i32>().unwrap();
+                            let height = split.next().unwrap().parse::<i32>().unwrap();
+                            result.size = (width, height).into();
+                        }
+                        "size" => {
+                            if let Ok(value) = value.parse::<i32>() {
+                                result.size = Size::new(value, value);
+                            } else {
+                                log::error!("Error parsing size: {}", value);
+                            }
+                        }
+                        "raster-size" => {
+                            let mut split = value.split('x');
+                            let width = split.next().unwrap().parse::<i32>().unwrap();
+                            let height = split.next().unwrap().parse::<i32>().unwrap();
+                            result.raster_size = (width, height).into();
+                        }
+                        "cell-size" => {
+                            let mut split = value.split('x');
+                            let width = split.next().unwrap().parse::<i32>().unwrap();
+                            let height = split.next().unwrap().parse::<i32>().unwrap();
+                            result.cell_size = (width, height).into();
+                        }
+                        "shift-up" => {
+                            if let Ok(value) = value.parse::<i32>() {
+                                result.shift_up = value;
+                            } else {
+                                log::error!("Error parsing shift-up: {}", value);
+                            }
+                        }
+                        "shift-left" => {
+                            if let Ok(value) = value.parse::<i32>() {
+                                result.shift_left = value;
+                            } else {
+                                log::error!("Error parsing shift-left: {}", value);
+                            }
+                        }
+                        "spacing" => match value {
+                            "monospace" => result.spacing = Spacing::Monospace,
+                            "proportional" => result.spacing = Spacing::Proportional,
+                            "character-cell" => result.spacing = Spacing::CharacterCell,
+                            "multi-cell" => result.spacing = Spacing::MultiCell,
+                            _ => {
+                                log::warn!("Error parsing spacing: {}", value);
+                            }
+                        },
+                        "encoding" | "default-char" | "converter" | "source-name" | "source-format" | "history" => {}
+                        _ => {
+                            log::warn!("Error parsing property: {}", property);
+                        }
+                    }
+                }
+
+                YaffParseState::NextChar => {
+                    if line.starts_with("u+") {
+                        continue;
+                    }
+                    if line.starts_with("0x") {
+                        cur_char = u8::from_str_radix(line[2..].trim_end_matches(':'), 16).unwrap() as char;
+                        result.glyphs.insert(cur_char, Glyph::default());
+                        continue;
+                    }
+                    if line == "default:" {
+                        is_default = true;
+                        result.default_char = Some(Glyph::default());
+                        continue;
+                    }
+                    if line.starts_with("  ") {
+                        state = YaffParseState::Data;
+                        parse_line_data(line, is_default, &mut result, cur_char);
+                        continue;
+                    }
+                }
+
+                YaffParseState::Data => {
+                    if line.is_empty() {
+                        state = YaffParseState::CharAttributes;
+                        continue;
+                    }
+                    if line.starts_with("u+") {
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line.starts_with("0x") {
+                        cur_char = u8::from_str_radix(line[2..].trim_end_matches(':'), 16).unwrap() as char;
+                        result.glyphs.insert(cur_char, Glyph::default());
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line == "default:" {
+                        is_default = true;
+                        result.default_char = Some(Glyph::default());
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+
+                    if line.starts_with(" ") {
+                        parse_line_data(line, is_default, &mut result, cur_char);
+                    }
+                }
+
+                YaffParseState::CharAttributes => {
+                    if line.is_empty() {
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line.starts_with("u+") {
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line.starts_with("0x") {
+                        cur_char = u8::from_str_radix(line[2..].trim_end_matches(':'), 16).unwrap() as char;
+                        result.glyphs.insert(cur_char, Glyph::default());
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line == "default:" {
+                        is_default = true;
+                        result.default_char = Some(Glyph::default());
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+
+                    if line.starts_with(" ") {
+                        let line = line.trim_start();
+                        let mut split = line.split(':');
+                        let Some(property) = split.next() else {
+                            log::error!("Error parsing key in line: {}", line);
+                            continue;
+                        };
+                        let property = property.trim();
+                        let Some(value) = split.next() else {
+                            log::error!("Error parsing value in line: {}", line);
+                            continue;
+                        };
+                        let value = value.trim();
+
+                        let glyph = if is_default {
+                            result.default_char.as_mut().unwrap()
+                        } else {
+                            result.glyphs.get_mut(&cur_char).unwrap()
+                        };
+
+                        match property {
+                            "left-bearing" => {
+                                if let Ok(value) = value.parse::<i32>() {
+                                    glyph.left_bearing = value;
+                                } else {
+                                    log::error!("Error parsing left-bearing: {}", value);
+                                }
+                            }
+                            "right-bearing" => {
+                                if let Ok(value) = value.parse::<i32>() {
+                                    glyph.right_bearing = value;
+                                } else {
+                                    log::error!("Error parsing right-bearing: {}", value);
+                                }
+                            }
+                            "top-bearing" => {
+                                if let Ok(value) = value.parse::<i32>() {
+                                    glyph.top_bearing = value;
+                                } else {
+                                    log::error!("Error parsing top-bearing: {}", value);
+                                }
+                            }
+                            "bottom-bearing" => {
+                                if let Ok(value) = value.parse::<i32>() {
+                                    glyph.bottom_bearing = value;
+                                } else {
+                                    log::error!("Error parsing bottom-bearing: {}", value);
+                                }
+                            }
+                            "shift-up" => {
+                                if let Ok(value) = value.parse::<i32>() {
+                                    glyph.shift_up = value;
+                                } else {
+                                    log::error!("Error parsing shift-up: {}", value);
+                                }
+                            }
+                            "shift-left" => {
+                                if let Ok(value) = value.parse::<i32>() {
+                                    glyph.shift_left = value;
+                                } else {
+                                    log::error!("Error parsing shift-left: {}", value);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+}
+
+fn parse_line_data(line: &str, is_default: bool, result: &mut BitFont, cur_char: char) {
+    let line = line.trim_start();
+    let mut row = 0;
+
+    let glyph = if is_default {
+        result.default_char.as_mut().unwrap()
+    } else {
+        result.glyphs.get_mut(&cur_char).unwrap()
+    };
+
+    let lw = glyph.width;
+    if lw == 0 {
+        glyph.width = line.len();
+    }
+
+    for a in line.chars() {
+        row = row << 1;
+        if a == '@' {
+            row |= 1;
+        }
+    }
+    glyph.data.push(row as u32);
+}
+
 macro_rules! fonts {
     ($( ($i:ident, $file:expr, $name: expr, $width:expr, $height:expr $(, $font_slot:expr)? ) ),* $(,)? ) => {
 
@@ -366,7 +722,9 @@ fn glyphs_from_u8_data(font_height: usize, mut data: &[u8]) -> HashMap<char, Gly
     let mut ch = 0;
     while !data.is_empty() {
         let glyph = Glyph {
-            data: data[..font_height].into(),
+            data: data[..font_height].iter().map(|b| *b as u32).collect(),
+            width: 8,
+            ..Default::default()
         };
         glyphs.insert(unsafe { char::from_u32_unchecked(ch as u32) }, glyph);
 
@@ -532,6 +890,61 @@ sauce_fonts![
     (ARMSCII_8_SAUCE, "Ansi/ARMSCII-8_Character_set_8x16.f16", "Atari ATASCII", 1.2, 0.0),
 ];
 
+macro_rules! amiga_fonts {
+    ($( ($i:ident, $file:expr, $name: expr, $size:expr) ),* $(,)? ) => {
+        $(
+            pub const $i: &str = include_str!(concat!("../data/fonts/Amiga/original/", $file));
+        )*
+
+        pub fn load_amiga_fonts() -> Vec<(String, usize, &'static str)> {
+            let mut fonts = Vec::new();
+            $(
+                fonts.push(($name.to_string(), $size, $i));
+            )*
+            fonts
+        }
+    }
+}
+
+amiga_fonts![
+    (AMIGA_TOPAZ_08, "amiga-ks13-topaz-08.yaff", "Topaz.font", 8),
+    (AMIGA_TOPAZ_09, "amiga-ks13-topaz-09.yaff", "Topaz.font", 9),
+    (AMIGA_TOPAZ_11, "workbench-3.1/Topaz_8x11.yaff", "Topaz.font", 11),
+    (AMIGA_DIAMOND_12, "workbench-3.1/Diamond_12.yaff", "Diamond.font", 12),
+    (AMIGA_DIAMOND_20, "workbench-3.1/Diamond_20.yaff", "Diamond.font", 20),
+    (AMIGA_EMERALD_20, "workbench-1.0/Emerald_20.yaff", "Emerald.font", 20),
+    (AMIGA_PEARL_08, "pearl_08.yaff", "Pearl.font", 8),
+    (AMIGA_GARNET_09, "workbench-3.1/Garnet_9.yaff", "Garnet.font", 9),
+    (AMIGA_GARNET_16, "workbench-3.1/Garnet_16.yaff", "Garnet.font", 16),
+    (AMIGA_HELVETICA_09, "workbench-3.1/Helvetica_9.yaff", "Helvetica.font", 9),
+    (AMIGA_HELVETICA_11, "workbench-3.1/Helvetica_11.yaff", "Helvetica.font", 11),
+    (AMIGA_HELVETICA_13, "workbench-3.1/Helvetica_13.yaff", "Helvetica.font", 13),
+    (AMIGA_HELVETICA_15, "workbench-3.1/Helvetica_15.yaff", "Helvetica.font", 15),
+    (AMIGA_HELVETICA_18, "workbench-3.1/Helvetica_18.yaff", "Helvetica.font", 18),
+    (AMIGA_HELVETICA_24, "workbench-3.1/Helvetica_24.yaff", "Helvetica.font", 24),
+    (AMIGA_OPAL_09, "workbench-3.1/Opal_9.yaff", "Opal.font", 9),
+    (AMIGA_OPAL_12, "workbench-3.1/Opal_12.yaff", "Opal.font", 12),
+    (AMIGA_RUBY_08, "workbench-3.1/Ruby_8.yaff", "Ruby.font", 8),
+    (AMIGA_RUBY_12, "workbench-3.1/Ruby_12.yaff", "Ruby.font", 12),
+    (AMIGA_RUBY_15, "workbench-3.1/Ruby_15.yaff", "Ruby.font", 15),
+    (AMIGA_SAPPHIRE_14, "workbench-3.1/Sapphire_14.yaff", "Sapphire.font", 14),
+    (AMIGA_SAPPHIRE_15, "workbench-1.0/Sapphire_15.yaff", "Sapphire.font", 15),
+    (AMIGA_SAPPHIRE_18, "workbench-1.0/Sapphire_18.yaff", "Sapphire.font", 18),
+    (AMIGA_SAPPHIRE_19, "workbench-3.1/Sapphire_19.yaff", "Sapphire.font", 19),
+    (AMIGA_TIMES_11, "workbench-3.1/Times_11.yaff", "Times.font", 11),
+    (AMIGA_TIMES_13, "workbench-3.1/Times_13.yaff", "Times.font", 13),
+    (AMIGA_TIMES_15, "workbench-3.1/Times_15.yaff", "Times.font", 15),
+    (AMIGA_TIMES_18, "workbench-3.1/Times_18.yaff", "Times.font", 18),
+    (AMIGA_TIMES_24, "workbench-3.1/Times_24.yaff", "Times.font", 24),
+    (AMIGA_COURIER_11, "workbench-3.1/Courier_11.yaff", "Courier.font", 11),
+    (AMIGA_COURIER_13, "workbench-3.1/Courier_13.yaff", "Courier.font", 13),
+    (AMIGA_COURIER_15, "workbench-3.1/Courier_15.yaff", "Courier.font", 15),
+    (AMIGA_COURIER_18, "workbench-3.1/Courier_18.yaff", "Courier.font", 18),
+    (AMIGA_COURIER_24, "workbench-3.1/Courier_24.yaff", "Courier.font", 24),
+    (AMIGA_COURIER_30, "workbench-3.1/Courier_30.yaff", "Courier.font", 30),
+    (AMIGA_COURIER_36, "workbench-3.1/Courier_36.yaff", "Courier.font", 36),
+];
+
 #[derive(Debug, Clone)]
 pub enum FontError {
     FontNotFound,
@@ -573,5 +986,42 @@ impl Error for FontError {
 
     fn cause(&self) -> Option<&dyn Error> {
         self.source()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::BitFont;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_parse_yaff() {
+        let yaff = r#"name: test
+bounding-box: 8x16
+
+u+0020:
+0x20:
+    @.
+    .@
+    @.
+
+"#;
+
+        let font = BitFont::from_str(yaff).unwrap();
+
+        assert_eq!(font.name, "test");
+        assert_eq!(font.size.width, 8);
+        assert_eq!(font.size.height, 16);
+
+        let glyph = font.get_glyph(' ').unwrap();
+        assert_eq!(glyph.width, 2);
+        assert_eq!(glyph.data, vec![2, 1, 2]);
+    }
+
+    #[test]
+    fn test_parse_yaff2() {
+        let font = BitFont::from_str(crate::AMIGA_TOPAZ_08).unwrap();
+        println!("{:?}", font.name);
+        println!("{:?}", font.size);
     }
 }

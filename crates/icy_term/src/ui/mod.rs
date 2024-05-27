@@ -206,21 +206,21 @@ impl MainWindow {
         //        check_error!(self, r, false);
     }
 
-    fn download(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType) {
+    fn download(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, file_name: Option<String>) {
         use icy_net::protocol::TransferState;
         self.buffer_update_thread.lock().current_transfer = TransferState::new(String::new());
 
         self.set_mode(ctx, MainWindowMode::FileTransfer(true));
-        self.send_data(SendData::Download(protocol_type));
+        self.send_data(SendData::Download(protocol_type, file_name));
 
         //let r = self.tx.send(SendData::Download(protocol_type));
         check_error!(self, r, false);
     }
 
-    pub(crate) fn initiate_file_transfer(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, download: bool) {
+    pub(crate) fn initiate_file_transfer(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, download: bool, file_name: Option<String>) {
         self.set_mode(ctx, MainWindowMode::ShowTerminal);
         if download {
-            self.download(ctx, protocol_type);
+            self.download(ctx, protocol_type, file_name);
         } else {
             self.init_upload_dialog(ctx, protocol_type);
         }
@@ -280,6 +280,7 @@ impl MainWindow {
             self.buffer_view.lock().clear_reference_image();
             self.buffer_view.lock().get_buffer_mut().layers[0].clear();
             self.buffer_view.lock().get_buffer_mut().stop_sixel_threads();
+
             self.dialing_directory_dialog.cur_addr = i;
             let converter = get_unicode_converter(&address.terminal_type);
 

@@ -1719,8 +1719,15 @@ impl Bgi {
         self.set_write_mode(op);
 
         for iy in src_y..src_y + height {
+            if iy >= image.height {
+                break;
+            }
             for ix in src_x..src_x + width {
-                let col = image.data[ix as usize + (iy * image.width) as usize];
+                if ix >= image.width {
+                    break;
+                }
+                let o = ix as usize + (iy * image.width) as usize;
+                let col = image.data[o];
 
                 let x = x + ix;
                 let y = y + iy;

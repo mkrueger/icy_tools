@@ -42,7 +42,7 @@ impl BufferParser for Parser {
             '\x7D' => buf.clear_screen(current_layer, caret),
             '\x7E' => caret.bs(buf, current_layer),
             '\x7F' | '\u{009E}' | '\u{009F}' => { /* TAB TODO */ }
-            '\u{009B}' => caret.lf(buf, current_layer),
+            '\u{009B}' => return Ok(caret.lf(buf, current_layer)),
             '\u{009C}' => buf.remove_terminal_line(current_layer, caret.pos.y),
             '\u{009D}' => buf.insert_terminal_line(current_layer, caret.pos.y),
             //   '\u{009E}' => { /* clear TAB stops TODO */ }

@@ -23,7 +23,7 @@ pub trait UndoOperation: Send {
 pub struct Paste {
     ch: char,
     glyph: Glyph,
-    old_data: Vec<u8>,
+    old_data: Vec<u32>,
 }
 
 impl Paste {
@@ -127,7 +127,7 @@ impl UndoOperation for FlipX {
 
 pub struct DownGlyph {
     ch: char,
-    old_data: Vec<u8>,
+    old_data: Vec<u32>,
 }
 
 impl DownGlyph {
@@ -160,7 +160,7 @@ impl UndoOperation for DownGlyph {
 
 pub struct UpGlyph {
     ch: char,
-    old_data: Vec<u8>,
+    old_data: Vec<u32>,
 }
 
 impl UpGlyph {
@@ -193,7 +193,7 @@ impl UndoOperation for UpGlyph {
 
 pub struct RightGlyph {
     ch: char,
-    old_data: Vec<u8>,
+    old_data: Vec<u32>,
 }
 
 impl RightGlyph {
@@ -227,7 +227,7 @@ impl UndoOperation for RightGlyph {
 
 pub struct LeftGlyph {
     ch: char,
-    old_data: Vec<u8>,
+    old_data: Vec<u32>,
 }
 
 impl LeftGlyph {
@@ -261,7 +261,7 @@ impl UndoOperation for LeftGlyph {
 
 pub struct ClearGlyph {
     ch: char,
-    old_data: Vec<u8>,
+    old_data: Vec<u32>,
 }
 
 impl ClearGlyph {
@@ -327,12 +327,12 @@ impl UndoOperation for InverseGlyph {
 
 pub struct Edit {
     ch: char,
-    old_data: Vec<u8>,
-    data: Vec<u8>,
+    old_data: Vec<u32>,
+    data: Vec<u32>,
 }
 
 impl Edit {
-    pub(crate) fn new(ch: char, data: Vec<u8>, old_data: Vec<u8>) -> Self {
+    pub(crate) fn new(ch: char, data: Vec<u32>, old_data: Vec<u32>) -> Self {
         Self { ch, data, old_data }
     }
 }

@@ -32,7 +32,7 @@ pub struct BitFontEditor {
     selected_char_opt: Option<char>,
     undo_stack: Arc<Mutex<Vec<Box<dyn UndoOperation>>>>,
     redo_stack: Vec<Box<dyn UndoOperation>>,
-    old_data: Option<Vec<u8>>,
+    old_data: Option<Vec<u32>>,
 
     send_update_message: bool,
     tool_switch: bool,

@@ -38,8 +38,10 @@ pub enum CallbackAction {
     PlayMusic(AnsiMusic),
     ChangeBaudEmulation(ansi::BaudEmulation),
     ResizeTerminal(i32, i32),
+    XModemTransfer(String),
     /// Pause for milliseconds
     Pause(u32),
+    ScrollDown(i32),
 }
 
 pub trait UnicodeConverter: Send + Sync {
@@ -72,18 +74,30 @@ pub trait BufferParser: Send {
 
 impl Caret {
     /// (line feed, LF, \n, ^J), moves the print head down one line, or to the left edge and down. Used as the end of line marker in most UNIX systems and variants.
-    pub fn lf(&mut self, buf: &mut Buffer, current_layer: usize) {
+    pub fn lf(&mut self, buf: &mut Buffer, current_layer: usize) -> CallbackAction {
         let was_ooe = self.pos.y > buf.get_last_editable_line();
-
+        let mut line_inserted = 0;
         self.pos.x = 0;
         self.pos.y += 1;
         while self.pos.y >= buf.layers[current_layer].lines.len() as i32 {
+            if buf.terminal_state.fixed_size && self.pos.y >= buf.terminal_state.get_height() {
+                line_inserted += 1;
+                if !buf.layers[current_layer].lines.is_empty() {
+                    buf.layers[current_layer].lines.remove(0);
+                }
+                self.pos.y -= 1;
+                continue;
+            }
             let len = buf.layers[current_layer].lines.len();
             let buffer_width = buf.terminal_state.get_width();
             buf.layers[current_layer].lines.insert(len, Line::with_capacity(buffer_width));
         }
+
         if !buf.is_terminal_buffer {
-            return;
+            if line_inserted > 0 {
+                return CallbackAction::ScrollDown(line_inserted);
+            }
+            return CallbackAction::Update;
         }
         if self.pos.y + 1 > buf.get_height() {
             buf.set_height(self.pos.y + 1);
@@ -94,6 +108,10 @@ impl Caret {
         } else {
             self.check_scrolling_on_caret_down(buf, current_layer, false);
         }
+        if line_inserted > 0 {
+            return CallbackAction::ScrollDown(line_inserted);
+        }
+        CallbackAction::Update
     }
 
     /// (form feed, FF, \f, ^L), to cause a printer to eject paper to the top of the next page, or a video terminal to clear the screen.
@@ -332,6 +350,7 @@ impl Buffer {
         let layer = &mut self.layers[layer];
         layer.clear();
         self.stop_sixel_threads();
+        self.terminal_state.cleared_screen = true;
         if self.is_terminal_buffer {
             self.set_size(self.terminal_state.get_size());
         }

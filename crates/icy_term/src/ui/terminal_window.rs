@@ -219,8 +219,8 @@ impl MainWindow {
         }
 
         let take = self.buffer_update_thread.lock().auto_transfer.take();
-        if let Some((protocol_type, download)) = take {
-            self.initiate_file_transfer(ctx, protocol_type, download);
+        if let Some((protocol_type, download, file_name)) = take {
+            self.initiate_file_transfer(ctx, protocol_type, download, file_name);
         }
 
         if self.update_thread_handle.is_some() && self.update_thread_handle.as_ref().unwrap().is_finished() {
@@ -432,7 +432,6 @@ impl MainWindow {
                                     buffer.get_buffer_mut().terminal_state.clear_margins_left_right();
                                     buffer.get_buffer_mut().terminal_state.clear_margins_top_bottom();
                                     buffer.clear_buffer_screen();
-                                    buffer.get_buffer_mut().terminal_state.cleared_screen = true;
                                 }
                                 self.output_string(cmd);
                                 return;

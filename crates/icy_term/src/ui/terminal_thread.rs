@@ -39,7 +39,7 @@ pub struct TerminalThread {
     pub auto_login: Option<AutoLogin>,
     pub sound_thread: Arc<Mutex<SoundThread>>,
 
-    pub auto_transfer: Option<(TransferProtocolType, bool)>,
+    pub auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>,
 
     pub terminal_type: Option<(TerminalEmulation, MusicOption)>,
 
@@ -60,14 +60,12 @@ impl TerminalThread {
     async fn update_buffer(&mut self, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, data: &[u8]) -> Res<()> {
         let mut caret: Caret = Caret::default();
         mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
-        let mut lock = self.buffer_view.lock();
-        let buffer = lock.get_buffer_mut();
         self.capture_dialog.append_data(&data);
 
         for ch in data {
             let ch = *ch;
             if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch) {
-                self.auto_transfer = Some((protocol_type, download));
+                self.auto_transfer = Some((protocol_type, download, None));
             }
             if let Some(autologin) = &mut self.auto_login {
                 if let Ok(Some(data)) = autologin.try_login(ch) {
@@ -75,7 +73,7 @@ impl TerminalThread {
                     autologin.logged_in = true;
                 }
             }
-            let result = buffer_parser.print_char(buffer, 0, &mut caret, ch as char);
+            let result = buffer_parser.print_char(self.buffer_view.lock().get_buffer_mut(), 0, &mut caret, ch as char);
             match result {
                 Ok(action) => {
                     self.handle_action(action, connection).await;
@@ -85,13 +83,13 @@ impl TerminalThread {
                 }
             }
         }
-        mem::swap(&mut caret, lock.get_caret_mut());
-        lock.get_buffer_mut().update_hyperlinks();
-        lock.redraw_view();
+        mem::swap(&mut caret, self.buffer_view.lock().get_caret_mut());
+        self.buffer_view.lock().get_buffer_mut().update_hyperlinks();
+        self.buffer_view.lock().redraw_view();
         Ok(())
     }
 
-    async fn handle_action(&self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData) -> (bool, u32) {
+    async fn handle_action(&mut self, result: icy_engine::CallbackAction, connection: &mut ConnectionThreadData) -> (bool, u32) {
         match result {
             icy_engine::CallbackAction::SendString(result) => {
                 let r = connection.com.send(result.as_bytes()).await;
@@ -127,12 +125,21 @@ impl TerminalThread {
                 return (false, 0);
             }
 
+            icy_engine::CallbackAction::ScrollDown(_) => {
+                return (true, 0);
+            }
+
             icy_engine::CallbackAction::Update => {
                 return (true, 0);
             }
             icy_engine::CallbackAction::Pause(ms) => {
                 // note: doesn't block the UI thread
                 return (true, ms);
+            }
+            icy_engine::CallbackAction::XModemTransfer(file_name) => {
+                self.auto_transfer = Some((TransferProtocolType::XModem, true, Some(file_name)));
+                // note: doesn't block the UI thread
+                return (false, 0);
             }
         }
         (false, 0)
@@ -309,8 +316,8 @@ async fn handle_receive(ctx: &egui::Context, c: &mut ConnectionThreadData, data:
             }
         }
 
-        SendData::Download(protocol) => {
-            if let Err(err) = download(ctx, c, protocol, update_thread).await {
+        SendData::Download(protocol, file_name) => {
+            if let Err(err) = download(ctx, c, protocol, update_thread, file_name).await {
                 log::error!("Failed to download files: {err}");
             }
         }
@@ -320,9 +327,18 @@ async fn handle_receive(ctx: &egui::Context, c: &mut ConnectionThreadData, data:
     Ok(())
 }
 
-async fn download(ctx: &egui::Context, c: &mut ConnectionThreadData, protocol: TransferProtocolType, update_thread: &Arc<Mutex<TerminalThread>>) -> Res<()> {
+async fn download(
+    ctx: &egui::Context,
+    c: &mut ConnectionThreadData,
+    protocol: TransferProtocolType,
+    update_thread: &Arc<Mutex<TerminalThread>>,
+    file_name: Option<String>,
+) -> Res<()> {
     let mut prot = protocol.create();
-    let transfer_state = prot.initiate_recv(&mut *c.com).await?;
+    let mut transfer_state = prot.initiate_recv(&mut *c.com).await?;
+    if let Some(file_name) = file_name {
+        transfer_state.recieve_state.file_name = file_name.clone();
+    }
     file_transfer(ctx, transfer_state, &mut *prot, c, update_thread).await?;
     Ok(())
 }
@@ -385,12 +401,13 @@ fn copy_downloaded_files(transfer_state: &mut TransferState) -> Res<()> {
                 let mut i = 1;
                 let new_name = PathBuf::from(name);
                 while dest.exists() {
-                    dest = dest.with_file_name(format!(
-                        "{}.{}.{}",
-                        new_name.file_stem().unwrap().to_string_lossy(),
-                        i,
-                        new_name.extension().unwrap().to_string_lossy()
-                    ));
+                    if let Some(stem) = new_name.file_stem() {
+                        if let Some(ext) = new_name.extension() {
+                            dest = dest.with_file_name(format!("{}.{}.{}", stem.to_string_lossy(), i, ext.to_string_lossy()));
+                        } else {
+                            dest = dest.with_file_name(format!("{}.{}", stem.to_string_lossy(), i));
+                        }
+                    }
                     i += 1;
                 }
                 std::fs::copy(&path, &dest)?;
