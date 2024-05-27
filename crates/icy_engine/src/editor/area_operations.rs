@@ -474,7 +474,7 @@ fn generate_flipx_variants(cur_glyph: &crate::Glyph, font_width: i32) -> Option<
     let w = 8 - font_width;
 
     for i in 0..flipped_glyph.data.len() {
-        flipped_glyph.data[i] = flipped_glyph.data[i].reverse_bits() << w;
+        flipped_glyph.data[i] = ((flipped_glyph.data[i] as u8).reverse_bits() << w) as u32;
     }
     if cur_glyph.data == flipped_glyph.data {
         return None;
@@ -488,10 +488,12 @@ fn generate_x_variants(flipped_glyph: &crate::Glyph, _font_width: i32) -> Vec<cr
     let mut left_glyph = cmp_glyhps[0].clone();
     for i in 0..left_glyph.data.len() {
         left_glyph.data[i] <<= 1;
+        left_glyph.data[i] &= 0xFF;
     }
     let mut left_by2_glyph = left_glyph.clone();
     for i in 0..left_glyph.data.len() {
         left_by2_glyph.data[i] <<= 1;
+        left_by2_glyph.data[i] &= 0xFF;
     }
     cmp_glyhps.push(left_glyph);
     cmp_glyhps.push(left_by2_glyph);
@@ -499,10 +501,12 @@ fn generate_x_variants(flipped_glyph: &crate::Glyph, _font_width: i32) -> Vec<cr
     let mut right_glyph = cmp_glyhps[0].clone();
     for i in 0..right_glyph.data.len() {
         right_glyph.data[i] >>= 1;
+        right_glyph.data[i] &= 0xFF;
     }
     let mut right_by2_glyph = right_glyph.clone();
     for i in 0..right_glyph.data.len() {
         right_by2_glyph.data[i] >>= 1;
+        right_by2_glyph.data[i] &= 0xFF;
     }
     cmp_glyhps.push(right_glyph);
     cmp_glyhps.push(right_by2_glyph);
