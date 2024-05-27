@@ -170,10 +170,15 @@ pub fn start_update_thread(
                     let com: Box<dyn Connection> = match open_connection(&connection_data).await {
                         Ok(com) => com,
                         Err(err) => {
-                            let _ = tx.send(SendData::Disconnect);
-                            log::error!("run_update_thread::open_connection: {err}");
-                            println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
+                            println!("111");
                             update_thread.lock().is_connected = false;
+                            println!("112");
+                            let _ = tx.send(SendData::Disconnect);
+                            println!("113");
+                            log::error!("run_update_thread::open_connection: {err}");
+                            println!("114");
+                            println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
+                            println!("115");
                             return;
                         }
                     };
@@ -196,9 +201,9 @@ pub fn start_update_thread(
                             read_data = connection.com.read(&mut data) => {
                                 match read_data {
                                     Err(err) => {
+                                        update_thread.lock().is_connected = false;
                                         println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
                                         log::error!("run_update_thread::read_data: {err}");
-                                        update_thread.lock().is_connected = false;
                                         break;
                                     }
                                     Ok(size) => {

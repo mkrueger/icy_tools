@@ -51,7 +51,7 @@ impl MainWindow {
                         self.set_mode(ctx, MainWindowMode::SelectProtocol(true));
                     }
                     let mut send_login = false;
-                    if let Some(auto_login) = &mut self.buffer_update_thread.lock().auto_login {
+                    if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
                         if !auto_login.logged_in {
                             let r = ui.add(ImageButton::new(KEY.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
                                 ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
@@ -76,7 +76,7 @@ impl MainWindow {
                     }
 
                     let mut mode = None;
-                    if let Some(auto_login) = &mut self.buffer_update_thread.lock().auto_login {
+                    if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
                         if auto_login.iemsi.isi.is_some() {
                             if self.get_mode() == MainWindowMode::ShowIEMSI {
                                 let r: egui::Response = ui.add(egui::Button::new(RichText::new(fl!(crate::LANGUAGE_LOADER, "toolbar-hide-iemsi"))));
@@ -98,8 +98,8 @@ impl MainWindow {
                         self.set_mode(ctx, mode);
                     }
 
-                    if self.buffer_update_thread.lock().sound_thread.lock().is_playing() {
-                        let button_text = match self.buffer_update_thread.lock().sound_thread.lock().stop_button {
+                    if self.terminal_thread.lock().sound_thread.lock().is_playing() {
+                        let button_text = match self.terminal_thread.lock().sound_thread.lock().stop_button {
                             0 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing1"),
                             1 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing2"),
                             2 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing3"),
@@ -110,15 +110,15 @@ impl MainWindow {
 
                         let r: egui::Response = ui.add(egui::Button::new(RichText::new(button_text)));
                         if r.clicked() {
-                            self.buffer_update_thread.lock().sound_thread.lock().clear();
+                            self.terminal_thread.lock().sound_thread.lock().clear();
                         }
                     }
 
-                    if self.buffer_update_thread.lock().capture_dialog.capture_session {
+                    if self.terminal_thread.lock().capture_dialog.capture_session {
                         let r: egui::Response = ui.add(egui::Button::new(RichText::new(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture"))));
 
                         if r.clicked() {
-                            self.buffer_update_thread.lock().capture_dialog.capture_session = false;
+                            self.terminal_thread.lock().capture_dialog.capture_session = false;
                         }
                     }
                     if *VERSION < *LATEST_VERSION {
@@ -218,13 +218,13 @@ impl MainWindow {
             dialogs::dialing_directory_dialog::view_dialing_directory(self, ctx);
         }
 
-        let take = self.buffer_update_thread.lock().auto_transfer.take();
+        let take = self.terminal_thread.lock().auto_transfer.take();
         if let Some((protocol_type, download, file_name)) = take {
             self.initiate_file_transfer(ctx, protocol_type, download, file_name);
         }
 
-        if self.update_thread_handle.is_some() && self.update_thread_handle.as_ref().unwrap().is_finished() {
-            let handle = self.update_thread_handle.take().unwrap();
+        if self.terminal_thread_handle.is_some() && self.terminal_thread_handle.as_ref().unwrap().is_finished() {
+            let handle = self.terminal_thread_handle.take().unwrap();
             if let Err(err) = handle.join() {
                 let err = format!("Error update thread crashed: {:?}", err.downcast_ref::<&str>());
                 log::error!("{err}");
@@ -411,7 +411,7 @@ impl MainWindow {
                         let x = (mouse_pos.x / calc.buffer_rect.width() * 640.0) as i32;
                         let y = (mouse_pos.y / calc.buffer_rect.height() * 350.0) as i32;
                         let mut found_field = None;
-                        for mouse_field in &self.buffer_update_thread.lock().mouse_field {
+                        for mouse_field in &self.terminal_thread.lock().mouse_field {
                             if !mouse_field.style.is_mouse_button() {
                                 continue;
                             }
@@ -447,7 +447,7 @@ impl MainWindow {
 
                         let x = (hover_pos.x / calc.buffer_rect.width() * 640.0) as i32;
                         let y = (hover_pos.y / calc.buffer_rect.height() * 350.0) as i32;
-                        let fields = &self.buffer_update_thread.lock().mouse_field;
+                        let fields = &self.terminal_thread.lock().mouse_field;
                         for mouse_field in fields {
                             if !mouse_field.style.is_mouse_button() {
                                 continue;
@@ -578,7 +578,7 @@ impl MainWindow {
         }
         for (k, m) in key_map {
             if *k == key_code {
-                if self.buffer_update_thread.lock().is_connected {
+                if self.terminal_thread.lock().is_connected {
                     self.send_vec(m.to_vec());
                 } else {
                     for c in *m {

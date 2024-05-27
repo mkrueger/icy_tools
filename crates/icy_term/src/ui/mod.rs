@@ -109,8 +109,8 @@ pub struct MainWindow {
     shift_pressed_during_selection: bool,
     use_rip: bool,
 
-    buffer_update_thread: Arc<egui::mutex::Mutex<TerminalThread>>,
-    update_thread_handle: Option<JoinHandle<()>>,
+    terminal_thread: Arc<egui::mutex::Mutex<TerminalThread>>,
+    terminal_thread_handle: Option<JoinHandle<()>>,
     pub tx: mpsc::Sender<SendData>,
     pub rx: mpsc::Receiver<SendData>,
 
@@ -123,6 +123,7 @@ pub struct MainWindow {
 
     pub show_find_dialog: bool,
     pub find_dialog: dialogs::find_dialog::DialogState,
+    show_disconnect: bool,
     title: String,
     buffer_parser: Box<dyn BufferParser>,
     #[cfg(target_arch = "wasm32")]
@@ -157,7 +158,7 @@ impl MainWindow {
 
     pub fn output_char(&mut self, ch: char) {
         let translated_char = self.buffer_view.lock().get_unicode_converter().convert_from_unicode(ch, 0);
-        if self.buffer_update_thread.lock().is_connected {
+        if self.terminal_thread.lock().is_connected {
             self.send_vec(vec![translated_char as u8]);
         } else {
             self.print_char(translated_char as u8);
@@ -165,7 +166,7 @@ impl MainWindow {
     }
 
     pub fn output_string(&mut self, str: &str) {
-        if self.buffer_update_thread.lock().is_connected {
+        if self.terminal_thread.lock().is_connected {
             let mut v = Vec::new();
             for ch in str.chars() {
                 let translated_char = self.buffer_view.lock().get_unicode_converter().convert_from_unicode(ch, 0);
@@ -198,7 +199,7 @@ impl MainWindow {
     #[cfg(not(target_arch = "wasm32"))]
     fn upload(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, files: Vec<PathBuf>) {
         use icy_net::protocol::TransferState;
-        self.buffer_update_thread.lock().current_transfer = TransferState::new(String::new());
+        self.terminal_thread.lock().current_transfer = TransferState::new(String::new());
 
         self.set_mode(ctx, MainWindowMode::FileTransfer(false));
         self.send_data(SendData::Upload(protocol_type, files));
@@ -208,7 +209,7 @@ impl MainWindow {
 
     fn download(&mut self, ctx: &egui::Context, protocol_type: TransferProtocolType, file_name: Option<String>) {
         use icy_net::protocol::TransferState;
-        self.buffer_update_thread.lock().current_transfer = TransferState::new(String::new());
+        self.terminal_thread.lock().current_transfer = TransferState::new(String::new());
 
         self.set_mode(ctx, MainWindowMode::FileTransfer(true));
         self.send_data(SendData::Download(protocol_type, file_name));
@@ -265,18 +266,18 @@ impl MainWindow {
                 (address.user_name.clone(), address.password.clone())
             };
 
-            self.buffer_update_thread.lock().auto_login = if user_name.is_empty() || password.is_empty() {
+            self.terminal_thread.lock().auto_login = if user_name.is_empty() || password.is_empty() {
                 None
             } else {
                 Some(AutoLogin::new(&cloned_addr.auto_login, user_name, password))
             };
 
             if let Some(rip_cache) = address.get_rip_cache() {
-                self.buffer_update_thread.lock().cache_directory = rip_cache;
+                self.terminal_thread.lock().cache_directory = rip_cache;
             }
 
             self.use_rip = matches!(address.terminal_type, TerminalEmulation::Rip);
-            self.buffer_update_thread.lock().terminal_type = Some((address.terminal_type, address.ansi_music));
+            self.terminal_thread.lock().terminal_type = Some((address.terminal_type, address.ansi_music));
             self.buffer_view.lock().clear_reference_image();
             self.buffer_view.lock().get_buffer_mut().layers[0].clear();
             self.buffer_view.lock().get_buffer_mut().stop_sixel_threads();
@@ -302,12 +303,12 @@ impl MainWindow {
 
         let data = OpenConnectionData::from(&cloned_addr, timeout, window_size, Some(self.get_options().modem.clone()));
 
-        if let Some(_handle) = self.update_thread_handle.take() {
+        if let Some(_handle) = self.terminal_thread_handle.take() {
             self.send_data(SendData::Disconnect);
         }
         self.buffer_parser = get_parser(&data.term_caps.terminal, data.use_ansi_music, PathBuf::new());
-        let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.buffer_update_thread.clone());
-        self.update_thread_handle = Some(update_thread_handle);
+        let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.terminal_thread.clone());
+        self.terminal_thread_handle = Some(update_thread_handle);
         self.tx = tx;
         self.rx = rx;
         self.send_data(SendData::SetBaudRate(cloned_addr.baud_emulation.get_baud_rate()));
@@ -322,8 +323,8 @@ impl MainWindow {
 
     pub fn hangup(&mut self, ctx: &egui::Context) {
         self.send_data(SendData::Disconnect);
-        self.update_thread_handle = None;
-        self.buffer_update_thread.lock().sound_thread.lock().clear();
+        self.terminal_thread_handle = None;
+        self.terminal_thread.lock().sound_thread.lock().clear();
         self.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
     }
 
@@ -364,8 +365,7 @@ impl MainWindow {
         let title = if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
             crate::DEFAULT_TITLE.to_string()
         } else {
-            let show_disconnect = false;
-            let d = Instant::now().duration_since(self.buffer_update_thread.lock().connection_time);
+            let d = Instant::now().duration_since(self.terminal_thread.lock().connection_time);
             let sec = d.as_secs();
             let minutes = sec / 60;
             let hours = minutes / 60;
@@ -377,7 +377,9 @@ impl MainWindow {
                 cur.system_name.clone()
             };
 
-            let title = if self.buffer_update_thread.lock().is_connected {
+            let is_connected = self.terminal_thread.lock().is_connected;
+            let title = if is_connected {
+                self.show_disconnect = true;
                 fl!(
                     crate::LANGUAGE_LOADER,
                     "title-connected",
@@ -388,7 +390,8 @@ impl MainWindow {
             } else {
                 fl!(crate::LANGUAGE_LOADER, "title-offline", version = crate::VERSION.to_string())
             };
-            if show_disconnect {
+            if self.show_disconnect && !is_connected {
+                self.show_disconnect = false;
                 self.set_mode(ctx, MainWindowMode::ShowDisconnectedMessage(system_name.clone(), connection_time.clone()));
                 self.output_string("\nNO CARRIER\n");
             }
@@ -457,7 +460,7 @@ impl MainWindow {
     }
 
     fn send_vec(&mut self, to_vec: Vec<u8>) {
-        if !self.buffer_update_thread.lock().is_connected {
+        if !self.terminal_thread.lock().is_connected {
             return;
         }
         self.send_data(SendData::Data(to_vec));

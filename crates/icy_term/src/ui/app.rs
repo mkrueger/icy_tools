@@ -112,8 +112,8 @@ impl MainWindow {
             dialing_directory_dialog: dialogs::dialing_directory_dialog::DialogState::new(addresses),
             drag_start: None,
             last_pos: Position::default(),
-            buffer_update_thread,
-            update_thread_handle: Some(update_thread_handle),
+            terminal_thread: buffer_update_thread,
+            terminal_thread_handle: Some(update_thread_handle),
             tx,
             rx,
             show_find_dialog: false,
@@ -122,6 +122,7 @@ impl MainWindow {
             use_rip: false,
             buffer_parser,
             title: String::new(),
+            show_disconnect: false,
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -197,7 +198,7 @@ impl eframe::App for MainWindow {
 
             MainWindowMode::FileTransfer(download) => {
                 self.update_terminal_window(ctx, frame, false);
-                let state = self.buffer_update_thread.lock().current_transfer.clone();
+                let state = self.terminal_thread.lock().current_transfer.clone();
                 // auto close uploads.
                 if !download && state.is_finished {
                     self.set_mode(ctx, MainWindowMode::ShowTerminal);
@@ -216,7 +217,7 @@ impl eframe::App for MainWindow {
             }
             MainWindowMode::ShowCaptureDialog => {
                 self.update_terminal_window(ctx, frame, false);
-                if !self.buffer_update_thread.lock().capture_dialog.show_caputure_dialog(ctx) {
+                if !self.terminal_thread.lock().capture_dialog.show_caputure_dialog(ctx) {
                     self.set_mode(ctx, MainWindowMode::ShowTerminal);
                 }
             }
