@@ -9,7 +9,7 @@ A modern terminal program for BBS systems.
 - Copy & Paste
 - IEMSI support
 - Supports CP437, PETSCII, ATASCII, 
-  VIEWDATA and RIPSCRIPT
+  VIEWDATA, RIPSCRIPT and SkyPix
 
 For latest builds/development visit:
 GitHub https://github.com/mkrueger/icy_tools

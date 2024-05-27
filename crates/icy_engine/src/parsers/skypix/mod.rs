@@ -111,7 +111,6 @@ impl Parser {
 
     fn run_skypix_sequence(&mut self, cmd: i32, parameters: &[i32], buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
         self.cmd_counter += 1;
-        //println!("run cmd {cmd} = par {parameters:?}");
         match cmd {
             1 => {
                 // SET_PIXEL
@@ -379,7 +378,6 @@ impl Parser {
     fn load_font(&mut self, parameter: &str, size: i32) {
         let mut index = None;
         let mut old_size = 0;
-        println!("load font {parameter} with size {size}");
         for (i, fonts) in self.fonts.iter().enumerate() {
             if fonts.0.eq_ignore_ascii_case(parameter) {
                 if index.is_none() {

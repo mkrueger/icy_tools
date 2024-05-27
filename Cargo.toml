@@ -25,7 +25,7 @@ icy_sixel = { path = "crates/icy_sixel" }
 icy_view_gui = { path = "crates/icy_view_gui" }
 codepages = { git ="https://github.com/mkrueger/icy_board" }
 
-zip = { version = "1.1.1"}
+zip = { version = "2.1.0"}
 lazy_static = "1.4.0"
 semver = "1.0.20"
 thiserror = "1.0.57"

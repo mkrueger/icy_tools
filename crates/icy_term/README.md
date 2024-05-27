@@ -6,7 +6,7 @@ Visit https://www.telnetbbsguide.com/ for a start to enter the BBS world.
 Features supported so far:
 - Platforms: Linux, macOs, Windows
 - Telnet, SSH, Websockets and Raw connections.
-- Ansi BBS, Avatar, PETSCII, ATASCII, Viewdata and RIPscrip emulation
+- Ansi BBS, Avatar, PETSCII, ATASCII, Viewdata, RIPscrip and SkyPix emulation
 - File transfer X/Y/Z Modem and variants (1k/1k-G/8k)
 - Rich set of ansi features
   - Modern engine with extended colors, 24bit fonts, ice support
@@ -63,6 +63,10 @@ Viewdata screenshot:
 RIPscrip screenshot:
 
 ![Viewdata](assets/ripscrip_bbs.png?raw=true "RIPscrip")
+
+SkyPix screenshot:
+
+![Viewdata](assets/skypix_bbs.png?raw=true "SkyPix")
 
 # History
 
