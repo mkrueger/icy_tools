@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use eframe::egui::{self, TextEdit, Ui};
 use egui_file::FileDialog;
 use egui_modal::Modal;
+use gifski::{progress::NoProgress, Repeat};
 use i18n_embed_fl::fl;
 use icy_engine::{BufferType, Rectangle, SaveOptions, TextPane};
 
@@ -16,6 +17,7 @@ mod ascii;
 mod atascii;
 mod avatar;
 mod bin;
+mod gif;
 mod ice_draw;
 mod pcboard;
 mod png;
@@ -189,7 +191,7 @@ impl ModalDialog for ExportFileDialog {
                 if ext == "png" {
                     let lock = &editor.buffer_view.lock();
                     let buf = lock.get_buffer();
-                    let (size, pixels) = buf.render_to_rgba(Rectangle::from(0, 0, buf.get_width(), buf.get_height()));
+                    let (size, pixels) = buf.render_to_rgba(Rectangle::from(0, 0, buf.get_width(), buf.get_height()), true);
                     let image_buffer = image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels);
                     match image_buffer {
                         Some(img) => {
@@ -204,6 +206,38 @@ impl ModalDialog for ExportFileDialog {
 
                     return Ok(None);
                 }
+                if ext == "gif" {
+                    let lock = &editor.buffer_view.lock();
+                    let buffer = lock.get_buffer();
+
+                    let size = buffer.get_size();
+                    let dim = buffer.get_font_dimensions();
+                    let width = size.width * dim.width;
+                    let height = size.height * dim.height;
+
+                    let settings = gifski::Settings {
+                        width: Some(width as u32),
+                        height: Some(height as u32),
+                        quality: 100,
+                        fast: true,
+                        repeat: Repeat::Infinite,
+                    };
+
+                    let (c, w) = gifski::new(settings)?;
+
+                    let fs = std::fs::File::create(&self.file_name)?;
+                    let mut pb = NoProgress {};
+                    std::thread::spawn(move || w.write(fs, &mut pb).unwrap());
+
+                    let (size, data) = buffer.render_to_rgba(Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()), true);
+                    let img = get_image(data, size);
+                    c.add_frame_rgba(0, img, 0.0)?;
+
+                    let (size, data) = buffer.render_to_rgba(Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()), false);
+                    let img = get_image(data, size);
+                    c.add_frame_rgba(1, img, 0.556)?;
+                    return Ok(None);
+                }
             }
         }
         unsafe {
@@ -214,9 +248,19 @@ impl ModalDialog for ExportFileDialog {
     }
 }
 
+fn get_image(data: Vec<u8>, size: icy_engine::Size) -> imgref::Img<Vec<rgb::RGBA<u8>>> {
+    let mut n = 0;
+    let mut d = Vec::new();
+    while n < data.len() {
+        d.push(rgb::RGBA::new(data[n], data[n + 1], data[n + 2], data[n + 3]));
+        n += 4;
+    }
+    imgref::Img::new(d, size.width as usize, size.height as usize)
+}
+
 type CreateSettingsFunction = fn(&mut Ui, &mut SaveOptions);
 
-const TYPE_DESCRIPTIONS: [(&str, CreateSettingsFunction, &str); 12] = [
+const TYPE_DESCRIPTIONS: [(&str, CreateSettingsFunction, &str); 13] = [
     ("Ansi (.ans)", ansi::create_settings_page, "ans"),
     ("Avatar (.avt)", avatar::create_settings_page, "avt"),
     ("PCBoard (.pcb)", pcboard::create_settings_page, "pcb"),
@@ -229,10 +273,12 @@ const TYPE_DESCRIPTIONS: [(&str, CreateSettingsFunction, &str); 12] = [
     ("CtrlA (.msg)", pcboard::create_settings_page, "msg"),
     ("Renegade (.an1)", pcboard::create_settings_page, "an1"),
     ("PNG (.png)", png::create_settings_page, "png"),
+    ("GIF (.gif)", gif::create_settings_page, "gif"),
 ];
 
-const ATASCII_TYPE_DESCRIPTIONS: [(&str, CreateSettingsFunction, &str); 3] = [
+const ATASCII_TYPE_DESCRIPTIONS: [(&str, CreateSettingsFunction, &str); 4] = [
     ("Atascii (.ata)", atascii::create_settings_page, "ata"),
     ("XBin (.xb)", xbin::create_settings_page, "xb"),
     ("PNG (.png)", png::create_settings_page, "png"),
+    ("GIF (.gif)", gif::create_settings_page, "gif"),
 ];

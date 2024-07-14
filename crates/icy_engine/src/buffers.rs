@@ -839,7 +839,7 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if .
-    pub fn render_to_rgba(&self, rect: Rectangle) -> (Size, Vec<u8>) {
+    pub fn render_to_rgba(&self, rect: Rectangle, blink_on: bool) -> (Size, Vec<u8>) {
         let font_size = self.get_font(0).unwrap().size;
 
         let px_width = rect.get_width() * font_size.width;
@@ -852,11 +852,15 @@ impl Buffer {
                 let ch = self.get_char((x + rect.start.x, y + rect.start.y));
                 let font = self.get_font(ch.get_font_page()).unwrap();
 
-                let fg = if ch.attribute.is_bold() && ch.attribute.get_foreground() < 8 {
+                let mut fg = if ch.attribute.is_bold() && ch.attribute.get_foreground() < 8 {
                     ch.attribute.get_foreground() + 8
                 } else {
                     ch.attribute.get_foreground()
                 };
+
+                if ch.attribute.is_blinking() && !blink_on {
+                    fg = ch.attribute.get_background();
+                }
 
                 let (f_r, f_g, f_b) = self.palette.get_rgb(fg);
                 let (b_r, b_g, b_b) = self.palette.get_rgb(ch.attribute.get_background());
