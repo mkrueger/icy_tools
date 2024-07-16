@@ -505,7 +505,7 @@ impl crate::ModalDialog for NewFileDialog {
 
                                 let font_id = FontId::new(20.0, eframe::epaint::FontFamily::Proportional);
                                 let text: WidgetText = template.title().into();
-                                let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                                let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                                 let mut title_rect = rect;
                                 title_rect.set_left(title_rect.left() + 40.0);
                                 title_rect.set_top(title_rect.top() + 4.0);
@@ -517,7 +517,7 @@ impl crate::ModalDialog for NewFileDialog {
 
                                 let font_id = FontId::new(14.0, eframe::epaint::FontFamily::Proportional);
                                 let text: WidgetText = template.description().lines().next().unwrap_or_default().into();
-                                let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                                let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                                 let mut descr_rect = rect;
                                 descr_rect.set_top(descr_rect.top() + 34.0);
                                 ui.painter().galley_with_override_text_color(

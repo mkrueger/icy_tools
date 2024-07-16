@@ -351,7 +351,7 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
                     } {
                         let font_id = FontId::new(font_size, FontFamily::Proportional);
                         let text: WidgetText = format!("{}", 1 + y + calc.first_line as i32).into();
-                        let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                        let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                         let rect = Rect::from_min_size(
                             Pos2::new(
                                 calc.buffer_rect.left() - galley.size().x - 4.0 - (calc.char_scroll_position.x % calc.font_height) * calc.scale.y,
@@ -387,7 +387,7 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
                     for x in 0..buf_w as i32 {
                         let font_id = FontId::new(font_size, FontFamily::Proportional);
                         let text: WidgetText = format!("{}", (1 + x) % 10).into();
-                        let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                        let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                         let rect = Rect::from_min_size(
                             Pos2::new(
                                 calc.buffer_rect.left() - galley.size().x - 4.0 + x as f32 * calc.char_size.x + calc.char_size.x,

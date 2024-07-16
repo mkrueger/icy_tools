@@ -130,7 +130,7 @@ impl Tool for BrushTool {
 
         ui.horizontal(|ui| {
             ui.label(fl!(crate::LANGUAGE_LOADER, "tool-size-label"));
-            ui.add(egui::DragValue::new(&mut self.size).clamp_range(1..=20).speed(1));
+            ui.add(egui::DragValue::new(&mut self.size).range(1..=20).speed(1));
         });
         /*
                 ui.radio_value(&mut self.brush_type, BrushType::Shade, fl!(crate::LANGUAGE_LOADER, "tool-shade"));

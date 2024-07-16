@@ -186,13 +186,13 @@ pub fn start_update_thread(
                     update_thread.lock().connection_time = Instant::now();
 
                     let mut connection = ConnectionThreadData {
-                        is_connected: false,
+                        _is_connected: false,
                         com,
                         baud_rate: connection_data.baud_emulation.get_baud_rate(),
-                        data_buffer: VecDeque::new(),
-                        thread_is_running: true,
-                        tx: tx,
-                        last_send_time: Instant::now(),
+                        _data_buffer: VecDeque::new(),
+                        _thread_is_running: true,
+                        _tx: tx,
+                        _last_send_time: Instant::now(),
                         rx: rx2,
                     };
                     let mut data = [0; 1024 * 64];

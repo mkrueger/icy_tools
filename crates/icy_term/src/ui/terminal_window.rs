@@ -32,7 +32,7 @@ impl MainWindow {
         if !self.is_fullscreen_mode {
             egui::TopBottomPanel::top("button_bar").frame(button_frame).show(ctx, |ui| {
                 if !enable_ui {
-                    ui.set_enabled(false);
+                    ui.disable();
                 }
                 ui.horizontal(|ui| {
                     let r = ui.add(ImageButton::new(UPLOAD.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
@@ -178,7 +178,7 @@ impl MainWindow {
 
         egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| {
             if !enable_ui {
-                ui.set_enabled(false);
+                ui.disable();
             }
             let rect = ui.available_rect_before_wrap();
 
@@ -271,7 +271,8 @@ impl MainWindow {
                     egui::Event::Paste(text) => {
                         self.output_string(&text);
                     }
-                    egui::Event::CompositionEnd(text) | egui::Event::Text(text) => {
+                    /*egui::Event::CompositionEnd(text) |*/
+                    egui::Event::Text(text) => {
                         for c in text.chars() {
                             self.output_char(c);
                         }
@@ -651,7 +652,7 @@ fn terminal_context_menu(ui: &mut egui::Ui, window: &mut MainWindow) {
     {
         ui.separator();
         if ui
-            .add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "terminal-menu-export")).wrap(false))
+            .add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "terminal-menu-export")).wrap_mode(egui::TextWrapMode::Truncate))
             .clicked()
         {
             window.init_export_dialog(ui.ctx());

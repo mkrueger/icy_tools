@@ -11,14 +11,14 @@ use web_time::Instant;
 use super::connect::SendData;
 
 pub struct ConnectionThreadData {
-    pub tx: mpsc::Sender<SendData>,
+    pub _tx: mpsc::Sender<SendData>,
     pub rx: mpsc::Receiver<SendData>,
     pub com: Box<dyn Connection>,
-    pub thread_is_running: bool,
-    pub is_connected: bool,
+    pub _thread_is_running: bool,
+    pub _is_connected: bool,
 
     // used for baud rate emulation
-    pub data_buffer: VecDeque<u8>,
+    pub _data_buffer: VecDeque<u8>,
     pub baud_rate: u32,
-    pub last_send_time: Instant,
+    pub _last_send_time: Instant,
 }

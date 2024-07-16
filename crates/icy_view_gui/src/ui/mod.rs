@@ -64,7 +64,9 @@ impl<'a> App for MainWindow<'a> {
             .exact_width(250.0)
             .resizable(true)
             .show(ctx, |ui| {
-                ui.set_enabled(self.sauce_dialog.is_none() && self.help_dialog.is_none());
+                if !(self.sauce_dialog.is_none() && self.help_dialog.is_none()) {
+                    ui.disable();
+                }
                 let command = self.file_view.show_ui(ui, false);
                 self.handle_command(command);
             });
@@ -73,7 +75,9 @@ impl<'a> App for MainWindow<'a> {
             .inner_margin(Margin::same(0.0))
             .fill(Color32::BLACK);
         egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| {
-            ui.set_enabled(self.sauce_dialog.is_none() && self.help_dialog.is_none());
+            if !(self.sauce_dialog.is_none() && self.help_dialog.is_none()) {
+                ui.disable();
+            }
             self.paint_main_area(ui)
         });
         self.in_scroll &= self.file_view.options.auto_scroll_enabled;

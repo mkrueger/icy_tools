@@ -115,7 +115,7 @@ impl Document for CharFontEditor {
 
             if self.selected_font < self.fonts.len() {
                 ScrollArea::vertical().show(ui, |ui| {
-                    ui.style_mut().wrap = Some(false);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
 
                     for i in 0..self.fonts.len() {
                         if ui.selectable_value(&mut self.selected_font, i, &self.fonts[i].name).clicked() {
@@ -210,7 +210,7 @@ impl Document for CharFontEditor {
                         ui.label(fl!(crate::LANGUAGE_LOADER, "tdf-editor-spacing_label"));
                     });
                     if ui
-                        .add(egui::DragValue::new(&mut self.fonts[self.selected_font].spaces).clamp_range(0.0..=40.0))
+                        .add(egui::DragValue::new(&mut self.fonts[self.selected_font].spaces).range(0.0..=40.0))
                         .changed()
                     {
                         self.undostack_len += 1;

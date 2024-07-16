@@ -186,7 +186,7 @@ fn main() {
                 }
                 window.open_file(&path, false);
             }
-            Box::new(window)
+            Ok(Box::new(window))
         }),
     ) {
         log::error!("Error returned by run_native: {}", err);

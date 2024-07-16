@@ -41,10 +41,10 @@ impl egui_tiles::Behavior<ToolTab> for ToolBehavior {
             ..Default::default()
         }
     }
-
+    /*
     fn has_close_buttons(&self) -> bool {
         false
-    }
+    }*/
 }
 
 pub trait ToolWindow {

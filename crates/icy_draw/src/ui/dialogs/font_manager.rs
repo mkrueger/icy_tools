@@ -63,7 +63,7 @@ impl crate::ModalDialog for FontManager {
 
                             let font_id = FontId::new(12.0, FontFamily::Monospace);
                             let text: WidgetText = format!("{i:-3}.").into();
-                            let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id.clone());
+                            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id.clone());
                             let size = galley.size();
                             let mut title_rect = rect;
                             title_rect.set_left(title_rect.left() + 4.0);
@@ -81,7 +81,7 @@ impl crate::ModalDialog for FontManager {
 
                             let font_id = TextStyle::Button.resolve(ui.style());
                             let text: WidgetText = font.name.clone().into();
-                            let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                             let mut title_rect = rect;
                             title_rect.set_left(title_rect.left() + 4.0 + size.x + 4.0);
                             ui.painter().galley_with_override_text_color(
@@ -92,7 +92,7 @@ impl crate::ModalDialog for FontManager {
 
                             let font_id = TextStyle::Button.resolve(ui.style());
                             let text: WidgetText = format!("{}x{}", font.size.width, font.size.height).into();
-                            let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                             let mut title_rect = rect;
                             title_rect.set_left(title_rect.left() + 399.0);
                             ui.painter().galley_with_override_text_color(
@@ -108,7 +108,7 @@ impl crate::ModalDialog for FontManager {
                                 fl!(crate::LANGUAGE_LOADER, "manage-font-not_used_label")
                             }
                             .into();
-                            let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+                            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
                             let mut title_rect = rect;
                             title_rect.set_left(title_rect.left() + 480.0);
                             ui.painter().galley_with_override_text_color(

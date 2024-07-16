@@ -84,7 +84,10 @@ impl ModalDialog for EditTagDialog {
                                         self.tag.replacement_value = tag.tag.clone();
                                         self.show_replacements = false;
                                     }
-                                    ui.add(Label::new(RichText::new(&tag.description).font(FontId::new(font_size, FontFamily::Proportional))).wrap(false));
+                                    ui.add(
+                                        Label::new(RichText::new(&tag.description).font(FontId::new(font_size, FontFamily::Proportional)))
+                                            .wrap_mode(egui::TextWrapMode::Truncate),
+                                    );
                                 });
                             }
                         }

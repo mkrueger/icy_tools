@@ -427,7 +427,9 @@ impl CommandWrapper {
         }
 
         let response = ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
-            ui.set_enabled(self.is_enabled);
+            if !self.is_enabled {
+                ui.disable();
+            }
             if let Some((KeyOrPointer::Key(k), modifier)) = self.key {
                 let mut shortcut = k.name().to_string();
 
@@ -445,7 +447,7 @@ impl CommandWrapper {
 
                 button_with_shortcut(ui, true, &self.label, shortcut)
             } else {
-                ui.add(egui::Button::new(&self.label).wrap(false))
+                ui.add(egui::Button::new(&self.label).wrap_mode(egui::TextWrapMode::Truncate))
             }
         });
 

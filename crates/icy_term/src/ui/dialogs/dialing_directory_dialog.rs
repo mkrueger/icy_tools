@@ -681,7 +681,7 @@ impl egui::Widget for AddressRow {
                 .font(FontId::new(14.0, FontFamily::Proportional))
                 .color(ui.ctx().style().visuals.warn_fg_color),
         );
-        let star_text = star_text.into_galley(ui, Some(false), wrap_width, egui::TextStyle::Button);
+        let star_text = star_text.into_galley(ui, Some(egui::TextWrapMode::Truncate), wrap_width, egui::TextStyle::Button);
         let star_text_size = star_text.size();
 
         let rt = RichText::new(addr.system_name.clone())
@@ -689,17 +689,17 @@ impl egui::Widget for AddressRow {
             .strong();
 
         let name_text = WidgetText::from(rt);
-        let name_text = name_text.into_galley(ui, Some(false), wrap_width, egui::TextStyle::Button);
+        let name_text = name_text.into_galley(ui, Some(egui::TextWrapMode::Truncate), wrap_width, egui::TextStyle::Button);
         let name_text_size = name_text.size();
 
         let addr_text = WidgetText::from(RichText::new(addr.address.clone()).font(FontId::new(12.0, FontFamily::Monospace)));
-        let addr_text = addr_text.into_galley(ui, Some(false), wrap_width, egui::TextStyle::Button);
+        let addr_text = addr_text.into_galley(ui, Some(egui::TextWrapMode::Truncate), wrap_width, egui::TextStyle::Button);
 
         let mut desired_size = total_extra + name_text.size() + Vec2::new(0.0, addr_text.size().y);
         desired_size.x = phone_list_width;
         desired_size.y = desired_size.y.at_least(ui.spacing().interact_size.y).floor();
         let (rect, response) = ui.allocate_at_least(desired_size, egui::Sense::click());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, selected, name_text.text()));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, name_text.text()));
 
         if ui.is_rect_visible(response.rect) {
             let visuals = ui.style().interact_selectable(&response, selected);
@@ -876,10 +876,14 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                     }
 
                     let connect_text = WidgetText::from(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button"));
-                    let connect_text_size = connect_text.into_galley(ui, Some(false), 1000., egui::TextStyle::Button).size();
+                    let connect_text_size = connect_text
+                        .into_galley(ui, Some(egui::TextWrapMode::Truncate), 1000., egui::TextStyle::Button)
+                        .size();
 
                     let cancel_text = WidgetText::from(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"));
-                    let cancel_text_size = cancel_text.into_galley(ui, Some(false), 1000., egui::TextStyle::Button).size();
+                    let cancel_text_size = cancel_text
+                        .into_galley(ui, Some(egui::TextWrapMode::Truncate), 1000., egui::TextStyle::Button)
+                        .size();
 
                     ui.add_space(ui.available_size_before_wrap().x - connect_text_size.x - cancel_text_size.x - 8.);
 

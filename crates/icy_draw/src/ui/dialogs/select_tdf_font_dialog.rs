@@ -67,7 +67,7 @@ impl SelectFontDialog {
 
         let font_id = TextStyle::Button.resolve(ui.style());
         let text: WidgetText = font.name.clone().into();
-        let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+        let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
         ui.painter().galley_with_override_text_color(
             egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect.shrink(4.0)).min,
             galley,
@@ -86,7 +86,7 @@ impl SelectFontDialog {
             };
             let text: WidgetText = ch.to_string().into();
             let font_id = FontId::new(14.0, FontFamily::Monospace);
-            let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
 
             let mut rect = rect.shrink(4.0);
             rect.set_top(rect.top() + y);
@@ -159,7 +159,7 @@ impl SelectFontDialog {
 
             let font_id = FontId::new(12.0, FontFamily::Proportional);
             let text: WidgetText = font_type.into();
-            let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
 
             let rect = Rect::from_min_size(
                 Pos2::new((rect.right() - galley.size().x - 10.0).floor(), (rect.top() + 8.0).floor()),

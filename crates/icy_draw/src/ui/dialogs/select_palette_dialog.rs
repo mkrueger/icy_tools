@@ -193,7 +193,7 @@ impl SelectPaletteDialog {
 
         let font_id = FontId::new(14.0, FontFamily::Proportional);
         let text: WidgetText = palette.0.title.clone().into();
-        let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+        let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
         ui.painter().galley_with_override_text_color(
             egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect.shrink(4.0)).min,
             galley,
@@ -236,7 +236,7 @@ impl SelectPaletteDialog {
 
         let font_id = FontId::new(12.0, FontFamily::Proportional);
         let text: WidgetText = font_type.into();
-        let galley = text.into_galley(ui, Some(false), f32::INFINITY, font_id);
+        let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
 
         let rect = Rect::from_min_size(
             Pos2::new((rect.right() - galley.size().x - 10.0).floor(), (rect.top() + 8.0).floor()),

@@ -17,7 +17,7 @@ pub struct PencilTool {
     undo_op: Option<AtomicUndoGuard>,
     draw_mode: BrushMode,
     color_mode: ColorMode,
-    pub attr: TextAttribute,
+    pub _attr: TextAttribute,
 
     last_pos: Position,
     cur_pos: Position,
@@ -32,7 +32,7 @@ impl Default for PencilTool {
             char_code: Rc::new(RefCell::new('\u{00B0}')),
             last_pos: Position::default(),
             cur_pos: Position::default(),
-            attr: icy_engine::TextAttribute::default(),
+            _attr: icy_engine::TextAttribute::default(),
         }
     }
 }

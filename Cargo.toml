@@ -45,22 +45,22 @@ regex = "1.9.5"
 directories = "5.0.1"
 tokio = { version = "1.37.0", features = ["full"] }
 
-egui = "0.27.2"
-eframe = "0.27.2"
+egui = "0.28.1"
+eframe = "0.28.1"
 # eframe = { version = "0.27.2", default-features = false, features = [
 #     "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
 #     "default_fonts", # Embed the default egui fonts.
 #     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
 #     "persistence",   # Enable restoring app state when restarting the app.
 # ], optional = true }
-egui_extras = { version="0.27.2", features = ["all_loaders", "svg", "image"] }
+egui_extras = { version="0.28.1", features = ["all_loaders", "svg", "image"] }
 # egui_extras = { version="0.27.2", features = [] }
-egui_glow = "0.27.2"
+egui_glow = "0.28.1"
 glow = "0.13.0"
-egui-modal = "0.3.6"
-egui-bind = "0.12.0"
-egui_file = "0.17.0"
-egui-notify = "0.14.0"
+egui-modal = "0.4.0"
+egui-bind = "0.13.0"
+egui_file = "0.18.0"
+egui-notify = "0.15.0"
 
 [profile.release]
 opt-level = 'z'     # Optimize for size

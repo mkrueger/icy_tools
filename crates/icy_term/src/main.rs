@@ -174,7 +174,7 @@ fn main() {
 
     log::info!("Starting iCY TERM {}", *VERSION);
 
-    if let Err(err) = eframe::run_native(&DEFAULT_TITLE, native_options, Box::new(|cc| Box::new(MainWindow::new(cc, options)))) {
+    if let Err(err) = eframe::run_native(&DEFAULT_TITLE, native_options, Box::new(|cc| Ok(Box::new(MainWindow::new(cc, options))))) {
         log::error!("Error returned by run_native: {}", err);
     }
     log::info!("shutting down.");

@@ -5,7 +5,7 @@ use crate::{util::PatternRecognizer, Res};
 
 pub struct AutoLogin {
     pub logged_in: bool,
-    pub disabled: bool,
+    pub _disabled: bool,
     pub iemsi: IEmsi,
     _last_char_recv: Instant,
     _first_char_recv: Option<Instant>,
@@ -25,7 +25,7 @@ impl AutoLogin {
     pub fn new(login_expr: &str, user_name: String, password: String) -> Self {
         Self {
             logged_in: false,
-            disabled: false,
+            _disabled: false,
             iemsi: IEmsi::default(),
             _first_char_recv: None,
             _last_char_recv: Instant::now(),

@@ -128,7 +128,7 @@ impl ModalDialog for ExportFileDialog {
                                     self.format_type = format_type;
                                 }
                             }
-                            if ui.add(egui::Button::new("…").wrap(false)).clicked() {
+                            if ui.add(egui::Button::new("…").wrap_mode(egui::TextWrapMode::Truncate)).clicked() {
                                 let mut initial_path = None;
                                 crate::set_default_initial_directory_opt(&mut initial_path);
                                 let mut dialog = FileDialog::save_file(initial_path);

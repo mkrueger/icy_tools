@@ -17,8 +17,7 @@ egui_glow = { workspace = true }
 egui-modal = { workspace = true }
 glow = { workspace = true }
 egui_file = { workspace = true }
-egui_tiles = { git ="https://github.com/mkrueger/egui_tiles"}
-#egui_tiles = { path = "../egui_tiles"  }
+egui_tiles = "0.9.0"
 egui-bind = { workspace = true }
 egui-notify = { workspace = true }
 log = { workspace = true }
@@ -42,7 +41,7 @@ icy_sauce = { workspace = true }
 
 bstr = { workspace = true }
 
-egui_code_editor = "0.2.7"
+egui_code_editor = "0.2.9"
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
 regex = { workspace = true }
 

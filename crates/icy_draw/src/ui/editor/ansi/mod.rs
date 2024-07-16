@@ -572,7 +572,8 @@ impl AnsiEditor {
                         self.output_string(text);
                     }
 
-                    egui::Event::CompositionEnd(text) | egui::Event::Text(text) => {
+                    /* egui::Event::CompositionEnd(text) |*/
+                    egui::Event::Text(text) => {
                         if !ui.input(|i| i.modifiers.ctrl || i.modifiers.command || i.modifiers.alt) {
                             for c in text.chars() {
                                 cur_tool.handle_key(self, MKey::Character(c as u16), MModifiers::None);
@@ -796,7 +797,7 @@ pub const DEFAULT_CHAR_SET_TABLE: [[u8; 10]; 15] = [
 ];
 
 pub fn terminal_context_menu(editor: &AnsiEditor, commands: &Commands, ui: &mut egui::Ui) -> Option<Message> {
-    ui.style_mut().wrap = Some(false);
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
     let mut result = None;
     ui.input_mut(|i| i.events.clear());
 

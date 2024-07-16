@@ -128,17 +128,17 @@ impl TerminalRenderer {
         }
 
         if self.redraw_view
-        || calc.char_scroll_position != self.last_scroll_position
-        || calc.char_size != self.last_char_size
-        || calc.buffer_rect.size() != self.last_buffer_rect_size
-        || edit_state.is_buffer_dirty()
+            || calc.char_scroll_position != self.last_scroll_position
+            || calc.char_size != self.last_char_size
+            || calc.buffer_rect.size() != self.last_buffer_rect_size
+            || edit_state.is_buffer_dirty()
         {
-  /*        println!("{} - {}, {}, {}, {} ", 
-                self.redraw_view,
-                calc.char_scroll_position != self.last_scroll_position,
-                calc.char_size != self.last_char_size,
-                calc.buffer_rect.size() != self.last_buffer_rect_size,
-                edit_state.is_buffer_dirty());*/
+            /*        println!("{} - {}, {}, {}, {} ",
+            self.redraw_view,
+            calc.char_scroll_position != self.last_scroll_position,
+            calc.char_size != self.last_char_size,
+            calc.buffer_rect.size() != self.last_buffer_rect_size,
+            edit_state.is_buffer_dirty());*/
 
             self.last_scroll_position = calc.char_scroll_position;
             self.last_char_size = calc.char_size;

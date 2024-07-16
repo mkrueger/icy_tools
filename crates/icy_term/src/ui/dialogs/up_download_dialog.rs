@@ -151,13 +151,18 @@ impl FileTransferDialog {
                                 match transfer_info.get_log_message(self.selected_log, i) {
                                     Some(msg) => match msg {
                                         OutputLogMessage::Error(msg) => {
-                                            ui.add(Label::new(RichText::new(msg).color(ctx.style().visuals.error_fg_color)).wrap(false));
+                                            ui.add(
+                                                Label::new(RichText::new(msg).color(ctx.style().visuals.error_fg_color))
+                                                    .wrap_mode(egui::TextWrapMode::Truncate),
+                                            );
                                         }
                                         OutputLogMessage::Warning(msg) => {
-                                            ui.add(Label::new(RichText::new(msg).color(ctx.style().visuals.warn_fg_color)).wrap(false));
+                                            ui.add(
+                                                Label::new(RichText::new(msg).color(ctx.style().visuals.warn_fg_color)).wrap_mode(egui::TextWrapMode::Truncate),
+                                            );
                                         }
                                         OutputLogMessage::Info(msg) => {
-                                            ui.add(Label::new(RichText::new(msg)).wrap(false));
+                                            ui.add(Label::new(RichText::new(msg)).wrap_mode(egui::TextWrapMode::Truncate));
                                         }
                                     },
                                     None => {

@@ -326,8 +326,8 @@ impl SmoothScroll {
         if response.hovered() {
             let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
             for e in events {
-                if let egui::Event::Scroll(vec) = e {
-                    self.char_scroll_position.y -= vec.y;
+                if let egui::Event::MouseWheel { delta, .. } = e {
+                    self.char_scroll_position.y -= delta.y;
                     self.set_scroll_position = true;
                 }
             }
@@ -380,8 +380,8 @@ impl SmoothScroll {
         if response.hovered() {
             let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
             for e in events {
-                if let egui::Event::Scroll(vec) = e {
-                    self.char_scroll_position.x -= vec.x;
+                if let egui::Event::MouseWheel { delta, .. } = e {
+                    self.char_scroll_position.x -= delta.x;
                     self.set_scroll_position = true;
                 }
             }

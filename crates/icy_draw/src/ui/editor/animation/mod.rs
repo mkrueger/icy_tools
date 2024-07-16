@@ -199,7 +199,7 @@ impl Document for AnimationEditor {
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
                     if !self.animator.lock().unwrap().error.is_empty() {
-                        ui.set_enabled(false);
+                        ui.disable();
                     }
 
                     if self.animator.lock().unwrap().success() {

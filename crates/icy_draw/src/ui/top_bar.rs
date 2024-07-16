@@ -73,7 +73,7 @@ impl<'a> MainWindow<'a> {
                 self.commands[0].new_file.ui(ui, &mut result);
                 self.commands[0].open_file.ui(ui, &mut result);
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-open_recent"), |ui| unsafe {
-                    ui.style_mut().wrap = Some(false);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
 
                     let get_recent_files = MRU_FILES.get_recent_files();
                     if !get_recent_files.is_empty() {
@@ -99,7 +99,7 @@ impl<'a> MainWindow<'a> {
             });
 
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-edit"), |ui| {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.set_min_width(200.0);
                 if let Some(doc) = self.get_active_document() {
                     if doc.lock().can_undo() {
@@ -153,7 +153,7 @@ impl<'a> MainWindow<'a> {
                 }
 
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-paste-as"), |ui| {
-                    ui.style_mut().wrap = Some(false);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(200.0);
 
                     let button = button_with_shortcut(ui, pop_data(BUFFER_DATA).is_some(), fl!(crate::LANGUAGE_LOADER, "menu-paste-as-new-image"), "");
@@ -170,7 +170,7 @@ impl<'a> MainWindow<'a> {
                 });
                 ui.separator();
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-area_operations"), |ui| {
-                    ui.style_mut().wrap = Some(false);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(300.0);
 
                     self.commands[0].justify_line_left.ui(ui, &mut result);
@@ -200,7 +200,10 @@ impl<'a> MainWindow<'a> {
 
                 ui.separator();
                 if ui
-                    .add_enabled(has_buffer, egui::Button::new(fl!(crate::LANGUAGE_LOADER, "menu-edit-sauce")).wrap(false))
+                    .add_enabled(
+                        has_buffer,
+                        egui::Button::new(fl!(crate::LANGUAGE_LOADER, "menu-edit-sauce")).wrap_mode(egui::TextWrapMode::Truncate),
+                    )
                     .clicked()
                 {
                     result = Some(Message::EditSauce);
@@ -211,7 +214,10 @@ impl<'a> MainWindow<'a> {
                 ui.separator();
 
                 if ui
-                    .add_enabled(has_buffer, egui::Button::new(fl!(crate::LANGUAGE_LOADER, "menu-set-canvas-size")).wrap(false))
+                    .add_enabled(
+                        has_buffer,
+                        egui::Button::new(fl!(crate::LANGUAGE_LOADER, "menu-set-canvas-size")).wrap_mode(egui::TextWrapMode::Truncate),
+                    )
                     .clicked()
                 {
                     result = Some(Message::SetCanvasSize);
@@ -220,7 +226,7 @@ impl<'a> MainWindow<'a> {
             });
 
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-selection"), |ui| {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.set_min_width(200.0);
                 self.commands[0].select_all.ui(ui, &mut result);
                 self.commands[0].deselect.ui(ui, &mut result);
@@ -235,7 +241,7 @@ impl<'a> MainWindow<'a> {
                 self.commands[0].crop.ui(ui, &mut result);
             });
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-colors"), |ui| {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.set_min_width(300.0);
                 if has_buffer {
                     if let Some(pane) = self.get_active_pane_mut() {
@@ -243,7 +249,7 @@ impl<'a> MainWindow<'a> {
                         if let Some(editor) = lock.get_ansi_editor_mut() {
                             let lock = &mut editor.buffer_view.lock();
                             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-ice-mode"), |ui| {
-                                ui.style_mut().wrap = Some(false);
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                                 ui.set_min_width(240.0);
 
                                 if ui
@@ -275,7 +281,7 @@ impl<'a> MainWindow<'a> {
                             });
 
                             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-palette-mode"), |ui| {
-                                ui.style_mut().wrap = Some(false);
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                                 ui.set_min_width(240.0);
 
                                 if ui
@@ -343,7 +349,7 @@ impl<'a> MainWindow<'a> {
                 self.commands[0].switch_to_default_color.ui(ui, &mut result);
             });
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-fonts"), |ui| {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.set_min_width(220.0);
                 let mut font_mode = FontMode::Single;
                 if let Some(pane) = self.get_active_pane_mut() {
@@ -351,7 +357,7 @@ impl<'a> MainWindow<'a> {
                         font_mode = editor.buffer_view.lock().get_buffer().font_mode;
 
                         ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-font-mode"), |ui| {
-                            ui.style_mut().wrap = Some(false);
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                             ui.set_min_width(240.0);
 
                             let lock = &mut editor.buffer_view.lock();
@@ -413,7 +419,7 @@ impl<'a> MainWindow<'a> {
                 self.commands[0].open_tdf_directory.ui(ui, &mut result);
             });
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-view"), |ui| {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.set_min_width(320.0);
                 ui.menu_button(
                     fl!(
@@ -422,7 +428,7 @@ impl<'a> MainWindow<'a> {
                         zoom = format!("{}%", (100. * unsafe { SETTINGS.get_scale().x }) as i32)
                     ),
                     |ui| {
-                        ui.style_mut().wrap = Some(false);
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                         ui.set_min_width(270.0);
 
                         self.commands[0].zoom_reset.ui(ui, &mut result);
@@ -467,7 +473,7 @@ impl<'a> MainWindow<'a> {
                 );
 
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-guides"), |ui| {
-                    ui.style_mut().wrap = Some(false);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(200.0);
                     if ui.selectable_label(cur_guide == Some(Vec2::new(80.0, 25.0)), "Smallscale 80x25").clicked() {
                         result = Some(Message::SetGuide(80, 25));
@@ -496,7 +502,7 @@ impl<'a> MainWindow<'a> {
                 });
 
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-raster"), |ui| {
-                    ui.style_mut().wrap = Some(false);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(100.0);
 
                     let raster = [(1, 1), (2, 2), (4, 2), (4, 4), (8, 2), (8, 4), (8, 8), (16, 4), (16, 8), (16, 16)];
@@ -537,10 +543,13 @@ impl<'a> MainWindow<'a> {
             unsafe {
                 if !PLUGINS.is_empty() {
                     ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-plugins"), |ui| {
-                        ui.style_mut().wrap = Some(false);
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                         ui.set_min_width(250.0);
                         for (i, p) in PLUGINS.iter().enumerate() {
-                            if ui.add_enabled(has_buffer, egui::Button::new(p.title.clone()).wrap(false)).clicked() {
+                            if ui
+                                .add_enabled(has_buffer, egui::Button::new(p.title.clone()).wrap_mode(egui::TextWrapMode::Truncate))
+                                .clicked()
+                            {
                                 result = Some(Message::RunPlugin(i));
                                 ui.close_menu();
                             }
@@ -553,7 +562,7 @@ impl<'a> MainWindow<'a> {
             }
 
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-help"), |ui| {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.set_min_width(170.0);
                 let r = ui.hyperlink_to(fl!(crate::LANGUAGE_LOADER, "menu-discuss"), "https://github.com/mkrueger/icy_tools/discussions");
                 if r.clicked() {

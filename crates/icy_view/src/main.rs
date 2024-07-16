@@ -64,7 +64,7 @@ fn main() {
             }
             let cmd = fd.file_view.refresh();
             fd.handle_command(cmd);
-            Box::new(fd)
+            Ok(Box::new(fd))
         }),
     )
     .unwrap();
