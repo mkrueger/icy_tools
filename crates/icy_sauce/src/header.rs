@@ -1,6 +1,6 @@
 use bstr::{BString, ByteSlice};
 
-use crate::{sauce_pad, sauce_trim, SauceDataType, SauceError};
+use crate::{sauce_pad, sauce_trim, zero_pad, SauceDataType, SauceError};
 
 pub(crate) const HDR_LEN: usize = 128;
 const SAUCE_ID: &[u8; 5] = b"SAUCE";
@@ -94,8 +94,7 @@ impl SauceHeader {
         data = &data[12..];
 
         assert_eq!(data.len(), TINFO_LEN);
-        let t_info_s = BString::new(data.trim_end().to_vec());
-
+        let t_info_s = sauce_trim(data);
         Ok(Some(Self {
             title,
             author,
@@ -133,7 +132,7 @@ impl SauceHeader {
         sauce_info.extend(&self.t_info4.to_le_bytes());
         sauce_info.push(self.comments);
         sauce_info.push(self.t_flags);
-        sauce_info.extend(sauce_pad(&self.t_info_s, TINFO_LEN));
+        sauce_info.extend(zero_pad(&self.t_info_s, TINFO_LEN));
 
         assert_eq!(sauce_info.len(), HDR_LEN);
 

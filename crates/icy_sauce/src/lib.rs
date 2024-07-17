@@ -143,6 +143,14 @@ pub(crate) fn sauce_pad(str: &BString, len: usize) -> Vec<u8> {
     data
 }
 
+/// Pads trailing \0 or cut too long data.
+pub(crate) fn zero_pad(str: &BString, len: usize) -> Vec<u8> {
+    let mut data = str.to_vec();
+    data.resize(len, 0);
+    data
+}
+
+
 #[cfg(test)]
 mod tests {
     use crate::{sauce_pad, sauce_trim};
