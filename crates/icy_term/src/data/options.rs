@@ -335,7 +335,6 @@ impl Options {
     ///
     /// This function will return an error if .
     pub fn store_options(&self) -> TerminalResult<()> {
-        println!("store_options");
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
             let file_name = proj_dirs.config_dir().join("options.toml");
@@ -443,13 +442,20 @@ fn parse_value(options: &mut Options, value: &Value) {
                     "window_coord" => {
                         if let Value::String(str) = v {
                             let mut minmax = str.split('-');
-                            let min = minmax.next().unwrap().split('/').collect::<Vec<&str>>();
-                            let max = minmax.next().unwrap().split('/').collect::<Vec<&str>>();
-
-                            options.window_rect = Some(Rect::from_min_max(
-                                egui::Pos2::new(min[0].parse::<f32>().unwrap(), min[1].parse::<f32>().unwrap()),
-                                egui::Pos2::new(max[0].parse::<f32>().unwrap(), max[1].parse::<f32>().unwrap()),
-                            ));
+                            if let Some(min) = minmax.next() {
+                                let min = min.split('/').collect::<Vec<&str>>();
+                                if let Some(max) = minmax.next() {
+                                    let max = max.split('/').collect::<Vec<&str>>();
+                                    if let (Ok(x1), Ok(y1)) = (min[0].parse::<f32>(), min[1].parse::<f32>()) {
+                                        if let (Ok(x2), Ok(y2)) = (max[0].parse::<f32>(), max[1].parse::<f32>()) {
+                                            options.window_rect = Some(Rect::from_min_max(
+                                                egui::Pos2::new(x1, y1),
+                                                egui::Pos2::new(x2, y2),
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     "scaling" => {
