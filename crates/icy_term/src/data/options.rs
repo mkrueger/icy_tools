@@ -335,6 +335,7 @@ impl Options {
     ///
     /// This function will return an error if .
     pub fn store_options(&self) -> TerminalResult<()> {
+        println!("store_options");
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
             let file_name = proj_dirs.config_dir().join("options.toml");
@@ -390,10 +391,6 @@ impl Options {
             }
             if !self.iemsi.birth_date.is_empty() {
                 file.write_all(format!("birth_date = \"{}\"\n", self.iemsi.birth_date).as_bytes())?;
-            }
-
-            if !self.iemsi.autologin {
-                file.write_all(format!("autologin = {}\n", self.iemsi.autologin).as_bytes())?;
             }
 
             write_keybindings(&mut file, &self.bind)?;

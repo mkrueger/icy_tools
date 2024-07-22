@@ -250,6 +250,7 @@ impl MainWindow {
     pub fn call_bbs(&mut self, ctx: &egui::Context, i: usize) {
         self.set_mode(ctx, MainWindowMode::ShowTerminal);
         let cloned_addr = self.dialing_directory_dialog.addresses.addresses[i].clone();
+        let iemsi_auto_login = self.get_options().iemsi.autologin;
 
         {
             let address = &mut self.dialing_directory_dialog.addresses.addresses[i];
@@ -265,8 +266,7 @@ impl MainWindow {
             } else {
                 (address.user_name.clone(), address.password.clone())
             };
-
-            self.terminal_thread.lock().auto_login = if user_name.is_empty() || password.is_empty() {
+            self.terminal_thread.lock().auto_login = if user_name.is_empty() || password.is_empty() || !iemsi_auto_login {
                 None
             } else {
                 Some(AutoLogin::new(&cloned_addr.auto_login, user_name, password))
