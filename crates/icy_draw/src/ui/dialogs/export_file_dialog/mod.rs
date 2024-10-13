@@ -143,7 +143,7 @@ impl ModalDialog for ExportFileDialog {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(fl!(crate::LANGUAGE_LOADER, "export-format-label"));
                         });
-                        egui::ComboBox::from_id_source("format_combo")
+                        egui::ComboBox::from_id_salt("format_combo")
                             .selected_text(desc[self.format_type as usize].0)
                             .width(190.)
                             .show_ui(ui, |ui| {

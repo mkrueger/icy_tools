@@ -486,7 +486,7 @@ impl crate::ModalDialog for NewFileDialog {
                     .resizable(false)
                     .show_inside(ui, |ui| {
                         let row_height = 58.0;
-                        egui::ScrollArea::vertical().id_source("bitfont_scroll_area").show(ui, |ui| {
+                        egui::ScrollArea::vertical().id_salt("bitfont_scroll_area").show(ui, |ui| {
                             for (i, template) in self.templates.iter().enumerate() {
                                 let is_selected = i == self.selected;
 

@@ -220,9 +220,8 @@ impl<'a> MainWindow<'a> {
             }
             Err(err) => {
                 log::error!("Error loading file: {}", err);
-                self.toasts
-                    .error(fl!(crate::LANGUAGE_LOADER, "error-load-file", error = err.to_string()))
-                    .set_duration(Some(Duration::from_secs(5)));
+                self.toasts.error(fl!(crate::LANGUAGE_LOADER, "error-load-file", error = err.to_string()));
+                //.set_duration(Some(Duration::from_secs(5)));
             }
         }
     }
@@ -257,7 +256,7 @@ impl<'a> MainWindow<'a> {
             }
             Err(err) => {
                 log::error!("error loading file {path:?}: {err}");
-                self.toasts.error(format!("{err}")).set_duration(Some(Duration::from_secs(5)));
+                self.toasts.error(format!("{err}")); //.set_duration(Some(Duration::from_secs(5)));
             }
         }
     }
@@ -437,9 +436,8 @@ impl<'a> MainWindow<'a> {
 
     pub fn show_error(&mut self, str: String) {
         log::error!("Error: {str}");
-        self.toasts
-            .error(fl!(crate::LANGUAGE_LOADER, "error-load-file", error = str))
-            .set_duration(Some(Duration::from_secs(5)));
+        self.toasts.error(fl!(crate::LANGUAGE_LOADER, "error-load-file", error = str));
+        //.set_duration(Some(Duration::from_secs(5)));
     }
 
     pub(crate) fn handle_result<T>(&mut self, result: EngineResult<T>) -> Option<T> {
@@ -750,7 +748,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                                     }
                                     Err(err) => {
                                         log::error!("Error: {}", err);
-                                        self.toasts.error(format!("{err}")).set_duration(Some(Duration::from_secs(5)));
+                                        self.toasts.error(format!("{err}")); //.set_duration(Some(Duration::from_secs(5)));
                                     }
                                 }
                             }
@@ -763,7 +761,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                             }
                             Err(err) => {
                                 log::error!("Error: {}", err);
-                                self.toasts.error(format!("{err}")).set_duration(Some(Duration::from_secs(5)));
+                                self.toasts.error(format!("{err}")); //.set_duration(Some(Duration::from_secs(5)));
                             }
                         }
                     }

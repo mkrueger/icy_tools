@@ -66,8 +66,6 @@ pub fn view_selector(window: &mut MainWindow, ctx: &egui::Context, _frame: &mut 
         modal.title(ui, title);
 
         modal.frame(ui, |ui: &mut egui::Ui| {
-            ui.set_width(550.);
-
             egui::Grid::new("some_unique_id")
                 .num_columns(2)
                 .spacing([4.0, 8.0])

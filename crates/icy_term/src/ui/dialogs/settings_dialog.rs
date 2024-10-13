@@ -81,7 +81,7 @@ impl MainWindowState {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let old_dark = self.options.is_dark_mode;
-                    egui::widgets::global_dark_light_mode_switch(ui);
+                    egui::global_theme_preference_switch(ui);
                     self.options.is_dark_mode = Some(ui.visuals().dark_mode);
                     if self.options.is_dark_mode != old_dark {
                         self.store_options();
@@ -291,7 +291,7 @@ fn show_modem_settings(state: &MainWindowState, ui: &mut egui::Ui) -> Option<Mes
                     CharSize::Bits7 => "7",
                     CharSize::Bits8 => "8",
                 };
-                egui::ComboBox::from_id_source("combobox1").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("combobox1").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
                     ui.selectable_value(&mut modem.char_size, CharSize::Bits5, "5");
                     ui.selectable_value(&mut modem.char_size, CharSize::Bits6, "6");
                     ui.selectable_value(&mut modem.char_size, CharSize::Bits7, "7");
@@ -302,7 +302,7 @@ fn show_modem_settings(state: &MainWindowState, ui: &mut egui::Ui) -> Option<Mes
                     StopBits::One => "1",
                     StopBits::Two => "2",
                 };
-                egui::ComboBox::from_id_source("combobox2").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("combobox2").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
                     ui.selectable_value(&mut modem.stop_bits, StopBits::One, "1");
                     ui.selectable_value(&mut modem.stop_bits, StopBits::Two, "2");
                 });
@@ -311,7 +311,7 @@ fn show_modem_settings(state: &MainWindowState, ui: &mut egui::Ui) -> Option<Mes
                     Parity::Odd => "Odd",
                     Parity::Even => "Even",
                 };
-                egui::ComboBox::from_id_source("combobox3").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("combobox3").selected_text(RichText::new(txt)).show_ui(ui, |ui| {
                     ui.selectable_value(&mut modem.parity, Parity::None, "None");
                     ui.selectable_value(&mut modem.parity, Parity::Odd, "Odd");
                     ui.selectable_value(&mut modem.parity, Parity::Even, "Even");

@@ -47,7 +47,7 @@ impl crate::ModalDialog for FontManager {
                 egui::CentralPanel::default().show_inside(ui, |ui| {
                     let row_height = 24.0;
                     ui.label(fl!(crate::LANGUAGE_LOADER, "manage-font-used_font_label"));
-                    egui::ScrollArea::vertical().id_source("bitfont_scroll_area").show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("bitfont_scroll_area").show(ui, |ui| {
                         for (i, font) in self.buffer_view.lock().get_buffer().font_iter() {
                             let is_selected = *i == self.selected;
 

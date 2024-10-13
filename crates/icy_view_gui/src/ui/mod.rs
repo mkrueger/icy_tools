@@ -38,6 +38,8 @@ pub struct MainWindow<'a> {
     pub error_text: Option<String>,
 
     full_screen_mode: bool,
+    hide_file_chooser: bool,
+
     loaded_buffer: bool,
 
     retained_image: Option<Image<'a>>,
@@ -59,17 +61,15 @@ const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe"
 
 impl<'a> App for MainWindow<'a> {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
-        egui::SidePanel::left("bottom_panel")
-            .default_width(ctx.available_rect().width() * 3.0 / 2.0)
-            .exact_width(250.0)
-            .resizable(true)
-            .show(ctx, |ui| {
+        if !self.hide_file_chooser {
+            egui::SidePanel::left("bottom_panel").exact_width(350.0).resizable(false).show(ctx, |ui| {
                 if !(self.sauce_dialog.is_none() && self.help_dialog.is_none()) {
                     ui.disable();
                 }
                 let command = self.file_view.show_ui(ui, false);
                 self.handle_command(command);
             });
+        }
         let frame_no_margins = egui::containers::Frame::none()
             .outer_margin(Margin::same(0.0))
             .inner_margin(Margin::same(0.0))
@@ -80,6 +80,7 @@ impl<'a> App for MainWindow<'a> {
             }
             self.paint_main_area(ui)
         });
+
         self.in_scroll &= self.file_view.options.auto_scroll_enabled;
         if self.in_scroll {
             //   ctx.request_repaint_after(Duration::from_millis(10));
@@ -109,6 +110,9 @@ impl<'a> App for MainWindow<'a> {
         }
 
         self.toasts.show(ctx);
+        if ctx.input(|i| i.key_pressed(egui::Key::F9)) {
+            self.hide_file_chooser = !self.hide_file_chooser;
+        }
 
         if ctx.input(|i| i.key_pressed(egui::Key::F11) || i.key_pressed(egui::Key::Enter) && i.modifiers.alt) {
             self.full_screen_mode = !self.full_screen_mode;
@@ -158,6 +162,7 @@ impl<'a> MainWindow<'a> {
             retained_image: None,
             texture_handle: None,
             full_screen_mode: false,
+            hide_file_chooser: false,
             error_text: None,
             loaded_buffer: false,
             sauce_dialog: None,
@@ -625,13 +630,11 @@ impl<'a> MainWindow<'a> {
                     self.in_scroll = self.file_view.options.auto_scroll_enabled;
 
                     if self.file_view.options.auto_scroll_enabled {
-                        self.toasts
-                            .info(fl!(crate::LANGUAGE_LOADER, "toast-auto-scroll-on"))
-                            .set_duration(Some(Duration::from_secs(3)));
+                        self.toasts.info(fl!(crate::LANGUAGE_LOADER, "toast-auto-scroll-on"));
+                        //.set_duration(Some(Duration::from_secs(3)));
                     } else {
-                        self.toasts
-                            .info(fl!(crate::LANGUAGE_LOADER, "toast-auto-scroll-off"))
-                            .set_duration(Some(Duration::from_secs(3)));
+                        self.toasts.info(fl!(crate::LANGUAGE_LOADER, "toast-auto-scroll-off"));
+                        //.set_duration(Some(Duration::from_secs(3)));
                     }
                 }
                 Message::ShowSauce(file) => {
@@ -649,19 +652,16 @@ impl<'a> MainWindow<'a> {
 
                     match self.file_view.options.scroll_speed {
                         ScrollSpeed::Slow => {
-                            self.toasts
-                                .info(fl!(crate::LANGUAGE_LOADER, "toast-scroll-slow"))
-                                .set_duration(Some(Duration::from_secs(3)));
+                            self.toasts.info(fl!(crate::LANGUAGE_LOADER, "toast-scroll-slow"));
+                            //.set_duration(Some(Duration::from_secs(3)));
                         }
                         ScrollSpeed::Medium => {
-                            self.toasts
-                                .info(fl!(crate::LANGUAGE_LOADER, "toast-scroll-medium"))
-                                .set_duration(Some(Duration::from_secs(3)));
+                            self.toasts.info(fl!(crate::LANGUAGE_LOADER, "toast-scroll-medium"));
+                            //.set_duration(Some(Duration::from_secs(3)));
                         }
                         ScrollSpeed::Fast => {
-                            self.toasts
-                                .info(fl!(crate::LANGUAGE_LOADER, "toast-scroll-fast"))
-                                .set_duration(Some(Duration::from_secs(3)));
+                            self.toasts.info(fl!(crate::LANGUAGE_LOADER, "toast-scroll-fast"));
+                            //.set_duration(Some(Duration::from_secs(3)));
                         }
                     }
                 }

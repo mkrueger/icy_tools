@@ -128,7 +128,7 @@ impl ModalDialog for EditTagDialog {
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-label"));
                     });
-                    egui::ComboBox::from_id_source("combobox1")
+                    egui::ComboBox::from_id_salt("combobox1")
                         .width(150.)
                         .selected_text(RichText::new(match self.tag.alignment {
                             Alignment::Left => fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-left"),

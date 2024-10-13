@@ -105,7 +105,7 @@ impl ModalDialog for EditLayerDialog {
 
                     ui.label("Mode:");
 
-                    egui::ComboBox::from_id_source("combobox1")
+                    egui::ComboBox::from_id_salt("combobox1")
                         .width(150.)
                         .selected_text(RichText::new(match self.properties.mode {
                             Mode::Normal => "Normal",

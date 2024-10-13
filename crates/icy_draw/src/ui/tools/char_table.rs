@@ -45,7 +45,7 @@ impl CharTableToolWindow {
     pub fn show_plain_char_table(&mut self, ui: &mut egui::Ui) -> Option<char> {
         let mut something_hovered = false;
         let mut result = None;
-        egui::ScrollArea::vertical().id_source("char_table_scroll_area").show(ui, |ui| {
+        egui::ScrollArea::vertical().id_salt("char_table_scroll_area").show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let scale = 2.0;

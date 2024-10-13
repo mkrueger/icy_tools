@@ -125,7 +125,7 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")));
                 });
 
-                egui::ComboBox::from_id_source("combobox1")
+                egui::ComboBox::from_id_salt("combobox1")
                     .selected_text(RichText::new(format!("{:?}", self.get_address_mut(self.selected_bbs).protocol)))
                     .width(PROTOCOL_COMBOBOX_WIDTH)
                     .show_ui(ui, |ui| {
@@ -141,7 +141,7 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
                 });
 
-                egui::ComboBox::from_id_source("combobox2")
+                egui::ComboBox::from_id_salt("combobox2")
                     .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).screen_mode)))
                     .width(250.)
                     .show_ui(ui, |ui| {
@@ -160,7 +160,7 @@ impl DialogState {
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
                 });
-                egui::ComboBox::from_id_source("combobox3")
+                egui::ComboBox::from_id_salt("combobox3")
                     .selected_text(RichText::new(fmt_terminal_emulation(&self.get_address_mut(self.selected_bbs).terminal_type)))
                     .width(250.)
                     .show_ui(ui, |ui| {
@@ -176,7 +176,7 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")))
                 });
 
-                egui::ComboBox::from_id_source("combobox5")
+                egui::ComboBox::from_id_salt("combobox5")
                     .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).baud_emulation)))
                     .width(250.)
                     .show_ui(ui, |ui| {
@@ -418,7 +418,7 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
                 });
                 ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_source("combobox2")
+                    egui::ComboBox::from_id_salt("combobox2")
                         .selected_text(RichText::new(format!("{}", adr.screen_mode)))
                         .width(250.)
                         .show_ui(ui, |ui| {
@@ -460,7 +460,7 @@ impl DialogState {
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
                 });
-                egui::ComboBox::from_id_source("combobox3")
+                egui::ComboBox::from_id_salt("combobox3")
                     .selected_text(RichText::new(fmt_terminal_emulation(&adr.terminal_type)))
                     .width(250.)
                     .show_ui(ui, |ui| {
@@ -483,7 +483,7 @@ impl DialogState {
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")));
                     });
-                    egui::ComboBox::from_id_source("combobox4")
+                    egui::ComboBox::from_id_salt("combobox4")
                         .selected_text(RichText::new(format!("{}", adr.ansi_music)))
                         .width(250.)
                         .show_ui(ui, |ui| {
@@ -500,7 +500,7 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")))
                 });
 
-                egui::ComboBox::from_id_source("combobox5")
+                egui::ComboBox::from_id_salt("combobox5")
                     .selected_text(RichText::new(format!("{}", adr.baud_emulation)))
                     .width(250.)
                     .show_ui(ui, |ui| {
@@ -623,7 +623,7 @@ impl DialogState {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")));
                 });
 
-                egui::ComboBox::from_id_source("combobox1")
+                egui::ComboBox::from_id_salt("combobox1")
                     .selected_text(RichText::new(format!("{:?}", adr.protocol)))
                     .width(PROTOCOL_COMBOBOX_WIDTH)
                     .show_ui(ui, |ui| {

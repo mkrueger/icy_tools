@@ -19,7 +19,7 @@ pub fn create_settings_page(ui: &mut Ui, options: &mut SaveOptions) {
                 }
             };
 
-            egui::ComboBox::from_id_source("screen_prep_combo")
+            egui::ComboBox::from_id_salt("screen_prep_combo")
                 .selected_text(label)
                 .width(150.)
                 .show_ui(ui, |ui| {

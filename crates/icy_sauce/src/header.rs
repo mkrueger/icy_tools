@@ -1,4 +1,4 @@
-use bstr::{BString, ByteSlice};
+use bstr::BString;
 
 use crate::{sauce_pad, sauce_trim, zero_pad, SauceDataType, SauceError};
 

@@ -95,7 +95,7 @@ impl Tool for TagTool {
                 }
             }
         });
-        egui::ScrollArea::vertical().id_source("tag_view_scroll_area").show(ui, |ui| {
+        egui::ScrollArea::vertical().id_salt("tag_view_scroll_area").show(ui, |ui| {
             ui.vertical(|ui| {
                 for (i, tag) in editor.buffer_view.lock().get_buffer().tags.iter().enumerate() {
                     let row_height = 22.0;

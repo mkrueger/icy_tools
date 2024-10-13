@@ -150,7 +150,6 @@ pub(crate) fn zero_pad(str: &BString, len: usize) -> Vec<u8> {
     data
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::{sauce_pad, sauce_trim};

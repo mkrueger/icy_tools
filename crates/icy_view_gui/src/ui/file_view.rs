@@ -164,6 +164,7 @@ impl FileView {
             });
         }
         ui.add_space(4.0);
+
         ui.horizontal(|ui| {
             ui.add(
                 TextEdit::singleline(&mut self.filter)
@@ -186,7 +187,7 @@ impl FileView {
             match self.path.to_str() {
                 Some(path) => {
                     let mut path_edit = path.to_string();
-                    ui.add(TextEdit::singleline(&mut path_edit).desired_width(f32::INFINITY));
+                    ui.add(TextEdit::singleline(&mut path_edit).desired_width(220.));
                 }
                 None => {
                     ui.colored_label(ui.style().visuals.error_fg_color, fl!(crate::LANGUAGE_LOADER, "error-invalid-path"));
@@ -453,7 +454,6 @@ impl FileView {
                 }
             }
         }
-
         command
     }
 

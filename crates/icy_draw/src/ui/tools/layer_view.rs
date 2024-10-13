@@ -129,7 +129,7 @@ impl LayerToolWindow {
                 self.stack_len = editor.undo_stack_len();
             }
 
-            egui::ScrollArea::vertical().id_source("layer_view_scroll_area").show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("layer_view_scroll_area").show(ui, |ui| {
                 for i in (0..max).rev() {
                     ui.horizontal(|ui| {
                         ui.add_space(4.0);

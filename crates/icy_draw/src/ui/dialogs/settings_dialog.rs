@@ -4,7 +4,7 @@ use eframe::{
     egui::{self, color_picker, Layout, Modifiers, RichText},
     epaint::{mutex::Mutex, Color32, Vec2},
 };
-use egui::Context;
+use egui::{global_theme_preference_switch, Context};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, BitFont, Buffer, Color, Position, Size, TextAttribute};
 use icy_engine_gui::{show_monitor_settings, show_terminal_area, BufferView, MarkerSettings, MonitorSettings};
@@ -118,7 +118,7 @@ impl SettingsDialog {
             .frame(egui::Frame::window(&ctx.style()))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    egui::widgets::global_dark_light_mode_switch(ui);
+                    global_theme_preference_switch(ui);
                     self.is_dark_mode = Some(ui.visuals().dark_mode);
 
                     let settings_category = self.settings_category;

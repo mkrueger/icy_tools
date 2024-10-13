@@ -1,4 +1,4 @@
-use egui::{FontFamily, FontId, Rect, RichText, SelectableLabel, TextEdit, Ui, Vec2};
+use egui::{FontFamily, FontId, Rect, RichText, SelectableLabel, TextEdit, Ui, UiBuilder, Vec2};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Buffer, Position, Selection, TextPane, UnicodeConverter};
 use icy_engine_gui::BufferView;
@@ -148,7 +148,7 @@ impl DialogState {
         );
         let img_size = 18.0;
 
-        ui.allocate_ui_at_rect(max_rect, |ui| {
+        ui.allocate_new_ui(UiBuilder::new().max_rect(max_rect), |ui| {
             ui.painter().rect(max_rect, 4.0, ui.visuals().extreme_bg_color, ui.visuals().window_stroke);
             ui.add_space(8.0);
             ui.horizontal(|ui| {

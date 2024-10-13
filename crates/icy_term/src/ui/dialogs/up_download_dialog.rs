@@ -144,7 +144,7 @@ impl FileTransferDialog {
                     };
 
                     ScrollArea::vertical()
-                        .id_source("output_log_scroll_area")
+                        .id_salt("output_log_scroll_area")
                         .min_scrolled_height(200.)
                         .show_rows(ui, 23., count, |ui, range| {
                             for i in range {
