@@ -176,7 +176,7 @@ impl SixelRenderer {
                         0,
                         glow::RGBA,
                         glow::UNSIGNED_BYTE,
-                        Some(&sixel.picture_data),
+                        glow::PixelUnpackData::Slice(Some(&sixel.picture_data)),
                     );
 
                     let new_entry = SixelCacheEntry {
@@ -219,7 +219,7 @@ pub(crate) unsafe fn create_sixel_render_texture(gl: &glow::Context, render_buff
         0,
         glow::RGBA,
         glow::UNSIGNED_BYTE,
-        None,
+        glow::PixelUnpackData::Slice(None),
     );
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, scale_filter);
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, scale_filter);

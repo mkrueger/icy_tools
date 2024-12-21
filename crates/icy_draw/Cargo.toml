@@ -17,20 +17,20 @@ egui_glow = { workspace = true }
 egui-modal = { workspace = true }
 glow = { workspace = true }
 egui_file = { workspace = true }
-egui_tiles = "0.10.1"
+egui_tiles = "0.11.0"
 egui-bind = { workspace = true }
 egui-notify = { workspace = true }
 log = { workspace = true }
 log4rs = "1.2.0"
-open = "5.3.0"
+open = "5.3.1"
 dark-light = "1.0.0"
 zip = { workspace = true }
-notify = "6.1.1"
+notify = "7.0.0"
 gifski = { version="1.32.0", features=["gifsicle"], default-features = false}
-imgref = "1.9.4"
+imgref = "1.11.0"
 rgb = "0.8.50"
 thiserror = { workspace = true }
-anyhow = "1.0.89"
+anyhow = "1.0.94"
 clap = { workspace = true }
 github_release_check = "0.2.1"
 
@@ -41,13 +41,13 @@ icy_sauce = { workspace = true }
 
 bstr = { workspace = true }
 
-egui_code_editor = "0.2.10"
-mlua = { version = "0.9.9", features = ["lua54", "vendored"] }
+egui_code_editor = "0.2.11"
+mlua = { version = "0.10.2", features = ["lua54", "vendored"] }
 regex = { workspace = true }
 
 walkdir = { workspace = true }
 serde = { workspace = true }
-serde_json = "1.0.128"
+serde_json = "1.0.134"
 lazy_static = { workspace = true }
 directories = { workspace = true }
 image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }

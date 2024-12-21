@@ -30,20 +30,25 @@ impl Plugin {
         let lua = Lua::new();
         let globals = lua.globals();
 
-        globals.set(
-            "log",
-            lua.create_function(move |_lua, txt: String| {
-                log::info!("{txt}");
-                Ok(())
-            })?,
-        )?;
+        globals
+            .set(
+                "log",
+                lua.create_function(move |_lua, txt: String| {
+                    log::info!("{txt}");
+                    Ok(())
+                })
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?,
+            )
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
-        globals.set(
-            "buf",
-            LuaBufferView {
-                buffer_view: editor.buffer_view.clone(),
-            },
-        )?;
+        globals
+            .set(
+                "buf",
+                LuaBufferView {
+                    buffer_view: editor.buffer_view.clone(),
+                },
+            )
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
         let sel = editor.buffer_view.lock().get_selection();
 
@@ -57,22 +62,30 @@ impl Plugin {
             let mut selected_rect = sel.as_rectangle().intersect(&rect);
             selected_rect -= rect.start;
 
-            globals.set("start_x", selected_rect.left())?;
-            globals.set("end_x", selected_rect.right() - 1)?;
-            globals.set("start_y", selected_rect.top())?;
-            globals.set("end_y", selected_rect.bottom() - 1)?;
+            globals
+                .set("start_x", selected_rect.left())
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals
+                .set("end_x", selected_rect.right() - 1)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals
+                .set("start_y", selected_rect.top())
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals
+                .set("end_y", selected_rect.bottom() - 1)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
         } else {
-            globals.set("start_x", 0)?;
-            globals.set("end_x", rect.get_width())?;
-            globals.set("start_y", 0)?;
-            globals.set("end_y", rect.get_height())?;
+            globals.set("start_x", 0).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals.set("end_x", rect.get_width()).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals.set("start_y", 0).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals.set("end_y", rect.get_height()).map_err(|error| anyhow::anyhow!(error.to_string()))?;
         }
         let _undo = editor
             .buffer_view
             .lock()
             .get_edit_state_mut()
             .begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-plugin", title = self.title.clone()));
-        lua.load(&self.text).exec()?;
+        lua.load(&self.text).exec().map_err(|error| anyhow::anyhow!(error.to_string()))?;
         Ok(())
     }
 
@@ -149,7 +162,7 @@ impl LuaBufferView {
 }
 
 impl UserData for LuaBufferView {
-    fn add_fields<'lua, F: mlua::UserDataFields<'lua, Self>>(fields: &mut F) {
+    fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("height", |_, this| Ok(this.buffer_view.lock().get_buffer_mut().get_height()));
         fields.add_field_method_set("height", |_, this, val| {
             this.buffer_view.lock().get_buffer_mut().set_height(val);
@@ -211,7 +224,7 @@ impl UserData for LuaBufferView {
         fields.add_field_method_get("layer_count", |_, this| Ok(this.buffer_view.lock().get_buffer_mut().layers.len()));
     }
 
-    fn add_methods<'lua, M: mlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
+    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("fg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             let color = this.buffer_view.lock().get_buffer_mut().palette.insert_color_rgb(r, g, b);
             this.buffer_view.lock().get_caret_mut().set_foreground(color);

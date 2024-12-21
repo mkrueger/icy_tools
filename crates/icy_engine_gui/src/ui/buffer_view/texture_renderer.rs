@@ -125,7 +125,7 @@ impl TextureRenderer {
             render_buffer_size.y as i32,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
-            glow::PixelPackData::Slice(&mut pixels),
+            glow::PixelPackData::Slice(Some(&mut pixels)),
         );
         /*
         gl.bind_texture(glow::TEXTURE_2D, Some(output_texture));
@@ -157,7 +157,7 @@ impl TextureRenderer {
             0,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
-            None,
+            glow::PixelUnpackData::Slice(None),
         );
         gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
         gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);

@@ -257,7 +257,7 @@ impl TerminalRenderer {
                 0,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                Some(&font_data),
+                glow::PixelUnpackData::Slice(Some(&font_data)),
             );
             crate::check_gl_error!(gl, "update_font_texture");
         }
@@ -275,7 +275,7 @@ impl TerminalRenderer {
                 0,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                Some(image.as_bytes()),
+                glow::PixelUnpackData::Slice(Some(image.as_bytes())),
             );
             crate::check_gl_error!(gl, "update_reference_image_texture");
         }
@@ -298,7 +298,7 @@ impl TerminalRenderer {
                 0,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                Some(pixels),
+                glow::PixelUnpackData::Slice(Some(pixels)),
             );
             crate::check_gl_error!(gl, "update_reference_image_texture");
         }
@@ -319,7 +319,7 @@ impl TerminalRenderer {
                 0,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                Some(igs),
+                glow::PixelUnpackData::Slice(Some(igs)),
             );
             crate::check_gl_error!(gl, "update_reference_image_texture");
         }
@@ -519,7 +519,7 @@ impl TerminalRenderer {
                 0,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                Some(&buffer_data),
+                glow::PixelUnpackData::Slice(Some(&buffer_data)),
             );
             crate::check_gl_error!(gl, "update_terminal_texture");
         }

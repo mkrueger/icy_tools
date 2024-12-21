@@ -438,7 +438,7 @@ unsafe fn create_screen_render_texture(gl: &glow::Context, render_buffer_size: V
         0,
         glow::RGBA,
         glow::UNSIGNED_BYTE,
-        None,
+        glow::PixelUnpackData::Slice(None),
     );
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, filter);
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter);
@@ -456,7 +456,7 @@ unsafe fn create_screen_render_texture(gl: &glow::Context, render_buffer_size: V
         0,
         glow::RGBA,
         glow::UNSIGNED_BYTE,
-        None,
+        glow::PixelUnpackData::Slice(None),
     );
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, filter);
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter);

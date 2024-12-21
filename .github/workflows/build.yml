@@ -48,9 +48,6 @@ jobs:
       run: |
         $VERSION=$(python tools\prep_diz.py "${{ matrix.app }}" "file_id.diz")
         echo "Version: $VERSION"
-        
-        Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
-        get-content .\crates\${{ matrix.app }}\build\file_id.diz | %{$_ -replace "#VERSION","$VERSION"} >file_id.diz
     - name: Build exe
       run: |
         cd .\crates\${{ matrix.app }}
