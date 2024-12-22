@@ -345,7 +345,7 @@ impl Options {
             file.write_all(b"version = \"1.1\"\n")?;
 
             if let Some(rect) = self.window_rect {
-                file.write_all(format!("window_coord = \"{}/{}-{}/{}\"\n", rect.min.x, rect.min.y, rect.max.x, rect.max.y).as_bytes())?;
+                file.write_all(format!("window_coord = \"{}/{}#{}/{}\"\n", rect.min.x, rect.min.y, rect.max.x, rect.max.y).as_bytes())?;
             }
 
             file.write_all(format!("scaling = \"{:?}\"\n", self.scaling).as_bytes())?;
@@ -441,14 +441,16 @@ fn parse_value(options: &mut Options, value: &Value) {
                 match k.as_str() {
                     "window_coord" => {
                         if let Value::String(str) = v {
-                            let mut minmax = str.split('-');
+                            let mut minmax = str.split('#');
                             if let Some(min) = minmax.next() {
                                 let min = min.split('/').collect::<Vec<&str>>();
-                                if let Some(max) = minmax.next() {
-                                    let max = max.split('/').collect::<Vec<&str>>();
-                                    if let (Ok(x1), Ok(y1)) = (min[0].parse::<f32>(), min[1].parse::<f32>()) {
-                                        if let (Ok(x2), Ok(y2)) = (max[0].parse::<f32>(), max[1].parse::<f32>()) {
-                                            options.window_rect = Some(Rect::from_min_max(egui::Pos2::new(x1, y1), egui::Pos2::new(x2, y2)));
+                                if min.len() == 2 {
+                                    if let Some(max) = minmax.next() {
+                                        let max = max.split('/').collect::<Vec<&str>>();
+                                        if let (Ok(x1), Ok(y1)) = (min[0].parse::<f32>(), min[1].parse::<f32>()) {
+                                            if let (Ok(x2), Ok(y2)) = (max[0].parse::<f32>(), max[1].parse::<f32>()) {
+                                                options.window_rect = Some(Rect::from_min_max(egui::Pos2::new(x1, y1), egui::Pos2::new(x2, y2)));
+                                            }
                                         }
                                     }
                                 }
