@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{plugins::Plugin, TerminalResult};
+use crate::TerminalResult;
 
 const MAX_RECENT_FILES: usize = 10;
 
@@ -32,6 +32,9 @@ pub struct Settings {
 
     #[serde(default)]
     scale: Vec2,
+
+    #[serde(skip_serializing)]
+    pub character_sets: CharacterSets,
 }
 
 impl Default for Settings {
@@ -46,6 +49,7 @@ impl Default for Settings {
             marker_settings: Default::default(),
             save_options: Default::default(),
             scale: Vec2::splat(2.0),
+            character_sets: Default::default(),
         }
     }
 }
@@ -53,6 +57,14 @@ impl Default for Settings {
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct KeyBindings {
     pub key_bindings: Vec<(String, eframe::egui::Key, Modifiers)>,
+}
+
+impl Default for KeyBindings {
+    fn default() -> Self {
+        Self {
+            key_bindings: super::Commands::default_keybindings(),
+        }
+    }
 }
 
 impl KeyBindings {
@@ -78,16 +90,14 @@ impl KeyBindings {
             return Ok(());
         };
 
-        unsafe {
-            let file = File::create(path)?;
-            let reader = BufWriter::new(file);
-            serde_json::to_writer_pretty(reader, &KEYBINDINGS.clone())?;
-            Ok(())
-        }
+        let file = File::create(path)?;
+        let reader = BufWriter::new(file);
+        serde_json::to_writer_pretty(reader, &self.clone())?;
+        Ok(())
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Serialize, Deserialize, Debug)]
 pub struct CharacterSets {
     pub character_sets: Vec<CharSetMapping>,
 }
@@ -115,12 +125,10 @@ impl CharacterSets {
             return Ok(());
         };
 
-        unsafe {
-            let file = File::create(path)?;
-            let reader = BufWriter::new(file);
-            serde_json::to_writer_pretty(reader, &CHARACTER_SETS.clone())?;
-            Ok(())
-        }
+        let file = File::create(path)?;
+        let reader = BufWriter::new(file);
+        serde_json::to_writer_pretty(reader, &self.clone())?;
+        Ok(())
     }
 }
 
@@ -158,21 +166,19 @@ impl Settings {
     }
 
     pub fn get_character_set_char(&self, checksum: u32, ch: usize) -> char {
-        unsafe {
-            let mut table_idx = 0;
+        let mut table_idx = 0;
 
-            for (i, set) in CHARACTER_SETS.character_sets.iter().enumerate() {
-                if set.font_checksum == checksum {
-                    table_idx = i;
-                    break;
-                }
+        for (i, set) in self.character_sets.character_sets.iter().enumerate() {
+            if set.font_checksum == checksum {
+                table_idx = i;
+                break;
             }
-            let char_set = &CHARACTER_SETS.character_sets[table_idx];
-            if self.character_set >= char_set.table.len() || ch >= char_set.table[self.character_set].len() {
-                return ' ';
-            }
-            char_set.table[self.character_set][ch]
         }
+        let char_set = &self.character_sets.character_sets[table_idx];
+        if self.character_set >= char_set.table.len() || ch >= char_set.table[self.character_set].len() {
+            return ' ';
+        }
+        char_set.table[self.character_set][ch]
     }
 
     pub fn set_character_set(character_set: usize) {
@@ -273,10 +279,18 @@ impl Settings {
         let reader = BufReader::new(file);
 
         // Read the JSON contents of the file as an instance of `User`.
-        let u = serde_json::from_reader(reader)?;
+        let mut result: Settings = serde_json::from_reader(reader)?;
+
+        if let Ok(settings_file) = CharacterSets::get_character_sets_file() {
+            if settings_file.exists() {
+                if let Ok(character_sets) = CharacterSets::load(&settings_file) {
+                    result.character_sets = character_sets;
+                }
+            }
+        }
 
         // Return the `User`.
-        Ok(u)
+        Ok(result)
     }
 
     pub(crate) fn save() -> io::Result<()> {
@@ -386,12 +400,6 @@ impl MostRecentlyUsedFiles {
     }
 }
 
-pub static mut PLUGINS: Vec<Plugin> = Vec::new();
-
-pub static mut KEYBINDINGS: KeyBindings = KeyBindings { key_bindings: Vec::new() };
-
-pub static mut CHARACTER_SETS: CharacterSets = CharacterSets { character_sets: Vec::new() };
-
 pub static mut MRU_FILES: MostRecentlyUsedFiles = MostRecentlyUsedFiles { files: Vec::new() };
 
 pub static mut SETTINGS: Settings = Settings {
@@ -425,6 +433,7 @@ pub static mut SETTINGS: Settings = Settings {
         guide_color: Color::new(0xAB, 0xAB, 0xAB),
     },
     scale: Vec2::splat(2.0),
+    character_sets: CharacterSets { character_sets: Vec::new() },
 };
 
 #[derive(Debug, Clone)]

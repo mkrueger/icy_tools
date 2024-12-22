@@ -6,9 +6,8 @@ use std::{
 };
 
 use crate::{
-    add_child, model::Tool, util::autosave, AnsiEditor, AskCloseFileDialog, BitFontEditor, ChannelToolWindow, CharFontEditor, Commands, Document,
-    DocumentBehavior, DocumentTab, LayerToolWindow, Message, MinimapToolWindow, ModalDialog, SettingsDialog, ToolBehavior, ToolTab, TopBar, KEYBINDINGS,
-    SETTINGS,
+    add_child, model::Tool, plugins::Plugin, util::autosave, AnsiEditor, AskCloseFileDialog, BitFontEditor, ChannelToolWindow, CharFontEditor, Commands,
+    Document, DocumentBehavior, DocumentTab, LayerToolWindow, Message, MinimapToolWindow, ModalDialog, SettingsDialog, ToolBehavior, ToolTab, TopBar, SETTINGS,
 };
 use directories::UserDirs;
 use eframe::egui::{Button, PointerButton};
@@ -21,6 +20,8 @@ use egui_tiles::{Container, TileId};
 use glow::Context;
 use i18n_embed_fl::fl;
 use icy_engine::{BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TheDrawFont};
+
+use super::KeyBindings;
 
 pub struct MainWindow<'a> {
     pub document_tree: egui_tiles::Tree<DocumentTab>,
@@ -51,6 +52,9 @@ pub struct MainWindow<'a> {
 
     pub in_open_file_mode: bool,
     pub open_file_window: icy_view_gui::MainWindow<'a>,
+
+    pub plugins: Vec<Plugin>,
+    pub key_bindings: KeyBindings,
 }
 
 pub const PASTE_TOOL: usize = 0;
@@ -131,11 +135,22 @@ impl<'a> MainWindow<'a> {
 
         tool_tree.root = Some(vert_id);
         let open_file_window = icy_view_gui::MainWindow::new(&gl, None, icy_view_gui::options::Options::default());
-        let mut c = Box::<Commands>::default();
-        unsafe {
-            c.apply_key_bindings(&KEYBINDINGS.key_bindings);
-        }
         let settings_dialog = SettingsDialog::new(ctx, &gl);
+
+        let mut key_bindings = KeyBindings::default();
+
+        if let Ok(settings_file) = KeyBindings::get_keybindings_file() {
+            if settings_file.exists() {
+                if let Ok(bindings) = KeyBindings::load(&settings_file) {
+                    key_bindings = bindings;
+                }
+            }
+        }
+
+        let mut c = Box::<Commands>::default();
+        c.apply_key_bindings(&key_bindings.key_bindings);
+        let plugins = Plugin::read_plugin_directory();
+
         MainWindow {
             document_behavior: DocumentBehavior::new(Arc::new(Mutex::new(tools))),
             tool_behavior: ToolBehavior::default(),
@@ -160,6 +175,8 @@ impl<'a> MainWindow<'a> {
             last_command_update: Instant::now(),
             current_id: None,
             title: String::new(),
+            key_bindings,
+            plugins,
         }
     }
 
@@ -424,7 +441,7 @@ impl<'a> MainWindow<'a> {
         self.modal_dialog = Some(Box::new(dialog));
     }
 
-    pub(crate) fn run_editor_command<T>(&mut self, param: T, func: fn(&mut MainWindow<'_>, &mut AnsiEditor, T) -> Option<Message>) {
+    pub(crate) fn run_editor_command<T>(&mut self, param: T, func: impl Fn(&mut MainWindow<'_>, &mut AnsiEditor, T) -> Option<Message>) {
         let mut msg = None;
         if let Some(doc) = self.get_active_document() {
             if let Some(editor) = doc.lock().get_ansi_editor_mut() {
@@ -843,8 +860,12 @@ impl<'a> eframe::App for MainWindow<'a> {
         if self.show_settings {
             self.show_settings = self.settings_dialog.show(ctx);
             if !self.show_settings {
-                unsafe {
-                    self.commands[0].apply_key_bindings(&KEYBINDINGS.key_bindings);
+                if self.key_bindings.key_bindings != self.settings_dialog.key_bindings.key_bindings {
+                    self.key_bindings = self.settings_dialog.key_bindings.clone();
+                    if let Err(err) = self.key_bindings.save() {
+                        log::error!("Error saving keybindings: {}", err);
+                    }
+                    self.commands[0].apply_key_bindings(&self.key_bindings.key_bindings);
                 }
             }
         }

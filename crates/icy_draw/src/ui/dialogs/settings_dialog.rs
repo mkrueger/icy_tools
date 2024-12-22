@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eframe::{
-    egui::{self, color_picker, Layout, Modifiers, RichText},
+    egui::{self, color_picker, Layout, RichText},
     epaint::{mutex::Mutex, Color32, Vec2},
 };
 use egui::{global_theme_preference_switch, Context};
@@ -9,7 +9,7 @@ use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, BitFont, Buffer, Color, Position, Size, TextAttribute};
 use icy_engine_gui::{show_monitor_settings, show_terminal_area, BufferView, MarkerSettings, MonitorSettings};
 
-use crate::{CharSetMapping, CharTableToolWindow, Commands, FontSelector, ModalDialog, SelectOutlineDialog, Settings, CHARACTER_SETS, KEYBINDINGS, SETTINGS};
+use crate::{CharSetMapping, CharTableToolWindow, FontSelector, KeyBindings, ModalDialog, SelectOutlineDialog, Settings, SETTINGS};
 pub struct SettingsDialog {
     settings_category: usize,
     select_outline_dialog: SelectOutlineDialog,
@@ -17,7 +17,7 @@ pub struct SettingsDialog {
     monitor_settings: MonitorSettings,
     marker_settings: MarkerSettings,
     key_filter: String,
-    key_bindings: Vec<(String, eframe::egui::Key, Modifiers)>,
+    pub key_bindings: KeyBindings,
 
     font_cache: Vec<BitFont>,
     font_selector: Option<FontSelector>,
@@ -70,7 +70,7 @@ impl SettingsDialog {
             monitor_settings: Default::default(),
             marker_settings: Default::default(),
             key_filter: String::new(),
-            key_bindings: Commands::default_keybindings(),
+            key_bindings: KeyBindings::default(),
             char_sets: Default::default(),
             font_cache,
             cur_char_set: 0,
@@ -82,11 +82,11 @@ impl SettingsDialog {
         }
     }
 
-    pub(crate) fn init(&mut self) {
+    pub(crate) fn init(&mut self, key_bindings: crate::KeyBindings) {
         self.monitor_settings = unsafe { SETTINGS.monitor_settings.clone() };
         self.marker_settings = unsafe { SETTINGS.marker_settings.clone() };
-        self.key_bindings = unsafe { KEYBINDINGS.key_bindings.clone() };
-        self.char_sets = unsafe { CHARACTER_SETS.character_sets.clone() };
+        self.key_bindings = key_bindings;
+        self.char_sets = unsafe { SETTINGS.character_sets.character_sets.clone() };
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> bool {
@@ -185,13 +185,13 @@ impl SettingsDialog {
 
                     KEYBIND_CAT => {
                         let mut map = std::collections::HashMap::new();
-                        for (s, key, modifier) in &self.key_bindings {
+                        for (s, key, modifier) in &self.key_bindings.key_bindings {
                             map.insert(s.clone(), (*key, *modifier));
                         }
                         crate::Commands::show_keybinds_settings(ui, &mut self.key_filter, &mut map);
-                        self.key_bindings.clear();
+                        self.key_bindings.key_bindings.clear();
                         for (s, (key, modifier)) in map {
-                            self.key_bindings.push((s, key, modifier));
+                            self.key_bindings.key_bindings.push((s, key, modifier));
                         }
                     }
                     _ => {}
@@ -202,15 +202,9 @@ impl SettingsDialog {
                 ui.with_layout(Layout::right_to_left(egui::Align::TOP), |ui| {
                     if ui.button(fl!(crate::LANGUAGE_LOADER, "new-file-ok")).clicked() {
                         unsafe {
-                            if KEYBINDINGS.key_bindings != self.key_bindings {
-                                KEYBINDINGS.key_bindings = self.key_bindings.clone();
-                                if let Err(err) = KEYBINDINGS.save() {
-                                    log::error!("Error saving keybindings: {}", err);
-                                }
-                            }
-                            if CHARACTER_SETS.character_sets != self.char_sets {
-                                CHARACTER_SETS.character_sets = self.char_sets.clone();
-                                if let Err(err) = CHARACTER_SETS.save() {
+                            if SETTINGS.character_sets.character_sets != self.char_sets {
+                                SETTINGS.character_sets.character_sets = self.char_sets.clone();
+                                if let Err(err) = SETTINGS.character_sets.save() {
                                     log::error!("Error saving character sets: {}", err);
                                 }
                             }
@@ -245,7 +239,7 @@ impl SettingsDialog {
                                 MARKER_CAT => SETTINGS.marker_settings = Default::default(),
                                 CHAR_SET_CAT => self.char_sets = Default::default(),
                                 KEYBIND_CAT => {
-                                    self.key_bindings = Commands::default_keybindings();
+                                    self.key_bindings = KeyBindings::default();
                                 }
                                 _ => {}
                             }

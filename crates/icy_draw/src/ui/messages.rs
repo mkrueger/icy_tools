@@ -9,8 +9,7 @@ use egui::mutex::Mutex;
 use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, Layer, PaletteMode, Size, Tag, TextPane, TheDrawFont};
 
 use crate::{
-    util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, MRU_FILES, PLUGINS,
-    SETTINGS,
+    util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, MRU_FILES, SETTINGS,
 };
 
 #[derive(Clone)]
@@ -959,12 +958,11 @@ impl<'a> MainWindow<'a> {
                 SETTINGS.show_line_numbers = !SETTINGS.show_line_numbers;
             },
             Message::RunPlugin(i) => {
-                self.run_editor_command(i, |window, editor, i| {
+                let plugin = self.plugins[i].clone();
+                self.run_editor_command(i, |window, editor, _i| {
                     let mut msg = None;
-                    unsafe {
-                        if let Err(err) = PLUGINS[i].run_plugin(window, editor) {
-                            msg = Some(Message::ShowError(format!("Error running plugin: {err}")));
-                        }
+                    if let Err(err) = plugin.run_plugin(window, editor) {
+                        msg = Some(Message::ShowError(format!("Error running plugin: {err}")));
                     }
                     msg
                 });
@@ -1052,7 +1050,7 @@ impl<'a> MainWindow<'a> {
             }
             Message::ShowSettings => {
                 self.show_settings = true;
-                self.settings_dialog.init();
+                self.settings_dialog.init(self.key_bindings.clone());
             }
 
             Message::ToggleLGAFont => {

@@ -11,7 +11,7 @@ use icy_engine::{
     FontMode, IceMode, PaletteMode,
 };
 
-use crate::{button_with_shortcut, MainWindow, Message, Settings, LATEST_VERSION, MRU_FILES, PLUGINS, SETTINGS, VERSION};
+use crate::{button_with_shortcut, MainWindow, Message, Settings, LATEST_VERSION, MRU_FILES, SETTINGS, VERSION};
 
 lazy_static::lazy_static! {
     pub static ref DOCK_LEFT_SVG: Image<'static> = Image::new(egui::include_image!("../../data/icons/dock_left.svg"));
@@ -540,25 +540,23 @@ impl<'a> MainWindow<'a> {
                 self.commands[0].clear_reference_image.ui(ui, &mut result);
             });
 
-            unsafe {
-                if !PLUGINS.is_empty() {
-                    ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-plugins"), |ui| {
-                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                        ui.set_min_width(250.0);
-                        for (i, p) in PLUGINS.iter().enumerate() {
-                            if ui
-                                .add_enabled(has_buffer, egui::Button::new(p.title.clone()).wrap_mode(egui::TextWrapMode::Truncate))
-                                .clicked()
-                            {
-                                result = Some(Message::RunPlugin(i));
-                                ui.close_menu();
-                            }
+            if !self.plugins.is_empty() {
+                ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-plugins"), |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                    ui.set_min_width(250.0);
+                    for (i, p) in self.plugins.iter().enumerate() {
+                        if ui
+                            .add_enabled(has_buffer, egui::Button::new(p.title.clone()).wrap_mode(egui::TextWrapMode::Truncate))
+                            .clicked()
+                        {
+                            result = Some(Message::RunPlugin(i));
+                            ui.close_menu();
                         }
+                    }
 
-                        ui.separator();
-                        self.commands[0].open_plugin_directory.ui(ui, &mut result);
-                    });
-                }
+                    ui.separator();
+                    self.commands[0].open_plugin_directory.ui(ui, &mut result);
+                });
             }
 
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-help"), |ui| {

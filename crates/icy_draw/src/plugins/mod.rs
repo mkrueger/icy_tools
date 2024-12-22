@@ -6,8 +6,9 @@ use mlua::{Lua, UserData};
 use regex::Regex;
 use walkdir::WalkDir;
 
-use crate::{model::font_imp::FontTool, Settings, PLUGINS};
+use crate::{model::font_imp::FontTool, Settings};
 
+#[derive(Clone)]
 pub struct Plugin {
     pub title: String,
     pub text: String,
@@ -26,7 +27,7 @@ impl Plugin {
         Err(anyhow::anyhow!("No plugin file"))
     }
 
-    pub(crate) fn run_plugin(&self, _window: &mut crate::MainWindow<'_>, editor: &crate::AnsiEditor) -> anyhow::Result<()> {
+    pub(crate) fn run_plugin(&self, _window: &crate::MainWindow<'_>, editor: &crate::AnsiEditor) -> anyhow::Result<()> {
         let lua = Lua::new();
         let globals = lua.globals();
 
@@ -89,10 +90,11 @@ impl Plugin {
         Ok(())
     }
 
-    pub fn read_plugin_directory() {
+    pub fn read_plugin_directory() -> Vec<Self> {
+        let mut result = Vec::new();
         let Ok(root) = Settings::get_plugin_directory() else {
             log::error!("Can't read plugin directory.");
-            return;
+            return result;
         };
         let walker = WalkDir::new(root).into_iter();
         for entry in walker.filter_entry(|e| !FontTool::is_hidden(e)) {
@@ -101,18 +103,17 @@ impl Plugin {
                     if entry.file_type().is_dir() {
                         continue;
                     }
-                    unsafe {
-                        match Plugin::load(entry.path()) {
-                            Ok(plugin) => {
-                                PLUGINS.push(plugin);
-                            }
-                            Err(err) => log::error!("Error loading plugin: {err}"),
+                    match Plugin::load(entry.path()) {
+                        Ok(plugin) => {
+                            result.push(plugin);
                         }
+                        Err(err) => log::error!("Error loading plugin: {err}"),
                     }
                 }
                 Err(err) => log::error!("Error loading plugin: {err}"),
             }
         }
+        result
     }
 }
 
