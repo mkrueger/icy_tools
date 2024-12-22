@@ -399,8 +399,9 @@ impl MainWindow {
                     egui::Event::Key {
                         key, pressed: true, modifiers, physical_key, ..
                     } => {
-                        // println!("Key: {key:?} {physical_key:?}");
-                        self.handle_key_press(ui, &response, key, modifiers);
+                        if self.handle_key_press(ui, &response, key, modifiers) {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -568,7 +569,7 @@ impl MainWindow {
         }
     }
 
-    fn handle_key_press(&mut self, ui: &mut egui::Ui, response: &egui::Response, key: egui::Key, modifiers: egui::Modifiers) {
+    fn handle_key_press(&mut self, ui: &mut egui::Ui, response: &egui::Response, key: egui::Key, modifiers: egui::Modifiers) -> bool {
         let im = self.screen_mode.get_input_mode();
         let key_map = im.cur_map();
         let mut key_code = key as u32;
@@ -588,11 +589,13 @@ impl MainWindow {
                     }
                 }
                 response.request_focus();
-
-                ui.input_mut(|i| i.consume_key(modifiers, key));
-                break;
+                ui.input_mut(|i| {
+                    i.consume_key(modifiers, key);
+                });
+                return true;
             }
         }
+        false
     }
 
     fn copy_to_clipboard(&mut self) {
