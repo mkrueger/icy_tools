@@ -47,14 +47,8 @@ impl MainWindow {
         //  #[cfg(target_arch = "wasm32")]
         let is_fullscreen_mode = false;
 
-        // try to detect dark vs light mode from the host system; default to dark
-        let is_dark = if let Some(dark_mode) = &options.is_dark_mode {
-            *dark_mode
-        } else {
-            dark_light::detect() != dark_light::Mode::Light
-        };
         let ctx: &egui::Context = &cc.egui_ctx;
-        ctx.set_visuals(if is_dark { egui::Visuals::dark() } else { egui::Visuals::light() });
+        ctx.set_theme(options.get_theme());
 
         let mut initial_upload_directory = None;
 

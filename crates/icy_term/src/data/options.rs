@@ -329,6 +329,18 @@ impl Options {
         Ok(Options::default())
     }
 
+    pub(crate) fn get_theme(&self) -> egui::ThemePreference {
+        if let Some(dark_mode) = self.is_dark_mode {
+            if dark_mode {
+                egui::ThemePreference::Dark
+            } else {
+                egui::ThemePreference::Light
+            }
+        } else {
+            egui::ThemePreference::System
+        }
+    }
+
     /// Returns the store options of this [`Options`].
     ///
     /// # Errors
