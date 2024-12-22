@@ -47,6 +47,7 @@ jobs:
     - name: Prepare FILE_ID.DIZ
       run: |
         $VERSION=$(python tools\prep_diz.py "${{ matrix.app }}" "file_id.diz")
+        Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
         echo "Version: $VERSION"
     - name: Build exe
       run: |
