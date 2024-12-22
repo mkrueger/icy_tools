@@ -13,7 +13,7 @@ use crate::{CharSetMapping, CharTableToolWindow, FontSelector, KeyBindings, Moda
 pub struct SettingsDialog {
     settings_category: usize,
     select_outline_dialog: SelectOutlineDialog,
-    is_dark_mode: Option<bool>,
+    pub is_dark_mode: Option<bool>,
     monitor_settings: MonitorSettings,
     marker_settings: MarkerSettings,
     key_filter: String,
@@ -78,7 +78,7 @@ impl SettingsDialog {
             views,
             char_view,
             font_selector: None,
-            is_dark_mode: unsafe { SETTINGS.is_dark_mode },
+            is_dark_mode: None,
         }
     }
 
@@ -87,6 +87,7 @@ impl SettingsDialog {
         self.marker_settings = unsafe { SETTINGS.marker_settings.clone() };
         self.key_bindings = key_bindings;
         self.char_sets = unsafe { SETTINGS.character_sets.character_sets.clone() };
+        self.is_dark_mode = unsafe { SETTINGS.is_dark_mode };
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> bool {

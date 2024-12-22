@@ -126,24 +126,16 @@ fn main() {
 
     if let Ok(settings_file) = Settings::get_settings_file() {
         if settings_file.exists() {
-            if let Ok(settings) = Settings::load(&settings_file) {
-                unsafe {
+            match Settings::load(&settings_file) {
+                Ok(settings) => unsafe {
                     SETTINGS = settings;
+                },
+                Err(err) => {
+                    log::error!("Error loading settings: {}", err);
                 }
             }
         }
     }
-
-    if let Ok(settings_file) = MostRecentlyUsedFiles::get_mru_file() {
-        if settings_file.exists() {
-            if let Ok(character_sets) = MostRecentlyUsedFiles::load(&settings_file) {
-                unsafe {
-                    MRU_FILES = character_sets;
-                }
-            }
-        }
-    }
-
     log::info!("Starting iCY DRAW {}", *VERSION);
     Plugin::read_plugin_directory();
     if let Err(err) = eframe::run_native(

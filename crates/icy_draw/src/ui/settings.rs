@@ -33,6 +33,7 @@ pub struct Settings {
     #[serde(default)]
     scale: Vec2,
 
+    #[serde(default)]
     #[serde(skip_serializing)]
     pub character_sets: CharacterSets,
 }
@@ -308,17 +309,15 @@ impl Settings {
         }
     }
 
-    pub(crate) fn get_theme(&self) -> egui::Visuals {
-        let is_dark = if let Some(dark_mode) = unsafe { SETTINGS.is_dark_mode } {
-            dark_mode
+    pub(crate) fn get_theme(&self) -> egui::ThemePreference {
+        if let Some(dark_mode) = unsafe { SETTINGS.is_dark_mode } {
+            if dark_mode {
+                egui::ThemePreference::Dark
+            } else {
+                egui::ThemePreference::Light
+            }
         } else {
-            dark_light::detect() != dark_light::Mode::Light
-        };
-
-        if is_dark {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
+            egui::ThemePreference::System
         }
     }
 
@@ -338,7 +337,7 @@ impl Settings {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Default, Serialize, Deserialize, Debug)]
 pub struct MostRecentlyUsedFiles {
     files: Vec<PathBuf>,
 }
@@ -399,8 +398,6 @@ impl MostRecentlyUsedFiles {
         Ok(())
     }
 }
-
-pub static mut MRU_FILES: MostRecentlyUsedFiles = MostRecentlyUsedFiles { files: Vec::new() };
 
 pub static mut SETTINGS: Settings = Settings {
     font_outline_style: 0,

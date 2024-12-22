@@ -5,7 +5,7 @@ use egui_bind::{BindTarget, KeyOrPointer};
 use i18n_embed_fl::fl;
 use icy_engine::PaletteMode;
 
-use crate::{button_with_shortcut, DocumentTab, Message, MRU_FILES, SETTINGS};
+use crate::{button_with_shortcut, DocumentTab, Message, SETTINGS};
 
 pub trait CommandState {
     fn is_enabled(&self, _open_tab_opt: Option<&DocumentTab>) -> bool {
@@ -94,14 +94,16 @@ impl CommandState for FileIsDirtyState {
     }
 }
 
+/*
 #[derive(Default)]
 pub struct HasRecentFilesState {}
 
 impl CommandState for HasRecentFilesState {
     fn is_enabled(&self, _open_tab_opt: Option<&DocumentTab>) -> bool {
-        unsafe { !MRU_FILES.get_recent_files().is_empty() }
+        !self.MRU_FILES.get_recent_files().is_empty()
     }
 }
+*/
 
 #[derive(Default)]
 pub struct CanUndoState {}
@@ -549,7 +551,7 @@ keys![
         AlwaysEnabledState
     ),
     (mirror_mode, "menu-mirror_mode", ToggleMirrorMode, BufferOpenState),
-    (clear_recent_open, "menu-open_recent_clear", ClearRecentOpenFiles, HasRecentFilesState),
+    (clear_recent_open, "menu-open_recent_clear", ClearRecentOpenFiles, AlwaysEnabledState),
     (inverse_selection, "menu-inverse_selection", InverseSelection, BufferOpenState),
     (clear_selection, "menu-delete_row", ClearSelection, BufferOpenState, Escape, NONE),
     (select_palette, "menu-select_palette", SelectPalette, CanSwitchPaletteState),

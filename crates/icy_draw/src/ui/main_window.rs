@@ -7,7 +7,8 @@ use std::{
 
 use crate::{
     add_child, model::Tool, plugins::Plugin, util::autosave, AnsiEditor, AskCloseFileDialog, BitFontEditor, ChannelToolWindow, CharFontEditor, Commands,
-    Document, DocumentBehavior, DocumentTab, LayerToolWindow, Message, MinimapToolWindow, ModalDialog, SettingsDialog, ToolBehavior, ToolTab, TopBar, SETTINGS,
+    Document, DocumentBehavior, DocumentTab, LayerToolWindow, Message, MinimapToolWindow, ModalDialog, MostRecentlyUsedFiles, SettingsDialog, ToolBehavior,
+    ToolTab, TopBar, SETTINGS,
 };
 use directories::UserDirs;
 use eframe::egui::{Button, PointerButton};
@@ -55,6 +56,7 @@ pub struct MainWindow<'a> {
 
     pub plugins: Vec<Plugin>,
     pub key_bindings: KeyBindings,
+    pub mru_files: MostRecentlyUsedFiles,
 }
 
 pub const PASTE_TOOL: usize = 0;
@@ -99,10 +101,6 @@ impl<'a> MainWindow<'a> {
         ];
 
         let ctx: &egui::Context = &cc.egui_ctx;
-
-        // try to detect dark vs light mode from the host system; default to dark
-
-        ctx.set_visuals(unsafe { SETTINGS.get_theme() });
 
         let mut style: egui::Style = (*ctx.style()).clone();
         style.spacing.window_margin = egui::Margin::same(8.0);
@@ -151,6 +149,16 @@ impl<'a> MainWindow<'a> {
         c.apply_key_bindings(&key_bindings.key_bindings);
         let plugins = Plugin::read_plugin_directory();
 
+        let mut mru_files = MostRecentlyUsedFiles::default();
+        if let Ok(mru_file_path) = MostRecentlyUsedFiles::get_mru_file() {
+            if mru_file_path.exists() {
+                if let Ok(mru) = MostRecentlyUsedFiles::load(&mru_file_path) {
+                    mru_files = mru;
+                }
+            }
+        }
+        ctx.set_theme(unsafe { SETTINGS.get_theme() });
+
         MainWindow {
             document_behavior: DocumentBehavior::new(Arc::new(Mutex::new(tools))),
             tool_behavior: ToolBehavior::default(),
@@ -177,12 +185,13 @@ impl<'a> MainWindow<'a> {
             title: String::new(),
             key_bindings,
             plugins,
+            mru_files,
         }
     }
 
     pub fn open_data(&mut self, path: &Path, data: &[u8]) {
         let full_path = path.to_path_buf();
-        unsafe { crate::MRU_FILES.add_recent_file(path) };
+        self.mru_files.add_recent_file(path);
         if let Some(ext) = path.extension() {
             let ext = ext.to_str().unwrap_or_default().to_ascii_lowercase();
             if is_font_extensions(&ext) {
@@ -860,6 +869,7 @@ impl<'a> eframe::App for MainWindow<'a> {
         if self.show_settings {
             self.show_settings = self.settings_dialog.show(ctx);
             if !self.show_settings {
+                unsafe { SETTINGS.is_dark_mode = self.settings_dialog.is_dark_mode };
                 if self.key_bindings.key_bindings != self.settings_dialog.key_bindings.key_bindings {
                     self.key_bindings = self.settings_dialog.key_bindings.clone();
                     if let Err(err) = self.key_bindings.save() {
@@ -867,6 +877,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                     }
                     self.commands[0].apply_key_bindings(&self.key_bindings.key_bindings);
                 }
+                super::Settings::save();
             }
         }
 

@@ -8,9 +8,7 @@ use eframe::{
 use egui::mutex::Mutex;
 use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, Layer, PaletteMode, Size, Tag, TextPane, TheDrawFont};
 
-use crate::{
-    util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, MRU_FILES, SETTINGS,
-};
+use crate::{util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, SETTINGS};
 
 #[derive(Clone)]
 pub enum Message {
@@ -219,6 +217,10 @@ impl<'a> MainWindow<'a> {
             Message::SaveFileAs => {
                 if let Some((_, tab)) = self.get_active_pane() {
                     let path = tab.get_path();
+                    if let Some(path) = &path {
+                        self.mru_files.add_recent_file(path);
+                    }
+
                     self.open_dialog(SaveFileDialog::new(path));
                 }
             }
@@ -885,7 +887,7 @@ impl<'a> MainWindow<'a> {
             }
 
             Message::ClearRecentOpenFiles => {
-                unsafe { MRU_FILES.clear_recent_files() };
+                self.mru_files.clear_recent_files();
             }
 
             Message::InverseSelection => {

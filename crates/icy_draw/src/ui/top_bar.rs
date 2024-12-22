@@ -11,7 +11,7 @@ use icy_engine::{
     FontMode, IceMode, PaletteMode,
 };
 
-use crate::{button_with_shortcut, MainWindow, Message, Settings, LATEST_VERSION, MRU_FILES, SETTINGS, VERSION};
+use crate::{button_with_shortcut, MainWindow, Message, Settings, LATEST_VERSION, SETTINGS, VERSION};
 
 lazy_static::lazy_static! {
     pub static ref DOCK_LEFT_SVG: Image<'static> = Image::new(egui::include_image!("../../data/icons/dock_left.svg"));
@@ -72,10 +72,10 @@ impl<'a> MainWindow<'a> {
 
                 self.commands[0].new_file.ui(ui, &mut result);
                 self.commands[0].open_file.ui(ui, &mut result);
-                ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-open_recent"), |ui| unsafe {
+                ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-open_recent"), |ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
 
-                    let get_recent_files = MRU_FILES.get_recent_files();
+                    let get_recent_files = self.mru_files.get_recent_files();
                     if !get_recent_files.is_empty() {
                         for file in get_recent_files.iter().rev() {
                             let button = ui.button(file.file_name().unwrap().to_string_lossy());
