@@ -885,7 +885,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                         .into_galley(ui, Some(egui::TextWrapMode::Truncate), 1000., egui::TextStyle::Button)
                         .size();
 
-                    ui.add_space(ui.available_size_before_wrap().x - connect_text_size.x - cancel_text_size.x - 8.);
+                    ui.add_space(ui.available_size_before_wrap().x - connect_text_size.x - cancel_text_size.x - 22.);
 
                     let r: egui::Response = ui.add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")));
                     if r.clicked() {
