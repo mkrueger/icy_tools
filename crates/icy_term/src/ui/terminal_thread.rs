@@ -50,6 +50,7 @@ pub struct TerminalThread {
     pub is_connected: bool,
     pub connection_time: Instant,
 }
+const BITS_PER_BYTE: u32 = 8;
 
 impl TerminalThread {
     pub async fn update_state(&mut self, connection: &mut ConnectionThreadData, buffer_parser: &mut dyn BufferParser, data: &[u8]) -> Res<()> {
@@ -162,7 +163,7 @@ pub fn start_update_thread(
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let mut buffer_parser = get_parser(
+                    let mut buffer_parser: Box<dyn BufferParser> = get_parser(
                         &connection_data.term_caps.terminal,
                         connection_data.use_ansi_music,
                         update_thread.lock().cache_directory.clone(),
@@ -170,15 +171,10 @@ pub fn start_update_thread(
                     let com: Box<dyn Connection> = match open_connection(&connection_data).await {
                         Ok(com) => com,
                         Err(err) => {
-                            println!("111");
                             update_thread.lock().is_connected = false;
-                            println!("112");
                             let _ = tx.send(SendData::Disconnect);
-                            println!("113");
                             log::error!("run_update_thread::open_connection: {err}");
-                            println!("114");
                             println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
-                            println!("115");
                             return;
                         }
                     };
@@ -192,7 +188,7 @@ pub fn start_update_thread(
                         _data_buffer: VecDeque::new(),
                         _thread_is_running: true,
                         _tx: tx,
-                        _last_send_time: Instant::now(),
+                        last_send_time: Instant::now(),
                         rx: rx2,
                     };
                     let mut data = [0; 1024 * 64];
@@ -208,21 +204,41 @@ pub fn start_update_thread(
                                     }
                                     Ok(size) => {
                                         if size > 0 {
-                                            let update_state = update_thread.lock().update_state(&mut connection, &mut *buffer_parser, &data[0..size]).await;
-                                            match &update_state {
-                                                Err(err) => {
-                                                    println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
-                                                    log::error!("run_update_thread::update_state: {err}");
-                                                }
-                                                Ok(()) => {
-                                                    let data = buffer_parser.get_picture_data();
-                                                    if data.is_some() {
-                                                        update_thread.lock().mouse_field = buffer_parser.get_mouse_fields();
-                                                        update_thread.lock().buffer_view.lock().set_reference_image(data);
+                                            let mut cur = 0;
+                                            while cur < size {
+                                                let next = if connection.baud_rate != 0 {
+                                                    let cur_time = Instant::now();
+                                                    let bytes_per_sec = connection.baud_rate / BITS_PER_BYTE;
+                                                    let elapsed_ms = cur_time.duration_since(connection.last_send_time).as_millis() as u32;
+                                                    let bytes_to_send = (bytes_per_sec.saturating_mul(elapsed_ms)) / 1000;
+                                                    if bytes_to_send > 0 {
+                                                        connection.last_send_time = cur_time;
                                                     }
+                                                    (cur + bytes_to_send as usize).min(size)
+                                                } else {
+                                                    size
+                                                };
+                                                if next > cur {
+                                                    let update_state = update_thread.lock().update_state(&mut connection, &mut *buffer_parser, &data[cur..next]).await;
+                                                    cur = next;
+                                                    match &update_state {
+                                                        Err(err) => {
+                                                            println(&update_thread, &mut buffer_parser, &format!("\n{err}\n"));
+                                                            log::error!("run_update_thread::update_state: {err}");
+                                                        }
+                                                        Ok(()) => {
+                                                            let data = buffer_parser.get_picture_data();
+                                                            if data.is_some() {
+                                                                update_thread.lock().mouse_field = buffer_parser.get_mouse_fields();
+                                                                update_thread.lock().buffer_view.lock().set_reference_image(data);
+                                                            }
+                                                        }
+                                                    }
+                                                    ctx.request_repaint();
+                                                } else {
+                                                    thread::sleep(std::time::Duration::from_millis(1));
                                                 }
                                             }
-                                            ctx.request_repaint();
                                         } else {
                                             thread::sleep(std::time::Duration::from_millis(20));
                                         }

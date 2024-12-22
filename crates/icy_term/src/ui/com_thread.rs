@@ -20,5 +20,5 @@ pub struct ConnectionThreadData {
     // used for baud rate emulation
     pub _data_buffer: VecDeque<u8>,
     pub baud_rate: u32,
-    pub _last_send_time: Instant,
+    pub last_send_time: Instant,
 }

@@ -399,7 +399,7 @@ impl MainWindow {
                     egui::Event::Key {
                         key, pressed: true, modifiers, physical_key, ..
                     } => {
-                        println!("Key: {key:?} {physical_key:?}");
+                        // println!("Key: {key:?} {physical_key:?}");
                         self.handle_key_press(ui, &response, key, modifiers);
                     }
                     _ => {}
