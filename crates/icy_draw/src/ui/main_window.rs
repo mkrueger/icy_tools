@@ -877,7 +877,11 @@ impl<'a> eframe::App for MainWindow<'a> {
                     }
                     self.commands[0].apply_key_bindings(&self.key_bindings.key_bindings);
                 }
-                super::Settings::save();
+                
+                if let Err(err) = super::Settings::save() {
+                    println!("Error saving settings: {}", err);
+                    log::error!("Error saving settings: {}", err);
+                }
             }
         }
 
