@@ -173,7 +173,7 @@ fn main() {
     }
 
     log::info!("Starting iCY TERM {}", *VERSION);
-
+    icy_net::websocket::init_websocket_providers();
     if let Err(err) = eframe::run_native(&DEFAULT_TITLE, native_options, Box::new(|cc| Ok(Box::new(MainWindow::new(cc, options))))) {
         log::error!("Error returned by run_native: {}", err);
     }
