@@ -124,6 +124,7 @@ fn main() {
         eprintln!("Failed to create log file");
     }
 
+    unsafe { SETTINGS.character_sets = CharacterSets::default(); }
     if let Ok(settings_file) = Settings::get_settings_file() {
         if settings_file.exists() {
             match Settings::load(&settings_file) {

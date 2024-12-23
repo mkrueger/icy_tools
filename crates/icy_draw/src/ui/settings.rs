@@ -98,9 +98,15 @@ impl KeyBindings {
     }
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CharacterSets {
     pub character_sets: Vec<CharSetMapping>,
+}
+
+impl Default for CharacterSets {
+    fn default() -> Self {
+        Self { character_sets: vec![CharSetMapping::default()] }
+    }
 }
 
 impl CharacterSets {
@@ -281,7 +287,7 @@ impl Settings {
 
         // Read the JSON contents of the file as an instance of `User`.
         let mut result: Settings = serde_json::from_reader(reader)?;
-
+        result.character_sets = CharacterSets::default();
         if let Ok(settings_file) = CharacterSets::get_character_sets_file() {
             if settings_file.exists() {
                 if let Ok(character_sets) = CharacterSets::load(&settings_file) {
