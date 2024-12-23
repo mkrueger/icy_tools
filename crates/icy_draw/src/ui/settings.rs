@@ -105,7 +105,9 @@ pub struct CharacterSets {
 
 impl Default for CharacterSets {
     fn default() -> Self {
-        Self { character_sets: vec![CharSetMapping::default()] }
+        Self {
+            character_sets: vec![CharSetMapping::default()],
+        }
     }
 }
 
