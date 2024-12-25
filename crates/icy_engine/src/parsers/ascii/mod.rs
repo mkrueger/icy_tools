@@ -1,6 +1,6 @@
 use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
 
-use super::BufferParser;
+use super::{BufferParser, TAB};
 use crate::{AttributedChar, Buffer, CallbackAction, Caret, EngineResult, UnicodeConverter, BEL, BS, CR, FF, LF};
 #[derive(Default)]
 pub struct Parser {}
@@ -41,6 +41,7 @@ impl BufferParser for Parser {
             FF => caret.ff(buf, current_layer),
             CR => caret.cr(buf),
             BS => caret.bs(buf, current_layer),
+            TAB => caret.tab_forward(buf),
             '\x7F' => caret.del(buf, current_layer),
             _ => buf.print_value(current_layer, caret, ch as u16),
         }

@@ -58,6 +58,7 @@ fn test_eol() {
     let (buf, _) = create_buffer(&mut Parser::default(), data);
     assert_eq!(2, buf.get_line_count());
 }
+
 /*
 #[test]
 fn test_ws_skip() {
@@ -119,4 +120,11 @@ fn test_url_scanner_multiple() {
 
     assert_eq!("https://github.com/mkrueger/icy_engine", hyperlinks[0].get_url(&buf));
     assert_eq!(Position::new(0, 2), hyperlinks[0].position);
+}
+
+#[test]
+fn test_tab() {
+    let data = b"\ta";
+    let (buf, _) = create_buffer(&mut Parser::default(), data);
+    assert_eq!(b'a', buf.get_char(Position::new(8, 0)).ch as u8);
 }

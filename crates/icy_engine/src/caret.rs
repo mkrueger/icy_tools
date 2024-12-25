@@ -1,3 +1,5 @@
+use crate::TextPane;
+
 use super::{Position, TextAttribute};
 
 #[derive(Clone)]
@@ -103,6 +105,11 @@ impl Caret {
 
     pub fn set_is_visible(&mut self, is_visible: bool) {
         self.is_visible = is_visible;
+    }
+
+    pub fn tab_forward(&mut self, buf: &mut crate::Buffer) {
+        let x = ((self.pos.x / 8 + 1) * 8).min(buf.get_width() - 1);
+        self.set_x_position(x);
     }
 }
 

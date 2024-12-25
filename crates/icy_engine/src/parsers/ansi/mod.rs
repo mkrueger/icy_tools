@@ -8,7 +8,7 @@ use std::{
 
 use self::sound::{AnsiMusic, MusicState};
 
-use super::BufferParser;
+use super::{BufferParser, TAB};
 use crate::{
     update_crc16, AttributedChar, AutoWrapMode, Buffer, CallbackAction, Caret, EngineResult, FontSelectionState, HyperLink, IceMode, MouseMode, OriginMode,
     ParserError, Position, TerminalScrolling, BEL, BS, CR, FF, LF,
@@ -1420,6 +1420,7 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::Update);
                 }
                 BEL => return Ok(CallbackAction::Beep),
+                TAB => caret.tab_forward(buf),
                 '\x7F' => {
                     caret.del(buf, current_layer);
                     return Ok(CallbackAction::Update);

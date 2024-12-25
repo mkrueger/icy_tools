@@ -27,6 +27,7 @@ pub const LF: char = '\n';
 pub const CR: char = '\r';
 pub const BS: char = '\x08';
 pub const FF: char = '\x0C';
+pub const TAB: char = '\t';
 
 #[derive(Debug, PartialEq)]
 pub enum CallbackAction {
