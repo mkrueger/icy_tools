@@ -63,7 +63,7 @@ pub struct MainWindow<'a> {
     // animations
     animation: Option<Arc<Mutex<Animator>>>,
 }
-const EXT_WHITE_LIST: [&str; 6] = ["seq", "diz", "nfo", "ice", "bbs", "ams"];
+const EXT_WHITE_LIST: [&str; 7] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus"];
 
 const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe", "com"];
 
