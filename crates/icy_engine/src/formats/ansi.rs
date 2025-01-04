@@ -6,6 +6,7 @@ use icy_sauce::char_caps::ContentType;
 use icy_sauce::SauceInformation;
 
 use crate::ansi::constants::COLOR_OFFSETS;
+use crate::ansi::MusicOption;
 use crate::{
     analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
     XTERM_256_PALETTE,
@@ -15,7 +16,9 @@ use crate::{Color, TextAttribute};
 use super::SaveOptions;
 
 #[derive(Default)]
-pub(crate) struct Ansi {}
+pub(crate) struct Ansi {
+    pub ansi_music: Option<MusicOption>,
+}
 
 impl OutputFormat for Ansi {
     fn get_file_extension(&self) -> &str {
@@ -60,6 +63,9 @@ impl OutputFormat for Ansi {
             result.load_sauce(sauce);
         }
         let mut parser = parsers::ansi::Parser::default();
+        if let Some(music) = self.ansi_music {
+            parser.ansi_music = music;
+        }
         parser.bs_is_ctrl_char = false;
         let (text, is_unicode) = crate::convert_ansi_to_utf8(data);
         if is_unicode {

@@ -29,7 +29,7 @@ github_release_check = "0.2.1"
 semver = { workspace = true }
 
 #sound
-rodio = { version = "0.20.1" , default-features = false, features = [] }
+rodio = { workspace = true }
 icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
 
@@ -42,7 +42,7 @@ gabi = "0.2.6"
 arboard = { version = "3.4.1" }
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 
 i18n-embed-fl = { workspace = true }
 # currently disabled because there needs to be a fix for wasm32:
@@ -66,7 +66,7 @@ rustls = { version = "0.22.2", features = [
  #   "dangerous_configuration"  # Allow invalid certs/etc.
 ]}
 webpki-roots = "0.26.0"
-getrandom =  { version = "0.2.10", features = ["js"] }
+getrandom =  { version = "0.2.15", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = { workspace = true }

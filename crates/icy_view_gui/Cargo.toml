@@ -15,7 +15,7 @@ glow = { workspace = true }
 memmap = "0.7.0"
 zip = { workspace = true }
 directories = { workspace = true }
-
+lazy_static = { workspace = true }
 
 log = { workspace = true }
 env_logger = "0.11"
@@ -35,3 +35,6 @@ image = { version = "0.25.1", features = ["jpeg", "png", "gif", "bmp"] }
 icy_sauce = { workspace = true }
 icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
+rodio = { workspace = true }
+getrandom =  { version = "0.2.15", features = ["js"] }
+web-time = "1.1.0"

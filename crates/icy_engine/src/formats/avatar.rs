@@ -158,14 +158,14 @@ mod tests {
 
     #[test]
     fn test_clear() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 12, b'X']).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 12, b'X'], None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(1, buf.get_real_buffer_width());
     }
 
     #[test]
     fn test_repeat() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X']).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X'], None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(5, buf.get_real_buffer_width());
         assert_eq!(b'X', buf.get_char((0, 0)).ch as u8);
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_zero_repeat() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[25, b'b', 0]).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[25, b'b', 0], None).unwrap();
         assert_eq!(0, buf.get_line_count());
         assert_eq!(0, buf.get_real_buffer_width());
     }
@@ -191,6 +191,7 @@ mod tests {
                 12, 22, 1, 8, 32, 88, 22, 1, 15, 88, 25, 32, 4, 88, 22, 1, 8, 88, 32, 32, 32, 22, 1, 3, 88, 88, 22, 1, 57, 88, 88, 88, 25, 88, 7, 22, 1, 9, 25,
                 88, 4, 22, 1, 25, 88, 88, 88, 88, 88, 88, 22, 1, 1, 25, 88, 13,
             ],
+            None,
         )
         .unwrap();
         assert_eq!(1, buf.get_line_count());
@@ -232,7 +233,7 @@ mod tests {
     }
 
     fn test_avt(data: &[u8]) {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None).unwrap();
         let converted = super::Avatar::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
 
         // more gentle output.

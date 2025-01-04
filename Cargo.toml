@@ -28,22 +28,23 @@ codepages = { git ="https://github.com/mkrueger/icy_board" }
 zip = { version = "2.2.0"}
 lazy_static = "1.4.0"
 semver = "1.0.20"
-thiserror = "2.0.8"
+thiserror = "2.0.9"
 clap = { version = "4.5.18", features = ["derive"] }
 log = "0.4.14"
 chrono = { version = "0.4.37", features = ["serde"] }
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive"] }
 walkdir = "2.5.0"
-i18n-embed = { version = "0.15.0", features = ["fluent-system", "desktop-requester"]} 
+i18n-embed = { version = "0.15.2", features = ["fluent-system", "desktop-requester"]} 
 i18n-embed-fl = "0.9.1"
 fluent-bundle = "0.15.2"
 rust-embed = "8.3.0"
 once_cell = "1.18.0"
 toml = "0.8.19"
-bstr = "1.10.0"
+bstr = "1.11.3"
 regex = "1.10.6"
 directories = "5.0.1"
 tokio = { version = "1.40.0", features = ["full"] }
+rodio = { version = "0.20.1" , default-features = false, features = [] }
 
 egui = "0.30.0"
 eframe = "0.30.0"

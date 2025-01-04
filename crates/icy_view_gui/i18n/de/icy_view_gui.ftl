@@ -49,3 +49,8 @@ toast-auto-scroll-off=Automatisches Scrollen aus
 toast-scroll-slow=Scrollgeschwindigkeit: langsam
 toast-scroll-medium=Scrollgeschwindigkeit: mittel
 toast-scroll-fast=Scrollgeschwindigkeit: schnell
+
+button-play_music=Musik spielen
+button-stop_music=Musik anhalten
+label-music_pause=Pause { $duration }
+label-music_note=Spiele { $freq }hz Dauer: { $duration }

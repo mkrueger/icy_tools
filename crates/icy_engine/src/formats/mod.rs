@@ -39,7 +39,9 @@ mod icy_draw;
 mod renegade;
 mod seq;
 
-use crate::{BitFont, Buffer, BufferFeatures, BufferParser, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS, SAUCE_FONT_NAMES};
+use crate::{
+    BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS, SAUCE_FONT_NAMES,
+};
 
 use super::{Position, TextAttribute};
 
@@ -194,8 +196,18 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
 
     for ch in text.chars() {
         let res = interpreter.print_char(result, 0, &mut caret, ch);
-        if !skip_errors && res.is_err() {
-            res?;
+        match res {
+            Ok(action) => match action {
+                CallbackAction::PlayMusic(ansi_music) => {
+                    result.ansi_music.push(ansi_music);
+                }
+                _ => {}
+            },
+            Err(err) => {
+                if !skip_errors {
+                    return Err(err);
+                }
+            }
         }
     }
 
@@ -340,7 +352,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_ansi(data: &[u8]) {
-        let buf = Buffer::from_bytes(&PathBuf::from("test.ans"), false, data).unwrap();
+        let buf = Buffer::from_bytes(&PathBuf::from("test.ans"), false, data, None).unwrap();
         let converted = super::Ansi::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
         // more gentle output.
         let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();

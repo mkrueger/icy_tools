@@ -11,6 +11,8 @@ use i18n_embed_fl::fl;
 use icy_sauce::char_caps::{CharCaps, ContentType};
 use icy_sauce::{SauceDataType, SauceInformation, SauceMetaInformation};
 
+use crate::ansi::sound::AnsiMusic;
+use crate::ansi::MusicOption;
 use crate::paint::HalfBlock;
 use crate::{
     parsers, EngineResult, Glyph, Layer, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane, UnicodeConverter,
@@ -236,6 +238,7 @@ pub struct Buffer {
     use_aspect_ratio: bool,
 
     pub tags: Vec<Tag>,
+    pub ansi_music: Vec<AnsiMusic>,
 }
 
 impl std::fmt::Debug for Buffer {
@@ -464,6 +467,7 @@ impl Buffer {
             use_letter_spacing: false,
             use_aspect_ratio: false,
             tags: Vec::new(),
+            ansi_music: Vec::new(),
         }
     }
 
@@ -757,7 +761,7 @@ impl Buffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn load_buffer(file_name: &Path, skip_errors: bool) -> EngineResult<Buffer> {
+    pub fn load_buffer(file_name: &Path, skip_errors: bool, ansi_music: Option<MusicOption>) -> EngineResult<Buffer> {
         let mut f = match File::open(file_name) {
             Ok(f) => f,
             Err(err) => {
@@ -769,7 +773,7 @@ impl Buffer {
             return Err(LoadingError::ReadFileError(format!("{err}")).into());
         }
 
-        Buffer::from_bytes(file_name, skip_errors, &bytes)
+        Buffer::from_bytes(file_name, skip_errors, &bytes, ansi_music)
     }
 
     /// .
@@ -799,10 +803,10 @@ impl Buffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn from_bytes(file_name: &Path, _skip_errors: bool, bytes: &[u8]) -> EngineResult<Buffer> {
+    pub fn from_bytes(file_name: &Path, _skip_errors: bool, bytes: &[u8], ansi_music: Option<MusicOption>) -> EngineResult<Buffer> {
         let ext = file_name.extension().unwrap_or_default().to_string_lossy();
         let mut len = bytes.len();
-        let sauce_data = match SauceInformation::read(bytes) {
+        let sauce_data: Option<SauceInformation> = match SauceInformation::read(bytes) {
             Ok(Some(sauce)) => {
                 len -= sauce.info_len();
                 Some(sauce)
@@ -821,7 +825,7 @@ impl Buffer {
             }
         }
 
-        crate::Ansi::default().load_buffer(file_name, &bytes[..len], sauce_data)
+        crate::Ansi { ansi_music }.load_buffer(file_name, &bytes[..len], sauce_data)
     }
 
     pub fn to_screenx(&self, x: i32) -> f64 {
@@ -1138,7 +1142,7 @@ mod tests {
         opt.save_sauce = true;
         let ansi_bytes = buf.to_bytes("ans", &opt).unwrap();
 
-        let loaded_buf = Buffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes).unwrap();
+        let loaded_buf = Buffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None).unwrap();
         assert_eq!(10, loaded_buf.get_width());
         assert_eq!(10, loaded_buf.layers[0].get_width());
     }

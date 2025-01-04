@@ -5,8 +5,12 @@ use eframe::{
 };
 
 use i18n_embed_fl::fl;
-use icy_engine::{parse_with_parser, rip, Buffer};
+use icy_engine::{
+    ansi::{sound::MusicAction, MusicOption},
+    parse_with_parser, rip, Buffer,
+};
 use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
+use music::SoundThread;
 
 use std::{
     env::current_dir,
@@ -22,7 +26,9 @@ use self::{
 
 mod file_view;
 mod help_dialog;
+mod music;
 pub mod options;
+pub mod rng;
 mod sauce_dialog;
 
 pub struct MainWindow<'a> {
@@ -52,10 +58,12 @@ pub struct MainWindow<'a> {
     is_closed: bool,
     pub opened_file: Option<FileEntry>,
     pub store_options: bool,
+    pub sound_thread: Arc<Mutex<SoundThread>>,
+
     // animations
     animation: Option<Arc<Mutex<Animator>>>,
 }
-const EXT_WHITE_LIST: [&str; 5] = ["seq", "diz", "nfo", "ice", "bbs"];
+const EXT_WHITE_LIST: [&str; 6] = ["seq", "diz", "nfo", "ice", "bbs", "ams"];
 
 const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe", "com"];
 
@@ -177,6 +185,7 @@ impl<'a> MainWindow<'a> {
             is_closed: false,
             animation: None,
             store_options: false,
+            sound_thread: Arc::new(Mutex::new(SoundThread::new())),
         }
     }
 
@@ -255,6 +264,46 @@ impl<'a> MainWindow<'a> {
             }
             return;
         } */
+
+        if !self.buffer_view.lock().get_buffer().ansi_music.is_empty() {
+            if let Ok(mut thread) = self.sound_thread.lock() {
+                thread.update_state();
+
+                ui.vertical(|ui| {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        if thread.is_playing() {
+                            if ui.button(fl!(crate::LANGUAGE_LOADER, "button-stop_music")).clicked() {
+                                thread.clear();
+                            }
+                            ui.separator();
+                            match &thread.cur_action {
+                                Some(action) => match action {
+                                    MusicAction::Pause(dur) => {
+                                        ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_pause", duration = dur));
+                                    }
+                                    MusicAction::PlayNote(freq, len, dotted) => {
+                                        ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_note", freq = freq, duration = len));
+                                    }
+                                    _ => {}
+                                },
+                                None => {
+                                    ui.label("No current action");
+                                }
+                            }
+                        } else {
+                            if ui.button(fl!(crate::LANGUAGE_LOADER, "button-play_music")).clicked() {
+                                for music in self.buffer_view.lock().get_buffer().ansi_music.iter().cloned() {
+                                    let _ = thread.play_music(music);
+                                }
+                            }
+                        }
+                    });
+                    ui.add_space(2.0);
+                });
+            }
+        }
 
         if let Some(img) = &self.retained_image {
             ScrollArea::both().show(ui, |ui| {
@@ -570,9 +619,14 @@ impl<'a> MainWindow<'a> {
                 })
                 || !EXT_BLACK_LIST.contains(&ext.as_str()) && !is_binary(entry)
             {
-                match entry.get_data(|path, data| Buffer::from_bytes(path, true, data)) {
+                match entry.get_data(|path, data| Buffer::from_bytes(path, true, data, Some(MusicOption::Both))) {
                     Ok(buf) => match buf {
                         Ok(buf) => {
+                            if let Ok(mut thread) = self.sound_thread.lock() {
+                                for music in buf.ansi_music.iter().cloned() {
+                                    let _ = thread.play_music(music);
+                                }
+                            }
                             self.buffer_view.lock().set_buffer(buf);
                             self.loaded_buffer = true;
                             self.in_scroll = true;

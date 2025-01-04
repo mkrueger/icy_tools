@@ -514,7 +514,7 @@ impl Animator {
                             return Err(mlua::Error::RuntimeError(format!("File not found {}", file)));
                         }
 
-                        if let Ok(buffer) = icy_engine::Buffer::load_buffer(&file_name, true) {
+                        if let Ok(buffer) = icy_engine::Buffer::load_buffer(&file_name, true, None) {
                             mlua::Result::Ok(LuaBuffer {
                                 caret: Caret::default(),
                                 buffer,

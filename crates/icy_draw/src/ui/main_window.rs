@@ -237,7 +237,7 @@ impl<'a> MainWindow<'a> {
             }
         }
 
-        match Buffer::from_bytes(path, true, data) {
+        match Buffer::from_bytes(path, true, data, None) {
             Ok(mut buf) => {
                 let id = self.create_id();
                 buf.is_terminal_buffer = false;

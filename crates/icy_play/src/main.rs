@@ -164,7 +164,7 @@ fn main() {
                 }
             },
             _ => {
-                let buffer = Buffer::load_buffer(&path, true);
+                let buffer = Buffer::load_buffer(&path, true, None);
                 if let Ok(buffer) = &buffer {
                     show_buffer(&mut io, buffer, true, args.utf8, &Terminal::Unknown, Vec::new()).unwrap();
                 }

@@ -37,6 +37,7 @@ icy_view_gui = { workspace = true }
 
 github_release_check = "0.2.1"
 semver = { workspace = true }
+rodio = { workspace = true }
 
 [build-dependencies]
 winres = "0.1"
