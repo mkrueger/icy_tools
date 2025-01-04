@@ -124,7 +124,6 @@ impl SoundThread {
             tx: tx2,
             music: VecDeque::new(),
             thread_is_running: true,
-            last_beep: Instant::now(),
         };
 
         if let Err(err) = std::thread::Builder::new().name("music_thread".to_string()).spawn(move || {
@@ -162,7 +161,6 @@ pub struct SoundBackgroundThreadData {
     thread_is_running: bool,
 
     music: VecDeque<SoundData>,
-    last_beep: Instant,
 }
 
 impl SoundBackgroundThreadData {
@@ -200,20 +198,6 @@ impl SoundBackgroundThreadData {
         }
     }
 
-    fn beep(&mut self) {
-        if self.last_beep.elapsed().as_millis() > 500 {
-            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-            let sink = rodio::Sink::try_new(&stream_handle).unwrap();
-            sink.set_volume(0.1);
-
-            let source = rodio::source::SineWave::new(880.);
-            sink.append(source);
-
-            thread::sleep(std::time::Duration::from_millis(200));
-        }
-        self.last_beep = Instant::now();
-    }
-
     fn play_music(&mut self, music: &AnsiMusic) {
         let _ = self.tx.send(SoundData::StartPlay);
         let mut i = 0;
@@ -237,7 +221,7 @@ impl SoundBackgroundThreadData {
                 }
                 MusicAction::PlayNote(freq, length, dotted) => {
                     let f = *freq;
-                    let mut duration = if *dotted { 420_000_i32 } else { 300_000_i32 } / *length;
+                    let mut duration = if *dotted { 360000_i32 } else { 240000_i32 } / *length;
                     let pause_length = match cur_style {
                         MusicStyle::Legato => 0,
                         MusicStyle::Staccato => duration / 4,

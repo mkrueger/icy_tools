@@ -40,7 +40,7 @@ mod renegade;
 mod seq;
 
 use crate::{
-    BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS, SAUCE_FONT_NAMES,
+    ansi::MusicOption, BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS, SAUCE_FONT_NAMES
 };
 
 use super::{Position, TextAttribute};
@@ -133,6 +133,18 @@ impl Default for SaveOptions {
     }
 }
 
+#[derive(Default)]
+pub struct LoadData {
+    sauce_opt: Option<SauceInformation>,
+    ansi_music: Option<MusicOption>
+}
+
+impl LoadData {
+    pub fn new(sauce_opt: Option<SauceInformation>, ansi_music: Option<MusicOption>) -> Self {
+        LoadData { sauce_opt, ansi_music }
+    }
+}
+
 pub trait OutputFormat: Send + Sync {
     fn get_file_extension(&self) -> &str;
 
@@ -158,7 +170,7 @@ pub trait OutputFormat: Send + Sync {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn load_buffer(&self, file_name: &Path, data: &[u8], sauce_opt: Option<SauceInformation>) -> anyhow::Result<crate::Buffer>;
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::Buffer>;
 }
 
 lazy_static::lazy_static! {

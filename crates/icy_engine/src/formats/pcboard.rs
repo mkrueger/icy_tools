@@ -1,11 +1,10 @@
 use std::path::Path;
 
 use codepages::tables::CP437_TO_UNICODE;
-use icy_sauce::SauceInformation;
 
 use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
 
-use super::SaveOptions;
+use super::{LoadData, SaveOptions};
 
 pub(crate) const HEX_TABLE: &[u8; 16] = b"0123456789ABCDEF";
 
@@ -96,11 +95,12 @@ impl OutputFormat for PCBoard {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], sauce_opt: Option<SauceInformation>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
-        if let Some(sauce) = sauce_opt {
+        let load_data = load_data_opt.unwrap_or_default();
+        if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
 

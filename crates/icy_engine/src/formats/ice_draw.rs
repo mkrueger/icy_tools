@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use icy_sauce::SauceInformation;
-
-use super::{SaveOptions, TextAttribute};
+use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
     analyze_font_usage, guess_font_name, AttributedChar, BitFont, Buffer, EngineResult, IceMode, LoadingError, OutputFormat, Palette, Position, SavingError,
     Size, TextPane,
@@ -122,7 +120,7 @@ impl OutputFormat for IceDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], _sauce_opt: Option<SauceInformation>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
         result.ice_mode = IceMode::Ice;
         result.is_terminal_buffer = false;

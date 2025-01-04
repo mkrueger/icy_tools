@@ -10,6 +10,7 @@ pub enum MusicState {
     Pause(i32),
     SetOctave,
     Note(usize, i32),
+    PlayNoteByNumber(usize),
     SetLength(i32),
 }
 
@@ -151,10 +152,29 @@ impl Parser {
                         x = x * 3 / 2;
                         self.state = EngineState::ParseAnsiMusic(MusicState::SetLength(x));
                     } else {
+                        self.state = EngineState::ParseAnsiMusic(MusicState::Default);
                         self.cur_length = x.clamp(1, 64);
                         return Ok(self.parse_default_ansi_music(ch));
                     }
                 }
+
+                MusicState::PlayNoteByNumber(x) => {
+                    if ch.is_ascii_digit() {
+                        let x = parse_next_number(x as i32, ch as u8) as usize;
+                        self.state = EngineState::ParseAnsiMusic(MusicState::PlayNoteByNumber(x));
+                    } else {
+                        self.state = EngineState::ParseAnsiMusic(MusicState::Default);
+                        let len = self.cur_length;
+                        self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::PlayNote(
+                            FREQ[x],
+                            self.cur_tempo * len / 4,
+                            false
+                        ));
+                        self.dotted_note = false;
+                    return Ok(self.parse_default_ansi_music(ch));
+                    }
+                }
+
                 MusicState::Pause(x) => {
                     let mut x = x;
                     if ch.is_ascii_digit() {
@@ -164,6 +184,7 @@ impl Parser {
                         x = x * 3 / 2;
                         self.state = EngineState::ParseAnsiMusic(MusicState::Pause(x));
                     } else {
+                        self.state = EngineState::ParseAnsiMusic(MusicState::Default);
                         let pause = x.clamp(1, 64);
                         self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::Pause(self.cur_tempo * pause));
                         return Ok(self.parse_default_ansi_music(ch));
@@ -204,6 +225,7 @@ impl Parser {
             'A' => self.state = EngineState::ParseAnsiMusic(MusicState::Note(9, 0)),
             'B' => self.state = EngineState::ParseAnsiMusic(MusicState::Note(11, 0)),
             'M' => self.state = EngineState::ParseAnsiMusic(MusicState::ParseMusicStyle),
+            'N' => self.state = EngineState::ParseAnsiMusic(MusicState::PlayNoteByNumber(0)),
             '<' => {
                 if self.cur_octave > 0 {
                     self.cur_octave -= 1;

@@ -267,7 +267,7 @@ impl<'a> MainWindow<'a> {
 
         if !self.buffer_view.lock().get_buffer().ansi_music.is_empty() {
             if let Ok(mut thread) = self.sound_thread.lock() {
-                thread.update_state();
+                let _ = thread.update_state();
 
                 ui.vertical(|ui| {
                     ui.add_space(8.0);
@@ -283,7 +283,7 @@ impl<'a> MainWindow<'a> {
                                     MusicAction::Pause(dur) => {
                                         ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_pause", duration = dur));
                                     }
-                                    MusicAction::PlayNote(freq, len, dotted) => {
+                                    MusicAction::PlayNote(freq, len, _dotted) => {
                                         ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_note", freq = freq, duration = len));
                                     }
                                     _ => {}
@@ -517,8 +517,13 @@ impl<'a> MainWindow<'a> {
 
     fn view_selected(&mut self, file: usize, force_load: bool) {
         if file >= self.file_view.files.len() {
-            return;
+            return;        
         }
+
+        if let Ok(thread) = self.sound_thread.lock() {
+            thread.clear();
+        }
+
         self.animation = None;
         self.last_scroll_pos = -1.0;
         let entry = &self.file_view.files[file];

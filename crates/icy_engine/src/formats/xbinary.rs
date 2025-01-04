@@ -1,13 +1,10 @@
 use std::path::Path;
-
-use icy_sauce::SauceInformation;
-
 use crate::{
     analyze_font_usage, guess_font_name, AttributedChar, BitFont, Buffer, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette,
     PaletteMode, Position, SavingError, TextPane,
 };
 
-use super::{SaveOptions, TextAttribute};
+use super::{LoadData, SaveOptions, TextAttribute};
 
 const XBIN_HEADER_SIZE: usize = 11;
 const XBIN_PALETTE_LENGTH: usize = 3 * 16;
@@ -156,11 +153,12 @@ impl OutputFormat for XBin {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], sauce_opt: Option<SauceInformation>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
-        if let Some(sauce) = sauce_opt {
+        let load_data = load_data_opt.unwrap_or_default();
+        if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
 

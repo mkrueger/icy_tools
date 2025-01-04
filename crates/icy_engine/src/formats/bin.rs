@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use icy_sauce::SauceInformation;
-
-use super::{Position, SaveOptions, TextAttribute};
+use super::{LoadData, Position, SaveOptions, TextAttribute};
 use crate::{AttributedChar, Buffer, BufferFeatures, EngineResult, OutputFormat, TextPane};
 
 #[derive(Default)]
@@ -37,11 +35,12 @@ impl OutputFormat for Bin {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], sauce_opt: Option<SauceInformation>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((160, 25));
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
-        if let Some(sauce) = sauce_opt {
+        let load_data = load_data_opt.unwrap_or_default();
+        if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
         let mut o = 0;

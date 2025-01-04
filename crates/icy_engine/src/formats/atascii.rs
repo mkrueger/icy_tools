@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use icy_sauce::SauceInformation;
-
-use super::SaveOptions;
+use super::{LoadData, SaveOptions};
 use crate::{
     atascii, BitFont, Buffer, BufferFeatures, BufferParser, Caret, EngineResult, OutputFormat, Palette, Position, TextPane, ATARI, ATARI_DEFAULT_PALETTE,
 };
@@ -62,7 +60,7 @@ impl OutputFormat for Atascii {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], sauce_opt: Option<SauceInformation>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result: Buffer = Buffer::new((40, 24));
         result.clear_font_table();
         let mut font = BitFont::from_bytes("", ATARI).unwrap();
@@ -73,7 +71,8 @@ impl OutputFormat for Atascii {
         result.buffer_type = crate::BufferType::Atascii;
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
-        if let Some(sauce) = sauce_opt {
+        let load_data = load_data_opt.unwrap_or_default();
+        if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
 

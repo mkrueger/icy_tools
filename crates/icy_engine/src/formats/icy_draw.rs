@@ -6,6 +6,8 @@ use regex::Regex;
 
 use crate::{attribute, BitFont, Buffer, Color, EngineResult, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextPane};
 
+use super::LoadData;
+
 mod constants {
     pub const ICD_VERSION: u16 = 0;
     pub const ICED_HEADER_SIZE: usize = 19;
@@ -387,7 +389,7 @@ impl OutputFormat for IcyDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], _sauce_opt: Option<SauceInformation>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());

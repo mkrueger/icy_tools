@@ -3,21 +3,18 @@ use std::path::Path;
 
 use codepages::tables::CP437_TO_UNICODE;
 use icy_sauce::char_caps::ContentType;
-use icy_sauce::SauceInformation;
 
 use crate::ansi::constants::COLOR_OFFSETS;
-use crate::ansi::MusicOption;
 use crate::{
     analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
     XTERM_256_PALETTE,
 };
 use crate::{Color, TextAttribute};
 
-use super::SaveOptions;
+use super::{LoadData, SaveOptions};
 
 #[derive(Default)]
 pub(crate) struct Ansi {
-    pub ansi_music: Option<MusicOption>,
 }
 
 impl OutputFormat for Ansi {
@@ -55,15 +52,16 @@ impl OutputFormat for Ansi {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], sauce_opt: Option<SauceInformation>) -> anyhow::Result<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::Buffer> {
         let mut result: Buffer = Buffer::new((80, 25));
+        let load_data = load_data_opt.unwrap_or_default();
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
-        if let Some(sauce) = sauce_opt {
+        if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
         let mut parser = parsers::ansi::Parser::default();
-        if let Some(music) = self.ansi_music {
+        if let Some(music) = load_data.ansi_music {
             parser.ansi_music = music;
         }
         parser.bs_is_ctrl_char = false;
