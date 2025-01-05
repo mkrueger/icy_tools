@@ -10,7 +10,11 @@ use wasm_thread as thread;
 
 use crate::rng::Rng;
 use icy_engine::ansi::sound::{AnsiMusic, MusicAction, MusicStyle};
-use rodio::OutputStream;
+use rodio::{
+    cpal::SampleRate,
+    source::{Function, SignalGenerator},
+    OutputStream, Source,
+};
 use web_time::{Duration, Instant};
 
 /// Data that is sent to the connection thread
@@ -204,8 +208,8 @@ impl SoundBackgroundThreadData {
         let mut cur_style = MusicStyle::Normal;
 
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink = rodio::Sink::try_new(&stream_handle).unwrap();
-        sink.set_volume(0.1);
+
+        let sample_rate = SampleRate(48000);
 
         while i < music.music_actions.len() {
             let act = &music.music_actions[i];
@@ -214,35 +218,29 @@ impl SoundBackgroundThreadData {
                 break;
             }
             let _ = self.tx.send(SoundData::CurAction(act.clone()));
+            let duration = act.get_duration();
 
             match act {
                 MusicAction::SetStyle(style) => {
                     cur_style = *style;
                 }
-                MusicAction::PlayNote(freq, length, dotted) => {
+                MusicAction::PlayNote(freq, _length, _dotted) => {
                     let f = *freq;
-                    let mut duration = if *dotted { 360000_i32 } else { 240000_i32 } / *length;
-                    let pause_length = match cur_style {
-                        MusicStyle::Legato => 0,
-                        MusicStyle::Staccato => duration / 4,
-                        _ => duration / 8,
-                    };
-                    duration -= pause_length;
-                    {
-                        let source = rodio::source::SineWave::new(f);
-                        sink.append(source);
-                        sink.play();
-                        thread::sleep(std::time::Duration::from_millis(duration as u64));
-                        sink.clear();
+                    let pause_length = cur_style.get_pause_length(duration);
+                    if let Err(err) = stream_handle.play_raw(
+                        SignalGenerator::new(sample_rate, f, Function::Square)
+                            .amplify(0.1)
+                            .take_duration(std::time::Duration::from_millis(duration as u64 - pause_length as u64)),
+                    ) {
+                        log::error!("Error in playing note: {}", err);
+                        break;
                     }
-                    thread::sleep(std::time::Duration::from_millis(pause_length as u64));
                 }
-                MusicAction::Pause(length) => {
-                    let duration = 2 * 250_000 / length;
-                    thread::sleep(std::time::Duration::from_millis(duration as u64));
-                }
+                MusicAction::Pause(_) => {}
             }
+            thread::sleep(std::time::Duration::from_millis(duration as u64));
         }
+
         let _ = self.tx.send(SoundData::StopPlay);
     }
 }

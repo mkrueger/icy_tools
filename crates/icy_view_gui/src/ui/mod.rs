@@ -517,7 +517,7 @@ impl<'a> MainWindow<'a> {
 
     fn view_selected(&mut self, file: usize, force_load: bool) {
         if file >= self.file_view.files.len() {
-            return;        
+            return;
         }
 
         if let Ok(thread) = self.sound_thread.lock() {

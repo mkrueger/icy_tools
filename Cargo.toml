@@ -44,7 +44,7 @@ bstr = "1.11.3"
 regex = "1.10.6"
 directories = "5.0.1"
 tokio = { version = "1.40.0", features = ["full"] }
-rodio = { version = "0.20.1" , default-features = false, features = [] }
+rodio = { version = "0.20.1" }
 
 egui = "0.30.0"
 eframe = "0.30.0"

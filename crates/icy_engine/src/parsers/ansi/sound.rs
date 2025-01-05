@@ -23,11 +23,37 @@ pub enum MusicStyle {
     Staccato,
 }
 
+impl MusicStyle {
+    pub fn get_pause_length(&self, duration: i32) -> i32 {
+        match self {
+            MusicStyle::Legato => 0,
+            MusicStyle::Staccato => duration / 4,
+            _ => duration / 8,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MusicAction {
     PlayNote(f32, i32, bool), // freq / note length / dotted
     Pause(i32),
     SetStyle(MusicStyle),
+}
+
+impl MusicAction {
+    pub fn get_duration(&self) -> i32 {
+        match self {
+            MusicAction::PlayNote(_, len, dotted) => {
+                if *dotted {
+                    360000 / *len
+                } else {
+                    240000 / *len
+                }
+            }
+            MusicAction::Pause(len) => 240000 / *len,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -165,13 +191,13 @@ impl Parser {
                     } else {
                         self.state = EngineState::ParseAnsiMusic(MusicState::Default);
                         let len = self.cur_length;
-                        self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::PlayNote(
-                            FREQ[x],
-                            self.cur_tempo * len / 4,
-                            false
-                        ));
+                        self.cur_music
+                            .as_mut()
+                            .unwrap()
+                            .music_actions
+                            .push(MusicAction::PlayNote(FREQ[x], self.cur_tempo * len / 4, false));
                         self.dotted_note = false;
-                    return Ok(self.parse_default_ansi_music(ch));
+                        return Ok(self.parse_default_ansi_music(ch));
                     }
                 }
 

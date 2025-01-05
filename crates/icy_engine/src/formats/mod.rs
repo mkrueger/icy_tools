@@ -40,7 +40,8 @@ mod renegade;
 mod seq;
 
 use crate::{
-    ansi::MusicOption, BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS, SAUCE_FONT_NAMES
+    ansi::MusicOption, BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS,
+    SAUCE_FONT_NAMES,
 };
 
 use super::{Position, TextAttribute};
@@ -136,7 +137,7 @@ impl Default for SaveOptions {
 #[derive(Default)]
 pub struct LoadData {
     sauce_opt: Option<SauceInformation>,
-    ansi_music: Option<MusicOption>
+    ansi_music: Option<MusicOption>,
 }
 
 impl LoadData {

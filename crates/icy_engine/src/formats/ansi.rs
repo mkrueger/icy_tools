@@ -14,8 +14,7 @@ use crate::{Color, TextAttribute};
 use super::{LoadData, SaveOptions};
 
 #[derive(Default)]
-pub(crate) struct Ansi {
-}
+pub(crate) struct Ansi {}
 
 impl OutputFormat for Ansi {
     fn get_file_extension(&self) -> &str {

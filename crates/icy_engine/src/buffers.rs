@@ -15,7 +15,8 @@ use crate::ansi::sound::AnsiMusic;
 use crate::ansi::MusicOption;
 use crate::paint::HalfBlock;
 use crate::{
-    parsers, EngineResult, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane, UnicodeConverter, FORMATS
+    parsers, EngineResult, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    UnicodeConverter, FORMATS,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
@@ -820,7 +821,7 @@ impl Buffer {
         let ext = ext.to_ascii_lowercase();
         for fmt in &*FORMATS {
             if fmt.get_file_extension() == ext || fmt.get_alt_extensions().contains(&ext) {
-                return fmt.load_buffer(file_name, &bytes[..len],  Some(LoadData::new(sauce_data, ansi_music)));
+                return fmt.load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music)));
             }
         }
 

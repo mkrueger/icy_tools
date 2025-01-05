@@ -1,8 +1,8 @@
-use std::path::Path;
 use crate::{
     analyze_font_usage, guess_font_name, AttributedChar, BitFont, Buffer, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette,
     PaletteMode, Position, SavingError, TextPane,
 };
+use std::path::Path;
 
 use super::{LoadData, SaveOptions, TextAttribute};
 
