@@ -191,11 +191,12 @@ impl Parser {
                     } else {
                         self.state = EngineState::ParseAnsiMusic(MusicState::Default);
                         let len = self.cur_length;
+                        let x = x.clamp(0, FREQ.len() - 1);
                         self.cur_music
                             .as_mut()
                             .unwrap()
                             .music_actions
-                            .push(MusicAction::PlayNote(FREQ[x], self.cur_tempo * len / 4, false));
+                            .push(MusicAction::PlayNote(FREQ[x], self.cur_tempo * len, false));
                         self.dotted_note = false;
                         return Ok(self.parse_default_ansi_music(ch));
                     }
