@@ -1,18 +1,14 @@
 use directories::UserDirs;
 use eframe::{
-    egui::{self, Image, Layout, RichText, Sense, TopBottomPanel, WidgetText},
+    egui::{self, Layout, RichText, Sense, TopBottomPanel, WidgetText},
     epaint::{FontFamily, FontId, Rounding},
 };
 use egui::{ScrollArea, TextEdit, Ui};
 use i18n_embed_fl::fl;
-use icy_sauce::SauceInformation;
 
-use std::{
-    env,
-    fs::{self, File},
-    io::{Error, Read},
-    path::{Path, PathBuf},
-};
+use std::{env, path::PathBuf};
+
+use crate::{Item, ItemFolder};
 
 use super::options::{Options, ScrollSpeed};
 
@@ -27,74 +23,6 @@ pub enum Message {
     ShowHelpDialog,
     ChangeScrollSpeed,
 }
-
-#[derive(Clone)]
-pub struct FileEntry {
-    pub file_info: FileInfo,
-    pub file_data: Option<Vec<u8>>,
-    pub read_sauce: bool,
-    pub sauce: Option<SauceInformation>,
-}
-
-impl FileEntry {
-    pub fn get_data<T>(&self, func: fn(&PathBuf, &[u8]) -> T) -> anyhow::Result<T> {
-        if let Some(data) = &self.file_data {
-            return Ok(func(&self.file_info.path, data));
-        }
-
-        let file = File::open(&self.file_info.path)?;
-        let mmap = unsafe { memmap::MmapOptions::new().map(&file)? };
-        Ok(func(&self.file_info.path, &mmap))
-    }
-
-    pub fn read_image<'a>(&self, func: fn(&PathBuf, Vec<u8>) -> Image<'a>) -> anyhow::Result<Image<'a>> {
-        let path = self.file_info.clone();
-        if let Some(data) = &self.file_data {
-            let data = data.clone();
-            Ok(func(&path.path, data))
-        } else {
-            let data = fs::read(&path.path)?;
-            Ok(func(&path.path, data))
-        }
-    }
-
-    pub fn is_file(&self) -> bool {
-        self.file_data.is_some() || !self.file_info.dir
-    }
-
-    fn load_sauce(&mut self) {
-        if self.read_sauce {
-            return;
-        }
-        self.read_sauce = true;
-
-        if let Ok(Ok(Some(data))) = self.get_data(|_, data| SauceInformation::read(data)) {
-            self.sauce = Some(data);
-        }
-    }
-
-    pub(crate) fn is_dir(&self) -> bool {
-        self.file_info.dir
-    }
-
-    fn is_dir_or_archive(&self) -> bool {
-        if let Some(ext) = self.file_info.path.extension() {
-            if ext.to_string_lossy().to_ascii_lowercase() == "zip" {
-                return true;
-            }
-        }
-
-        self.is_dir()
-    }
-
-    pub(crate) fn get_sauce(&self) -> Option<SauceInformation> {
-        if !self.read_sauce {
-            return None;
-        }
-        self.sauce.clone()
-    }
-}
-
 pub struct FileView {
     /// Current opened path.
     path: PathBuf,
@@ -102,7 +30,8 @@ pub struct FileView {
     pub selected_file: Option<usize>,
     pub scroll_pos: Option<usize>,
     /// Files in directory.
-    pub files: Vec<FileEntry>,
+    pub parents: Vec<Box<dyn Item>>,
+    pub files: Vec<Box<dyn Item>>,
     pub upgrade_version: Option<String>,
 
     pub options: super::options::Options,
@@ -131,13 +60,14 @@ impl FileView {
             pre_select_file = Some(path.file_name().unwrap().to_string_lossy().to_string());
             path.pop();
         }
-
+        let folder = ItemFolder::new(path.clone());
         Self {
             path,
             selected_file: None,
             pre_select_file,
             scroll_pos: None,
-            files: Vec::new(),
+            files: folder.get_subitems().unwrap_or_default(),
+            parents: vec![Box::new(folder)],
             filter: String::new(),
             options,
             upgrade_version: None,
@@ -263,23 +193,7 @@ impl FileView {
             if filter.is_empty() {
                 return true;
             }
-            if let Some(sauce) = &p.sauce {
-                if sauce.title().to_string().to_lowercase().contains(&filter)
-                /*    || sauce
-                    .group
-                    .to_string()
-                    .to_lowercase()
-                    .contains(&filter)
-                || sauce
-                    .author
-                    .to_string()
-                    .to_lowercase()
-                    .contains(&filter)*/
-                {
-                    return true;
-                }
-            }
-            p.file_info.path.to_string_lossy().to_lowercase().contains(&filter)
+            p.get_label().contains(&filter)
         });
 
         let mut indices = Vec::new();
@@ -300,14 +214,13 @@ impl FileView {
                 }
 
                 let label = if !ui.is_rect_visible(rect) {
-                    get_file_name(&entry.file_info.path).to_string()
+                    entry.get_label()
                 } else {
-                    match entry.is_dir_or_archive() {
-                        true => "🗀 ",
-                        false => "🗋 ",
+                    if let Some(icon) = entry.get_icon() {
+                        format!("{} {}", icon, entry.get_label())
+                    } else {
+                        entry.get_label()
                     }
-                    .to_string()
-                        + get_file_name(&entry.file_info.path)
                 };
 
                 let font_id = FontId::new(14.0, FontFamily::Proportional);
@@ -316,8 +229,7 @@ impl FileView {
                 ui.painter()
                     .galley_with_override_text_color(egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect).min, galley, text_color);
                 if response.hovered() {
-                    entry.load_sauce();
-                    if let Some(sauce) = &entry.sauce {
+                    if let Some(sauce) = &entry.get_sauce() {
                         response = response.on_hover_ui(|ui| {
                             egui::Grid::new("some_unique_id").num_columns(2).spacing([4.0, 2.0]).show(ui, |ui| {
                                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
@@ -468,172 +380,17 @@ impl FileView {
 
     pub fn refresh(&mut self) -> Option<Message> {
         self.files.clear();
-
-        if self.path.is_file() {
-            match fs::File::open(&self.path) {
-                Ok(file) => match zip::ZipArchive::new(file) {
-                    Ok(mut archive) => {
-                        for i in 0..archive.len() {
-                            match archive.by_index(i) {
-                                Ok(mut file) => {
-                                    let mut data = Vec::new();
-                                    file.read_to_end(&mut data).unwrap_or_default();
-
-                                    let entry = FileEntry {
-                                        file_info: FileInfo {
-                                            path: file.enclosed_name().unwrap_or(PathBuf::from("unknown")).to_path_buf(),
-                                            dir: file.is_dir(),
-                                        },
-                                        file_data: Some(data),
-                                        read_sauce: false,
-                                        sauce: None,
-                                    };
-                                    self.files.push(entry);
-                                }
-                                Err(err) => {
-                                    log::error!("Error reading zip file: {}", err);
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        log::error!("Error reading zip archive: {}", err);
-                    }
-                },
-                Err(err) => {
-                    log::error!("Failed to open zip file: {}", err);
-                }
-            }
-        } else {
-            let folders = read_folder(&self.path);
-            match folders {
-                Ok(folders) => {
-                    self.files = folders
-                        .iter()
-                        .map(|f| FileEntry {
-                            file_info: f.clone(),
-                            read_sauce: false,
-                            sauce: None,
-                            file_data: None,
-                        })
-                        .collect();
-                }
-                Err(err) => {
-                    log::error!("Failed to read folder: {}", err);
-                }
-            }
+        if let Some(items) = self.parents.last().unwrap().get_subitems() {
+            self.files = items;
         }
         self.selected_file = None;
-
         if let Some(file) = &self.pre_select_file {
             for (i, entry) in self.files.iter().enumerate() {
-                if let Some(file_name) = entry.file_info.path.file_name() {
-                    if file_name.to_string_lossy() == *file {
-                        return Message::Select(i, false).into();
-                    }
+                if entry.get_label() == *file {
+                    return Message::Select(i, false).into();
                 }
             }
         }
         None
-    }
-}
-
-#[cfg(windows)]
-fn is_drive_root(path: &Path) -> bool {
-    path.to_str()
-        .filter(|path| &path[1..] == ":\\")
-        .and_then(|path| path.chars().next())
-        .map_or(false, |ch| ch.is_ascii_uppercase())
-}
-
-fn get_file_name(path: &Path) -> &str {
-    #[cfg(windows)]
-    if path.is_dir() && is_drive_root(path) {
-        return path.to_str().unwrap_or_default();
-    }
-    path.file_name().and_then(|name| name.to_str()).unwrap_or_default()
-}
-
-#[cfg(windows)]
-extern "C" {
-    pub fn GetLogicalDrives() -> u32;
-}
-
-#[cfg(windows)]
-fn get_drives() -> Vec<PathBuf> {
-    let mut drive_names = Vec::new();
-    let mut drives = unsafe { GetLogicalDrives() };
-    let mut letter = b'A';
-    while drives > 0 {
-        if drives & 1 != 0 {
-            drive_names.push(format!("{}:\\", letter as char).into());
-        }
-        drives >>= 1;
-        letter += 1;
-    }
-    drive_names
-}
-
-fn read_folder(path: &Path) -> Result<Vec<FileInfo>, Error> {
-    fs::read_dir(path).map(|entries| {
-        let mut file_infos: Vec<FileInfo> = entries
-            .filter_map(|result| result.ok())
-            .filter_map(|entry| {
-                let info = FileInfo::new(entry.path());
-                if !info.dir {
-                    // Do not show system files.
-                    if !info.path.is_file() {
-                        return None;
-                    }
-                }
-
-                #[cfg(unix)]
-                if info.get_file_name().starts_with('.') {
-                    return None;
-                }
-
-                Some(info)
-            })
-            .collect();
-
-        // Sort keeping folders before files.
-        file_infos.sort_by(|a, b| match a.dir == b.dir {
-            true => a.path.file_name().cmp(&b.path.file_name()),
-            false => b.dir.cmp(&a.dir),
-        });
-
-        #[cfg(windows)]
-        let file_infos = {
-            let drives = get_drives();
-            let mut infos = Vec::with_capacity(drives.len() + file_infos.len());
-            for drive in drives {
-                infos.push(FileInfo { path: drive, dir: true });
-            }
-            infos.append(&mut file_infos);
-            infos
-        };
-
-        file_infos
-    })
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FileInfo {
-    pub path: PathBuf,
-    pub dir: bool,
-}
-
-impl FileInfo {
-    pub fn new(path: PathBuf) -> Self {
-        let dir = path.is_dir();
-        Self { path, dir }
-    }
-
-    pub fn get_file_name(&self) -> &str {
-        #[cfg(windows)]
-        if self.dir && is_drive_root(&self.path) {
-            return self.path.to_str().unwrap_or_default();
-        }
-        self.path.file_name().and_then(|name| name.to_str()).unwrap_or_default()
     }
 }

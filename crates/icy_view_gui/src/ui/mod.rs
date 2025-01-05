@@ -19,8 +19,10 @@ use std::{
     time::Duration,
 };
 
+use crate::ItemType;
+
 use self::{
-    file_view::{FileEntry, FileView, Message},
+    file_view::{FileView, Message},
     options::{Options, ScrollSpeed},
 };
 
@@ -56,16 +58,16 @@ pub struct MainWindow<'a> {
 
     toasts: egui_notify::Toasts,
     is_closed: bool,
-    pub opened_file: Option<FileEntry>,
+    pub opened_file: Option<usize>,
     pub store_options: bool,
     pub sound_thread: Arc<Mutex<SoundThread>>,
 
     // animations
     animation: Option<Arc<Mutex<Animator>>>,
 }
-const EXT_WHITE_LIST: [&str; 7] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus"];
-
-const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe", "com"];
+pub const EXT_WHITE_LIST: [&str; 7] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus"];
+pub const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe", "com"];
+pub const EXT_IMAGE_LIST: [&str; 5] = ["png", "jpg", "jpeg", "gif", "bmp"];
 
 impl<'a> App for MainWindow<'a> {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
@@ -418,15 +420,17 @@ impl<'a> MainWindow<'a> {
         } else {
             match self.file_view.selected_file {
                 Some(file) => {
-                    if self.file_view.files[file].is_dir() {
+                    if self.file_view.files[file].is_folder() {
                         return;
                     }
                     ui.add_space(ui.available_height() / 3.0);
                     ui.vertical_centered(|ui| {
                         if let Some(idx) = self.file_view.selected_file {
-                            if let Some(file_name) = self.file_view.files[idx].file_info.path.file_name() {
-                                ui.heading(fl!(crate::LANGUAGE_LOADER, "message-file-not-supported", name = file_name.to_string_lossy()));
-                            }
+                            ui.heading(fl!(
+                                crate::LANGUAGE_LOADER,
+                                "message-file-not-supported",
+                                name = self.file_view.files[idx].get_label()
+                            ));
                         }
 
                         ui.add_space(8.0);
@@ -497,22 +501,20 @@ impl<'a> MainWindow<'a> {
             return false;
         }
 
-        let open_path = if self.file_view.files[file].is_file() {
-            if let Some(ext) = self.file_view.files[file].file_info.path.extension() {
-                ext == "zip"
-            } else {
-                false
+        if let Some(items) = self.file_view.files[file].get_subitems() {
+            {
+                self.file_view.set_path(self.file_view.files[file].get_file_path());
+                let mut d = self.file_view.files.drain(file..file + 1);
+                self.file_view.parents.push(d.next().unwrap());
             }
-        } else {
-            true
-        };
-
-        if open_path {
+            self.file_view.files = items;
+            self.file_view.selected_file = None;
+            self.file_view.scroll_pos = None;
             self.reset_state();
-            self.file_view.set_path(self.file_view.files[file].file_info.path.clone());
+            true
+        } else {
+            false
         }
-
-        open_path
     }
 
     fn view_selected(&mut self, file: usize, force_load: bool) {
@@ -527,105 +529,84 @@ impl<'a> MainWindow<'a> {
         self.animation = None;
         self.last_scroll_pos = -1.0;
         let entry = &self.file_view.files[file];
-        if entry.is_file() {
-            let ext = if let Some(ext) = entry.file_info.path.extension() {
-                let ext2 = ext.to_ascii_lowercase();
-                ext2.to_str().unwrap_or_default().to_string()
-            } else {
-                String::new()
-            };
-            if ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" || ext == "bmp" {
-                let image = entry
-                    .read_image(|path: &PathBuf, data| {
-                        let file_name = path.to_string_lossy().to_string();
-                        let img = Image::from_bytes(file_name, data);
-                        img.show_loading_spinner(true)
-                    })
-                    .unwrap();
-                self.retained_image = Some(image);
-                return;
-            }
-            /*
-            if ext == "svg" {
-                self.image_loading_thread = Some(entry.read_image(|path, data| egui_extras::RetainedImage::from_svg_bytes(path.to_string_lossy(), data)));
-                return;
-            }*/
-            if ext == "icyanim" {
-                let anim = entry.get_data(|path, data| match String::from_utf8(data.to_vec()) {
-                    Ok(data) => {
-                        let parent = path.parent().map(|path| path.to_path_buf());
-                        let anim = Animator::run(&parent, data);
-                        anim.lock().unwrap().set_is_loop(true);
-                        anim.lock().unwrap().set_is_playing(true);
-                        Ok(anim)
-                    }
-                    Err(err) => {
-                        log::error!("Error while parsing icyanim file: {err}");
-                        Err(anyhow::anyhow!("Error while parsing icyanim file: {err}"))
-                    }
-                });
-                match anim {
-                    Ok(Ok(anim)) => {
-                        anim.lock().unwrap().start_playback(self.buffer_view.clone());
-                        self.animation = Some(anim);
-                        return;
-                    }
-                    Ok(Err(err)) | Err(err) => {
-                        log::error!("Error while loading icyanim file: {err}");
-                        self.error_text = Some(err.to_string())
-                    }
+        if !entry.is_folder() {
+            if entry.item_type() == ItemType::Picture {
+                if let Some(data) = entry.read_data() {
+                    let img = Image::from_bytes(entry.get_label(), data).show_loading_spinner(true);
+                    self.retained_image = Some(img);
+                    return;
                 }
+                return;
             }
-
-            if ext == "rip" {
-                match entry.get_data(|_path, data| {
-                    let mut rip_parser = rip::Parser::new(Box::default(), PathBuf::new());
-                    let mut result: Buffer = Buffer::new((80, 25));
-                    result.is_terminal_buffer = false;
-
-                    let (text, is_unicode) = icy_engine::convert_ansi_to_utf8(data);
-                    if is_unicode {
-                        result.buffer_type = icy_engine::BufferType::Unicode;
-                    }
-
-                    match parse_with_parser(&mut result, &mut rip_parser, &text, true) {
-                        Ok(_) => rip_parser,
+            if entry.item_type() == ItemType::IcyAnimation {
+                if let Some(data) = entry.read_data() {
+                    let anim = match String::from_utf8(data.to_vec()) {
+                        Ok(data) => {
+                            let path = entry.get_file_path();
+                            let parent = path.parent().map(|path| path.to_path_buf());
+                            let anim = Animator::run(&parent, data);
+                            anim.lock().unwrap().set_is_loop(true);
+                            anim.lock().unwrap().set_is_playing(true);
+                            Ok(anim)
+                        }
                         Err(err) => {
-                            log::error!("Error while parsing rip file: {err}");
-                            rip_parser
+                            log::error!("Error while parsing icyanim file: {err}");
+                            Err(anyhow::anyhow!("Error while parsing icyanim file: {err}"))
                         }
-                    }
-                }) {
-                    Ok(buf) => {
-                        let size = buf.bgi.window;
-                        let mut pixels = Vec::new();
-                        let pal = buf.bgi.get_palette().clone();
-                        for i in buf.bgi.screen {
-                            let (r, g, b) = pal.get_rgb(i as u32);
-                            pixels.push(r);
-                            pixels.push(g);
-                            pixels.push(b);
-                            pixels.push(255);
-                        }
-                        let color_image: ColorImage = ColorImage::from_rgba_premultiplied([size.width as usize, size.height as usize], &pixels);
-                        self.texture_handle = Some(color_image);
-                    }
-                    Err(err) => self.error_text = Some(err.to_string()),
-                }
+                    };
 
-                return;
+                    match anim {
+                        Ok(anim) => {
+                            anim.lock().unwrap().start_playback(self.buffer_view.clone());
+                            self.animation = Some(anim);
+                            return;
+                        }
+                        Err(err) => {
+                            log::error!("Error while loading icyanim file: {err}");
+                            self.error_text = Some(err.to_string())
+                        }
+                    }
+                }
+            }
+            if entry.item_type() == ItemType::Rip {
+                if let Some(data) = entry.read_data() {
+                    let buf = {
+                        let mut rip_parser = rip::Parser::new(Box::default(), PathBuf::new());
+                        let mut result: Buffer = Buffer::new((80, 25));
+                        result.is_terminal_buffer = false;
+
+                        let (text, is_unicode) = icy_engine::convert_ansi_to_utf8(&data);
+                        if is_unicode {
+                            result.buffer_type = icy_engine::BufferType::Unicode;
+                        }
+
+                        match parse_with_parser(&mut result, &mut rip_parser, &text, true) {
+                            Ok(_) => rip_parser,
+                            Err(err) => {
+                                log::error!("Error while parsing rip file: {err}");
+                                rip_parser
+                            }
+                        }
+                    };
+                    let size = buf.bgi.window;
+                    let mut pixels = Vec::new();
+                    let pal = buf.bgi.get_palette().clone();
+                    for i in buf.bgi.screen {
+                        let (r, g, b) = pal.get_rgb(i as u32);
+                        pixels.push(r);
+                        pixels.push(g);
+                        pixels.push(b);
+                        pixels.push(255);
+                    }
+                    let color_image: ColorImage = ColorImage::from_rgba_premultiplied([size.width as usize, size.height as usize], &pixels);
+                    self.texture_handle = Some(color_image);
+                    return;
+                }
             }
 
-            if force_load
-                || EXT_WHITE_LIST.contains(&ext.as_str())
-                || icy_engine::FORMATS.iter().any(|f| {
-                    let e = ext.as_str().to_ascii_lowercase();
-                    f.get_file_extension() == e || f.get_alt_extensions().contains(&e)
-                })
-                || !EXT_BLACK_LIST.contains(&ext.as_str()) && !is_binary(entry)
-            {
-                match entry.get_data(|path, data| Buffer::from_bytes(path, true, data, Some(MusicOption::Both))) {
-                    Ok(buf) => match buf {
+            if force_load || entry.item_type() == ItemType::Ansi {
+                if let Some(data) = entry.read_data() {
+                    match Buffer::from_bytes(&entry.get_file_path(), true, &data, Some(MusicOption::Both)) {
                         Ok(buf) => {
                             if let Ok(mut thread) = self.sound_thread.lock() {
                                 for music in buf.ansi_music.iter().cloned() {
@@ -637,8 +618,7 @@ impl<'a> MainWindow<'a> {
                             self.in_scroll = true;
                         }
                         Err(err) => self.error_text = Some(err.to_string()),
-                    },
-                    Err(err) => self.error_text = Some(err.to_string()),
+                    }
                 }
             }
         }
@@ -735,25 +715,8 @@ impl<'a> MainWindow<'a> {
             self.view_selected(file, false);
             true
         } else {
-            if let Some(file) = self.file_view.files.get(file) {
-                self.opened_file = Some(file.clone());
-            }
-
+            self.opened_file = Some(file);
             false
         }
     }
-}
-
-fn is_binary(file_entry: &FileEntry) -> bool {
-    if let Err(err) = file_entry.get_data(|_, data| {
-        for i in data.iter().take(500) {
-            if i == &0 || i == &255 {
-                return true;
-            }
-        }
-        false
-    }) {
-        log::warn!("Error while checking if file is binary: {}", err);
-    }
-    true
 }

@@ -599,10 +599,12 @@ impl<'a> eframe::App for MainWindow<'a> {
 
         if self.in_open_file_mode {
             if self.open_file_window.show_file_chooser(ctx) {
-                let file = self.open_file_window.opened_file.take();
-                if let Some(file) = &file {
+                let file = self.open_file_window.opened_file.take().unwrap_or_default();
+                if !self.open_file_window.file_view.files[file].is_folder() {
+                    self.open_file(&self.open_file_window.file_view.files[file].get_file_path(), false);
+
+                    /*/
                     if file.file_info.path.exists() {
-                        self.open_file(&file.file_info.path, false);
                     } else if let Some(data) = &file.file_data {
                         let mut path = file.file_info.path.clone();
                         if let Some(user) = UserDirs::new() {
@@ -614,7 +616,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                             }
                         }
                         self.open_data(&path, data);
-                    }
+                    }*/
                 }
                 self.in_open_file_mode = false;
             }
