@@ -110,3 +110,7 @@ impl dyn Item {
         }
     }
 }
+
+pub fn sort_folder(directories: &mut Vec<Box<dyn Item>>) {
+    directories.sort_by(|a, b| a.get_label().to_lowercase().cmp(&b.get_label().to_lowercase()));
+}

@@ -2,7 +2,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use i18n_embed_fl::fl;
 
-use super::{zip::ZipFile, Item, ItemType};
+use super::{sort_folder, zip::ZipFile, Item, ItemType};
 
 pub struct SixteenFolder {}
 
@@ -162,7 +162,7 @@ impl Item for SixteenFiles {
                             result.push(Box::new(SixteenFile::new(filename, location, uri)));
                         }
                     }
-                    result.reverse();
+                    sort_folder(&mut result);
                 }
                 Err(err) => {
                     log::error!("Error parsing json: {}", err);

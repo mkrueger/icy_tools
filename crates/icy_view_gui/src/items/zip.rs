@@ -1,4 +1,4 @@
-use super::{Item, ItemType};
+use super::{sort_folder, Item, ItemType};
 use std::{io::Read, path::PathBuf};
 
 pub struct ZipFile {
@@ -58,6 +58,7 @@ impl Item for ZipFile {
                 log::error!("Error reading zip file: {:?}", self.get_file_path());
             }
         }
+        sort_folder(&mut files);
         Some(files)
     }
 }

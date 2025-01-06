@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{zip::ZipFile, Item, ItemType, SixteenFolder};
+use super::{sort_folder, zip::ZipFile, Item, ItemType, SixteenFolder};
 
 pub struct ItemFolder {
     pub path: PathBuf,
@@ -135,6 +135,9 @@ fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
                 }
             }
         }
+        sort_folder(&mut directories);
+        sort_folder(&mut files);
+
         #[cfg(windows)]
         {
             let drives = get_drives();
