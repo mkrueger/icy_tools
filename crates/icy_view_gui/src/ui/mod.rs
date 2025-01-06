@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 
-use crate::ItemType;
+use crate::{ItemFolder, ItemType};
 
 use self::{
     file_view::{FileView, Message},
@@ -691,6 +691,15 @@ impl<'a> MainWindow<'a> {
                         self.reset_state();
                         self.file_view.refresh();
                         self.handle_command(ctx, Some(Message::Select(0, false)));
+                    } else {
+                        if let Some(parent) = self.file_view.parents.pop() {
+                            if let Some(parent) = parent.get_file_path().parent() {
+                                self.file_view.parents.push(Box::new(ItemFolder::new(parent.to_path_buf())));
+                                self.reset_state();
+                                self.file_view.refresh();
+                                self.handle_command(ctx, Some(Message::Select(0, false)));
+                            }
+                        }
                     }
                 }
                 Message::ToggleAutoScroll => {
