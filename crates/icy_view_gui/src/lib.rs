@@ -1,4 +1,5 @@
 pub mod ui;
+use semver::Version;
 pub use ui::*;
 pub mod items;
 pub use items::*;
@@ -12,6 +13,11 @@ use i18n_embed::{
     fluent::{fluent_language_loader, FluentLanguageLoader},
     DesktopLanguageRequester,
 };
+
+lazy_static::lazy_static! {
+    static ref VERSION: Version = Version::parse( env!("CARGO_PKG_VERSION")).unwrap();
+    static ref DEFAULT_TITLE: String = format!("iCY VIEW {}", *crate::VERSION);
+}
 
 use once_cell::sync::Lazy;
 pub static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {

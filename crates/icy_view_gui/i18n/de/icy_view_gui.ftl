@@ -52,5 +52,8 @@ toast-scroll-fast=Scrollgeschwindigkeit: schnell
 
 button-play_music=Musik spielen
 button-stop_music=Musik anhalten
-label-music_pause=Pause { $duration }
-label-music_note=Spiele { $freq }hz Dauer: { $duration }
+
+label-music_pause=Pause { $duration }ms
+label-music_note=Spiele { $note }({ $octave }) für { $duration }ms
+
+label-sixteencolors_pack= { $year } ({ $packs } Pakete)

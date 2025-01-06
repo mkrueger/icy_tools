@@ -181,7 +181,6 @@ impl<'a> MainWindow<'a> {
                     while path.parent().is_some() && !path.is_dir() {
                         path = path.parent().unwrap().to_path_buf();
                     }
-
                     self.open_file_window.file_view.set_path(path);
                 }
                 self.open_file_window.reset();

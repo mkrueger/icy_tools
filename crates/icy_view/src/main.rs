@@ -63,7 +63,7 @@ fn main() {
                 fd.file_view.upgrade_version = Some(LATEST_VERSION.to_string());
             }
             let cmd = fd.file_view.refresh();
-            fd.handle_command(cmd);
+            fd.handle_command(&cc.egui_ctx, cmd);
             Ok(Box::new(fd))
         }),
     )

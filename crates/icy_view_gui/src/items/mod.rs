@@ -1,10 +1,14 @@
 use std::path::{Path, PathBuf};
 
+use crate::EXT_MUSIC_LIST;
 use icy_sauce::SauceInformation;
+
 use super::{EXT_IMAGE_LIST, EXT_WHITE_LIST};
-mod zip;
 mod files;
+mod zip;
 pub use files::*;
+mod sixteencolors;
+pub use sixteencolors::*;
 
 pub trait Item {
     fn item_type(&self) -> ItemType;
@@ -38,6 +42,7 @@ pub enum ItemType {
     Unknown,
     Folder,
     Ansi,
+    AnsiMusic,
     IcyAnimation,
     Rip,
     Picture,
@@ -55,7 +60,9 @@ impl ItemType {
                 String::new()
             };
 
-            if EXT_WHITE_LIST.contains(&ext.as_str())
+            if EXT_MUSIC_LIST.contains(&ext.as_str()) {
+                ItemType::AnsiMusic
+            } else if EXT_WHITE_LIST.contains(&ext.as_str())
                 || icy_engine::FORMATS.iter().any(|f| {
                     let e = ext.as_str().to_ascii_lowercase();
                     f.get_file_extension() == e || f.get_alt_extensions().contains(&e)
@@ -76,9 +83,9 @@ impl ItemType {
     fn get_icon(&self) -> Option<char> {
         match self {
             ItemType::Folder => Some('🗁'),
-            ItemType::Ansi => Some('🖺'),
-            ItemType::IcyAnimation => Some('🖺'),
-            ItemType::Rip => Some('🖺'),
+            ItemType::IcyAnimation => Some('🎥'),
+            ItemType::Ansi | ItemType::Rip => Some('🖹'),
+            ItemType::AnsiMusic => Some('🎵'),
             ItemType::Picture => Some('🖻'),
             _ => Some('🗋'),
         }

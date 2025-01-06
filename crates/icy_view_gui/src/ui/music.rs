@@ -229,7 +229,7 @@ impl SoundBackgroundThreadData {
                     let pause_length = cur_style.get_pause_length(duration);
                     if let Err(err) = stream_handle.play_raw(
                         SignalGenerator::new(sample_rate, f, Function::Square)
-                            .amplify(0.1)
+                            .amplify(0.07)
                             .take_duration(std::time::Duration::from_millis(duration as u64 - pause_length as u64)),
                     ) {
                         log::error!("Error in playing note: {}", err);

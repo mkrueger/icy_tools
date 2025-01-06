@@ -6,7 +6,10 @@ use eframe::{
 
 use i18n_embed_fl::fl;
 use icy_engine::{
-    ansi::{sound::MusicAction, MusicOption},
+    ansi::{
+        sound::{MusicAction, FREQ},
+        MusicOption,
+    },
     parse_with_parser, rip, Buffer,
 };
 use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
@@ -65,6 +68,8 @@ pub struct MainWindow<'a> {
     // animations
     animation: Option<Arc<Mutex<Animator>>>,
 }
+pub const EXT_MUSIC_LIST: [&str; 2] = ["ams", "mus"];
+
 pub const EXT_WHITE_LIST: [&str; 7] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus"];
 pub const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe", "com"];
 pub const EXT_IMAGE_LIST: [&str; 5] = ["png", "jpg", "jpeg", "gif", "bmp"];
@@ -77,7 +82,7 @@ impl<'a> App for MainWindow<'a> {
                     ui.disable();
                 }
                 let command = self.file_view.show_ui(ui, false);
-                self.handle_command(command);
+                self.handle_command(ctx, command);
             });
         }
         let frame_no_margins = egui::containers::Frame::none()
@@ -150,6 +155,8 @@ impl<'a> App for MainWindow<'a> {
     }
 }
 
+const NOTE_TABLE: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
 impl<'a> MainWindow<'a> {
     pub fn new(gl: &Arc<glow::Context>, mut initial_path: Option<PathBuf>, options: Options) -> Self {
         let mut view = BufferView::new(gl);
@@ -216,7 +223,7 @@ impl<'a> MainWindow<'a> {
             .resizable(true)
             .show(ctx, |ui| {
                 let command = self.file_view.show_ui(ui, true);
-                self.handle_command(command);
+                self.handle_command(ctx, command);
             });
 
         let frame_no_margins = egui::containers::Frame::none()
@@ -282,11 +289,23 @@ impl<'a> MainWindow<'a> {
                             ui.separator();
                             match &thread.cur_action {
                                 Some(action) => match action {
-                                    MusicAction::Pause(dur) => {
-                                        ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_pause", duration = dur));
+                                    MusicAction::Pause(_) => {
+                                        let duration = action.get_duration();
+                                        ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_pause", duration = duration));
                                     }
-                                    MusicAction::PlayNote(freq, len, _dotted) => {
-                                        ui.label(fl!(crate::LANGUAGE_LOADER, "label-music_note", freq = freq, duration = len));
+                                    MusicAction::PlayNote(freq, _len, _dotted) => {
+                                        if let Some(item) = FREQ.iter().enumerate().find(|(_i, p)| *p == freq) {
+                                            let note = item.0 % 12;
+                                            let octave = item.0 / 12;
+                                            let duration = action.get_duration();
+                                            ui.label(fl!(
+                                                crate::LANGUAGE_LOADER,
+                                                "label-music_note",
+                                                note = NOTE_TABLE[note],
+                                                octave = octave,
+                                                duration = duration
+                                            ));
+                                        }
                                     }
                                     _ => {}
                                 },
@@ -309,7 +328,9 @@ impl<'a> MainWindow<'a> {
 
         if let Some(img) = &self.retained_image {
             ScrollArea::both().show(ui, |ui| {
-                let size = img.load_and_calc_size(ui, ui.available_size()).unwrap();
+                let Some(size) = img.load_and_calc_size(ui, ui.available_size()) else {
+                    return;
+                };
                 let rect: Rect = egui::Rect::from_min_size(ui.min_rect().min, size);
                 img.paint_at(ui, rect);
             });
@@ -438,7 +459,7 @@ impl<'a> MainWindow<'a> {
                             .button(RichText::heading(fl!(crate::LANGUAGE_LOADER, "button-load-anyways").into()))
                             .clicked()
                         {
-                            self.handle_command(Some(Message::Select(file, true)));
+                            self.handle_command(ui.ctx(), Some(Message::Select(file, true)));
                         }
                     });
                 }
@@ -501,13 +522,12 @@ impl<'a> MainWindow<'a> {
             return false;
         }
 
-        if let Some(items) = self.file_view.files[file].get_subitems() {
+        if let Some(_) = self.file_view.files[file].get_subitems() {
             {
-                self.file_view.set_path(self.file_view.files[file].get_file_path());
-                let mut d = self.file_view.files.drain(file..file + 1);
+                let mut d = self.file_view.files.drain(file..);
                 self.file_view.parents.push(d.next().unwrap());
             }
-            self.file_view.files = items;
+            self.file_view.refresh();
             self.file_view.selected_file = None;
             self.file_view.scroll_pos = None;
             self.reset_state();
@@ -517,11 +537,11 @@ impl<'a> MainWindow<'a> {
         }
     }
 
-    fn view_selected(&mut self, file: usize, force_load: bool) {
+    fn view_selected(&mut self, ctx: &Context, file: usize, force_load: bool) {
         if file >= self.file_view.files.len() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
             return;
         }
-
         if let Ok(thread) = self.sound_thread.lock() {
             thread.clear();
         }
@@ -529,6 +549,8 @@ impl<'a> MainWindow<'a> {
         self.animation = None;
         self.last_scroll_pos = -1.0;
         let entry = &self.file_view.files[file];
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("iCY VIEW {} - {}", *crate::VERSION, entry.get_label())));
+
         if !entry.is_folder() {
             if entry.item_type() == ItemType::Picture {
                 if let Some(data) = entry.read_data() {
@@ -604,7 +626,7 @@ impl<'a> MainWindow<'a> {
                 }
             }
 
-            if force_load || entry.item_type() == ItemType::Ansi {
+            if force_load || entry.item_type() == ItemType::Ansi || entry.item_type() == ItemType::AnsiMusic {
                 if let Some(data) = entry.read_data() {
                     match Buffer::from_bytes(&entry.get_file_path(), true, &data, Some(MusicOption::Both)) {
                         Ok(buf) => {
@@ -621,6 +643,8 @@ impl<'a> MainWindow<'a> {
                     }
                 }
             }
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
         }
     }
 
@@ -633,7 +657,7 @@ impl<'a> MainWindow<'a> {
         self.cur_scroll_pos = 0.0;
     }
 
-    pub fn handle_command(&mut self, command: Option<Message>) {
+    pub fn handle_command(&mut self, ctx: &Context, command: Option<Message>) {
         if let Some(command) = command {
             match command {
                 Message::Select(file, fore_load) => {
@@ -642,7 +666,7 @@ impl<'a> MainWindow<'a> {
                         if file < self.file_view.files.len() {
                             self.file_view.selected_file = Some(file);
                             self.file_view.scroll_pos = Some(file);
-                            self.view_selected(file, fore_load);
+                            self.view_selected(ctx, file, fore_load);
                         }
                     }
                 }
@@ -651,17 +675,17 @@ impl<'a> MainWindow<'a> {
                     self.file_view.refresh();
                 }
                 Message::Open(file) => {
-                    self.is_closed = !self.open(file);
+                    self.is_closed = !self.open(ctx, file);
                 }
                 Message::Cancel => {
                     self.is_closed = true;
                 }
                 Message::ParentFolder => {
-                    let mut p = self.file_view.get_path();
-                    if p.pop() {
+                    if self.file_view.parents.len() > 1 {
+                        self.file_view.parents.pop();
                         self.reset_state();
-                        self.file_view.set_path(p);
-                        self.handle_command(Some(Message::Select(0, false)));
+                        self.file_view.refresh();
+                        self.handle_command(ctx, Some(Message::Select(0, false)));
                     }
                 }
                 Message::ToggleAutoScroll => {
@@ -708,11 +732,11 @@ impl<'a> MainWindow<'a> {
         }
     }
 
-    fn open(&mut self, file: usize) -> bool {
+    fn open(&mut self, ctx: &Context, file: usize) -> bool {
         if self.open_selected(file) && !self.file_view.files.is_empty() {
             self.file_view.selected_file = Some(0);
             self.file_view.scroll_pos = Some(0);
-            self.view_selected(file, false);
+            self.view_selected(ctx, file, false);
             true
         } else {
             self.opened_file = Some(file);

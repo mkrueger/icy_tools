@@ -1,14 +1,18 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use super::{zip::ZipFile, Item, ItemType};
+use super::{zip::ZipFile, Item, ItemType, SixteenFolder};
 
 pub struct ItemFolder {
     pub path: PathBuf,
+    pub include_16colors: bool,
 }
 
 impl ItemFolder {
     pub fn new(path: PathBuf) -> Self {
-        Self { path }
+        Self { path, include_16colors: false }
     }
 }
 
@@ -26,7 +30,12 @@ impl Item for ItemFolder {
 
     fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
         Some(match read_folder(&self.path) {
-            Ok(items) => items,
+            Ok(mut items) => {
+                if self.include_16colors {
+                    items.insert(0, Box::new(SixteenFolder::new()));
+                }
+                items
+            }
             Err(err) => {
                 log::error!("Failed to read folder: {:?}", err);
                 Vec::new()
@@ -68,7 +77,6 @@ impl Item for ItemFile {
     }
 }
 
-
 #[cfg(windows)]
 extern "C" {
     pub fn GetLogicalDrives() -> u32;
@@ -107,7 +115,7 @@ fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
                 directories.push(Box::new(ItemFolder::new(path)));
             } else {
                 if path.extension().unwrap_or_default().to_ascii_lowercase() == "zip" {
-                    files.push(Box::new(ZipFile::new(path)));
+                    files.push(Box::new(ZipFile::new(Box::new(ItemFile::new(path)))));
                 } else {
                     files.push(Box::new(ItemFile::new(path)));
                 }

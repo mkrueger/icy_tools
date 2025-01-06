@@ -6,6 +6,7 @@ use eframe::{
 use egui::{ScrollArea, TextEdit, Ui};
 use i18n_embed_fl::fl;
 
+use core::f32;
 use std::{env, path::PathBuf};
 
 use crate::{Item, ItemFolder};
@@ -24,8 +25,6 @@ pub enum Message {
     ChangeScrollSpeed,
 }
 pub struct FileView {
-    /// Current opened path.
-    path: PathBuf,
     /// Selected file path
     pub selected_file: Option<usize>,
     pub scroll_pos: Option<usize>,
@@ -60,9 +59,9 @@ impl FileView {
             pre_select_file = Some(path.file_name().unwrap().to_string_lossy().to_string());
             path.pop();
         }
-        let folder = ItemFolder::new(path.clone());
+        let mut folder = ItemFolder::new(path);
+        folder.include_16colors = true;
         Self {
-            path,
             selected_file: None,
             pre_select_file,
             scroll_pos: None,
@@ -96,40 +95,32 @@ impl FileView {
         ui.add_space(4.0);
 
         ui.horizontal(|ui| {
-            ui.add(
-                TextEdit::singleline(&mut self.filter)
-                    .hint_text(fl!(crate::LANGUAGE_LOADER, "filter-entries-hint-text"))
-                    .desired_width(300.),
-            );
             let response = ui.button("🗙").on_hover_text(fl!(crate::LANGUAGE_LOADER, "tooltip-reset-filter-button"));
             if response.clicked() {
                 self.filter.clear();
             }
+
+            ui.add_sized(
+                [200.0, ui.style().spacing.interact_size.y],
+                TextEdit::singleline(&mut self.filter).hint_text(fl!(crate::LANGUAGE_LOADER, "filter-entries-hint-text")),
+            );
+
             if let Some(ver) = &self.upgrade_version {
                 ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = ver.clone()),
                     "https://github.com/mkrueger/icy_tools/releases",
                 );
             }
-        });
 
-        ui.horizontal(|ui| {
-            match self.path.to_str() {
-                Some(path) => {
-                    let mut path_edit = path.to_string();
-                    ui.add(TextEdit::singleline(&mut path_edit).desired_width(220.));
-                }
-                None => {
-                    ui.colored_label(ui.style().visuals.error_fg_color, fl!(crate::LANGUAGE_LOADER, "error-invalid-path"));
-                }
-            }
-
-            ui.add_enabled_ui(self.path.parent().is_some(), |ui| {
-                let response = ui.button("⬆").on_hover_text("Parent Folder");
-                if response.clicked() {
-                    command = Some(Message::ParentFolder);
-                }
-            });
+            ui.add_enabled_ui(
+                self.parents.len() > 1 || self.parents.last().unwrap().get_file_path().parent().is_some(),
+                |ui| {
+                    let response = ui.button("⬆").on_hover_text("Parent Folder");
+                    if response.clicked() {
+                        command = Some(Message::ParentFolder);
+                    }
+                },
+            );
 
             let response = ui.button("⟲").on_hover_text(fl!(crate::LANGUAGE_LOADER, "tooltip-refresh"));
             if response.clicked() {
@@ -178,6 +169,21 @@ impl FileView {
                     ui.close_menu();
                 }
             });
+        });
+
+        ui.horizontal(|ui| match self.parents.last() {
+            Some(path) => {
+                let mut path_edit = path.get_file_path().to_string_lossy().to_string();
+                let response = ui.add(TextEdit::singleline(&mut path_edit).desired_width(f32::INFINITY));
+                if response.changed() {
+                    let path = path_edit.parse::<PathBuf>().unwrap();
+                    self.parents.push(Box::new(ItemFolder::new(path)));
+                    command = self.refresh();
+                }
+            }
+            None => {
+                ui.colored_label(ui.style().visuals.error_fg_color, fl!(crate::LANGUAGE_LOADER, "error-invalid-path"));
+            }
         });
         if self.selected_file.is_none() && !self.files.is_empty() {
             //  command = Some(Command::Select(0));
@@ -368,13 +374,8 @@ impl FileView {
         }
         command
     }
-
-    pub fn get_path(&self) -> PathBuf {
-        self.path.clone()
-    }
-
     pub fn set_path(&mut self, path: impl Into<PathBuf>) -> Option<Message> {
-        self.path = path.into();
+        self.parents.push(Box::new(ItemFolder::new(path.into())));
         self.refresh()
     }
 
