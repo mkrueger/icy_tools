@@ -97,6 +97,14 @@ fn get_drives() -> Vec<PathBuf> {
     drive_names
 }
 
+#[cfg(windows)]
+fn is_drive_root(path: &Path) -> bool {
+    path.to_str()
+        .filter(|path| &path[1..] == ":\\")
+        .and_then(|path| path.chars().next())
+        .map_or(false, |ch| ch.is_ascii_uppercase())
+}
+
 pub fn get_file_name(path: &Path) -> &str {
     #[cfg(windows)]
     if path.is_dir() && is_drive_root(path) {
@@ -124,10 +132,12 @@ fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
         #[cfg(windows)]
         {
             let drives = get_drives();
-            let mut infos = Vec::with_capacity(drives.len() + file_infos.len());
+            let mut infos: Vec<Box<dyn Item>> = Vec::with_capacity(drives.len() + directories.len());
             for drive in drives {
-                directories.push(Box::new(ItemFolder { path: drive }));
+                infos.push(Box::new(ItemFolder::new(drive)));
             }
+            infos.append(&mut directories);
+            directories = infos;
         }
         directories.append(&mut files);
         directories
