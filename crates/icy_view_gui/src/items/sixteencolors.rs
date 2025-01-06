@@ -32,7 +32,7 @@ impl Item for SixteenFolder {
         Some('🌐')
     }
 
-    fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
+    fn get_subitems(&mut self) -> Option<Vec<Box<dyn Item>>> {
         let mut result: Vec<Box<dyn Item>> = Vec::new();
         let url = format!("{}/year?rows=0", API_PATH);
         match reqwest::blocking::get(url) {
@@ -86,7 +86,7 @@ impl Item for SixteenPack {
         Some('📦')
     }
 
-    fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
+    fn get_subitems(&mut self) -> Option<Vec<Box<dyn Item>>> {
         let mut result: Vec<Box<dyn Item>> = Vec::new();
         let url = format!("{}/year/{}?rows=0", API_PATH, self.year);
         match reqwest::blocking::get(url) {
@@ -144,7 +144,7 @@ impl Item for SixteenFiles {
         Some('📁')
     }
 
-    fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
+    fn get_subitems(&mut self) -> Option<Vec<Box<dyn Item>>> {
         let mut result: Vec<Box<dyn Item>> = Vec::new();
         let url = format!("{}/pack/{}?rows=0", API_PATH, self.name);
         match reqwest::blocking::get(url) {
@@ -180,11 +180,17 @@ struct SixteenFile {
     pub filename: String,
     pub location: String,
     pub uri: String,
+    data: Option<Vec<u8>>,
 }
 
 impl SixteenFile {
     pub fn new(filename: String, location: String, uri: String) -> Self {
-        Self { filename, location, uri }
+        Self {
+            filename,
+            location,
+            uri,
+            data: None,
+        }
     }
 }
 
@@ -201,11 +207,16 @@ impl Item for SixteenFile {
         ItemType::get_type(&PathBuf::from_str(&self.filename).unwrap())
     }
 
-    fn read_data(&self) -> Option<Vec<u8>> {
+    fn read_data(&mut self) -> Option<Vec<u8>> {
+        if let Some(data) = &self.data {
+            return Some(data.clone());
+        }
+
         let url = format!("{}{}", MAIN_PATH, self.uri);
         match reqwest::blocking::get(url) {
             Ok(response) => {
                 if let Ok(bytes) = response.bytes() {
+                    self.data = Some(bytes.to_vec());
                     return Some(bytes.to_vec());
                 }
             }

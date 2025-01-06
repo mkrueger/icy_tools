@@ -19,11 +19,11 @@ pub trait Item {
         self.item_type().get_icon()
     }
 
-    fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
+    fn get_subitems(&mut self) -> Option<Vec<Box<dyn Item>>> {
         None
     }
 
-    fn get_sauce(&self) -> Option<SauceInformation> {
+    fn get_sauce(&mut self) -> Option<SauceInformation> {
         if let Some(file) = self.read_data() {
             if let Ok(info) = SauceInformation::read(&file) {
                 return info;
@@ -32,7 +32,7 @@ pub trait Item {
         None
     }
 
-    fn read_data(&self) -> Option<Vec<u8>> {
+    fn read_data(&mut self) -> Option<Vec<u8>> {
         None
     }
 }
@@ -96,7 +96,8 @@ impl dyn Item {
     pub fn is_folder(&self) -> bool {
         self.item_type() == ItemType::Folder
     }
-    pub fn is_binary(&self) -> bool {
+
+    pub fn is_binary(&mut self) -> bool {
         if let Some(data) = self.read_data() {
             for i in data.iter().take(500) {
                 if i == &0 || i == &255 {

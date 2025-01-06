@@ -27,7 +27,7 @@ impl Item for ZipFile {
         Some('📦')
     }
 
-    fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
+    fn get_subitems(&mut self) -> Option<Vec<Box<dyn Item>>> {
         let mut files: Vec<Box<dyn Item>> = Vec::new();
         match self.item.read_data() {
             Some(file) => match zip::ZipArchive::new(std::io::Cursor::new(file)) {
@@ -89,7 +89,7 @@ impl Item for ZipItem {
     fn item_type(&self) -> ItemType {
         self.item_type
     }
-    fn read_data(&self) -> Option<Vec<u8>> {
+    fn read_data(&mut self) -> Option<Vec<u8>> {
         Some(self.data.clone())
     }
 }

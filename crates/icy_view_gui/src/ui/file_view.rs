@@ -381,7 +381,7 @@ impl FileView {
 
     pub fn refresh(&mut self) -> Option<Message> {
         self.files.clear();
-        if let Some(items) = self.parents.last().unwrap().get_subitems() {
+        if let Some(items) = self.parents.last_mut().unwrap().get_subitems() {
             self.files = items;
         }
         self.selected_file = None;

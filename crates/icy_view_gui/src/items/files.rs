@@ -28,7 +28,7 @@ impl Item for ItemFolder {
         ItemType::Folder
     }
 
-    fn get_subitems(&self) -> Option<Vec<Box<dyn Item>>> {
+    fn get_subitems(&mut self) -> Option<Vec<Box<dyn Item>>> {
         Some(match read_folder(&self.path) {
             Ok(mut items) => {
                 if self.include_16colors {
@@ -46,6 +46,7 @@ impl Item for ItemFolder {
 pub struct ItemFile {
     item_type: ItemType,
     path: PathBuf,
+    data: Option<Vec<u8>>,
 }
 
 impl ItemFile {
@@ -53,6 +54,7 @@ impl ItemFile {
         Self {
             item_type: ItemType::get_type(&path),
             path,
+            data: None,
         }
     }
 }
@@ -69,8 +71,12 @@ impl Item for ItemFile {
         self.path.clone()
     }
 
-    fn read_data(&self) -> Option<Vec<u8>> {
+    fn read_data(&mut self) -> Option<Vec<u8>> {
+        if let Some(data) = &self.data {
+            return Some(data.clone());
+        }
         if let Ok(file) = fs::read(&self.path) {
+            self.data = Some(file.clone());
             return Some(file);
         }
         None

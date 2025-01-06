@@ -548,7 +548,7 @@ impl<'a> MainWindow<'a> {
 
         self.animation = None;
         self.last_scroll_pos = -1.0;
-        let entry = &self.file_view.files[file];
+        let entry = &mut self.file_view.files[file];
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("iCY VIEW {} - {}", *crate::VERSION, entry.get_label())));
 
         if !entry.is_folder() {
