@@ -398,6 +398,11 @@ impl<'a> MainWindow<'a> {
                 self.key_vel -= 2500.0;
                 self.in_scroll = false;
             }
+            let scroll_delta = ui.input_mut(|i| i.raw_scroll_delta.y);
+            if scroll_delta != 0.0 {
+                self.cur_scroll_pos -= scroll_delta * 4.0;
+                self.in_scroll = false;
+            }
 
             if (self.key_vel - 0.1).abs() > 0.1 {
                 let friction_coeff = 10.0;
