@@ -5,6 +5,7 @@ use eframe::{
 };
 use egui::{ScrollArea, TextEdit, Ui};
 use i18n_embed_fl::fl;
+use wildcard::Wildcard;
 
 use core::f32;
 use std::{env, path::PathBuf};
@@ -194,12 +195,24 @@ impl FileView {
         let strong_color = ui.style().visuals.strong_text_color();
         let text_color = ui.style().visuals.text_color();
 
-        let filter = self.filter.to_lowercase();
+        let use_casing = self.filter.chars().any(|f| f.is_uppercase());
+        let mut filter = self.filter.clone();
+
+        if !(filter.ends_with('*') || filter.ends_with('*')) {
+            filter.push('*');
+        }
+
+        let wildcard = Wildcard::new(filter.as_bytes()).unwrap();
+
         let filtered_entries = self.files.iter_mut().enumerate().filter(|(_, p)| {
-            if filter.is_empty() {
+            if self.filter.is_empty() {
                 return true;
             }
-            p.get_label().contains(&filter)
+            if use_casing {
+                wildcard.is_match(p.get_label().as_bytes())
+            } else {
+                wildcard.is_match(p.get_label().to_lowercase().as_bytes())
+            }
         });
 
         let mut indices = Vec::new();
