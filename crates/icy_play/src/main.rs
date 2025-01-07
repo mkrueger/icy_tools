@@ -30,6 +30,9 @@ pub struct Cli {
     #[arg(help = "If true modern terminal output (UTF8) is used.", long, default_value_t = false)]
     utf8: bool,
 
+    #[arg(help = "Use lf instead of positioning at end of line.", long, default_value_t = false)]
+    use_lf: bool,
+
     #[arg(help = "File to play/show.", required = true)]
     path: Option<PathBuf>,
 
@@ -40,7 +43,7 @@ pub struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Copy)]
 enum Commands {
     #[command(about = "Plays the animation (default)")]
     Play,
@@ -75,13 +78,13 @@ pub fn get_line_checksums(buf: &Buffer) -> Vec<u32> {
 fn main() {
     let args = Cli::parse();
 
-    let mut io: Box<dyn Com> = if let Some(port) = args.port {
+    let mut io: Box<dyn Com> = if let Some(port) = args.port.clone() {
         Box::new(com::SocketCom::connect("127.0.0.1:".to_string() + port.as_str()).unwrap())
     } else {
         Box::new(com::StdioCom::start().unwrap())
     };
 
-    if let Some(path) = args.path {
+    if let Some(path) = args.path.clone() {
         let parent = Some(path.parent().unwrap().to_path_buf());
 
         let Some(ext) = path.extension() else {
@@ -142,7 +145,7 @@ fn main() {
                                             }
                                         }
                                     }
-                                    show_buffer(&mut io, buffer, false, args.utf8, &term, skip_lines).unwrap();
+                                    show_buffer(&mut io, buffer, false, &args, &term, skip_lines).unwrap();
                                     checksums = new_checksums;
                                     std::thread::sleep(Duration::from_millis(*delay as u64));
                                 } else {
@@ -155,7 +158,7 @@ fn main() {
                             let _ = io.write(b"\x1b[?25h\x1b[0;0 D");
                         }
                         Commands::ShowFrame { frame } => {
-                            show_buffer(&mut io, &animator.lock().unwrap().frames[frame].0, true, args.utf8, &term, Vec::new()).unwrap();
+                            show_buffer(&mut io, &animator.lock().unwrap().frames[frame].0, true, &args, &term, Vec::new()).unwrap();
                         }
                     }
                 }
@@ -166,34 +169,34 @@ fn main() {
             _ => {
                 let buffer = Buffer::load_buffer(&path, true, None);
                 if let Ok(buffer) = &buffer {
-                    show_buffer(&mut io, buffer, true, args.utf8, &Terminal::Unknown, Vec::new()).unwrap();
+                    show_buffer(&mut io, buffer, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
                 }
             }
         }
     }
 }
 
-fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, use_utf8: bool, terminal: &Terminal, skip_lines: Vec<usize>) -> anyhow::Result<()> {
+fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, cli: &Cli, terminal: &Terminal, skip_lines: Vec<usize>) -> anyhow::Result<()> {
     let mut opt: SaveOptions = SaveOptions::default();
-    if use_utf8 {
+    if cli.utf8 {
         opt.modern_terminal_output = true;
     }
     opt.control_char_handling = icy_engine::ControlCharHandling::FilterOut;
-    opt.longer_terminal_output = !use_utf8;
+    opt.longer_terminal_output = !cli.use_lf;
     opt.compress = true;
     opt.use_cursor_forward = false;
     opt.preserve_line_length = true;
     opt.use_repeat_sequences = terminal.can_repeat_rle();
     opt.lossles_output = true;
     opt.skip_lines = Some(skip_lines);
-    opt.alt_rgb = use_utf8;
+    opt.alt_rgb = cli.utf8;
     opt.save_sauce = false;
-    opt.always_use_rgb = use_utf8;
+    opt.always_use_rgb = cli.utf8;
 
     if matches!(terminal, Terminal::IcyTerm) {
         opt.control_char_handling = icy_engine::ControlCharHandling::IcyTerm;
     }
-    let bytes = if use_utf8 && buffer.ice_mode == icy_engine::IceMode::Ice {
+    let bytes = if cli.utf8 && buffer.ice_mode == icy_engine::IceMode::Ice {
         let mut state = EditState::from_buffer(buffer.flat_clone(true));
         let _ = state.set_ice_mode(icy_engine::IceMode::Unlimited);
         state.get_buffer().to_bytes("ans", &opt)?
