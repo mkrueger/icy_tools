@@ -184,8 +184,10 @@ fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, use_u
     opt.use_cursor_forward = false;
     opt.preserve_line_length = true;
     opt.use_repeat_sequences = terminal.can_repeat_rle();
-
+    opt.lossles_output = true;
     opt.skip_lines = Some(skip_lines);
+    opt.alt_rgb = use_utf8;
+    opt.save_sauce = false;
 
     if matches!(terminal, Terminal::IcyTerm) {
         opt.control_char_handling = icy_engine::ControlCharHandling::IcyTerm;

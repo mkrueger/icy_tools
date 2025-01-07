@@ -104,6 +104,9 @@ pub struct SaveOptions {
 
     #[serde(skip)]
     pub skip_lines: Option<Vec<usize>>,
+
+    #[serde(skip)]
+    pub alt_rgb: bool,
 }
 
 impl SaveOptions {
@@ -124,6 +127,7 @@ impl SaveOptions {
             use_repeat_sequences: false,
             preserve_line_length: false,
             skip_lines: None,
+            alt_rgb: false,
         }
     }
 }

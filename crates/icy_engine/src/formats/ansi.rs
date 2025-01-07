@@ -275,7 +275,12 @@ impl StringGenerator {
                 sgr.push(5);
                 sgr.push(*ext_color);
             } else {
-                sgr_tc.push(1);
+                if self.options.alt_rgb {
+                    sgr_tc.push(38);
+                    sgr_tc.push(2);
+                } else {
+                    sgr_tc.push(1);
+                }
                 sgr_tc.push(cur_fore_rgb.0);
                 sgr_tc.push(cur_fore_rgb.1);
                 sgr_tc.push(cur_fore_rgb.2);
@@ -292,7 +297,12 @@ impl StringGenerator {
                 sgr.push(5);
                 sgr.push(*ext_color);
             } else {
-                sgr_tc.push(0);
+                if self.options.alt_rgb {
+                    sgr_tc.push(48);
+                    sgr_tc.push(2);
+                } else {
+                    sgr_tc.push(0);
+                }
                 sgr_tc.push(cur_back_rgb.0);
                 sgr_tc.push(cur_back_rgb.1);
                 sgr_tc.push(cur_back_rgb.2);
@@ -527,14 +537,22 @@ impl StringGenerator {
                 let mut idx = 0;
                 while idx < cell.sgr_tc.len() {
                     result.extend_from_slice(b"\x1b[");
-                    for i in 0..3 {
+                    for i in 0..=if self.options.alt_rgb { 4 } else { 3 } {
+                        if i > 0 {
+                            result.push(b';');
+                        }
                         result.extend_from_slice(cell.sgr_tc[idx + i].to_string().as_bytes());
-                        result.push(b';');
                     }
-                    result.extend_from_slice(cell.sgr_tc[idx + 3].to_string().as_bytes());
-                    result.push(b't');
+
+                    //result.extend_from_slice(cell.sgr_tc[idx + 3].to_string().as_bytes());
+                    if self.options.alt_rgb {
+                        result.push(b'm');
+                        idx += 5;
+                    } else {
+                        result.push(b't');
+                        idx += 4;
+                    }
                     self.push_result(&mut result);
-                    idx += 4;
                 }
 
                 let cell_char = if self.options.modern_terminal_output {
