@@ -140,7 +140,7 @@ fn main() {
             }
         }
 
-        let level = log::LevelFilter::Debug;
+        let level = log::LevelFilter::Info;
 
         // Build a stderr logger.
         let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
