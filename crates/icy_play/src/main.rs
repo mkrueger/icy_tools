@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use icy_engine::{update_crc32, Buffer, SaveOptions, TextPane};
+use icy_engine::{editor::EditState, update_crc32, Buffer, SaveOptions, TextPane};
 use icy_engine_gui::animations::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 
@@ -179,7 +179,7 @@ fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, use_u
         opt.modern_terminal_output = true;
     }
     opt.control_char_handling = icy_engine::ControlCharHandling::FilterOut;
-    opt.longer_terminal_output = true;
+    opt.longer_terminal_output = !use_utf8;
     opt.compress = true;
     opt.use_cursor_forward = false;
     opt.preserve_line_length = true;
@@ -188,11 +188,18 @@ fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, use_u
     opt.skip_lines = Some(skip_lines);
     opt.alt_rgb = use_utf8;
     opt.save_sauce = false;
+    opt.always_use_rgb = use_utf8;
 
     if matches!(terminal, Terminal::IcyTerm) {
         opt.control_char_handling = icy_engine::ControlCharHandling::IcyTerm;
     }
-    let bytes = buffer.to_bytes("ans", &opt)?;
+    let bytes = if use_utf8 && buffer.ice_mode == icy_engine::IceMode::Ice {
+        let mut state = EditState::from_buffer(buffer.flat_clone(true));
+        let _ = state.set_ice_mode(icy_engine::IceMode::Unlimited);
+        state.get_buffer().to_bytes("ans", &opt)?
+    } else {
+        buffer.to_bytes("ans", &opt)?
+    };
 
     if !single_frame && terminal.use_dcs() {
         io.write(b"\x1BP0;1;0!z")?;

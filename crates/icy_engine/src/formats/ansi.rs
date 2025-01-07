@@ -198,6 +198,12 @@ impl StringGenerator {
             }
         }
 
+        if self.options.always_use_rgb {
+            fore_idx = None;
+            back_idx = None;
+            is_bold = state.is_bold;
+        }
+
         if !is_bold && state.is_bold
             || !is_blink && state.is_blink
             || !is_italic && state.is_italic
@@ -623,8 +629,8 @@ impl StringGenerator {
             if !self.options.longer_terminal_output {
                 if self.options.modern_terminal_output {
                     result.extend_from_slice(b"\x1b[0m");
+                    result.push(13);
                     result.push(10);
-                    self.last_line_break = result.len();
                 } else if x < layer.get_width() as usize && y + 1 < layer.get_height() as usize {
                     if self.options.compress && x + 1 >= layer.get_width() as usize {
                         // if it's shorter to line break with 1 space, do that
@@ -633,8 +639,8 @@ impl StringGenerator {
                         result.push(13);
                         result.push(10);
                     }
-                    self.last_line_break = result.len();
                 }
+                self.last_line_break = result.len();
             }
         }
     }

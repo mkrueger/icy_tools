@@ -107,6 +107,9 @@ pub struct SaveOptions {
 
     #[serde(skip)]
     pub alt_rgb: bool,
+
+    #[serde(skip)]
+    pub always_use_rgb: bool,
 }
 
 impl SaveOptions {
@@ -128,6 +131,7 @@ impl SaveOptions {
             preserve_line_length: false,
             skip_lines: None,
             alt_rgb: false,
+            always_use_rgb: false,
         }
     }
 }
