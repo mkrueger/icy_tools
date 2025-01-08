@@ -425,7 +425,11 @@ impl StringGenerator {
                 }
                 x += 1;
             }
-
+            // for longer modern terminal output ecs[0m is needed to reset colors at line end.
+            if !self.options.longer_terminal_output && self.options.modern_terminal_output {
+                state.fg = DOS_DEFAULT_PALETTE[7].clone();
+                state.bg = DOS_DEFAULT_PALETTE[0].clone();
+            }
             result.push(line);
         }
         result
