@@ -111,6 +111,7 @@ impl ScreenMode {
         main_window.buffer_view.lock().get_buffer_mut().set_size(self.get_window_size());
         main_window.buffer_view.lock().get_buffer_mut().terminal_state.set_size(self.get_window_size());
         main_window.buffer_view.lock().get_buffer_mut().terminal_state.fixed_size = false;
+        main_window.buffer_view.lock().get_buffer_mut().layers[0].set_size(self.get_window_size());
         match self {
             // ScreenMode::Cga(_, h) | ScreenMode::Ega(_, h) |
             ScreenMode::Vga(_x, y) => {
