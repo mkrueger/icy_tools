@@ -10,7 +10,7 @@ use icy_engine::{
         sound::{MusicAction, FREQ},
         MusicOption,
     },
-    parse_with_parser, rip, Buffer, TextPane,
+    parse_with_parser, rip, Buffer,
 };
 use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
 use music::SoundThread;
@@ -217,7 +217,7 @@ impl<'a> MainWindow<'a> {
 
     pub fn show_file_chooser(&mut self, ctx: &Context) -> bool {
         self.is_closed = false;
-        egui::SidePanel::left("bottom_panel").exact_width(400.0).resizable(false).show(ctx, |ui| {
+        egui::SidePanel::left("bottom_panel").exact_width(412.0).resizable(false).show(ctx, |ui| {
             let command = self.file_view.show_ui(ui, true);
             self.handle_command(ctx, command);
         });

@@ -387,8 +387,10 @@ impl FileView {
         }
         command
     }
-    pub fn set_path(&mut self, path: impl Into<PathBuf>) -> Option<Message> {
-        self.parents.push(Box::new(ItemFolder::new(path.into())));
+    pub fn set_path(&mut self, path: impl Into<PathBuf>, include_16colors: bool) -> Option<Message> {
+        let mut folder = ItemFolder::new(path.into());
+        folder.include_16colors = include_16colors;
+        self.parents.push(Box::new(folder));
         self.refresh()
     }
 

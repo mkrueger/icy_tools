@@ -601,7 +601,14 @@ impl<'a> eframe::App for MainWindow<'a> {
             if self.open_file_window.show_file_chooser(ctx) {
                 let file = self.open_file_window.opened_file.take().unwrap_or_default();
                 if !self.open_file_window.file_view.files[file].is_folder() {
-                    self.open_file(&self.open_file_window.file_view.files[file].get_file_path(), false);
+                    let path = self.open_file_window.file_view.files[file].get_file_path();
+                    if self.open_file_window.file_view.files[file].is_virtual_file() {
+                        if let Some(data) = self.open_file_window.file_view.files[file].read_data() {
+                            self.open_data(&path, &data);
+                        }
+                    } else {
+                        self.open_file(&path, false);
+                    }
 
                     /*/
                     if file.file_info.path.exists() {

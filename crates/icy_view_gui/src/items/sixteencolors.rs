@@ -206,7 +206,9 @@ impl Item for SixteenFile {
     fn item_type(&self) -> ItemType {
         ItemType::get_type(&PathBuf::from_str(&self.filename).unwrap())
     }
-
+    fn is_virtual_file(&self) -> bool {
+        true
+    }
     fn read_data(&mut self) -> Option<Vec<u8>> {
         if let Some(data) = &self.data {
             return Some(data.clone());

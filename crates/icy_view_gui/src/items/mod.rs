@@ -15,6 +15,10 @@ pub trait Item {
     fn get_label(&self) -> String;
     fn get_file_path(&self) -> PathBuf;
 
+    fn is_virtual_file(&self) -> bool {
+        false
+    }
+
     fn get_icon(&self) -> Option<char> {
         self.item_type().get_icon()
     }
