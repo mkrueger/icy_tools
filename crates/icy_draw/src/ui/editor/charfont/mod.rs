@@ -123,7 +123,7 @@ impl Document for CharFontEditor {
                             self.selected_font = i;
                             self.old_selected_char_opt = None;
                             self.selected_char_opt = None;
-                            self.show_selected_char();
+                            self.show_selected_char(ui);
                         }
                     }
                 });
@@ -149,7 +149,7 @@ impl Document for CharFontEditor {
                     self.selected_font = 0;
                     self.selected_char_opt = None;
                     self.old_selected_char_opt = None;
-                    self.show_selected_char();
+                    self.show_selected_char(ui);
                     self.undostack_len += 1;
                 }
 
@@ -158,7 +158,7 @@ impl Document for CharFontEditor {
                     self.selected_font = self.fonts.len() - 1;
                     self.selected_char_opt = None;
                     self.old_selected_char_opt = None;
-                    self.show_selected_char();
+                    self.show_selected_char(ui);
                     self.undostack_len += 1;
                 }
             });
@@ -232,7 +232,7 @@ impl Document for CharFontEditor {
                     self.fonts[self.selected_font].clear_glyph(self.selected_char_opt.unwrap());
                     self.selected_char_opt = None;
                     self.old_selected_char_opt = None;
-                    self.show_selected_char();
+                    self.show_selected_char(ui);
                     self.undostack_len += 1;
                 }
             }
@@ -282,7 +282,7 @@ impl Document for CharFontEditor {
                                     let old_style = self.outline_previewbuffer_view.lock().get_edit_state_mut().get_outline_style();
                                     self.outline_previewbuffer_view.lock().get_edit_state_mut().set_outline_style(outline_style);
                                     if outline_style != old_style {
-                                        self.show_selected_char();
+                                        self.show_selected_char(ui);
                                     }
                                 });
 
@@ -461,7 +461,7 @@ impl CharFontEditor {
             last_update_preview_attr: TextAttribute::default(),
             tool_switch: true,
         };
-        res.show_selected_char();
+        res.update_selected_char();
         res
     }
 
@@ -483,7 +483,7 @@ impl CharFontEditor {
                     let response = BitFontEditor::draw_glyph(ui, &self.font, style, ch);
                     if response.clicked() {
                         self.selected_char_opt = Some(ch);
-                        self.show_selected_char();
+                        self.show_selected_char(ui);
                     }
                 }
             });
@@ -498,6 +498,7 @@ impl CharFontEditor {
 
             let _ = self.outline_previewbuffer_view.lock().get_edit_state_mut().clear_layer(0);
             self.outline_previewbuffer_view.lock().get_caret_mut().set_attr(attr);
+            self.outline_previewbuffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
             if let Some(ch) = self.selected_char_opt {
                 let size = self.outline_previewbuffer_view.lock().get_edit_state_mut().get_buffer().get_size();
 
@@ -517,7 +518,7 @@ impl CharFontEditor {
         }
     }
 
-    fn show_selected_char(&mut self) {
+    fn update_selected_char(&mut self) {
         {
             self.save_old_selected_char();
             let font = &self.fonts[self.selected_font];
@@ -529,15 +530,19 @@ impl CharFontEditor {
             edit_state.set_current_layer(1);
             edit_state.get_caret_mut().set_position((0, 0).into());
             edit_state.set_outline_style(usize::MAX);
-
+            edit_state.set_is_buffer_dirty();
             if let Some(ch) = self.selected_char_opt {
                 font.render(edit_state, ch as u8);
             }
-
             edit_state.get_undo_stack().lock().unwrap().clear();
             self.old_selected_char_opt = self.selected_char_opt;
         }
         self.render_outline_preview();
+    }
+
+    fn show_selected_char(&mut self, ui: &mut egui::Ui) {
+        self.update_selected_char();
+        ui.ctx().request_repaint();
     }
 
     fn save_old_selected_char(&mut self) {
@@ -622,15 +627,25 @@ impl CharFontEditor {
 
 fn set_up_layers(buffer: &mut Buffer) {
     buffer.layers.clear();
-
-    let mut new_layer = Layer::new("background", Size::new(30, 12));
+    let char_size = Size::new(30, 12);
+    let mut new_layer = Layer::new("background", char_size);
     new_layer.properties.has_alpha_channel = false;
     new_layer.properties.is_locked = true;
     new_layer.properties.is_position_locked = true;
+    for y in 0..char_size.height {
+        for x in 0..char_size.width {
+            new_layer.set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
+        }
+    }
     buffer.layers.push(new_layer);
 
-    let mut new_layer = Layer::new("edit layer", Size::new(30, 12));
+    let mut new_layer = Layer::new("edit layer", char_size);
     new_layer.properties.has_alpha_channel = true;
     new_layer.properties.is_position_locked = true;
+    for y in 0..char_size.height {
+        for x in 0..char_size.width {
+            new_layer.set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
+        }
+    }
     buffer.layers.push(new_layer);
 }
