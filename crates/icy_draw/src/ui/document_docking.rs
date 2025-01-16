@@ -174,6 +174,14 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
         title.into()
     }
 
+    fn is_tab_closable(&self, _tiles: &Tiles<DocumentTab>, _tile_id: TileId) -> bool {
+        true
+    }
+    fn on_tab_close(&mut self, tiles: &mut Tiles<DocumentTab>, _tile_id: TileId) -> bool {
+        self.request_close = Some(tiles.tile_ids().next().unwrap());
+        false
+    }
+
     fn pane_ui(&mut self, ui: &mut egui::Ui, _tile_id: egui_tiles::TileId, pane: &mut DocumentTab) -> egui_tiles::UiResponse {
         if pane.is_destroyed() {
             return egui_tiles::UiResponse::None;
@@ -205,7 +213,7 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
     fn on_tab_button(&mut self, tiles: &Tiles<DocumentTab>, tile_id: TileId, button_response: eframe::egui::Response) -> Response {
         let response_opt = button_response.context_menu(|ui| {
             if ui.button(fl!(crate::LANGUAGE_LOADER, "tab-context-menu-close")).clicked() {
-                // self.on_close_requested(tiles, tile_id);
+                self.request_close = Some(tile_id);
                 ui.close_menu();
             }
             if ui.button(fl!(crate::LANGUAGE_LOADER, "tab-context-menu-close_others")).clicked() {
@@ -233,10 +241,6 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
             button_response
         }
     }
-    /*
-    fn on_close_requested(&mut self, _tiles: &Tiles<DocumentTab>, tile_id: TileId) {
-        self.request_close = Some(tile_id);
-    }*/
 
     fn simplification_options(&self) -> egui_tiles::SimplificationOptions {
         egui_tiles::SimplificationOptions {
@@ -244,10 +248,6 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
             ..Default::default()
         }
     }
-    /*
-    fn has_close_buttons(&self) -> bool {
-        true
-    }*/
 
     fn top_bar_right_ui(&mut self, tiles: &Tiles<DocumentTab>, ui: &mut Ui, _tile_id: TileId, tabs: &Tabs, _scroll_offset: &mut f32) {
         if let Some(id) = tabs.active {

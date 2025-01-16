@@ -26,7 +26,6 @@ impl egui_tiles::Behavior<ToolTab> for ToolBehavior {
 
         WidgetText::RichText(egui::RichText::new(title).small())
     }
-
     fn pane_ui(&mut self, ui: &mut egui::Ui, _tile_id: egui_tiles::TileId, pane: &mut ToolTab) -> egui_tiles::UiResponse {
         let message = pane.doc.show_ui(ui, self.active_document.clone());
         if self.message.is_none() {
@@ -41,10 +40,6 @@ impl egui_tiles::Behavior<ToolTab> for ToolBehavior {
             ..Default::default()
         }
     }
-    /*
-    fn has_close_buttons(&self) -> bool {
-        false
-    }*/
 }
 
 pub trait ToolWindow {
