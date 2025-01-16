@@ -743,7 +743,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                ui.set_width(ui.available_width() - 250.0);
+                ui.set_width((ui.available_width() - 250.0).max(0.0));
                 self.document_tree.ui(&mut self.document_behavior, ui);
 
                 if self.document_behavior.get_selected_tool() != PASTE_TOOL {

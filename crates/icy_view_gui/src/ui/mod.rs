@@ -217,14 +217,10 @@ impl<'a> MainWindow<'a> {
 
     pub fn show_file_chooser(&mut self, ctx: &Context) -> bool {
         self.is_closed = false;
-        egui::SidePanel::left("bottom_panel")
-            .default_width(ctx.available_rect().width() * 3.0 / 2.0)
-            .exact_width(250.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                let command = self.file_view.show_ui(ui, true);
-                self.handle_command(ctx, command);
-            });
+        egui::SidePanel::left("bottom_panel").exact_width(400.0).resizable(false).show(ctx, |ui| {
+            let command = self.file_view.show_ui(ui, true);
+            self.handle_command(ctx, command);
+        });
 
         let frame_no_margins = egui::containers::Frame::none()
             .outer_margin(Margin::same(0.0))
