@@ -10,7 +10,7 @@ use icy_engine::{
         sound::{MusicAction, FREQ},
         MusicOption,
     },
-    parse_with_parser, rip, Buffer,
+    parse_with_parser, rip, Buffer, TextPane,
 };
 use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
 use music::SoundThread;
@@ -478,7 +478,12 @@ impl<'a> MainWindow<'a> {
     }
 
     fn show_buffer_view(&mut self, ui: &mut egui::Ui, monitor_settings: MonitorSettings) -> (egui::Response, icy_engine_gui::TerminalCalc) {
-        let w = (ui.available_width() / 8.0).floor();
+        let w = if self.buffer_view.lock().get_buffer_mut().use_letter_spacing() {
+            (ui.available_width() / 9.0).floor()
+        } else {
+            (ui.available_width() / 8.0).floor()
+        };
+
         let scalex = (w / self.buffer_view.lock().get_width() as f32).min(2.0);
         let scaley = if self.buffer_view.lock().get_buffer_mut().use_aspect_ratio() {
             scalex * 1.35
