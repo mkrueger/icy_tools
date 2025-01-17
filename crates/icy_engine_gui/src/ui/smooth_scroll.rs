@@ -24,11 +24,12 @@ impl Default for SmoothScroll {
         Self::new()
     }
 }
+static mut SCROLL_ID: u64 = 0;
 
 impl SmoothScroll {
     pub fn new() -> Self {
         Self {
-            id: Id::new("smooth_scroll"),
+            id: Id::new(format!("smooth_scroll_{}", unsafe { SCROLL_ID = SCROLL_ID.wrapping_add(1); SCROLL_ID })),
             char_scroll_position: Vec2::ZERO,
             last_char_height: 0.0,
             drag_horiz_start: false,
@@ -327,7 +328,7 @@ impl SmoothScroll {
             let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
             for e in events {
                 if let egui::Event::MouseWheel { delta, .. } = e {
-                    self.char_scroll_position.y -= delta.y;
+                    self.char_scroll_position.y -= delta.y * 42.0;
                     self.set_scroll_position = true;
                 }
             }
