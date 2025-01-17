@@ -87,7 +87,7 @@ impl MinimapToolWindow {
 
         let (response, ours) = icy_engine_gui::show_terminal_area(ui, self.buffer_view.clone(), opt);
 
-        let theirs = editor.buffer_view.lock().calc.clone();
+        let theirs: icy_engine_gui::TerminalCalc = editor.buffer_view.lock().calc.clone();
 
         let their_total_size = Vec2::new(theirs.char_width, theirs.char_height) * theirs.char_size;
         let their_buffer_size = Vec2::new(theirs.buffer_char_width, theirs.buffer_char_height) * theirs.char_size;
@@ -97,7 +97,7 @@ impl MinimapToolWindow {
         let tmax_y: f32 = theirs.font_height * (theirs.char_height - theirs.buffer_char_height).max(0.0);
         let tmax_x: f32 = theirs.font_width * (theirs.real_width as f32 - theirs.buffer_char_width).max(0.0);
 
-        let size = our_total_size * their_buffer_size / their_total_size;
+        let mut size = our_total_size * their_buffer_size / their_total_size;
         let tx = theirs.char_scroll_position.x / tmax_x.max(1.0);
         let ty = theirs.char_scroll_position.y / tmax_y.max(1.0);
 
@@ -119,6 +119,9 @@ impl MinimapToolWindow {
             self.next_scroll_pos = Some(ours.char_scroll_position + pos / ours.scale);
             ui.ctx().request_repaint();
         }
+
+        size.x = size.x.min(ours.terminal_rect.size().x);
+        size.y = size.y.min(ours.terminal_rect.size().y);
 
         if pos.x + size.x > ours.terminal_rect.size().x || pos.y + size.y > ours.terminal_rect.size().y {
             let p = pos + size - ours.terminal_rect.size();

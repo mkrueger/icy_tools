@@ -472,7 +472,7 @@ keys![
     (undo, "menu-undo", Undo, CanUndoState, Z, CTRL),
     (cut, "menu-cut", Cut, CanCutState, X, CTRL),
     (copy, "menu-copy", Copy, CanCopyState, C, CTRL),
-    (paste, "menu-paste", Paste, CanPasteState, L, CTRL), 
+    (paste, "menu-paste", Paste, CanPasteState, L, CTRL),
     (show_settings, "menu-show_settings", ShowSettings, AlwaysEnabledState),
     (select_all, "menu-select-all", SelectAll, BufferOpenState, A, CTRL),
     (deselect, "menu-select_nothing", SelectNothing, BufferOpenState),
