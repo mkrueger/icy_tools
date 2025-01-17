@@ -565,4 +565,6 @@ keys![
     (lga_font, "menu-9px-font", ToggleLGAFont, LGAFontState),
     (aspect_ratio, "menu-aspect-ratio", ToggleAspectRatio, AspectRatioState),
     (toggle_grid_guides, "menu-toggle_grid", ToggleGrid, BufferOpenState),
+    (toggle_left_pane, "menu-toggle_left_pane", ToggleLeftPane, AlwaysEnabledState, F11, NONE),
+    (toggle_right_pane, "menu-toggle_right_pane", ToggleRightPane, AlwaysEnabledState, F12, NONE),
 ];

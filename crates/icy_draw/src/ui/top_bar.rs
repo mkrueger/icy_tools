@@ -528,6 +528,8 @@ impl<'a> MainWindow<'a> {
 
                 self.commands[0].show_layer_borders.ui(ui, &mut result);
                 self.commands[0].show_line_numbers.ui(ui, &mut result);
+                self.commands[0].toggle_left_pane.ui(ui, &mut result);
+                self.commands[0].toggle_right_pane.ui(ui, &mut result);
 
                 self.commands[0].fullscreen.ui(ui, &mut result);
 

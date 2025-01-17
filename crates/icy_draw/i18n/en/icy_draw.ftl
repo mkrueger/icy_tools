@@ -97,6 +97,8 @@ menu-zoom-fit_size=Fit Size
 menu-show_layer_borders=Show Layer Borders
 menu-show_line_numbers=Show Line Numbers
 menu-toggle_grid=Toggle Grid/Guides
+menu-toggle_left_pane=Toggle Left Pane
+menu-toggle_right_pane=Toggle Right Pane
 
 menu-pick_attribute_under_caret=Pick up Attribute
 menu-default_color=Default Color

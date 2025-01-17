@@ -155,6 +155,8 @@ pub enum Message {
     RemoveTag(usize),
     SelectCurrentTag(usize),
     ShowEditTagDialog(Box<Tag>, i32),
+    ToggleLeftPane,
+    ToggleRightPane,
 }
 
 pub const CTRL_SHIFT: egui::Modifiers = egui::Modifiers {
@@ -1131,6 +1133,12 @@ impl<'a> MainWindow<'a> {
                     }
                     None
                 });
+            }
+            Message::ToggleLeftPane => {
+                self.left_panel = !self.left_panel;
+            }
+            Message::ToggleRightPane => {
+                self.right_panel = !self.right_panel;
             }
         }
     }
