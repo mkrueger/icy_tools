@@ -1645,7 +1645,7 @@ impl UndoOperation for SetUseLetterSpacing {
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_use_letter_spacing(!self.new_ls);
+        edit_state.buffer.set_use_letter_spacing(self.new_ls);
         Ok(())
     }
 }
@@ -1671,7 +1671,7 @@ impl UndoOperation for SetUseAspectRatio {
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_use_aspect_ratio(!self.new_ar);
+        edit_state.buffer.set_use_aspect_ratio(self.new_ar);
         Ok(())
     }
 }
