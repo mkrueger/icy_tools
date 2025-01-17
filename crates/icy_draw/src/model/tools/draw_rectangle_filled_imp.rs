@@ -58,6 +58,16 @@ impl Tool for DrawRectangleFilledTool {
         response.on_hover_cursor(egui::CursorIcon::Crosshair)
     }
 
+    fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, _pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
+        if button == 1 {
+            let p2 = editor.half_block_click_pos;
+            self.old_pos = p2;
+            self.draw_shape(editor, p2);
+            editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-line"));
+        }
+        None
+    }
+
     fn handle_drag_begin(&mut self, _editor: &mut AnsiEditor, _response: &egui::Response) -> Event {
         self.old_pos = Position::new(-1, -1);
         Event::None
@@ -65,16 +75,8 @@ impl Tool for DrawRectangleFilledTool {
 
     fn handle_drag(&mut self, _ui: &egui::Ui, response: egui::Response, editor: &mut AnsiEditor, _calc: &TerminalCalc) -> egui::Response {
         let p2 = editor.half_block_click_pos;
-        if self.old_pos == p2 {
-            return response;
-        }
         self.old_pos = p2;
-
-        editor.clear_overlay_layer();
-        let p1 = editor.drag_pos.start_half_block;
-        let start = Position::new(p1.x.min(p2.x), p1.y.min(p2.y));
-        let end = Position::new(p1.x.max(p2.x), p1.y.max(p2.y));
-        fill_rectangle(&mut editor.buffer_view.lock(), start, end, self.draw_mode.clone(), self.color_mode);
+        self.draw_shape(editor, p2);
         response
     }
 
@@ -85,5 +87,19 @@ impl Tool for DrawRectangleFilledTool {
             editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-draw-rectangle"));
         }
         None
+    }
+
+    fn handle_key(&mut self, editor: &mut AnsiEditor, key: super::MKey, modifier: super::MModifiers) -> Event {
+        super::handle_tool_key(editor, key, modifier)
+    }
+}
+
+impl DrawRectangleFilledTool {
+    fn draw_shape(&mut self, editor: &mut AnsiEditor, p2: Position) {
+        editor.clear_overlay_layer();
+        let p1 = editor.drag_pos.start_half_block;
+        let start = Position::new(p1.x.min(p2.x), p1.y.min(p2.y));
+        let end = Position::new(p1.x.max(p2.x), p1.y.max(p2.y));
+        fill_rectangle(&mut editor.buffer_view.lock(), start, end, self.draw_mode.clone(), self.color_mode);
     }
 }

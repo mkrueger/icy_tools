@@ -7,7 +7,7 @@ use crate::{
     AnsiEditor, Event, Message,
 };
 
-use super::{Position, Tool};
+use super::{MKey, MModifiers, Position, Tool};
 
 pub struct LineTool {
     draw_mode: BrushMode,
@@ -59,9 +59,12 @@ impl Tool for LineTool {
             .show_ui(ui, editor_opt, self.char_code.clone(), crate::paint::BrushUi::HideOutline)
     }
 
-    fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
+    fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, _pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
         if button == 1 {
-            editor.set_caret_position(pos);
+            let p2 = editor.half_block_click_pos;
+            self.old_pos = p2;
+            self.draw_shape(editor, p2);
+            editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-line"));
         }
         None
     }
@@ -70,18 +73,32 @@ impl Tool for LineTool {
         response.on_hover_cursor(egui::CursorIcon::Crosshair)
     }
 
-    fn handle_drag_begin(&mut self, _editor: &mut AnsiEditor, _response: &egui::Response) -> Event {
-        self.old_pos = Position::new(-1, -1);
+    fn handle_drag_begin(&mut self, editor: &mut AnsiEditor, _response: &egui::Response) -> Event {
+        let p2 = editor.half_block_click_pos;
+        self.old_pos = p2;
+        self.draw_shape(editor, p2);
         Event::None
     }
 
     fn handle_drag(&mut self, _ui: &egui::Ui, response: egui::Response, editor: &mut AnsiEditor, _calc: &TerminalCalc) -> egui::Response {
         let p2 = editor.half_block_click_pos;
-        if self.old_pos == p2 {
-            return response;
-        }
         self.old_pos = p2;
+        self.draw_shape(editor, p2);
+        response
+    }
 
+    fn handle_drag_end(&mut self, editor: &mut AnsiEditor) -> Option<Message> {
+        editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-line"));
+        None
+    }
+
+    fn handle_key(&mut self, editor: &mut AnsiEditor, key: MKey, modifier: MModifiers) -> Event {
+        super::handle_tool_key(editor, key, modifier)
+    }
+}
+
+impl LineTool {
+    fn draw_shape(&mut self, editor: &mut AnsiEditor, p2: Position) {
         editor.clear_overlay_layer();
         draw_line(
             &mut editor.buffer_view.lock(),
@@ -90,15 +107,5 @@ impl Tool for LineTool {
             self.draw_mode.clone(),
             self.color_mode,
         );
-        response
-    }
-
-    fn handle_drag_end(&mut self, editor: &mut AnsiEditor) -> Option<Message> {
-        if editor.drag_pos.start == editor.drag_pos.cur {
-            editor.buffer_view.lock().get_buffer_mut().remove_overlay();
-        } else {
-            editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-line"));
-        }
-        None
     }
 }

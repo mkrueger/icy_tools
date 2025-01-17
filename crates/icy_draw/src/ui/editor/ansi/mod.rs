@@ -36,7 +36,7 @@ pub struct AnsiEditor {
     pub id: usize,
     pub drag_pos: DragPos,
     pub half_block_click_pos: Position,
-    drag_started: bool,
+    pub drag_started: bool,
     pub buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     pub is_inactive: bool,
 
@@ -622,6 +622,7 @@ impl AnsiEditor {
                     let cp = cp_abs - layer_offset;
                     let click_pos2 = calc.calc_click_pos_half_block(mouse_pos);
                     self.half_block_click_pos = Position::new(click_pos2.x as i32 - layer_offset.x, click_pos2.y as i32 - layer_offset.y);
+                    self.drag_pos.start_half_block = self.half_block_click_pos;
 
                     /*
                     let b: i32 = match responsee.b {

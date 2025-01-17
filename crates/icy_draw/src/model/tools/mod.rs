@@ -162,3 +162,14 @@ fn toolbar_pos_sel_text(editor: &AnsiEditor, show_selection: bool) -> String {
         fl!(crate::LANGUAGE_LOADER, "toolbar-position", line = (pos.y + 1), column = (pos.x + 1))
     }
 }
+
+pub fn handle_tool_key(editor: &mut AnsiEditor, key: MKey, _modifier: MModifiers) -> Event {
+    match key {
+        MKey::Escape => {
+            editor.clear_overlay_layer();
+            editor.drag_started = false;
+        }
+        _ => {}
+    }
+    Event::None
+}
