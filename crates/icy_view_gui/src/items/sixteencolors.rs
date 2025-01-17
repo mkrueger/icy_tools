@@ -100,7 +100,7 @@ impl Item for SixteenPack {
                         let name = pack["name"].as_str().unwrap_or_default().to_string();
                         result.push(Box::new(SixteenFiles::new(filename, month, year, name)));
                     }
-                    result.reverse();
+                    sort_folder(&mut result);
                 }
                 Err(err) => {
                     log::error!("Error parsing json: {}", err);
