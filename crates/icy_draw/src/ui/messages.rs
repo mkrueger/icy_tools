@@ -790,6 +790,7 @@ impl<'a> MainWindow<'a> {
 
             Message::ToggleFullScreen => {
                 self.is_fullscreen = !self.is_fullscreen;
+                self.set_fullscreen_opt = Some(self.is_fullscreen);
             }
 
             Message::ZoomReset => unsafe {

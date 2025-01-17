@@ -50,6 +50,7 @@ pub struct MainWindow<'a> {
     pub commands: Vec<Box<Commands>>,
     pub last_command_update: Instant,
     pub is_fullscreen: bool,
+    pub set_fullscreen_opt: Option<bool>,
 
     pub in_open_file_mode: bool,
     pub open_file_window: icy_view_gui::MainWindow<'a>,
@@ -176,6 +177,7 @@ impl<'a> MainWindow<'a> {
             commands: vec![c],
             is_closed: false,
             is_fullscreen: false,
+            set_fullscreen_opt: None,
             in_open_file_mode: false,
             open_file_window,
             show_settings: false,
@@ -873,7 +875,9 @@ impl<'a> eframe::App for MainWindow<'a> {
             }
         });
 
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.is_fullscreen));
+        if let Some(fullscreen) = self.set_fullscreen_opt.take() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(fullscreen));
+        }
 
         if self.show_settings {
             self.show_settings = self.settings_dialog.show(ctx);
