@@ -22,15 +22,15 @@ egui-bind = { workspace = true }
 egui-notify = { workspace = true }
 log = { workspace = true }
 log4rs = "1.2.0"
-open = "5.3.1"
-dark-light = "1.0.0"
+open = "5.3.2"
+dark-light = "2.0.0"
 zip = { workspace = true }
-notify = "7.0.0"
+notify = "8.0.0"
 gifski = { version="1.32.0", features=["gifsicle"], default-features = false}
 imgref = "1.11.0"
 rgb = "0.8.50"
 thiserror = { workspace = true }
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 clap = { workspace = true }
 github_release_check = "0.2.1"
 
@@ -47,7 +47,7 @@ regex = { workspace = true }
 
 walkdir = { workspace = true }
 serde = { workspace = true }
-serde_json = "1.0.134"
+serde_json = "1.0.135"
 lazy_static = { workspace = true }
 directories = { workspace = true }
 image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
