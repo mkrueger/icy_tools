@@ -16,7 +16,7 @@ use eframe::{
     egui::{self, Key, Response, SidePanel, Ui},
     epaint::FontId,
 };
-use egui::mutex::Mutex;
+use egui::{mutex::Mutex, Modifiers};
 use egui_tiles::{Container, TileId};
 use glow::Context;
 use i18n_embed_fl::fl;
@@ -598,6 +598,41 @@ pub fn button_with_shortcut(ui: &mut Ui, enabled: bool, label: impl Into<String>
 impl<'a> eframe::App for MainWindow<'a> {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let focus = ctx.memory(|r| r.focused());
+
+        ctx.input_mut(|i| {
+            for e in &mut i.events {
+                match e {
+                    egui::Event::Copy => {
+                        *e = egui::Event::Key {
+                            key: Key::C,
+                            modifiers: Modifiers::CTRL,
+                            physical_key: None,
+                            repeat: false,
+                            pressed: true,
+                        };
+                    }
+                    egui::Event::Cut => {
+                        *e = egui::Event::Key {
+                            key: Key::X,
+                            modifiers: Modifiers::CTRL,
+                            physical_key: None,
+                            repeat: false,
+                            pressed: true,
+                        };
+                    }
+                    egui::Event::Paste(_) => {
+                        *e = egui::Event::Key {
+                            key: Key::V,
+                            modifiers: Modifiers::CTRL,
+                            physical_key: None,
+                            repeat: false,
+                            pressed: true,
+                        };
+                    }
+                    _ => {}
+                }
+            }
+        });
 
         if self.in_open_file_mode {
             if self.open_file_window.show_file_chooser(ctx) {
