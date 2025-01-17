@@ -152,22 +152,28 @@ impl Tool for FillTool {
     }
 
     fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
-        if button == 1 {
-            let Ok(layer) = editor.get_cur_layer_index() else { return None };
-            if layer >= editor.buffer_view.lock().get_buffer().layers.len() {
-                return None;
-            }
-            let attr = editor.buffer_view.lock().get_caret().get_attribute();
-            let ch = if let Some(layer) = editor.buffer_view.lock().get_edit_state().get_cur_layer() {
-                layer.get_char(pos)
-            } else {
-                return None;
-            };
-            if self.color_mode.use_fore() || self.color_mode.use_back() || matches!(self.fill_type, BrushMode::Char(_)) {
-                let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-bucket-fill"));
-                let mut op = FillOperation::new(self, editor, ch, AttributedChar::new(*self.char_code.borrow(), attr));
-                op.fill(editor, pos);
-            }
+        let Ok(layer) = editor.get_cur_layer_index() else { return None };
+        if layer >= editor.buffer_view.lock().get_buffer().layers.len() {
+            return None;
+        }
+        let ch = if let Some(layer) = editor.buffer_view.lock().get_edit_state().get_cur_layer() {
+            layer.get_char(pos)
+        } else {
+            return None;
+        };
+
+        let mut attr = editor.get_caret_attribute();
+        let flip_colors = button == 2;
+        if flip_colors {
+            let tmp = attr.get_foreground();
+            attr.set_foreground(attr.get_background());
+            attr.set_background(tmp);
+        }
+
+        if self.color_mode.use_fore() || self.color_mode.use_back() || matches!(self.fill_type, BrushMode::Char(_)) {
+            let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-bucket-fill"));
+            let mut op = FillOperation::new(self, editor, ch, AttributedChar::new(*self.char_code.borrow(), attr));
+            op.fill(editor, pos);
         }
         None
     }

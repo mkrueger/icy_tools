@@ -8,7 +8,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::{
     create_image,
     paint::{BrushMode, ColorMode},
-    AnsiEditor, Event, Message,
+    AnsiEditor, DragMode, Event, Message,
 };
 
 use super::{Position, Tool};
@@ -42,7 +42,7 @@ impl Default for BrushTool {
     }
 }
 impl BrushTool {
-    fn paint_brush(&self, editor: &mut AnsiEditor, pos: Position) {
+    fn paint_brush(&self, editor: &mut AnsiEditor, pos: Position, swap_colors: bool) {
         let mid = Position::new(-(self.size / 2), -(self.size / 2));
 
         let center = pos + mid;
@@ -73,10 +73,18 @@ impl BrushTool {
                 attribute.attr &= !icy_engine::attribute::INVISIBLE;
 
                 if self.color_mode.use_fore() {
-                    attribute.set_foreground(caret_attr.get_foreground());
+                    attribute.set_foreground(if swap_colors {
+                        caret_attr.get_background()
+                    } else {
+                        caret_attr.get_foreground()
+                    });
                 }
                 if self.color_mode.use_back() {
-                    attribute.set_background(caret_attr.get_background());
+                    attribute.set_background(if swap_colors {
+                        caret_attr.get_foreground()
+                    } else {
+                        caret_attr.get_background()
+                    });
                 }
 
                 match &self.brush_mode {
@@ -225,22 +233,19 @@ impl Tool for BrushTool {
     }
 
     fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, pos: Position, _pos_abs: Position, _response: &Response) -> Option<Message> {
-        if button == 1 {
-            let _op: AtomicUndoGuard = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-paint-brush"));
-
-            self.paint_brush(editor, pos);
-        }
+        let _op: AtomicUndoGuard = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-paint-brush"));
+        self.paint_brush(editor, pos, button == 2);
         None
     }
 
     fn handle_drag(&mut self, _ui: &egui::Ui, response: egui::Response, editor: &mut AnsiEditor, _calc: &TerminalCalc) -> egui::Response {
-        self.paint_brush(editor, editor.drag_pos.cur);
+        self.paint_brush(editor, editor.drag_pos.cur, matches!(editor.drag_started, DragMode::Secondary));
         response
     }
 
     fn handle_drag_begin(&mut self, editor: &mut AnsiEditor, _response: &egui::Response) -> Event {
         self.undo_op = Some(editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-paint-brush")));
-        self.paint_brush(editor, editor.drag_pos.cur);
+        self.paint_brush(editor, editor.drag_pos.cur, matches!(editor.drag_started, DragMode::Secondary));
         Event::None
     }
 

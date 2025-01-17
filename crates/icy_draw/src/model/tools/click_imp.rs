@@ -54,6 +54,10 @@ impl Tool for ClickTool {
         !is_selected
     }
 
+    fn has_context_menu(&self) -> bool {
+        true
+    }
+
     fn show_ui(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, editor_opt: Option<&mut AnsiEditor>) -> Option<Message> {
         if self.char_table.is_none() {
             self.char_table = Some(CharTableToolWindow::new(ctx, 16));

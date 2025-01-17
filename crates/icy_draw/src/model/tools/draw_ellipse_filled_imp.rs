@@ -13,7 +13,6 @@ pub struct DrawEllipseFilledTool {
     draw_mode: BrushMode,
     color_mode: ColorMode,
     char_code: std::rc::Rc<std::cell::RefCell<char>>,
-    old_pos: Position,
 }
 
 impl Default for DrawEllipseFilledTool {
@@ -22,7 +21,6 @@ impl Default for DrawEllipseFilledTool {
             draw_mode: BrushMode::HalfBlock,
             color_mode: crate::paint::ColorMode::Both,
             char_code: std::rc::Rc::new(std::cell::RefCell::new('\u{00B0}')),
-            old_pos: Position::default(),
         }
     }
 }
@@ -58,44 +56,27 @@ impl Tool for DrawEllipseFilledTool {
     }
 
     fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, _pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
-        if button == 1 {
-            let p2 = editor.half_block_click_pos;
-            self.old_pos = p2;
-            self.draw_shape(editor, p2);
-            editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-line"));
-        }
-        None
+        super::tool::handle_click(self, editor, button, fl!(crate::LANGUAGE_LOADER, "undo-draw-ellipse"))
     }
 
-    fn handle_drag_begin(&mut self, _editor: &mut AnsiEditor, _response: &egui::Response) -> Event {
-        self.old_pos = Position::new(-1, -1);
-        Event::None
+    fn handle_drag_begin(&mut self, editor: &mut AnsiEditor, _response: &egui::Response) -> Event {
+        super::tool::handle_drag_begin(self, editor)
     }
 
     fn handle_drag(&mut self, _ui: &egui::Ui, response: egui::Response, editor: &mut AnsiEditor, _calc: &TerminalCalc) -> egui::Response {
-        let p2 = editor.half_block_click_pos;
-        self.old_pos = p2;
-
-        self.draw_shape(editor, p2);
+        super::tool::handle_drag(self, editor);
         response
     }
 
     fn handle_drag_end(&mut self, editor: &mut AnsiEditor) -> Option<Message> {
-        if editor.drag_pos.start == editor.drag_pos.cur {
-            editor.buffer_view.lock().get_buffer_mut().remove_overlay();
-        } else {
-            editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-draw-ellipse"));
-        }
-        None
+        super::tool::handle_drag_end(editor, fl!(crate::LANGUAGE_LOADER, "undo-draw-ellipse"))
     }
 
     fn handle_key(&mut self, editor: &mut AnsiEditor, key: super::MKey, modifier: super::MModifiers) -> Event {
-        super::handle_tool_key(editor, key, modifier)
+        super::tool::handle_key(editor, key, modifier)
     }
-}
 
-impl DrawEllipseFilledTool {
-    fn draw_shape(&mut self, editor: &mut AnsiEditor, p2: Position) {
+    fn render_shape(&mut self, editor: &mut AnsiEditor, p2: Position) {
         editor.clear_overlay_layer();
         let p1 = editor.drag_pos.start_half_block;
         let start = Position::new(p1.x.min(p2.x), p1.y.min(p2.y));

@@ -114,6 +114,10 @@ pub trait Tool {
         true
     }
 
+    fn has_context_menu(&self) -> bool {
+        false
+    }
+
     fn show_ui(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, editor_opt: Option<&mut AnsiEditor>) -> Option<Message>;
 
     fn show_doc_ui(&mut self, _ctx: &egui::Context, _ui: &mut egui::Ui, _doc: Arc<Mutex<Box<dyn Document>>>) -> Option<Message> {
@@ -149,6 +153,24 @@ pub trait Tool {
     fn get_toolbar_location_text(&self, editor: &AnsiEditor) -> String {
         toolbar_pos_sel_text(editor, true)
     }
+
+    fn draw_shape(&mut self, editor: &mut AnsiEditor, p2: Position, flip_colors: bool) {
+        editor.clear_overlay_layer();
+        let attr = editor.get_caret_attribute();
+        if flip_colors {
+            let mut flipped = attr;
+            let tmp = flipped.get_foreground();
+            flipped.set_foreground(flipped.get_background());
+            flipped.set_background(tmp);
+            editor.set_caret_attribute(flipped);
+        }
+        self.render_shape(editor, p2);
+        if flip_colors {
+            editor.set_caret_attribute(attr);
+        }
+    }
+
+    fn render_shape(&mut self, _editor: &mut AnsiEditor, _p2: Position) {}
 }
 
 fn toolbar_pos_sel_text(editor: &AnsiEditor, show_selection: bool) -> String {
@@ -163,13 +185,41 @@ fn toolbar_pos_sel_text(editor: &AnsiEditor, show_selection: bool) -> String {
     }
 }
 
-pub fn handle_tool_key(editor: &mut AnsiEditor, key: MKey, _modifier: MModifiers) -> Event {
-    match key {
-        MKey::Escape => {
-            editor.clear_overlay_layer();
-            editor.drag_started = false;
+pub mod tool {
+    use super::{MKey, MModifiers, Tool};
+    use crate::{AnsiEditor, DragMode, Event};
+
+    pub(crate) fn handle_key(editor: &mut AnsiEditor, key: MKey, _modifier: MModifiers) -> Event {
+        match key {
+            MKey::Escape => {
+                editor.clear_overlay_layer();
+                editor.drag_started = crate::DragMode::Off;
+            }
+            _ => {}
         }
-        _ => {}
+        Event::None
     }
-    Event::None
+
+    pub(crate) fn handle_drag_end(editor: &mut AnsiEditor, fl: String) -> Option<crate::Message> {
+        editor.join_overlay(fl);
+        None
+    }
+
+    pub(crate) fn handle_drag(tool: &mut dyn Tool, editor: &mut AnsiEditor) {
+        let p2 = editor.half_block_click_pos;
+        tool.draw_shape(editor, p2, matches!(editor.drag_started, DragMode::Secondary));
+    }
+
+    pub(crate) fn handle_drag_begin(tool: &mut dyn Tool, editor: &mut AnsiEditor) -> Event {
+        let p2 = editor.half_block_click_pos;
+        tool.draw_shape(editor, p2, matches!(editor.drag_started, DragMode::Secondary));
+        Event::None
+    }
+
+    pub(crate) fn handle_click(tool: &mut dyn Tool, editor: &mut AnsiEditor, button: i32, fl: String) -> Option<crate::Message> {
+        let p2 = editor.half_block_click_pos;
+        tool.draw_shape(editor, p2, button != 1);
+        editor.join_overlay(fl);
+        None
+    }
 }

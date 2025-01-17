@@ -32,11 +32,19 @@ pub enum Event {
     CursorPositionChange(Position, Position),
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub enum DragMode {
+    #[default]
+    Off,
+    Primary,
+    Secondary,
+}
+
 pub struct AnsiEditor {
     pub id: usize,
     pub drag_pos: DragPos,
     pub half_block_click_pos: Position,
-    pub drag_started: bool,
+    pub drag_started: DragMode,
     pub buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     pub is_inactive: bool,
 
@@ -205,12 +213,17 @@ impl Document for AnsiEditor {
         if calc.has_focus {
             self.request_focus = false;
         }
-        let response_opt = response.context_menu(|ui| {
-            message = terminal_context_menu(self, &options.commands, ui);
-        });
-        if let Some(response_opt) = response_opt {
-            response = response_opt.response;
+
+        if cur_tool.has_context_menu() {
+            let response_opt = response.context_menu(|ui| {
+                message = terminal_context_menu(self, &options.commands, ui);
+            });
+
+            if let Some(response_opt) = response_opt {
+                response = response_opt.response;
+            }
         }
+
         self.handle_response(ui, response, calc, cur_tool, &mut message);
 
         message
@@ -239,7 +252,7 @@ impl AnsiEditor {
             buffer_view,
             is_inactive: false,
             reference_image: None,
-            drag_started: false,
+            drag_started: DragMode::Off,
             drag_pos: DragPos::default(),
             egui_id: Id::new(id),
             guide: None,
@@ -284,13 +297,16 @@ impl AnsiEditor {
         //(self.pos_changed)(self, pos);
     }
 
+    pub fn get_caret_attribute(&mut self) -> TextAttribute {
+        self.buffer_view.lock().get_caret().get_attribute()
+    }
+
     pub fn set_caret_attribute(&mut self, attr: TextAttribute) {
         if attr == self.buffer_view.lock().get_caret().get_attribute() {
             return;
         }
 
         self.buffer_view.lock().get_caret_mut().set_attr(attr);
-        // (self.attr_changed)(attr);
     }
 
     pub fn join_overlay(&mut self, description: impl Into<String>) {
@@ -612,8 +628,8 @@ impl AnsiEditor {
                 }
             }
         }
-
-        if response.clicked_by(egui::PointerButton::Primary) {
+        let primary_button_clicked = response.clicked_by(egui::PointerButton::Primary);
+        if primary_button_clicked || response.clicked_by(egui::PointerButton::Secondary) {
             if let Some(mouse_pos) = response.hover_pos() {
                 if calc.buffer_rect.contains(mouse_pos) && !calc.vert_scrollbar_rect.contains(mouse_pos) && !calc.horiz_scrollbar_rect.contains(mouse_pos) {
                     let click_pos = calc.calc_click_pos(mouse_pos);
@@ -632,7 +648,8 @@ impl AnsiEditor {
                                      PointerButton::Extra1 => 4,
                                      PointerButton::Extra2 => 5,
                                  }; */
-                    let msg = cur_tool.handle_click(self, 1, cp, cp_abs, &response);
+                    let button = if primary_button_clicked { 1 } else { 2 };
+                    let msg = cur_tool.handle_click(self, button, cp, cp_abs, &response);
                     if message.is_none() {
                         *message = msg;
                     }
@@ -640,11 +657,12 @@ impl AnsiEditor {
             }
         }
 
-        if response.drag_started_by(egui::PointerButton::Primary) {
+        let primary_button_pressed = response.drag_started_by(egui::PointerButton::Primary);
+        if primary_button_pressed || response.drag_started_by(egui::PointerButton::Secondary) {
             if let Some(mouse_pos) = response.hover_pos() {
                 if calc.buffer_rect.contains(mouse_pos) && !calc.vert_scrollbar_rect.contains(mouse_pos) && !calc.horiz_scrollbar_rect.contains(mouse_pos) {
                     let click_pos = calc.calc_click_pos(mouse_pos);
-                    let cp_abs = Position::new(click_pos.x as i32, click_pos.y as i32);
+                    let cp_abs: Position = Position::new(click_pos.x as i32, click_pos.y as i32);
 
                     let layer_offset = self.get_cur_click_offset();
                     let cp = cp_abs - layer_offset;
@@ -660,14 +678,16 @@ impl AnsiEditor {
                     self.drag_pos.cur_abs = cp_abs;
                     self.drag_pos.cur = cp;
                     self.drag_pos.start_half_block = half_block_click_pos;
-                    self.drag_started = true;
+                    self.drag_started = if primary_button_pressed { DragMode::Primary } else { DragMode::Secondary };
 
                     cur_tool.handle_drag_begin(self, &response);
                 }
             }
         }
 
-        if response.dragged_by(egui::PointerButton::Primary) && self.drag_started {
+        if response.dragged_by(egui::PointerButton::Primary) && matches!(self.drag_started, DragMode::Primary)
+            || response.dragged_by(egui::PointerButton::Secondary) && matches!(self.drag_started, DragMode::Secondary)
+        {
             if let Some(mouse_pos) = response.hover_pos() {
                 let layer_offset = self.get_cur_click_offset();
                 let click_pos2 = calc.calc_click_pos_half_block(mouse_pos);
@@ -705,13 +725,15 @@ impl AnsiEditor {
             cur_tool.handle_no_hover(self);
         }
 
-        if response.drag_stopped_by(egui::PointerButton::Primary) {
+        if response.drag_stopped_by(egui::PointerButton::Primary) && matches!(self.drag_started, DragMode::Primary)
+            || response.drag_stopped_by(egui::PointerButton::Secondary) && matches!(self.drag_started, DragMode::Secondary)
+        {
             let msg = cur_tool.handle_drag_end(self);
             if msg.is_some() {
                 *message = msg;
             }
 
-            self.drag_started = false;
+            self.drag_started = DragMode::Off;
         }
 
         response

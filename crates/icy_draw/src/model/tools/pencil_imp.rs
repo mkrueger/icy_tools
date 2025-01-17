@@ -61,18 +61,28 @@ impl Tool for PencilTool {
     }
 
     fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
-        if button == 1 {
-            self.last_pos = pos;
-            let _op: AtomicUndoGuard = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-pencil"));
-            editor.clear_overlay_layer();
-            plot_point(
-                &mut editor.buffer_view.lock(),
-                editor.half_block_click_pos,
-                self.draw_mode.clone(),
-                self.color_mode,
-                PointRole::Line,
-            );
-            editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-pencil"));
+        self.last_pos = pos;
+        let _op: AtomicUndoGuard = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-pencil"));
+        editor.clear_overlay_layer();
+        let flip_colors = button == 2;
+        let attr = editor.get_caret_attribute();
+        if flip_colors {
+            let mut flipped = attr;
+            let tmp = flipped.get_foreground();
+            flipped.set_foreground(flipped.get_background());
+            flipped.set_background(tmp);
+            editor.set_caret_attribute(flipped);
+        }
+        plot_point(
+            &mut editor.buffer_view.lock(),
+            editor.half_block_click_pos,
+            self.draw_mode.clone(),
+            self.color_mode,
+            PointRole::Line,
+        );
+        editor.join_overlay(fl!(crate::LANGUAGE_LOADER, "undo-pencil"));
+        if flip_colors {
+            editor.set_caret_attribute(attr);
         }
         None
     }
@@ -85,6 +95,15 @@ impl Tool for PencilTool {
         if self.last_pos == editor.half_block_click_pos {
             return response;
         }
+        let flip_colors = matches!(editor.drag_started, crate::DragMode::Secondary);
+        let attr = editor.get_caret_attribute();
+        if flip_colors {
+            let mut flipped = attr;
+            let tmp = flipped.get_foreground();
+            flipped.set_foreground(flipped.get_background());
+            flipped.set_background(tmp);
+            editor.set_caret_attribute(flipped);
+        }
         plot_point(
             &mut editor.buffer_view.lock(),
             editor.half_block_click_pos,
@@ -92,7 +111,9 @@ impl Tool for PencilTool {
             self.color_mode,
             PointRole::Line,
         );
-
+        if flip_colors {
+            editor.set_caret_attribute(attr);
+        }
         self.last_pos = editor.half_block_click_pos;
         self.cur_pos = editor.drag_pos.cur;
         editor.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
@@ -105,6 +126,15 @@ impl Tool for PencilTool {
         self.last_pos = editor.half_block_click_pos;
         self.cur_pos = editor.drag_pos.cur;
         editor.clear_overlay_layer();
+        let flip_colors = matches!(editor.drag_started, crate::DragMode::Secondary);
+        let attr = editor.get_caret_attribute();
+        if flip_colors {
+            let mut flipped = attr;
+            let tmp = flipped.get_foreground();
+            flipped.set_foreground(flipped.get_background());
+            flipped.set_background(tmp);
+            editor.set_caret_attribute(flipped);
+        }
         plot_point(
             &mut editor.buffer_view.lock(),
             editor.half_block_click_pos,
@@ -112,6 +142,9 @@ impl Tool for PencilTool {
             self.color_mode,
             PointRole::Line,
         );
+        if flip_colors {
+            editor.set_caret_attribute(attr);
+        }
         editor.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
         Event::None
     }
