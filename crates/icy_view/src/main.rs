@@ -56,7 +56,10 @@ fn main() {
         Box::new(|cc| {
             let gl = cc.gl.as_ref().expect("You need to run eframe with the glow backend");
             egui_extras::install_image_loaders(&cc.egui_ctx);
-
+            cc.egui_ctx.options_mut(|o| {
+                o.zoom_with_keyboard = false;
+                o.zoom_factor = 1.0;
+            });
             let mut fd = MainWindow::new(gl, args.path, options);
             fd.store_options = true;
             if *VERSION < *LATEST_VERSION {

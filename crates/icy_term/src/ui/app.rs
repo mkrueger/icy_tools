@@ -135,6 +135,11 @@ impl MainWindow {
         ]
         .into();
         ctx.set_style(style);
+        ctx.options_mut(|o| {
+            o.zoom_with_keyboard = false;
+            o.zoom_factor = 1.0;
+        });
+
         view
     }
 }

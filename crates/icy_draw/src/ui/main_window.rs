@@ -159,6 +159,10 @@ impl<'a> MainWindow<'a> {
             }
         }
         ctx.set_theme(unsafe { SETTINGS.get_theme() });
+        ctx.options_mut(|o| {
+            o.zoom_with_keyboard = false;
+            o.zoom_factor = 1.0;
+        });
 
         MainWindow {
             document_behavior: DocumentBehavior::new(Arc::new(Mutex::new(tools))),
@@ -883,7 +887,7 @@ impl<'a> eframe::App for MainWindow<'a> {
         self.handle_message(msg);
         self.handle_message(read_outline_keys(ctx));
         self.handle_message(read_color_keys(ctx));
-
+      
         ctx.input(|i| {
             for f in &i.raw.dropped_files {
                 if let Some(path) = &f.path {
