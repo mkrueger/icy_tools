@@ -144,7 +144,6 @@ impl LayerToolWindow {
                                 scale: Some(Vec2::new(scale, scale)),
                                 use_terminal_height: false,
                                 hide_scrollbars: true,
-                                id: Some(ui.id().with(i)),
                                 clip_rect: Some(ui.clip_rect()),
                                 ..Default::default()
                             };

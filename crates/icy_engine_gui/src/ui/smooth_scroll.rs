@@ -9,10 +9,10 @@ pub struct SmoothScroll {
     last_char_height: f32,
     drag_horiz_start: bool,
     drag_vert_start: bool,
-    id: Id,
     lock_focus: bool,
     hide_scrollbars: bool,
     stick_to_bottom: bool,
+    interactive: bool,
     scroll_offset_x: Option<f32>,
     scroll_offset_y: Option<f32>,
     /// Scroll position set by the user
@@ -24,15 +24,10 @@ impl Default for SmoothScroll {
         Self::new()
     }
 }
-static mut SCROLL_ID: u64 = 0;
 
 impl SmoothScroll {
     pub fn new() -> Self {
         Self {
-            id: Id::new(format!("smooth_scroll_{}", unsafe {
-                SCROLL_ID = SCROLL_ID.wrapping_add(1);
-                SCROLL_ID
-            })),
             char_scroll_position: Vec2::ZERO,
             last_char_height: 0.0,
             drag_horiz_start: false,
@@ -43,11 +38,12 @@ impl SmoothScroll {
             scroll_offset_y: None,
             set_scroll_position: false,
             hide_scrollbars: false,
+            interactive: true,
         }
     }
 
-    pub fn with_id(mut self, id: Id) -> Self {
-        self.id = id;
+    pub fn with_interactive(mut self, interactive: bool) -> Self {
+        self.interactive = interactive;
         self
     }
 
@@ -75,17 +71,17 @@ impl SmoothScroll {
         self
     }
 
-    fn persist_data(&mut self, ui: &Ui) {
+    fn persist_data(&mut self, ui: &Ui, id: Id) {
         ui.ctx().memory_mut(|mem: &mut egui::Memory| {
             mem.data.insert_persisted(
-                self.id,
+                id,
                 (self.char_scroll_position, self.last_char_height, self.drag_horiz_start, self.drag_vert_start),
             );
         });
     }
 
-    fn load_data(&mut self, ui: &Ui) {
-        if let Some(scroll) = ui.ctx().memory_mut(|mem| mem.data.get_persisted::<(Vec2, f32, bool, bool)>(self.id)) {
+    fn load_data(&mut self, ui: &Ui, id: Id) {
+        if let Some(scroll) = ui.ctx().memory_mut(|mem| mem.data.get_persisted::<(Vec2, f32, bool, bool)>(id)) {
             self.char_scroll_position = scroll.0;
             if self.char_scroll_position.x.is_nan() {
                 self.char_scroll_position.x = 0.0;
@@ -106,21 +102,35 @@ impl SmoothScroll {
         calc_contents: impl FnOnce(Rect, &TerminalOptions) -> TerminalCalc,
         add_contents: impl FnOnce(&mut Ui, &mut TerminalCalc, &TerminalOptions),
     ) -> (Response, TerminalCalc) {
-        self.load_data(ui);        
-        let size = if let Some(terminal_size) = options.terminal_size {
+        let desired_size = if let Some(terminal_size) = options.terminal_size {
             terminal_size
         } else {
             ui.available_size()
         };
+        //ui.memory_mut(|mem| mem.interested_in_focus(self.id, ui.layer_id()));
+        let (id, rect) = ui.allocate_space(desired_size);
+        self.load_data(ui, id);
 
-        let response = ui.allocate_response(Vec2::new(size.x, size.y), Sense::click_and_drag());
-        
-        ui.memory_mut(|mem| mem.set_focus_lock_filter(response.id, EventFilter {
-            tab: true,
-            horizontal_arrows: true,
-            vertical_arrows: true,
-            escape: true,
-        }));
+        let mut response = ui.interact(rect, id, Sense::click_and_drag());
+        response.intrinsic_size = Some(desired_size);
+
+        if self.interactive && response.clicked() {
+            response.request_focus();
+        }
+        if self.interactive && ui.memory(|mem| mem.has_focus(id)) {
+            ui.memory_mut(|mem: &mut egui::Memory| {
+                mem.set_focus_lock_filter(
+                    id,
+                    EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        escape: true,
+                    },
+                )
+            });
+        }
+
         let rect = response.rect;
 
         let mut calc = calc_contents(rect, options);
@@ -172,17 +182,6 @@ impl SmoothScroll {
             self.show_vertical_scrollbar(ui, &response, &mut calc, has_horiz_scollbar);
         }
         if response.has_focus() {
-            ui.memory_mut(|mem| {
-                mem.set_focus_lock_filter(
-                    self.id,
-                    EventFilter {
-                        tab: true,
-                        horizontal_arrows: true,
-                        vertical_arrows: true,
-                        escape: true,
-                    },
-                )
-            });
             calc.has_focus = true;
         }
 
@@ -195,24 +194,13 @@ impl SmoothScroll {
             self.show_horizontal_scrollbar(ui, &response, &mut calc, has_vert_scrollbar);
         }
         if response.has_focus() {
-            ui.memory_mut(|mem| {
-                mem.set_focus_lock_filter(
-                    self.id,
-                    EventFilter {
-                        tab: true,
-                        horizontal_arrows: true,
-                        vertical_arrows: true,
-                        escape: true,
-                    },
-                )
-            });
             calc.has_focus = true;
         }
 
         if response.clicked() || options.request_focus {
             response.request_focus();
         }
-        self.persist_data(ui);
+        self.persist_data(ui, id);
         calc.set_scroll_position_set_by_user = self.set_scroll_position;
 
         self.clamp_scroll_position(&mut calc);

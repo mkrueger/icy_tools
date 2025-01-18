@@ -8,7 +8,7 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, Id, Key, Response},
+    egui::{self, Key, Response},
     epaint::{mutex::Mutex, Vec2},
 };
 use i18n_embed_fl::fl;
@@ -41,7 +41,6 @@ pub enum DragMode {
 }
 
 pub struct AnsiEditor {
-    pub id: usize,
     pub drag_pos: DragPos,
     pub half_block_click_pos: Position,
     pub drag_started: DragMode,
@@ -54,7 +53,6 @@ pub struct AnsiEditor {
     pub reference_image: Option<PathBuf>,
     // pub outline_changed: std::boxed::Box<dyn Fn(&Editor)>,
     //pub request_refresh: Box<dyn Fn ()>,
-    pub egui_id: Id,
     pub next_scroll_x_position: Option<f32>,
     pub next_scroll_y_position: Option<f32>,
     pub guide: Option<Vec2>,
@@ -197,7 +195,6 @@ impl Document for AnsiEditor {
             fit_width: options.fit_width,
             monitor_settings: unsafe { SETTINGS.monitor_settings.clone() },
             marker_settings: unsafe { SETTINGS.marker_settings.clone() },
-            id: Some(Id::new(self.id + 10000)),
             raster: self.raster,
             guide: self.guide,
             scroll_offset_y: self.next_scroll_y_position.take(),
@@ -244,17 +241,15 @@ impl Document for AnsiEditor {
 }
 
 impl AnsiEditor {
-    pub fn new(gl: &Arc<glow::Context>, id: usize, buf: Buffer) -> Self {
+    pub fn new(gl: &Arc<glow::Context>, buf: Buffer) -> Self {
         let buffer_view = Arc::new(Mutex::new(BufferView::from_buffer(gl, buf)));
         // let buffer_parser = ansi::Parser::default();
         AnsiEditor {
-            id,
             buffer_view,
             is_inactive: false,
             reference_image: None,
             drag_started: DragMode::Off,
             drag_pos: DragPos::default(),
-            egui_id: Id::new(id),
             guide: None,
             raster: None,
             outline_font_mode: false,

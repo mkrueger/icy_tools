@@ -323,7 +323,6 @@ impl SettingsDialog {
                 let opt = icy_engine_gui::TerminalOptions {
                     stick_to_bottom: false,
                     scale: Some(Vec2::new(2.0, 2.0)),
-                    id: Some(egui::Id::new(200 + id)),
                     terminal_size: Some(Vec2::new(font_dims.width as f32 * 10. * 2.0, font_dims.height as f32 * 2.0)),
                     force_focus: self.selected_view == i,
                     ..Default::default()

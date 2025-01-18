@@ -3,7 +3,7 @@ mod undo;
 use std::{path::Path, sync::Arc};
 
 use eframe::{
-    egui::{self, Id, Layout, RichText, Sense},
+    egui::{self, Layout, RichText, Sense},
     emath::Align2,
     epaint::{mutex::Mutex, Color32, FontFamily, FontId, Pos2, Rect, Rounding, Vec2},
 };
@@ -19,7 +19,6 @@ use crate::{model::Tool, to_message, AnsiEditor, ClipboardHandler, Document, Doc
 use self::undo::UndoOperation;
 
 pub struct BitFontEditor {
-    id: usize,
     original_font: BitFont,
     last_updated_font: BitFont,
     font: BitFont,
@@ -45,7 +44,7 @@ pub enum DrawGlyphStyle {
 }
 
 impl BitFontEditor {
-    pub fn new(gl: &Arc<glow::Context>, id: usize, font: BitFont) -> Self {
+    pub fn new(gl: &Arc<glow::Context>, font: BitFont) -> Self {
         let mut buffer = Buffer::new(Size::new(10, 10));
         buffer.is_terminal_buffer = false;
         let mut buffer_view = BufferView::from_buffer(gl, buffer);
@@ -54,7 +53,6 @@ impl BitFontEditor {
         let size = font.size;
         let last_updated_font = font.clone();
         Self {
-            id,
             buffer_view,
             original_font: font.clone(),
             last_updated_font,
@@ -593,7 +591,6 @@ impl Document for BitFontEditor {
                         scale: Some(Vec2::new(2.0, 2.0)),
                         monitor_settings: unsafe { SETTINGS.monitor_settings.clone() },
                         marker_settings: unsafe { SETTINGS.marker_settings.clone() },
-                        id: Some(Id::new(self.id + 20000)),
                         ..Default::default()
                     };
                     self.buffer_view.lock().get_caret_mut().set_is_visible(false);

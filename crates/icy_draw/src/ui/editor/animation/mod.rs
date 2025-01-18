@@ -6,7 +6,7 @@ use std::{
 
 use crate::{model::Tool, AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, TerminalResult, UndoHandler};
 use eframe::{
-    egui::{self, Id, ImageButton, RichText, Slider, TextEdit, TopBottomPanel},
+    egui::{self, ImageButton, RichText, Slider, TextEdit, TopBottomPanel},
     epaint::Vec2,
 };
 use egui::{Image, ProgressBar};
@@ -24,7 +24,6 @@ mod highlighting;
 
 pub struct AnimationEditor {
     gl: Arc<glow::Context>,
-    id: usize,
 
     undostack: usize,
 
@@ -55,7 +54,7 @@ pub struct AnimationEditor {
 }
 
 impl AnimationEditor {
-    pub fn new(gl: Arc<glow::Context>, id: usize, path: &Path, txt: String) -> Self {
+    pub fn new(gl: Arc<glow::Context>, path: &Path, txt: String) -> Self {
         let mut buffer = Buffer::new(Size::new(80, 25));
         buffer.is_terminal_buffer = false;
         let mut buffer_view = BufferView::from_buffer(&gl, buffer);
@@ -66,7 +65,6 @@ impl AnimationEditor {
         let export_path = path.with_extension("gif");
         Self {
             gl,
-            id,
             buffer_view,
             animator,
             txt,
@@ -294,7 +292,6 @@ impl Document for AnimationEditor {
                         stick_to_bottom: false,
                         scale: Some(scale),
                         monitor_settings,
-                        id: Some(Id::new(self.id + 20000)),
                         ..Default::default()
                     };
                     ui.allocate_ui(Vec2::new(ui.available_width(), ui.available_height() - 100.0), |ui| {

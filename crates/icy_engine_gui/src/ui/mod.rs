@@ -163,7 +163,6 @@ pub struct TerminalOptions {
     pub use_terminal_height: bool,
     pub scroll_offset_x: Option<f32>,
     pub scroll_offset_y: Option<f32>,
-    pub id: Option<egui::Id>,
 
     pub show_layer_borders: bool,
     pub show_line_numbers: bool,
@@ -195,7 +194,6 @@ impl Default for TerminalOptions {
             force_focus: false,
             scroll_offset_x: None,
             scroll_offset_y: None,
-            id: None,
             guide: None,
             raster: None,
             terminal_size: None,
@@ -234,9 +232,6 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
         .with_scroll_x_offset(options.scroll_offset_x)
         .with_hide_scrollbars(options.hide_scrollbars);
 
-    if let Some(id) = options.id {
-        scroll = scroll.with_id(id);
-    }
     let caret_pos = buffer_view.lock().get_edit_state().get_caret().get_position();
     let selected_rect = buffer_view.lock().get_edit_state().get_selection();
     let show_line_numbers = options.show_line_numbers;

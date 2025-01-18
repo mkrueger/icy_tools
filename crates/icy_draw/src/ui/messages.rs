@@ -568,10 +568,9 @@ impl<'a> MainWindow<'a> {
                         layer.set_title(buf.layers[0].get_title());
                         buf.layers.clear();
                         buf.layers.push(layer);
-                        let id = self.create_id();
                         buf.is_terminal_buffer = false;
                         buf.set_height(buf.get_line_count());
-                        let editor = AnsiEditor::new(&self.gl, id, buf);
+                        let editor = AnsiEditor::new(&self.gl, buf);
                         crate::add_child(&mut self.document_tree, None, Box::new(editor));
                     }
                 }

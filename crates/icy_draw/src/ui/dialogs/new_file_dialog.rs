@@ -57,8 +57,7 @@ impl Template for Dos16Template {
         buf.palette_mode = icy_engine::PaletteMode::Fixed16;
         buf.font_mode = icy_engine::FontMode::Sauce;
 
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -92,8 +91,7 @@ impl Template for Ice16Template {
         buf.palette_mode = icy_engine::PaletteMode::Fixed16;
         buf.font_mode = icy_engine::FontMode::Sauce;
 
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -127,8 +125,7 @@ impl Template for XB16Template {
         buf.palette_mode = icy_engine::PaletteMode::Free16;
         buf.font_mode = icy_engine::FontMode::Single;
 
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -162,8 +159,7 @@ impl Template for XBExtTemplate {
         buf.palette_mode = icy_engine::PaletteMode::Free16;
         buf.font_mode = icy_engine::FontMode::FixedSize;
         buf.set_font(1, BitFont::default());
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -197,8 +193,7 @@ impl Template for AnsiTemplate {
         buf.palette_mode = icy_engine::PaletteMode::RGB;
         buf.font_mode = icy_engine::FontMode::Unlimited;
 
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -231,8 +226,7 @@ impl Template for FileIdTemplate {
         buf.ice_mode = icy_engine::IceMode::Blink;
         buf.palette_mode = icy_engine::PaletteMode::Fixed16;
         buf.font_mode = icy_engine::FontMode::Sauce;
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -276,8 +270,7 @@ impl Template for AtasciiTemplate {
         buf.set_font(0, font);
         buf.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
 
-        let id = window.create_id();
-        let editor = AnsiEditor::new(&window.gl, id, buf);
+        let editor = AnsiEditor::new(&window.gl, buf);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -323,7 +316,6 @@ impl Template for AnsiMationTemplate {
     }
 
     fn create_file(&self, window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
-        let id = window.create_id();
         let txt = r#"local buf = new_buffer(80, 25)
 
 for i=0,9,1 do
@@ -333,7 +325,7 @@ for i=0,9,1 do
     buf:print("Hello World " .. cur_frame)
     next_frame(buf)
 end"#;
-        let editor = crate::AnimationEditor::new(window.gl.clone(), id, Path::new("."), txt.into());
+        let editor = crate::AnimationEditor::new(window.gl.clone(), Path::new("."), txt.into());
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -363,7 +355,6 @@ impl Template for BitFontTemplate {
     }
 
     fn create_file(&self, window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
-        let id = window.create_id();
         let font = if self.width == 8 && self.height == 16 {
             BitFont::default()
         } else if self.width == 8 && self.height == 8 {
@@ -378,7 +369,7 @@ impl Template for BitFontTemplate {
                 &vec![0; 256 * self.height as usize],
             )
         };
-        let editor = crate::BitFontEditor::new(&window.gl, id, font);
+        let editor = crate::BitFontEditor::new(&window.gl, font);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }
@@ -431,9 +422,8 @@ impl Template for TdfFontTemplate {
     }
 
     fn create_file(&self, window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
-        let id = window.create_id();
         let fonts = vec![TheDrawFont::new(self.title(), self.font_type, 1)];
-        let editor = crate::CharFontEditor::new(&window.gl, id, fonts);
+        let editor = crate::CharFontEditor::new(&window.gl, fonts);
         add_child(&mut window.document_tree, None, Box::new(editor));
         Ok(None)
     }

@@ -252,6 +252,7 @@ impl MainWindow {
             ..Default::default()
         };
         let (mut response, calc) = icy_engine_gui::show_terminal_area(ui, self.buffer_view.clone(), opt);
+
         let inner_response = response.context_menu(|ui| terminal_context_menu(ui, self));
         if let Some(inner_response) = inner_response {
             response = inner_response.response;

@@ -207,24 +207,18 @@ impl<'a> MainWindow<'a> {
                     }
                     let file_name_str = file_name.unwrap_or_default().to_str().unwrap_or_default().to_string();
                     if let Ok(font) = BitFont::from_bytes(file_name_str, data) {
-                        let id = self.create_id();
-                        add_child(
-                            &mut self.document_tree,
-                            Some(full_path.clone()),
-                            Box::new(BitFontEditor::new(&self.gl, id, font)),
-                        );
+                        add_child(&mut self.document_tree, Some(full_path.clone()), Box::new(BitFontEditor::new(&self.gl, font)));
                         return;
                     }
                 }
 
                 if "icyanim" == ext {
-                    let id = self.create_id();
                     match std::str::from_utf8(data) {
                         Ok(txt) => {
                             add_child(
                                 &mut self.document_tree,
                                 Some(full_path.clone()),
-                                Box::new(crate::AnimationEditor::new(self.gl.clone(), id, full_path, txt.to_string())),
+                                Box::new(crate::AnimationEditor::new(self.gl.clone(), full_path, txt.to_string())),
                             );
                         }
                         Err(err) => {
@@ -240,12 +234,7 @@ impl<'a> MainWindow<'a> {
                         return;
                     }
                     if let Ok(fonts) = TheDrawFont::from_tdf_bytes(data) {
-                        let id = self.create_id();
-                        add_child(
-                            &mut self.document_tree,
-                            Some(full_path.clone()),
-                            Box::new(CharFontEditor::new(&self.gl, id, fonts)),
-                        );
+                        add_child(&mut self.document_tree, Some(full_path.clone()), Box::new(CharFontEditor::new(&self.gl, fonts)));
                         return;
                     }
                 }
@@ -253,9 +242,8 @@ impl<'a> MainWindow<'a> {
         }
         match Buffer::from_bytes(file_name, true, data, None, terminal_width) {
             Ok(mut buf) => {
-                let id = self.create_id();
                 buf.is_terminal_buffer = false;
-                let editor = AnsiEditor::new(&self.gl, id, buf);
+                let editor = AnsiEditor::new(&self.gl, buf);
                 add_child(&mut self.document_tree, full_path, Box::new(editor));
             }
             Err(err) => {

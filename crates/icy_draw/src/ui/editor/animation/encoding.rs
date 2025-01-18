@@ -54,7 +54,6 @@ pub fn start_encoding_thread(
     let mut opt = icy_engine_gui::TerminalOptions {
         stick_to_bottom: false,
         scale: Some(Vec2::new(1.0, 1.0)),
-        id: Some(egui::Id::new("gif")),
         ..Default::default()
     };
 

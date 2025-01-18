@@ -16,7 +16,6 @@ use crate::{
 };
 
 pub struct CharFontEditor {
-    id: usize,
     font: BitFont,
     selected_char_opt: Option<char>,
     old_selected_char_opt: Option<char>,
@@ -291,7 +290,6 @@ impl Document for CharFontEditor {
                                     scale: Some(Vec2::new(2.0, 2.0)),
                                     monitor_settings: unsafe { SETTINGS.monitor_settings.clone() },
                                     marker_settings: unsafe { SETTINGS.marker_settings.clone() },
-                                    id: Some(egui::Id::new(self.id + 20000)),
                                     ..Default::default()
                                 };
 
@@ -433,10 +431,10 @@ fn set_attribute(layer: &mut Layer, attr: TextAttribute) {
 }
 
 impl CharFontEditor {
-    pub fn new(gl: &Arc<glow::Context>, id: usize, fonts: Vec<TheDrawFont>) -> Self {
+    pub fn new(gl: &Arc<glow::Context>, fonts: Vec<TheDrawFont>) -> Self {
         let mut buffer = Buffer::new(Size::new(30, 12));
         set_up_layers(&mut buffer);
-        let ansi_editor = AnsiEditor::new(gl, id, buffer);
+        let ansi_editor = AnsiEditor::new(gl, buffer);
 
         let mut buffer = Buffer::new(Size::new(30, 12));
         buffer.is_terminal_buffer = false;
@@ -445,7 +443,6 @@ impl CharFontEditor {
         let outline_previewbuffer_view = Arc::new(Mutex::new(buffer_view));
 
         let mut res = Self {
-            id,
             font: BitFont::default(),
             ansi_editor,
             selected_char_opt: Some('A'),
