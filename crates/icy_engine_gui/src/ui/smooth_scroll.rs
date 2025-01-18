@@ -29,7 +29,10 @@ static mut SCROLL_ID: u64 = 0;
 impl SmoothScroll {
     pub fn new() -> Self {
         Self {
-            id: Id::new(format!("smooth_scroll_{}", unsafe { SCROLL_ID = SCROLL_ID.wrapping_add(1); SCROLL_ID })),
+            id: Id::new(format!("smooth_scroll_{}", unsafe {
+                SCROLL_ID = SCROLL_ID.wrapping_add(1);
+                SCROLL_ID
+            })),
             char_scroll_position: Vec2::ZERO,
             last_char_height: 0.0,
             drag_horiz_start: false,

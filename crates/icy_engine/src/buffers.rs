@@ -773,7 +773,7 @@ impl Buffer {
             return Err(LoadingError::ReadFileError(format!("{err}")).into());
         }
 
-        Buffer::from_bytes(file_name, skip_errors, &bytes, ansi_music)
+        Buffer::from_bytes(file_name, skip_errors, &bytes, ansi_music, None)
     }
 
     /// .
@@ -803,7 +803,13 @@ impl Buffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn from_bytes(file_name: &Path, _skip_errors: bool, bytes: &[u8], ansi_music: Option<MusicOption>) -> EngineResult<Buffer> {
+    pub fn from_bytes(
+        file_name: &Path,
+        _skip_errors: bool,
+        bytes: &[u8],
+        ansi_music: Option<MusicOption>,
+        default_terminal_width: Option<usize>,
+    ) -> EngineResult<Buffer> {
         let ext = file_name.extension().unwrap_or_default().to_string_lossy();
         let mut len = bytes.len();
         let sauce_data: Option<SauceInformation> = match SauceInformation::read(bytes) {
@@ -821,11 +827,11 @@ impl Buffer {
         let ext = ext.to_ascii_lowercase();
         for fmt in &*FORMATS {
             if fmt.get_file_extension() == ext || fmt.get_alt_extensions().contains(&ext) {
-                return fmt.load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music)));
+                return fmt.load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music, default_terminal_width)));
             }
         }
 
-        crate::Ansi::default().load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music)))
+        crate::Ansi::default().load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music, default_terminal_width)))
     }
 
     pub fn to_screenx(&self, x: i32) -> f64 {
@@ -1142,7 +1148,7 @@ mod tests {
         opt.save_sauce = true;
         let ansi_bytes = buf.to_bytes("ans", &opt).unwrap();
 
-        let loaded_buf = Buffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None).unwrap();
+        let loaded_buf = Buffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None, None).unwrap();
         assert_eq!(10, loaded_buf.get_width());
         assert_eq!(10, loaded_buf.layers[0].get_width());
     }

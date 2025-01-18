@@ -150,7 +150,7 @@ fn main() {
                 if path.is_relative() {
                     path = std::env::current_dir().unwrap().join(path);
                 }
-                window.open_file(&path, false);
+                window.open_file(&path, false, None);
             }
             Ok(Box::new(window))
         }),

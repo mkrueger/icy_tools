@@ -146,11 +146,16 @@ impl Default for SaveOptions {
 pub struct LoadData {
     sauce_opt: Option<SauceInformation>,
     ansi_music: Option<MusicOption>,
+    default_terminal_width: Option<usize>,
 }
 
 impl LoadData {
-    pub fn new(sauce_opt: Option<SauceInformation>, ansi_music: Option<MusicOption>) -> Self {
-        LoadData { sauce_opt, ansi_music }
+    pub fn new(sauce_opt: Option<SauceInformation>, ansi_music: Option<MusicOption>, default_terminal_width: Option<usize>) -> Self {
+        LoadData {
+            sauce_opt,
+            ansi_music,
+            default_terminal_width,
+        }
     }
 }
 
@@ -373,7 +378,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_ansi(data: &[u8]) {
-        let buf = Buffer::from_bytes(&PathBuf::from("test.ans"), false, data, None).unwrap();
+        let buf = Buffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
         let converted = super::Ansi::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
         // more gentle output.
         let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();

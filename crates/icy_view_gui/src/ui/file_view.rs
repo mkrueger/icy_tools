@@ -17,6 +17,7 @@ use super::options::{Options, ScrollSpeed};
 pub enum Message {
     Select(usize, bool),
     Open(usize),
+    Reopen,
     Cancel,
     Refresh,
     ParentFolder,
@@ -24,6 +25,7 @@ pub enum Message {
     ShowSauce(usize),
     ShowHelpDialog,
     ChangeScrollSpeed,
+    SetTerminalWidth,
 }
 pub struct FileView {
     /// Selected file path
@@ -37,6 +39,8 @@ pub struct FileView {
     pub options: super::options::Options,
     pub filter: String,
     pre_select_file: Option<String>,
+    pub show_terminal_width: bool,
+    pub terminal_width: usize,
 }
 
 impl FileView {
@@ -71,12 +75,14 @@ impl FileView {
             filter: String::new(),
             options,
             upgrade_version: None,
+            show_terminal_width: false,
+            terminal_width: 80,
         }
     }
 
     pub(crate) fn show_ui(&mut self, ui: &mut Ui, file_chooser: bool) -> Option<Message> {
         let mut command: Option<Message> = None;
-
+        let mut focus = true;
         if file_chooser {
             TopBottomPanel::bottom("bottom_buttons").show_inside(ui, |ui| {
                 ui.set_width(350.0);
@@ -101,10 +107,13 @@ impl FileView {
                 self.filter.clear();
             }
 
-            ui.add_sized(
+            let r = ui.add_sized(
                 [200.0, ui.style().spacing.interact_size.y],
                 TextEdit::singleline(&mut self.filter).hint_text(fl!(crate::LANGUAGE_LOADER, "filter-entries-hint-text")),
             );
+            if r.has_focus() {
+                focus = false;
+            }
 
             if let Some(ver) = &self.upgrade_version {
                 ui.hyperlink_to(
@@ -169,6 +178,12 @@ impl FileView {
                     command = Some(Message::ChangeScrollSpeed);
                     ui.close_menu();
                 }
+
+                let r = ui.selectable_label(false, fl!(crate::LANGUAGE_LOADER, "menu-item-set_terminal_width"));
+                if r.clicked() {
+                    command = Some(Message::SetTerminalWidth);
+                    ui.close_menu();
+                }
             });
         });
 
@@ -181,11 +196,42 @@ impl FileView {
                     self.parents.push(Box::new(ItemFolder::new(path)));
                     command = self.refresh();
                 }
+
+                if response.has_focus() {
+                    focus = false;
+                }
             }
             None => {
                 ui.colored_label(ui.style().visuals.error_fg_color, fl!(crate::LANGUAGE_LOADER, "error-invalid-path"));
             }
         });
+
+        if self.show_terminal_width {
+            ui.horizontal(|ui| {
+                let mut width_edit = self.terminal_width.to_string();
+                ui.label(fl!(crate::LANGUAGE_LOADER, "label-terminal_width"));
+                let response = ui.add(TextEdit::singleline(&mut width_edit).desired_width(100.));
+                if response.has_focus() {
+                    focus = false;
+                }
+                if response.changed() {
+                    if let Ok(width) = width_edit.parse::<usize>() {
+                        self.terminal_width = width;
+                    }
+                    command = Some(Message::Reopen);
+                    ui.close_menu();
+                }
+
+                let response = ui.button("🗙");
+                if response.clicked() {
+                    self.show_terminal_width = false;
+                }
+            });
+            if command.is_some() {
+                return command;
+            }
+        }
+
         if self.selected_file.is_none() && !self.files.is_empty() {
             //  command = Some(Command::Select(0));
         }
@@ -311,7 +357,7 @@ impl FileView {
             }
         });
 
-        if ui.is_enabled() {
+        if ui.is_enabled() && focus {
             if ui.input(|i| i.key_pressed(egui::Key::PageUp) && i.modifiers.alt) {
                 command = Some(Message::ParentFolder);
             }

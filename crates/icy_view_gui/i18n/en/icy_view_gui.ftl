@@ -10,12 +10,15 @@ menu-item-auto-scroll=Auto scroll
 menu-item-scroll-speed-slow=Slow speed
 menu-item-scroll-speed-medium=Medium speed
 menu-item-scroll-speed-fast=Fast speed
+menu-item-set_terminal_width=Set terminal width
+
 menu-upgrade_version=Upgrade to { $version }
 
 tooltip-refresh=Refresh
 tooltip-reset-filter-button=Reset filter
 
 filter-entries-hint-text=Filter entries
+label-terminal_width=Terminal width:
 
 message-loading-image=Loading image…
 message-file-not-supported=File { $name } may not be supported.

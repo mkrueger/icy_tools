@@ -10,12 +10,15 @@ menu-item-auto-scroll=Automatisches Scrollen
 menu-item-scroll-speed-slow=Langsam scrollen
 menu-item-scroll-speed-medium=Mittel scrollen
 menu-item-scroll-speed-fast=Schnell scrollen
+menu-item-set_terminal_width=Terminal Breite
+
 menu-upgrade_version=Neue Version { $version }
 
 tooltip-refresh=Neu laden
 tooltip-reset-filter-button=Filter zurücksetzen
 
 filter-entries-hint-text=Einträge filtern
+label-terminal_width=Terminal Breite:
 
 message-loading-image=Bild wird geladen…
 message-file-not-supported=Die Datei { $name } wird nicht unterstützt.

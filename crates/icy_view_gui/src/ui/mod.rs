@@ -61,6 +61,8 @@ pub struct MainWindow<'a> {
 
     toasts: egui_notify::Toasts,
     is_closed: bool,
+    selected_index: Option<usize>,
+    last_force_load: bool,
     pub opened_file: Option<usize>,
     pub store_options: bool,
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -195,6 +197,8 @@ impl<'a> MainWindow<'a> {
             animation: None,
             store_options: false,
             sound_thread: Arc::new(Mutex::new(SoundThread::new())),
+            selected_index: None,
+            last_force_load: false,
         }
     }
 
@@ -634,7 +638,13 @@ impl<'a> MainWindow<'a> {
 
             if force_load || entry.item_type() == ItemType::Ansi || entry.item_type() == ItemType::AnsiMusic {
                 if let Some(data) = entry.read_data() {
-                    match Buffer::from_bytes(&entry.get_file_path(), true, &data, Some(MusicOption::Both)) {
+                    match Buffer::from_bytes(
+                        &entry.get_file_path(),
+                        true,
+                        &data,
+                        Some(MusicOption::Both),
+                        Some(self.file_view.terminal_width),
+                    ) {
                         Ok(buf) => {
                             if let Ok(mut thread) = self.sound_thread.lock() {
                                 for music in buf.ansi_music.iter().cloned() {
@@ -666,13 +676,15 @@ impl<'a> MainWindow<'a> {
     pub fn handle_command(&mut self, ctx: &Context, command: Option<Message>) {
         if let Some(command) = command {
             match command {
-                Message::Select(file, fore_load) => {
-                    if self.file_view.selected_file != Some(file) || fore_load {
+                Message::Select(file, force_load) => {
+                    if self.file_view.selected_file != Some(file) || force_load {
                         self.reset_state();
                         if file < self.file_view.files.len() {
+                            self.selected_index = Some(file);
                             self.file_view.selected_file = Some(file);
                             self.file_view.scroll_pos = Some(file);
-                            self.view_selected(ctx, file, fore_load);
+                            self.last_force_load = force_load;
+                            self.view_selected(ctx, file, force_load);
                         }
                     }
                 }
@@ -682,6 +694,13 @@ impl<'a> MainWindow<'a> {
                 }
                 Message::Open(file) => {
                     self.is_closed = !self.open(ctx, file);
+                }
+                Message::Reopen => {
+                    if let Some(file) = self.selected_index {
+                        self.reset_state();
+                        self.view_selected(ctx, file, self.last_force_load);
+                        println!("Reopen: {file}");
+                    }
                 }
                 Message::Cancel => {
                     self.is_closed = true;
@@ -743,6 +762,9 @@ impl<'a> MainWindow<'a> {
                         }
                     }
                 }
+                Message::SetTerminalWidth => {
+                    self.file_view.show_terminal_width = true;
+                }
             }
         }
     }
@@ -757,5 +779,9 @@ impl<'a> MainWindow<'a> {
             self.opened_file = Some(file);
             false
         }
+    }
+
+    pub fn get_terminal_width(&self) -> usize {
+        self.file_view.terminal_width
     }
 }

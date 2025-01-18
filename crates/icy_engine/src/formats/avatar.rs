@@ -123,10 +123,12 @@ impl OutputFormat for Avatar {
     }
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
+        let load_data = load_data_opt.unwrap_or_default();
+        let width = load_data.default_terminal_width.unwrap_or(80);
+        let mut result: Buffer = Buffer::new((width, 25));
+
         result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
-        let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
@@ -157,14 +159,14 @@ mod tests {
 
     #[test]
     fn test_clear() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 12, b'X'], None).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 12, b'X'], None, None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(1, buf.get_real_buffer_width());
     }
 
     #[test]
     fn test_repeat() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X'], None).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X'], None, None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(5, buf.get_real_buffer_width());
         assert_eq!(b'X', buf.get_char((0, 0)).ch as u8);
@@ -176,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_zero_repeat() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[25, b'b', 0], None).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[25, b'b', 0], None, None).unwrap();
         assert_eq!(0, buf.get_line_count());
         assert_eq!(0, buf.get_real_buffer_width());
     }
@@ -190,6 +192,7 @@ mod tests {
                 12, 22, 1, 8, 32, 88, 22, 1, 15, 88, 25, 32, 4, 88, 22, 1, 8, 88, 32, 32, 32, 22, 1, 3, 88, 88, 22, 1, 57, 88, 88, 88, 25, 88, 7, 22, 1, 9, 25,
                 88, 4, 22, 1, 25, 88, 88, 88, 88, 88, 88, 22, 1, 1, 25, 88, 13,
             ],
+            None,
             None,
         )
         .unwrap();
@@ -232,7 +235,7 @@ mod tests {
     }
 
     fn test_avt(data: &[u8]) {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None).unwrap();
+        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None, None).unwrap();
         let converted = super::Avatar::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
 
         // more gentle output.

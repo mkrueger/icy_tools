@@ -191,7 +191,7 @@ impl<'a> MainWindow<'a> {
         }
     }
 
-    pub fn open_data(&mut self, path: &Path, data: &[u8]) {
+    pub fn open_data(&mut self, path: &Path, data: &[u8], terminal_width: Option<usize>) {
         let full_path = path.to_path_buf();
         self.mru_files.add_recent_file(path);
         if let Some(ext) = path.extension() {
@@ -239,7 +239,7 @@ impl<'a> MainWindow<'a> {
             }
         }
 
-        match Buffer::from_bytes(path, true, data, None) {
+        match Buffer::from_bytes(path, true, data, None, terminal_width) {
             Ok(mut buf) => {
                 let id = self.create_id();
                 buf.is_terminal_buffer = false;
@@ -254,7 +254,7 @@ impl<'a> MainWindow<'a> {
         }
     }
 
-    pub fn open_file(&mut self, path: &Path, load_autosave: bool) {
+    pub fn open_file(&mut self, path: &Path, load_autosave: bool, terminal_width: Option<usize>) {
         let mut already_open = None;
         self.enumerate_documents(|id, pane| {
             if let Some(doc_path) = pane.get_path() {
@@ -280,7 +280,7 @@ impl<'a> MainWindow<'a> {
 
         match fs::read(load_path) {
             Ok(data) => {
-                self.open_data(path, &data);
+                self.open_data(path, &data, terminal_width);
             }
             Err(err) => {
                 log::error!("error loading file {path:?}: {err}");
@@ -641,10 +641,10 @@ impl<'a> eframe::App for MainWindow<'a> {
                     let path = self.open_file_window.file_view.files[file].get_file_path();
                     if self.open_file_window.file_view.files[file].is_virtual_file() {
                         if let Some(data) = self.open_file_window.file_view.files[file].read_data() {
-                            self.open_data(&path, &data);
+                            self.open_data(&path, &data, Some(self.open_file_window.get_terminal_width()));
                         }
                     } else {
-                        self.open_file(&path, false);
+                        self.open_file(&path, false, Some(self.open_file_window.get_terminal_width()));
                     }
 
                     /*/
@@ -887,7 +887,7 @@ impl<'a> eframe::App for MainWindow<'a> {
         ctx.input(|i| {
             for f in &i.raw.dropped_files {
                 if let Some(path) = &f.path {
-                    self.open_file(path, false);
+                    self.open_file(path, false, None);
                 }
             }
             for evt in &i.events.clone() {

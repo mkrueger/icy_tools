@@ -196,10 +196,10 @@ impl<'a> MainWindow<'a> {
                     return;
                 }
 
-                self.open_file(&path, false);
+                self.open_file(&path, false, None);
             }
             Message::LoadFile(path, load_autosave) => {
-                self.open_file(&path, load_autosave);
+                self.open_file(&path, load_autosave, None);
             }
 
             Message::SaveFile => {
