@@ -106,7 +106,7 @@ impl SmoothScroll {
         calc_contents: impl FnOnce(Rect, &TerminalOptions) -> TerminalCalc,
         add_contents: impl FnOnce(&mut Ui, &mut TerminalCalc, &TerminalOptions),
     ) -> (Response, TerminalCalc) {
-        self.load_data(ui);
+        self.load_data(ui);        
         let size = if let Some(terminal_size) = options.terminal_size {
             terminal_size
         } else {
@@ -114,6 +114,13 @@ impl SmoothScroll {
         };
 
         let response = ui.allocate_response(Vec2::new(size.x, size.y), Sense::click_and_drag());
+        
+        ui.memory_mut(|mem| mem.set_focus_lock_filter(response.id, EventFilter {
+            tab: true,
+            horizontal_arrows: true,
+            vertical_arrows: true,
+            escape: true,
+        }));
         let rect = response.rect;
 
         let mut calc = calc_contents(rect, options);
