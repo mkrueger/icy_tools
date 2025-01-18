@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -195,60 +195,68 @@ impl<'a> MainWindow<'a> {
         }
     }
 
-    pub fn open_data(&mut self, path: &Path, data: &[u8], terminal_width: Option<usize>) {
-        let full_path = path.to_path_buf();
-        self.mru_files.add_recent_file(path);
-        if let Some(ext) = path.extension() {
-            let ext = ext.to_str().unwrap_or_default().to_ascii_lowercase();
-            if is_font_extensions(&ext) {
-                let file_name = path.file_name();
-                if file_name.is_none() {
-                    return;
-                }
-                let file_name_str = file_name.unwrap_or_default().to_str().unwrap_or_default().to_string();
-                if let Ok(font) = BitFont::from_bytes(file_name_str, data) {
-                    let id = self.create_id();
-                    add_child(&mut self.document_tree, Some(full_path), Box::new(BitFontEditor::new(&self.gl, id, font)));
-                    return;
-                }
-            }
-
-            if "icyanim" == ext {
-                let id = self.create_id();
-                match std::str::from_utf8(data) {
-                    Ok(txt) => {
+    pub fn open_data(&mut self, full_path: Option<PathBuf>, file_name: &Path, data: &[u8], terminal_width: Option<usize>) {
+        if let Some(full_path) = &full_path {
+            self.mru_files.add_recent_file(&full_path);
+            if let Some(ext) = full_path.extension() {
+                let ext = ext.to_str().unwrap_or_default().to_ascii_lowercase();
+                if is_font_extensions(&ext) {
+                    let file_name = full_path.file_name();
+                    if file_name.is_none() {
+                        return;
+                    }
+                    let file_name_str = file_name.unwrap_or_default().to_str().unwrap_or_default().to_string();
+                    if let Ok(font) = BitFont::from_bytes(file_name_str, data) {
+                        let id = self.create_id();
                         add_child(
                             &mut self.document_tree,
-                            Some(full_path),
-                            Box::new(crate::AnimationEditor::new(self.gl.clone(), id, path, txt.to_string())),
+                            Some(full_path.clone()),
+                            Box::new(BitFontEditor::new(&self.gl, id, font)),
                         );
-                    }
-                    Err(err) => {
-                        self.show_error(format!("{err}"));
+                        return;
                     }
                 }
-                return;
-            }
 
-            if "tdf" == ext {
-                let file_name = path.file_name();
-                if file_name.is_none() {
+                if "icyanim" == ext {
+                    let id = self.create_id();
+                    match std::str::from_utf8(data) {
+                        Ok(txt) => {
+                            add_child(
+                                &mut self.document_tree,
+                                Some(full_path.clone()),
+                                Box::new(crate::AnimationEditor::new(self.gl.clone(), id, full_path, txt.to_string())),
+                            );
+                        }
+                        Err(err) => {
+                            self.show_error(format!("{err}"));
+                        }
+                    }
                     return;
                 }
-                if let Ok(fonts) = TheDrawFont::from_tdf_bytes(data) {
-                    let id = self.create_id();
-                    add_child(&mut self.document_tree, Some(full_path), Box::new(CharFontEditor::new(&self.gl, id, fonts)));
-                    return;
+
+                if "tdf" == ext {
+                    let file_name = full_path.file_name();
+                    if file_name.is_none() {
+                        return;
+                    }
+                    if let Ok(fonts) = TheDrawFont::from_tdf_bytes(data) {
+                        let id = self.create_id();
+                        add_child(
+                            &mut self.document_tree,
+                            Some(full_path.clone()),
+                            Box::new(CharFontEditor::new(&self.gl, id, fonts)),
+                        );
+                        return;
+                    }
                 }
             }
         }
-
-        match Buffer::from_bytes(path, true, data, None, terminal_width) {
+        match Buffer::from_bytes(file_name, true, data, None, terminal_width) {
             Ok(mut buf) => {
                 let id = self.create_id();
                 buf.is_terminal_buffer = false;
                 let editor = AnsiEditor::new(&self.gl, id, buf);
-                add_child(&mut self.document_tree, Some(full_path), Box::new(editor));
+                add_child(&mut self.document_tree, full_path, Box::new(editor));
             }
             Err(err) => {
                 log::error!("Error loading file: {}", err);
@@ -284,7 +292,12 @@ impl<'a> MainWindow<'a> {
 
         match fs::read(load_path) {
             Ok(data) => {
-                self.open_data(path, &data, terminal_width);
+                self.open_data(
+                    Some(path.to_path_buf()),
+                    &PathBuf::from(path.file_name().unwrap_or_default()),
+                    &data,
+                    terminal_width,
+                );
             }
             Err(err) => {
                 log::error!("error loading file {path:?}: {err}");
@@ -649,7 +662,12 @@ impl<'a> eframe::App for MainWindow<'a> {
                     let path = self.open_file_window.file_view.files[file].get_file_path();
                     if self.open_file_window.file_view.files[file].is_virtual_file() {
                         if let Some(data) = self.open_file_window.file_view.files[file].read_data() {
-                            self.open_data(&path, &data, Some(self.open_file_window.get_terminal_width()));
+                            self.open_data(
+                                None,
+                                &PathBuf::from(path.file_name().unwrap()),
+                                &data,
+                                Some(self.open_file_window.get_terminal_width()),
+                            );
                         }
                     } else {
                         self.open_file(&path, false, Some(self.open_file_window.get_terminal_width()));
