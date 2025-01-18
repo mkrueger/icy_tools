@@ -113,8 +113,8 @@ impl SmoothScroll {
             ui.available_size()
         };
 
-        let (_, rect) = ui.allocate_space(Vec2::new(size.x, size.y));
-        let mut response = ui.interact(rect, self.id, Sense::click_and_drag());
+        let response = ui.allocate_response(Vec2::new(size.x, size.y), Sense::click_and_drag());
+        let rect = response.rect;
 
         let mut calc = calc_contents(rect, options);
         calc.char_scroll_position = self.char_scroll_position;
@@ -162,7 +162,7 @@ impl SmoothScroll {
         let has_vert_scrollbar = calc.char_height > calc.buffer_char_height;
         if has_vert_scrollbar && !self.hide_scrollbars {
             self.clamp_scroll_position(&mut calc);
-            response = self.show_vertical_scrollbar(ui, response, &mut calc, has_horiz_scollbar);
+            self.show_vertical_scrollbar(ui, &response, &mut calc, has_horiz_scollbar);
         }
         if response.has_focus() {
             ui.memory_mut(|mem| {
@@ -185,7 +185,7 @@ impl SmoothScroll {
 
         if has_horiz_scollbar && !self.hide_scrollbars {
             self.clamp_scroll_position(&mut calc);
-            response = self.show_horizontal_scrollbar(ui, response, &mut calc, has_vert_scrollbar);
+            self.show_horizontal_scrollbar(ui, &response, &mut calc, has_vert_scrollbar);
         }
         if response.has_focus() {
             ui.memory_mut(|mem| {
@@ -220,7 +220,7 @@ impl SmoothScroll {
         calc.char_scroll_position = self.char_scroll_position;
     }
 
-    fn show_vertical_scrollbar(&mut self, ui: &Ui, response: Response, calc: &mut TerminalCalc, has_horiz_scrollbar: bool) -> Response {
+    fn show_vertical_scrollbar(&mut self, ui: &Ui, response: &Response, calc: &mut TerminalCalc, has_horiz_scrollbar: bool) {
         let scrollbar_width = ui.style().spacing.scroll.bar_width;
         let x = calc.terminal_rect.right() - scrollbar_width;
         let mut bg_rect: Rect = calc.terminal_rect;
@@ -255,10 +255,9 @@ impl SmoothScroll {
             4.,
             Color32::from_rgba_unmultiplied(0xFF, 0xFF, 0xFF, 0x5F + (127.0 * how_on) as u8),
         );
-        response
     }
 
-    fn show_horizontal_scrollbar(&mut self, ui: &Ui, response: Response, calc: &mut TerminalCalc, has_vert_scrollbar: bool) -> Response {
+    fn show_horizontal_scrollbar(&mut self, ui: &Ui, response: &Response, calc: &mut TerminalCalc, has_vert_scrollbar: bool) {
         let scrollbar_height = ui.style().spacing.scroll.bar_width;
         let y = calc.terminal_rect.bottom() - scrollbar_height;
         let mut bg_rect: Rect = calc.terminal_rect;
@@ -270,7 +269,7 @@ impl SmoothScroll {
         let bar_offset = -bar_width / 2.0;
 
         let how_on = if ui.is_enabled() {
-            let (dragged, hovered) = self.handle_user_input_horiz(ui, &response, y, bar_offset, calc, bg_rect);
+            let (dragged, hovered) = self.handle_user_input_horiz(ui, response, y, bar_offset, calc, bg_rect);
             self.clamp_scroll_position(calc);
             ui.ctx().animate_bool(response.id.with("_horiz"), hovered || dragged)
         } else {
@@ -296,7 +295,6 @@ impl SmoothScroll {
             4.,
             Color32::from_rgba_unmultiplied(0xFF, 0xFF, 0xFF, 0x5F + (127.0 * how_on) as u8),
         );
-        response
     }
 
     fn handle_user_input_vert(&mut self, ui: &Ui, response: &Response, x: f32, bar_offset: f32, calc: &TerminalCalc, bg_rect: Rect) -> (bool, bool) {
