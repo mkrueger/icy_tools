@@ -61,7 +61,6 @@ pub struct MainWindow<'a> {
 
     toasts: egui_notify::Toasts,
     is_closed: bool,
-    selected_index: Option<usize>,
     last_force_load: bool,
     pub opened_file: Option<usize>,
     pub store_options: bool,
@@ -72,7 +71,7 @@ pub struct MainWindow<'a> {
 }
 pub const EXT_MUSIC_LIST: [&str; 2] = ["ams", "mus"];
 
-pub const EXT_WHITE_LIST: [&str; 7] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus"];
+pub const EXT_WHITE_LIST: [&str; 10] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus", "txt", "doc", "md"];
 pub const EXT_BLACK_LIST: [&str; 8] = ["zip", "rar", "gz", "tar", "7z", "pdf", "exe", "com"];
 pub const EXT_IMAGE_LIST: [&str; 5] = ["png", "jpg", "jpeg", "gif", "bmp"];
 
@@ -197,7 +196,6 @@ impl<'a> MainWindow<'a> {
             animation: None,
             store_options: false,
             sound_thread: Arc::new(Mutex::new(SoundThread::new())),
-            selected_index: None,
             last_force_load: false,
         }
     }
@@ -680,7 +678,6 @@ impl<'a> MainWindow<'a> {
                     if self.file_view.selected_file != Some(file) || force_load {
                         self.reset_state();
                         if file < self.file_view.files.len() {
-                            self.selected_index = Some(file);
                             self.file_view.selected_file = Some(file);
                             self.file_view.scroll_pos = Some(file);
                             self.last_force_load = force_load;
@@ -696,10 +693,10 @@ impl<'a> MainWindow<'a> {
                     self.is_closed = !self.open(ctx, file);
                 }
                 Message::Reopen => {
-                    if let Some(file) = self.selected_index {
+                    if let Some(file) = self.file_view.selected_file {
                         self.reset_state();
+                        self.file_view.selected_file = Some(file);
                         self.view_selected(ctx, file, self.last_force_load);
-                        println!("Reopen: {file}");
                     }
                 }
                 Message::Cancel => {

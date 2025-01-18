@@ -216,7 +216,7 @@ impl FileView {
                 }
                 if response.changed() {
                     if let Ok(width) = width_edit.parse::<usize>() {
-                        self.terminal_width = width;
+                        self.terminal_width = width.clamp(1, 1000);
                     }
                     command = Some(Message::Reopen);
                     ui.close_menu();
