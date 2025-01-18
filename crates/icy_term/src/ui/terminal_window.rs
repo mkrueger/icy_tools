@@ -3,7 +3,7 @@ use eframe::{
     egui::{self, CursorIcon, PointerButton},
     epaint::Vec2,
 };
-use egui::{ImageButton, Margin, Modifiers, RichText};
+use egui::{ImageButton, Margin, Modifiers, RichText, Sense};
 use i18n_embed_fl::fl;
 use icy_engine::{Position, Selection, TextPane};
 use web_time::Duration;
@@ -35,17 +35,26 @@ impl MainWindow {
                     ui.disable();
                 }
                 ui.horizontal(|ui| {
-                    let r = ui.add(ImageButton::new(UPLOAD.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
-                        ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).small());
-                    });
+                    let sense = Sense {
+                        click: true,
+                        drag: false,
+                        focusable: false,
+                    };
+                    let r = ui
+                        .add(ImageButton::new(UPLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .on_hover_ui(|ui| {
+                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).small());
+                        });
 
                     if r.clicked() {
                         self.set_mode(ctx, MainWindowMode::SelectProtocol(false));
                     }
 
-                    let r = ui.add(ImageButton::new(DOWNLOAD.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
-                        ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-download")).small());
-                    });
+                    let r = ui
+                        .add(ImageButton::new(DOWNLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .on_hover_ui(|ui| {
+                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-download")).small());
+                        });
 
                     if r.clicked() {
                         self.set_mode(ctx, MainWindowMode::SelectProtocol(true));
@@ -53,9 +62,11 @@ impl MainWindow {
                     let mut send_login = false;
                     if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
                         if !auto_login.logged_in {
-                            let r = ui.add(ImageButton::new(KEY.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
-                                ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
-                            });
+                            let r = ui
+                                .add(ImageButton::new(KEY.clone().tint(crate::ui::button_tint(ui)).sense(sense)))
+                                .on_hover_ui(|ui| {
+                                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
+                                });
 
                             if r.clicked() {
                                 send_login = true;
@@ -67,9 +78,11 @@ impl MainWindow {
                         self.send_login();
                     }
 
-                    let r: egui::Response = ui.add(ImageButton::new(CALL.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
-                        ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).small());
-                    });
+                    let r: egui::Response = ui
+                        .add(ImageButton::new(CALL.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .on_hover_ui(|ui| {
+                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).small());
+                        });
 
                     if r.clicked() {
                         self.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
@@ -131,9 +144,11 @@ impl MainWindow {
                     let size = ui.available_size_before_wrap();
                     ui.add_space(size.x - 70.0);
 
-                    let r = ui.add(ImageButton::new(LOGOUT.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
-                        ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).small());
-                    });
+                    let r = ui
+                        .add(ImageButton::new(LOGOUT.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .on_hover_ui(|ui| {
+                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).small());
+                        });
                     if r.clicked() {
                         self.hangup(ctx);
                     }
@@ -589,7 +604,9 @@ impl MainWindow {
                         self.print_char(*c);
                     }
                 }
-                response.request_focus();
+                if !response.has_focus() {
+                    response.request_focus();
+                }
                 ui.input_mut(|i| {
                     i.consume_key(modifiers, key);
                 });

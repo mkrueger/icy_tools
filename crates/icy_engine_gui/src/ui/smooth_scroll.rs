@@ -107,7 +107,6 @@ impl SmoothScroll {
         } else {
             ui.available_size()
         };
-        //ui.memory_mut(|mem| mem.interested_in_focus(self.id, ui.layer_id()));
         let (id, rect) = ui.allocate_space(desired_size);
         self.load_data(ui, id);
 
@@ -195,10 +194,6 @@ impl SmoothScroll {
         }
         if response.has_focus() {
             calc.has_focus = true;
-        }
-
-        if response.clicked() || options.request_focus {
-            response.request_focus();
         }
         self.persist_data(ui, id);
         calc.set_scroll_position_set_by_user = self.set_scroll_position;
