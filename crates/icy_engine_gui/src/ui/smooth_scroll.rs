@@ -330,9 +330,11 @@ impl SmoothScroll {
         if response.hovered() {
             let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
             for e in events {
-                if let egui::Event::MouseWheel { delta, .. } = e {
-                    self.char_scroll_position.y -= delta.y * 42.0;
-                    self.set_scroll_position = true;
+                if let egui::Event::MouseWheel { delta, modifiers, .. } = e {
+                    if !(modifiers.ctrl || modifiers.mac_cmd) {
+                        self.char_scroll_position.y -= delta.y * 42.0;
+                        self.set_scroll_position = true;
+                    }
                 }
             }
 

@@ -16,7 +16,7 @@ use eframe::{
     egui::{self, Key, Response, SidePanel, Ui},
     epaint::FontId,
 };
-use egui::{mutex::Mutex, Modifiers};
+use egui::{mutex::Mutex, Modifiers, Vec2};
 use egui_tiles::{Container, TileId};
 use glow::Context;
 use i18n_embed_fl::fl;
@@ -500,20 +500,22 @@ impl<'a> MainWindow<'a> {
         result
     }
 
-    pub fn update_title(&mut self, ctx: &egui::Context) {
-        let id = if let Some((id, _)) = self.get_active_pane() { Some(id) } else { None };
+    pub fn update_title(&mut self, ctx: &egui::Context, force: bool) {
+        if !force {
+            let id = if let Some((id, _)) = self.get_active_pane() { Some(id) } else { None };
 
-        if let Some(id) = id {
-            if self.current_id == Some(id) {
+            if let Some(id) = id {
+                if self.current_id == Some(id) {
+                    return;
+                }
+                self.current_id = Some(id);
+            } else {
+                if self.current_id.is_some() {
+                    self.current_id = None;
+                    self.set_title(ctx, crate::DEFAULT_TITLE.clone());
+                }
                 return;
             }
-            self.current_id = Some(id);
-        } else {
-            if self.current_id.is_some() {
-                self.current_id = None;
-                self.set_title(ctx, crate::DEFAULT_TITLE.clone());
-            }
-            return;
         }
 
         if let Some((_, doc)) = self.get_active_pane() {
@@ -544,16 +546,18 @@ impl<'a> MainWindow<'a> {
                         parent.to_string_lossy().to_string()
                     };
                     format!(
-                        "{}{} - iCY DRAW {}",
+                        "{}{} - iCY DRAW {} ({}%)",
                         directory,
                         path.file_name().unwrap_or_default().to_str().unwrap_or_default(),
-                        *crate::VERSION
+                        *crate::VERSION,
+                        (100. * unsafe { SETTINGS.get_scale().x }) as i32
                     )
                 } else {
                     format!(
-                        "{} - iCY DRAW {}",
+                        "{} - iCY DRAW {} ({}%)",
                         path.file_name().unwrap_or_default().to_str().unwrap_or_default(),
-                        *crate::VERSION
+                        *crate::VERSION,
+                        (100. * unsafe { SETTINGS.get_scale().x }) as i32
                     )
                 };
                 self.set_title(ctx, title);
@@ -675,7 +679,6 @@ impl<'a> eframe::App for MainWindow<'a> {
         }
 
         let msg = self.show_top_bar(ctx, frame);
-        self.update_title(ctx);
         self.handle_message(msg);
         if self.is_closed {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -887,7 +890,7 @@ impl<'a> eframe::App for MainWindow<'a> {
         self.handle_message(msg);
         self.handle_message(read_outline_keys(ctx));
         self.handle_message(read_color_keys(ctx));
-      
+        let mut force_update_title = false;
         ctx.input(|i| {
             for f in &i.raw.dropped_files {
                 if let Some(path) = &f.path {
@@ -907,6 +910,16 @@ impl<'a> eframe::App for MainWindow<'a> {
                         let scale = unsafe { SETTINGS.get_scale() } * *vec;
                         unsafe {
                             SETTINGS.set_scale(scale);
+                            force_update_title = true;
+                        }
+                    }
+                    egui::Event::MouseWheel { delta, modifiers, .. } => {
+                        if modifiers.ctrl || modifiers.mac_cmd {
+                            let scale = unsafe { SETTINGS.get_scale() } + Vec2::splat(delta.y) * 0.1;
+                            unsafe {
+                                SETTINGS.set_scale(scale);
+                                force_update_title = true;
+                            }
                         }
                     }
                     _ => (),
@@ -944,7 +957,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                 });
             }
         }
-
+        self.update_title(ctx, force_update_title);
         ctx.request_repaint_after(Duration::from_millis(150));
     }
 
