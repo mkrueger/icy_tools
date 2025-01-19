@@ -79,8 +79,16 @@ impl Tool for DrawEllipseTool {
     fn render_shape(&mut self, editor: &mut AnsiEditor, p2: Position) {
         editor.clear_overlay_layer();
         let p1 = editor.drag_pos.start_half_block;
-        let start = Position::new(p1.x.min(p2.x), p1.y.min(p2.y));
-        let end = Position::new(p1.x.max(p2.x), p1.y.max(p2.y));
+        let (start, end) = if editor.modifiers.ctrl || editor.modifiers.mac_cmd {
+            (Position::new(p1.x.min(p2.x), p1.y.min(p2.y)), Position::new(p1.x.max(p2.x), p1.y.max(p2.y)))
+        } else {
+            let mid = p1;
+            let radius = Position::new((p2.x - p1.x).abs(), (p2.y - p1.y).abs());
+            (
+                Position::new(mid.x - radius.x, mid.y - radius.y),
+                Position::new(mid.x + radius.x, mid.y + radius.y),
+            )
+        };
         draw_ellipse(&mut editor.buffer_view.lock(), start, end, self.draw_mode.clone(), self.color_mode);
     }
 }

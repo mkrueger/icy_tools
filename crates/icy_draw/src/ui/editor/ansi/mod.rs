@@ -42,6 +42,7 @@ pub enum DragMode {
 
 pub struct AnsiEditor {
     pub drag_pos: DragPos,
+    pub modifiers: egui::Modifiers,
     pub half_block_click_pos: Position,
     pub drag_started: DragMode,
     pub buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
@@ -250,6 +251,7 @@ impl AnsiEditor {
             reference_image: None,
             drag_started: DragMode::Off,
             drag_pos: DragPos::default(),
+            modifiers: egui::Modifiers::default(),
             guide: None,
             raster: None,
             outline_font_mode: false,
@@ -634,6 +636,7 @@ impl AnsiEditor {
                     let click_pos2 = calc.calc_click_pos_half_block(mouse_pos);
                     self.half_block_click_pos = Position::new(click_pos2.x as i32 - layer_offset.x, click_pos2.y as i32 - layer_offset.y);
                     self.drag_pos.start_half_block = self.half_block_click_pos;
+                    self.modifiers = ui.input(|i| i.modifiers);
 
                     /*
                     let b: i32 = match responsee.b {
@@ -669,7 +672,7 @@ impl AnsiEditor {
 
                     self.drag_pos.start_abs = cp_abs;
                     self.drag_pos.start = cp;
-
+                    self.modifiers = ui.input(|i| i.modifiers);
                     self.drag_pos.cur_abs = cp_abs;
                     self.drag_pos.cur = cp;
                     self.drag_pos.start_half_block = half_block_click_pos;
@@ -692,6 +695,8 @@ impl AnsiEditor {
                 let half_block_click_pos = click_pos2 - half_block_layer_offset;
 
                 let mut c_abs = self.half_block_click_pos;
+                self.modifiers = ui.input(|i| i.modifiers);
+
                 while c_abs != half_block_click_pos {
                     let s = (half_block_click_pos - c_abs).signum();
                     c_abs += s;
