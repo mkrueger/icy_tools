@@ -120,6 +120,15 @@ impl Tool for ClickTool {
             Rectangle::from_coords(0, 0, 0, 0)
         };
 
+        let mut cp = editor.drag_pos.cur_abs;
+        if cp.x > editor.drag_pos.start_abs.x {
+            cp.x -= 1;
+        }
+        if cp.y > editor.drag_pos.start_abs.y {
+            cp.y -= 1;
+        }
+        editor.buffer_view.lock().get_caret_mut().set_position(cp);
+
         match self.selection_drag {
             SelectionDrag::Move => {
                 rect.start = self.start_selection.top_left() - editor.drag_pos.start_abs + editor.drag_pos.cur_abs;
@@ -329,6 +338,16 @@ impl Tool for ClickTool {
 
             MKey::Character(ch) => {
                 let typed_char = unsafe { char::from_u32_unchecked(ch as u32) };
+                if (ch == b'B' as u16 || ch == b'b' as u16) && modifier.is_alt() {
+                    let mut rect = Rectangle::from_coords(pos.x, pos.y, pos.x, pos.y);
+                    rect.size = icy_engine::Size::new(rect.size.width.max(1), rect.size.height.max(1));
+
+                    editor.drag_pos.start_abs = rect.top_left();
+                    editor.drag_pos.cur_abs = rect.top_left();
+                    editor.buffer_view.lock().set_selection(rect);
+                    return Event::None;
+                }
+                editor.buffer_view.lock().clear_selection();
                 if editor.outline_font_mode {
                     let typed_char = typed_char.to_ascii_uppercase();
                     if VALID_OUTLINE_CHARS.contains(typed_char) {
@@ -433,7 +452,22 @@ impl Tool for ClickTool {
             }
             _ => {}
         }
+        update_caret_selection(editor);
         Event::None
+    }
+}
+
+fn update_caret_selection(editor: &mut AnsiEditor) {
+    if editor.buffer_view.lock().get_selection().is_some() {
+        let mut pos = editor.buffer_view.lock().get_caret().get_position();
+        if pos.x >= editor.drag_pos.start_abs.x {
+            pos.x += 1;
+        }
+        if pos.y >= editor.drag_pos.start_abs.y {
+            pos.y += 1;
+        }
+        let rect: Rectangle = Rectangle::from_coords(editor.drag_pos.start_abs.x, editor.drag_pos.start_abs.y, pos.x, pos.y);
+        editor.buffer_view.lock().set_selection(rect);
     }
 }
 

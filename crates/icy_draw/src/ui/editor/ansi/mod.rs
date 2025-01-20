@@ -598,21 +598,21 @@ impl AnsiEditor {
                         key, pressed: true, modifiers, ..
                     } => {
                         let mut key_code = *key as u32;
-                        if modifiers.shift {
-                            key_code |= SHIFT_MOD;
-                        }
 
                         let mut modifier: MModifiers = MModifiers::None;
                         if modifiers.ctrl || modifiers.command {
                             modifier = MModifiers::Control;
+                            key_code |= CTRL_MOD;
                         }
 
                         if modifiers.shift {
                             modifier = MModifiers::Shift;
+                            key_code |= SHIFT_MOD;
                         }
 
                         if modifiers.alt {
                             modifier = MModifiers::Alt;
+                            key_code |= ALT_MOD;
                         }
                         for (k, m) in EDITOR_KEY_MAP {
                             if *k == key_code {
@@ -629,6 +629,8 @@ impl AnsiEditor {
         if primary_button_clicked || response.clicked_by(egui::PointerButton::Secondary) {
             if let Some(mouse_pos) = response.hover_pos() {
                 if calc.buffer_rect.contains(mouse_pos) && !calc.vert_scrollbar_rect.contains(mouse_pos) && !calc.horiz_scrollbar_rect.contains(mouse_pos) {
+                    response.request_focus();
+
                     let click_pos = calc.calc_click_pos(mouse_pos);
                     let cp_abs = Position::new(click_pos.x as i32, click_pos.y as i32);
                     let layer_offset = self.get_cur_click_offset();
@@ -659,6 +661,8 @@ impl AnsiEditor {
         if primary_button_pressed || response.drag_started_by(egui::PointerButton::Secondary) {
             if let Some(mouse_pos) = response.hover_pos() {
                 if calc.buffer_rect.contains(mouse_pos) && !calc.vert_scrollbar_rect.contains(mouse_pos) && !calc.horiz_scrollbar_rect.contains(mouse_pos) {
+                    response.request_focus();
+
                     let click_pos = calc.calc_click_pos(mouse_pos);
                     let cp_abs: Position = Position::new(click_pos.x as i32, click_pos.y as i32);
 
@@ -687,6 +691,8 @@ impl AnsiEditor {
             || response.dragged_by(egui::PointerButton::Secondary) && matches!(self.drag_started, DragMode::Secondary)
         {
             if let Some(mouse_pos) = response.hover_pos() {
+                response.request_focus();
+
                 let layer_offset = self.get_cur_click_offset();
                 let click_pos2 = calc.calc_click_pos_half_block(mouse_pos);
                 let click_pos2 = Position::new(click_pos2.x as i32, click_pos2.y as i32);
@@ -844,6 +850,7 @@ pub fn terminal_context_menu(editor: &AnsiEditor, commands: &Commands, ui: &mut 
 
 pub const CTRL_MOD: u32 = 0b1000_0000_0000_0000_0000;
 pub const SHIFT_MOD: u32 = 0b0100_0000_0000_0000_0000;
+pub const ALT_MOD: u32 = 0b0010_0000_0000_0000_0000;
 
 pub static EDITOR_KEY_MAP: &[(u32, MKey)] = &[
     (Key::Escape as u32, MKey::Escape),
@@ -879,4 +886,5 @@ pub static EDITOR_KEY_MAP: &[(u32, MKey)] = &[
     (Key::F10 as u32, MKey::F10),
     (Key::F11 as u32, MKey::F11),
     (Key::F12 as u32, MKey::F12),
+    (Key::B as u32 | ALT_MOD, MKey::Character(b'b' as u16)),
 ];

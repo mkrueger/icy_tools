@@ -204,11 +204,9 @@ impl Rectangle {
     ///
     /// Panics if .
     pub fn from_coords(x1: i32, y1: i32, x2: i32, y2: i32) -> Self {
-        assert!(x1 <= x2);
-        assert!(y1 <= y2);
         Rectangle {
-            start: Position::new(x1, y1),
-            size: Size::new(x2 - x1, y2 - y1),
+            start: Position::new(x1.min(x2), y1.min(y2)),
+            size: Size::new((x2 - x1).abs(), (y2 - y1).abs()),
         }
     }
 
