@@ -6,7 +6,8 @@ use super::{ansi, BufferParser};
 use crate::{ansi::EngineState, Buffer, CallbackAction, Caret, EngineResult, ParserError, Rectangle, Size};
 
 pub mod bgi;
-mod commands;
+pub mod commands;
+pub use commands::*;
 
 #[cfg(test)]
 mod tests;
