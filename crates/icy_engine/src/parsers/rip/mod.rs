@@ -6,8 +6,7 @@ use super::{ansi, BufferParser};
 use crate::{ansi::EngineState, Buffer, CallbackAction, Caret, EngineResult, ParserError, Rectangle, Size};
 
 pub mod bgi;
-pub mod commands;
-pub use commands::*;
+mod commands;
 
 #[cfg(test)]
 mod tests;
@@ -416,7 +415,7 @@ impl BufferParser for Parser {
     }
 }
 
-fn to_base_36(len: usize, number: i32) -> String {
+pub fn to_base_36(len: usize, number: i32) -> String {
     let mut res = String::new();
     let mut number = number;
     for _ in 0..len {
@@ -429,7 +428,7 @@ fn to_base_36(len: usize, number: i32) -> String {
     res
 }
 
-fn parse_base_36(number: &mut i32, ch: char) -> EngineResult<()> {
+pub fn parse_base_36(number: &mut i32, ch: char) -> EngineResult<()> {
     if let Some(digit) = ch.to_digit(36) {
         *number = *number * 36 + digit as i32;
         Ok(())
