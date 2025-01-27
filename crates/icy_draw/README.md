@@ -77,6 +77,13 @@ Note that fonts/palettes etc. do not need to be unzipped. Just throw a .zip file
  - PETSCII, ATSCII and Viewdata - the engine can do it (see icy_term)
  - Server capabilities
 
+## Translations
+
+| Language| user | e-mail |
+| :... | :... | :... |
+| German  | mkrueger | mkrueger@posteo.de |
+| Spanish | lu9dce   | hellocodelinux@gmail.com |
+
 ## Help
 
 Contributions are welcome. But also testing & bug reporting or feature requests.
