@@ -377,6 +377,10 @@ impl BufferParser for Parser {
                     self.state = EngineState::ReadOSCSequenceEscape;
                     return Ok(CallbackAction::NoUpdate);
                 }
+                if ch == '\x07' {
+                    self.state = EngineState::Default;
+                    return self.parse_osc(buf, caret);
+                }
                 self.parse_string.push(ch);
                 return Ok(CallbackAction::NoUpdate);
             }
