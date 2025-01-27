@@ -44,9 +44,9 @@ chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
 anyhow = "1.0.95"
 
+i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
-# currently disabled because there needs to be a fix for wasm32:
-#rust-embed = { workspace = true }
+rust-embed = { workspace = true }
 once_cell = { workspace = true }
 
 log = { workspace = true }
@@ -71,12 +71,10 @@ getrandom =  { version = "0.2.15", features = ["js"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = { workspace = true }
 open = "5.0.0"
-i18n-embed = { version = "0.14.0", features = ["fluent-system", "desktop-requester"]}
 tracing-subscriber = "0.3"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-i18n-embed = { version = "0.14.0", features = ["fluent-system", "web-sys-requester"]}
 console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
 wasm-bindgen-futures = "0.4"

@@ -19,7 +19,6 @@ use lazy_static::lazy_static;
 use ui::MainWindow;
 use web_time::Instant;
 pub type TerminalResult<T> = Res<T>;
-use i18n_embed::fluent::{fluent_language_loader, FluentLanguageLoader};
 use log4rs::{
     append::{
         console::{ConsoleAppender, Target},
@@ -57,40 +56,18 @@ lazy_static::lazy_static! {
         VERSION.clone()
     };
 }
-/* RustEmbed version (not working os wasm atm)
-#[derive(RustEmbed)]
+
+pub use ui::*;
+
+#[derive(rust_embed::RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources
 struct Localizations;
-*/
-
-// Hack for fixing RustEmbed on wasm
-struct Localizations {}
-
-const localization_files: [&str; 2] = ["en/icy_term.ftl", "de/icy_term.ftl"];
-
-impl i18n_embed::I18nAssets for Localizations {
-    fn get_file(&self, file_path: &str) -> Option<std::borrow::Cow<'_, [u8]>> {
-        match file_path {
-            "en/icy_term.ftl" => Some(std::borrow::Cow::Borrowed(include_bytes!("../i18n/en/icy_term.ftl"))),
-            "de/icy_term.ftl" => Some(std::borrow::Cow::Borrowed(include_bytes!("../i18n/de/icy_term.ftl"))),
-            _ => None,
-        }
-    }
-
-    fn filenames_iter(&self) -> Box<dyn Iterator<Item = String>> {
-        Box::new(localization_files.iter().map(std::string::ToString::to_string))
-    }
-}
 
 use once_cell::sync::Lazy;
-static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
-    let loader = fluent_language_loader!();
-    #[cfg(not(target_arch = "wasm32"))]
+static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
+    let loader = i18n_embed::fluent::fluent_language_loader!();
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
-    #[cfg(target_arch = "wasm32")]
-    let requested_languages = i18n_embed::WebLanguageRequester::requested_languages();
-
-    let _result = i18n_embed::select(&loader, &Localizations {}, &requested_languages);
+    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
     loader
 });
 
