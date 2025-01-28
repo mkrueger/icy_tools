@@ -76,10 +76,10 @@ menu-palette-mode-free=Libre 16
 menu-palette-mode-free8=Libre 8
 
 menu-select_palette=Seleccionar paleta
-menu-next_fg_color=Siguiente color de primer plano
-menu-next_bg_color=Siguiente color de fondo
-menu-prev_fg_color=Color de primer plano anterior
-menu-prev_bg_color=Color de fondo anterior
+menu-next_fg_color=Siguiente color de Frente
+menu-next_bg_color=Siguiente color de Fondo
+menu-prev_fg_color=Color de Frente anterior
+menu-prev_bg_color=Color de Fondo anterior
 
 menu-view=Vista
 menu-reference-image=Abrir imagen de referencia…
@@ -102,7 +102,7 @@ menu-toggle_right_pane=Alternar panel derecho
 
 menu-pick_attribute_under_caret=Seleccionar atributo
 menu-default_color=Color predeterminado
-menu-toggle_color=Cambiar primer plano/fondo
+menu-toggle_color=Cambiar Frente/Fondo
 
 menu-fonts=Fuentes
 menu-font-mode=Modo de fuente
@@ -127,7 +127,7 @@ menu-open_plugin_directory=Abrir directorio de plugins…
 
 menu-upgrade_version=Actualizar a { $version }
 
-tool-fg=Primer plano
+tool-fg=Frente
 tool-bg=Fondo
 tool-solid=Sólido
 tool-character=Carácter
@@ -143,7 +143,7 @@ tool-select-label=Modo de selección:
 tool-select-normal=Rectángulo
 tool-select-character=Carácter
 tool-select-attribute=Atributo
-tool-select-foreground=Primer plano
+tool-select-foreground=Frente
 tool-select-background=Fondo
 tool-select-description=Mantén shift para agregar a la selección. Control/Cmd para quitar.
 
@@ -164,7 +164,7 @@ tool-rectangle_tooltip=Dibujar rectángulo
 tool-filled_rectangle_name=Rectángulo relleno
 tool-filled_rectangle_tooltip=Dibujar rectángulo relleno
 tool-eraser_name=Borrador
-tool-eraser_tooltip=Borrar al fondo usando un pincel
+tool-eraser_tooltip=Borrar al Fondo usando un pincel
 tool-fill_name=Rellenar
 tool-fill_tooltip=Rellenar área con color o carácter
 tool-flip_name=Conmutador
@@ -298,7 +298,7 @@ layer_tool_menu_delete_layer=Eliminar capa
 layer_tool_menu_clear_layer=Limpiar capa
 
 channel_tool_title=Canales
-channel_tool_fg=Primer plano
+channel_tool_fg=Frente
 channel_tool_bg=Fondo
 
 font_tool_select_outline_button=Contorno
@@ -310,14 +310,14 @@ font_tool_no_fonts_label=
 font_tool_open_directory_button=Abrir directorio de fuentes
 
 pipette_tool_char_code=Código { $code }
-pipette_tool_foreground=Primer plano { $fg }
+pipette_tool_foreground=Frente { $fg }
 pipette_tool_background=Fondo { $bg }
 pipette_tool_keys=
     Mantén shift para seleccionar
-    el color del primer plano
+    el color del Frente
 
     Mantén control para seleccionar
-    el color del fondo
+    el color del Fondo
 
 char_table_tool_title=Tabla de caracteres
 minimap_tool_title=Vista previa
@@ -469,7 +469,7 @@ palette_selector-viewdata_default_palette=Viewdata
 palette_selector-extracted_from_buffer_default_label=Extraído del búfer
 
 tdf-editor-outline_preview_label=Vista previa de glifo contorneado
-tdf-editor-draw_bg_checkbox=Usar fondo
+tdf-editor-draw_bg_checkbox=Usar Fondo
 tdf-editor-clone_button=Clonar
 tdf-editor-font_name_label=Nombre de la fuente:
 tdf-editor-spacing_label=Espaciado:
