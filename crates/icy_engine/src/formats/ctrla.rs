@@ -95,7 +95,7 @@ impl OutputFormat for CtrlA {
             }
 
             // do not end with eol
-            if pos.x < buf.get_width() && pos.y + 1 < height {
+            if pos.y + 1 < height {
                 result.push(13);
                 result.push(10);
             }

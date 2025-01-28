@@ -636,7 +636,7 @@ impl StringGenerator {
                     result.extend_from_slice(b"\x1b[0m");
                     result.push(13);
                     result.push(10);
-                } else if x < layer.get_width() as usize && y + 1 < layer.get_height() as usize {
+                } else if y + 1 < layer.get_height() as usize {
                     if self.options.compress && x + 1 >= layer.get_width() as usize {
                         // if it's shorter to line break with 1 space, do that
                         result.push(b' ');
