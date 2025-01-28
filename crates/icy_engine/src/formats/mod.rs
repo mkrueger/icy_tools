@@ -261,8 +261,6 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
         }
     }
 
-    // crop last empty line (if any)
-    crop_loaded_file(result);
     for y in 0..result.get_height() {
         for x in 0..result.get_width() {
             let mut ch = result.get_char((x, y));
@@ -277,15 +275,6 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
         }
     }
     Ok(())
-}
-
-pub(crate) fn crop_loaded_file(result: &mut Buffer) {
-    while result.layers[0].lines.len() > 1 && result.layers[0].lines.last().unwrap().chars.is_empty() {
-        result.layers[0].lines.pop();
-    }
-    let height = result.get_line_count();
-    result.layers[0].set_height(height);
-    result.set_height(height);
 }
 
 #[derive(Debug, Clone)]
