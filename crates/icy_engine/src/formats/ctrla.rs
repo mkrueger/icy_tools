@@ -107,8 +107,8 @@ impl OutputFormat for CtrlA {
     }
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
-        result.is_terminal_buffer = false;
+        let mut result = Buffer::new((80, 1));
+        result.is_terminal_buffer = true;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {
@@ -120,6 +120,7 @@ impl OutputFormat for CtrlA {
             result.buffer_type = crate::BufferType::Unicode;
         }
         parse_with_parser(&mut result, &mut parsers::ctrla::Parser::default(), &text, true)?;
+        result.is_terminal_buffer = false;
         Ok(result)
     }
 }
