@@ -122,10 +122,11 @@ impl OutputFormat for Artworx {
         loop {
             for _ in 0..result.get_width() {
                 if o + 2 > file_size {
-                    crate::crop_loaded_file(&mut result);
                     return Ok(result);
                 }
                 result.layers[0].set_height(pos.y + 1);
+                result.set_height(pos.y + 1);
+
                 let attribute = TextAttribute::from_u8(data[o + 1], result.ice_mode);
                 result.layers[0].set_char(pos, AttributedChar::new(data[o] as char, attribute));
                 pos.x += 1;
