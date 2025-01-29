@@ -2,7 +2,6 @@ use crate::ui::screen_modes::ScreenMode;
 use crate::TerminalResult;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_engine::igs::CommandExecutor;
 use icy_engine::{ansi, ascii, atascii, avatar, mode7, petscii, rip, skypix, viewdata, BufferParser, UnicodeConverter};
 use icy_net::telnet::TerminalEmulation;
 use icy_net::ConnectionType;
@@ -77,8 +76,7 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cac
             Box::new(parser)
         }
         TerminalEmulation::IGS => {
-            let ig_executor: Arc<std::sync::Mutex<Box<dyn CommandExecutor>>> =
-                Arc::new(std::sync::Mutex::new(Box::<icy_engine::parsers::igs::DrawExecutor>::default()));
+            let ig_executor = Arc::new(std::sync::Mutex::new(icy_engine::parsers::igs::DrawExecutor::default()));
             Box::new(icy_engine::igs::Parser::new(ig_executor))
         }
     }

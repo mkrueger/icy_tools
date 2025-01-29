@@ -50,6 +50,7 @@ pub enum ItemType {
     IcyAnimation,
     Rip,
     Picture,
+    IGS,
 }
 
 impl ItemType {
@@ -79,6 +80,8 @@ impl ItemType {
                 ItemType::IcyAnimation
             } else if ext == "rip" {
                 ItemType::Rip
+            } else if ext == "ig" {
+                ItemType::IGS
             } else {
                 ItemType::Unknown
             }
@@ -91,6 +94,7 @@ impl ItemType {
             ItemType::Ansi | ItemType::Rip => Some('🖹'),
             ItemType::AnsiMusic => Some('🎵'),
             ItemType::Picture => Some('🖻'),
+            ItemType::IGS => Some('🕹'),
             _ => Some('🗋'),
         }
     }

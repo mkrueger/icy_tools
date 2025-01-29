@@ -63,7 +63,7 @@ pub struct Parser {
     loop_state: LoopState,
     loop_cmd: char,
     loop_parameters: Vec<Vec<String>>,
-    command_executor: Arc<Mutex<Box<dyn CommandExecutor>>>,
+    command_executor: Arc<Mutex<dyn CommandExecutor>>,
     got_double_colon: bool,
     cur_loop: Option<Loop>,
 }
@@ -93,7 +93,7 @@ impl Loop {
         })
     }
 
-    fn next_step(&mut self, exe: &Arc<Mutex<Box<dyn CommandExecutor>>>, buf: &mut Buffer, caret: &mut Caret) -> Option<EngineResult<CallbackAction>> {
+    fn next_step(&mut self, exe: &Arc<Mutex<dyn CommandExecutor>>, buf: &mut Buffer, caret: &mut Caret) -> Option<EngineResult<CallbackAction>> {
         let is_running = if self.from < self.to { self.i < self.to } else { self.i > self.to };
         if !is_running {
             return None;
@@ -161,7 +161,7 @@ impl Loop {
 }
 
 impl Parser {
-    pub fn new(command_executor: Arc<Mutex<Box<dyn CommandExecutor>>>) -> Self {
+    pub fn new(command_executor: Arc<Mutex<dyn CommandExecutor>>) -> Self {
         Self {
             fallback_parser: ansi::Parser::default(),
             state: State::Default,

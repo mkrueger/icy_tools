@@ -13,11 +13,12 @@ use icy_engine::{
     parse_with_parser, rip, Buffer,
 };
 use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
+use igs::IGS;
 use music::SoundThread;
 
 use std::{
     env::current_dir,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -31,6 +32,7 @@ use self::{
 
 mod file_view;
 mod help_dialog;
+mod igs;
 mod music;
 pub mod options;
 pub mod rng;
@@ -55,6 +57,7 @@ pub struct MainWindow<'a> {
 
     retained_image: Option<Image<'a>>,
     texture_handle: Option<ColorImage>,
+    igs: Option<Arc<Mutex<IGS>>>,
 
     sauce_dialog: Option<sauce_dialog::SauceDialog>,
     help_dialog: Option<help_dialog::HelpDialog>,
@@ -179,6 +182,7 @@ impl<'a> MainWindow<'a> {
             in_scroll: false,
             retained_image: None,
             texture_handle: None,
+            igs: None,
             full_screen_mode: false,
             hide_file_chooser: false,
             error_text: None,
@@ -204,6 +208,7 @@ impl<'a> MainWindow<'a> {
         self.in_scroll = false;
         self.retained_image = None;
         self.texture_handle = None;
+        self.igs = None;
         self.error_text = None;
         self.loaded_buffer = false;
         self.sauce_dialog = None;
@@ -323,7 +328,20 @@ impl<'a> MainWindow<'a> {
                 });
             }
         }
-
+        if let Some(igs) = &self.igs {
+            ScrollArea::both().show(ui, |ui| {
+                let color_image: ColorImage = igs.lock().unwrap().texture_handle.clone();
+                let handle = ui.ctx().load_texture("my_texture", color_image, TextureOptions::NEAREST);
+                let sized_texture: SizedTexture = (&handle).into();
+                let w = ui.available_width() - 16.0;
+                let scale = w / sized_texture.size.x;
+                let img = Image::from_texture(sized_texture).fit_to_original_size(scale);
+                let size = img.load_and_calc_size(ui, ui.available_size()).unwrap();
+                let rect: Rect = egui::Rect::from_min_size(ui.min_rect().min, size);
+                img.paint_at(ui, rect);
+            });
+            return;
+        }
         if let Some(img) = &self.retained_image {
             ScrollArea::both().show(ui, |ui| {
                 let Some(size) = img.load_and_calc_size(ui, ui.available_size()) else {
@@ -334,9 +352,9 @@ impl<'a> MainWindow<'a> {
             });
             return;
         }
-        if let Some(color_image) = &self.texture_handle {
+        if let Some(texture_handle) = &self.texture_handle {
             ScrollArea::both().show(ui, |ui| {
-                let color_image: ColorImage = color_image.clone();
+                let color_image: ColorImage = texture_handle.clone();
                 let handle = ui.ctx().load_texture("my_texture", color_image, TextureOptions::NEAREST);
                 let sized_texture: SizedTexture = (&handle).into();
                 let w = ui.available_width() - 16.0;
@@ -556,109 +574,124 @@ impl<'a> MainWindow<'a> {
 
         self.animation = None;
         self.last_scroll_pos = -1.0;
-        let entry = &mut self.file_view.files[file];
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("iCY VIEW {} - {}", *crate::VERSION, entry.get_label())));
+        let label = self.file_view.files[file].get_label();
+        let path = self.file_view.files[file].get_file_path();
+        let data = if self.file_view.files[file].item_type() != ItemType::Unknown || force_load {
+            self.file_view.files[file].read_data().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
-        if !entry.is_folder() {
-            if entry.item_type() == ItemType::Picture {
-                if let Some(data) = entry.read_data() {
-                    let img = Image::from_bytes(entry.get_label(), data).show_loading_spinner(true);
-                    self.retained_image = Some(img);
-                    return;
-                }
+        match self.file_view.files[file].item_type() {
+            ItemType::Folder => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
                 return;
             }
-            if entry.item_type() == ItemType::IcyAnimation {
-                if let Some(data) = entry.read_data() {
-                    let anim = match String::from_utf8(data.to_vec()) {
-                        Ok(data) => {
-                            let path = entry.get_file_path();
-                            let parent = path.parent().map(|path| path.to_path_buf());
-                            let anim = Animator::run(&parent, data);
-                            anim.lock().unwrap().set_is_loop(true);
-                            anim.lock().unwrap().set_is_playing(true);
-                            Ok(anim)
-                        }
-                        Err(err) => {
-                            log::error!("Error while parsing icyanim file: {err}");
-                            Err(anyhow::anyhow!("Error while parsing icyanim file: {err}"))
-                        }
-                    };
-
-                    match anim {
-                        Ok(anim) => {
-                            anim.lock().unwrap().start_playback(self.buffer_view.clone());
-                            self.animation = Some(anim);
-                            return;
-                        }
-                        Err(err) => {
-                            log::error!("Error while loading icyanim file: {err}");
-                            self.error_text = Some(err.to_string())
-                        }
-                    }
+            ItemType::IcyAnimation => self.load_icy_animation(&path, &data),
+            ItemType::Rip => self.load_rip(&data),
+            ItemType::Picture => {
+                let img = Image::from_bytes(label.clone(), data).show_loading_spinner(true);
+                self.retained_image = Some(img);
+            }
+            ItemType::IGS => self.load_igs(&path, &data),
+            ItemType::Unknown => {
+                if force_load {
+                    self.load_ansi(&PathBuf::from("a.ans"), &data);
                 }
             }
-            if entry.item_type() == ItemType::Rip {
-                if let Some(data) = entry.read_data() {
-                    let buf = {
-                        let mut rip_parser = rip::Parser::new(Box::default(), PathBuf::new());
-                        let mut result: Buffer = Buffer::new((80, 25));
-                        result.is_terminal_buffer = false;
+            ItemType::Ansi | ItemType::AnsiMusic => self.load_ansi(&path, &data),
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("iCY VIEW {} - {}", *crate::VERSION, label)));
+    }
 
-                        let (text, is_unicode) = icy_engine::convert_ansi_to_utf8(&data);
-                        if is_unicode {
-                            result.buffer_type = icy_engine::BufferType::Unicode;
-                        }
+    fn load_igs(&mut self, path: &Path, data: &[u8]) {
+        match String::from_utf8(data.to_vec()) {
+            Ok(data) => {
+                let parent = path.parent().map(|path| path.to_path_buf());
+                let anim = IGS::run(&parent, data);
+                self.igs = Some(anim);
+            }
+            Err(err) => {
+                log::error!("Error while parsing icyanim file: {err}");
+                self.error_text = Some(format!("{}", err));
+            }
+        };
+    }
 
-                        match parse_with_parser(&mut result, &mut rip_parser, &text, true) {
-                            Ok(_) => rip_parser,
-                            Err(err) => {
-                                log::error!("Error while parsing rip file: {err}");
-                                rip_parser
-                            }
-                        }
-                    };
-                    let size = buf.bgi.window;
-                    let mut pixels = Vec::new();
-                    let pal = buf.bgi.get_palette().clone();
-                    for i in buf.bgi.screen {
-                        let (r, g, b) = pal.get_rgb(i as u32);
-                        pixels.push(r);
-                        pixels.push(g);
-                        pixels.push(b);
-                        pixels.push(255);
-                    }
-                    let color_image: ColorImage = ColorImage::from_rgba_premultiplied([size.width as usize, size.height as usize], &pixels);
-                    self.texture_handle = Some(color_image);
-                    return;
-                }
+    fn load_icy_animation(&mut self, path: &Path, data: &[u8]) {
+        let anim: Result<Arc<Mutex<Animator>>, anyhow::Error> = match String::from_utf8(data.to_vec()) {
+            Ok(data) => {
+                let parent = path.parent().map(|path| path.to_path_buf());
+                let anim: Arc<Mutex<Animator>> = Animator::run(&parent, data);
+                anim.lock().unwrap().set_is_loop(true);
+                anim.lock().unwrap().set_is_playing(true);
+                Ok(anim)
+            }
+            Err(err) => {
+                log::error!("Error while parsing icyanim file: {err}");
+                Err(anyhow::anyhow!("Error while parsing icyanim file: {err}"))
+            }
+        };
+
+        match anim {
+            Ok(anim) => {
+                anim.lock().unwrap().start_playback(self.buffer_view.clone());
+                self.animation = Some(anim);
+                return;
+            }
+            Err(err) => {
+                log::error!("Error while loading icyanim file: {err}");
+                self.error_text = Some(err.to_string())
+            }
+        }
+    }
+
+    fn load_rip(&mut self, data: &[u8]) {
+        let buf: rip::Parser = {
+            let mut rip_parser = rip::Parser::new(Box::default(), PathBuf::new());
+            let mut result: Buffer = Buffer::new((80, 25));
+            result.is_terminal_buffer = false;
+
+            let (text, is_unicode) = icy_engine::convert_ansi_to_utf8(&data);
+            if is_unicode {
+                result.buffer_type = icy_engine::BufferType::Unicode;
             }
 
-            if force_load || entry.item_type() == ItemType::Ansi || entry.item_type() == ItemType::AnsiMusic {
-                if let Some(data) = entry.read_data() {
-                    match Buffer::from_bytes(
-                        &entry.get_file_path(),
-                        true,
-                        &data,
-                        Some(MusicOption::Both),
-                        Some(self.file_view.terminal_width),
-                    ) {
-                        Ok(buf) => {
-                            if let Ok(mut thread) = self.sound_thread.lock() {
-                                for music in buf.ansi_music.iter().cloned() {
-                                    let _ = thread.play_music(music);
-                                }
-                            }
-                            self.buffer_view.lock().set_buffer(buf);
-                            self.loaded_buffer = true;
-                            self.in_scroll = true;
-                        }
-                        Err(err) => self.error_text = Some(err.to_string()),
-                    }
+            match parse_with_parser(&mut result, &mut rip_parser, &text, true) {
+                Ok(_) => rip_parser,
+                Err(err) => {
+                    log::error!("Error while parsing rip file: {err}");
+                    rip_parser
                 }
             }
-        } else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
+        };
+        let size = buf.bgi.window;
+        let mut pixels = Vec::new();
+        let pal = buf.bgi.get_palette().clone();
+        for i in buf.bgi.screen {
+            let (r, g, b) = pal.get_rgb(i as u32);
+            pixels.push(r);
+            pixels.push(g);
+            pixels.push(b);
+            pixels.push(255);
+        }
+        let color_image: ColorImage = ColorImage::from_rgba_premultiplied([size.width as usize, size.height as usize], &pixels);
+        self.texture_handle = Some(color_image);
+    }
+
+    fn load_ansi(&mut self, path: &Path, data: &[u8]) {
+        match Buffer::from_bytes(path, true, &data, Some(MusicOption::Both), Some(self.file_view.terminal_width)) {
+            Ok(buf) => {
+                if let Ok(mut thread) = self.sound_thread.lock() {
+                    for music in buf.ansi_music.iter().cloned() {
+                        let _ = thread.play_music(music);
+                    }
+                }
+                self.buffer_view.lock().set_buffer(buf);
+                self.loaded_buffer = true;
+                self.in_scroll = true;
+            }
+            Err(err) => self.error_text = Some(err.to_string()),
         }
     }
 

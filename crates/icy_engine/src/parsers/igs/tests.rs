@@ -35,7 +35,7 @@ use crate::{
 
 fn create_parser() -> (Arc<Mutex<IgsCommandVec>>, Parser) {
     let commands = Arc::new(Mutex::new(Vec::new()));
-    let command_executor: Arc<Mutex<Box<dyn CommandExecutor>>> = Arc::new(Mutex::new(Box::new(TestExecutor { commands: commands.clone() })));
+    let command_executor: Arc<Mutex<dyn CommandExecutor>> = Arc::new(Mutex::new(TestExecutor { commands: commands.clone() }));
     let igs_parser = Parser::new(command_executor);
     (commands, igs_parser)
 }
