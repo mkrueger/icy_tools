@@ -111,7 +111,7 @@ impl MainWindow {
                     if send_login {
                         self.send_login();
                     }
-                    
+
                     if self.terminal_thread.lock().sound_thread.lock().is_playing() {
                         let button_text = match self.terminal_thread.lock().sound_thread.lock().stop_button {
                             0 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing1"),
