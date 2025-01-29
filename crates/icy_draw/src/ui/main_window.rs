@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -205,10 +206,20 @@ impl<'a> MainWindow<'a> {
                     if file_name.is_none() {
                         return;
                     }
-                    let file_name_str = file_name.unwrap_or_default().to_str().unwrap_or_default().to_string();
-                    if let Ok(font) = BitFont::from_bytes(file_name_str, data) {
-                        add_child(&mut self.document_tree, Some(full_path.clone()), Box::new(BitFontEditor::new(&self.gl, font)));
-                        return;
+
+                    if ext == "yaff" {
+                        if let Ok(txt) = fs::read_to_string(&full_path) {
+                            if let Ok(font) = BitFont::from_str(&txt) {
+                                add_child(&mut self.document_tree, Some(full_path.clone()), Box::new(BitFontEditor::new(&self.gl, font)));
+                                return;
+                            }
+                        }
+                    } else {
+                        let file_name_str = file_name.unwrap_or_default().to_str().unwrap_or_default().to_string();
+                        if let Ok(font) = BitFont::from_bytes(file_name_str, data) {
+                            add_child(&mut self.document_tree, Some(full_path.clone()), Box::new(BitFontEditor::new(&self.gl, font)));
+                            return;
+                        }
                     }
                 }
 
@@ -596,6 +607,7 @@ pub fn is_font_extensions(ext: &str) -> bool {
         || "f02" == ext
         || "f01" == ext
         || "fon" == ext
+        || "yaff" == ext
 }
 
 pub fn button_with_shortcut(ui: &mut Ui, enabled: bool, label: impl Into<String>, shortcut: impl Into<String>) -> Response {

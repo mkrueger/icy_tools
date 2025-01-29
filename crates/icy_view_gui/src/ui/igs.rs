@@ -44,6 +44,7 @@ impl IGS {
             let vec = in_txt.chars().collect::<Vec<_>>();
             let mut i = 0;
             let mut parser = icy_engine::parsers::igs::Parser::new(executor);
+
             while i < vec.len() {
                 if !igs.lock().unwrap().is_playing {
                     thread::sleep(Duration::from_millis(20));
@@ -57,7 +58,10 @@ impl IGS {
                             let texture_handle = make_texture(&igs.lock().unwrap().executor);
                             igs.lock().unwrap().texture_handle = texture_handle;
                         }
-                        CallbackAction::Pause(_) => todo!(),
+                        CallbackAction::Pause(ms) => {
+                            println!("pause {}", ms);
+                            thread::sleep(Duration::from_millis(ms as u64));
+                        }
 
                         _ => {}
                     }

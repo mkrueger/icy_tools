@@ -1,7 +1,9 @@
+use std::str::FromStr;
+
 use super::{cmd::IgsCommands, CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN};
 use crate::{
-    igs::HATCH_PATTERN, igs::HATCH_WIDE_PATTERN, igs::HOLLOW_PATTERN, igs::TYPE_PATTERN, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position,
-    Size, ATARI, IGS_PALETTE, IGS_SYSTEM_PALETTE,
+    igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
+    load_atari_fonts, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position, Size, ATARI, IGS_PALETTE, IGS_SYSTEM_PALETTE,
 };
 
 #[derive(Default)]
@@ -134,6 +136,8 @@ pub struct DrawExecutor {
 
     /// for the G command.
     double_step: f32,
+
+    fonts: Vec<(String, usize, &'static str)>,
 }
 
 unsafe impl Send for DrawExecutor {}
@@ -142,6 +146,9 @@ unsafe impl Sync for DrawExecutor {}
 
 impl Default for DrawExecutor {
     fn default() -> Self {
+        let fonts = load_atari_fonts();
+        let font_8px = BitFont::from_str(fonts[1].2).unwrap();
+
         Self {
             screen: vec![1; 320 * 200],
             terminal_resolution: TerminalResolution::Low,
@@ -160,7 +167,7 @@ impl Default for DrawExecutor {
             polymarker_size: 1,
             solidline_size: 1,
             user_defined_pattern_number: 1,
-            font_8px: BitFont::from_bytes("ATARI", ATARI).unwrap(),
+            font_8px,
             screen_memory: Vec::new(),
             screen_memory_size: Size::new(0, 0),
 
@@ -170,6 +177,7 @@ impl Default for DrawExecutor {
             draw_border: false,
             hollow_set: false,
             double_step: -1.0,
+            fonts,
         }
     }
 }
@@ -178,7 +186,7 @@ impl DrawExecutor {
     pub fn clear(&mut self, buf: &mut Buffer, caret: &mut Caret) {
         buf.clear_screen(0, caret);
         let res = self.get_resolution();
-        self.screen = vec![1; (res.width * res.height) as usize];
+        self.screen = vec![0; (res.width * res.height) as usize];
     }
 
     pub fn set_resolution(&mut self, buf: &mut Buffer, caret: &mut Caret) {
@@ -377,7 +385,7 @@ impl DrawExecutor {
     }
 
     fn fill_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
-        let mut x = -a;
+        let mut x: i32 = -a;
         let mut y = 0; /* II. quadrant from bottom left to top right */
         let e2 = b * b;
         let mut err = x * (2 * e2 + x) + e2; /* error of 1.step */
@@ -567,33 +575,33 @@ impl DrawExecutor {
         let char_size = self.font_8px.size;
         let color = self.text_color;
 
-        let font_size = match self.text_size {
-            8 => Size::new(7, 7),
-            // 9 => Size::new(8, 8),
-            10 => Size::new(9, 14),
-            // 16 => Size::new(8, 14),
-            // 18 => Size::new(8, 16),
-            // 20 => Size::new(8, 18),
-            _ => Size::new(8, 8),
-        };
-
+        let font_size = self.font_8px.size; /*match self.text_size {
+                                                8 => Size::new(8, 8),
+                                                9 => Size::new(8, 8),
+                                               // 10 => Size::new(9, 14),
+                                                // 16 => Size::new(8, 14),
+                                                // 18 => Size::new(8, 16),
+                                                // 20 => Size::new(8, 18),
+                                                _ => Size::new(8, 8),
+                                            };*/
+        let HIGH_BIT = 1 << (self.font_8px.size.width - 1);
         for ch in string_parameter.chars() {
             let data = self.font_8px.get_glyph(ch).unwrap().data.clone();
             for y in 0..font_size.height {
                 for x in 0..font_size.width {
-                    let iy = (y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
-                    let ix = (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
-                    if data[iy as usize] & (128 >> ix) != 0 {
-                        let p = pos + Position::new(x, y);
+                    let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
+                    let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
+                    if data[iy as usize] & (HIGH_BIT >> ix) != 0 {
+                        let p = pos + Position::new(x, y - font_size.height / 2);
                         self.set_pixel(p.x, p.y, color);
                     }
                 }
             }
             match self.text_rotation {
-                TextRotation::RightReverse | TextRotation::Right => pos.x += font_size.width - 1,
+                TextRotation::RightReverse | TextRotation::Right => pos.x += font_size.width,
                 TextRotation::Up => pos.y -= font_size.height,
                 TextRotation::Down => pos.y += font_size.height,
-                TextRotation::Left => pos.x -= font_size.width - 1,
+                TextRotation::Left => pos.x -= font_size.width,
             }
         }
     }
@@ -758,6 +766,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
+        println!("command: {:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() != 1 {
@@ -817,6 +826,13 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 2 {
                     return Err(anyhow::anyhow!("ColorSet command requires 2 arguments"));
                 }
+                /*println!("Color Set {}={}", match parameters[0] {
+                                    0 => "polymaker",
+                                    1 => "line",
+                                    2 => "fill",
+                                    3 => "text",
+                                    _ => "?"
+                ,                },  parameters[1]);*/
                 match parameters[0] {
                     0 => self.polymarker_color = parameters[1] as u8,
                     1 => self.line_color = parameters[1] as u8,
@@ -841,7 +857,8 @@ impl CommandExecutor for DrawExecutor {
                     (parameters[2] as u8) << 5 | parameters[2] as u8,
                     (parameters[3] as u8) << 5 | parameters[3] as u8,
                 );
-                Ok(CallbackAction::NoUpdate)
+                //println!("Set pen color {} to {}", color, self.pen_colors[color as usize]);
+                Ok(CallbackAction::Update)
             }
 
             IgsCommands::DrawLine => {
@@ -955,19 +972,20 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 5 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
+                println!("Todo pieslice!");
                 /*
-                                let mut pb = PathBuilder::new();
-                                pb.arc(
-                                    parameters[0] as f32,
-                                    parameters[1] as f32,
-                                    parameters[2] as f32,
-                                    parameters[3] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                                    parameters[4] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                                );
-                                let path = pb.finish();
+                let mut pb = PathBuilder::new();
+                pb.arc(
+                    parameters[0] as f32,
+                    parameters[1] as f32,
+                    parameters[2] as f32,
+                    parameters[3] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
+                    parameters[4] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
+                );
+                let path = pb.finish();
 
-                                let (r, g, b) = self.pen_colors[self.fill_color].get_rgb();
-                                self.screen.fill(&path, &Source::Solid(create_solid_source(r, g, b)), &DrawOptions::new());
+                let (r, g, b) = self.pen_colors[self.fill_color].get_rgb();
+                self.screen.fill(&path, &Source::Solid(create_solid_source(r, g, b)), &DrawOptions::new());
                 */
                 Ok(CallbackAction::Update)
             }

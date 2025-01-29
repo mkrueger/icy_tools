@@ -406,6 +406,7 @@ enum YaffParseState {
     NextChar,
     Data,
     CharAttributes,
+    SkipChar,
 }
 
 impl FromStr for BitFont {
@@ -481,10 +482,22 @@ impl FromStr for BitFont {
                             result.raster_size = (width, height).into();
                         }
                         "cell-size" => {
-                            let mut split = value.split('x');
-                            let width = split.next().unwrap().parse::<i32>().unwrap();
-                            let height = split.next().unwrap().parse::<i32>().unwrap();
+                            let mut split = if value.contains('x') { value.split('x') } else { value.split(' ') };
+                            let w = split.next().unwrap();
+                            let h = split.next().unwrap();
+
+                            let Ok(width) = w.parse::<i32>() else {
+                                log::error!("can't parse width {w}");
+                                continue;
+                            };
+                            let Ok(height) = h.parse::<i32>() else {
+                                log::error!("can't parse height {h}");
+                                continue;
+                            };
                             result.cell_size = (width, height).into();
+                            if result.size.width == 0 {
+                                result.size = result.cell_size;
+                            }
                         }
                         "shift-up" => {
                             if let Ok(value) = value.parse::<i32>() {
@@ -518,6 +531,8 @@ impl FromStr for BitFont {
 
                 YaffParseState::NextChar => {
                     if line.starts_with("u+") {
+                        state = YaffParseState::SkipChar;
+
                         continue;
                     }
                     if line.starts_with("0x") {
@@ -537,6 +552,28 @@ impl FromStr for BitFont {
                     }
                 }
 
+                YaffParseState::SkipChar => {
+                    if line.is_empty() {
+                        state = YaffParseState::CharAttributes;
+                        continue;
+                    }
+                    if line.starts_with("u+") {
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line.starts_with("0x") {
+                        cur_char = u8::from_str_radix(line[2..].trim_end_matches(':'), 16).unwrap() as char;
+                        result.glyphs.insert(cur_char, Glyph::default());
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                    if line == "default:" {
+                        is_default = true;
+                        result.default_char = Some(Glyph::default());
+                        state = YaffParseState::NextChar;
+                        continue;
+                    }
+                }
                 YaffParseState::Data => {
                     if line.is_empty() {
                         state = YaffParseState::CharAttributes;
@@ -655,6 +692,7 @@ impl FromStr for BitFont {
                 }
             }
         }
+
         Ok(result)
     }
 }
@@ -943,6 +981,28 @@ amiga_fonts![
     (AMIGA_COURIER_24, "workbench-3.1/Courier_24.yaff", "Courier.font", 24),
     (AMIGA_COURIER_30, "workbench-3.1/Courier_30.yaff", "Courier.font", 30),
     (AMIGA_COURIER_36, "workbench-3.1/Courier_36.yaff", "Courier.font", 36),
+];
+
+macro_rules! atari_fonts {
+    ($( ($i:ident, $file:expr, $name: expr, $size:expr) ),* $(,)? ) => {
+        $(
+            pub const $i: &str = include_str!(concat!("../data/fonts/Atari/", $file));
+        )*
+
+        pub fn load_atari_fonts() -> Vec<(String, usize, &'static str)> {
+            let mut fonts = Vec::new();
+            $(
+                fonts.push(($name.to_string(), $size, $i));
+            )*
+            fonts
+        }
+    }
+}
+
+atari_fonts![
+    (ATARI_ST_6X6, "atari-st-6x6.yaff", "Atari ST 6x6", 6),
+    (ATARI_ST_8X8, "atari-st-8x8.yaff", "Atari ST 8x8", 8),
+    (ATARI_ST_8X16, "atari-st-8x16.yaff", "Atari ST 8x16", 16),
 ];
 
 #[derive(Debug, Clone)]
