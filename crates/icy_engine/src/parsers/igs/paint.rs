@@ -289,7 +289,7 @@ impl DrawExecutor {
 
     fn fill_pixel(&mut self, x: i32, y: i32) {
         let w = self.fill_pattern[(y as usize) % self.fill_pattern.len()];
-        if w & (1 << (x as usize % 16)) != 0 {
+        if w & (0x8000 >> (x as usize % 16)) != 0 {
             self.set_pixel(x, y, self.fill_color);
         }
     }
@@ -766,7 +766,6 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        println!("command: {:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() != 1 {
