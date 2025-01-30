@@ -5,6 +5,9 @@ Now 20 years later I've decided to give it an update and here it is.
 
 IcyDraw is a full features ansi drawing tool doing things a bit different than other tools.
 
+![DOS](assets/main_window.jpg?raw=true "Main Window")
+
+
 ## Features
  
  - Full CP437 support

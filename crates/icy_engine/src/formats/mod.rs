@@ -261,6 +261,14 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
         }
     }
 
+    // crop last empty line (if any)
+    // get_line_count() returns the real height without empty lines
+    // a caret move may move up, to load correctly it need to be checked.
+    // The initial height of 24 lines may be too large for the real content height.
+    let real_height = result.get_line_count().max(caret.get_position().y + 1);
+    result.set_height(real_height);
+    result.layers[0].set_height(real_height);
+
     for y in 0..result.get_height() {
         for x in 0..result.get_width() {
             let mut ch = result.get_char((x, y));

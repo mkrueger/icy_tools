@@ -103,9 +103,6 @@ impl Caret {
         if self.pos.y + 1 > buf.get_height() {
             buf.set_height(self.pos.y + 1);
         }
-        if self.pos.y + 1 > buf.layers[current_layer].get_height() {
-            buf.layers[current_layer].set_height(self.pos.y + 1);
-        }
 
         if was_ooe {
             buf.terminal_state.limit_caret_pos(buf, self);

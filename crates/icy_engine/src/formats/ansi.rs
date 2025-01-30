@@ -54,8 +54,8 @@ impl OutputFormat for Ansi {
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::Buffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
-        let mut result: Buffer = Buffer::new((width, 1));
-        result.is_terminal_buffer = true;
+        let mut result: Buffer = Buffer::new((width, 25));
+        result.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
@@ -70,7 +70,6 @@ impl OutputFormat for Ansi {
             result.buffer_type = crate::BufferType::Unicode;
         }
         parse_with_parser(&mut result, &mut parser, &text, true)?;
-        result.is_terminal_buffer = false;
         Ok(result)
     }
 }
@@ -637,7 +636,7 @@ impl StringGenerator {
                     result.extend_from_slice(b"\x1b[0m");
                     result.push(13);
                     result.push(10);
-                } else if y + 1 < layer.get_height() as usize {
+                } else if x < layer.get_width() as usize && y + 1 < layer.get_height() as usize {
                     if self.options.compress && x + 1 >= layer.get_width() as usize {
                         // if it's shorter to line break with 1 space, do that
                         result.push(b' ');

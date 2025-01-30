@@ -57,8 +57,6 @@ lazy_static::lazy_static! {
     };
 }
 
-pub use ui::*;
-
 #[derive(rust_embed::RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources
 struct Localizations;

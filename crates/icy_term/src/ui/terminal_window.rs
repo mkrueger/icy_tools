@@ -59,24 +59,6 @@ impl MainWindow {
                     if r.clicked() {
                         self.set_mode(ctx, MainWindowMode::SelectProtocol(true));
                     }
-                    let mut send_login = false;
-                    if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
-                        if !auto_login.logged_in {
-                            let r = ui
-                                .add(ImageButton::new(KEY.clone().tint(crate::ui::button_tint(ui)).sense(sense)))
-                                .on_hover_ui(|ui| {
-                                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
-                                });
-
-                            if r.clicked() {
-                                send_login = true;
-                                auto_login.logged_in = true;
-                            }
-                        }
-                    }
-                    if send_login {
-                        self.send_login();
-                    }
 
                     let r: egui::Response = ui
                         .add(ImageButton::new(CALL.clone().tint(crate::ui::button_tint(ui))).sense(sense))
@@ -109,6 +91,25 @@ impl MainWindow {
 
                     if let Some(mode) = mode {
                         self.set_mode(ctx, mode);
+                    }
+
+                    let mut send_login = false;
+                    if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
+                        if !auto_login.logged_in {
+                            let r = ui
+                                .add(ImageButton::new(KEY.clone().tint(crate::ui::button_tint(ui)).sense(sense)))
+                                .on_hover_ui(|ui| {
+                                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
+                                });
+
+                            if r.clicked() {
+                                send_login = true;
+                                auto_login.logged_in = true;
+                            }
+                        }
+                    }
+                    if send_login {
+                        self.send_login();
                     }
 
                     if self.terminal_thread.lock().sound_thread.lock().is_playing() {

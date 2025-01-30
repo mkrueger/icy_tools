@@ -1,7 +1,9 @@
+use std::str::FromStr;
+
 use super::{cmd::IgsCommands, CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN};
 use crate::{
-    igs::HATCH_PATTERN, igs::HATCH_WIDE_PATTERN, igs::HOLLOW_PATTERN, igs::TYPE_PATTERN, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position,
-    Size, ATARI, IGS_PALETTE, IGS_SYSTEM_PALETTE,
+    igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
+    load_atari_fonts, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position, Size, ATARI, IGS_PALETTE, IGS_SYSTEM_PALETTE,
 };
 
 #[derive(Default)]
@@ -126,7 +128,9 @@ pub struct DrawExecutor {
     pattern_index_number: usize,
     draw_border: bool,
 
-    font_8px: BitFont,
+    font_7px: BitFont,
+    font_9px: BitFont,
+    font_16px: BitFont,
     hollow_set: bool,
 
     screen_memory: Vec<u8>,
@@ -134,6 +138,8 @@ pub struct DrawExecutor {
 
     /// for the G command.
     double_step: f32,
+
+    fonts: Vec<(String, usize, &'static str)>,
 }
 
 unsafe impl Send for DrawExecutor {}
@@ -142,6 +148,11 @@ unsafe impl Sync for DrawExecutor {}
 
 impl Default for DrawExecutor {
     fn default() -> Self {
+        let fonts = load_atari_fonts();
+        let font_7px = BitFont::from_str(fonts[0].2).unwrap();
+        let font_9px = BitFont::from_str(fonts[1].2).unwrap();
+        let font_16px = BitFont::from_str(fonts[2].2).unwrap();
+
         Self {
             screen: vec![1; 320 * 200],
             terminal_resolution: TerminalResolution::Low,
@@ -160,7 +171,9 @@ impl Default for DrawExecutor {
             polymarker_size: 1,
             solidline_size: 1,
             user_defined_pattern_number: 1,
-            font_8px: BitFont::from_bytes("ATARI", ATARI).unwrap(),
+            font_7px,
+            font_9px,
+            font_16px,
             screen_memory: Vec::new(),
             screen_memory_size: Size::new(0, 0),
 
@@ -170,6 +183,7 @@ impl Default for DrawExecutor {
             draw_border: false,
             hollow_set: false,
             double_step: -1.0,
+            fonts,
         }
     }
 }
@@ -178,7 +192,7 @@ impl DrawExecutor {
     pub fn clear(&mut self, buf: &mut Buffer, caret: &mut Caret) {
         buf.clear_screen(0, caret);
         let res = self.get_resolution();
-        self.screen = vec![1; (res.width * res.height) as usize];
+        self.screen = vec![0; (res.width * res.height) as usize];
     }
 
     pub fn set_resolution(&mut self, buf: &mut Buffer, caret: &mut Caret) {
@@ -281,7 +295,7 @@ impl DrawExecutor {
 
     fn fill_pixel(&mut self, x: i32, y: i32) {
         let w = self.fill_pattern[(y as usize) % self.fill_pattern.len()];
-        if w & (1 << (x as usize % 16)) != 0 {
+        if w & (0x8000 >> (x as usize % 16)) != 0 {
             self.set_pixel(x, y, self.fill_color);
         }
     }
@@ -377,7 +391,7 @@ impl DrawExecutor {
     }
 
     fn fill_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
-        let mut x = -a;
+        let mut x: i32 = -a;
         let mut y = 0; /* II. quadrant from bottom left to top right */
         let e2 = b * b;
         let mut err = x * (2 * e2 + x) + e2; /* error of 1.step */
@@ -564,48 +578,97 @@ impl DrawExecutor {
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
-        let char_size = self.font_8px.size;
-        let color = self.text_color;
+        println!("text size: {} ", self.text_size);
 
-        let font_size = match self.text_size {
-            8 => Size::new(7, 7),
-            // 9 => Size::new(8, 8),
-            10 => Size::new(9, 14),
-            // 16 => Size::new(8, 14),
-            // 18 => Size::new(8, 16),
-            // 20 => Size::new(8, 18),
-            _ => Size::new(8, 8),
+        let font = if self.text_size < 9 {
+            self.font_7px.clone()
+        } else if self.text_size > 11 {
+            self.font_16px.clone()
+        } else {
+            self.font_9px.clone()
         };
 
+        let color = self.text_color;
+
+        let font_size = font.size; /*match self.text_size {
+                                                                       8 => Size::new(8, 8),
+                                   9 => Size::new(8, 8),
+                                   // 10 => Size::new(9, 14),
+                                   // 16 => Size::new(8, 14),
+                                   // 18 => Size::new(8, 16),
+                                   // 20 => Size::new(8, 18),
+                                   _ => Size::new(8, 8),
+                                                                   };*/
+        let HIGH_BIT = 1 << (font.size.width - 1);
         for ch in string_parameter.chars() {
-            let data = self.font_8px.get_glyph(ch).unwrap().data.clone();
+            let data = font.get_glyph(ch).unwrap().data.clone();
             for y in 0..font_size.height {
                 for x in 0..font_size.width {
-                    let iy = (y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
-                    let ix = (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
-                    if data[iy as usize] & (128 >> ix) != 0 {
-                        let p = pos + Position::new(x, y);
+                    let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
+                    let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
+                    if data[iy as usize] & (HIGH_BIT >> ix) != 0 {
+                        let p = pos + Position::new(x, y - font_size.height / 2);
                         self.set_pixel(p.x, p.y, color);
                     }
                 }
             }
             match self.text_rotation {
-                TextRotation::RightReverse | TextRotation::Right => pos.x += font_size.width - 1,
+                TextRotation::RightReverse | TextRotation::Right => pos.x += font_size.width,
                 TextRotation::Up => pos.y -= font_size.height,
                 TextRotation::Down => pos.y += font_size.height,
-                TextRotation::Left => pos.x -= font_size.width - 1,
+                TextRotation::Left => pos.x -= font_size.width,
             }
         }
     }
 
     fn blit_screen_to_screen(&mut self, _write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = to.x - from.x;
-        let height = to.y - from.y;
+        let width = (to.x - from.x) as usize;
+        let height = (to.y - from.y) as usize;
+        let line_length = self.get_resolution().width as usize;
+        let start = from.x as usize + from.y as usize * line_length;
+        let mut offset = start;
 
-        for y in 0..height {
-            for x in 0..width {
-                let color = self.get_pixel(from.x + x, from.y + y);
-                self.set_pixel(dest.x + x, dest.y + y, color);
+        let mut blit = Vec::with_capacity(width as usize * height as usize);
+
+        for _y in 0..height {
+            blit.extend_from_slice(&self.screen[offset..offset + width]);
+            offset += line_length;
+        }
+
+        offset = dest.x as usize + dest.y as usize * line_length;
+        let mut blit_offset = 0;
+        for _y in 0..height as i32 {
+            let mut o = offset;
+            for _x in 0..width {
+                let s = blit[blit_offset];
+                let d = self.screen[o];
+                let dest = match _write_mode {
+                    0 => 0,
+                    1 => s & d,
+                    2 => s & !d,
+                    3 => s,
+                    4 => !s & d,
+                    5 => d,
+                    6 => s ^ d,
+                    7 => s | d,
+                    8 => !(s | d),
+                    9 => !(s ^ d),
+                    10 => !d,
+                    11 => s | !d,
+                    12 => !s,
+                    13 => !s | d,
+                    14 => !(s & d),
+                    15 => 1,
+                    _ => 2,
+                };
+                self.screen[o] = dest;
+                o += 1;
+                blit_offset += 1
+            }
+
+            offset += line_length;
+            if offset >= self.screen.len() {
+                break;
             }
         }
     }
@@ -736,7 +799,7 @@ impl CommandExecutor for DrawExecutor {
     fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
         let mut pixels = Vec::new();
         for i in &self.screen {
-            let (r, g, b) = self.pen_colors[*i as usize].get_rgb();
+            let (r, g, b) = self.pen_colors[(*i as usize) & 0xF].get_rgb();
 
             pixels.push(r);
             pixels.push(g);
@@ -758,6 +821,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
+        // println!("cmd:{:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() != 1 {
@@ -817,6 +881,13 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 2 {
                     return Err(anyhow::anyhow!("ColorSet command requires 2 arguments"));
                 }
+                /*println!("Color Set {}={}", match parameters[0] {
+                                    0 => "polymaker",
+                                    1 => "line",
+                                    2 => "fill",
+                                    3 => "text",
+                                    _ => "?"
+                ,                },  parameters[1]);*/
                 match parameters[0] {
                     0 => self.polymarker_color = parameters[1] as u8,
                     1 => self.line_color = parameters[1] as u8,
@@ -841,7 +912,8 @@ impl CommandExecutor for DrawExecutor {
                     (parameters[2] as u8) << 5 | parameters[2] as u8,
                     (parameters[3] as u8) << 5 | parameters[3] as u8,
                 );
-                Ok(CallbackAction::NoUpdate)
+                //println!("Set pen color {} to {}", color, self.pen_colors[color as usize]);
+                Ok(CallbackAction::Update)
             }
 
             IgsCommands::DrawLine => {
@@ -955,19 +1027,20 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 5 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
+                println!("Todo pieslice!");
                 /*
-                                let mut pb = PathBuilder::new();
-                                pb.arc(
-                                    parameters[0] as f32,
-                                    parameters[1] as f32,
-                                    parameters[2] as f32,
-                                    parameters[3] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                                    parameters[4] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                                );
-                                let path = pb.finish();
+                let mut pb = PathBuilder::new();
+                pb.arc(
+                    parameters[0] as f32,
+                    parameters[1] as f32,
+                    parameters[2] as f32,
+                    parameters[3] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
+                    parameters[4] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
+                );
+                let path = pb.finish();
 
-                                let (r, g, b) = self.pen_colors[self.fill_color].get_rgb();
-                                self.screen.fill(&path, &Source::Solid(create_solid_source(r, g, b)), &DrawOptions::new());
+                let (r, g, b) = self.pen_colors[self.fill_color].get_rgb();
+                self.screen.fill(&path, &Source::Solid(create_solid_source(r, g, b)), &DrawOptions::new());
                 */
                 Ok(CallbackAction::Update)
             }
@@ -1248,7 +1321,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("GrabScreen command requires > 2 argument"));
                 }
                 let write_mode = parameters[1];
-
+                println!("grab screen {} - {write_mode}", parameters[0]);
                 match parameters[0] {
                     0 => {
                         if parameters.len() != 8 {
