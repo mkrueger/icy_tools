@@ -625,10 +625,14 @@ impl DrawExecutor {
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
         let font = if self.text_size < 9 {
+            pos.y -= 5;
             self.font_7px.clone()
         } else if self.text_size >= 10 {
+            pos.y -= 12;
+
             self.font_16px.clone()
         } else {
+            pos.y -= 7;
             self.font_9px.clone()
         };
 
@@ -643,6 +647,7 @@ impl DrawExecutor {
                                    // 20 => Size::new(8, 18),
                                    _ => Size::new(8, 8),
                                                                    };*/
+
         let high_bit = 1 << (font.size.width - 1);
         for ch in string_parameter.chars() {
             let data = font.get_glyph(ch).unwrap().data.clone();
@@ -651,7 +656,7 @@ impl DrawExecutor {
                     let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
                     let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
                     if data[iy as usize] & (high_bit >> ix) != 0 {
-                        let p = pos + Position::new(x, y - font_size.height / 2);
+                        let p = pos + Position::new(x, y);
 
                         self.set_pixel(p.x, p.y, color);
                     }
