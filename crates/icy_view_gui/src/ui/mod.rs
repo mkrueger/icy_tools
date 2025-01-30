@@ -208,7 +208,9 @@ impl<'a> MainWindow<'a> {
         self.in_scroll = false;
         self.retained_image = None;
         self.texture_handle = None;
-        self.igs = None;
+        if let Some(igs) = self.igs.take() {
+            igs.lock().unwrap().stop();
+        }
         self.error_text = None;
         self.loaded_buffer = false;
         self.sauce_dialog = None;
@@ -329,17 +331,17 @@ impl<'a> MainWindow<'a> {
             }
         }
         if let Some(igs) = &self.igs {
-            ScrollArea::both().show(ui, |ui| {
+            //ScrollArea::both().show(ui, |ui| {
                 let color_image: ColorImage = igs.lock().unwrap().texture_handle.clone();
                 let handle = ui.ctx().load_texture("my_texture", color_image, TextureOptions::NEAREST);
                 let sized_texture: SizedTexture = (&handle).into();
-                let w = ui.available_width() - 16.0;
+                let w = ui.available_width();
                 let scale = w / sized_texture.size.x;
                 let img = Image::from_texture(sized_texture).fit_to_original_size(scale);
                 let size = img.load_and_calc_size(ui, ui.available_size()).unwrap();
                 let rect: Rect = egui::Rect::from_min_size(ui.min_rect().min, size);
                 img.paint_at(ui, rect);
-            });
+            //});
             return;
         }
         if let Some(img) = &self.retained_image {
@@ -571,7 +573,9 @@ impl<'a> MainWindow<'a> {
         if let Ok(thread) = self.sound_thread.lock() {
             thread.clear();
         }
-
+        if let Some(igs) = self.igs.take() {
+            igs.lock().unwrap().stop();
+        }
         self.animation = None;
         self.last_scroll_pos = -1.0;
         let label = self.file_view.files[file].get_label();
@@ -591,6 +595,7 @@ impl<'a> MainWindow<'a> {
             ItemType::Rip => self.load_rip(&data),
             ItemType::Picture => {
                 let img = Image::from_bytes(label.clone(), data).show_loading_spinner(true);
+                let img = img.texture_options(TextureOptions::NEAREST);
                 self.retained_image = Some(img);
             }
             ItemType::IGS => self.load_igs(&path, &data),

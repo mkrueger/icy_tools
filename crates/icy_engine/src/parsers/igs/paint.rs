@@ -855,7 +855,6 @@ impl CommandExecutor for DrawExecutor {
         let mut pixels = Vec::new();
         for i in &self.screen {
             let (r, g, b) = self.pen_colors[(*i as usize) & 0xF].get_rgb();
-
             pixels.push(r);
             pixels.push(g);
             pixels.push(b);
