@@ -1,0 +1,21 @@
+settings-heading = Configuració
+settings-scaling = Escalat
+settings-monitor-type = Monitor
+settings-reset-button = Restablir
+settings-monitor-category = Monitor
+settings-monitor-use-crt-filter-checkbox = Utilitzar filtre CRT
+settings-monitor-brightness = Brillantor
+settings-monitor-contrast = Contrast
+settings-monitor-saturation = Saturació
+settings-monitor-gamma = Gamma
+settings-monitor-blur = Desenfocament
+settings-monitor-curve = Corba
+settings-monitor-scanlines = Línies de rastreig
+settings-background_color-label=Color de la vora:
+
+settings-monitor-color = Color
+settings-monitor-grayscale = Escala de grisos
+settings-monitor-amber = Ambre
+settings-monitor-green = Verd
+settings-monitor-apple2 = Apple ][
+settings-monitor-futuristic = Futurista
