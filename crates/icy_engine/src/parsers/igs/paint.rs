@@ -1,9 +1,13 @@
 use std::str::FromStr;
 
-use super::{cmd::IgsCommands, vdi::gdp_curve, CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN};
+use super::{
+    cmd::IgsCommands,
+    vdi::{color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
+    CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
+};
 use crate::{
-    igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
-    load_atari_fonts, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position, Size, ATARI, IGS_PALETTE, IGS_SYSTEM_PALETTE,
+    igs::{vdi::blit_px, HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
+    load_atari_fonts, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position, Size, IGS_PALETTE, IGS_SYSTEM_PALETTE,
 };
 
 #[derive(Default)]
@@ -51,6 +55,7 @@ pub enum TextRotation {
     RightReverse,
 }
 
+#[derive(Debug)]
 pub enum PolymarkerType {
     Point,
     Plus,
@@ -84,11 +89,22 @@ impl LineType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrawingMode {
+    /// new = (fore AND mask) OR (back AND NOT mask)
     Replace,
+
+    /// Transparent mode affects only the pixels where the mask is 1.
+    /// new = (fore AND mask) OR (old AND NOT mask)
     Transparent,
+
+    /// XOR mode reverses the bits representing the color. T
+    /// new = mask XOR old
     Xor,
+
+    /// Reverse transparent mode affects only the pixels where the mask is 0,
+    /// changing them to the fore value.
+    /// new = (old AND mask) OR (fore AND NOT mask)
     ReverseTransparent,
 }
 
@@ -138,8 +154,6 @@ pub struct DrawExecutor {
 
     /// for the G command.
     double_step: f32,
-
-    fonts: Vec<(String, usize, &'static str)>,
 }
 
 unsafe impl Send for DrawExecutor {}
@@ -183,7 +197,6 @@ impl Default for DrawExecutor {
             draw_border: false,
             hollow_set: false,
             double_step: -1.0,
-            fonts,
         }
     }
 }
@@ -281,10 +294,11 @@ impl DrawExecutor {
     }*/
 
     fn set_pixel(&mut self, x: i32, y: i32, line_color: u8) {
-        let offset = (y * self.get_resolution().width + x) as usize;
-        if offset >= self.screen.len() {
+        let res = self.get_resolution();
+        if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;
         }
+        let offset = (y * res.width + x) as usize;
         self.screen[offset] = line_color;
     }
 
@@ -295,8 +309,30 @@ impl DrawExecutor {
 
     fn fill_pixel(&mut self, x: i32, y: i32) {
         let w = self.fill_pattern[(y as usize) % self.fill_pattern.len()];
-        if w & (0x8000 >> (x as usize % 16)) != 0 {
-            self.set_pixel(x, y, self.fill_color);
+
+        let mask = w & (0x8000 >> (x as usize % 16)) != 0;
+        match self.drawing_mode {
+            DrawingMode::Replace => {
+                if mask {
+                    self.set_pixel(x, y, self.fill_color);
+                }
+            }
+            DrawingMode::Transparent => {
+                if mask {
+                    self.set_pixel(x, y, self.fill_color);
+                }
+            }
+            DrawingMode::Xor => {
+                let s = if mask { 0xFF } else { 0x00 };
+                let d = color_idx_to_pixel_val(self.pen_colors.len(), self.get_pixel(x, y));
+                let new_color = pixel_val_to_color_idx(self.pen_colors.len(), (s ^ d) & 0x0F);
+                self.set_pixel(x, y, new_color);
+            }
+            DrawingMode::ReverseTransparent => {
+                if !mask {
+                    self.set_pixel(x, y, self.fill_color);
+                }
+            }
         }
     }
 
@@ -471,7 +507,7 @@ impl DrawExecutor {
         while i < parameters.len() {
             let nx = parameters[i];
             let ny = parameters[i + 1];
-            self.draw_line(x, y, nx, ny, self.fill_color, mask);
+            self.draw_line(x, y, nx, ny, self.line_color, mask);
             x = nx;
             y = ny;
             i += 2;
@@ -588,10 +624,9 @@ impl DrawExecutor {
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
-
         let font = if self.text_size < 9 {
             self.font_7px.clone()
-        } else if self.text_size > 11 {
+        } else if self.text_size >= 10 {
             self.font_16px.clone()
         } else {
             self.font_9px.clone()
@@ -608,15 +643,16 @@ impl DrawExecutor {
                                    // 20 => Size::new(8, 18),
                                    _ => Size::new(8, 8),
                                                                    };*/
-        let HIGH_BIT = 1 << (font.size.width - 1);
+        let high_bit = 1 << (font.size.width - 1);
         for ch in string_parameter.chars() {
             let data = font.get_glyph(ch).unwrap().data.clone();
             for y in 0..font_size.height {
                 for x in 0..font_size.width {
                     let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
                     let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
-                    if data[iy as usize] & (HIGH_BIT >> ix) != 0 {
+                    if data[iy as usize] & (high_bit >> ix) != 0 {
                         let p = pos + Position::new(x, y - font_size.height / 2);
+
                         self.set_pixel(p.x, p.y, color);
                     }
                 }
@@ -630,12 +666,25 @@ impl DrawExecutor {
         }
     }
 
-    fn blit_screen_to_screen(&mut self, _write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = (to.x - from.x) as usize;
-        let height = (to.y - from.y) as usize;
-        let line_length = self.get_resolution().width as usize;
-        let start = from.x as usize + from.y as usize * line_length;
-        let mut offset = start;
+    fn blit_screen_to_screen(&mut self, write_mode: i32, from: Position, to: Position, dest: Position) {
+        let width = (to.x - from.x).abs() as usize;
+        let height = (to.y - from.y).abs() as usize;
+
+        let start_x = to.x.min(from.x) as usize;
+        let start_y = to.y.min(from.y) as usize;
+
+        let res = self.get_resolution();
+
+        if res.width < start_x as i32 || res.height < start_y as i32 {
+            return;
+        }
+        let width = width.min(res.width as usize - start_x);
+        let height = height.min(res.height as usize - start_y);
+
+        let line_length = res.width as usize;
+        let start = start_x + start_y as usize * line_length;
+
+        let mut offset: usize = start;
 
         let mut blit = Vec::with_capacity(width as usize * height as usize);
 
@@ -646,61 +695,53 @@ impl DrawExecutor {
 
         offset = dest.x as usize + dest.y as usize * line_length;
         let mut blit_offset = 0;
+        if res.width < dest.x as i32 || res.height < dest.y as i32 {
+            return;
+        }
+        let width = width.min(res.width as usize - dest.x as usize);
+        let height = height.min(res.height as usize - dest.y as usize);
+
         for _y in 0..height as i32 {
             let mut o = offset;
             for _x in 0..width {
-                let s = blit[blit_offset];
-                let d = self.screen[o];
-                let dest = match _write_mode {
-                    0 => 0,
-                    1 => s & d,
-                    2 => s & !d,
-                    3 => s,
-                    4 => !s & d,
-                    5 => d,
-                    6 => s ^ d,
-                    7 => s | d,
-                    8 => !(s | d),
-                    9 => !(s ^ d),
-                    10 => !d,
-                    11 => s | !d,
-                    12 => !s,
-                    13 => !s | d,
-                    14 => !(s & d),
-                    15 => 1,
-                    _ => 2,
-                };
-                self.screen[o] = dest;
+                self.screen[o] = blit_px(write_mode, self.pen_colors.len(), blit[blit_offset], self.screen[o]);
                 o += 1;
-                blit_offset += 1
+                blit_offset += 1;
             }
-
             offset += line_length;
-            if offset >= self.screen.len() {
-                break;
-            }
         }
     }
 
-    fn blit_memory_to_screen(&mut self, _write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = to.x - from.x;
-        let height = to.y - from.y;
+    fn blit_memory_to_screen(&mut self, write_mode: i32, from: Position, to: Position, dest: Position) {
+        let width = (to.x - from.x).abs() as usize;
+        let height = (to.y - from.y).abs() as usize;
+
+        let start_x = to.x.min(from.x) as usize;
+        let start_y = to.y.min(from.y) as usize;
+
+        if self.screen_memory_size.width < start_x as i32 || self.screen_memory_size.height < start_y as i32 {
+            return;
+        }
+        let width = width.min(self.screen_memory_size.width as usize - start_x);
+        let height = height.min(self.screen_memory_size.height as usize - start_y);
+
         let res = self.get_resolution();
 
         for y in 0..height {
-            let yp = y + from.y;
-            if dest.y + y >= res.height {
+            let mut offset = (start_y + y) * self.screen_memory_size.width as usize + start_x;
+            let mut screen_offset = (dest.y as usize + y) * res.width as usize + dest.x as usize;
+            if screen_offset >= self.screen.len() {
                 break;
             }
-            for x in 0..width {
-                let xp = x + from.x;
-
-                if dest.x + x >= res.width {
+            for _x in 0..width {
+                let color = self.screen_memory[offset];
+                offset += 1;
+                if screen_offset >= self.screen.len() {
                     break;
                 }
-                let offset = (yp * width + xp) as usize;
-                let color = self.screen_memory[offset];
-                self.set_pixel(dest.x + x, dest.y + y, color);
+                let px = self.screen[screen_offset];
+                self.screen[screen_offset] = blit_px(write_mode, self.pen_colors.len(), color, px);
+                screen_offset += 1;
             }
         }
     }
@@ -780,7 +821,7 @@ impl DrawExecutor {
         let old_color = self.fill_color;
         let old_type = self.line_type;
         self.line_type = LineType::Solid;
-        self.fill_color = self.line_color;
+        self.fill_color = self.polymarker_color;
         for _ in 0..num_lines {
             let num_points = points[i] as usize;
             i += 1;
@@ -830,7 +871,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        // println!("cmd:{:?}", command);
+        //println!("cmd:{:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() != 1 {
@@ -890,7 +931,8 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 2 {
                     return Err(anyhow::anyhow!("ColorSet command requires 2 arguments"));
                 }
-                /*println!("Color Set {}={}", match parameters[0] {
+                /*
+                println!("Color Set {}={}", match parameters[0] {
                                     0 => "polymaker",
                                     1 => "line",
                                     2 => "fill",

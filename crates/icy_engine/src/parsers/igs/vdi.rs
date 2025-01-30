@@ -73,9 +73,6 @@ fn clc_nsteps(x_rad: i32, y_rad: i32) -> i32 {
 }
 
 pub fn gdp_curve(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: i32) -> Vec<i32> {
-    let xrad = x_rad.abs();
-    let yrad = y_rad.abs();
-
     let mut del_ang = end_ang - beg_ang;
     if del_ang < 0 {
         del_ang += TWOPI as i32;
@@ -109,4 +106,81 @@ pub fn clc_arc(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: 
     points.push(p.y);
 
     points
+}
+
+const COLOR_TO_PIX_TABLE: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
+pub fn color_idx_to_pixel_val(colors: usize, c: u8) -> u8 {
+    if colors == 16 {
+        return COLOR_TO_PIX_TABLE[c as usize];
+    }
+    // THIS IS A GUESS. THE REFERENCE BOOKS ONLY GIVE TABLES FOR 8-bit and 16-bit PALETTES.
+    // NEED TO DOUBLE-CHECK ON REAL ATARI.
+    if colors == 16 {
+        return match c {
+            0 => 0,
+            1 => 3,
+            2 => 1,
+            3 => 2,
+            _ => c,
+        };
+    }
+    return c;
+}
+
+const PIX_TO_COLOR_TABLE: [u8; 16] = [0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 15, 13, 1];
+pub fn pixel_val_to_color_idx(colors: usize, c: u8) -> u8 {
+    if colors == 16 {
+        return PIX_TO_COLOR_TABLE[c as usize];
+    }
+
+    // THIS IS A GUESS. THE REFERENCE BOOKS ONLY GIVE TABLES FOR 8-bit and 16-bit PALETTES.
+    // NEED TO DOUBLE-CHECK ON REAL ATARI.
+    if colors == 16 {
+        return match c {
+            0 => 0,
+            1 => 2,
+            2 => 3,
+            3 => 1,
+            _ => c,
+        };
+    }
+    return c;
+}
+
+#[cfg(test)]
+mod test {
+    use crate::igs::vdi::{color_idx_to_pixel_val, pixel_val_to_color_idx};
+
+    #[test]
+    pub fn test_pixel_conversation() {
+        for i in 0..16u8 {
+            assert_eq!(i, color_idx_to_pixel_val(16, pixel_val_to_color_idx(16, i)));
+            assert_eq!(i, pixel_val_to_color_idx(16, color_idx_to_pixel_val(16, i)));
+        }
+    }
+}
+
+pub fn blit_px(write_mode: i32, colors: usize, s: u8, d: u8) -> u8 {
+    let s = color_idx_to_pixel_val(colors, s);
+    let d = color_idx_to_pixel_val(colors, d);
+    let dest = match write_mode {
+        0 => 0,
+        1 => s & d,
+        2 => s & !d,
+        3 => s,
+        4 => !s & d,
+        5 => d,
+        6 => s ^ d,
+        7 => s | d,
+        8 => !(s | d),
+        9 => !(s ^ d),
+        10 => !d,
+        11 => s | !d,
+        12 => !s,
+        13 => !s | d,
+        14 => !(s & d),
+        15 => 1,
+        _ => 2,
+    } & 0xF;
+    pixel_val_to_color_idx(colors, dest)
 }
