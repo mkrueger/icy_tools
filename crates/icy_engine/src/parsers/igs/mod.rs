@@ -8,8 +8,11 @@ use crate::{ansi, Buffer, CallbackAction, Caret, EngineResult, Size};
 
 mod cmd;
 use cmd::IgsCommands;
+
 mod paint;
 pub use paint::*;
+
+mod vdi;
 
 #[cfg(test)]
 mod tests;

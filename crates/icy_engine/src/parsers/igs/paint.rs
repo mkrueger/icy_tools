@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use super::{cmd::IgsCommands, CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN};
+use super::{cmd::IgsCommands, vdi::gdp_curve, CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN};
 use crate::{
     igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
     load_atari_fonts, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position, Size, ATARI, IGS_PALETTE, IGS_SYSTEM_PALETTE,
@@ -390,6 +390,16 @@ impl DrawExecutor {
         }
     }
 
+    fn draw_pieslice(&mut self, xm: i32, ym: i32, r: i32, beg_ang: i32, end_ang: i32) {
+        let points = gdp_curve(xm, ym, r, r, beg_ang, end_ang);
+        self.draw_poly(&points);
+    }
+
+    fn fill_pieslice(&mut self, xm: i32, ym: i32, r: i32, beg_ang: i32, end_ang: i32) {
+        let points = gdp_curve(xm, ym, r, r, beg_ang, end_ang);
+        self.fill_poly(&points);
+    }
+
     fn fill_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
         let mut x: i32 = -a;
         let mut y = 0; /* II. quadrant from bottom left to top right */
@@ -578,7 +588,6 @@ impl DrawExecutor {
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
-        println!("text size: {} ", self.text_size);
 
         let font = if self.text_size < 9 {
             self.font_7px.clone()
@@ -978,6 +987,7 @@ impl CommandExecutor for DrawExecutor {
                 let mut y0 = parameters[1];
                 let mut x1 = parameters[2];
                 let mut y1 = parameters[3];
+                let round_corners = parameters[4] != 0;
 
                 if x0 > x1 {
                     std::mem::swap(&mut x0, &mut x1);
@@ -987,14 +997,21 @@ impl CommandExecutor for DrawExecutor {
                     std::mem::swap(&mut y0, &mut y1);
                 }
 
-                self.fill_rect(x0, y0, x1, y1);
+                if round_corners {
+                    self.round_rect(x0, y0, x1, y1, 1);
+                } else {
+                    self.fill_rect(x0, y0, x1, y1);
+                }
                 if self.draw_border {
-                    let color = self.fill_color;
-
-                    self.draw_line(x0, y0, x0, y1, color, 0);
-                    self.draw_line(x1, y0, x1, y1, color, 0);
-                    self.draw_line(x0, y0, x1, y0, color, 0);
-                    self.draw_line(x0, y1, x1, y1, color, 0);
+                    if round_corners {
+                        self.round_rect(x0, y0, x1, y1, 0);
+                    } else {
+                        let color = self.fill_color;
+                        self.draw_line(x0, y0, x0, y1, color, 0);
+                        self.draw_line(x1, y0, x1, y1, color, 0);
+                        self.draw_line(x0, y0, x1, y0, color, 0);
+                        self.draw_line(x0, y1, x1, y1, color, 0);
+                    }
                 }
                 Ok(CallbackAction::Update)
             }
@@ -1027,21 +1044,11 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 5 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
-                println!("Todo pieslice!");
-                /*
-                let mut pb = PathBuilder::new();
-                pb.arc(
-                    parameters[0] as f32,
-                    parameters[1] as f32,
-                    parameters[2] as f32,
-                    parameters[3] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                    parameters[4] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                );
-                let path = pb.finish();
 
-                let (r, g, b) = self.pen_colors[self.fill_color].get_rgb();
-                self.screen.fill(&path, &Source::Solid(create_solid_source(r, g, b)), &DrawOptions::new());
-                */
+                self.fill_pieslice(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]);
+                if self.draw_border {
+                    self.draw_pieslice(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]);
+                }
                 Ok(CallbackAction::Update)
             }
 
@@ -1321,7 +1328,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("GrabScreen command requires > 2 argument"));
                 }
                 let write_mode = parameters[1];
-                println!("grab screen {} - {write_mode}", parameters[0]);
+                // println!("grab screen {} - {write_mode}", parameters[0]);
                 match parameters[0] {
                     0 => {
                         if parameters.len() != 8 {
