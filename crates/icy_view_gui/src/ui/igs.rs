@@ -70,7 +70,6 @@ impl IGS {
                             igs.lock().unwrap().texture_handle = texture_handle;
                         }
                         CallbackAction::Pause(ms) => {
-                            println!("pause {}", ms);
                             thread::sleep(Duration::from_millis(ms as u64));
                         }
 

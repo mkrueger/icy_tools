@@ -116,7 +116,7 @@ pub enum DrawingMode {
     ReverseTransparent,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillPatternType {
     Hollow,
     Solid,
@@ -438,13 +438,11 @@ impl DrawExecutor {
     fn fill_elliptical_pieslice(&mut self, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
         let points = gdp_curve(xm, ym, xr, yr, beg_ang, end_ang);
         self.fill_poly(&points);
-        self.draw_poly(&points, self.fill_color, true);
     }
 
     fn fill_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
         let points = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.fill_poly(&points);
-        self.draw_poly(&points, self.fill_color, true);
     }
 
     fn fill_rect(&mut self, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32) {
@@ -598,6 +596,10 @@ impl DrawExecutor {
                 }
             }
         }
+        if self.fill_pattern_type == FillPatternType::Solid {
+            self.draw_poly(&points, self.fill_color, true);
+        }
+
     }
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
@@ -764,49 +766,75 @@ impl DrawExecutor {
         }
     }
 
-    fn round_rect(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, parameters: i32) {
+    fn round_rect(&mut self, mut x1: i32, mut y1: i32, mut x2: i32, mut y2: i32, parameters: i32) {
         let mut points = Vec::new();
-
+        if x1 > x2 {
+            swap(&mut x1, &mut x2);
+        }
+        if y1 < y2 {
+            swap(&mut y1, &mut y2);
+        }
+        
         let x_radius = (self.get_resolution().width >> 6).min((x2 - x1) / 2);
-        let y_radius = x_radius.min((y2 - y1) / 2);
+        let y_radius = self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2);
 
-        let x_off = [0, 12539 * x_radius / 32767, 23170 * x_radius / 32767, 30273 * x_radius / 32767, x_radius];
+        const ISIN225:i32 = 12539;
+        const ISIN450:i32 = 23170;
+        const ISIN675:i32 = 30273;
+        const ICOS225:i32 = ISIN675;
+        const ICOS450:i32 = ISIN450;
+        const ICOS675:i32 = ISIN225;
 
-        let y_off = [y_radius, 30273 * y_radius / 32767, 23170 * y_radius / 32767, 12539 * y_radius / 32767, 0];
+        let x_off = [
+            0, 
+            (ICOS675 * x_radius) / 32767, 
+            (ICOS450 * x_radius) / 32767, 
+            (ICOS225 * x_radius) / 32767, 
+            x_radius
+        ];
+
+        let y_off = [
+            y_radius, 
+            (ISIN675 * y_radius) / 32767, 
+            (ISIN450 * y_radius) / 32767, 
+            (ISIN225 * y_radius) / 32767, 
+            0];
         let xc = x2 - x_radius;
-        let yc = y2 - y_radius;
+        let yc = y2 + y_radius;
 
         // upper right
         for i in 0..x_off.len() {
             points.push(xc + x_off[i]);
-            points.push(yc + y_off[i]);
+            points.push(yc - y_off[i]);
         }
 
         // lower right
-        let yc = y1 + y_radius;
+        let yc = y1 - y_radius;
         for i in 0..x_off.len() {
             points.push(xc + x_off[4 - i]);
-            points.push(yc - y_off[4 - i]);
+            points.push(yc + y_off[4 - i]);
         }
 
         // lower left
         let xc = x1 + x_radius;
         for i in 0..x_off.len() {
             points.push(xc - x_off[i]);
-            points.push(yc - y_off[i]);
+            points.push(yc + y_off[i]);
         }
 
         // upper left
-        let yc = y2 - y_radius;
+        let yc = y2 + y_radius;
         for i in 0..x_off.len() {
             points.push(xc - x_off[4 - i]);
-            points.push(yc + y_off[4 - i]);
+            points.push(yc - y_off[4 - i]);
         }
+        points.push(points[0]);
+        points.push(points[1]);
 
         if parameters == 1 {
             self.fill_poly(&points);
         } else {
-            self.draw_poly(&points, self.line_color, true);
+            self.draw_poly(&points, self.line_color, false);
         }
     }
 
@@ -990,10 +1018,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("PolyFill requires {} arguments was {} ", points * 2 + 1, parameters.len()));
                 }
                 self.fill_poly(&parameters[1..]);
-                self.draw_poly(&parameters[1..], self.fill_color, true);
-                if self.draw_border {
-                    self.draw_poly(&parameters[1..], self.line_color, true);
-                }
+     
                 Ok(CallbackAction::Update)
             }
 
