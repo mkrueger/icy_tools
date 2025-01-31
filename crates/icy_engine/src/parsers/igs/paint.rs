@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{mem::swap, str::FromStr};
 
 use super::{
     cmd::IgsCommands,
@@ -171,10 +171,10 @@ impl Default for DrawExecutor {
             screen: vec![1; 320 * 200],
             terminal_resolution: TerminalResolution::Low,
             pen_colors: IGS_SYSTEM_PALETTE.to_vec(),
-            polymarker_color: 0,
-            line_color: 0,
-            fill_color: 0,
-            text_color: 0,
+            polymarker_color: 1,
+            line_color: 1,
+            fill_color: 1,
+            text_color: 1,
             cur_position: Position::new(0, 0),
             text_effects: TextEffects::Normal,
             text_size: 9,
@@ -336,36 +336,78 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: u8, mask: usize) {
+    fn draw_hline(&mut self, y: i32, x0: i32, x1: i32, color: u8, mask: usize) {
         let mut line_mask = LINE_STYLE[mask];
-
-        let dx = (x0 - x1).abs();
-        let dy = (y0 - y1).abs();
-
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-        let mut err = dx - dy;
-
-        let mut x = x0;
-        let mut y = y0;
-        loop {
+        line_mask = line_mask.rotate_left((x0 & 0x0f) as u32);
+        for x in x0..=x1 {
+            line_mask = line_mask.rotate_left(1);
             if 1 & line_mask != 0 {
                 self.set_pixel(x, y, color);
             }
-            line_mask = line_mask.rotate_left(1);
+        }
+    }
 
-            if x == x1 && y == y1 {
-                break;
-            }
+    fn draw_line(&mut self, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32, color: u8, mask: usize) {
+        if x1 < x0 {
+            swap(&mut x0, &mut x1);
+            swap(&mut y0, &mut y1);
+        }
+        if y0 == y1 {
+            self.draw_hline(y0, x0, x1, color, mask);
+            return;
+        }
+        let mut line_mask = LINE_STYLE[mask];
 
-            let e2 = 2 * err;
-            if e2 > -dy {
-                err -= dy;
-                x += sx;
+        let mut dx = x1 - x0;
+        let mut dy = y1 - y0;
+
+        let xinc = 1;
+
+        let yinc;
+        if dy < 0 {
+            dy = -dy;
+            yinc = -1;
+        } else {
+            yinc = 1;
+        }
+
+        let mut x = x0;
+        let mut y = y0;
+
+        if dx >= dy {
+            let mut eps = -dx;
+            let e1 = 2 * dy;
+            let e2 = 2 * dx;
+            while dx >= 0 {
+                line_mask = line_mask.rotate_left(1);
+                if 1 & line_mask != 0 {
+                    self.set_pixel(x, y, color);
+                }
+                x += xinc;
+                eps += e1;
+                if eps >= 0 {
+                    eps -= e2;
+                    y += yinc;
+                }
+                dx -= 1;
             }
-            if e2 < dx {
-                err += dx;
-                y += sy;
+        } else {
+            let mut eps = -dy;
+            let e1 = 2 * dx;
+            let e2 = 2 * dy;
+            while dy >= 0 {
+                line_mask = line_mask.rotate_left(1);
+                if 1 & line_mask != 0 {
+                    self.set_pixel(x, y, color);
+                }
+                y += yinc;
+
+                eps += e1;
+                if eps >= 0 {
+                    eps -= e2;
+                    x += xinc;
+                }
+                dy -= 1;
             }
         }
     }
@@ -499,7 +541,7 @@ impl DrawExecutor {
         self.draw_line(x, y, parameters[0], parameters[1], self.fill_color, mask);
     }
 
-    fn draw_polyline(&mut self, parameters: &[i32]) {
+    fn draw_polyline(&mut self, color: u8, parameters: &[i32]) {
         let mut x = parameters[0];
         let mut y = parameters[1];
         let mask = self.line_type.get_mask();
@@ -507,7 +549,7 @@ impl DrawExecutor {
         while i < parameters.len() {
             let nx = parameters[i];
             let ny = parameters[i + 1];
-            self.draw_line(x, y, nx, ny, self.line_color, mask);
+            self.draw_line(x, y, nx, ny, color, mask);
             x = nx;
             y = ny;
             i += 2;
@@ -672,8 +714,8 @@ impl DrawExecutor {
     }
 
     fn blit_screen_to_screen(&mut self, write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = (to.x - from.x).abs() as usize;
-        let height = (to.y - from.y).abs() as usize;
+        let width = (to.x - from.x).abs() as usize + 1;
+        let height = (to.y - from.y).abs() as usize + 1;
 
         let start_x = to.x.min(from.x) as usize;
         let start_y = to.y.min(from.y) as usize;
@@ -718,8 +760,8 @@ impl DrawExecutor {
     }
 
     fn blit_memory_to_screen(&mut self, write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = (to.x - from.x).abs() as usize;
-        let height = (to.y - from.y).abs() as usize;
+        let width = (to.x - from.x).abs() as usize + 1;
+        let height = (to.y - from.y).abs() as usize + 1;
 
         let start_x = to.x.min(from.x) as usize;
         let start_y = to.y.min(from.y) as usize;
@@ -752,15 +794,18 @@ impl DrawExecutor {
     }
 
     fn blit_screen_to_memory(&mut self, _write_mode: i32, from: Position, to: Position) {
-        let width = to.x - from.x;
-        let height = to.y - from.y;
+        let width = (to.x - from.x).abs() + 1;
+        let height = (to.y - from.y).abs() + 1;
+
+        let start_x = to.x.min(from.x);
+        let start_y = to.y.min(from.y);
 
         self.screen_memory_size = Size::new(width, height);
         self.screen_memory.clear();
 
-        for y in from.y..to.y {
-            for x in from.x..to.x {
-                let color = self.get_pixel(x, y);
+        for y in 0..height {
+            for x in 0..width {
+                let color = self.get_pixel(start_x + x, start_y + y);
                 self.screen_memory.push(color);
             }
         }
@@ -823,25 +868,22 @@ impl DrawExecutor {
         };
         let num_lines = points[0];
         let mut i = 1;
-        let old_color = self.fill_color;
         let old_type = self.line_type;
+        let scale = 1;
         self.line_type = LineType::Solid;
-        self.fill_color = self.polymarker_color;
         for _ in 0..num_lines {
             let num_points = points[i] as usize;
             i += 1;
             let mut p = Vec::new();
-            p.push(x0);
-            p.push(y0);
-            for x in 0..num_points {
-                p.push(points[i + x * 2] + x0);
-                p.push(points[i + x * 2 + 1] + y0);
+            for _x in 0..num_points {
+                p.push(scale * points[i] + x0);
+                i += 1;
+                p.push(scale * points[i] + y0);
+                i += 1;
             }
-            self.draw_polyline(&p);
-            i += num_points;
+            self.draw_polyline(self.polymarker_color, &p);
         }
         self.line_type = old_type;
-        self.fill_color = old_color;
     }
 }
 
@@ -875,7 +917,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        //println!("cmd:{:?}", command);
+        // println!("cmd:{:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() != 1 {
@@ -1003,7 +1045,7 @@ impl CommandExecutor for DrawExecutor {
                 if points * 2 + 1 != parameters.len() as i32 {
                     return Err(anyhow::anyhow!("PolyLine requires {} arguments was {} ", points * 2 + 1, parameters.len()));
                 }
-                self.draw_polyline(&parameters[1..]);
+                self.draw_polyline(self.line_color, &parameters[1..]);
                 self.cur_position = Position::new(parameters[parameters.len() - 2], parameters[parameters.len() - 1]);
 
                 Ok(CallbackAction::Update)
@@ -1179,6 +1221,7 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 3 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
+                //println!("AttributeForFills {:?}", parameters);
                 match parameters[0] {
                     0 => {
                         self.fill_pattern_type = FillPatternType::Hollow;

@@ -28,9 +28,8 @@ fn make_texture(executor: &Arc<Mutex<dyn CommandExecutor>>) -> ColorImage {
 }
 
 impl IGS {
-    pub fn stop(&mut self)
-    {
-        self.exit_requested.swap(true,  std::sync::atomic::Ordering::Relaxed);
+    pub fn stop(&mut self) {
+        self.exit_requested.swap(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn run(_parent: &Option<PathBuf>, in_txt: String) -> Arc<Mutex<Self>> {
@@ -55,7 +54,7 @@ impl IGS {
             let mut parser = icy_engine::parsers::igs::Parser::new(executor);
 
             while i < vec.len() {
-                if exit_requested.load(std::sync::atomic::Ordering::Relaxed) { 
+                if exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
                     return;
                 }
                 if !igs.lock().unwrap().is_playing {

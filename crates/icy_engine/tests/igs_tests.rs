@@ -1,10 +1,16 @@
-use std::{fs::{self, File}, io, sync::{Arc, Mutex}};
+use std::{
+    fs::{self, File},
+    io,
+    sync::{Arc, Mutex},
+};
 
-use icy_engine::{igs::{CommandExecutor, DrawExecutor}, Buffer, BufferParser, Caret, Color};
+use icy_engine::{
+    igs::{CommandExecutor, DrawExecutor},
+    Buffer, BufferParser, Caret, Color,
+};
 
 #[test]
-pub fn test_igs()
-{
+pub fn test_igs() {
     let mut img_buf = [0; 320 * 200 * 4];
     for entry in fs::read_dir("tests/igs/").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
@@ -39,7 +45,7 @@ fn check_output(rendered_data: &[u8], img_buf: &[u8]) {
         for x in 0..320 {
             let idx = (y * 320 + x) * 4;
             let col1 = Color::new(rendered_data[idx], rendered_data[idx + 1], rendered_data[idx + 2]);
-            
+
             let idx = (y * 320 + x) * 3;
             let col2 = Color::new(img_buf[idx], img_buf[idx + 1], img_buf[idx + 2]);
 

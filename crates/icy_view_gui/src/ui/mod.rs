@@ -332,15 +332,15 @@ impl<'a> MainWindow<'a> {
         }
         if let Some(igs) = &self.igs {
             //ScrollArea::both().show(ui, |ui| {
-                let color_image: ColorImage = igs.lock().unwrap().texture_handle.clone();
-                let handle = ui.ctx().load_texture("my_texture", color_image, TextureOptions::NEAREST);
-                let sized_texture: SizedTexture = (&handle).into();
-                let w = ui.available_width();
-                let scale = w / sized_texture.size.x;
-                let img = Image::from_texture(sized_texture).fit_to_original_size(scale);
-                let size = img.load_and_calc_size(ui, ui.available_size()).unwrap();
-                let rect: Rect = egui::Rect::from_min_size(ui.min_rect().min, size);
-                img.paint_at(ui, rect);
+            let color_image: ColorImage = igs.lock().unwrap().texture_handle.clone();
+            let handle = ui.ctx().load_texture("my_texture", color_image, TextureOptions::NEAREST);
+            let sized_texture: SizedTexture = (&handle).into();
+            let w = ui.available_width();
+            let scale = w / sized_texture.size.x;
+            let img = Image::from_texture(sized_texture).fit_to_original_size(scale);
+            let size = img.load_and_calc_size(ui, ui.available_size()).unwrap();
+            let rect: Rect = egui::Rect::from_min_size(ui.min_rect().min, size);
+            img.paint_at(ui, rect);
             //});
             return;
         }
