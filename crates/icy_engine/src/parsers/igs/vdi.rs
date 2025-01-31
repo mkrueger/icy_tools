@@ -34,25 +34,32 @@ pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> 
     let mut delta_y = 1;
 
     let mut angle = angle % TWOPI;
+    let mut negative = 1;
     if angle > 3 * HALFPI {
         angle = TWOPI - angle;
+        negative = 0;
     } else if angle > PI {
         angle -= PI;
-        delta_x = -1;
+        negative = 2;
     } else if angle > HALFPI {
         angle = PI - angle;
-        delta_x = -1;
-        delta_y = -1;
+        negative = 3;
     }
     if angle > MAX_TABLE_ANGLE {
         delta_x = 0;
-        delta_y *= y_rad as i32;
+        delta_y = y_rad as i32;
     } else if angle < HALFPI - MAX_TABLE_ANGLE {
-        delta_x *= x_rad as i32;
+        delta_x = x_rad as i32;
         delta_y = 0;
     } else {
-        delta_x *= umul_shift(icos(angle), x_rad as u16) as i32;
-        delta_y *= umul_shift(isin(angle), y_rad as u16) as i32;
+        delta_x = umul_shift(icos(angle), x_rad as u16) as i32;
+        delta_y = umul_shift(isin(angle), y_rad as u16) as i32;
+    }
+    if negative & 2 != 0 {
+        delta_x = -delta_x;
+    }
+    if negative & 1 != 0 {
+        delta_y = -delta_y;
     }
     Position::new(xm + delta_x, ym + delta_y)
 }

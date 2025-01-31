@@ -438,11 +438,13 @@ impl DrawExecutor {
     fn fill_elliptical_pieslice(&mut self, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
         let points = gdp_curve(xm, ym, xr, yr, beg_ang, end_ang);
         self.fill_poly(&points);
+        self.draw_poly(&points, self.fill_color, true);
     }
 
     fn fill_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
         let points = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.fill_poly(&points);
+        self.draw_poly(&points, self.fill_color, true);
     }
 
     fn fill_rect(&mut self, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32) {
@@ -591,13 +593,11 @@ impl DrawExecutor {
                 j += 1;
 
                 // Fill in all pixels horizontally from (x1, y) to (x2, y)
-
                 for k in x1..=x2 {
                     self.fill_pixel(k, y);
                 }
             }
         }
-
     }
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
@@ -837,6 +837,11 @@ impl DrawExecutor {
             self.draw_polyline(self.polymarker_color, &p);
         }
         self.line_type = old_type;
+    }
+
+    fn calc_circle_y_rad(&self, xrad: i32) -> i32 {
+        // st med 169, st low 338, st high 372, height == 372
+        xrad * 338 / 372
     }
 }
 
@@ -1088,10 +1093,11 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 5 {
                     return Err(anyhow::anyhow!("Pieslice command requires 5 arguments"));
                 }
-
-                self.fill_elliptical_pieslice(parameters[0], parameters[1], parameters[2], parameters[2], parameters[3], parameters[4]);
+                let xrad = parameters[2];
+                let yrad = self.calc_circle_y_rad(xrad);
+                self.fill_elliptical_pieslice(parameters[0], parameters[1], xrad, yrad, parameters[3], parameters[4]);
                 if self.draw_border {
-                    self.draw_elliptical_pieslice(parameters[0], parameters[1], parameters[2], parameters[2], parameters[3], parameters[4]);
+                    self.draw_elliptical_pieslice(parameters[0], parameters[1], xrad, yrad, parameters[3], parameters[4]);
                 }
                 Ok(CallbackAction::Update)
             }
@@ -1112,9 +1118,11 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 3 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
-                self.fill_ellipse(parameters[0], parameters[1], parameters[2], parameters[2]);
+                let xrad = parameters[2];
+                let yrad = self.calc_circle_y_rad(xrad);
+                self.fill_ellipse(parameters[0], parameters[1], xrad, yrad);
                 if self.draw_border {
-                    self.draw_circle(parameters[0], parameters[1], parameters[2]);
+                    self.draw_circle(parameters[0], parameters[1], xrad);
                 }
                 Ok(CallbackAction::Update)
             }
@@ -1124,7 +1132,8 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("EllipticalArc command requires 5 arguments"));
                 }
 
-                self.draw_arc(parameters[0], parameters[1], parameters[2], parameters[2], parameters[3], parameters[4]);
+                let xrad = parameters[2];
+                self.draw_arc(parameters[0], parameters[1], xrad, self.calc_circle_y_rad(xrad), parameters[3], parameters[4]);
                 Ok(CallbackAction::Update)
             }
 
