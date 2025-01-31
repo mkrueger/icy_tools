@@ -501,31 +501,24 @@ impl DrawExecutor {
 
     fn fill_poly(&mut self, points: &[i32]) {
         let max_vertices = 512;
-
-        let mut i = 3;
         let mut y_max = points[1];
         let mut y_min = points[1];
-        while i < points.len() {
+
+        let mut i = 3;
+        while i < points.len() - 1 {
             let y = points[i];
-            if y > y_max {
-                y_max = y;
-            }
-            if y < y_min {
-                y_min = y;
-            }
+            y_max = y_max.max(y);
+            y_min = y_min.min(y);
             i += 2;
         }
 
+        let point_cnt = points.len() / 2;
         // VDI apparently loops over the scan lines from bottom to top
-        for y in (y_min..=y_max).rev() {
-            // Set up counter for vector intersections
-            let mut intersections = 0;
-
+        for y in (y_min + 1..=y_max).rev() {
             // Set up a buffer for storing polygon edges that intersect the scan line
             let mut edge_buffer = Vec::new();
 
             // Loop over all vertices/points and find the intersections
-            let point_cnt = points.len() / 2;
             for i in 0..point_cnt {
                 // Account for fact that final point connects to the first point
                 let mut next_point = i + 1;
@@ -543,8 +536,8 @@ impl DrawExecutor {
 
                 // If the current vector is horizontal (0), ignore it.
                 // Calculate deltas of each endpoint with current scan line.
-                let dy1 = y - y1;
-                let dy2 = y - y2;
+                let dy1 = (y - y1) as i32;
+                let dy2 = (y - y2) as i32;
 
                 // Determine whether the current vector intersects with
                 // the scan line by comparing the Y-deltas we calculated
@@ -561,18 +554,17 @@ impl DrawExecutor {
                     let dx = (x2 - x1) << 1; // Left shift so we can round by adding 1 below
 
                     // Stop if we have reached the max number of verticies allowed (512)
-                    if intersections >= max_vertices {
+                    if edge_buffer.len() >= max_vertices {
                         break;
                     }
 
-                    intersections += 1;
-
                     // Add X value for this vector to edge buffer
-                    if dx < 0 {
-                        edge_buffer.push(((dy2 * dx / dy + 1) >> 1) + x2);
+                    let a = if dx < 0 {
+                        ((dy2 * dx / dy + 1) >> 1) + x2
                     } else {
-                        edge_buffer.push(((dy1 * dx / dy + 1) >> 1) + x1);
-                    }
+                        ((dy1 * dx / dy + 1) >> 1) + x1
+                    };
+                    edge_buffer.push(a);
                 }
             }
 
@@ -582,29 +574,30 @@ impl DrawExecutor {
             // intersection in ascending order.
             // (The list contains only the x-coordinates of the points.)
 
-            if intersections < 2 {
+            if edge_buffer.len() < 2 {
                 continue;
             }
 
             // Sort the X-coordinates, so they are arranged left to right.
             // There are almost always exactly 2, except for weird shapes.
             edge_buffer.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
             // Loop through all edges in pairs, filling the pixels in between.
-            let mut i = intersections / 2;
             let mut j = 0;
-            while i > 0 {
-                i -= 1;
+            while j < edge_buffer.len() {
                 /* grab a pair of endpoints */
-                let x1 = edge_buffer[j];
-                let x2 = edge_buffer[j + 1];
+                let x1 = edge_buffer[j] as i32;
+                j += 1;
+                let x2 = edge_buffer[j] as i32;
+                j += 1;
+
                 // Fill in all pixels horizontally from (x1, y) to (x2, y)
+
                 for k in x1..=x2 {
                     self.fill_pixel(k, y);
                 }
-                j += 2;
             }
         }
+
     }
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
@@ -992,6 +985,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("PolyFill requires {} arguments was {} ", points * 2 + 1, parameters.len()));
                 }
                 self.fill_poly(&parameters[1..]);
+                self.draw_poly(&parameters[1..], self.fill_color, true);
                 if self.draw_border {
                     self.draw_poly(&parameters[1..], self.line_color, true);
                 }

@@ -34,32 +34,25 @@ pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> 
     let mut delta_y = 1;
 
     let mut angle = angle % TWOPI;
-    let mut negative = 1;
     if angle > 3 * HALFPI {
         angle = TWOPI - angle;
-        negative = 0;
     } else if angle > PI {
         angle -= PI;
-        negative = 2;
+        delta_x = -1;
     } else if angle > HALFPI {
         angle = PI - angle;
-        negative = 3;
+        delta_x = -1;
+        delta_y = -1;
     }
     if angle > MAX_TABLE_ANGLE {
         delta_x = 0;
-        delta_y = y_rad as i32;
+        delta_y *= y_rad as i32;
     } else if angle < HALFPI - MAX_TABLE_ANGLE {
-        delta_x = x_rad as i32;
+        delta_x *= x_rad as i32;
         delta_y = 0;
     } else {
-        delta_x = umul_shift(icos(angle), x_rad as u16) as i32;
-        delta_y = umul_shift(isin(angle), y_rad as u16) as i32;
-    }
-    if negative & 2 != 0 {
-        delta_x = -delta_x;
-    }
-    if negative & 1 != 0 {
-        delta_y = -delta_y;
+        delta_x *= umul_shift(icos(angle), x_rad as u16) as i32;
+        delta_y *= umul_shift(isin(angle), y_rad as u16) as i32;
     }
     Position::new(xm + delta_x, ym + delta_y)
 }
@@ -84,9 +77,7 @@ pub fn gdp_curve(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang
     }
     let x_rad: i32 = x_rad.abs();
     let y_rad = y_rad.abs();
-
     let steps = clc_nsteps(x_rad, y_rad);
-
     clc_arc(xm, ym, x_rad, y_rad, beg_ang, end_ang, del_ang, steps)
 }
 
@@ -97,10 +88,8 @@ pub fn clc_arc(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: 
     let mut last_p = p;
     points.push(p.x);
     points.push(p.y);
-
     for i in 1..steps {
         let angle = del_ang * i / steps + start;
-
         let p = calculate_point(xm, ym, x_rad, y_rad, angle as u16);
         if last_p != p {
             points.push(p.x);
@@ -111,7 +100,6 @@ pub fn clc_arc(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: 
     let p = calculate_point(xm, ym, x_rad, y_rad, end_ang as u16);
     points.push(p.x);
     points.push(p.y);
-
     points
 }
 
@@ -195,7 +183,7 @@ pub fn blit_px(write_mode: i32, colors: usize, s: u8, d: u8) -> u8 {
 #[cfg(test)]
 mod test_loop_bug2 {
     use crate::{igs::vdi::icos, Position};
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::assert_eq;
 
     use super::isin;
     #[test]

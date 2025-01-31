@@ -50,7 +50,7 @@ fn check_output(rendered_data: &[u8], img_buf: &[u8]) {
             let col2 = Color::new(img_buf[idx], img_buf[idx + 1], img_buf[idx + 2]);
 
             if col1 != col2 {
-                panic!("Mismatch pixel at x: {}, y: {}. Expected: {:?}, got: {:?}", x, y, col1, col2);
+                panic!("Mismatch pixel at x: {}, y: {}. Expected: {:?}, got: {:?}", x, y, col2, col1);
             }
         }
     }
