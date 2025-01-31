@@ -1,12 +1,12 @@
 use crate::Position;
 
-const PI: u16 = 1800;
-const HALFPI: u16 = PI / 2;
-const TWOPI: u16 = PI * 2;
+pub const PI: u16 = 1800;
+pub const HALFPI: u16 = PI / 2;
+pub const TWOPI: u16 = PI * 2;
 
 const MAX_TABLE_ANGLE: u16 = 896;
 
-const SINUS_TABLE: [i32; 113] = [
+const SINUS_TABLE: [u16; 113] = [
     0, 915, 1830, 2744, 3658, 4572, 5484, 6395, 7305, 8214, 9121, 10026, 10929, 11831, 12729, 13626, 14519, 15410, 16298, 17183, 18064, 18942, 19816, 20686,
     21553, 22415, 23272, 24125, 24974, 25817, 26656, 27489, 28317, 29140, 29956, 30767, 31572, 32371, 33163, 33949, 34729, 35501, 36267, 37026, 37777, 38521,
     39258, 39986, 40708, 41421, 42126, 42823, 43511, 44191, 44862, 45525, 46179, 46824, 47459, 48086, 48703, 49310, 49908, 50496, 51075, 51643, 52201, 52750,
@@ -16,17 +16,17 @@ const SINUS_TABLE: [i32; 113] = [
 ];
 
 fn isin(angle: u16) -> u16 {
-    let index = (angle >> 3) as usize;
-    let remainder = (angle & 7) as i32;
-    let tmpsin = SINUS_TABLE[index];
+    let index = (angle >> 3) as u16;
+    let remainder = (angle & 7) as u16;
+    let tmpsin = SINUS_TABLE[index as usize] as u16;
     if remainder != 0 {
-        return (tmpsin + ((SINUS_TABLE[index + 1] - tmpsin) * remainder) >> 3) as u16;
+        return tmpsin + (((SINUS_TABLE[index as usize + 1] - tmpsin) * remainder) >> 3);
     }
     tmpsin as u16
 }
 
 fn icos(angle: u16) -> u16 {
-    isin(HALFPI - angle)
+    isin(HALFPI.wrapping_sub(angle))
 }
 
 pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> Position {
@@ -34,35 +34,40 @@ pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> 
     let mut delta_y = 1;
 
     let mut angle = angle % TWOPI;
-
+    let mut negative = 1;
     if angle > 3 * HALFPI {
         angle = TWOPI - angle;
+        negative = 0;
     } else if angle > PI {
         angle -= PI;
-        delta_x = -1;
+        negative = 2;
     } else if angle > HALFPI {
         angle = PI - angle;
-        delta_x = -1;
-        delta_y = -1;
+        negative = 3;
     }
-
     if angle > MAX_TABLE_ANGLE {
         delta_x = 0;
-        delta_y *= y_rad as i32;
+        delta_y = y_rad as i32;
     } else if angle < HALFPI - MAX_TABLE_ANGLE {
-        delta_x *= x_rad as i32;
+        delta_x = x_rad as i32;
         delta_y = 0;
     } else {
-        delta_x *= umul_shift(icos(angle), x_rad as u16);
-        delta_y *= umul_shift(isin(angle), y_rad as u16);
+        delta_x = umul_shift(icos(angle), x_rad as u16) as i32;
+        delta_y = umul_shift(isin(angle), y_rad as u16) as i32;
+    }
+    if negative & 2 != 0 {
+        delta_x = -delta_x;
+    }
+    if negative & 1 != 0 {
+        delta_y = -delta_y;
     }
     Position::new(xm + delta_x, ym + delta_y)
 }
 
-fn umul_shift(a: u16, b: u16) -> i32 {
-    let a = a as u32;
-    let b = b as u32;
-    ((a * b + 32768) >> 16) as i32
+fn umul_shift(a: u16, b: u16) -> u16 {
+    let a = a as i32;
+    let b = b as i32;
+    ((a * b + 32768) >> 16) as u16
 }
 
 const MIN_ARC_CT: i32 = 32;
@@ -77,6 +82,8 @@ pub fn gdp_curve(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang
     if del_ang < 0 {
         del_ang += TWOPI as i32;
     }
+    let x_rad: i32 = x_rad.abs();
+    let y_rad = y_rad.abs();
 
     let steps = clc_nsteps(x_rad, y_rad);
 
@@ -183,4 +190,107 @@ pub fn blit_px(write_mode: i32, colors: usize, s: u8, d: u8) -> u8 {
         _ => 2,
     } & 0xF;
     pixel_val_to_color_idx(colors, dest)
+}
+
+#[cfg(test)]
+mod test_loop_bug2 {
+    use crate::{igs::vdi::icos, Position};
+    use pretty_assertions::{assert_eq, assert_ne};
+
+    use super::isin;
+    #[test]
+    pub fn test_isin() {
+        let vec = (0..90).step_by(5).map(|i| isin(i * 10)).collect::<Vec<_>>();
+        let expected = vec![
+            0,     // isin(0)
+            5711,  // isin(50)
+            11380, // isin(100)
+            16961, // isin(150)
+            22415, // isin(200)
+            27696, // isin(250)
+            32767, // isin(300)
+            37589, // isin(350)
+            42126, // isin(400)
+            46340, // isin(450)
+            50202, // isin(500)
+            53683, // isin(550)
+            56756, // isin(600)
+            59395, // isin(650)
+            61582, // isin(700)
+            63302, // isin(750)
+            64540, // isin(800)
+            65285, // isin(850)
+        ];
+        assert_eq!(vec, expected);
+    }
+    #[test]
+    pub fn test_icos() {
+        let vec = (5..90).step_by(5).map(|i| icos(i * 10)).collect::<Vec<_>>();
+        let expected = vec![
+            65285, // icos(50)
+            64540, // icos(100)
+            63302, // icos(150)
+            61582, // icos(200)
+            59395, // icos(250)
+            56756, // icos(300)
+            53683, // icos(350)
+            50202, // icos(400)
+            46340, // icos(450)
+            42126, // icos(500)
+            37589, // icos(550)
+            32767, // icos(600)
+            27696, // icos(650)
+            22415, // icos(700)
+            16961, // icos(750)
+            11380, // icos(800)
+            5711,  // icos(850)
+        ];
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    pub fn test_calc_point() {
+        let vec = (0..=36).map(|i| super::calculate_point(100, 100, 50, 50, i * 100)).collect::<Vec<_>>();
+
+        let expected = vec![
+            Position::new(150, 100),
+            Position::new(149, 91),
+            Position::new(147, 83),
+            Position::new(143, 75),
+            Position::new(138, 68),
+            Position::new(132, 62),
+            Position::new(125, 57),
+            Position::new(117, 53),
+            Position::new(109, 51),
+            Position::new(100, 50),
+            Position::new(91, 51),
+            Position::new(83, 53),
+            Position::new(75, 57),
+            Position::new(68, 62),
+            Position::new(62, 68),
+            Position::new(57, 75),
+            Position::new(53, 83),
+            Position::new(51, 91),
+            Position::new(50, 100),
+            Position::new(51, 109),
+            Position::new(53, 117),
+            Position::new(57, 125),
+            Position::new(62, 132),
+            Position::new(68, 138),
+            Position::new(75, 143),
+            Position::new(83, 147),
+            Position::new(91, 149),
+            Position::new(100, 150),
+            Position::new(109, 149),
+            Position::new(117, 147),
+            Position::new(125, 143),
+            Position::new(132, 138),
+            Position::new(138, 132),
+            Position::new(143, 125),
+            Position::new(147, 117),
+            Position::new(149, 109),
+            Position::new(150, 100),
+        ];
+        assert_eq!(vec, expected);
+    }
 }

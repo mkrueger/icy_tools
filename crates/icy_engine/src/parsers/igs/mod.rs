@@ -338,6 +338,12 @@ impl BufferParser for Parser {
                         self.parsed_numbers.push(0);
                     }
                     ':' => {
+                        // workaround for polyline bug.
+                        if *command == IgsCommands::PolyLine && self.parsed_numbers.len() == 1 {
+                            self.got_double_colon = false;
+                            self.parsed_numbers.push(0);
+                            return Ok(CallbackAction::NoUpdate);
+                        }
                         self.got_double_colon = true;
                         let parameters: Vec<_> = self.parsed_numbers.drain(..).collect();
                         let res = self

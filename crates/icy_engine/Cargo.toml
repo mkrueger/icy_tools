@@ -36,3 +36,4 @@ icy_sixel = { workspace = true }
 
 [dev-dependencies]
 walkdir = { workspace = true }
+pretty_assertions = "1.4.1"

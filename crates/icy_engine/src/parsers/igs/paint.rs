@@ -2,7 +2,7 @@ use std::{mem::swap, str::FromStr};
 
 use super::{
     cmd::IgsCommands,
-    vdi::{color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
+    vdi::{color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx, TWOPI},
     CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
 };
 use crate::{
@@ -38,6 +38,8 @@ impl TerminalResolution {
         }
     }
 }
+
+#[derive(Debug, PartialEq)]
 pub enum TextEffects {
     Normal,
     Thickened,
@@ -47,11 +49,17 @@ pub enum TextEffects {
     Outlined,
 }
 
+#[derive(Debug)]
 pub enum TextRotation {
+    /// 0 degree
     Right,
+    /// 90 degree
     Up,
-    Down,
+    /// 180 degree
     Left,
+    /// 270 degree
+    Down,
+    /// 360 degree
     RightReverse,
 }
 
@@ -413,100 +421,28 @@ impl DrawExecutor {
     }
 
     fn draw_circle(&mut self, xm: i32, ym: i32, r: i32) {
-        let mut x = -r;
-        let mut y = 0;
-        let mut err = 2 - 2 * r;
-        let color = self.line_color;
-
-        while x < 0 {
-            self.set_pixel(xm - x, ym + y, color); /*   I. Quadrant */
-            self.set_pixel(xm - y, ym - x, color); /*  II. Quadrant */
-            self.set_pixel(xm + x, ym - y, color); /* III. Quadrant */
-            self.set_pixel(xm + y, ym + x, color); /*  IV. Quadrant */
-            let r = err;
-            if r <= y {
-                y += 1;
-                err += y * 2 + 1; /* e_xy+e_y < 0 */
-            }
-            if r > x || err > y {
-                x += 1;
-                err += x * 2 + 1; /* e_xy+e_x > 0 or no 2nd y-step */
-            }
-        }
+        let points = gdp_curve(xm, ym, r, r, 0, TWOPI as i32);
+        self.draw_poly(&points, self.line_color, false);
     }
 
     fn draw_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
-        let mut x = -a;
-        let mut y = 0; /* II. quadrant from bottom left to top right */
-        let e2 = b * b;
-        let mut err = x * (2 * e2 + x) + e2; /* error of 1.step */
-        let color = self.line_color;
-
-        while x <= 0 {
-            self.set_pixel(xm - x, ym + y, color); /*   I. Quadrant */
-            self.set_pixel(xm + x, ym + y, color); /*  II. Quadrant */
-            self.set_pixel(xm + x, ym - y, color); /* III. Quadrant */
-            self.set_pixel(xm - x, ym - y, color); /*  IV. Quadrant */
-            let e2 = 2 * err;
-            if e2 >= (x * 2 + 1) * b * b {
-                /* e_xy+e_x > 0 */
-                x += 1;
-                err += (x * 2 + 1) * b * b;
-            }
-            if e2 <= (y * 2 + 1) * a * a {
-                /* e_xy+e_y < 0 */
-                y += 1;
-                err += (y * 2 + 1) * a * a;
-            }
-        }
-
-        while y < b {
-            /* too early stop of flat ellipses a=1, */
-            y += 1;
-            self.set_pixel(xm, ym + y, color); /* -> finish tip of ellipse */
-            self.set_pixel(xm, ym - y, color);
-        }
+        let points = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
+        self.draw_poly(&points, self.line_color, false);
     }
 
-    fn draw_pieslice(&mut self, xm: i32, ym: i32, r: i32, beg_ang: i32, end_ang: i32) {
-        let points = gdp_curve(xm, ym, r, r, beg_ang, end_ang);
-        self.draw_poly(&points);
+    fn draw_elliptical_pieslice(&mut self, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
+        let points = gdp_curve(xm, ym, xr, yr, beg_ang, end_ang);
+        self.draw_poly(&points, self.line_color, true);
     }
 
-    fn fill_pieslice(&mut self, xm: i32, ym: i32, r: i32, beg_ang: i32, end_ang: i32) {
-        let points = gdp_curve(xm, ym, r, r, beg_ang, end_ang);
+    fn fill_elliptical_pieslice(&mut self, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
+        let points = gdp_curve(xm, ym, xr, yr, beg_ang, end_ang);
         self.fill_poly(&points);
     }
 
     fn fill_ellipse(&mut self, xm: i32, ym: i32, a: i32, b: i32) {
-        let mut x: i32 = -a;
-        let mut y = 0; /* II. quadrant from bottom left to top right */
-        let e2 = b * b;
-        let mut err = x * (2 * e2 + x) + e2; /* error of 1.step */
-        let color = self.line_color;
-
-        while x <= 0 {
-            self.fill_rect(xm - x, ym + y, xm + x, ym + y); /*  II. Quadrant */
-            self.fill_rect(xm + x, ym - y, xm - x, ym - y); /*  IV. Quadrant */
-            let e2 = 2 * err;
-            if e2 >= (x * 2 + 1) * b * b {
-                /* e_xy+e_x > 0 */
-                x += 1;
-                err += (x * 2 + 1) * b * b;
-            }
-            if e2 <= (y * 2 + 1) * a * a {
-                /* e_xy+e_y < 0 */
-                y += 1;
-                err += (y * 2 + 1) * a * a;
-            }
-        }
-
-        while y < b {
-            /* too early stop of flat ellipses a=1, */
-            y += 1;
-            self.set_pixel(xm, ym + y, color); /* -> finish tip of ellipse */
-            self.set_pixel(xm, ym - y, color);
-        }
+        let points = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
+        self.fill_poly(&points);
     }
 
     fn fill_rect(&mut self, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32) {
@@ -524,7 +460,12 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_poly(&mut self, parameters: &[i32]) {
+    fn draw_arc(&mut self, xm: i32, ym: i32, a: i32, b: i32, beg_ang: i32, end_ang: i32) {
+        let points = gdp_curve(xm, ym, a, b, beg_ang, end_ang);
+        self.draw_poly(&points, self.line_color, false);
+    }
+
+    fn draw_poly(&mut self, parameters: &[i32], color: u8, close: bool) {
         let mut x = parameters[0];
         let mut y = parameters[1];
         let mask = self.line_type.get_mask();
@@ -532,13 +473,15 @@ impl DrawExecutor {
         while i < parameters.len() {
             let nx = parameters[i];
             let ny = parameters[i + 1];
-            self.draw_line(x, y, nx, ny, self.fill_color, mask);
+            self.draw_line(x, y, nx, ny, color, mask);
             x = nx;
             y = ny;
             i += 2;
         }
-        // close polygon
-        self.draw_line(x, y, parameters[0], parameters[1], self.fill_color, mask);
+        if close {
+            // close polygon
+            self.draw_line(x, y, parameters[0], parameters[1], color, mask);
+        }
     }
 
     fn draw_polyline(&mut self, color: u8, parameters: &[i32]) {
@@ -666,41 +609,58 @@ impl DrawExecutor {
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
-        let font = if self.text_size < 9 {
-            pos.y -= 5;
-            self.font_7px.clone()
-        } else if self.text_size >= 10 {
-            pos.y -= 12;
-
-            self.font_16px.clone()
-        } else {
-            pos.y -= 7;
-            self.font_9px.clone()
+        let y_off;
+        let font = match self.text_size {
+            8 => {
+                y_off = -4;
+                self.font_7px.clone()
+            }
+            9 => {
+                y_off = -6;
+                self.font_9px.clone()
+            }
+            16 => {
+                y_off = -11;
+                self.font_16px.clone()
+            }
+            _ => {
+                y_off = -13;
+                self.font_16px.clone()
+            }
         };
+        pos.y += y_off;
+        // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
 
         let color = self.text_color;
-
-        let font_size = font.size; /*match self.text_size {
-                                                                       8 => Size::new(8, 8),
-                                   9 => Size::new(8, 8),
-                                   // 10 => Size::new(9, 14),
-                                   // 16 => Size::new(8, 14),
-                                   // 18 => Size::new(8, 16),
-                                   // 20 => Size::new(8, 18),
-                                   _ => Size::new(8, 8),
-                                                                   };*/
-
+        let font_size = font.size;
         let high_bit = 1 << (font.size.width - 1);
+        let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
         for ch in string_parameter.chars() {
             let data = font.get_glyph(ch).unwrap().data.clone();
             for y in 0..font_size.height {
                 for x in 0..font_size.width {
                     let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
                     let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
+                    draw_mask = draw_mask.rotate_left(1);
                     if data[iy as usize] & (high_bit >> ix) != 0 {
-                        let p = pos + Position::new(x, y);
-
-                        self.set_pixel(p.x, p.y, color);
+                        if 1 & draw_mask != 0 {
+                            let p = pos + Position::new(x, y);
+                            self.set_pixel(p.x, p.y, color);
+                            if self.text_effects == TextEffects::Thickened {
+                                self.set_pixel(p.x + 1, p.y, color);
+                            }
+                        }
+                    }
+                }
+                draw_mask = draw_mask.rotate_left(1);
+            }
+            if self.text_effects == TextEffects::Underlined {
+                let y = font_size.height - 1;
+                for x in 0..font_size.width {
+                    let p = pos + Position::new(x, y);
+                    self.set_pixel(p.x, p.y, color);
+                    if self.text_effects == TextEffects::Thickened {
+                        self.set_pixel(p.x + 1, p.y, color);
                     }
                 }
             }
@@ -853,7 +813,7 @@ impl DrawExecutor {
         if parameters == 1 {
             self.fill_poly(&points);
         } else {
-            self.draw_poly(&points);
+            self.draw_poly(&points, self.line_color, true);
         }
     }
 
@@ -917,7 +877,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        // println!("cmd:{:?}", command);
+        //println!("cmd:{:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() != 1 {
@@ -977,14 +937,18 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 2 {
                     return Err(anyhow::anyhow!("ColorSet command requires 2 arguments"));
                 }
-                /*
-                println!("Color Set {}={}", match parameters[0] {
-                                    0 => "polymaker",
-                                    1 => "line",
-                                    2 => "fill",
-                                    3 => "text",
-                                    _ => "?"
-                ,                },  parameters[1]);*/
+
+                /*                println!(
+                    "Color Set {}={}",
+                    match parameters[0] {
+                        0 => "polymaker",
+                        1 => "line",
+                        2 => "fill",
+                        3 => "text",
+                        _ => "?",
+                    },
+                    parameters[1]
+                );*/
                 match parameters[0] {
                     0 => self.polymarker_color = parameters[1] as u8,
                     1 => self.line_color = parameters[1] as u8,
@@ -1004,11 +968,8 @@ impl CommandExecutor for DrawExecutor {
                 if !(0..=15).contains(&color) {
                     return Err(anyhow::anyhow!("ColorSet unknown/unsupported argument: {color}"));
                 }
-                self.pen_colors[color as usize] = Color::new(
-                    (parameters[1] as u8) << 5 | parameters[1] as u8,
-                    (parameters[2] as u8) << 5 | parameters[2] as u8,
-                    (parameters[3] as u8) << 5 | parameters[3] as u8,
-                );
+                //println!("Set pen color {} to {:b}", color, parameters[1]);
+                self.pen_colors[color as usize] = Color::new((parameters[1] * 0x22) as u8, (parameters[2] * 0x22) as u8, (parameters[3] * 0x22) as u8);
                 //println!("Set pen color {} to {}", color, self.pen_colors[color as usize]);
                 Ok(CallbackAction::Update)
             }
@@ -1032,7 +993,7 @@ impl CommandExecutor for DrawExecutor {
                 }
                 self.fill_poly(&parameters[1..]);
                 if self.draw_border {
-                    self.draw_poly(&parameters[1..]);
+                    self.draw_poly(&parameters[1..], self.line_color, true);
                 }
                 Ok(CallbackAction::Update)
             }
@@ -1042,6 +1003,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("PolyLine requires minimun 1 arguments"));
                 }
                 let points: i32 = parameters[0];
+
                 if points * 2 + 1 != parameters.len() as i32 {
                     return Err(anyhow::anyhow!("PolyLine requires {} arguments was {} ", points * 2 + 1, parameters.len()));
                 }
@@ -1130,12 +1092,24 @@ impl CommandExecutor for DrawExecutor {
             }
             IgsCommands::Pieslice => {
                 if parameters.len() != 5 {
-                    return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
+                    return Err(anyhow::anyhow!("Pieslice command requires 5 arguments"));
                 }
 
-                self.fill_pieslice(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]);
+                self.fill_elliptical_pieslice(parameters[0], parameters[1], parameters[2], parameters[2], parameters[3], parameters[4]);
                 if self.draw_border {
-                    self.draw_pieslice(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]);
+                    self.draw_elliptical_pieslice(parameters[0], parameters[1], parameters[2], parameters[2], parameters[3], parameters[4]);
+                }
+                Ok(CallbackAction::Update)
+            }
+
+            IgsCommands::EllipticalPieslice => {
+                if parameters.len() != 6 {
+                    return Err(anyhow::anyhow!("EllipticalPieslice command requires 6 arguments"));
+                }
+
+                self.fill_elliptical_pieslice(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4], parameters[5]);
+                if self.draw_border {
+                    self.draw_elliptical_pieslice(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4], parameters[5]);
                 }
                 Ok(CallbackAction::Update)
             }
@@ -1148,6 +1122,15 @@ impl CommandExecutor for DrawExecutor {
                 if self.draw_border {
                     self.draw_circle(parameters[0], parameters[1], parameters[2]);
                 }
+                Ok(CallbackAction::Update)
+            }
+
+            IgsCommands::Arc => {
+                if parameters.len() != 5 {
+                    return Err(anyhow::anyhow!("EllipticalArc command requires 5 arguments"));
+                }
+
+                self.draw_arc(parameters[0], parameters[1], parameters[2], parameters[2], parameters[3], parameters[4]);
                 Ok(CallbackAction::Update)
             }
 
@@ -1166,20 +1149,8 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 6 {
                     return Err(anyhow::anyhow!("EllipticalArc command requires 6 arguments"));
                 }
-                /*
-                let mut pb = PathBuilder::new();
-                pb.elliptic_arc(
-                    parameters[0] as f32,
-                    parameters[1] as f32,
-                    parameters[2] as f32,
-                    parameters[4] as f32,
-                    parameters[5] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                    parameters[6] as f32 / 360.0 * 2.0 * std::f32::consts::PI,
-                );
-                let path = pb.finish();
-                let (r, g, b) = self.pen_colors[self.fill_color].get_rgb();
-                self.screen.fill(&path, &Source::Solid(create_solid_source(r, g, b)), &DrawOptions::new());
-                */
+
+                self.draw_arc(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4], parameters[5]);
                 Ok(CallbackAction::Update)
             }
 
@@ -1292,6 +1263,7 @@ impl CommandExecutor for DrawExecutor {
                 if parameters.len() != 3 {
                     return Err(anyhow::anyhow!("PolymarkerPlot command requires 2 arguments"));
                 }
+                //println!("text effect {}", parameters[0]);
                 match parameters[0] {
                     0 => self.text_effects = TextEffects::Normal,
                     1 => self.text_effects = TextEffects::Thickened,
@@ -1310,8 +1282,8 @@ impl CommandExecutor for DrawExecutor {
                 match parameters[2] {
                     0 => self.text_rotation = TextRotation::Right,
                     1 => self.text_rotation = TextRotation::Up,
-                    2 => self.text_rotation = TextRotation::Down,
-                    3 => self.text_rotation = TextRotation::Left,
+                    2 => self.text_rotation = TextRotation::Left,
+                    3 => self.text_rotation = TextRotation::Down,
                     4 => self.text_rotation = TextRotation::RightReverse,
                     _ => return Err(anyhow::anyhow!("TextEffects unknown/unsupported argument: {}", parameters[2])),
                 }

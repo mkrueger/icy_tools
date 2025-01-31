@@ -86,7 +86,7 @@ pub fn test_loop_parsing() {
     assert_eq!(' ', buf.get_char((0, 0)).ch);
 }
 
-/*  TODO: Implement me!
+/*
 #[test]
 pub fn test_loop_bug() {
     let (commands, mut igs_parser) = create_parser();
@@ -97,11 +97,20 @@ pub fn test_loop_bug() {
     assert_eq!(81, commands.lock().unwrap().len());
     assert_eq!(IgsCommands::WriteText, commands.lock().unwrap()[80].0);
     assert_eq!(vec![147, 100, 0], commands.lock().unwrap()[80].1);
-}
-*/
+}*/
+
 #[test]
 pub fn test_loop_bug2() {
     let (commands, mut igs_parser) = create_parser();
     create_buffer(&mut igs_parser, b"G#S>0,0,0,0:\r\nG#S>0,0,0,0:\r\nG#S>0,0,0,0:\r\nG#S>0,0,0,0:\r\n");
     assert_eq!(4, commands.lock().unwrap().len());
+}
+
+#[test]
+pub fn test_polyline_bug() {
+    let (commands, mut igs_parser) = create_parser();
+    create_buffer(&mut igs_parser, b"G#z>3:28,29,62,113,129,45:\r\n");
+    let cmd = &commands.lock().unwrap()[0];
+    assert_eq!(IgsCommands::PolyLine, cmd.0);
+    assert_eq!(vec![3, 28, 29, 62, 113, 129, 45], cmd.1);
 }
