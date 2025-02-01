@@ -36,6 +36,8 @@ enum LoopState {
     ReadCommand,
     ReadCount,
     ReadParameter,
+    ChainGangStart,
+    EndChain,
 }
 
 pub trait CommandExecutor: Send + Sync {
@@ -59,14 +61,25 @@ pub trait CommandExecutor: Send + Sync {
     ) -> EngineResult<CallbackAction>;
 }
 
+type LoopParameters = Vec<Vec<String>>;
+
+fn count_params(params: &LoopParameters) -> i32 {
+    params.iter().map(|x| x.len() as i32).sum()
+}
+
 pub struct Parser {
     fallback_parser: ansi::Parser,
     state: State,
     parsed_numbers: Vec<i32>,
+
     parsed_string: String,
+
+    loop_parameter_count: i32,
     loop_state: LoopState,
     loop_cmd: char,
-    loop_parameters: Vec<Vec<String>>,
+    loop_parameters: LoopParameters,
+    chain_gang: String,
+
     command_executor: Arc<Mutex<dyn CommandExecutor>>,
     got_double_colon: bool,
     cur_loop: Option<Loop>,
@@ -77,20 +90,25 @@ struct Loop {
     to: i32,
     step: i32,
     delay: i32,
-    command: IgsCommands,
+    cur_cmd: usize,
+    command: Vec<IgsCommands>,
     parsed_string: String,
-    parameters: Vec<Vec<String>>,
+    parameters: LoopParameters,
 }
 
 impl Loop {
-    fn new(from: i32, to: i32, step: i32, delay: i32, command: char, parsed_string: String, loop_parameters: Vec<Vec<String>>) -> EngineResult<Self> {
-        let command = IgsCommands::from_char(command)?;
+    fn new(from: i32, to: i32, step: i32, delay: i32, cmd_str: String, parsed_string: String, loop_parameters: LoopParameters) -> EngineResult<Self> {
+        let mut command = Vec::new();
+        for ch in cmd_str.chars() {
+            command.push(IgsCommands::from_char(ch)?);
+        }
         Ok(Self {
             i: from,
             from,
             to,
             step,
             delay,
+            cur_cmd: 0,
             command,
             parsed_string,
             parameters: loop_parameters,
@@ -102,14 +120,12 @@ impl Loop {
         if !is_running {
             return None;
         }
-        let cur_parameter = ((self.i - self.from) as usize) % self.parameters.len();
         let mut parameters = Vec::new();
-        for p in &self.parameters[cur_parameter] {
+        for p in &self.parameters[self.cur_cmd % self.parameters.len()] {
             let mut p = p.clone();
             let mut add_step_value = false;
             let mut subtract_const_value = false;
             let mut subtract_x_step = false;
-
             if p.starts_with('+') {
                 add_step_value = true;
                 p.remove(0);
@@ -147,16 +163,23 @@ impl Loop {
             }
             parameters.push(value);
         }
+
         // println!("step: {:?} => {:?}", self.loop_parameters[cur_parameter], parameters);
-        let res = exe.lock().unwrap().execute_command(buf, caret, self.command, &parameters, &self.parsed_string);
+        let res = exe
+            .lock()
+            .unwrap()
+            .execute_command(buf, caret, self.command[self.cur_cmd], &parameters, &self.parsed_string);
         // todo: correct delay?
         std::thread::sleep(Duration::from_millis(200 * self.delay as u64));
-        if self.from < self.to {
-            self.i += self.step;
-        } else {
-            self.i -= self.step;
+        self.cur_cmd += 1;
+        if self.cur_cmd >= self.command.len() {
+            self.cur_cmd = 0;
+            if self.from < self.to {
+                self.i += self.step;
+            } else {
+                self.i -= self.step;
+            }
         }
-
         match res {
             Ok(r) => Some(Ok(r)),
             Err(err) => Some(Err(err)),
@@ -177,6 +200,8 @@ impl Parser {
             loop_cmd: ' ',
             got_double_colon: false,
             cur_loop: None,
+            chain_gang: String::new(),
+            loop_parameter_count: 0,
         }
     }
 }
@@ -225,10 +250,23 @@ impl BufferParser for Parser {
                                 self.loop_state = LoopState::ReadCommand;
                             }
                         }
-                        LoopState::ReadCommand => {
-                            if ch == '@' || ch == '|' || ch == ',' {
+                        LoopState::ChainGangStart => {
+                            if ch == '@' {
+                                self.loop_state = LoopState::EndChain;
+                            } else {
+                                self.chain_gang.push(ch);
+                            }
+                        }
+                        LoopState::EndChain => {
+                            if ch == ',' {
                                 self.loop_state = LoopState::ReadCount;
-                                self.parsed_numbers.push(0);
+                            }
+                        }
+                        LoopState::ReadCommand => {
+                            if ch == '>' {
+                                self.loop_state = LoopState::ChainGangStart;
+                            } else if ch == '@' || ch == '|' || ch == ',' {
+                                self.loop_state = LoopState::ReadCount;
                                 self.parsed_string.clear();
                             } else {
                                 self.loop_cmd = ch;
@@ -236,11 +274,7 @@ impl BufferParser for Parser {
                         }
                         LoopState::ReadCount => match ch {
                             '0'..='9' => {
-                                let d = match self.parsed_numbers.pop() {
-                                    Some(number) => number,
-                                    _ => 0,
-                                };
-                                self.parsed_numbers.push(parse_next_number(d, ch as u8));
+                                self.loop_parameter_count = parse_next_number(self.loop_parameter_count, ch as u8);
                             }
                             ',' => {
                                 self.loop_parameters.clear();
@@ -255,12 +289,7 @@ impl BufferParser for Parser {
                         LoopState::ReadParameter => match ch {
                             '_' | '\n' | '\r' => { /* ignore */ }
                             ',' => {
-                                if self.parsed_numbers[4]
-                                    <= self.loop_parameters.iter().fold(0, |mut x, p| {
-                                        x += p.len() as i32;
-                                        x
-                                    })
-                                {
+                                if self.loop_parameter_count <= count_params(&self.loop_parameters) {
                                     self.state = State::ReadCommandStart;
 
                                     let mut l = Loop::new(
@@ -268,7 +297,11 @@ impl BufferParser for Parser {
                                         self.parsed_numbers[1],
                                         self.parsed_numbers[2],
                                         self.parsed_numbers[3],
-                                        self.loop_cmd,
+                                        if self.chain_gang.is_empty() {
+                                            self.loop_cmd.to_string()
+                                        } else {
+                                            self.chain_gang.clone()
+                                        },
                                         self.parsed_string.clone(),
                                         self.loop_parameters.clone(),
                                     )?;
@@ -282,20 +315,18 @@ impl BufferParser for Parser {
                                 self.loop_parameters.last_mut().unwrap().push(String::new());
                             }
                             ':' => {
-                                //println!("{:?} : {}", self.parsed_numbers, self.loop_parameters.iter().fold(0, |mut x, p| {x += p.len() as i32; x }) );
-                                if self.parsed_numbers[4]
-                                    <= self.loop_parameters.iter().fold(0, |mut x, p| {
-                                        x += p.len() as i32;
-                                        x
-                                    })
-                                {
+                                if self.loop_parameter_count <= count_params(&self.loop_parameters) {
                                     self.state = State::ReadCommandStart;
                                     let mut l = Loop::new(
                                         self.parsed_numbers[0],
                                         self.parsed_numbers[1],
                                         self.parsed_numbers[2],
                                         self.parsed_numbers[3],
-                                        self.loop_cmd,
+                                        if self.chain_gang.is_empty() {
+                                            self.loop_cmd.to_string()
+                                        } else {
+                                            self.chain_gang.clone()
+                                        },
                                         self.parsed_string.clone(),
                                         self.loop_parameters.clone(),
                                     )?;
@@ -306,10 +337,36 @@ impl BufferParser for Parser {
                                     }
                                     return Ok(CallbackAction::Update);
                                 }
-                                self.loop_parameters.push(vec![String::new()]);
+                                self.loop_parameters.last_mut().unwrap().push(String::new());
                             }
                             _ => {
-                                self.loop_parameters.last_mut().unwrap().last_mut().unwrap().push(ch);
+                                if let Some((pos, _)) = self.chain_gang.chars().enumerate().find(|(_i, x)| *x == ch) {
+                                    let is_next_chain = if let Some(p) = self.loop_parameters.last() {
+                                        if let Some(last_par) = p.last() {
+                                            *last_par == pos.to_string()
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+                                    if is_next_chain {
+                                        self.loop_parameter_count -= 1;
+                                        let _n = self.loop_parameters.last_mut().unwrap().pop();
+                                        //self.loop_parameters.push(vec![_n.unwrap()]);
+                                        if self.loop_parameters.len() > 1 || !self.loop_parameters.last().unwrap().is_empty() {
+                                            self.loop_parameters.push(vec![String::new()]);
+                                        }
+                                        return Ok(CallbackAction::NoUpdate);
+                                    }
+                                }
+                                if let Some(p) = self.loop_parameters.last_mut() {
+                                    if let Some(last_par) = p.last_mut() {
+                                        last_par.push(ch);
+                                    } else {
+                                        p.push(ch.to_string());
+                                    }
+                                }
                             }
                         },
                     }
@@ -373,6 +430,8 @@ impl BufferParser for Parser {
 
                     '&' => {
                         self.state = State::ReadCommand(IgsCommands::LoopCommand);
+                        self.loop_parameter_count = 0;
+                        self.chain_gang.clear();
                         self.loop_state = LoopState::Start;
                         Ok(CallbackAction::NoUpdate)
                     }

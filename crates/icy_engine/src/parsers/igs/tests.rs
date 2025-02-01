@@ -1,4 +1,4 @@
-use crate::{Buffer, CallbackAction, Caret, EngineResult, Size};
+use crate::{Buffer, BufferParser, CallbackAction, Caret, EngineResult, Size};
 
 use super::{cmd::IgsCommands, CommandExecutor};
 
@@ -35,7 +35,7 @@ use crate::{
 
 fn create_parser() -> (Arc<Mutex<IgsCommandVec>>, Parser) {
     let commands = Arc::new(Mutex::new(Vec::new()));
-    let command_executor: Arc<Mutex<dyn CommandExecutor>> = Arc::new(Mutex::new(TestExecutor { commands: commands.clone() }));
+    let command_executor = Arc::new(Mutex::new(TestExecutor { commands: commands.clone() }));
     let igs_parser = Parser::new(command_executor);
     (commands, igs_parser)
 }
@@ -113,4 +113,13 @@ pub fn test_polyline_bug() {
     let cmd = &commands.lock().unwrap()[0];
     assert_eq!(IgsCommands::PolyLine, cmd.0);
     assert_eq!(vec![3, 28, 29, 62, 113, 129, 45], cmd.1);
+}
+
+#[test]
+pub fn test_chain_gang_loop() {
+    let (commands, mut igs_parser) = create_parser();
+    create_buffer(
+        &mut igs_parser,
+        b"G#&>1,10,1,0,>Gq@,22,0G3,3,0,102,20,107,218,156:1q10:0G3,3,0,109,20,114,218,156:1q10:\r\n",
+    );
 }

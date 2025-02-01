@@ -452,6 +452,7 @@ fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (Buffer, Care
     buf.layers.first_mut().unwrap().lines.clear();
 
     update_buffer(&mut buf, &mut caret, parser, input);
+    while parser.get_next_action(&mut buf, &mut caret, 0).is_some() {}
 
     (buf, caret)
 }

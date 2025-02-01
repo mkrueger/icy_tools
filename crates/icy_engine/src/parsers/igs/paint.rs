@@ -674,16 +674,32 @@ impl DrawExecutor {
         }
     }
 
-    fn blit_screen_to_screen(&mut self, write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = (to.x - from.x).abs() as usize + 1;
-        let height = (to.y - from.y).abs() as usize + 1;
+    fn blit_screen_to_screen(&mut self, write_mode: i32, from: Position, to: Position, mut dest: Position) {
+        let mut width = (to.x - from.x).abs() as usize + 1;
+        let mut height = (to.y - from.y).abs() as usize + 1;
+
+        if dest.x < 0 {
+            if width < dest.x.abs() as usize {
+                return;
+            }
+            width -= dest.x.abs() as usize;
+            dest.x = 0;
+        }
+
+        if dest.y < 0 {
+            if height < dest.y.abs() as usize {
+                return;
+            }
+            height -= dest.y.abs() as usize;
+            dest.y = 0;
+        }
 
         let start_x = to.x.min(from.x) as usize;
         let start_y = to.y.min(from.y) as usize;
 
         let res = self.get_resolution();
 
-        if res.width < start_x as i32 || res.height < start_y as i32 {
+        if res.width < dest.x as i32 || res.height < dest.y as i32 {
             return;
         }
         let width = width.min(res.width as usize - start_x);
@@ -720,9 +736,25 @@ impl DrawExecutor {
         }
     }
 
-    fn blit_memory_to_screen(&mut self, write_mode: i32, from: Position, to: Position, dest: Position) {
-        let width = (to.x - from.x).abs() as usize + 1;
-        let height = (to.y - from.y).abs() as usize + 1;
+    fn blit_memory_to_screen(&mut self, write_mode: i32, from: Position, to: Position, mut dest: Position) {
+        let mut width = (to.x - from.x).abs() as usize + 1;
+        let mut height = (to.y - from.y).abs() as usize + 1;
+
+        if dest.x < 0 {
+            if width < dest.x.abs() as usize {
+                return;
+            }
+            width -= dest.x.abs() as usize;
+            dest.x = 0;
+        }
+
+        if dest.y < 0 {
+            if height < dest.y.abs() as usize {
+                return;
+            }
+            height -= dest.y.abs() as usize;
+            dest.y = 0;
+        }
 
         let start_x = to.x.min(from.x) as usize;
         let start_y = to.y.min(from.y) as usize;
@@ -741,6 +773,9 @@ impl DrawExecutor {
                 break;
             }
             for _x in 0..width {
+                if dest.x + _x as i32 >= res.width {
+                    break;
+                }
                 let color = self.screen_memory[offset];
                 offset += 1;
                 if screen_offset >= self.screen.len() {
@@ -909,7 +944,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        // println!("cmd:{:?}", command);
+        //  println!("cmd:{:?}", command);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() < 1 {
@@ -1423,7 +1458,6 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("GrabScreen command requires > 2 argument"));
                 }
                 let write_mode = parameters[1];
-                //println!("grab screen {} - {write_mode}", parameters[0]);
                 match parameters[0] {
                     0 => {
                         if parameters.len() < 8 {
