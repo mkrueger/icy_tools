@@ -2,6 +2,7 @@ use std::{mem::swap, str::FromStr};
 
 use super::{
     cmd::IgsCommands,
+    sound::SOUND_DATA,
     vdi::{color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx, TWOPI},
     CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
 };
@@ -1502,8 +1503,42 @@ impl CommandExecutor for DrawExecutor {
                 Ok(CallbackAction::NoUpdate)
             }
             IgsCommands::BellsAndWhistles => {
-                // TODO
-                Ok(CallbackAction::NoUpdate)
+                let effect = parameters[0] as usize;
+                const CLK_TCK: usize = 200;
+                match effect {
+                    0..=4 => unsafe {
+                        let data = SOUND_DATA[effect].to_vec();
+                        let mut out_data = Vec::new();
+                        (0..5 * CLK_TCK).for_each(|_| out_data.extend_from_slice(&data));
+                        Ok(CallbackAction::PlayGISTSound(out_data.to_vec()))
+                    },
+                    5..=19 => unsafe { Ok(CallbackAction::PlayGISTSound(SOUND_DATA[effect].to_vec())) },
+                    20 => unsafe {
+                        // b 20,play_flag,snd_num,element_num,negative_flag,thousands,ones
+                        let play_flag = parameters[1];
+                        let snd_num = parameters[2].clamp(0, 19);
+                        let element_num = parameters[3].clamp(0, 55);
+                        let negative_flag = if parameters[4] != 0 { -1 } else { 1 };
+                        let thousands = parameters[5];
+                        let ones = parameters[6];
+                        SOUND_DATA[snd_num as usize][element_num as usize] = negative_flag * (thousands * 1000 * ones) as i16;
+                        if play_flag != 0 {
+                            Ok(CallbackAction::PlayGISTSound(SOUND_DATA[snd_num as usize].to_vec()))
+                        } else {
+                            Ok(CallbackAction::NoUpdate)
+                        }
+                    },
+                    21 => {
+                        //STOP sound
+                        Ok(CallbackAction::NoUpdate)
+                    }
+                    22 => unsafe {
+                        // b 22, snd_num
+                        let snd_num = parameters[1].clamp(0, 19);
+                        Ok(CallbackAction::PlayGISTSound(SOUND_DATA[snd_num as usize].to_vec()))
+                    },
+                    _ => Err(anyhow::anyhow!("BellsAndWhistles unknown/unsupported effect: {}", effect)),
+                }
             }
             IgsCommands::ExtendedCommands => {
                 match parameters[0] {

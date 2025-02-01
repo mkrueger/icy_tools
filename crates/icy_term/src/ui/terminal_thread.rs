@@ -122,7 +122,7 @@ impl TerminalThread {
                 return (false, 0);
             }
 
-            icy_engine::CallbackAction::NoUpdate => {
+            icy_engine::CallbackAction::PlayGISTSound(_) | icy_engine::CallbackAction::NoUpdate => {
                 return (false, 0);
             }
 

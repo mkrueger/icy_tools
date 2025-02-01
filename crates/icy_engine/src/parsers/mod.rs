@@ -43,6 +43,7 @@ pub enum CallbackAction {
     /// Pause for milliseconds
     Pause(u32),
     ScrollDown(i32),
+    PlayGISTSound(Vec<i16>),
 }
 
 pub trait UnicodeConverter: Send + Sync {

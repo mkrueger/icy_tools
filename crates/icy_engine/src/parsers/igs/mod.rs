@@ -12,6 +12,7 @@ use cmd::IgsCommands;
 mod paint;
 pub use paint::*;
 
+mod sound;
 mod vdi;
 
 #[cfg(test)]
