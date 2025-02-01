@@ -63,8 +63,8 @@ impl IGS {
                 }
                 let c = vec[i];
                 i += 1;
-                if let Ok(act) = parser.print_char(&mut buffer, 0, &mut caret, c) {
-                    match act {
+                match parser.print_char(&mut buffer, 0, &mut caret, c) {
+                    Ok(act) => match act {
                         CallbackAction::Update => {
                             let texture_handle = make_texture(&igs.lock().unwrap().executor);
                             igs.lock().unwrap().texture_handle = texture_handle;
@@ -74,6 +74,9 @@ impl IGS {
                         }
 
                         _ => {}
+                    },
+                    Err(err) => {
+                        eprintln!("IGS Error: {:?}", err);
                     }
                 }
             }

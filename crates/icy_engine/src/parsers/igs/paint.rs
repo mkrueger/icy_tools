@@ -599,7 +599,6 @@ impl DrawExecutor {
         if self.fill_pattern_type == FillPatternType::Solid {
             self.draw_poly(&points, self.fill_color, true);
         }
-
     }
 
     fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
@@ -728,7 +727,6 @@ impl DrawExecutor {
         let height = height.min(self.screen_memory_size.height as usize - start_y);
 
         let res = self.get_resolution();
-
         for y in 0..height {
             let mut offset = (start_y + y) * self.screen_memory_size.width as usize + start_x;
             let mut screen_offset = (dest.y as usize + y) * res.width as usize + dest.x as usize;
@@ -774,31 +772,32 @@ impl DrawExecutor {
         if y1 < y2 {
             swap(&mut y1, &mut y2);
         }
-        
+
         let x_radius = (self.get_resolution().width >> 6).min((x2 - x1) / 2);
         let y_radius = self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2);
 
-        const ISIN225:i32 = 12539;
-        const ISIN450:i32 = 23170;
-        const ISIN675:i32 = 30273;
-        const ICOS225:i32 = ISIN675;
-        const ICOS450:i32 = ISIN450;
-        const ICOS675:i32 = ISIN225;
+        const ISIN225: i32 = 12539;
+        const ISIN450: i32 = 23170;
+        const ISIN675: i32 = 30273;
+        const ICOS225: i32 = ISIN675;
+        const ICOS450: i32 = ISIN450;
+        const ICOS675: i32 = ISIN225;
 
         let x_off = [
-            0, 
-            (ICOS675 * x_radius) / 32767, 
-            (ICOS450 * x_radius) / 32767, 
-            (ICOS225 * x_radius) / 32767, 
-            x_radius
+            0,
+            (ICOS675 * x_radius) / 32767,
+            (ICOS450 * x_radius) / 32767,
+            (ICOS225 * x_radius) / 32767,
+            x_radius,
         ];
 
         let y_off = [
-            y_radius, 
-            (ISIN675 * y_radius) / 32767, 
-            (ISIN450 * y_radius) / 32767, 
-            (ISIN225 * y_radius) / 32767, 
-            0];
+            y_radius,
+            (ISIN675 * y_radius) / 32767,
+            (ISIN450 * y_radius) / 32767,
+            (ISIN225 * y_radius) / 32767,
+            0,
+        ];
         let xc = x2 - x_radius;
         let yc = y2 + y_radius;
 
@@ -903,10 +902,10 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        //println!("cmd:{:?}", command);
+        // println!("cmd:{:?}", command);
         match command {
             IgsCommands::Initialize => {
-                if parameters.len() != 1 {
+                if parameters.len() < 1 {
                     return Err(anyhow::anyhow!("Initialize command requires 1 argument"));
                 }
                 match parameters[0] {
@@ -935,7 +934,7 @@ impl CommandExecutor for DrawExecutor {
                 Ok(CallbackAction::Update)
             }
             IgsCommands::AskIG => {
-                if parameters.len() != 1 {
+                if parameters.len() < 1 {
                     return Err(anyhow::anyhow!("Initialize command requires 1 argument"));
                 }
                 match parameters[0] {
@@ -945,7 +944,7 @@ impl CommandExecutor for DrawExecutor {
                 }
             }
             IgsCommands::Cursor => {
-                if parameters.len() != 1 {
+                if parameters.len() < 1 {
                     return Err(anyhow::anyhow!("Cursor command requires 1 argument"));
                 }
                 match parameters[0] {
@@ -960,7 +959,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::ColorSet => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("ColorSet command requires 2 arguments"));
                 }
 
@@ -986,7 +985,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::SetPenColor => {
-                if parameters.len() != 4 {
+                if parameters.len() < 4 {
                     return Err(anyhow::anyhow!("SetPenColor command requires 4 arguments"));
                 }
 
@@ -1001,7 +1000,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::DrawLine => {
-                if parameters.len() != 4 {
+                if parameters.len() < 4 {
                     return Err(anyhow::anyhow!("DrawLine command requires 4 arguments"));
                 }
                 let color = self.line_color;
@@ -1018,7 +1017,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("PolyFill requires {} arguments was {} ", points * 2 + 1, parameters.len()));
                 }
                 self.fill_poly(&parameters[1..]);
-     
+
                 Ok(CallbackAction::Update)
             }
 
@@ -1038,7 +1037,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::LineDrawTo => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("LineDrawTo command requires 2 arguments"));
                 }
                 self.draw_line(
@@ -1054,7 +1053,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::Box => {
-                if parameters.len() != 5 {
+                if parameters.len() < 5 {
                     return Err(anyhow::anyhow!("Box command requires 5 arguments"));
                 }
                 let mut x0 = parameters[0];
@@ -1091,7 +1090,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::RoundedRectangles => {
-                if parameters.len() != 5 {
+                if parameters.len() < 5 {
                     return Err(anyhow::anyhow!("Box command requires 5 arguments"));
                 }
                 let x0 = parameters[0];
@@ -1104,7 +1103,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::HollowSet => {
-                if parameters.len() != 1 {
+                if parameters.len() < 1 {
                     return Err(anyhow::anyhow!("HollowSet command requires 1 argument"));
                 }
                 match parameters[0] {
@@ -1115,7 +1114,7 @@ impl CommandExecutor for DrawExecutor {
                 Ok(CallbackAction::NoUpdate)
             }
             IgsCommands::Pieslice => {
-                if parameters.len() != 5 {
+                if parameters.len() < 5 {
                     return Err(anyhow::anyhow!("Pieslice command requires 5 arguments"));
                 }
                 let xrad = parameters[2];
@@ -1128,7 +1127,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::EllipticalPieslice => {
-                if parameters.len() != 6 {
+                if parameters.len() < 6 {
                     return Err(anyhow::anyhow!("EllipticalPieslice command requires 6 arguments"));
                 }
 
@@ -1140,7 +1139,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::Circle => {
-                if parameters.len() != 3 {
+                if parameters.len() < 3 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
                 let xrad = parameters[2];
@@ -1153,7 +1152,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::Arc => {
-                if parameters.len() != 5 {
+                if parameters.len() < 5 {
                     return Err(anyhow::anyhow!("EllipticalArc command requires 5 arguments"));
                 }
 
@@ -1163,7 +1162,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::Ellipse => {
-                if parameters.len() != 4 {
+                if parameters.len() < 4 {
                     return Err(anyhow::anyhow!("Ellipse command requires 4 arguments"));
                 }
                 self.fill_ellipse(parameters[0], parameters[1], parameters[2], parameters[3]);
@@ -1174,7 +1173,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::EllipticalArc => {
-                if parameters.len() != 6 {
+                if parameters.len() < 6 {
                     return Err(anyhow::anyhow!("EllipticalArc command requires 6 arguments"));
                 }
 
@@ -1183,7 +1182,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::QuickPause => {
-                if parameters.len() != 1 {
+                if parameters.len() < 1 {
                     return Err(anyhow::anyhow!("QuickPause command requires 1 arguments"));
                 }
                 match parameters[0] {
@@ -1217,7 +1216,7 @@ impl CommandExecutor for DrawExecutor {
                 }
             }
             IgsCommands::AttributeForFills => {
-                if parameters.len() != 3 {
+                if parameters.len() < 3 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
                 //println!("AttributeForFills {:?}", parameters);
@@ -1270,7 +1269,7 @@ impl CommandExecutor for DrawExecutor {
                 Ok(CallbackAction::NoUpdate)
             }
             IgsCommands::FilledRectangle => {
-                if parameters.len() != 4 {
+                if parameters.len() < 4 {
                     return Err(anyhow::anyhow!("FilledRectangle command requires 4 arguments"));
                 }
                 self.fill_rect(parameters[0], parameters[1], parameters[2], parameters[3]);
@@ -1280,7 +1279,7 @@ impl CommandExecutor for DrawExecutor {
             IgsCommands::TimeAPause => Ok(CallbackAction::Pause(1000 * parameters[0] as u32)),
 
             IgsCommands::PolymarkerPlot => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("PolymarkerPlot command requires 2 arguments"));
                 }
                 self.draw_poly_maker(parameters[0], parameters[1]);
@@ -1288,7 +1287,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::TextEffects => {
-                if parameters.len() != 3 {
+                if parameters.len() < 3 {
                     return Err(anyhow::anyhow!("PolymarkerPlot command requires 2 arguments"));
                 }
                 //println!("text effect {}", parameters[0]);
@@ -1319,7 +1318,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::LineMarkerTypes => {
-                if parameters.len() != 3 {
+                if parameters.len() < 3 {
                     return Err(anyhow::anyhow!("LineMarkerTypes command requires 3 arguments"));
                 }
                 if parameters[0] == 1 {
@@ -1356,7 +1355,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::DrawingMode => {
-                if parameters.len() != 1 {
+                if parameters.len() < 1 {
                     return Err(anyhow::anyhow!("DrawingMode command requires 1 argument"));
                 }
                 match parameters[0] {
@@ -1370,7 +1369,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::SetResolution => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("SetResolution command requires 2 argument"));
                 }
                 match parameters[0] {
@@ -1396,7 +1395,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::WriteText => {
-                if parameters.len() != 3 {
+                if parameters.len() < 3 {
                     return Err(anyhow::anyhow!("WriteText command requires 3 arguments"));
                 }
                 let text_pos = Position::new(parameters[0], parameters[1]);
@@ -1405,7 +1404,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::FloodFill => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("FloodFill command requires 2 arguments"));
                 }
                 self.flood_fill(parameters[0], parameters[1]);
@@ -1417,10 +1416,10 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("GrabScreen command requires > 2 argument"));
                 }
                 let write_mode = parameters[1];
-                // println!("grab screen {} - {write_mode}", parameters[0]);
+                //println!("grab screen {} - {write_mode}", parameters[0]);
                 match parameters[0] {
                     0 => {
-                        if parameters.len() != 8 {
+                        if parameters.len() < 8 {
                             return Err(anyhow::anyhow!("GrabScreen screen to screen command requires 8 argument"));
                         }
                         let from_start = Position::new(parameters[2], parameters[3]);
@@ -1430,7 +1429,7 @@ impl CommandExecutor for DrawExecutor {
                     }
 
                     1 => {
-                        if parameters.len() != 6 {
+                        if parameters.len() < 6 {
                             return Err(anyhow::anyhow!("GrabScreen screen to memory command requires 6 argument"));
                         }
                         let from_start = Position::new(parameters[2], parameters[3]);
@@ -1439,7 +1438,7 @@ impl CommandExecutor for DrawExecutor {
                     }
 
                     2 => {
-                        if parameters.len() != 4 {
+                        if parameters.len() < 4 {
                             return Err(anyhow::anyhow!("GrabScreen memory to screen command requires 4 argument"));
                         }
                         let dest = Position::new(parameters[2], parameters[3]);
@@ -1452,7 +1451,7 @@ impl CommandExecutor for DrawExecutor {
                     }
 
                     3 => {
-                        if parameters.len() != 8 {
+                        if parameters.len() < 8 {
                             return Err(anyhow::anyhow!("GrabScreen piece of memory to screen command requires 4 argument"));
                         }
                         let from_start = Position::new(parameters[2], parameters[3]);
@@ -1471,7 +1470,7 @@ impl CommandExecutor for DrawExecutor {
             }
 
             IgsCommands::VTColor => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("VTColor command requires 2 argument"));
                 }
                 if let Some(pen) = REGISTER_TO_PEN.get(parameters[1] as usize) {
@@ -1490,10 +1489,61 @@ impl CommandExecutor for DrawExecutor {
                 }
             }
             IgsCommands::VTPosition => {
-                if parameters.len() != 2 {
+                if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("VTPosition command requires 2 argument"));
                 }
                 caret.set_position(Position::new(parameters[0], parameters[1]));
+                Ok(CallbackAction::NoUpdate)
+            }
+            IgsCommands::BellsAndWhistles => {
+                // TODO
+            }
+            IgsCommands::ExtendedCommands => {
+                match parameters[0] {
+                    11 => {
+                        // 11 LOAD or WIPE SCREEN BITBLIT MEMORY
+                        if parameters.len() < 4 {
+                            return Err(anyhow::anyhow!("ExtCmd WipeScreenBitBlitMemory command requires 3 argument"));
+                        }
+                        let sub_cmd = parameters[1];
+                        let target = parameters[2];
+                        let value = parameters[3];
+
+                        match sub_cmd {
+                            0 => {
+                                // WIPE BitBlit Memory
+                                if target == 0 {
+                                    // all
+                                    if value < 256 {
+                                        self.screen_memory.fill(value as u8);
+                                    } else {
+                                        // todo: fill with random
+                                    }
+                                } else {
+                                    // specific line
+                                    if target < self.screen_memory_size.height {
+                                        for x in 0..self.screen_memory_size.width {
+                                            self.screen_memory[(x as usize) + (target as usize) * self.screen_memory_size.width as usize] = value as u8;
+                                        }
+                                    } else {
+                                        log::warn!("WipeScreenBitBlitMemory invalid target line: {}", target);
+                                    }
+                                }
+                            }
+                            1 => { // LOAD and SHOW BitBlit Memory
+                            }
+                            2 => { //  LOAD BitBlit Memory
+                            }
+                            _ => {
+                                println!("Unimplemented IGS LOAD or WIPE SCREEN BITBLIT MEMORY command: {parameters:?}");
+                            }
+                        }
+                    }
+                    _ => {
+                        println!("Unimplemented IGS extended command: {parameters:?}");
+                    }
+                }
+
                 Ok(CallbackAction::NoUpdate)
             }
             _ => Err(anyhow::anyhow!("Unimplemented IGS command: {command:?}")),

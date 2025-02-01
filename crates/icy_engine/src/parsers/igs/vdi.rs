@@ -30,8 +30,8 @@ fn icos(angle: u16) -> u16 {
 }
 
 pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> Position {
-    let mut delta_x ;
-    let mut delta_y ;
+    let mut delta_x;
+    let mut delta_y;
 
     let mut angle = angle % TWOPI;
     let mut negative = 1;
