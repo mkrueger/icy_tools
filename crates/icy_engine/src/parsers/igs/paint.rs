@@ -431,12 +431,14 @@ impl DrawExecutor {
     }
 
     fn draw_elliptical_pieslice(&mut self, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
-        let points = gdp_curve(xm, ym, xr, yr, beg_ang, end_ang);
+        let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
+        points.extend_from_slice(&[xm, ym]);
         self.draw_poly(&points, self.line_color, true);
     }
 
     fn fill_elliptical_pieslice(&mut self, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
-        let points = gdp_curve(xm, ym, xr, yr, beg_ang, end_ang);
+        let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
+        points.extend_from_slice(&[xm, ym]);
         self.fill_poly(&points);
     }
 
@@ -461,7 +463,7 @@ impl DrawExecutor {
     }
 
     fn draw_arc(&mut self, xm: i32, ym: i32, a: i32, b: i32, beg_ang: i32, end_ang: i32) {
-        let points = gdp_curve(xm, ym, a, b, beg_ang, end_ang);
+        let points = gdp_curve(xm, ym, a, b, beg_ang * 10, end_ang * 10);
         self.draw_poly(&points, self.line_color, false);
     }
 
@@ -500,6 +502,10 @@ impl DrawExecutor {
     }
 
     fn fill_poly(&mut self, points: &[i32]) {
+        if self.hollow_set {
+            self.draw_poly(points, self.fill_color, true);
+            return;
+        }
         let max_vertices = 512;
         let mut y_max = points[1];
         let mut y_min = points[1];
@@ -1143,7 +1149,7 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
                 let xrad = parameters[2];
-                let yrad = self.calc_circle_y_rad(xrad);
+                let yrad = self.calc_circle_y_rad(xrad).max(1);
                 self.fill_ellipse(parameters[0], parameters[1], xrad, yrad);
                 if self.draw_border {
                     self.draw_circle(parameters[0], parameters[1], xrad);
