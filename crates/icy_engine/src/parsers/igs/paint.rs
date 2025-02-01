@@ -1497,6 +1497,7 @@ impl CommandExecutor for DrawExecutor {
             }
             IgsCommands::BellsAndWhistles => {
                 // TODO
+                Ok(CallbackAction::NoUpdate)
             }
             IgsCommands::ExtendedCommands => {
                 match parameters[0] {
