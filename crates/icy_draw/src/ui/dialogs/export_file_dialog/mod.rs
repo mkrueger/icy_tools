@@ -157,6 +157,16 @@ impl ModalDialog for ExportFileDialog {
                         ui.end_row();
                     });
 
+                if self.file_name.parent().is_none() || self.file_name.parent().unwrap().to_string_lossy().is_empty() {
+                    if let Ok(path) = std::env::current_dir() {
+                        ui.small(fl!(
+                            crate::LANGUAGE_LOADER,
+                            "export-path-dest-label",
+                            path = crate::util::shorten_directory(&path)
+                        ));
+                    }
+                }
+
                 ui.separator();
 
                 unsafe {

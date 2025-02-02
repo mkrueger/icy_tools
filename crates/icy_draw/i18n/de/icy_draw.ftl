@@ -253,6 +253,7 @@ export-maximum_line_length=Maximale Zeilenlänge
 export-use_repeat_sequences=Benutze `CSI Pn b`Sequenzen 
 export-save_full_line_length=Abschließende Weißzeichen speichern
 export-format-label=Format:
+export-path-dest-label=Datei wird in { $path } gespeichert
 
 select-character-title=Zeichen auswählen
 

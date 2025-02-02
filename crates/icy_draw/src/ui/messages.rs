@@ -1,6 +1,5 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
-use directories::UserDirs;
 use eframe::{
     egui::{self},
     epaint::Vec2,
@@ -1158,9 +1157,7 @@ pub fn set_default_initial_directory_opt(initial_directory: &mut Option<PathBuf>
     if initial_directory.is_some() {
         return;
     }
-    *initial_directory = if let Some(user) = UserDirs::new() {
-        Some(user.home_dir().to_path_buf())
-    } else if let Ok(cur) = std::env::current_dir() {
+    *initial_directory = if let Ok(cur) = std::env::current_dir() {
         Some(cur)
     } else {
         return;

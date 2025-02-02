@@ -11,7 +11,6 @@ use crate::{
     Document, DocumentBehavior, DocumentTab, LayerToolWindow, Message, MinimapToolWindow, ModalDialog, MostRecentlyUsedFiles, SettingsDialog, ToolBehavior,
     ToolTab, TopBar, SETTINGS,
 };
-use directories::UserDirs;
 use eframe::egui::{Button, PointerButton};
 use eframe::{
     egui::{self, Key, Response, SidePanel, Ui},
@@ -40,6 +39,9 @@ pub struct MainWindow<'a> {
     id: usize,
 
     pub current_id: Option<TileId>,
+    /// used for title updates
+    pub last_scale: Vec2,
+
     pub is_closed: bool,
     pub top_bar: TopBar,
     pub left_panel: bool,
@@ -193,6 +195,7 @@ impl<'a> MainWindow<'a> {
             key_bindings,
             plugins,
             mru_files,
+            last_scale: Vec2::new(0.0, 0.0),
         }
     }
 
@@ -515,48 +518,26 @@ impl<'a> MainWindow<'a> {
     pub fn update_title(&mut self, ctx: &egui::Context, force: bool) {
         if !force {
             let id = if let Some((id, _)) = self.get_active_pane() { Some(id) } else { None };
-
-            if let Some(id) = id {
-                if self.current_id == Some(id) {
+            if self.last_scale == unsafe { SETTINGS.get_scale() } {
+                if let Some(id) = id {
+                    if self.current_id == Some(id) {
+                        return;
+                    }
+                    self.current_id = Some(id);
+                } else {
+                    if self.current_id.is_some() {
+                        self.current_id = None;
+                        self.set_title(ctx, crate::DEFAULT_TITLE.clone());
+                    }
                     return;
                 }
-                self.current_id = Some(id);
-            } else {
-                if self.current_id.is_some() {
-                    self.current_id = None;
-                    self.set_title(ctx, crate::DEFAULT_TITLE.clone());
-                }
-                return;
             }
         }
 
         if let Some((_, doc)) = self.get_active_pane() {
             if let Some(path) = doc.get_path() {
-                let title = if let Some(mut parent) = path.parent() {
-                    let directory = if let Some(user) = UserDirs::new() {
-                        let home_dir = user.home_dir();
-                        let mut parents = Vec::new();
-                        let mut root = false;
-                        while parent != home_dir {
-                            if let Some(file_name) = parent.file_name() {
-                                let value = file_name.to_string_lossy().to_string();
-                                parents.push(value);
-                                parent = parent.parent().unwrap();
-                            } else {
-                                root = true;
-                                break;
-                            }
-                        }
-                        if root {
-                            format!("/{}/", parents.into_iter().rev().collect::<Vec<String>>().join("/"))
-                        } else if parents.is_empty() {
-                            "~/".to_string()
-                        } else {
-                            format!("~/{}/", parents.into_iter().rev().collect::<Vec<String>>().join("/"))
-                        }
-                    } else {
-                        parent.to_string_lossy().to_string()
-                    };
+                let title = if let Some(parent) = path.parent() {
+                    let directory = crate::util::shorten_directory(parent);
                     format!(
                         "{}{} - iCY DRAW {} ({}%)",
                         directory,
@@ -572,6 +553,7 @@ impl<'a> MainWindow<'a> {
                         (100. * unsafe { SETTINGS.get_scale().x }) as i32
                     )
                 };
+                self.last_scale = unsafe { SETTINGS.get_scale() };
                 self.set_title(ctx, title);
             }
         }

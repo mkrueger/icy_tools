@@ -246,6 +246,7 @@ export-maximum_line_length=Maximum line length
 export-use_repeat_sequences=Use CSI Pn b repeat sequences
 export-save_full_line_length=Save trailing white spaces
 export-format-label=Format:
+export-path-dest-label=File will be saved in { $path }
 
 select-character-title=Select Character
 

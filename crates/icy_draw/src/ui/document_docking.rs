@@ -177,8 +177,8 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
     fn is_tab_closable(&self, _tiles: &Tiles<DocumentTab>, _tile_id: TileId) -> bool {
         true
     }
-    fn on_tab_close(&mut self, tiles: &mut Tiles<DocumentTab>, _tile_id: TileId) -> bool {
-        self.request_close = Some(tiles.tile_ids().next().unwrap());
+    fn on_tab_close(&mut self, _tiles: &mut Tiles<DocumentTab>, tile_id: TileId) -> bool {
+        self.request_close = Some(tile_id);
         false
     }
 
