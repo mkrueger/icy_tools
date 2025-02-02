@@ -33,24 +33,29 @@ pub struct ExportFileDialog {
 }
 
 impl ExportFileDialog {
-    pub fn new(buf: &icy_engine::Buffer) -> Self {
-        let file_name = match &buf.file_name {
+    pub fn new(path: Option<PathBuf>, buf: &icy_engine::Buffer) -> Self {
+        let file_name = match path {
             Some(path) => {
-                let mut p = path.clone();
+                let mut p: PathBuf = path.clone();
                 let desc: &[(&str, CreateSettingsFunction, &str)] = if matches!(buf.buffer_type, BufferType::Atascii) {
                     &ATASCII_TYPE_DESCRIPTIONS
                 } else {
                     &TYPE_DESCRIPTIONS
                 };
-                let format_type = get_format_type(buf.buffer_type, path) as usize;
+                let format_type = get_format_type(buf.buffer_type, &path) as usize;
                 let ext = desc[format_type].2;
                 p.set_extension(ext);
                 p
             }
-            _ => PathBuf::from("Untitled.ans"),
+            _ => {
+                if let Ok(path) = std::env::current_dir() {
+                    path.join("Untitled.ans")
+                } else {
+                    PathBuf::from("Untitled.ans")
+                }
+            }
         };
         let format_type = get_format_type(buf.buffer_type, &file_name);
-
         ExportFileDialog {
             should_commit: false,
             file_name,
@@ -86,7 +91,7 @@ impl ModalDialog for ExportFileDialog {
         if let Some(ed) = &mut self.folder_dialog {
             if ed.show(ctx).selected() {
                 if let Some(res) = ed.path() {
-                    self.file_name = res.to_path_buf();
+                    self.file_name = res.to_path_buf().join(self.file_name.file_name().unwrap());
                 }
                 self.folder_dialog = None
             } else {
@@ -119,7 +124,23 @@ impl ModalDialog for ExportFileDialog {
                             ui.label(fl!(crate::LANGUAGE_LOADER, "export-file-label"));
                         });
                         ui.horizontal(|ui| {
-                            let mut path_edit = self.file_name.to_string_lossy().to_string();
+                            let mut path_edit = self.file_name.file_name().unwrap_or_default().to_string_lossy().to_string();
+                            let response = ui.add(TextEdit::singleline(&mut path_edit).desired_width(450.));
+                            if response.changed() {
+                                self.file_name = path_edit.into();
+                                let format_type = get_format_type(self.buffer_type, &self.file_name);
+                                if format_type >= 0 {
+                                    self.format_type = format_type;
+                                }
+                            }
+                        });
+                        ui.end_row();
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(fl!(crate::LANGUAGE_LOADER, "export-path-label"));
+                        });
+                        ui.horizontal(|ui| {
+                            let mut path_edit = self.file_name.parent().unwrap().to_string_lossy().to_string();
                             let response = ui.add(TextEdit::singleline(&mut path_edit).desired_width(450.));
                             if response.changed() {
                                 self.file_name = path_edit.into();
@@ -129,12 +150,10 @@ impl ModalDialog for ExportFileDialog {
                                 }
                             }
                             if ui.add(egui::Button::new("…").wrap_mode(egui::TextWrapMode::Truncate)).clicked() {
-                                let mut initial_path = None;
-                                crate::set_default_initial_directory_opt(&mut initial_path);
-                                let mut dialog = FileDialog::save_file(initial_path);
+                                let initial_path = self.file_name.parent().unwrap().to_path_buf();
+                                let mut dialog = FileDialog::select_folder(Some(initial_path));
                                 dialog.open();
                                 self.folder_dialog = Some(dialog);
-
                                 ui.close_menu();
                             }
                         });
@@ -156,16 +175,6 @@ impl ModalDialog for ExportFileDialog {
                             });
                         ui.end_row();
                     });
-
-                if self.file_name.parent().is_none() || self.file_name.parent().unwrap().to_string_lossy().is_empty() {
-                    if let Ok(path) = std::env::current_dir() {
-                        ui.small(fl!(
-                            crate::LANGUAGE_LOADER,
-                            "export-path-dest-label",
-                            path = crate::util::shorten_directory(&path)
-                        ));
-                    }
-                }
 
                 ui.separator();
 

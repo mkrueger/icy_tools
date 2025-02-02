@@ -234,6 +234,7 @@ color-is_blinking=Blink
 export-title=Export
 export-button-title=Export
 export-file-label=File name:
+export-path-label=Path:
 export-video-preparation-label=Video Preparation:
 export-video-preparation-None=None
 export-video-preparation-Clear=Clear Screen
@@ -246,7 +247,6 @@ export-maximum_line_length=Maximum line length
 export-use_repeat_sequences=Use CSI Pn b repeat sequences
 export-save_full_line_length=Save trailing white spaces
 export-format-label=Format:
-export-path-dest-label=File will be saved in { $path }
 
 select-character-title=Select Character
 

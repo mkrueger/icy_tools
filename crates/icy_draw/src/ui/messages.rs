@@ -225,17 +225,23 @@ impl<'a> MainWindow<'a> {
                 }
             }
             Message::ExportFile => {
-                self.run_editor_command(0, |window, editor, _| {
+                let path = if let Some((_, tab)) = self.get_active_pane() {
+                    tab.get_path()
+                } else {
+                    return;
+                };
+                self.run_editor_command(path, |window, editor, path| {
                     let view = editor.buffer_view.clone();
-                    window.open_dialog(crate::ExportFileDialog::new(view.lock().get_buffer()));
+                    window.open_dialog(crate::ExportFileDialog::new(path, view.lock().get_buffer()));
                     None
                 });
+                /*
                 if let Some(doc) = self.get_active_document() {
                     if let Some(editor) = doc.lock().get_ansi_editor() {
                         let view = editor.buffer_view.clone();
-                        self.open_dialog(crate::ExportFileDialog::new(view.lock().get_buffer()));
+                        self.open_dialog(crate::ExportFileDialog::new(path, view.lock().get_buffer()));
                     }
-                }
+                }*/
             }
             Message::ShowOutlineDialog => {
                 self.open_dialog(SelectOutlineDialog::default());
