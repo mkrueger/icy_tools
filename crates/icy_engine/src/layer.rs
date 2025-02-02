@@ -1,6 +1,4 @@
-use i18n_embed_fl::fl;
-
-use crate::{Buffer, Color, Line, Position, Rectangle, Sixel, Size, TextAttribute, TextPane, UnicodeConverter};
+use crate::{Buffer, Color, Line, Position, Rectangle, Sixel, Size, TextPane, UnicodeConverter};
 
 use super::AttributedChar;
 
@@ -296,43 +294,6 @@ impl Layer {
         self.size = size.into();
     }
 
-    /// .
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
-    pub fn from_clipboard_data(data: &[u8]) -> Option<Layer> {
-        if data[0] != 0 {
-            return None;
-        }
-        let x = i32::from_le_bytes(data[1..5].try_into().unwrap());
-        let y = i32::from_le_bytes(data[5..9].try_into().unwrap());
-        let width = u32::from_le_bytes(data[9..13].try_into().unwrap()) as usize;
-        let height = u32::from_le_bytes(data[13..17].try_into().unwrap()) as usize;
-        let mut data = &data[17..];
-
-        let mut layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-pasted-name"), (width, height));
-        layer.properties.has_alpha_channel = true;
-        layer.role = Role::PastePreview;
-        layer.set_offset((x, y));
-        for y in 0..height {
-            for x in 0..width {
-                let ch = AttributedChar {
-                    ch: unsafe { char::from_u32_unchecked(u16::from_le_bytes([data[0], data[1]]) as u32) },
-                    attribute: TextAttribute {
-                        attr: u16::from_le_bytes([data[2], data[3]]),
-                        font_page: u16::from_le_bytes([data[4], data[5]]) as usize,
-                        background_color: u32::from_le_bytes([data[6], data[7], data[8], data[9]]),
-                        foreground_color: u32::from_le_bytes([data[10], data[11], data[12], data[13]]),
-                    },
-                };
-                layer.set_char((x as i32, y as i32), ch);
-                data = &data[14..];
-            }
-        }
-        Some(layer)
-    }
-
     pub(crate) fn from_layer(layer: &Layer, area: Rectangle) -> Layer {
         let mut result = Layer::new("new", area.get_size());
 
@@ -430,7 +391,7 @@ mod tests {
         state.set_selection(Rectangle::from_min_size((5, 6), (7, 8))).unwrap();
         let data = state.get_clipboard_data().unwrap();
 
-        let layer = Layer::from_clipboard_data(&data).unwrap();
+        let layer = state.from_clipboard_data(&data).unwrap();
 
         assert_eq!(layer.get_width(), 7);
         assert_eq!(layer.get_height(), 8);

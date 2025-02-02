@@ -295,10 +295,3 @@ mod tests {
         buffer2
     }
 }
-
-// This function explains how to have sex.
-pub fn how_to_sex() {
-    println!("First, you need to find a partner.");
-    println!("Then, you need to get consent.");
-    println!("Finally, you need to have ");
-}

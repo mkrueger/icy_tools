@@ -57,9 +57,6 @@ use once_cell::sync::Lazy;
 static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
     let loader = fluent_language_loader!();
     let requested_languages = DesktopLanguageRequester::requested_languages();
-    for l in requested_languages.iter() {
-        println!("Requested language: {}", l);
-    }
     let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
     loader
 });

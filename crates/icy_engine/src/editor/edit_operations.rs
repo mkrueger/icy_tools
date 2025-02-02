@@ -56,7 +56,7 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn paste_clipboard_data(&mut self, data: &[u8]) -> EngineResult<()> {
-        if let Some(layer) = Layer::from_clipboard_data(data) {
+        if let Some(layer) = self.from_clipboard_data(data) {
             let op = Paste::new(self.get_current_layer()?, layer);
             self.push_undo_action(Box::new(op))?;
         }

@@ -5,7 +5,7 @@ use eframe::{
     epaint::Vec2,
 };
 use egui::mutex::Mutex;
-use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, Layer, PaletteMode, Size, Tag, TextPane, TheDrawFont};
+use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane, TheDrawFont};
 
 use crate::{util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, SETTINGS};
 
@@ -560,22 +560,26 @@ impl<'a> MainWindow<'a> {
 
             Message::PasteAsNewImage => {
                 if let Some(data) = pop_data(icy_engine::util::BUFFER_DATA) {
-                    if let Some(mut layer) = Layer::from_clipboard_data(&data) {
+                    let mut buf = icy_engine::Buffer::new((80, 24));
+                    buf.is_terminal_buffer = false;
+                    let editor = AnsiEditor::new(&self.gl, buf);
+
+                    if let Some(mut layer) = editor.buffer_view.clone().lock().get_edit_state_mut().from_clipboard_data(&data) {
                         layer.set_offset((0, 0));
                         layer.role = icy_engine::Role::Normal;
-                        let mut buf = icy_engine::Buffer::new(layer.get_size());
-                        layer.set_title(buf.layers[0].get_title());
-                        buf.layers.clear();
-                        buf.layers.push(layer);
-                        buf.is_terminal_buffer = false;
-                        buf.set_height(buf.get_line_count());
-                        let editor = AnsiEditor::new(&self.gl, buf);
+                        let lc = layer.get_line_count();
+
+                        editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers.clear();
+                        editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers.push(layer);
+                        editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().set_height(lc);
+
                         crate::add_child(&mut self.document_tree, None, Box::new(editor));
                     }
                 }
             }
 
             Message::PasteAsBrush => {
+                /*
                 if let Some(data) = pop_data(icy_engine::util::BUFFER_DATA) {
                     if let Some(layer) = Layer::from_clipboard_data(&data) {
                         unsafe {
@@ -583,7 +587,7 @@ impl<'a> MainWindow<'a> {
                             self.document_behavior.set_selected_tool(crate::BRUSH_TOOL);
                         }
                     }
-                }
+                }*/
             }
             Message::CloseWindow => {
                 self.is_closed = true;

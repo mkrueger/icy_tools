@@ -1,4 +1,4 @@
-use crate::{Buffer, BufferParser, CallbackAction, Caret, EngineResult, Size};
+use crate::{Buffer, CallbackAction, Caret, EngineResult, Size};
 
 use super::{cmd::IgsCommands, CommandExecutor};
 
@@ -117,7 +117,7 @@ pub fn test_polyline_bug() {
 
 #[test]
 pub fn test_chain_gang_loop() {
-    let (commands, mut igs_parser) = create_parser();
+    let (_commands, mut igs_parser) = create_parser();
     create_buffer(
         &mut igs_parser,
         b"G#&>1,10,1,0,>Gq@,22,0G3,3,0,102,20,107,218,156:1q10:0G3,3,0,109,20,114,218,156:1q10:\r\n",
