@@ -16,7 +16,7 @@ use icy_engine::{
     attribute,
     editor::{AtomicUndoGuard, UndoState},
     util::{pop_data, pop_sixel_image, push_data, BUFFER_DATA},
-    AttributedChar, Buffer, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane,
+    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane, UnicodeConverter,
 };
 
 use icy_engine_gui::{show_terminal_area, BufferView, CaretShape, TerminalCalc};
@@ -275,7 +275,7 @@ impl AnsiEditor {
 
     pub fn output_string(&mut self, str: &str) {
         for ch in str.chars() {
-            self.type_key(ch);
+            self.type_cp437_key(ch);
         }
     }
 
@@ -442,7 +442,7 @@ impl AnsiEditor {
     pub fn type_char_set_key(&mut self, character_set: usize) {
         self.buffer_view.lock().clear_selection();
         let ch = self.get_char_set_key(character_set);
-        self.type_key(unsafe { char::from_u32_unchecked(ch as u32) });
+        self.type_cp437_key(unsafe { char::from_u32_unchecked(ch as u32) });
     }
 
     pub fn get_char(&self, pos: Position) -> AttributedChar {
@@ -483,7 +483,11 @@ impl AnsiEditor {
         }
     }
 
-    pub fn type_key(&mut self, char_code: char) {
+    pub fn type_cp437_key(&mut self, mut char_code: char) {
+        if self.buffer_view.lock().get_edit_state().get_buffer().buffer_type == BufferType::Unicode {
+            char_code = icy_engine::ascii::CP437Converter::default().convert_to_unicode(AttributedChar::new(char_code, TextAttribute::default()));
+        }
+
         let pos = self.buffer_view.lock().get_caret().get_position();
         self.buffer_view.lock().clear_selection();
         if self.buffer_view.lock().get_caret().insert_mode {

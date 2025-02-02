@@ -426,7 +426,7 @@ impl Tool for FontTool {
                         height: size.height,
                     });
                 } else {
-                    editor.type_key(unsafe { char::from_u32_unchecked(ch as u32) });
+                    editor.type_cp437_key(unsafe { char::from_u32_unchecked(ch as u32) });
                     self.sizes.push(Size::new(1, 1));
                 }
             }

@@ -351,19 +351,19 @@ impl Tool for ClickTool {
                 if editor.outline_font_mode {
                     let typed_char = typed_char.to_ascii_uppercase();
                     if VALID_OUTLINE_CHARS.contains(typed_char) {
-                        editor.type_key(typed_char);
+                        editor.type_cp437_key(typed_char);
                     } else if let '1'..='8' = typed_char {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(10 + typed_char as usize - b'1' as usize).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(10 + typed_char as usize - b'1' as usize).unwrap());
                     }
                 } else {
-                    editor.type_key(typed_char);
+                    editor.type_cp437_key(typed_char);
                 }
             }
 
             MKey::F1 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().next().unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().next().unwrap());
                     } else {
                         editor.type_char_set_key(0);
                     }
@@ -372,7 +372,7 @@ impl Tool for ClickTool {
             MKey::F2 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(1).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(1).unwrap());
                     } else {
                         editor.type_char_set_key(1);
                     }
@@ -381,7 +381,7 @@ impl Tool for ClickTool {
             MKey::F3 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(2).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(2).unwrap());
                     } else {
                         editor.type_char_set_key(2);
                     }
@@ -390,7 +390,7 @@ impl Tool for ClickTool {
             MKey::F4 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(3).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(3).unwrap());
                     } else {
                         editor.type_char_set_key(3);
                     }
@@ -399,7 +399,7 @@ impl Tool for ClickTool {
             MKey::F5 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(4).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(4).unwrap());
                     } else {
                         editor.type_char_set_key(4);
                     }
@@ -408,7 +408,7 @@ impl Tool for ClickTool {
             MKey::F6 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(5).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(5).unwrap());
                     } else {
                         editor.type_char_set_key(5);
                     }
@@ -417,7 +417,7 @@ impl Tool for ClickTool {
             MKey::F7 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(6).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(6).unwrap());
                     } else {
                         editor.type_char_set_key(6);
                     }
@@ -426,7 +426,7 @@ impl Tool for ClickTool {
             MKey::F8 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(7).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(7).unwrap());
                     } else {
                         editor.type_char_set_key(7);
                     }
@@ -435,7 +435,7 @@ impl Tool for ClickTool {
             MKey::F9 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(8).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(8).unwrap());
                     } else {
                         editor.type_char_set_key(8);
                     }
@@ -444,7 +444,7 @@ impl Tool for ClickTool {
             MKey::F10 => {
                 if matches!(modifier, MModifiers::None) {
                     if editor.outline_font_mode {
-                        editor.type_key(VALID_OUTLINE_CHARS.chars().nth(9).unwrap());
+                        editor.type_cp437_key(VALID_OUTLINE_CHARS.chars().nth(9).unwrap());
                     } else {
                         editor.type_char_set_key(9);
                     }

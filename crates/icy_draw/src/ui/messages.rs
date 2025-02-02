@@ -473,7 +473,7 @@ impl<'a> MainWindow<'a> {
 
             Message::CharTable(ch) => {
                 self.run_editor_command(ch, |_, editor, ch| {
-                    editor.type_key(ch);
+                    editor.type_cp437_key(ch);
                     None
                 });
             }
