@@ -26,7 +26,8 @@ mod xbin;
 
 pub struct ExportFileDialog {
     pub should_commit: bool,
-    pub file_name: PathBuf,
+    file_name: String,
+    folder_name: PathBuf,
     folder_dialog: Option<FileDialog>,
     format_type: i32,
     buffer_type: BufferType,
@@ -34,7 +35,7 @@ pub struct ExportFileDialog {
 
 impl ExportFileDialog {
     pub fn new(path: Option<PathBuf>, buf: &icy_engine::Buffer) -> Self {
-        let file_name = match path {
+        let (folder_name, file_name) = match path {
             Some(path) => {
                 let mut p: PathBuf = path.clone();
                 let desc: &[(&str, CreateSettingsFunction, &str)] = if matches!(buf.buffer_type, BufferType::Atascii) {
@@ -45,20 +46,25 @@ impl ExportFileDialog {
                 let format_type = get_format_type(buf.buffer_type, &path) as usize;
                 let ext = desc[format_type].2;
                 p.set_extension(ext);
-                p
+                (
+                    p.parent().unwrap().to_path_buf(),
+                    p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                )
             }
             _ => {
+                let name = "Untitled.ans".to_string();
                 if let Ok(path) = std::env::current_dir() {
-                    path.join("Untitled.ans")
+                    (path, name)
                 } else {
-                    PathBuf::from("Untitled.ans")
+                    (PathBuf::new(), name)
                 }
             }
         };
-        let format_type = get_format_type(buf.buffer_type, &file_name);
+        let format_type = get_format_type(buf.buffer_type, &PathBuf::from(&file_name));
         ExportFileDialog {
             should_commit: false,
             file_name,
+            folder_name,
             format_type,
             folder_dialog: None,
             buffer_type: buf.buffer_type,
@@ -91,7 +97,7 @@ impl ModalDialog for ExportFileDialog {
         if let Some(ed) = &mut self.folder_dialog {
             if ed.show(ctx).selected() {
                 if let Some(res) = ed.path() {
-                    self.file_name = res.to_path_buf().join(self.file_name.file_name().unwrap());
+                    self.folder_name = res.to_path_buf();
                 }
                 self.folder_dialog = None
             } else {
@@ -124,11 +130,11 @@ impl ModalDialog for ExportFileDialog {
                             ui.label(fl!(crate::LANGUAGE_LOADER, "export-file-label"));
                         });
                         ui.horizontal(|ui| {
-                            let mut path_edit = self.file_name.file_name().unwrap_or_default().to_string_lossy().to_string();
+                            let mut path_edit = self.file_name.clone();
                             let response = ui.add(TextEdit::singleline(&mut path_edit).desired_width(450.));
                             if response.changed() {
-                                self.file_name = path_edit.into();
-                                let format_type = get_format_type(self.buffer_type, &self.file_name);
+                                self.file_name = path_edit;
+                                let format_type = get_format_type(self.buffer_type, &PathBuf::from(self.file_name.clone()));
                                 if format_type >= 0 {
                                     self.format_type = format_type;
                                 }
@@ -140,17 +146,13 @@ impl ModalDialog for ExportFileDialog {
                             ui.label(fl!(crate::LANGUAGE_LOADER, "export-path-label"));
                         });
                         ui.horizontal(|ui| {
-                            let mut path_edit = self.file_name.parent().unwrap().to_string_lossy().to_string();
+                            let mut path_edit = self.folder_name.to_string_lossy().to_string();
                             let response = ui.add(TextEdit::singleline(&mut path_edit).desired_width(450.));
                             if response.changed() {
-                                self.file_name = path_edit.into();
-                                let format_type = get_format_type(self.buffer_type, &self.file_name);
-                                if format_type >= 0 {
-                                    self.format_type = format_type;
-                                }
+                                self.folder_name = PathBuf::from(path_edit);
                             }
                             if ui.add(egui::Button::new("…").wrap_mode(egui::TextWrapMode::Truncate)).clicked() {
-                                let initial_path = self.file_name.parent().unwrap().to_path_buf();
+                                let initial_path = self.folder_name.clone();
                                 let mut dialog = FileDialog::select_folder(Some(initial_path));
                                 dialog.open();
                                 self.folder_dialog = Some(dialog);
@@ -167,9 +169,11 @@ impl ModalDialog for ExportFileDialog {
                             .width(190.)
                             .show_ui(ui, |ui| {
                                 (0..desc.len()).for_each(|i| {
-                                    let td = desc[i];
+                                    let td: (&str, fn(&mut Ui, &mut SaveOptions), &str) = desc[i];
                                     if ui.selectable_value(&mut self.format_type, i as i32, td.0).clicked() {
-                                        self.file_name.set_extension(td.2);
+                                        let mut p = PathBuf::from(&self.file_name);
+                                        p.set_extension(td.2);
+                                        self.file_name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
                                     }
                                 });
                             });
@@ -204,7 +208,7 @@ impl ModalDialog for ExportFileDialog {
     }
 
     fn commit(&self, editor: &mut AnsiEditor) -> TerminalResult<Option<crate::Message>> {
-        if let Some(ext) = self.file_name.extension() {
+        if let Some(ext) = PathBuf::from(self.file_name.clone()).extension() {
             if let Some(ext) = ext.to_str() {
                 let ext = ext.to_lowercase();
                 if ext == "png" {
@@ -260,7 +264,7 @@ impl ModalDialog for ExportFileDialog {
             }
         }
         unsafe {
-            editor.save_content(self.file_name.as_path(), &SETTINGS.save_options)?;
+            editor.save_content(&self.folder_name.join(&self.file_name).as_path(), &SETTINGS.save_options)?;
             SETTINGS.save_options.format_type = self.format_type;
         }
         Ok(None)

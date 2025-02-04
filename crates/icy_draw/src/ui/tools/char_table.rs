@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use codepages::tables::CP437_TO_UNICODE;
 use eframe::{
     egui::{self, RichText, Sense},
     epaint::{Color32, FontId, Pos2, Rect, Vec2},
@@ -199,12 +200,14 @@ pub fn create_font_image(
     let mut buffer = Buffer::new((buffer_width, (font.length as usize) / buffer_width));
     buffer.set_font(0, font.clone());
     for ch in 0..font.length as usize {
+        let mut attr = if ch == selected { selected_attribute } else { attribute };
+        let is_ctrl_code = ch < b' ' as usize && (CP437_TO_UNICODE[ch] as usize) == ch;
+        if is_ctrl_code {
+            attr.set_foreground(8);
+        }
         buffer.layers[0].set_char(
             (ch % buffer_width, ch / buffer_width),
-            AttributedChar::new(
-                unsafe { char::from_u32_unchecked(ch as u32) },
-                if ch == selected { selected_attribute } else { attribute },
-            ),
+            AttributedChar::new(unsafe { char::from_u32_unchecked(ch as u32) }, attr),
         );
     }
     create_image(ctx, &buffer)

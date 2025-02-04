@@ -38,6 +38,7 @@ icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
 icy_view_gui = { workspace = true }
 icy_sauce = { workspace = true }
+codepages = { workspace = true }
 
 bstr = { workspace = true }
 

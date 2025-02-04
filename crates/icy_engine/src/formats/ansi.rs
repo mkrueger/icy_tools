@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use codepages::tables::CP437_TO_UNICODE;
+use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
 use icy_sauce::char_caps::ContentType;
 
 use crate::ansi::constants::COLOR_OFFSETS;
@@ -573,20 +573,29 @@ impl StringGenerator {
                         let uni_ch = CP437_TO_UNICODE[cell.ch as usize].to_string();
                         uni_ch.as_bytes().to_vec()
                     }
-                } else if StringGenerator::CONTROL_CHARS.contains(cell.ch) {
-                    match self.options.control_char_handling {
-                        crate::ControlCharHandling::Ignore => {
-                            vec![cell.ch as u8]
-                        }
-                        crate::ControlCharHandling::IcyTerm => {
-                            vec![b'\x1B', cell.ch as u8]
-                        }
-                        crate::ControlCharHandling::FilterOut => {
-                            vec![b'.']
+                } else {
+                    let mut ch = cell.ch;
+                    if buf.buffer_type == crate::BufferType::Unicode {
+                        if let Some(tch) = UNICODE_TO_CP437.get(&ch) {
+                            ch = *tch as char;
                         }
                     }
-                } else {
-                    vec![cell.ch as u8]
+
+                    if StringGenerator::CONTROL_CHARS.contains(ch) {
+                        match self.options.control_char_handling {
+                            crate::ControlCharHandling::Ignore => {
+                                vec![ch as u8]
+                            }
+                            crate::ControlCharHandling::IcyTerm => {
+                                vec![b'\x1B', ch as u8]
+                            }
+                            crate::ControlCharHandling::FilterOut => {
+                                vec![b'.']
+                            }
+                        }
+                    } else {
+                        vec![ch as u8]
+                    }
                 };
 
                 if self.options.compress {
