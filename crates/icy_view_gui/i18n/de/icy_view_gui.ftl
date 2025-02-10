@@ -11,6 +11,7 @@ menu-item-scroll-speed-slow=Langsam scrollen
 menu-item-scroll-speed-medium=Mittel scrollen
 menu-item-scroll-speed-fast=Schnell scrollen
 menu-item-set_terminal_width=Terminal Breite
+menu-item-settings=Einstellungen
 
 menu-upgrade_version=Neue Version { $version }
 
@@ -60,3 +61,7 @@ label-music_pause=Pause { $duration }ms
 label-music_note=Spiele { $note }({ $octave }) für { $duration }ms
 
 label-sixteencolors_pack= { $year } ({ $packs } Pakete)
+
+settings-heading=Einstellungen
+settings-reset_button=Reset
+settings-monitor-category=Monitor

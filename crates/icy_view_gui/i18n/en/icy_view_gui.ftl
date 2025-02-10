@@ -11,6 +11,7 @@ menu-item-scroll-speed-slow=Slow speed
 menu-item-scroll-speed-medium=Medium speed
 menu-item-scroll-speed-fast=Fast speed
 menu-item-set_terminal_width=Set terminal width
+menu-item-settings=Settings
 
 menu-upgrade_version=Upgrade to { $version }
 
@@ -60,3 +61,7 @@ label-music_pause=Pause { $duration }ms
 label-music_note=Play { $note }({ $octave }) for { $duration }ms
 
 label-sixteencolors_pack= { $year } ({ $packs } packs)
+
+settings-heading=Settings
+settings-reset_button=Reset
+settings-monitor-category=Monitor

@@ -11,6 +11,7 @@ menu-item-scroll-speed-slow=Pomalu
 menu-item-scroll-speed-medium=Střední rychlost
 menu-item-scroll-speed-fast=Rychle
 menu-item-set_terminal_width=Nastavit šířku terminálu
+menu-item-settings=Nastavení
 
 menu-upgrade_version=Aktualizovat na { $version }
 
@@ -60,3 +61,7 @@ label-music_pause=Pauza { $duration }ms
 label-music_note=Přehrát { $note }({ $octave }) po dobu { $duration }ms
 
 label-sixteencolors_pack= { $year } ({ $packs } balíčky)
+
+settings-heading=Nastavení
+settings-reset_button=Resetovat
+settings-monitor-category=Monitor

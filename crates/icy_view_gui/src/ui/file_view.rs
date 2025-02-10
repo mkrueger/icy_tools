@@ -26,6 +26,7 @@ pub enum Message {
     ShowHelpDialog,
     ChangeScrollSpeed,
     SetTerminalWidth,
+    ShowSettings
 }
 pub struct FileView {
     /// Selected file path
@@ -182,6 +183,12 @@ impl FileView {
                 let r = ui.selectable_label(false, fl!(crate::LANGUAGE_LOADER, "menu-item-set_terminal_width"));
                 if r.clicked() {
                     command = Some(Message::SetTerminalWidth);
+                    ui.close_menu();
+                }
+
+                let r = ui.selectable_label(false, fl!(crate::LANGUAGE_LOADER, "menu-item-settings"));
+                if r.clicked() {
+                    command = Some(Message::ShowSettings);
                     ui.close_menu();
                 }
             });

@@ -11,6 +11,7 @@ menu-item-scroll-speed-slow=Velocidad lenta
 menu-item-scroll-speed-medium=Velocidad media
 menu-item-scroll-speed-fast=Velocidad rápida
 menu-item-set_terminal_width=Establecer ancho de terminal
+menu-item-settings=Ajustes
 
 menu-upgrade_version=Actualizar a { $version }
 
@@ -60,3 +61,7 @@ label-music_pause=Pausa de { $duration }ms
 label-music_note=Reproducir { $note }({ $octave }) durante { $duration }ms
 
 label-sixteencolors_pack= { $year } ({ $packs } paquetes)
+
+settings-heading=Ajustes
+settings-reset_button=Restablecer
+settings-monitor-category=Monitor

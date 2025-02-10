@@ -11,6 +11,7 @@ menu-item-scroll-speed-slow=Lassú sebesség
 menu-item-scroll-speed-medium=Közepes sebesség
 menu-item-scroll-speed-fast=Gyors sebesség
 menu-item-set_terminal_width=Terminál szélességének beállítása
+menu-item-settings=Beállítások
 
 menu-upgrade_version=Frissítés erre: { $version }
 
@@ -60,3 +61,7 @@ label-music_pause=Szünet { $duration }ms
 label-music_note=Lejátszás { $note }({ $octave }) { $duration }ms-ig
 
 label-sixteencolors_pack= { $year } ({ $packs } csomagok)
+
+settings-heading=Beállítások
+settings-reset_button=Visszaállítás
+settings-monitor-category=Monitor

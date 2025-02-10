@@ -11,6 +11,7 @@ menu-item-scroll-speed-slow=Viteză lentă
 menu-item-scroll-speed-medium=Viteză medie
 menu-item-scroll-speed-fast=Viteză rapidă
 menu-item-set_terminal_width=Setează lățimea terminalului
+menu-item-settings=Setări
 
 menu-upgrade_version=Actualizează la { $version }
 
@@ -60,3 +61,7 @@ label-music_pause=Pauză { $duration }ms
 label-music_note=Redă { $note }({ $octave }) pentru { $duration }ms
 
 label-sixteencolors_pack= { $year } ({ $packs } pachete)
+
+settings-heading=Setări
+settings-reset_button=Resetați
+settings-monitor-category=Monitor

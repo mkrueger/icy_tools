@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use eframe::{
     egui::{self, load::SizedTexture, Context, CursorIcon, Image, Margin, RichText, ScrollArea, TextureOptions},
     epaint::{Color32, ColorImage, Rect, Vec2},
@@ -15,6 +16,8 @@ use icy_engine::{
 use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
 use igs::IGS;
 use music::SoundThread;
+use settings::{Settings, SETTINGS};
+use settings_dialog::SettingsDialog;
 
 use std::{
     env::current_dir,
@@ -37,6 +40,8 @@ mod music;
 pub mod options;
 pub mod rng;
 mod sauce_dialog;
+mod settings;
+mod settings_dialog;
 
 pub struct MainWindow<'a> {
     buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
@@ -61,6 +66,7 @@ pub struct MainWindow<'a> {
 
     sauce_dialog: Option<sauce_dialog::SauceDialog>,
     help_dialog: Option<help_dialog::HelpDialog>,
+    settings_dialog: Option<SettingsDialog>,
 
     toasts: egui_notify::Toasts,
     is_closed: bool,
@@ -130,6 +136,12 @@ impl<'a> App for MainWindow<'a> {
             }
         }
 
+        if let Some(settings_dialog) = &mut self.settings_dialog {
+            if !settings_dialog.show(ctx) {
+                self.settings_dialog = None;
+            }
+        }
+
         self.toasts.show(ctx);
         if ctx.input(|i| i.key_pressed(egui::Key::F9)) {
             self.hide_file_chooser = !self.hide_file_chooser;
@@ -165,6 +177,20 @@ const NOTE_TABLE: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#",
 
 impl<'a> MainWindow<'a> {
     pub fn new(gl: &Arc<glow::Context>, mut initial_path: Option<PathBuf>, options: Options) -> Self {
+        if let Ok(path) = Settings::get_settings_file() {
+            if path.exists() {
+                match Settings::load(&path) {
+                    Ok(settings) => {
+                        unsafe {
+                            SETTINGS = settings;
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("Error while loading settings: {err}");
+                    }
+                }
+            }
+        }
         let mut view = BufferView::new(gl);
         view.interactive = false;
 
@@ -191,6 +217,7 @@ impl<'a> MainWindow<'a> {
             loaded_buffer: false,
             sauce_dialog: None,
             help_dialog: None,
+            settings_dialog: None,
             drag_started: false,
             cur_scroll_pos: 0.0,
             drag_vel: 0.0,
@@ -379,7 +406,7 @@ impl<'a> MainWindow<'a> {
         }
 
         if self.loaded_buffer {
-            let (response, calc) = self.show_buffer_view(ui, MonitorSettings::default());
+            let (response, calc) = self.show_buffer_view(ui, unsafe { SETTINGS.monitor_settings.clone() });
 
             // stop scrolling when reached the end.
             if self.in_scroll {
@@ -783,6 +810,9 @@ impl<'a> MainWindow<'a> {
                 }
                 Message::ShowHelpDialog => {
                     self.help_dialog = Some(help_dialog::HelpDialog::new());
+                }
+                Message::ShowSettings => {
+                    self.settings_dialog = Some(SettingsDialog::new());
                 }
                 Message::ChangeScrollSpeed => {
                     self.file_view.options.scroll_speed = self.file_view.options.scroll_speed.next();
