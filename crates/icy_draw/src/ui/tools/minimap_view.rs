@@ -9,7 +9,7 @@ use i18n_embed_fl::fl;
 use icy_engine::TextPane;
 use icy_engine_gui::BufferView;
 
-use crate::{AnsiEditor, Document, Message, ToolWindow};
+use crate::{AnsiEditor, Document, Message, ToolWindow, SETTINGS};
 
 pub struct MinimapToolWindow {
     buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
@@ -54,7 +54,6 @@ impl MinimapToolWindow {
             self.buffer_view.lock().redraw_font();
             self.buffer_view.lock().redraw_view();
         }
-
         self.buffer_view.lock().use_fg = editor.buffer_view.lock().use_fg;
         self.buffer_view.lock().use_bg = editor.buffer_view.lock().use_bg;
         let w = (ui.available_width() / self.buffer_view.lock().get_buffer().get_font_dimensions().width as f32).floor();
@@ -68,6 +67,7 @@ impl MinimapToolWindow {
 
         let mut opt = icy_engine_gui::TerminalOptions {
             filter: glow::LINEAR as i32,
+            monitor_settings: unsafe { SETTINGS.monitor_settings.clone() },
             stick_to_bottom: false,
             scale: Some(Vec2::new(scalex, scaley)),
             use_terminal_height: false,
