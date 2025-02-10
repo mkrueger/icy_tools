@@ -64,6 +64,8 @@ pub struct MainWindow<'a> {
 
     toasts: egui_notify::Toasts,
     is_closed: bool,
+    pub is_canceled: bool,
+
     last_force_load: bool,
     pub opened_file: Option<usize>,
     pub store_options: bool,
@@ -197,6 +199,7 @@ impl<'a> MainWindow<'a> {
             toasts: egui_notify::Toasts::default(),
             opened_file: None,
             is_closed: false,
+            is_canceled: false,
             animation: None,
             store_options: false,
             sound_thread: Arc::new(Mutex::new(SoundThread::new())),
@@ -729,6 +732,7 @@ impl<'a> MainWindow<'a> {
                 }
                 Message::Open(file) => {
                     self.is_closed = !self.open(ctx, file);
+                    self.is_canceled = false;
                 }
                 Message::Reopen => {
                     if let Some(file) = self.file_view.selected_file {
@@ -739,6 +743,7 @@ impl<'a> MainWindow<'a> {
                 }
                 Message::Cancel => {
                     self.is_closed = true;
+                    self.is_canceled = true;
                 }
                 Message::ParentFolder => {
                     if self.file_view.parents.len() > 1 {
