@@ -42,7 +42,9 @@ pub struct MainWindow<'a> {
     /// used for title updates
     pub last_scale: Vec2,
 
-    pub is_closed: bool,
+    pub allowed_to_close: bool,
+    pub request_close: bool,
+    pub close_all_requested: bool,
     pub top_bar: TopBar,
     pub left_panel: bool,
     pub right_panel: bool,
@@ -182,7 +184,9 @@ impl<'a> MainWindow<'a> {
             bottom_panel: false,
             top_bar: TopBar::new(&cc.egui_ctx),
             commands: vec![c],
-            is_closed: false,
+            request_close: false,
+            allowed_to_close: false,
+            close_all_requested: false,
             is_fullscreen: false,
             set_fullscreen_opt: None,
             in_open_file_mode: false,
@@ -602,6 +606,38 @@ impl<'a> eframe::App for MainWindow<'a> {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let focus = ctx.memory(|r| r.focused());
 
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if self.allowed_to_close {
+                // do nothing - we will close
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.request_close = true;
+                self.close_all_requested = false;
+            }
+        }
+
+        if self.request_close {
+            let mut dirty_files = Vec::new();
+            let mut ids = Vec::new();
+            for tile in self.document_tree.active_tiles().iter() {
+                if let Some(egui_tiles::Tile::Pane(p)) = self.document_tree.tiles.get(*tile) {
+                    if p.is_dirty() {
+                        ids.push(*tile);
+                        dirty_files.push(p.get_path().unwrap_or_default());
+                    }
+                }
+            }
+            if dirty_files.len() > 0 {
+                self.open_dialog(super::UnsavedFilesDialog::new(dirty_files, ids));
+                self.request_close = false;
+                self.allowed_to_close = false;
+            } else {
+                self.request_close = false;
+                self.allowed_to_close = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+
         ctx.input_mut(|i| {
             for e in &mut i.events {
                 match e {
@@ -681,9 +717,6 @@ impl<'a> eframe::App for MainWindow<'a> {
 
         let msg = self.show_top_bar(ctx, frame);
         self.handle_message(msg);
-        if self.is_closed {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
         SidePanel::left("left_panel")
             .exact_width(264.0)
             .resizable(false)
@@ -833,7 +866,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                                 }
                             }
                         }
-                        match modal_dialog.commit_self(self) {
+                        match modal_dialog.commit_self(ctx, self) {
                             Ok(msg) => {
                                 if dialog_message.is_none() {
                                     dialog_message = msg;
@@ -892,6 +925,7 @@ impl<'a> eframe::App for MainWindow<'a> {
         self.handle_message(read_outline_keys(ctx));
         self.handle_message(read_color_keys(ctx));
         let mut force_update_title = false;
+
         ctx.input(|i| {
             for f in &i.raw.dropped_files {
                 if let Some(path) = &f.path {
@@ -959,14 +993,12 @@ impl<'a> eframe::App for MainWindow<'a> {
         }
         self.update_title(ctx, force_update_title);
         ctx.request_repaint_after(Duration::from_millis(150));
-    }
 
-    fn on_exit(&mut self, _gl: Option<&glow::Context>) {
-        /* TODO
-
-        self.enumerate_documents( move |doc| {
-            doc.destroy(gl);
-        });*/
+        ctx.viewport(|i| {
+            for f in &i.commands {
+                println!("{:?}", f);
+            }
+        });
     }
 }
 

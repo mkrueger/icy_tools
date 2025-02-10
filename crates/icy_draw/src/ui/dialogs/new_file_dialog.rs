@@ -554,7 +554,7 @@ impl crate::ModalDialog for NewFileDialog {
         self.create
     }
 
-    fn commit_self(&self, window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
+    fn commit_self(&self, _ctx: &egui::Context, window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
         self.templates[self.selected].create_file(window)
     }
 }

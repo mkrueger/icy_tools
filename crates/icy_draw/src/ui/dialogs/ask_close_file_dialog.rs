@@ -65,7 +65,7 @@ impl crate::ModalDialog for AskCloseFileDialog {
         self.do_commit
     }
 
-    fn commit_self(&self, window: &mut MainWindow<'_>) -> TerminalResult<Option<Message>> {
+    fn commit_self(&self, _ctx: &egui::Context, window: &mut MainWindow<'_>) -> TerminalResult<Option<Message>> {
         let mut msg = None;
         if self.save {
             if self.path.is_none() {

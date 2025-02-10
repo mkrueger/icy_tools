@@ -596,7 +596,7 @@ impl<'a> MainWindow<'a> {
                 }*/
             }
             Message::CloseWindow => {
-                self.is_closed = true;
+                self.request_close = true;
             }
             Message::CenterLine => {
                 self.run_editor_command(0, |_, editor, _| {

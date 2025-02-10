@@ -510,3 +510,12 @@ edit-tag-alignment-right=Right
 edit-tag-alignment-center=Center
 add_tag_tooltip=Add Tag
 delete_tag_tooltip=Delete Tag
+
+ask_unsaved_file_dialog-description=Do you want to save the changes to the following {
+    $number ->
+        [1] file?
+        *[other] {$number} files?
+    }
+ask_unsaved_file_dialog-subdescription=Your changes will be lost if you don't save them.
+ask_unsaved_file_dialog-save_all_button=Save All
+ask_unsaved_file_dialog-dont_save_button=Don't Save

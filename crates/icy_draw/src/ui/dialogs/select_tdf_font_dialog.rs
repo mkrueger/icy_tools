@@ -308,7 +308,7 @@ impl crate::ModalDialog for SelectFontDialog {
         self.do_select
     }
 
-    fn commit_self(&self, _window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
+    fn commit_self(&self, _ctx: &egui::Context, _window: &mut MainWindow<'_>) -> crate::TerminalResult<Option<Message>> {
         *self.selected_font_arc.lock() = self.selected_font;
         Ok(None)
     }

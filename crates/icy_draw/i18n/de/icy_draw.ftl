@@ -517,3 +517,13 @@ edit-tag-alignment-right=Rechts
 edit-tag-alignment-center=Zentriert
 add_tag_tooltip=Tag hinzufügen
 delete_tag_tooltip=Tag löschen
+
+
+ask_unsaved_file_dialog-description=Sollen die Änderungen in {
+    $number ->
+        [1] dieser Datei gespeichert werden?
+        *[other] {$number} Dateien gespeichert werden?
+    }
+ask_unsaved_file_dialog-subdescription=Alle Änderungen gehen verloren, wenn nicht gespeichert wird.
+ask_unsaved_file_dialog-save_all_button=Alle Speichern
+ask_unsaved_file_dialog-dont_save_button=Nicht Speichern

@@ -54,3 +54,6 @@ pub use select_palette_dialog::*;
 
 mod settings_dialog;
 pub use settings_dialog::*;
+
+mod unsaved_files_dialog;
+pub use unsaved_files_dialog::*;
