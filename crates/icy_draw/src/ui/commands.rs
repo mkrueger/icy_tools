@@ -562,7 +562,7 @@ keys![
     (prev_fg_color, "menu-prev_fg_color", PreviousFgColor, BufferOpenState, ArrowUp, CTRL),
     (next_bg_color, "menu-next_bg_color", NextBgColor, BufferOpenState, ArrowRight, CTRL),
     (prev_bg_color, "menu-prev_bg_color", PreviousBgColor, BufferOpenState, ArrowLeft, CTRL),
-    (lga_font, "menu-9px-font", ToggleLGAFont, LGAFontState),
+    (lga_font, "menu-9px-font", ToggleLGAFont, LGAFontState, F, CTRL),
     (aspect_ratio, "menu-aspect-ratio", ToggleAspectRatio, AspectRatioState),
     (toggle_grid_guides, "menu-toggle_grid", ToggleGrid, BufferOpenState),
     (toggle_left_pane, "menu-toggle_left_pane", ToggleLeftPane, AlwaysEnabledState, F11, NONE),
