@@ -37,7 +37,7 @@ pub enum BrushUi {
 }
 impl BrushUi {
     fn has_half_block(&self) -> bool {
-        matches!(self, BrushUi::All | BrushUi::HideOutline)
+        matches!(self, BrushUi::All | BrushUi::HideOutline | BrushUi::Fill)
     }
 
     fn has_outline(&self) -> bool {
