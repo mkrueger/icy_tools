@@ -221,6 +221,9 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
     caret.set_ice_mode(result.ice_mode == IceMode::Ice);
 
     for ch in text.chars() {
+        if ch == '\x1A' {
+            break;
+        }
         let res = interpreter.print_char(result, 0, &mut caret, ch);
         match res {
             Ok(action) => match action {
