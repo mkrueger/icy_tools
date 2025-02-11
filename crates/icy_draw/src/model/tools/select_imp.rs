@@ -99,6 +99,9 @@ impl Tool for SelectTool {
 
         None
     }
+    fn has_context_menu(&self) -> bool {
+        true
+    }
 
     fn handle_click(&mut self, editor: &mut AnsiEditor, button: i32, pos: Position, cur_abs: Position, response: &egui::Response) -> Option<Message> {
         let cur_ch = editor.get_char_from_cur_layer(pos);
