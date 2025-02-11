@@ -258,7 +258,8 @@ impl OutputRenderer {
         gl.uniform_3_f32(gl.get_uniform_location(self.output_shader, "u_border_color").as_ref(), r, g, b);
 
         if buffer_view.edit_state.get_mirror_mode() {
-            let x = buffer_rect.left() + buffer_view.calc.buffer_char_width as f32 / 2.0 * buffer_view.calc.char_size.x - top_pos.x;
+            let x = buffer_view.calc.char_width as f32 / 2.0 * buffer_view.calc.char_size.x;
+            let x = buffer_rect.left() + x - top_pos.x;
             gl.uniform_1_f32(
                 gl.get_uniform_location(self.output_shader, "u_mirror_x").as_ref(),
                 (x * info.pixels_per_point).floor(),
