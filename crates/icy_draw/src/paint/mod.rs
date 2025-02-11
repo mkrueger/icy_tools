@@ -94,7 +94,7 @@ impl BrushMode {
         });
 
         if let Some(editor) = editor_opt {
-            let scale = 2.0;
+            let scale = 1.0;
             let lock = &editor.buffer_view.lock();
             let font_page = lock.get_caret().get_font_page();
             let font_count = lock.get_buffer().font_count();
@@ -149,7 +149,6 @@ impl BrushMode {
             }
 
             let font = lock.get_buffer().get_font(font_page).unwrap();
-
             unsafe {
                 if FONT_CHECKSUM != font.get_checksum() || FONT_IMG.is_none() || SEL_CHAR != *char_code.borrow() as usize {
                     FONT_CHECKSUM = font.get_checksum();
@@ -302,29 +301,16 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
     if matches!(mode, BrushMode::HalfBlock) && matches!(point_role, PointRole::Fill) {
         mode = BrushMode::Block;
     }
-    match mode {
+    let mirror_mode = buffer_view.get_edit_state().get_mirror_mode();
+    let ch = match mode {
         BrushMode::HalfBlock => {
             let half_block: HalfBlock = HalfBlock::from(buffer_view.get_buffer(), pos);
-            if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, half_block.get_half_block_char(attribute.get_foreground()));
-            }
+            half_block.get_half_block_char(attribute.get_foreground())
         }
-        BrushMode::Block => {
-            if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, AttributedChar::new(219 as char, attribute));
-            }
-        }
-        BrushMode::Char(ch) => {
-            if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, AttributedChar::new(*ch.borrow(), attribute));
-            }
-        }
+        BrushMode::Block => AttributedChar::new(219 as char, attribute),
+        BrushMode::Char(ch) => AttributedChar::new(*ch.borrow(), attribute),
 
-        BrushMode::Outline => {
-            if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, AttributedChar::new(get_outline_char(ch, point_role), attribute));
-            }
-        }
+        BrushMode::Outline => AttributedChar::new(get_outline_char(ch, point_role), attribute),
 
         BrushMode::Shade => {
             let mut char_code = SHADE_GRADIENT[0];
@@ -338,16 +324,19 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
                     }
                 }
             }
-            if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, AttributedChar::new(char_code, attribute));
-            }
+            AttributedChar::new(char_code, attribute)
         }
-        BrushMode::Colorize => {
-            if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, AttributedChar::new(ch.ch, attribute));
-            }
+        BrushMode::Colorize => AttributedChar::new(ch.ch, attribute),
+        _ => {
+            return;
         }
-        _ => {}
+    };
+    if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
+        layer.set_char(text_pos, ch);
+        if mirror_mode {
+            let mirror_pos = Position::new(layer.get_width() - text_pos.x - 1, text_pos.y);
+            layer.set_char(mirror_pos, ch);
+        }
     }
 }
 

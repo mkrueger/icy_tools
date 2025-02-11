@@ -1105,7 +1105,7 @@ impl<'a> eframe::App for MainWindow<'a> {
             }
         }
         self.update_title(ctx, force_update_title);
-        ctx.request_repaint_after(Duration::from_millis(150));
+        ctx.request_repaint_after(Duration::from_millis(100));
     }
 }
 

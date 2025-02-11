@@ -173,12 +173,7 @@ impl OutputRenderer {
             gl.get_uniform_location(self.output_shader, "brightness").as_ref(),
             monitor_settings.brightness / 30.0,
         );
-        /*
-                    gl.uniform_1_f32(
-                        gl.get_uniform_location(self.draw_program, "light")
-                            .as_ref(),
-                            self.light);
-        */
+
         gl.uniform_1_f32(gl.get_uniform_location(self.output_shader, "blur").as_ref(), monitor_settings.blur / 30.0);
 
         gl.uniform_1_f32(
@@ -261,6 +256,16 @@ impl OutputRenderer {
         let (r, g, b) = options.monitor_settings.border_color.get_rgb_f32();
 
         gl.uniform_3_f32(gl.get_uniform_location(self.output_shader, "u_border_color").as_ref(), r, g, b);
+
+        if buffer_view.edit_state.get_mirror_mode() {
+            let x = buffer_rect.left() + buffer_view.calc.buffer_char_width as f32 / 2.0 * buffer_view.calc.char_size.x - top_pos.x;
+            gl.uniform_1_f32(
+                gl.get_uniform_location(self.output_shader, "u_mirror_x").as_ref(),
+                (x * info.pixels_per_point).floor(),
+            );
+        } else {
+            gl.uniform_1_f32(gl.get_uniform_location(self.output_shader, "u_mirror_x").as_ref(), 0.0);
+        }
 
         if let Some(layer) = buffer_view.edit_state.get_cur_layer() {
             if options.show_layer_borders {

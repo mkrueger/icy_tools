@@ -1,5 +1,7 @@
 precision highp float;
 
+#define LINE_SIZE 1.5
+
 uniform sampler2D u_render_texture;
 uniform sampler2D u_render_data_texture;
 
@@ -38,6 +40,9 @@ uniform float light;
 uniform float blur;
 uniform float u_scanlines;
 uniform float u_use_monochrome;
+
+uniform float u_mirror_x;
+
 uniform vec3  u_monchrome_mask;
 
 out vec4 color;
@@ -127,16 +132,38 @@ void draw_checkers_background() {
 	}
 }
 
-void draw_dash() {
+#define DASH_SPEED 6.0
+void draw_horiz_dash(int direction) {
 	float checker_size = 2.0;
     vec2 p = floor((gl_FragCoord.xy + u_render_coordinates) / checker_size);
-    float PatternMask = mod(p.x + mod(p.y, 4.0) + u_time, 4.0);
+    float PatternMask = mod(p.x + direction * u_time * DASH_SPEED, 8.0);
 	if (PatternMask < 2.0) {
-		color = vec4(1.0);
-	} else {
 		color = vec4(0.0);
+	} else {
+		color = vec4(0.9);
 	} 
+}
 
+void draw_vert_dash(int direction) {
+	float checker_size = 2.0;
+    vec2 p = floor((gl_FragCoord.xy + u_render_coordinates) / checker_size);
+    float PatternMask = mod(p.y + direction * u_time * DASH_SPEED, 8.0);
+	if (PatternMask < 2.0) {
+		color = vec4(0.0);
+	} else {
+		color = vec4(0.9);
+	} 
+}
+
+void draw_mirror_dash() {
+	float checker_size = 2.0;
+    vec2 p = floor((gl_FragCoord.xy + u_render_coordinates) / checker_size);
+    float PatternMask = mod( mod(p.y, 4.0), 4.0);
+	if (PatternMask < 2.0) {
+		color = vec4(0.0, 1.0, 1.0, 1.0);
+	} else {
+		color = vec4(0.0, 0.5, 0.5, 1.0);
+	} 
 }
 
 vec4 draw_grid_raster(vec4 c) {
@@ -195,9 +222,9 @@ void draw_selection_rect(vec2 upper_left, vec2 bottom_right, bool in_buffer_rect
 
     if (upper_left.y <= uv.y && uv.y <= bottom_right.y)  {
 		// left
-		if (upper_left.x == uv.x) {
+		if (abs(upper_left.x - uv.x) < LINE_SIZE) {
 			if (in_buffer_rect) {
-				draw_dash();
+				draw_vert_dash(1);
 			} else {
 				color = vec4(1.0);
 			}
@@ -209,9 +236,9 @@ void draw_selection_rect(vec2 upper_left, vec2 bottom_right, bool in_buffer_rect
 		}
 		
 		// right
-		if (bottom_right.x == uv.x) {
+		if (abs(bottom_right.x - uv.x) < LINE_SIZE) {
 			if (in_buffer_rect) {
-				draw_dash();
+				draw_vert_dash(-1);
 			} else {
 				color = vec4(1.0);
 			}
@@ -236,9 +263,9 @@ void draw_selection_rect(vec2 upper_left, vec2 bottom_right, bool in_buffer_rect
 	
     if (upper_left.x <= uv.x && uv.x <= bottom_right.x)  {
 		// bottom
-		if (upper_left.y == uv.y) {
+		if (abs(upper_left.y - uv.y) < LINE_SIZE) {
 			if (in_buffer_rect) {
-				draw_dash();
+				draw_horiz_dash(-1);
 			} else {
 				color = vec4(1.0);
 			}
@@ -254,9 +281,9 @@ void draw_selection_rect(vec2 upper_left, vec2 bottom_right, bool in_buffer_rect
 		}
 
 		// top
-		if (bottom_right.y == uv.y) {
+		if (abs(bottom_right.y - uv.y) < LINE_SIZE) {
 			if (in_buffer_rect) {
-				draw_dash();
+				draw_horiz_dash(1);
 			} else {
 				color = vec4(1.0);
 			}
@@ -286,19 +313,35 @@ bool is_inside_selection() {
 	return false;
 }
 
-void draw_color_dash(vec3 rect_color) {
+void draw_horiz_color_dash(vec3 rect_color) {
 	if (is_inside_selection())  {
-		draw_dash();
+		draw_horiz_dash(1);
 		return;
 	}
-
+	
 	float checker_size = 2.0;
     vec2 p = floor((gl_FragCoord.xy + u_render_coordinates) / checker_size);
-    float PatternMask = mod(p.x + mod(p.y, 4.0), 4.0);
+    float PatternMask = mod(p.x, 4.0);
 	if (PatternMask < 2.0) {
 		color = vec4(rect_color, 1.0);
 	} else {
-		color = vec4(0.0);
+		color = vec4(rect_color * 0.5, 1.0);
+	} 
+}
+
+void draw_vert_color_dash(vec3 rect_color) {
+	if (is_inside_selection())  {
+		draw_vert_dash(1);
+		return;
+	}
+	
+	float checker_size = 2.0;
+    vec2 p = floor((gl_FragCoord.xy + u_render_coordinates) / checker_size);
+    float PatternMask = mod(p.y, 4.0);
+	if (PatternMask < 2.0) {
+		color = vec4(rect_color, 1.0);
+	} else {
+		color = vec4(rect_color * 0.5, 1.0);
 	} 
 }
 
@@ -310,25 +353,25 @@ void draw_layer_rect(vec2 upper_left, vec2 bottom_right, vec3 rect_color) {
 	float v = 1.0;
     if (upper_left.y <= uv.y && uv.y <= bottom_right.y)  {
 		// left
-		if (upper_left.x == uv.x) {
-			draw_color_dash(rect_color);
+		if (abs(upper_left.x - uv.x) < LINE_SIZE) {
+			draw_vert_color_dash(rect_color);
 		} 
 		
 		// right
-		if (bottom_right.x == uv.x) {
-			draw_color_dash(rect_color);
+		if (abs(bottom_right.x - uv.x) < LINE_SIZE) {
+			draw_vert_color_dash(rect_color);
 		}
     }
 	
     if (upper_left.x <= uv.x && uv.x <= bottom_right.x)  {
 		// bottom
-		if (upper_left.y == uv.y) {
-			draw_color_dash(rect_color);
+		if (abs(upper_left.y - uv.y) < LINE_SIZE) {
+			draw_horiz_color_dash(rect_color);
 		} 
 
 		// top
-		if (bottom_right.y == uv.y) {
-			draw_color_dash(rect_color);
+		if (abs(bottom_right.y - uv.y) < LINE_SIZE) {
+			draw_horiz_color_dash(rect_color);
 		}
     }
 }
@@ -457,7 +500,7 @@ void main() {
 		}
 
 		vec4 sel = texture(u_render_data_texture, coord);
-		float f = 1.0;
+		float f = 2.0;
 		vec2 div = (to - from);
 		vec4 up = texture(u_render_data_texture, coord - vec2(0.0, f) / div);
 		vec4 down = texture(u_render_data_texture, coord + vec2(0.0, f) / div);
@@ -470,13 +513,17 @@ void main() {
 		vec4 right_down = texture(u_render_data_texture, coord + vec2(f, f) / div);
 
 		if (u_show_selection_rectangle > 0.0) {
-
 			// test outpupt - view selected area
 			// color = 0.8 * color + 0.2 * sel.rgb;
 			if (sel.r == 1.0) {
-				if (up.r == 0.0 || down.r == 0.0 || left.r == 0.0 || right.r == 0.0
-				|| left_up.r == 0.0 || left_down.r == 0.0 || right_up.r == 0.0 || right_down.r == 0.0) {
-					draw_dash();
+				if (up.r == 0.0) {
+					draw_horiz_dash(1);
+				} else if (down.r == 0.0) {
+					draw_horiz_dash(-1);
+				} else if (left.r == 0.0 || left_up.r == 0.0 || left_down.r == 0.0) {
+					draw_vert_dash(1);
+				} else if (right.r == 0.0 || right_up.r == 0.0 || right_down.r == 0.0) {
+					draw_vert_dash(-1);
 				} else {
 					color = vec4(0.9 * color.xyz, 1.0);
 				}
@@ -497,7 +544,9 @@ void main() {
 			draw_layer_rectangle(true);
 
 		}
-
+		if (u_mirror_x > 0.0 && abs(uv.x - u_mirror_x) < LINE_SIZE) {
+			draw_mirror_dash();
+		}
 		if (u_use_monochrome > 0.0) {
 			float mono = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 			color = vec4(mono, mono, mono, 1.0);

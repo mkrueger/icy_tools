@@ -203,6 +203,26 @@ impl CommandState for AspectRatioState {
     }
 }
 
+#[derive(Default)]
+pub struct MirrorModeState {}
+
+impl CommandState for MirrorModeState {
+    fn is_enabled(&self, open_tab_opt: Option<&DocumentTab>) -> bool {
+        if let Some(pane) = open_tab_opt {
+            return pane.doc.lock().get_ansi_editor().is_some();
+        }
+        false
+    }
+    fn is_checked(&self, open_tab_opt: Option<&DocumentTab>) -> Option<bool> {
+        if let Some(pane) = open_tab_opt {
+            if let Some(editor) = pane.doc.lock().get_ansi_editor() {
+                return Some(editor.buffer_view.lock().get_edit_state().get_mirror_mode());
+            }
+        }
+        Some(false)
+    }
+}
+
 pub struct CommandWrapper {
     key: Option<(KeyOrPointer, Modifiers)>,
     message: Message,
@@ -550,7 +570,7 @@ keys![
         OpenPalettesDirectory,
         AlwaysEnabledState
     ),
-    (mirror_mode, "menu-mirror_mode", ToggleMirrorMode, BufferOpenState),
+    (mirror_mode, "menu-mirror_mode", ToggleMirrorMode, MirrorModeState),
     (clear_recent_open, "menu-open_recent_clear", ClearRecentOpenFiles, AlwaysEnabledState),
     (inverse_selection, "menu-inverse_selection", InverseSelection, BufferOpenState),
     (clear_selection, "menu-delete_row", ClearSelection, BufferOpenState, Escape, NONE),
