@@ -217,7 +217,13 @@ impl DrawExecutor {
         self.screen = vec![0; (res.width * res.height) as usize];
     }
 
-    pub fn set_resolution(&mut self, buf: &mut Buffer, caret: &mut Caret) {
+    pub fn set_resolution(&mut self, res: TerminalResolution) {
+        self.terminal_resolution = res;
+        // let res = self.get_resolution();
+        // self.screen = vec![1; (res.width * res.height) as usize];
+    }
+
+    pub fn init_resolution(&mut self, buf: &mut Buffer, caret: &mut Caret) {
         buf.clear_screen(0, caret);
         let res = self.get_resolution();
         self.screen = vec![1; (res.width * res.height) as usize];
@@ -910,7 +916,12 @@ impl DrawExecutor {
 
     fn calc_circle_y_rad(&self, xrad: i32) -> i32 {
         // st med 169, st low 338, st high 372, height == 372
-        xrad * 338 / 372
+        let x_size = match self.terminal_resolution {
+            TerminalResolution::Low => 338,
+            TerminalResolution::Medium => 169,
+            TerminalResolution::High => 372,
+        };
+        xrad * x_size / 372
     }
 }
 
@@ -944,7 +955,7 @@ impl CommandExecutor for DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        //  println!("cmd:{:?}", command);
+        //println!("cmd:{:?} arguments: {:?}", command, parameters);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() < 1 {
@@ -952,19 +963,19 @@ impl CommandExecutor for DrawExecutor {
                 }
                 match parameters[0] {
                     0 => {
-                        self.set_resolution(buf, caret);
+                        self.init_resolution(buf, caret);
                         self.pen_colors = IGS_SYSTEM_PALETTE.to_vec();
                         self.reset_attributes();
                     }
                     1 => {
-                        self.set_resolution(buf, caret);
+                        self.init_resolution(buf, caret);
                         self.pen_colors = IGS_SYSTEM_PALETTE.to_vec();
                     }
                     2 => {
                         self.reset_attributes();
                     }
                     3 => {
-                        self.set_resolution(buf, caret);
+                        self.init_resolution(buf, caret);
                         self.pen_colors = IGS_PALETTE.to_vec();
                     }
                     x => return Err(anyhow::anyhow!("Initialize unknown/unsupported argument: {x}")),
@@ -1415,10 +1426,11 @@ impl CommandExecutor for DrawExecutor {
                     return Err(anyhow::anyhow!("SetResolution command requires 2 argument"));
                 }
                 match parameters[0] {
-                    0 => self.terminal_resolution = TerminalResolution::Low,
-                    1 => self.terminal_resolution = TerminalResolution::Medium,
+                    0 => self.set_resolution(TerminalResolution::Low),
+                    1 => self.set_resolution(TerminalResolution::Medium),
                     _ => return Err(anyhow::anyhow!("SetResolution unknown/unsupported argument: {}", parameters[0])),
                 }
+
                 match parameters[1] {
                     0 => { // no change
                     }
@@ -1620,6 +1632,10 @@ impl CommandExecutor for DrawExecutor {
                     }
                 }
 
+                Ok(CallbackAction::NoUpdate)
+            }
+            IgsCommands::InputCommand => {
+                log::warn!("InputCommand not implemented - parameters: {:?}", parameters);
                 Ok(CallbackAction::NoUpdate)
             }
             _ => Err(anyhow::anyhow!("Unimplemented IGS command: {command:?}")),

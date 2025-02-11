@@ -134,7 +134,6 @@ pub fn pixel_val_to_color_idx(colors: usize, c: u8) -> u8 {
     if colors == 16 {
         return PIX_TO_COLOR_TABLE[c as usize];
     }
-
     // THIS IS A GUESS. THE REFERENCE BOOKS ONLY GIVE TABLES FOR 8-bit and 16-bit PALETTES.
     // NEED TO DOUBLE-CHECK ON REAL ATARI.
     if colors == 16 {

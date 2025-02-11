@@ -12,7 +12,7 @@ use icy_engine::{
 #[test]
 pub fn test_igs() {
     let mut img_buf = [0; 320 * 200 * 4];
-    for entry in fs::read_dir("tests/igs/").expect("Error reading test_data directory.") {
+    for entry in fs::read_dir("tests/igs/lowres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ig" {
             continue;
