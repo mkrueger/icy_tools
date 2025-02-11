@@ -1,4 +1,4 @@
-use egui::{Button, Label, RichText, Sense, Widget};
+use egui::{Button, Label, RichText, Widget};
 use egui_extras::{Column, TableBuilder};
 use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, Tag, TextAttribute};

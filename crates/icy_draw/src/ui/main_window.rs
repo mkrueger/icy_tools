@@ -674,7 +674,7 @@ impl<'a> eframe::App for MainWindow<'a> {
         });
 
         if self.in_open_file_mode {
-            if self.open_file_window.show_file_chooser(ctx) {
+            if self.open_file_window.show_file_chooser(ctx, unsafe { SETTINGS.monitor_settings.clone() }) {
                 let file: usize = self.open_file_window.opened_file.take().unwrap_or_default();
 
                 if !self.open_file_window.is_canceled && !self.open_file_window.file_view.files[file].is_folder() {

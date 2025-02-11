@@ -252,8 +252,9 @@ impl<'a> MainWindow<'a> {
         self.animation = None;
     }
 
-    pub fn show_file_chooser(&mut self, ctx: &Context) -> bool {
+    pub fn show_file_chooser(&mut self, ctx: &Context, monitor_settins: MonitorSettings) -> bool {
         self.is_closed = false;
+        unsafe { SETTINGS.monitor_settings = monitor_settins };
         egui::SidePanel::left("bottom_panel").exact_width(412.0).resizable(false).show(ctx, |ui| {
             let command = self.file_view.show_ui(ui, true);
             self.handle_command(ctx, command);
@@ -264,6 +265,7 @@ impl<'a> MainWindow<'a> {
             .inner_margin(Margin::same(0.0))
             .fill(Color32::BLACK);
         egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| self.paint_main_area(ui));
+        self.file_view.options.show_settings = false;
         self.in_scroll &= self.file_view.options.auto_scroll_enabled;
         if self.in_scroll {
             //   ctx.request_repaint_after(Duration::from_millis(10));

@@ -32,11 +32,13 @@ impl ScrollSpeed {
 pub struct Options {
     pub auto_scroll_enabled: bool,
     pub scroll_speed: ScrollSpeed,
+    pub show_settings: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
+            show_settings: true,
             auto_scroll_enabled: true,
             scroll_speed: ScrollSpeed::Medium,
         }
