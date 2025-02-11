@@ -14,6 +14,7 @@ use crate::{AnsiEditor, Document, Message, ToolWindow, SETTINGS};
 pub struct MinimapToolWindow {
     buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     undo_size: i32,
+    id: u64,
     palette_hash: u32,
     next_scroll_pos: Option<Vec2>,
 }
@@ -41,7 +42,9 @@ impl MinimapToolWindow {
     pub fn show_minimap(&mut self, ui: &mut egui::Ui, editor: &mut AnsiEditor) -> Option<Message> {
         let undo_stack = editor.buffer_view.lock().get_edit_state().undo_stack_len() as i32;
         let cur_palette_hash = editor.buffer_view.lock().get_buffer_mut().palette.get_checksum();
-        if undo_stack != self.undo_size || self.palette_hash != cur_palette_hash {
+
+        if editor.id != self.id || undo_stack != self.undo_size || self.palette_hash != cur_palette_hash {
+            self.id = editor.id;
             self.undo_size = undo_stack;
             let bv = editor.buffer_view.lock();
             let buffer = bv.get_buffer();
@@ -145,6 +148,7 @@ impl MinimapToolWindow {
         buffer_view.get_buffer_mut().is_terminal_buffer = false;
         buffer_view.get_caret_mut().set_is_visible(false);
         Self {
+            id: 0,
             buffer_view: Arc::new(eframe::epaint::mutex::Mutex::new(buffer_view)),
             undo_size: -1,
             palette_hash: 0,

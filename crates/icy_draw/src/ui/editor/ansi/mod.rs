@@ -41,6 +41,7 @@ pub enum DragMode {
 }
 
 pub struct AnsiEditor {
+    pub id: u64,
     pub drag_pos: DragPos,
     pub modifiers: egui::Modifiers,
     pub half_block_click_pos: Position,
@@ -241,11 +242,18 @@ impl Document for AnsiEditor {
     }
 }
 
+static mut CUR_ID: u64 = 0;
+
 impl AnsiEditor {
     pub fn new(gl: &Arc<glow::Context>, buf: Buffer) -> Self {
         let buffer_view = Arc::new(Mutex::new(BufferView::from_buffer(gl, buf)));
         // let buffer_parser = ansi::Parser::default();
+
         AnsiEditor {
+            id: unsafe {
+                CUR_ID = CUR_ID.wrapping_add(1);
+                CUR_ID
+            },
             buffer_view,
             is_inactive: false,
             reference_image: None,
