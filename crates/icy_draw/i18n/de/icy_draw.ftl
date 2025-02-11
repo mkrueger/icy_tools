@@ -76,14 +76,15 @@ menu-palette-mode-free=Frei 16
 menu-palette-mode-free8=Frei 8
 
 menu-color-mode-ext-colors=256 Farben
-menu-color-mode-ext-font=16 Farben, ext font, blink
-menu-color-mode-ext-font-ice=16 Farben, ext font, ice
-menu-select_palette=Palette auswählen
-menu-open_palette_directory=Öffne Palettenverzeichnis…
 menu-next_fg_color=Nächste Vordergrundfarbe
 menu-next_bg_color=Nächste Hintergrundfarbe
 menu-prev_fg_color=Vorherige Vordergrundfarbe
 menu-prev_bg_color=Vorherige Hintergrundfarbe
+
+menu-color-mode-reset=Farben zurücksetzen
+menu-color-mode-reset-palette=Palette zurücksetzen
+menu-color-mode-set-colors=Farben setzen
+menu-color-mode-set-palette=Palette setzen
 
 menu-view=Ansicht
 menu-reference-image=Referenzbild setzen…
@@ -248,14 +249,12 @@ export-video-preparation-Home=Cursor zurücksetzen
 export-utf8-output-label=UTF-8 Ausgabe
 export-save-sauce-label=SAUCE Info speichern
 export-compression-label=Ausgabe komprimieren
-export-compression-level-off=Keine
-export-compression-level-medium=Mittel
-export-compression-level-high=Hoch
 export-limit-output-line-length-label=Maximale Ausgabe-Zeilenlänge
 export-maximum_line_length=Maximale Zeilenlänge
 export-use_repeat_sequences=Benutze `CSI Pn b`Sequenzen 
 export-save_full_line_length=Abschließende Weißzeichen speichern
 export-format-label=Format:
+export-compression-level-label=Kompressionsgrad:
 
 select-character-title=Zeichen auswählen
 
@@ -368,8 +367,8 @@ font_selector-sauce_font=SAUCE
 select-palette-dialog-title=Palette auswählen ({ $count } verfügbar)
 select-palette-dialog-builtin_palette=BUILTIN
 select-palette-dialog-no-matching-palettes=Keine Paletten gefunden, die die Suche erfüllen
-
-autosave-dialog-title=Autosave
+HEK
+autosave-dialog-title=AutosaveI
 autosave-dialog-description=Icy Draw hat eine Autosave Datei gefunden.
 autosave-dialog-question=Was möchtest du tun?
 autosave-dialog-load_autosave_button=Autosave laden
@@ -526,7 +525,6 @@ edit-tag-role-hyperlink=Hyperlink
 
 add_tag_tooltip=Tag hinzufügen
 delete_tag_tooltip=Tag löschen
-
 
 ask_unsaved_file_dialog-description=Sollen die Änderungen in {
     $number ->

@@ -248,6 +248,7 @@ export-maximum_line_length=Maximális sorhossz
 export-use_repeat_sequences=CSI Pn b ismétlési szekvenciák használata
 export-save_full_line_length=Végső szóközök mentése
 export-format-label=Formátum:
+export-path-label=Útvonal:
 
 select-character-title=Karakter kiválasztása
 
@@ -507,5 +508,21 @@ edit-tag-length-label=Hossz:
 edit-tag-alignment-left=Balra
 edit-tag-alignment-right=Jobbra
 edit-tag-alignment-center=Középre
+edit-tag-placement-label=Elhelyezés:
+edit-tag-placement-in_line=Sorban
+edit-tag-placement-after=GotoXY-vel
+edit-tag-role-label=Szerep:
+edit-tag-role-displaycode=Megjelenítési kód
+edit-tag-role-hyperlink=Hiperhivatkozás
+
 add_tag_tooltip=Címke hozzáadása
 delete_tag_tooltip=Címke törlése
+
+ask_unsaved_file_dialog-description=Szeretné menteni a módosításokat a következő {
+    $number ->
+        [1] fájlban?
+        *[other] {$number} fájlban?
+    }
+ask_unsaved_file_dialog-subdescription=A módosítások elvesznek, ha nem menti őket.
+ask_unsaved_file_dialog-save_all_button=Összes mentése
+ask_unsaved_file_dialog-dont_save_button=Ne mentse

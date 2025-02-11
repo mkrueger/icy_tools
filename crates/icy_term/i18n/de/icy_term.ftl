@@ -52,6 +52,11 @@ settings-keybinds-quit = Beenden:
 settings-keybinds-show-find = Suchen:
 
 settings-modem-category = Modem
+settings-modem-device = Gerät:
+settings-modem-baud_rate = Baudrate:
+settings-modem-data_bits = Datenbits / Stopbits / Parität:
+settings-modem-init_string = Init-String:
+settings-modem_dial_string = Wählstring:
 
 dialing_directory-connect-to = Verbinde zu…
 dialing_directory-new_bbs = Neue BBS
@@ -84,6 +89,8 @@ dialing_directory-add-bbs-button = Neue BBS
 dialing_directory-version-warning = Die BBS Liste ist mit einer neueren Version von IcyTerm erstellt worden. Bitte neue Version verwenden. Keine Änderungen werden gespeichert.
 dialing_directory-custom-iemsi-login-data = Benutzerdefinierte IEMSI Login-Daten
 dialing_directory-open_cache_button=Cache öffnen…
+dialing_directory-date-format=%d.%m.%Y um %H:%M
+dialing_directory-baud-emulation = Baud-Emulation:
 
 terminal-upload = Upload
 terminal-download = Download
@@ -96,6 +103,7 @@ terminal-menu-export = Buffer exportieren…
 terminal-find-hint = Text suchen
 terminal-find-no-results = Keine Ergebnisse
 terminal-find-results = { $cur } von { $total }
+terminal-menu = Menü
 
 protocol-select-download = Download-Protokoll wählen
 protocol-select-upload = Upload-Protokoll wählen

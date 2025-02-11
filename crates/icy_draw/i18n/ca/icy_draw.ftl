@@ -248,6 +248,7 @@ export-maximum_line_length=Longitud màxima de línia
 export-use_repeat_sequences=Utilitzar seqüències de repetició CSI Pn b
 export-save_full_line_length=Desar espais en blanc finals
 export-format-label=Format:
+export-path-label=Camí:
 
 select-character-title=Seleccionar caràcter
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Longitud:
 edit-tag-alignment-left=Esquerra
 edit-tag-alignment-right=Dreta
 edit-tag-alignment-center=Centre
+edit-tag-placement-label=Col·locació:
+edit-tag-placement-in_line=En línia
+edit-tag-placement-after=Amb GotoXY
+edit-tag-role-label=Rol:
+edit-tag-role-displaycode=Codi de visualització
+edit-tag-role-hyperlink=Enllaç
+
 add_tag_tooltip=Afegir etiqueta
 delete_tag_tooltip=Eliminar etiqueta
+
+ask_unsaved_file_dialog-description=Voleu desar els canvis als següents {
+    $number ->
+        [1] fitxer?
+        *[other] {$number} fitxers?
+    }
+ask_unsaved_file_dialog-subdescription=Els vostres canvis es perdran si no els deseu.
+ask_unsaved_file_dialog-save_all_button=Desar tot
+ask_unsaved_file_dialog-dont_save_button=No desar

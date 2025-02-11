@@ -248,6 +248,7 @@ export-maximum_line_length=Comprimento máximo da linha
 export-use_repeat_sequences=Usar sequências de repetição CSI Pn b
 export-save_full_line_length=Salvar espaços em branco finais
 export-format-label=Formato:
+export-path-label=Caminho:
 
 select-character-title=Selecionar caractere
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Comprimento:
 edit-tag-alignment-left=Esquerda
 edit-tag-alignment-right=Direita
 edit-tag-alignment-center=Centro
+edit-tag-placement-label=Posicionamento:
+edit-tag-placement-in_line=Na linha
+edit-tag-placement-after=Com GotoXY
+edit-tag-role-label=Função:
+edit-tag-role-displaycode=Código de exibição
+edit-tag-role-hyperlink=Hiperlink
+
 add_tag_tooltip=Adicionar tag
 delete_tag_tooltip=Excluir tag
+
+ask_unsaved_file_dialog-description=Deseja salvar as alterações nos seguintes {
+    $number ->
+        [1] arquivo?
+        *[other] {$number} arquivos?
+    }
+ask_unsaved_file_dialog-subdescription=Suas alterações serão perdidas se você não salvar.
+ask_unsaved_file_dialog-save_all_button=Salvar Tudo
+ask_unsaved_file_dialog-dont_save_button=Não Salvar

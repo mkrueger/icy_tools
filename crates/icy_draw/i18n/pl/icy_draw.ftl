@@ -1,6 +1,6 @@
 font-editor-table = Tabela znaków 0-{ $length }:
 
-unsaved-title=Bez tytułu
+unsaved-title=Bez nazwy
 
 menu-file=Plik
 menu-new=Nowy…
@@ -10,7 +10,7 @@ menu-open_recent_clear=Wyczyść
 menu-save=Zapisz
 menu-edit-sauce=Edytuj informacje Sauce…
 menu-9px-font=Czcionka 9px
-menu-aspect-ratio=Stosunek wymiarów
+menu-aspect-ratio=Klasyczne proporcje
 menu-set-canvas-size=Ustaw rozmiar płótna…
 menu-close=Zamknij
 menu-save-as=Zapisz jako…
@@ -248,6 +248,7 @@ export-maximum_line_length=Maksymalna długość linii
 export-use_repeat_sequences=Użyj sekwencji powtarzania CSI Pn b
 export-save_full_line_length=Zapisz końcowe białe znaki
 export-format-label=Format:
+export-path-label=Ścieżka:
 
 select-character-title=Wybierz znak
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Długość:
 edit-tag-alignment-left=Lewo
 edit-tag-alignment-right=Prawo
 edit-tag-alignment-center=Środek
+edit-tag-placement-label=Umieszczenie:
+edit-tag-placement-in_line=W linii
+edit-tag-placement-after=Z GotoXY
+edit-tag-role-label=Rola:
+edit-tag-role-displaycode=Kod wyświetlania
+edit-tag-role-hyperlink=Hiperłącze
+
 add_tag_tooltip=Dodaj Tag
 delete_tag_tooltip=Usuń Tag
+
+ask_unsaved_file_dialog-description=Czy chcesz zapisać zmiany w następujących {
+    $number ->
+        [1] pliku?
+        *[other] {$number} plikach?
+    }
+ask_unsaved_file_dialog-subdescription=Twoje zmiany zostaną utracone, jeśli ich nie zapiszesz.
+ask_unsaved_file_dialog-save_all_button=Zapisz wszystko
+ask_unsaved_file_dialog-dont_save_button=Nie zapisuj

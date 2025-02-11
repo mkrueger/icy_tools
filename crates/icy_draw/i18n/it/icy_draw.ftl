@@ -5,12 +5,12 @@ unsaved-title=Senza titolo
 menu-file=File
 menu-new=Nuovo…
 menu-open=Apri…
-menu-open_recent=Apri recente
-menu-open_recent_clear=Pulisci
+menu-open_recent=Apri recenti
+menu-open_recent_clear=Cancella
 menu-save=Salva
-menu-edit-sauce=Modifica informazioni SAUCE…
+menu-edit-sauce=Modifica info Sauce…
 menu-9px-font=Font 9px
-menu-aspect-ratio=Rapporto d'aspetto legacy
+menu-aspect-ratio=Proporzioni classiche
 menu-set-canvas-size=Imposta dimensione tela…
 menu-close=Chiudi
 menu-save-as=Salva come…
@@ -248,6 +248,7 @@ export-maximum_line_length=Lunghezza massima linea
 export-use_repeat_sequences=Usa sequenze di ripetizione CSI Pn b
 export-save_full_line_length=Salva spazi bianchi finali
 export-format-label=Formato:
+export-path-label=Percorso:
 
 select-character-title=Seleziona carattere
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Lunghezza:
 edit-tag-alignment-left=Sinistra
 edit-tag-alignment-right=Destra
 edit-tag-alignment-center=Centro
+edit-tag-placement-label=Posizionamento:
+edit-tag-placement-in_line=In linea
+edit-tag-placement-after=Con GotoXY
+edit-tag-role-label=Ruolo:
+edit-tag-role-displaycode=Codice visualizzazione
+edit-tag-role-hyperlink=Link ipertestuale
+
 add_tag_tooltip=Aggiungi tag
 delete_tag_tooltip=Elimina tag
+
+ask_unsaved_file_dialog-description=Vuoi salvare le modifiche ai seguenti {
+    $number ->
+        [1] file?
+        *[other] {$number} file?
+    }
+ask_unsaved_file_dialog-subdescription=Le tue modifiche andranno perse se non le salvi.
+ask_unsaved_file_dialog-save_all_button=Salva tutto
+ask_unsaved_file_dialog-dont_save_button=Non salvare
