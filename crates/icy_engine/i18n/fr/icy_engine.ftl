@@ -48,6 +48,7 @@ undo-set_use_letter_spacing=Définir l'utilisation de l'espacement des lettres
 undo-set_use_aspect_ratio=Définir l'utilisation du rapport d'aspect
 undo-edit-tag=Modifier l'étiquette
 undo-remove-tag=Supprimer l'étiquette
+undo-show-tags=Afficher les étiquettes
 
 layer-duplicate-name={ $name } copie
 layer-new-name=Couche

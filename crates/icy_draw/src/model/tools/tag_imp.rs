@@ -1,5 +1,6 @@
 use eframe::epaint::{FontId, Rounding, Vec2};
-use egui::{FontFamily, RichText, Sense, WidgetText};
+use egui::{Button, FontFamily, Label, RichText, Sense, Widget, WidgetText};
+use egui_extras::{Column, TableBuilder};
 use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, Tag, TextAttribute};
 use icy_engine_gui::TerminalCalc;
@@ -63,7 +64,12 @@ impl Tool for TagTool {
                 }
             }
         }
-
+        let show_tags = editor.buffer_view.lock().get_buffer().show_tags;
+        let mut show_tags2 = show_tags;
+        ui.checkbox(&mut show_tags2, fl!(crate::LANGUAGE_LOADER, "tool-tag_show"));
+        if show_tags != show_tags2 {
+            result = Some(Message::ShowTags(show_tags2));
+        }
         ui.horizontal(|ui| {
             let r = medium_hover_button(ui, &crate::ADD_LAYER_SVG).on_hover_ui(|ui| {
                 ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "add_tag_tooltip")).small());
@@ -95,46 +101,65 @@ impl Tool for TagTool {
                 }
             }
         });
-        egui::ScrollArea::vertical().id_salt("tag_view_scroll_area").show(ui, |ui| {
-            ui.vertical(|ui| {
-                for (i, tag) in editor.buffer_view.lock().get_buffer().tags.iter().enumerate() {
-                    let row_height = 22.0;
-                    let (id, rect) = ui.allocate_space(Vec2::new(ui.available_width(), row_height));
-                    let response = ui.interact(rect, id, Sense::click());
+
+        let table = TableBuilder::new(ui)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::auto())
+            .column(Column::auto())
+            .column(Column::auto())
+            .sense(egui::Sense::click());
+
+        table
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong(fl!(crate::LANGUAGE_LOADER, "edit-tag-title"));
+                });
+                header.col(|ui| {
+                    ui.strong(fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-label"));
+                });
+                header.col(|ui| {
+                    ui.strong("");
+                });
+            })
+            .body(|body| {
+                let lock = editor.buffer_view.lock();
+                let tags = &lock.get_buffer().tags;
+
+                body.rows(18.0, tags.len(), |mut row| {
+                    let i = row.index();
+                    let tag = &tags[i];
                     let is_selected = i == cur_tag;
+                    row.set_selected(is_selected);
+                    row.col(|ui| {
+                        Label::new(tag.replacement_value.to_string()).selectable(false).ui(ui);
+                    });
+                    row.col(|ui| {
+                        let text = match tag.tag_placement {
+                            icy_engine::TagPlacement::InText => {
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-in_line")
+                            }
+                            icy_engine::TagPlacement::WithGotoXY => {
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-after")
+                            }
+                        };
+                        Label::new(text).selectable(false).ui(ui);
+                    });
+                    row.col(|ui| {
+                        if Button::new(RichText::new(fl!(crate::LANGUAGE_LOADER, "tool-tag_edit_button")).size(12.0))
+                            .small()
+                            .ui(ui)
+                            .clicked()
+                        {
+                            result = Some(Message::ShowEditTagDialog(tag.clone().into(), i as i32));
+                        }
+                    });
 
-                    let back_painter = ui.painter_at(rect);
-                    if response.hovered() {
-                        back_painter.rect_filled(rect, Rounding::ZERO, ui.style().visuals.widgets.active.bg_fill);
-                    } else if is_selected {
-                        back_painter.rect_filled(rect, Rounding::ZERO, ui.style().visuals.extreme_bg_color);
-                    }
-
-                    let text_color = if is_selected {
-                        ui.style().visuals.strong_text_color()
-                    } else {
-                        ui.style().visuals.text_color()
-                    };
-
-                    let font_id = FontId::new(14.0, FontFamily::Proportional);
-                    let text: WidgetText = tag.replacement_value.clone().into();
-                    let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
-                    ui.painter().galley_with_override_text_color(
-                        egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect.shrink(4.0)).min,
-                        galley,
-                        text_color,
-                    );
-
+                    let response = row.response();
                     if response.clicked() {
                         result = Some(Message::SelectCurrentTag(i as usize));
                     }
-
-                    if response.double_clicked() {
-                        result = Some(Message::ShowEditTagDialog(tag.clone().into(), i as i32));
-                    }
-                }
+                });
             });
-        });
         result
     }
 

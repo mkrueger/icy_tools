@@ -183,6 +183,8 @@ tool-select_name=Unealtă de selecție
 tool-select_tooltip=Selecții multiple și non-dreptunghiulare
 tool-tag_name=Unealtă de etichetare
 tool-tag_tooltip=Etichetele sunt folosite pentru a extinde șirurile în ieșire
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Nou
 

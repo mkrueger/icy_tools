@@ -151,6 +151,7 @@ pub enum Message {
     KeySwitchBackground(usize),
     AddNewTag(Box<Tag>),
     UpdateTag(Box<Tag>, usize),
+    ShowTags(bool),
     RemoveTag(usize),
     SelectCurrentTag(usize),
     ShowEditTagDialog(Box<Tag>, i32),
@@ -344,7 +345,12 @@ impl<'a> MainWindow<'a> {
                     to_message(lock.get_edit_state_mut().update_tag(*tag, index))
                 });
             }
-
+            Message::ShowTags(tags_enabled) => {
+                self.run_editor_command(tags_enabled, |_, editor, tags_enabled| {
+                    let mut lock = editor.buffer_view.lock();
+                    to_message(lock.get_edit_state_mut().show_tags(tags_enabled))
+                });
+            }
             Message::SelectCurrentTag(tag) => {
                 self.run_editor_command(tag, |_, editor, tag| {
                     let mut lock = editor.buffer_view.lock();

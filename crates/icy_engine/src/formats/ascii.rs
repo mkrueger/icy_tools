@@ -20,7 +20,7 @@ impl OutputFormat for Ascii {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
         let mut pos = Position::default();
         let height = buf.get_line_count();

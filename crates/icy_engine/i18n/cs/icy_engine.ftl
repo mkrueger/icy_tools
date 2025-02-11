@@ -48,6 +48,7 @@ undo-set_use_letter_spacing=Nastavit použití mezery mezi písmeny
 undo-set_use_aspect_ratio=Nastavit použití poměru stran
 undo-edit-tag=Upravit štítek
 undo-remove-tag=Odebrat štítek
+undo-show-tags=Zobrazit štítky
 
 layer-duplicate-name={ $name } kopie
 layer-new-name=Vrstva

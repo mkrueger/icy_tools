@@ -146,7 +146,13 @@ impl Tag {
                 }
             }
         };
-        AttributedChar::new(ch, self.attribute)
+        if self.tag_role == TagRole::Displaycode {
+            AttributedChar::new(ch, self.attribute)
+        } else {
+            let mut attr = self.attribute;
+            attr.set_is_underlined(true);
+            AttributedChar::new(ch, attr)
+        }
     }
 }
 
@@ -237,6 +243,7 @@ pub struct Buffer {
     use_letter_spacing: bool,
     use_aspect_ratio: bool,
 
+    pub show_tags: bool,
     pub tags: Vec<Tag>,
     pub ansi_music: Vec<AnsiMusic>,
 }
@@ -372,6 +379,7 @@ impl Buffer {
             frame.set_font(*f.0, f.1.clone());
         }
         frame.tags = self.tags.clone();
+        frame.show_tags = self.show_tags;
         frame
     }
 
@@ -466,6 +474,7 @@ impl Buffer {
             sixel_threads: VecDeque::new(), // file_name_changed: Box::new(|| {}),
             use_letter_spacing: false,
             use_aspect_ratio: false,
+            show_tags: true,
             tags: Vec::new(),
             ansi_music: Vec::new(),
         }
@@ -781,15 +790,20 @@ impl Buffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn to_bytes(&self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    pub fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let extension = extension.to_ascii_lowercase();
         for fmt in &*crate::FORMATS {
             if fmt.get_file_extension() == extension || fmt.get_alt_extensions().contains(&extension) {
-                if options.lossles_output {
-                    return fmt.to_bytes(self, options);
-                }
-                let optimizer = crate::ColorOptimizer::new(self, options);
-                return fmt.to_bytes(&optimizer.optimize(self), options);
+                let tags_enabled = self.show_tags;
+                self.show_tags = false;
+                let res = if options.lossles_output {
+                    fmt.to_bytes(self, options)
+                } else {
+                    let optimizer = crate::ColorOptimizer::new(self, options);
+                    fmt.to_bytes(&mut optimizer.optimize(self), options)
+                };
+                self.show_tags = tags_enabled;
+                return res;
             }
         }
         Err(anyhow::anyhow!("Unknown format"))
@@ -969,16 +983,6 @@ impl Buffer {
         }
         transparent_char
     }
-
-    pub fn get_tag_at(&self, pos: impl Into<Position>) -> Option<&Tag> {
-        let pos = pos.into();
-        for tag in &self.tags {
-            if tag.is_enabled && tag.position == pos {
-                return Some(tag);
-            }
-        }
-        None
-    }
 }
 
 impl Default for Buffer {
@@ -1007,9 +1011,11 @@ impl TextPane for Buffer {
     fn get_char(&self, pos: impl Into<Position>) -> AttributedChar {
         let pos = pos.into();
 
-        for tag in &self.tags {
-            if tag.is_enabled && tag.contains(pos) {
-                return tag.get_char_at(pos.x - tag.position.x);
+        if self.show_tags {
+            for tag in &self.tags {
+                if tag.is_enabled && tag.contains(pos) {
+                    return tag.get_char_at(pos.x - tag.position.x);
+                }
             }
         }
 

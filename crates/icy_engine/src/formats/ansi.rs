@@ -6,8 +6,8 @@ use icy_sauce::char_caps::ContentType;
 
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
-    analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
-    XTERM_256_PALETTE,
+    analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, ANSI_FONTS,
+    DOS_DEFAULT_PALETTE, XTERM_256_PALETTE,
 };
 use crate::{Color, TextAttribute};
 
@@ -33,7 +33,7 @@ impl OutputFormat for Ansi {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
         let mut result = Vec::new();
 
         let mut gen = StringGenerator::new(options.clone());
@@ -377,7 +377,7 @@ impl StringGenerator {
 
             // previewlen == 0 tags are invisible, so they need to be checked.
             for t in self.tags.iter() {
-                if t.is_enabled && t.position.y == y as i32 {
+                if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y as i32 {
                     len = len.max(t.position.x + t.len() as i32);
                 }
             }
@@ -385,7 +385,7 @@ impl StringGenerator {
             while x < len {
                 let mut found_tag = false;
                 for t in self.tags.iter() {
-                    if t.is_enabled && t.position.y == y as i32 && t.position.x == x as i32 {
+                    if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y as i32 && t.position.x == x as i32 {
                         for ch in t.replacement_value.chars() {
                             line.push(CharCell {
                                 ch,
@@ -395,7 +395,7 @@ impl StringGenerator {
                                 cur_state: state.clone(),
                             });
                         }
-                        x += t.len() as i32;
+                        x += (t.len() as i32).max(1);
                         found_tag = true;
                         break;
                     }
@@ -474,8 +474,16 @@ impl StringGenerator {
     }
 
     pub fn screen_end(&mut self, buf: &Buffer) {
+        for tag in buf.tags.iter() {
+            if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                self.output
+                    .extend_from_slice(format!("\x1b[{};{}H", tag.position.y + 1, tag.position.x + 1).as_bytes());
+                self.output.extend_from_slice(tag.replacement_value.as_bytes());
+            }
+        }
+
         if matches!(buf.ice_mode, crate::IceMode::Ice) {
-            self.push_result(&mut b"\x1b[?33l".to_vec());
+            self.output.extend_from_slice(&mut b"\x1b[?33l".to_vec());
         }
     }
 

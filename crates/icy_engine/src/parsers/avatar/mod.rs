@@ -11,6 +11,9 @@ enum AvtReadState {
     ReadColor,
 }
 
+pub const AVT_MOVE_CLREOL: u8 = 7;
+pub const AVT_MOVE_CURSOR: u8 = 8;
+
 /// Starts Avatar command
 const AVT_CMD: char = '\x16';
 /// clear the current window and set current attribute to default.
@@ -64,7 +67,7 @@ impl BufferParser for Parser {
                 Ok(CallbackAction::NoUpdate)
             }
             AvtReadState::ReadCommand => {
-                match ch as u16 {
+                match ch as u8 {
                     1 => {
                         self.avt_state = AvtReadState::ReadColor;
                         return Ok(CallbackAction::NoUpdate);
@@ -85,10 +88,10 @@ impl BufferParser for Parser {
                     6 => {
                         caret.pos.x = min(79, caret.pos.x + 1);
                     }
-                    7 => {
+                    AVT_MOVE_CLREOL => {
                         return Err(ParserError::Description("todo: avt cleareol").into());
                     }
-                    8 => {
+                    AVT_MOVE_CURSOR => {
                         self.avt_state = AvtReadState::MoveCursor;
                         self.avatar_state = 1;
                         return Ok(CallbackAction::NoUpdate);

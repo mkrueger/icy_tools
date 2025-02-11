@@ -135,9 +135,9 @@ fn main() {
                                         break;
                                     }
                                 }
-                                if let Some((buffer, _, delay)) = animator.lock().unwrap().get_cur_frame_buffer() {
+                                if let Some((buffer, _, delay)) = animator.lock().unwrap().get_cur_frame_buffer_mut() {
                                     let new_checksums = get_line_checksums(buffer);
-                                    let mut skip_lines = Vec::new();
+                                    let mut skip_lines: Vec<usize> = Vec::new();
                                     if checksums.len() == new_checksums.len() {
                                         for i in 0..checksums.len() {
                                             if checksums[i] == new_checksums[i] {
@@ -158,7 +158,7 @@ fn main() {
                             let _ = io.write(b"\x1b[?25h\x1b[0;0 D");
                         }
                         Commands::ShowFrame { frame } => {
-                            show_buffer(&mut io, &animator.lock().unwrap().frames[frame].0, true, &args, &term, Vec::new()).unwrap();
+                            show_buffer(&mut io, &mut animator.lock().unwrap().frames[frame].0, true, &args, &term, Vec::new()).unwrap();
                         }
                     }
                 }
@@ -167,8 +167,8 @@ fn main() {
                 }
             },
             _ => {
-                let buffer = Buffer::load_buffer(&path, true, None);
-                if let Ok(buffer) = &buffer {
+                let mut buffer = Buffer::load_buffer(&path, true, None);
+                if let Ok(buffer) = &mut buffer {
                     show_buffer(&mut io, buffer, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
                 }
             }
@@ -176,7 +176,7 @@ fn main() {
     }
 }
 
-fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, cli: &Cli, terminal: &Terminal, skip_lines: Vec<usize>) -> anyhow::Result<()> {
+fn show_buffer(io: &mut Box<dyn Com>, buffer: &mut Buffer, single_frame: bool, cli: &Cli, terminal: &Terminal, skip_lines: Vec<usize>) -> anyhow::Result<()> {
     let mut opt: SaveOptions = SaveOptions::default();
     if cli.utf8 {
         opt.modern_terminal_output = true;
@@ -199,7 +199,7 @@ fn show_buffer(io: &mut Box<dyn Com>, buffer: &Buffer, single_frame: bool, cli: 
     let bytes = if cli.utf8 && buffer.ice_mode == icy_engine::IceMode::Ice {
         let mut state = EditState::from_buffer(buffer.flat_clone(true));
         let _ = state.set_ice_mode(icy_engine::IceMode::Unlimited);
-        state.get_buffer().to_bytes("ans", &opt)?
+        state.get_buffer_mut().to_bytes("ans", &opt)?
     } else {
         buffer.to_bytes("ans", &opt)?
     };

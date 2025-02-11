@@ -110,7 +110,7 @@ impl ModalDialog for ExportFileDialog {
         let modal = Modal::new(ctx, "export_file-dialog");
         modal.show(|ui| {
             ui.set_width(550.);
-            ui.set_height(320.);
+            ui.set_height(340.);
 
             modal.title(ui, fl!(crate::LANGUAGE_LOADER, "export-title"));
 

@@ -18,6 +18,12 @@ impl EditState {
         Ok(())
     }
 
+    pub fn show_tags(&mut self, show_tags: bool) -> EngineResult<()> {
+        let op = undo_operations::ShowTags::new(show_tags);
+        self.push_undo_action(Box::new(op))?;
+        Ok(())
+    }
+
     pub fn move_tag(&mut self, tag: usize, pos: Position) -> EngineResult<()> {
         let old_pos = self.buffer.tags[tag].position;
         let op = undo_operations::MoveTag::new(tag, old_pos, pos);

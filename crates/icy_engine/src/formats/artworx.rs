@@ -35,7 +35,7 @@ impl OutputFormat for Artworx {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.ice_mode != IceMode::Ice {
             return Err(anyhow::anyhow!("Only ice mode files are supported by this format."));
         }
@@ -195,7 +195,7 @@ mod tests {
         buffer.ice_mode = crate::IceMode::Ice;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
-        test_artworx(&buffer);
+        test_artworx(&mut buffer);
     }
 
     #[test]
@@ -218,7 +218,7 @@ mod tests {
 
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
-        test_artworx(&buffer);
+        test_artworx(&mut buffer);
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
         buffer.set_font(0, BitFont::from_ansi_font_page(42).unwrap());
         buffer.ice_mode = crate::IceMode::Ice;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Blink)));
-        test_artworx(&buffer);
+        test_artworx(&mut buffer);
     }
     fn create_buffer() -> Buffer {
         let mut buffer = Buffer::new((80, 25));
@@ -239,7 +239,7 @@ mod tests {
         buffer
     }
 
-    fn test_artworx(buffer: &Buffer) -> Buffer {
+    fn test_artworx(buffer: &mut Buffer) -> Buffer {
         let xb = super::Artworx::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
+use crate::{
+    avatar::AVT_MOVE_CURSOR, parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane,
+};
 
 use super::{LoadData, SaveOptions};
 
@@ -38,7 +40,7 @@ impl OutputFormat for Avatar {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.palette.len() != 16 {
             return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
         }
@@ -56,7 +58,7 @@ impl OutputFormat for Avatar {
             }
             super::ScreenPreperation::Home => {
                 result.push(AVT_CMD);
-                result.push(8); // move caret
+                result.push(AVT_MOVE_CURSOR); // move caret
                 result.push(1); // x
                 result.push(1); // y
             }
@@ -67,6 +69,19 @@ impl OutputFormat for Avatar {
             let line_length = buf.get_line_length(pos.y);
 
             while pos.x < line_length {
+                let mut found_tag = false;
+                for tag in &buf.tags {
+                    if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                        result.extend(tag.replacement_value.as_bytes());
+                        pos.x += (tag.len() as i32).max(1);
+                        found_tag = true;
+                        break;
+                    }
+                }
+                if found_tag {
+                    continue;
+                }
+
                 let mut repeat_count = 1;
                 let mut ch = buf.get_char(pos);
 
@@ -116,6 +131,16 @@ impl OutputFormat for Avatar {
             pos.x = 0;
             pos.y += 1;
         }
+        for tag in &buf.tags {
+            if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                result.push(AVT_CMD);
+                result.push(AVT_MOVE_CURSOR); // move caret
+                result.push(tag.position.x as u8 + 1); // x
+                result.push(tag.position.y as u8 + 1); // y
+                result.extend(tag.replacement_value.as_bytes());
+            }
+        }
+
         if options.save_sauce {
             buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::Avatar, &mut result)?;
         }
@@ -235,8 +260,8 @@ mod tests {
     }
 
     fn test_avt(data: &[u8]) {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None, None).unwrap();
-        let converted = super::Avatar::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
+        let mut buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None, None).unwrap();
+        let converted = super::Avatar::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
 
         // more gentle output.
         let b: Vec<u8> = output_avt(&converted);

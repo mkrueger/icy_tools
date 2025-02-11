@@ -183,6 +183,8 @@ tool-select_name=Kijelölő eszköz
 tool-select_tooltip=Többszörös és nem téglalap kijelölések
 tool-tag_name=Címke eszköz
 tool-tag_tooltip=Címkék használata a kimenet bővítéséhez
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Új
 

@@ -48,6 +48,7 @@ undo-set_use_letter_spacing=Imposta uso spaziatura lettere
 undo-set_use_aspect_ratio=Imposta uso rapporto d'aspetto
 undo-edit-tag=Modifica tag
 undo-remove-tag=Rimuovi tag
+undo-show-tags=Mostra tag
 
 layer-duplicate-name={ $name } copia
 layer-new-name=Livello

@@ -38,7 +38,7 @@ impl OutputFormat for IcyDraw {
         "Iced"
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
 
         let font_dims = buf.get_font_dimensions();
@@ -991,7 +991,7 @@ mod tests {
         buf.layers[1].default_font_page = 1;
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1003,7 +1003,7 @@ mod tests {
         buf.set_height(23);
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1029,7 +1029,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1051,7 +1051,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1072,7 +1072,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
 
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
@@ -1094,7 +1094,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
 
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
@@ -1112,7 +1112,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1136,7 +1136,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1167,7 +1167,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1184,7 +1184,7 @@ mod tests {
         );
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
     }
@@ -1198,7 +1198,7 @@ mod tests {
         buf.layers[1].properties.is_visible = false;
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let mut buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
 
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);
@@ -1219,7 +1219,7 @@ mod tests {
         assert_eq!(AttributedChar::invisible(), buf.layers[1].get_char((1, 0)));
 
         let draw = IcyDraw::default();
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
         let mut buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
 
         compare_buffers(&buf, &buf2, crate::CompareOptions::ALL);

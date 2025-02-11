@@ -186,6 +186,8 @@ tool-select_name=Auswahl
 tool-select_tooltip=Mehrfachauswahl oder nicht rechteckige Auswahl
 tool-tag_name=Tag Tool
 tool-tag_tooltip=Tags werden im Output ersetzt
+tool-tag_show=Tags anzeigen
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Neu
 
@@ -515,6 +517,13 @@ edit-tag-length-label=Länge:
 edit-tag-alignment-left=Links
 edit-tag-alignment-right=Rechts
 edit-tag-alignment-center=Zentriert
+edit-tag-placement-label=Platzierung:
+edit-tag-placement-in_line=In Zeile
+edit-tag-placement-after=Mit GotoXY
+edit-tag-role-label=Rolle:
+edit-tag-role-displaycode=Darstellungscode
+edit-tag-role-hyperlink=Hyperlink
+
 add_tag_tooltip=Tag hinzufügen
 delete_tag_tooltip=Tag löschen
 

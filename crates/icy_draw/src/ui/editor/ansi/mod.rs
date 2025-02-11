@@ -166,7 +166,7 @@ impl Document for AnsiEditor {
         let mut options = SaveOptions::new();
         options.compress = false;
         options.lossles_output = true;
-        let bytes = self.buffer_view.lock().get_buffer().to_bytes(&ext, &options)?;
+        let bytes = self.buffer_view.lock().get_buffer_mut().to_bytes(&ext, &options)?;
         Ok(bytes)
     }
 
@@ -408,9 +408,9 @@ impl AnsiEditor {
             Ok(mut f) => {
                 let content = if let Some(ext) = file_name.extension() {
                     let ext = OsStr::to_string_lossy(ext).to_lowercase();
-                    self.buffer_view.lock().get_buffer().to_bytes(ext.as_str(), options)?
+                    self.buffer_view.lock().get_buffer_mut().to_bytes(ext.as_str(), options)?
                 } else {
-                    self.buffer_view.lock().get_buffer().to_bytes(ICED_EXT, options)?
+                    self.buffer_view.lock().get_buffer_mut().to_bytes(ICED_EXT, options)?
                 };
                 if let Err(err) = f.write_all(&content) {
                     return Err(SavingError::ErrorWritingFile(format!("{err}")).into());

@@ -12,7 +12,7 @@ pub struct SettingsDialog {
     settings_category: usize,
 
     monitor_settings: MonitorSettings,
-    pub is_dark_mode: Option<bool>
+    pub is_dark_mode: Option<bool>,
 }
 const MONITOR_CAT: usize = 0;
 
@@ -52,7 +52,6 @@ impl SettingsDialog {
                     {
                         self.settings_category = MONITOR_CAT;
                     }
-
                 });
                 ui.separator();
                 match self.settings_category {
@@ -61,7 +60,7 @@ impl SettingsDialog {
                             SETTINGS.monitor_settings = new_settings;
                         }
                     },
-                 
+
                     _ => {}
                 }
 
@@ -88,8 +87,7 @@ impl SettingsDialog {
                         dialog_open = false;
                     }
 
-                    if ui.button(fl!(crate::LANGUAGE_LOADER, "settings-reset_button")).clicked()
-                    {
+                    if ui.button(fl!(crate::LANGUAGE_LOADER, "settings-reset_button")).clicked() {
                         unsafe {
                             match self.settings_category {
                                 MONITOR_CAT => SETTINGS.monitor_settings = Default::default(),
@@ -102,5 +100,4 @@ impl SettingsDialog {
 
         open && dialog_open
     }
-
 }

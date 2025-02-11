@@ -40,7 +40,7 @@ impl OutputFormat for XBin {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
 
         result.extend_from_slice(b"XBIN");
@@ -595,7 +595,7 @@ mod tests {
         buffer.ice_mode = crate::IceMode::Blink;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Blink)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1000_1000, crate::IceMode::Blink)));
-        let res = test_xbin(&buffer);
+        let res = test_xbin(&mut buffer);
         let ch = res.layers[0].get_char((1, 0));
 
         assert_eq!(ch.attribute.get_foreground(), 0b1000);
@@ -609,7 +609,7 @@ mod tests {
         buffer.ice_mode = crate::IceMode::Ice;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
-        let res = test_xbin(&buffer);
+        let res = test_xbin(&mut buffer);
         let ch = res.layers[0].get_char((1, 0));
 
         assert_eq!(ch.attribute.get_foreground(), 0b1111);
@@ -636,7 +636,7 @@ mod tests {
 
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
-        let res = test_xbin(&buffer);
+        let res = test_xbin(&mut buffer);
         let ch = res.layers[0].get_char((1, 0));
 
         assert_eq!(ch.attribute.get_foreground(), 0b1111);
@@ -649,7 +649,7 @@ mod tests {
         buffer.set_font(0, BitFont::from_ansi_font_page(42).unwrap());
         buffer.ice_mode = crate::IceMode::Blink;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Blink)));
-        test_xbin(&buffer);
+        test_xbin(&mut buffer);
     }
 
     #[test]
@@ -662,7 +662,7 @@ mod tests {
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', attr));
         attr.set_font_page(1);
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', attr));
-        let res = test_xbin(&buffer);
+        let res = test_xbin(&mut buffer);
 
         let ch = res.layers[0].get_char((1, 0));
 
@@ -685,7 +685,7 @@ mod tests {
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;
 
-        let res = test_xbin(&buffer);
+        let res = test_xbin(&mut buffer);
 
         let ch = res.layers[0].get_char((1, 0));
 
@@ -705,7 +705,7 @@ mod tests {
         buffer
     }
 
-    fn test_xbin(buffer: &Buffer) -> Buffer {
+    fn test_xbin(buffer: &mut Buffer) -> Buffer {
         let xb = super::XBin::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

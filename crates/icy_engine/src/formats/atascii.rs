@@ -21,7 +21,7 @@ impl OutputFormat for Atascii {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Atascii {
             return Err(anyhow::anyhow!("Buffer is not an Atascii buffer!"));
         }

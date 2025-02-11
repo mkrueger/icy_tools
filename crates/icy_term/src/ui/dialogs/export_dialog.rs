@@ -30,9 +30,9 @@ impl MainWindow {
                         if let Ok(mut file) = File::create(file_name) {
                             let content = if let Some(ext) = path.extension() {
                                 let ext = OsStr::to_str(ext).unwrap().to_lowercase();
-                                self.buffer_view.lock().get_buffer().to_bytes(ext.as_str(), &SaveOptions::new())
+                                self.buffer_view.lock().get_buffer_mut().to_bytes(ext.as_str(), &SaveOptions::new())
                             } else {
-                                self.buffer_view.lock().get_buffer().to_bytes("ans", &SaveOptions::new())
+                                self.buffer_view.lock().get_buffer_mut().to_bytes("ans", &SaveOptions::new())
                             };
                             let r = match content {
                                 Ok(content) => file.write_all(&content),

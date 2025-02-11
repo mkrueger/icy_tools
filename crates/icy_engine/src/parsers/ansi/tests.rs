@@ -341,8 +341,8 @@ fn test_print_char_extension() {
 
 #[test]
 fn test_insert_mode() {
-    let (buf, _) = create_buffer(&mut ansi::Parser::default(), b"test\x1B[H\x1B[4lhelp\x1B[H\x1B[4hnewtest");
-    let converted = crate::Ascii::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
+    let (mut buf, _) = create_buffer(&mut ansi::Parser::default(), b"test\x1B[H\x1B[4lhelp\x1B[H\x1B[4hnewtest");
+    let converted = crate::Ascii::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
 
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();

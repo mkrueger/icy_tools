@@ -26,7 +26,7 @@ pub enum Message {
     ShowHelpDialog,
     ChangeScrollSpeed,
     SetTerminalWidth,
-    ShowSettings
+    ShowSettings,
 }
 pub struct FileView {
     /// Selected file path

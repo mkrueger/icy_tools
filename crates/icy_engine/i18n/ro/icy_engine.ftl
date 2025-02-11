@@ -48,6 +48,7 @@ undo-set_use_letter_spacing=Definiți utilizarea spațierii literelor
 undo-set_use_aspect_ratio=Definiți utilizarea raportului de aspect
 undo-edit-tag=Editați eticheta
 undo-remove-tag=Eliminați eticheta
+undo-show-tags=Afișați etichetele
 
 layer-duplicate-name={ $name } copie
 layer-new-name=Strat

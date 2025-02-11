@@ -132,23 +132,70 @@ impl ModalDialog for EditTagDialog {
                         .width(150.)
                         .selected_text(RichText::new(match self.tag.alignment {
                             Alignment::Left => fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-left"),
-                            Alignment::Right => fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-right"),
+                            Alignment::Right => fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-center"),
                             Alignment::Center => fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-right"),
                         }))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut self.tag.alignment, Alignment::Left, fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-left"));
                             ui.selectable_value(
                                 &mut self.tag.alignment,
-                                Alignment::Right,
-                                fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-right"),
+                                Alignment::Center,
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-center"),
                             );
                             ui.selectable_value(
                                 &mut self.tag.alignment,
-                                Alignment::Center,
+                                Alignment::Right,
                                 fl!(crate::LANGUAGE_LOADER, "edit-tag-alignment-right"),
                             );
                         });
                     ui.end_row();
+
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-label"));
+                    });
+                    egui::ComboBox::from_id_salt("combobox2")
+                        .width(150.)
+                        .selected_text(RichText::new(match self.tag.tag_placement {
+                            icy_engine::TagPlacement::InText => fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-in_line"),
+                            icy_engine::TagPlacement::WithGotoXY => fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-after"),
+                        }))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.tag.tag_placement,
+                                icy_engine::TagPlacement::InText,
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-in_line"),
+                            );
+                            ui.selectable_value(
+                                &mut self.tag.tag_placement,
+                                icy_engine::TagPlacement::WithGotoXY,
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-placement-after"),
+                            );
+                        });
+                    ui.end_row();
+
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(fl!(crate::LANGUAGE_LOADER, "edit-tag-role-label"));
+                    });
+                    egui::ComboBox::from_id_salt("combobox3")
+                        .width(150.)
+                        .selected_text(RichText::new(match self.tag.tag_role {
+                            icy_engine::TagRole::Displaycode => fl!(crate::LANGUAGE_LOADER, "edit-tag-role-displaycode"),
+                            icy_engine::TagRole::Hyperlink => fl!(crate::LANGUAGE_LOADER, "edit-tag-role-hyperlink"),
+                        }))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.tag.tag_role,
+                                icy_engine::TagRole::Displaycode,
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-role-displaycode"),
+                            );
+                            ui.selectable_value(
+                                &mut self.tag.tag_role,
+                                icy_engine::TagRole::Hyperlink,
+                                fl!(crate::LANGUAGE_LOADER, "edit-tag-role-hyperlink"),
+                            );
+                        });
+                    ui.end_row();
+
                     ui.label("");
                     ui.checkbox(&mut self.tag.is_enabled, fl!(crate::LANGUAGE_LOADER, "edit-layer-dialog-is-visible-checkbox"));
                     ui.end_row();

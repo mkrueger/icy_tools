@@ -180,11 +180,9 @@ impl<'a> MainWindow<'a> {
         if let Ok(path) = Settings::get_settings_file() {
             if path.exists() {
                 match Settings::load(&path) {
-                    Ok(settings) => {
-                        unsafe {
-                            SETTINGS = settings;
-                        }
-                    }
+                    Ok(settings) => unsafe {
+                        SETTINGS = settings;
+                    },
                     Err(err) => {
                         log::error!("Error while loading settings: {err}");
                     }

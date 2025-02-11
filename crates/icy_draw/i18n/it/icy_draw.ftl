@@ -183,6 +183,8 @@ tool-select_name=Strumento di selezione
 tool-select_tooltip=Selezioni multiple e non rettangolari
 tool-tag_name=Strumento tag
 tool-tag_tooltip=I tag sono usati per espandere stringhe in output
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Nuovo
 

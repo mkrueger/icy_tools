@@ -73,14 +73,14 @@ pub static mut SETTINGS: Settings = Settings {
 
 #[derive(Debug, Clone)]
 pub enum IcyViewError {
-   // Error(String),
+    // Error(String),
     ErrorCreatingDirectory(String),
 }
 
 impl std::fmt::Display for IcyViewError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-           // IcyViewError::Error(err) => write!(f, "Error: {err}"),
+            // IcyViewError::Error(err) => write!(f, "Error: {err}"),
             IcyViewError::ErrorCreatingDirectory(dir) => {
                 write!(f, "Error creating directory: {dir}")
             }

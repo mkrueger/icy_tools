@@ -183,6 +183,8 @@ tool-select_name=Eina de selecció
 tool-select_tooltip=Seleccions múltiples i no rectangulars
 tool-tag_name=Eina d'etiquetes
 tool-tag_tooltip=Les etiquetes s'utilitzen per expandir cadenes en la sortida
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Nou
 

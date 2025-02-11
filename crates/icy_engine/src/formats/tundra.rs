@@ -34,7 +34,7 @@ impl OutputFormat for TundraDraw {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = vec![TUNDRA_VER]; // version
         result.extend(TUNDRA_HEADER);
         let mut attr = TextAttribute::from_u8(0, buf.ice_mode);
@@ -279,10 +279,10 @@ mod tests {
         buffer.ice_mode = crate::IceMode::Ice;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
-        test_tundra(&buffer);
+        test_tundra(&mut buffer);
     }
 
-    fn test_tundra(buffer: &Buffer) -> Buffer {
+    fn test_tundra(buffer: &mut Buffer) -> Buffer {
         let xb = super::TundraDraw::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

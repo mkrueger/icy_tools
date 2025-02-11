@@ -19,7 +19,7 @@ impl OutputFormat for Bin {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
 
         for y in 0..buf.get_height() {

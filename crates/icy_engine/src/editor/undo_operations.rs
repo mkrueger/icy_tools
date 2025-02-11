@@ -1800,3 +1800,29 @@ impl UndoOperation for RemoveTag {
         Ok(())
     }
 }
+
+pub struct ShowTags {
+    show: bool,
+}
+
+impl ShowTags {
+    pub fn new(show: bool) -> Self {
+        Self { show }
+    }
+}
+
+impl UndoOperation for ShowTags {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-show-tags")
+    }
+
+    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        edit_state.buffer.show_tags = !self.show;
+        Ok(())
+    }
+
+    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+        edit_state.buffer.show_tags = self.show;
+        Ok(())
+    }
+}

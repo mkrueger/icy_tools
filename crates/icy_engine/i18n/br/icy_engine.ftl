@@ -48,6 +48,7 @@ undo-set_use_letter_spacing=Definir uso de espaçamento de letras
 undo-set_use_aspect_ratio=Definir uso de proporção
 undo-edit-tag=Editar tag
 undo-remove-tag=Remover tag
+undo-show-tags=Mostrar tags
 
 layer-duplicate-name={ $name } cópia
 layer-new-name=Camada

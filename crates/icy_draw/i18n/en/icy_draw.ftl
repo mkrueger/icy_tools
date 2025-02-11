@@ -183,6 +183,8 @@ tool-select_name=Select Tool
 tool-select_tooltip=Mutliple and non rectangular selections
 tool-tag_name=Tag Tool
 tool-tag_tooltip=Tags are used to expand strings in output
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=New
 
@@ -508,6 +510,13 @@ edit-tag-length-label=Length:
 edit-tag-alignment-left=Left
 edit-tag-alignment-right=Right
 edit-tag-alignment-center=Center
+edit-tag-placement-label=Placement:
+edit-tag-placement-in_line=In Line
+edit-tag-placement-after=With GotoXY
+edit-tag-role-label=Role:
+edit-tag-role-displaycode=Display code
+edit-tag-role-hyperlink=Hyperlink
+
 add_tag_tooltip=Add Tag
 delete_tag_tooltip=Delete Tag
 

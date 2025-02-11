@@ -48,6 +48,8 @@ undo-set_use_letter_spacing=9 Pixel Modus geändert
 undo-set_use_aspect_ratio=Seitenverhältnis geändert
 undo-edit-tag=Tag bearbeitet
 undo-remove-tag=Tag gelöscht
+undo-show-tags=Tags anzeigen
+
 
 layer-duplicate-name={ $name }-Kopie
 layer-new-name=Ebene

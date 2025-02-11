@@ -48,6 +48,7 @@ undo-set_use_letter_spacing=Betűköz használatának beállítása
 undo-set_use_aspect_ratio=Képarány használatának beállítása
 undo-edit-tag=Címke szerkesztése
 undo-remove-tag=Címke eltávolítása
+undo-show-tags=Címkék megjelenítése
 
 layer-duplicate-name={ $name } másolat
 layer-new-name=Réteg

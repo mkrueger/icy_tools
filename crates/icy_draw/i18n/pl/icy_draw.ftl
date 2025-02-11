@@ -183,6 +183,8 @@ tool-select_name=Narzędzie zaznaczania
 tool-select_tooltip=Wielokrotne i niestandardowe zaznaczenia
 tool-tag_name=Narzędzie tagowania
 tool-tag_tooltip=Tagi są używane do rozszerzania ciągów w wyjściu
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Nowy
 

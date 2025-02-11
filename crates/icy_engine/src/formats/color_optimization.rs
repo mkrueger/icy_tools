@@ -32,6 +32,8 @@ impl ColorOptimizer {
     /// Panics if .
     pub fn optimize(&self, buffer: &Buffer) -> Buffer {
         let mut b = buffer.flat_clone(false);
+        let tags_enabled = b.show_tags;
+        b.show_tags = false;
         for layer in &mut b.layers {
             let mut cur_attr = TextAttribute::default();
             for y in 0..layer.get_height() {
@@ -57,6 +59,7 @@ impl ColorOptimizer {
                 }
             }
         }
+        b.show_tags = tags_enabled;
         b
     }
 }

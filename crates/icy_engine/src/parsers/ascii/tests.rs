@@ -4,8 +4,8 @@ use crate::{
 };
 
 fn test_ascii(data: &[u8]) {
-    let (buf, _) = create_buffer(&mut Parser::default(), data);
-    let converted = crate::Ascii::default().to_bytes(&buf, &SaveOptions::new()).unwrap();
+    let (mut buf, _) = create_buffer(&mut Parser::default(), data);
+    let converted = crate::Ascii::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
 
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();

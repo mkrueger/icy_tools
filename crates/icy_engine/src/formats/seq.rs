@@ -22,7 +22,7 @@ impl OutputFormat for Seq {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Petscii {
             return Err(anyhow::anyhow!("Buffer is not a Petscii buffer!"));
         }

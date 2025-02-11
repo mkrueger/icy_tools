@@ -710,6 +710,13 @@ impl Animator {
         None
     }
 
+    pub fn get_cur_frame_buffer_mut(&mut self) -> Option<(&mut Buffer, &mut MonitorSettings, &mut u32)> {
+        if let Some((scene, settings, next_frame)) = self.frames.get_mut(self.cur_frame) {
+            return Some((scene, settings, next_frame));
+        }
+        None
+    }
+
     pub fn next_frame(&mut self) -> bool {
         self.cur_frame += 1;
         if self.cur_frame >= self.frames.len() {

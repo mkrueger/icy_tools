@@ -183,6 +183,8 @@ tool-select_name=Herramienta de selección
 tool-select_tooltip=Selecciones múltiples y no rectangulares
 tool-tag_name=Herramienta de etiquetas
 tool-tag_tooltip=Las etiquetas se usan para expandir cadenas en la salida
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Nuevo
 

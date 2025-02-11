@@ -2,7 +2,7 @@ use std::path::Path;
 
 use codepages::tables::CP437_TO_UNICODE;
 
-use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TextAttribute, TextPane};
+use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane};
 
 use super::{LoadData, SaveOptions};
 
@@ -24,16 +24,15 @@ impl OutputFormat for PCBoard {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.palette.len() != 16 {
             return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
         }
-        let mut result = Vec::new();
+        let mut result: Vec<u8> = Vec::new();
         let mut last_attr = TextAttribute::default();
         let mut pos = Position::default();
         let height = buf.get_line_count();
         let mut first_char = true;
-
         if options.modern_terminal_output {
             // write UTF-8 BOM as unicode indicator.
             result.extend([0xEF, 0xBB, 0xBF]);
@@ -49,9 +48,16 @@ impl OutputFormat for PCBoard {
             let line_length = buf.get_line_length(pos.y);
 
             while pos.x < line_length {
-                if let Some(tag) = buf.get_tag_at(pos) {
-                    result.extend(tag.replacement_value.as_bytes());
-                    pos.x += tag.len() as i32;
+                let mut found_tag = false;
+                for tag in &buf.tags {
+                    if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                        result.extend(tag.replacement_value.as_bytes());
+                        pos.x += (tag.len() as i32).max(1);
+                        found_tag = true;
+                        break;
+                    }
+                }
+                if found_tag {
                     continue;
                 }
 
@@ -89,6 +95,14 @@ impl OutputFormat for PCBoard {
             pos.x = 0;
             pos.y += 1;
         }
+
+        for tag in &buf.tags {
+            if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                result.extend(format!("\x1B[{};{}H", tag.position.y + 1, tag.position.x + 1).as_bytes());
+                result.extend(tag.replacement_value.as_bytes());
+            }
+        }
+
         if options.save_sauce {
             buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::PCBoard, &mut result)?;
         }

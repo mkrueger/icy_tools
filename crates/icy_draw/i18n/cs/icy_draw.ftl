@@ -183,6 +183,8 @@ tool-select_name=Nástroj výběru
 tool-select_tooltip=Vícenásobné a neobdélníkové výběry
 tool-tag_name=Nástroj pro značky
 tool-tag_tooltip=Značky se používají k rozšíření řetězců ve výstupu
+tool-tag_show=Show Tags
+tool-tag_edit_button={ menu-edit }
 
 toolbar-new=Nový
 
