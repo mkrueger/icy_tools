@@ -109,14 +109,6 @@ impl Tool for PipetteTool {
         response.on_hover_cursor(egui::CursorIcon::Crosshair)
     }
 
-    fn get_toolbar_location_text(&self, _editor: &AnsiEditor) -> String {
-        if let Some(pos) = self.cur_pos {
-            fl!(crate::LANGUAGE_LOADER, "toolbar-position", line = (pos.y + 1), column = (pos.x + 1))
-        } else {
-            String::new()
-        }
-    }
-
     fn handle_no_hover(&mut self, editor: &mut AnsiEditor) {
         unsafe {
             CUR_CHAR = None;

@@ -22,7 +22,6 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Response};
 use egui::mutex::Mutex;
-use i18n_embed_fl::fl;
 use icy_engine::Position;
 use icy_engine_gui::TerminalCalc;
 
@@ -150,10 +149,6 @@ pub trait Tool {
         None
     }
 
-    fn get_toolbar_location_text(&self, editor: &AnsiEditor) -> String {
-        toolbar_pos_sel_text(editor, true)
-    }
-
     fn draw_shape(&mut self, editor: &mut AnsiEditor, p2: Position, flip_colors: bool) {
         editor.clear_overlay_layer();
         let attr = editor.get_caret_attribute();
@@ -171,18 +166,6 @@ pub trait Tool {
     }
 
     fn render_shape(&mut self, _editor: &mut AnsiEditor, _p2: Position) {}
-}
-
-fn toolbar_pos_sel_text(editor: &AnsiEditor, show_selection: bool) -> String {
-    let pos = editor.get_caret_position();
-    let sel = if show_selection { editor.buffer_view.lock().get_selection() } else { None };
-
-    if let Some(sel) = sel {
-        let r = sel.as_rectangle();
-        fl!(crate::LANGUAGE_LOADER, "toolbar-size", colums = r.size.width, rows = r.size.height)
-    } else {
-        fl!(crate::LANGUAGE_LOADER, "toolbar-position", line = (pos.y + 1), column = (pos.x + 1))
-    }
 }
 
 pub mod tool {

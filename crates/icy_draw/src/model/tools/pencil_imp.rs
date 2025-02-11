@@ -154,9 +154,4 @@ impl Tool for PencilTool {
         self.undo_op = None;
         None
     }
-
-    fn get_toolbar_location_text(&self, _editor: &AnsiEditor) -> String {
-        let pos = self.cur_pos;
-        fl!(crate::LANGUAGE_LOADER, "toolbar-position", line = (pos.y + 1), column = (pos.x + 1))
-    }
 }

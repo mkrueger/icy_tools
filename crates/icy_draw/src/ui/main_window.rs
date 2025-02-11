@@ -16,11 +16,11 @@ use eframe::{
     egui::{self, Key, Response, SidePanel, Ui},
     epaint::FontId,
 };
-use egui::{mutex::Mutex, Modifiers, Vec2};
+use egui::{mutex::Mutex, Layout, Modifiers, Pos2, Rect, TextStyle, Vec2, WidgetText};
 use egui_tiles::{Container, TileId};
 use glow::Context;
 use i18n_embed_fl::fl;
-use icy_engine::{BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TheDrawFont};
+use icy_engine::{BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TextPane, TheDrawFont};
 
 use super::KeyBindings;
 
@@ -39,8 +39,6 @@ pub struct MainWindow<'a> {
     id: usize,
 
     pub current_id: Option<TileId>,
-    /// used for title updates
-    pub last_scale: Vec2,
 
     pub allowed_to_close: bool,
     pub request_close: bool,
@@ -199,7 +197,6 @@ impl<'a> MainWindow<'a> {
             key_bindings,
             plugins,
             mru_files,
-            last_scale: Vec2::new(0.0, 0.0),
         }
     }
 
@@ -522,19 +519,17 @@ impl<'a> MainWindow<'a> {
     pub fn update_title(&mut self, ctx: &egui::Context, force: bool) {
         if !force {
             let id = if let Some((id, _)) = self.get_active_pane() { Some(id) } else { None };
-            if self.last_scale == unsafe { SETTINGS.get_scale() } {
-                if let Some(id) = id {
-                    if self.current_id == Some(id) {
-                        return;
-                    }
-                    self.current_id = Some(id);
-                } else {
-                    if self.current_id.is_some() {
-                        self.current_id = None;
-                        self.set_title(ctx, crate::DEFAULT_TITLE.clone());
-                    }
+            if let Some(id) = id {
+                if self.current_id == Some(id) {
                     return;
                 }
+                self.current_id = Some(id);
+            } else {
+                if self.current_id.is_some() {
+                    self.current_id = None;
+                    self.set_title(ctx, crate::DEFAULT_TITLE.clone());
+                }
+                return;
             }
         }
 
@@ -543,21 +538,18 @@ impl<'a> MainWindow<'a> {
                 let title = if let Some(parent) = path.parent() {
                     let directory = crate::util::shorten_directory(parent);
                     format!(
-                        "{}{} - iCY DRAW {} ({}%)",
+                        "{}{} - iCY DRAW {}",
                         directory,
                         path.file_name().unwrap_or_default().to_str().unwrap_or_default(),
-                        *crate::VERSION,
-                        (100. * unsafe { SETTINGS.get_scale().x }) as i32
+                        *crate::VERSION
                     )
                 } else {
                     format!(
-                        "{} - iCY DRAW {} ({}%)",
+                        "{} - iCY DRAW {}",
                         path.file_name().unwrap_or_default().to_str().unwrap_or_default(),
-                        *crate::VERSION,
-                        (100. * unsafe { SETTINGS.get_scale().x }) as i32
+                        *crate::VERSION
                     )
                 };
-                self.last_scale = unsafe { SETTINGS.get_scale() };
                 self.set_title(ctx, title);
             }
         }
@@ -717,6 +709,127 @@ impl<'a> eframe::App for MainWindow<'a> {
 
         let msg = self.show_top_bar(ctx, frame);
         self.handle_message(msg);
+
+        egui::TopBottomPanel::bottom("status_bar_panel")
+            .frame(egui::Frame {
+                fill: ctx.style().visuals.panel_fill,
+                ..Default::default()
+            })
+            .exact_height(24.0)
+            .show(ctx, |ui| {
+                ui.allocate_ui_with_layout(ui.available_rect_before_wrap().size(), Layout::left_to_right(egui::Align::Min), |ui| {
+                    let draw_rect = ui.available_rect_before_wrap();
+                    let font_id = TextStyle::Body.resolve(ui.style());
+
+                    let text: WidgetText = if let Some(doc) = self.get_active_document() {
+                        if let Some(editor) = doc.lock().get_ansi_editor() {
+                            let ice_mode = editor.buffer_view.lock().get_buffer().ice_mode;
+
+                            let ice_mode_text = match ice_mode {
+                                icy_engine::IceMode::Unlimited => "~",
+                                icy_engine::IceMode::Blink => "B",
+                                icy_engine::IceMode::Ice => "I",
+                            };
+
+                            let pal_mode = editor.buffer_view.lock().get_buffer().palette_mode;
+                            let pal_mode_text = match pal_mode {
+                                icy_engine::PaletteMode::RGB => "RGB",
+                                icy_engine::PaletteMode::Fixed16 => "DOS",
+                                icy_engine::PaletteMode::Free8 => "8",
+                                icy_engine::PaletteMode::Free16 => "16",
+                            };
+                            format!("[{:03}%] [{ice_mode_text}-{pal_mode_text}]", (100. * unsafe { SETTINGS.get_scale().x }) as i32)
+                        } else {
+                            format!("[{:03}%]", (100. * unsafe { SETTINGS.get_scale().x }) as i32)
+                        }
+                    } else {
+                        format!("[{:03}%]", (100. * unsafe { SETTINGS.get_scale().x }) as i32)
+                    }
+                    .into();
+                    let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id.clone());
+                    let rect = Rect::from_min_size(
+                        Pos2::new(draw_rect.left() + 8.0, draw_rect.top() + (draw_rect.height() - galley.size().y) / 2.0),
+                        galley.size(),
+                    );
+                    ui.painter().galley_with_override_text_color(
+                        egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect).min,
+                        galley,
+                        ui.style().visuals.text_color(),
+                    );
+                    let cur_x = rect.right();
+
+                    if let Some(doc) = self.get_active_document() {
+                        if let Some(editor) = doc.lock().get_ansi_editor() {
+                            let font = editor.buffer_view.lock().get_edit_state().get_caret().get_font_page();
+                            let use_letter_spacing = editor.buffer_view.lock().get_buffer().use_letter_spacing();
+                            let use_ar = editor.buffer_view.lock().get_buffer().use_aspect_ratio();
+                            if let Some(font) = editor.buffer_view.lock().get_buffer().get_font(font) {
+                                let text: WidgetText = format!(
+                                    "{} - {}x{} {} {}",
+                                    font.name,
+                                    font.size.width,
+                                    font.size.height,
+                                    if use_letter_spacing { "(9px)" } else { "" },
+                                    if use_ar { "(ar)" } else { "" },
+                                )
+                                .into();
+                                let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id.clone());
+                                let rect = Rect::from_min_size(
+                                    Pos2::new(cur_x + 8.0, draw_rect.top() + (draw_rect.height() - galley.size().y) / 2.0),
+                                    galley.size(),
+                                );
+                                ui.painter().galley_with_override_text_color(
+                                    egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect).min,
+                                    galley,
+                                    ui.style().visuals.text_color(),
+                                );
+                            }
+
+                            // center text
+                            let size = editor.buffer_view.lock().get_buffer().get_size();
+                            let text: WidgetText = if let Some(sel) = editor.buffer_view.lock().get_selection() {
+                                let r = sel.as_rectangle();
+                                fl!(crate::LANGUAGE_LOADER, "toolbar-size", colums = r.get_width(), rows = r.get_height())
+                            } else {
+                                fl!(crate::LANGUAGE_LOADER, "toolbar-size", colums = size.width, rows = size.height)
+                            }
+                            .into();
+
+                            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id.clone());
+                            let rect = Rect::from_min_size(draw_rect.center() - galley.size() / 2.0, galley.size());
+                            ui.painter().galley_with_override_text_color(
+                                egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect).min,
+                                galley,
+                                ui.style().visuals.text_color(),
+                            );
+
+                            let pos: icy_engine::Position = editor.buffer_view.lock().get_caret().get_position();
+                            let insert_mode = editor.buffer_view.lock().get_caret().insert_mode;
+                            let text: WidgetText = format!(
+                                "{} {}",
+                                if insert_mode { "(Ins) " } else { "" },
+                                fl!(crate::LANGUAGE_LOADER, "toolbar-position", line = (pos.y + 1), column = (pos.x + 1))
+                            )
+                            .into();
+
+                            let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id.clone());
+                            let rect = Rect::from_min_size(
+                                Pos2::new(
+                                    draw_rect.right() - 8.0 - galley.size().x,
+                                    draw_rect.top() + (draw_rect.height() - galley.size().y) / 2.0,
+                                ),
+                                galley.size(),
+                            );
+                            ui.painter().galley_with_override_text_color(
+                                egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect).min,
+                                galley,
+                                ui.style().visuals.text_color(),
+                            );
+                        }
+                    }
+                });
+            });
+
         SidePanel::left("left_panel")
             .exact_width(264.0)
             .resizable(false)
@@ -812,7 +925,6 @@ impl<'a> eframe::App for MainWindow<'a> {
 
         egui::SidePanel::right("right_panel")
             .frame(panel_frame)
-            .exact_width(324.0)
             .resizable(false)
             .show_animated(ctx, self.right_panel, |ui| {
                 self.tool_behavior.active_document = self.get_active_document();
@@ -846,6 +958,7 @@ impl<'a> eframe::App for MainWindow<'a> {
                     }
                 }
             });
+
         self.dialog_open = false;
         let mut dialog_message = None;
         if self.modal_dialog.is_some() {

@@ -116,7 +116,6 @@ pub struct DocumentBehavior {
     dark_mode: bool,
 
     pos_img: Option<TextureHandle>,
-    cur_line_col_txt: String,
 
     pub request_close: Option<TileId>,
     pub request_close_others: Option<TileId>,
@@ -139,7 +138,6 @@ impl DocumentBehavior {
             request_close_all: None,
             message: None,
             pos_img: None,
-            cur_line_col_txt: String::new(),
             dark_mode: true,
         }
     }
@@ -319,44 +317,6 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
                         } else if res.clicked_by(egui::PointerButton::Secondary) {
                             Settings::set_character_set((char_set + DEFAULT_CHAR_SET_TABLE.len() - 1) % DEFAULT_CHAR_SET_TABLE.len())
                         }
-                    }
-
-                    let txt = self.tools.lock()[self.selected_tool].get_toolbar_location_text(editor);
-                    if txt != self.cur_line_col_txt || self.dark_mode != ui.style().visuals.dark_mode {
-                        self.cur_line_col_txt = txt;
-                        self.dark_mode = ui.style().visuals.dark_mode;
-                        let mut txt2 = String::new();
-                        let mut char_count = 0;
-                        for c in self.cur_line_col_txt.chars() {
-                            if (c as u32) < 255 {
-                                txt2.push(c);
-                                char_count += 1;
-                            }
-                        }
-
-                        let mut buffer = Buffer::new((char_count, 1));
-                        buffer.is_terminal_buffer = false;
-                        let mut attr: TextAttribute = TextAttribute::default();
-                        let c = if ui.style().visuals.dark_mode {
-                            ui.style().visuals.extreme_bg_color
-                        } else {
-                            (Rgba::from(ui.style().visuals.panel_fill) * Rgba::from_gray(0.8)).into()
-                        };
-
-                        let bg_color = buffer.palette.insert_color_rgb(c.r(), c.g(), c.b());
-                        attr.set_background(bg_color);
-
-                        let c = ui.style().visuals.text_color();
-                        let fg_color = buffer.palette.insert_color_rgb(c.r(), c.g(), c.b());
-                        attr.set_foreground(fg_color);
-
-                        for (i, mut c) in txt2.chars().enumerate() {
-                            if c as u32 > 255 {
-                                c = ' ';
-                            }
-                            buffer.layers[0].set_char((i, 0), AttributedChar::new(c, attr));
-                        }
-                        self.pos_img = Some(create_image(ui.ctx(), &buffer));
                     }
 
                     if let Some(img) = &self.pos_img {

@@ -1,4 +1,4 @@
-use super::{move_layer_imp::get_layer_offset_text, Event, MKey, Position, Tool};
+use super::{Event, MKey, Position, Tool};
 use crate::{to_message, AnsiEditor, Message};
 use eframe::egui::{self, Key};
 use i18n_embed_fl::fl;
@@ -131,10 +131,6 @@ impl Tool for PasteTool {
             layer.set_preview_offset(Some(self.drag_offset));
         }
         response.on_hover_cursor(egui::CursorIcon::Grabbing)
-    }
-
-    fn get_toolbar_location_text(&self, editor: &AnsiEditor) -> String {
-        get_layer_offset_text(editor)
     }
 
     fn handle_hover(&mut self, _ui: &egui::Ui, response: egui::Response, _editor: &mut AnsiEditor, _cur: Position, _cur_abs: Position) -> egui::Response {

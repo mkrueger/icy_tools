@@ -215,14 +215,6 @@ impl Tool for TagTool {
         response.on_hover_cursor(egui::CursorIcon::Grabbing)
     }
 
-    fn get_toolbar_location_text(&self, _editor: &AnsiEditor) -> String {
-        if let Some(pos) = self.cur {
-            fl!(crate::LANGUAGE_LOADER, "toolbar-position", line = (pos.y + 1), column = (pos.x + 1))
-        } else {
-            String::new()
-        }
-    }
-
     fn handle_click(&mut self, _editor: &mut AnsiEditor, button: i32, _pos: Position, _pos_abs: Position, _response: &egui::Response) -> Option<Message> {
         if button == 1 {}
         None
