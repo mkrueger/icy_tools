@@ -1,5 +1,4 @@
-use eframe::epaint::{FontId, Rounding, Vec2};
-use egui::{Button, FontFamily, Label, RichText, Sense, Widget, WidgetText};
+use egui::{Button, Label, RichText, Sense, Widget};
 use egui_extras::{Column, TableBuilder};
 use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, Tag, TextAttribute};
@@ -130,7 +129,7 @@ impl Tool for TagTool {
                     let tag = &tags[i];
                     let is_selected = i == cur_tag;
                     row.set_selected(is_selected);
-                    row.col(|ui| {
+                    row.col(|ui: &mut egui::Ui| {
                         Label::new(tag.replacement_value.to_string()).selectable(false).ui(ui);
                     });
                     row.col(|ui| {

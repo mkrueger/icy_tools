@@ -1,7 +1,7 @@
 use eframe::egui::{self, RichText};
 use egui::{load::SizedTexture, Color32, FontId, Image, Rect, Rounding, Sense, Stroke, TextureHandle, Vec2, Widget};
 use i18n_embed_fl::fl;
-use icy_engine::{AttributedChar, Position, TextAttribute, TextPane, TheDrawFont};
+use icy_engine::{paint::HalfBlock, AttributedChar, Position, TextAttribute, TextPane, TheDrawFont};
 use icy_engine_gui::BufferView;
 
 use crate::{create_font_image, create_hover_image, AnsiEditor, Message};
@@ -304,9 +304,9 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
     }
     match mode {
         BrushMode::HalfBlock => {
-            let half_block = icy_engine::paint::get_halfblock(buffer_view.get_buffer(), ch, pos, attribute.get_foreground(), true);
+            let half_block: HalfBlock = HalfBlock::from(buffer_view.get_buffer(), pos);
             if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-                layer.set_char(text_pos, half_block);
+                layer.set_char(text_pos, half_block.get_half_block_char(attribute.get_foreground()));
             }
         }
         BrushMode::Block => {

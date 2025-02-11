@@ -954,7 +954,7 @@ impl Buffer {
     }
 
     pub fn make_solid_color(&self, mut transparent_char: AttributedChar, underlying_char: AttributedChar) -> AttributedChar {
-        let half_block = HalfBlock::from(self, underlying_char, Position::default());
+        let half_block = HalfBlock::from_char(underlying_char, Position::default());
         match transparent_char.ch {
             crate::paint::HALF_BLOCK_TOP => {
                 if transparent_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {

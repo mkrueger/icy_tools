@@ -1,4 +1,4 @@
-use crate::{AttributedChar, Buffer, Position, TextAttribute, TextPane};
+use crate::{AttributedChar, Position, TextAttribute, TextPane};
 
 pub(crate) const FULL_BLOCK: char = 219 as char;
 pub(crate) const HALF_BLOCK_TOP: char = 223 as char;
@@ -8,92 +8,6 @@ pub(crate) const EMPTY_BLOCK2: char = 255 as char;
 pub(crate) const LEFT_BLOCK: char = 221 as char;
 pub(crate) const RIGHT_BLOCK: char = 222 as char;
 
-pub(crate) struct HalfBlock {
-    pub upper_block_color: u32,
-    pub lower_block_color: u32,
-    pub is_top: bool,
-}
-
-impl HalfBlock {
-    pub fn from(buf: &Buffer, block: AttributedChar, pos: Position) -> Self {
-        let is_top = pos.y % 2 == 0;
-
-        let Some(font) = buf.get_font(block.get_font_page()) else {
-            return Self {
-                upper_block_color: block.attribute.get_background(),
-                lower_block_color: block.attribute.get_background(),
-                is_top,
-            };
-        };
-
-        let Some(glyph) = font.get_glyph(block.ch) else {
-            return Self {
-                upper_block_color: block.attribute.get_background(),
-                lower_block_color: block.attribute.get_background(),
-                is_top,
-            };
-        };
-
-        let mut upper = 0;
-        let mut lower = 0;
-        for i in 0..(glyph.data.len() / 2) {
-            upper += glyph.data[i].count_ones() as i32;
-            lower += glyph.data[glyph.data.len() / 2 + i].count_ones() as i32;
-        }
-        let upper_block_color = if upper > font.size.width * font.size.height / 4 {
-            block.attribute.get_foreground()
-        } else {
-            block.attribute.get_background()
-        };
-        let lower_block_color = if lower > font.size.width * font.size.height / 4 {
-            block.attribute.get_foreground()
-        } else {
-            block.attribute.get_background()
-        };
-
-        Self {
-            upper_block_color,
-            lower_block_color,
-            is_top,
-        }
-    }
-}
-
-pub fn get_halfblock(buf: &Buffer, cur_char: AttributedChar, pos: Position, color: u32, transparent_color: bool) -> AttributedChar {
-    let half_block = HalfBlock::from(buf, cur_char, pos);
-    let transparent_color = cur_char.is_transparent() && transparent_color;
-
-    let ch = if (half_block.is_top && half_block.lower_block_color == color) || (!half_block.is_top && half_block.upper_block_color == color) {
-        AttributedChar::new(FULL_BLOCK, TextAttribute::new(color, 0))
-    } else if half_block.is_top {
-        AttributedChar::new(
-            HALF_BLOCK_TOP,
-            TextAttribute::new(
-                color,
-                if transparent_color {
-                    TextAttribute::TRANSPARENT_COLOR
-                } else {
-                    half_block.lower_block_color
-                },
-            ),
-        )
-    } else {
-        AttributedChar::new(
-            HALF_BLOCK_BOTTOM,
-            TextAttribute::new(
-                color,
-                if transparent_color {
-                    TextAttribute::TRANSPARENT_COLOR
-                } else {
-                    half_block.upper_block_color
-                },
-            ),
-        )
-    };
-
-    optimize_block(ch)
-}
-
 fn flip_colors(attribute: TextAttribute) -> TextAttribute {
     let mut result = attribute;
     result.set_foreground(attribute.get_background());
@@ -101,48 +15,20 @@ fn flip_colors(attribute: TextAttribute) -> TextAttribute {
     result
 }
 
-fn optimize_block(mut block: AttributedChar) -> AttributedChar {
-    if block.attribute.get_foreground() == 0 {
-        if block.attribute.get_background() == 0 || block.ch == FULL_BLOCK {
-            block.ch = ' ';
-            return block;
-        }
-        match block.ch {
-            HALF_BLOCK_BOTTOM => {
-                return AttributedChar::new(HALF_BLOCK_TOP, flip_colors(block.attribute));
-            }
-            HALF_BLOCK_TOP => {
-                return AttributedChar::new(HALF_BLOCK_BOTTOM, flip_colors(block.attribute));
-            }
-            _ => {}
-        }
-    } else if block.attribute.get_foreground() < 8 && block.attribute.get_background() >= 8 {
-        match block.ch {
-            HALF_BLOCK_BOTTOM => {
-                return AttributedChar::new(HALF_BLOCK_TOP, flip_colors(block.attribute));
-            }
-            HALF_BLOCK_TOP => {
-                return AttributedChar::new(HALF_BLOCK_BOTTOM, flip_colors(block.attribute));
-            }
-            _ => {}
-        }
-    }
-    block
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HalfBlockType {
     None,
     Upper,
     Lower,
+    Full,
+    Empty,
+
     Left,
     Right,
-    Empty,
-    Full,
 }
 
 #[derive(Debug)]
-pub struct HalfBlockInfo {
+pub struct HalfBlock {
     pub ch: AttributedChar,
     pub upper_block_color: u32,
     pub lower_block_color: u32,
@@ -152,10 +38,14 @@ pub struct HalfBlockInfo {
     pub block_type: HalfBlockType,
 }
 
-impl HalfBlockInfo {
+impl HalfBlock {
     pub fn from<T: TextPane>(buf: &T, pos: Position) -> Self {
-        let is_top = pos.y % 2 == 0;
         let ch = buf.get_char(Position::new(pos.x, pos.y / 2));
+        Self::from_char(ch, pos)
+    }
+
+    pub fn from_char(ch: AttributedChar, pos: Position) -> Self {
+        let is_top = pos.y % 2 == 0;
         let mut upper_block_color = 0;
         let mut lower_block_color = 0;
         let mut left_block_color = 0;
@@ -214,7 +104,10 @@ impl HalfBlockInfo {
     }
 
     pub fn is_blocky(&self) -> bool {
-        self.block_type != HalfBlockType::None
+        match self.block_type {
+            HalfBlockType::Upper | HalfBlockType::Lower | HalfBlockType::Full | HalfBlockType::Empty => true,
+            _ => false,
+        }
     }
 
     pub fn is_vertically_blocky(&self) -> bool {
@@ -223,7 +116,7 @@ impl HalfBlockInfo {
 
     pub fn get_half_block_char(&self, col: u32) -> AttributedChar {
         let block = if self.is_blocky() {
-            if self.is_top && self.lower_block_color == col || !self.is_blocky() && self.upper_block_color == col {
+            if self.is_top && self.lower_block_color == col || !self.is_top && self.upper_block_color == col {
                 AttributedChar::new(FULL_BLOCK, TextAttribute::new(col, 0))
             } else if self.is_top {
                 AttributedChar::new(HALF_BLOCK_TOP, TextAttribute::new(col, self.lower_block_color))
@@ -237,6 +130,49 @@ impl HalfBlockInfo {
                 AttributedChar::new(HALF_BLOCK_BOTTOM, TextAttribute::new(col, self.ch.attribute.background_color))
             }
         };
-        optimize_block(block)
+        self.optimize_block(block)
+    }
+
+    fn optimize_block(&self, mut block: AttributedChar) -> AttributedChar {
+        if block.attribute.get_foreground() == 0 {
+            if block.attribute.get_background() == 0 || block.ch == FULL_BLOCK {
+                block.ch = ' ';
+                block.attribute = TextAttribute::default();
+                return block;
+            }
+
+            match block.ch {
+                HALF_BLOCK_BOTTOM => {
+                    return AttributedChar::new(HALF_BLOCK_TOP, flip_colors(block.attribute));
+                }
+                HALF_BLOCK_TOP => {
+                    return AttributedChar::new(HALF_BLOCK_BOTTOM, flip_colors(block.attribute));
+                }
+                _ => {}
+            }
+        } else if block.attribute.get_foreground() < 8 && block.attribute.get_background() >= 8 {
+            if self.is_blocky() {
+                match block.ch {
+                    HALF_BLOCK_BOTTOM => {
+                        return AttributedChar::new(HALF_BLOCK_TOP, flip_colors(block.attribute));
+                    }
+                    HALF_BLOCK_TOP => {
+                        return AttributedChar::new(HALF_BLOCK_BOTTOM, flip_colors(block.attribute));
+                    }
+                    _ => {}
+                }
+            } else if self.is_vertically_blocky() {
+                match block.ch {
+                    LEFT_BLOCK => {
+                        return AttributedChar::new(RIGHT_BLOCK, flip_colors(block.attribute));
+                    }
+                    RIGHT_BLOCK => {
+                        return AttributedChar::new(LEFT_BLOCK, flip_colors(block.attribute));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        block
     }
 }

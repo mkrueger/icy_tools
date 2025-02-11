@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use eframe::egui;
 use i18n_embed_fl::fl;
-use icy_engine::{paint::HalfBlockInfo, AttributedChar, Size, TextAttribute, TextPane};
+use icy_engine::{paint::HalfBlock, AttributedChar, Size, TextAttribute, TextPane};
 
 use crate::{
     paint::{BrushMode, ColorMode},
@@ -175,7 +175,7 @@ impl Tool for FillTool {
             BrushMode::HalfBlock => {
                 let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-bucket-fill"));
                 let mut op = FillHalfBlockOperation::new(self, editor, attr.get_foreground());
-                op.fill(editor, pos);
+                op.fill(editor, editor.half_block_click_pos);
             }
             BrushMode::Char(_) => {
                 let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-bucket-fill"));
@@ -224,12 +224,10 @@ impl FillHalfBlockOperation {
         }
     }
 
-    pub fn fill(&mut self, editor: &mut AnsiEditor, mut pos: Position) {
-        pos.y *= 2;
-
+    pub fn fill(&mut self, editor: &mut AnsiEditor, pos: Position) {
         let mut pos_stack = vec![(pos, pos)];
         let cur_layer = editor.buffer_view.lock().get_edit_state().get_current_layer().unwrap();
-        let block = HalfBlockInfo::from(&editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers[cur_layer], pos);
+        let block = HalfBlock::from(&editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers[cur_layer], pos);
         if !block.is_blocky() {
             return;
         }
@@ -246,7 +244,7 @@ impl FillHalfBlockOperation {
             if self.use_selection && !editor.buffer_view.lock().get_edit_state().get_is_selected(text_pos + self.offset) {
                 continue;
             }
-            let block = HalfBlockInfo::from(&editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers[cur_layer], to);
+            let block = HalfBlock::from(&editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers[cur_layer], to);
             if block.is_blocky() && (block.is_top && block.upper_block_color == target_color) || (!block.is_top && block.lower_block_color == target_color) {
                 let ch = block.get_half_block_char(self.color);
                 let _ = editor.buffer_view.lock().get_edit_state_mut().set_char(text_pos, ch);
