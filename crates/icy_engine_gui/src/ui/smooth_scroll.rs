@@ -318,9 +318,14 @@ impl SmoothScroll {
         if response.hovered() {
             let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
             for e in events {
-                if let egui::Event::MouseWheel { delta, modifiers, .. } = e {
+                if let egui::Event::MouseWheel { unit, delta, modifiers, .. } = e {
                     if !(modifiers.ctrl || modifiers.mac_cmd) {
-                        self.char_scroll_position.y -= delta.y * 42.0;
+                        let modifier = match unit {
+                            egui::MouseWheelUnit::Point => 1.0,
+                            egui::MouseWheelUnit::Line => calc.char_height,
+                            egui::MouseWheelUnit::Page => calc.char_height * calc.buffer_char_height,
+                        };
+                        self.char_scroll_position.y -= delta.y * modifier;
                         self.set_scroll_position = true;
                     }
                 }
@@ -374,8 +379,13 @@ impl SmoothScroll {
         if response.hovered() {
             let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
             for e in events {
-                if let egui::Event::MouseWheel { delta, .. } = e {
-                    self.char_scroll_position.x -= delta.x;
+                if let egui::Event::MouseWheel { unit, delta, .. } = e {
+                    let modifier = match unit {
+                        egui::MouseWheelUnit::Point => 1.0,
+                        egui::MouseWheelUnit::Line => calc.char_width,
+                        egui::MouseWheelUnit::Page => calc.char_width * calc.buffer_char_width,
+                    };
+                    self.char_scroll_position.x -= delta.x * modifier;
                     self.set_scroll_position = true;
                 }
             }
