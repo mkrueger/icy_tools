@@ -28,6 +28,9 @@ impl SixelRenderer {
             }
         }
     }
+    pub fn has_sixels(&self) -> bool {
+        !self.sixel_cache.is_empty()
+    }
 
     pub fn destroy(&self, gl: &glow::Context) {
         unsafe {
@@ -43,6 +46,9 @@ impl SixelRenderer {
         mut render_texture: NativeTexture,
         output_renderer: &OutputRenderer,
     ) -> glow::Texture {
+        if !self.has_sixels() {
+            return render_texture;
+        }
         let mut sixel_render_texture = create_sixel_render_texture(gl, render_buffer_size, glow::NEAREST as i32);
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(output_renderer.framebuffer));
         if gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE {

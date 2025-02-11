@@ -256,7 +256,7 @@ impl BufferView {
             let (render_texture, render_data_texture) = self.output_renderer.bind_framebuffers(gl, render_buffer_size, options.filter);
             self.terminal_renderer.render_terminal(gl, self, render_buffer_size, options, has_focus);
             // draw sixels
-            let render_texture = self
+            let render_texture: glow::NativeTexture = self
                 .sixel_renderer
                 .render_sixels(gl, self, render_buffer_size, render_texture, &self.output_renderer);
             gl.enable(glow::SCISSOR_TEST);
@@ -290,7 +290,7 @@ impl BufferView {
 
             gl.delete_texture(render_data_texture);
             self.terminal_renderer.render_terminal(gl, self, render_buffer_size, options, has_focus);
-            // draw sixels
+            // draw
             let render_texture = self
                 .sixel_renderer
                 .render_sixels(gl, self, render_buffer_size, render_texture, &self.output_renderer);
@@ -307,7 +307,6 @@ impl BufferView {
         let edit_state = &mut self.edit_state;
         self.sixel_renderer.update_sixels(gl, edit_state.get_buffer_mut(), &self.calc);
         self.terminal_renderer.update_textures(gl, edit_state, &self.calc, use_fg, use_bg);
-
         check_gl_error!(gl, "buffer_view.update_contents");
     }
 
