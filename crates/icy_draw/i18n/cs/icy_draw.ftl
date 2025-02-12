@@ -248,6 +248,7 @@ export-maximum_line_length=Maximální délka řádku
 export-use_repeat_sequences=Použít opakující se sekvence CSI Pn b
 export-save_full_line_length=Uložit koncové mezery
 export-format-label=Formát:
+export-path-label=Cesta:
 
 select-character-title=Vybrat znak
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Délka:
 edit-tag-alignment-left=Vlevo
 edit-tag-alignment-right=Vpravo
 edit-tag-alignment-center=Na střed
+edit-tag-placement-label=Umístění:
+edit-tag-placement-in_line=V řádku
+edit-tag-placement-after=S GotoXY
+edit-tag-role-label=Role:
+edit-tag-role-displaycode=Zobrazovací kód
+edit-tag-role-hyperlink=Hypertextový odkaz
+
 add_tag_tooltip=Přidat značku
 delete_tag_tooltip=Odstranit značku
+
+ask_unsaved_file_dialog-description=Chcete uložit změny v následujících {
+    $number ->
+        [1] souboru?
+        *[other] {$number} souborech?
+    }
+ask_unsaved_file_dialog-subdescription=Vaše změny budou ztraceny, pokud je neuložíte.
+ask_unsaved_file_dialog-save_all_button=Uložit vše
+ask_unsaved_file_dialog-dont_save_button=Neukládat

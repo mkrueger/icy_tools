@@ -248,6 +248,7 @@ export-maximum_line_length=Lungime maximă linie
 export-use_repeat_sequences=Folosește secvențe de repetare CSI Pn b
 export-save_full_line_length=Salvează spațiile albe finale
 export-format-label=Format:
+export-path-label=Cale:
 
 select-character-title=Selectează caracter
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Lungime:
 edit-tag-alignment-left=Stânga
 edit-tag-alignment-right=Dreapta
 edit-tag-alignment-center=Centru
+edit-tag-placement-label=Plasare:
+edit-tag-placement-in_line=În linie
+edit-tag-placement-after=Cu GotoXY
+edit-tag-role-label=Rol:
+edit-tag-role-displaycode=Cod afișare
+edit-tag-role-hyperlink=Hyperlink
+
 add_tag_tooltip=Adăugați Etichetă
 delete_tag_tooltip=Ștergeți Etichetă
+
+ask_unsaved_file_dialog-description=Doriți să salvați modificările la următoarele {
+    $number ->
+        [1] fișier?
+        *[other] {$number} fișiere?
+    }
+ask_unsaved_file_dialog-subdescription=Modificările dvs. vor fi pierdute dacă nu le salvați.
+ask_unsaved_file_dialog-save_all_button=Salvați tot
+ask_unsaved_file_dialog-dont_save_button=Nu salvați

@@ -248,6 +248,7 @@ export-maximum_line_length=Longueur maximale de la ligne
 export-use_repeat_sequences=Utiliser les séquences de répétition CSI Pn b
 export-save_full_line_length=Enregistrer les espaces blancs à la fin
 export-format-label=Format:
+export-path-label=Chemin:
 
 select-character-title=Sélectionner un caractère
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Longueur:
 edit-tag-alignment-left=Gauche
 edit-tag-alignment-right=Droite
 edit-tag-alignment-center=Centré
+edit-tag-placement-label=Placement:
+edit-tag-placement-in_line=En ligne
+edit-tag-placement-after=Avec GotoXY
+edit-tag-role-label=Rôle:
+edit-tag-role-displaycode=Code d'affichage
+edit-tag-role-hyperlink=Hyperlien
+
 add_tag_tooltip=Ajouter une étiquette
 delete_tag_tooltip=Supprimer une étiquette
+
+ask_unsaved_file_dialog-description=Voulez-vous enregistrer les modifications apportées au fichier suivant {
+    $number ->
+        [1] ?
+        *[other] {$number} fichiers?
+    }
+ask_unsaved_file_dialog-subdescription=Vos modifications seront perdues si vous ne les enregistrez pas.
+ask_unsaved_file_dialog-save_all_button=Tout enregistrer
+ask_unsaved_file_dialog-dont_save_button=Ne pas enregistrer

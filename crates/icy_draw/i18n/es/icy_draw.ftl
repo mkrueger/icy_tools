@@ -1,4 +1,4 @@
-font-editor-table = Char table 0-{ $length }:
+font-editor-table = Tabla de caracteres 0-{ $length }:
 
 unsaved-title=Sin título
 
@@ -248,6 +248,7 @@ export-maximum_line_length=Longitud máxima de línea
 export-use_repeat_sequences=Usar secuencias de repetición CSI Pn b
 export-save_full_line_length=Guardar espacios en blanco al final
 export-format-label=Formato:
+export-path-label=Ruta:
 
 select-character-title=Seleccionar carácter
 
@@ -509,5 +510,21 @@ edit-tag-length-label=Longitud:
 edit-tag-alignment-left=Izquierda
 edit-tag-alignment-right=Derecha
 edit-tag-alignment-center=Centrado
+edit-tag-placement-label=Ubicación:
+edit-tag-placement-in_line=En línea
+edit-tag-placement-after=Con GotoXY
+edit-tag-role-label=Rol:
+edit-tag-role-displaycode=Código de visualización
+edit-tag-role-hyperlink=Hipervínculo
+
 add_tag_tooltip=Agregar Etiqueta
 delete_tag_tooltip=Eliminar Etiqueta
+
+ask_unsaved_file_dialog-description=¿Quieres guardar los cambios en el siguiente {
+    $number ->
+        [1] archivo?
+        *[other] {$number} archivos?
+    }
+ask_unsaved_file_dialog-subdescription=Tus cambios se perderán si no los guardas.
+ask_unsaved_file_dialog-save_all_button=Guardar todo
+ask_unsaved_file_dialog-dont_save_button=No guardar
