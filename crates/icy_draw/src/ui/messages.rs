@@ -576,17 +576,22 @@ impl<'a> MainWindow<'a> {
                     buf.is_terminal_buffer = false;
                     let editor = AnsiEditor::new(&self.gl, buf);
 
-                    if let Some(mut layer) = editor.buffer_view.clone().lock().get_edit_state_mut().from_clipboard_data(&data) {
-                        layer.set_offset((0, 0));
-                        layer.role = icy_engine::Role::Normal;
-                        let lc = layer.get_line_count();
+                    {
+                        let mut lock = editor.buffer_view.lock();
+                        let state = lock.get_edit_state_mut();
+                        if let Some(mut layer) = state.from_clipboard_data(&data) {
+                            layer.set_offset((0, 0));
+                            layer.role = icy_engine::Role::Normal;
+                            layer.properties.has_alpha_channel = false;
+                            let lc = layer.get_line_count();
 
-                        editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers.clear();
-                        editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers.push(layer);
-                        editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().set_height(lc);
-
-                        crate::add_child(&mut self.document_tree, None, Box::new(editor));
+                            state.get_buffer_mut().layers.clear();
+                            state.get_buffer_mut().layers.push(layer);
+                            state.get_buffer_mut().set_height(lc);
+                        }
                     }
+
+                    crate::add_child(&mut self.document_tree, None, Box::new(editor));
                 }
             }
 
