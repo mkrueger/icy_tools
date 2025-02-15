@@ -18,6 +18,7 @@ jobs:
    - name: Install required libraries
      run: |
        sudo apt-get install build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
+       git submodule update --init
    - name: Build deb
      id: build-deb
      run: |
@@ -51,6 +52,7 @@ jobs:
         echo "Version: $VERSION"
     - name: Build exe
       run: |
+        git submodule update --init
         cd .\crates\${{ matrix.app }}
         cargo build --release
         cd ..\..
@@ -75,6 +77,7 @@ jobs:
           rustup target add x86_64-apple-darwin
           cargo install cargo-bundle
           brew install create-dmg
+          git submodule update --init
       - name: Build app
         run: |
           cd crates/${{ matrix.app }}
