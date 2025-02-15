@@ -303,7 +303,12 @@ impl UserData for LuaBufferView {
             }
             let mut ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
             ch.attribute.set_foreground(col);
-            this.buffer_view.lock().get_buffer_mut().layers[cur_layer].set_char((x, y), ch);
+            if let Err(err) = this.buffer_view.lock().get_edit_state_mut().set_char((x, y), ch) {
+                return Err(mlua::Error::SyntaxError {
+                    message: format!("Error setting char: {}", err),
+                    incomplete_input: false,
+                });
+            }
             Ok(())
         });
 
@@ -332,7 +337,12 @@ impl UserData for LuaBufferView {
             }
             let mut ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
             ch.attribute.set_background(col);
-            this.buffer_view.lock().get_buffer_mut().layers[cur_layer].set_char((x, y), ch);
+            if let Err(err) = this.buffer_view.lock().get_edit_state_mut().set_char((x, y), ch) {
+                return Err(mlua::Error::SyntaxError {
+                    message: format!("Error setting char: {}", err),
+                    incomplete_input: false,
+                });
+            }
             Ok(())
         });
 
