@@ -1,10 +1,10 @@
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
 use eframe::{
     egui::{self, menu, ImageButton, TopBottomPanel, Ui},
     epaint::Vec2,
 };
-use egui::Image;
+use egui::{text::LayoutJob, FontId, Image, TextFormat};
 use i18n_embed_fl::fl;
 use icy_engine::{
     util::{pop_data, BUFFER_DATA},
@@ -546,13 +546,37 @@ impl<'a> MainWindow<'a> {
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-plugins"), |ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(250.0);
+
+                    let mut buttons = HashMap::new();
+
                     for (i, p) in self.plugins.iter().enumerate() {
-                        if ui
-                            .add_enabled(has_buffer, egui::Button::new(p.title.clone()).wrap_mode(egui::TextWrapMode::Truncate))
-                            .clicked()
-                        {
-                            result = Some(Message::RunPlugin(i));
-                            ui.close_menu();
+                        let path = if p.path.is_empty() { String::new() } else { p.path[0].clone() };
+                        if !buttons.contains_key(&path) {
+                            buttons.insert(path.clone(), Vec::new());
+                        }
+                        buttons.get_mut(&path).unwrap().push((i, p));
+                    }
+                    let mut buttons = buttons.into_iter().collect::<Vec<_>>();
+                    buttons.sort_by(|a, b| {
+                        if a.0.is_empty() {
+                            return std::cmp::Ordering::Greater;
+                        }
+                        if b.0.is_empty() {
+                            return std::cmp::Ordering::Less;
+                        }
+                        a.0.cmp(&b.0)
+                    });
+                    for (_i, v) in buttons.iter_mut() {
+                        v.sort_by(|a, b| a.1.title.cmp(&b.1.title));
+                    }
+
+                    for (menu, items) in buttons {
+                        if menu.is_empty() {
+                            show_plugin_menu(&mut result, has_buffer, ui, &items);
+                        } else {
+                            ui.menu_button(menu, |ui| {
+                                show_plugin_menu(&mut result, has_buffer, ui, &items);
+                            });
                         }
                     }
 
@@ -610,6 +634,30 @@ impl<'a> MainWindow<'a> {
                 );
             }
         });
+    }
+}
+
+fn show_plugin_menu(result: &mut Option<Message>, has_buffer: bool, ui: &mut Ui, items: &Vec<(usize, &crate::plugins::Plugin)>) {
+    for (i, p) in items {
+        let mut layout_job = LayoutJob::simple(
+            p.description.clone(),
+            FontId::proportional(12.0),
+            ui.visuals().text_color(),
+            ui.available_width(),
+        );
+        layout_job.append("\n\n", 0.0, TextFormat::default());
+        let mut fmt = TextFormat::simple(FontId::proportional(10.0), ui.visuals().text_color());
+        fmt.valign = egui::Align::RIGHT;
+        layout_job.append(&p.author, 0.0, fmt);
+
+        if ui
+            .add_enabled(has_buffer, egui::Button::new(p.title.clone()).wrap_mode(egui::TextWrapMode::Truncate))
+            .on_hover_text(layout_job)
+            .clicked()
+        {
+            *result = Some(Message::RunPlugin(*i));
+            ui.close_menu();
+        }
     }
 }
 

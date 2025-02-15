@@ -11,7 +11,10 @@ use crate::{model::font_imp::FontTool, Settings};
 #[derive(Clone)]
 pub struct Plugin {
     pub title: String,
+    pub description: String,
+    pub author: String,
     pub text: String,
+    pub path: Vec<String>,
 }
 
 impl Plugin {
@@ -19,10 +22,43 @@ impl Plugin {
         let text = fs::read_to_string(path)?;
 
         let re = Regex::new(r"--\s*Title:\s*(.*)")?;
-
         if let Some(cap) = re.captures(&text) {
             let title = cap.get(1).unwrap().as_str().to_string();
-            return Ok(Self { title, text });
+
+            let re = Regex::new(r"--\s*Author:\s*(.*)")?;
+            let author = if let Some(cap) = re.captures(&text) {
+                cap.get(1).unwrap().as_str().to_string()
+            } else {
+                String::new()
+            };
+
+            let re = Regex::new(r"--\s*Description:\s*(.*)")?;
+            let description = if let Some(cap) = re.captures(&text) {
+                cap.get(1).unwrap().as_str().to_string()
+            } else {
+                String::new()
+            };
+
+            let re = Regex::new(r"--\s*Path:\s*(.*)")?;
+            let path = if let Some(cap) = re.captures(&text) {
+                cap.get(1)
+                    .unwrap()
+                    .as_str()
+                    .to_string()
+                    .split('/')
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>()
+            } else {
+                vec![]
+            };
+
+            return Ok(Self {
+                title,
+                author,
+                description,
+                text,
+                path,
+            });
         }
         Err(anyhow::anyhow!("No plugin file"))
     }
