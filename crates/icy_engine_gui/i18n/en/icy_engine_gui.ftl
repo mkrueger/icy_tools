@@ -19,3 +19,4 @@ settings-monitor-amber = Amber
 settings-monitor-green = Green
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futuristic
+settings-monitor-custom=Custom

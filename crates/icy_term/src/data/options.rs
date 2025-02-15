@@ -8,7 +8,7 @@ use egui::{Modifiers, Rect};
 use egui_bind::KeyOrPointer;
 use i18n_embed_fl::fl;
 use icy_engine::Color;
-use icy_engine_gui::MonitorSettings;
+use icy_engine_gui::{MonitorSettings, MonitorType};
 use toml::Value;
 
 use crate::{Modem, TerminalResult};
@@ -366,7 +366,7 @@ impl Options {
             }
             file.write_all(format!("border_color = {:?}\n", self.monitor_settings.border_color.to_hex()).as_bytes())?;
             file.write_all(format!("use_crt_filter = {:?}\n", self.monitor_settings.use_filter).as_bytes())?;
-            file.write_all(format!("monitor_type = {:?}\n", self.monitor_settings.monitor_type).as_bytes())?;
+            file.write_all(format!("monitor_type = {}\n", self.monitor_settings.monitor_type as i32).as_bytes())?;
             file.write_all(format!("monitor_gamma = {:?}\n", self.monitor_settings.gamma).as_bytes())?;
             file.write_all(format!("monitor_contrast = {:?}\n", self.monitor_settings.contrast).as_bytes())?;
             file.write_all(format!("monitor_saturation = {:?}\n", self.monitor_settings.saturation).as_bytes())?;
@@ -500,7 +500,7 @@ fn parse_value(options: &mut Options, value: &Value) {
                     }
                     "monitor_type" => {
                         if let Value::Integer(b) = v {
-                            options.monitor_settings.monitor_type = *b as usize;
+                            options.monitor_settings.monitor_type = MonitorType::from(*b as i32);
                         }
                     }
                     "monitor_gamma" => {

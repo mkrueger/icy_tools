@@ -3,15 +3,16 @@ use i18n_embed_fl::fl;
 use icy_engine::Color;
 use lazy_static::lazy_static;
 
-use crate::{ui::LANGUAGE_LOADER, MonitorSettings};
+use crate::{ui::LANGUAGE_LOADER, MonitorSettings, MonitorType};
 lazy_static! {
-    static ref MONITOR_NAMES: [String; 6] = [
+    static ref MONITOR_NAMES: [String; 7] = [
         fl!(LANGUAGE_LOADER, "settings-monitor-color"),
         fl!(LANGUAGE_LOADER, "settings-monitor-grayscale"),
         fl!(LANGUAGE_LOADER, "settings-monitor-amber"),
         fl!(LANGUAGE_LOADER, "settings-monitor-green"),
         fl!(LANGUAGE_LOADER, "settings-monitor-apple2"),
         fl!(LANGUAGE_LOADER, "settings-monitor-futuristic"),
+        fl!(LANGUAGE_LOADER, "settings-monitor-custom"),
     ];
 }
 
@@ -23,13 +24,23 @@ pub fn show_monitor_settings(ui: &mut egui::Ui, old_settings: &MonitorSettings) 
     let cur_color = monitor_settings.monitor_type;
     egui::ComboBox::from_label(fl!(LANGUAGE_LOADER, "settings-monitor-type"))
         .width(150.)
-        .selected_text(&MONITOR_NAMES[cur_color])
+        .selected_text(&MONITOR_NAMES[(cur_color as i32) as usize])
         .show_ui(ui, |ui| {
             (0..MONITOR_NAMES.len()).for_each(|i| {
                 let label = RichText::new(&MONITOR_NAMES[i]);
-                ui.selectable_value(&mut monitor_settings.monitor_type, i, label);
+                ui.selectable_value(&mut monitor_settings.monitor_type, MonitorType::from(i as i32), label);
             });
         });
+
+    if monitor_settings.monitor_type == MonitorType::CustomMonochrome {
+        ui.horizontal(|ui| {
+            ui.label(fl!(LANGUAGE_LOADER, "settings-monitor-custom"));
+            let (r, g, b) = monitor_settings.custom_monitor_color.get_rgb();
+            let mut color = Color32::from_rgb(r, g, b);
+            color_picker::color_edit_button_srgba(ui, &mut color, color_picker::Alpha::Opaque);
+            monitor_settings.custom_monitor_color = Color::new(color.r(), color.g(), color.b());
+        });
+    }
 
     ui.horizontal(|ui| {
         ui.label(fl!(LANGUAGE_LOADER, "settings-background_color-label"));

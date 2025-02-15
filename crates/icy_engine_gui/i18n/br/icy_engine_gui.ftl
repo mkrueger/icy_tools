@@ -19,3 +19,4 @@ settings-monitor-amber = Âmbar
 settings-monitor-green = Verde
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futurista
+settings-monitor-custom=Personalizado

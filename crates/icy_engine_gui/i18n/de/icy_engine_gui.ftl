@@ -19,3 +19,4 @@ settings-monitor-amber = Bernstein
 settings-monitor-green = Grün
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futuristisch
+settings-monitor-custom=Benutzerdefiniert

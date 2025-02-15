@@ -19,3 +19,4 @@ settings-monitor-amber = Jantar
 settings-monitor-green = Zelená
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futuristický
+settings-monitor-custom=Vlastní

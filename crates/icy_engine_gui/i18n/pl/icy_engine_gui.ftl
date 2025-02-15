@@ -19,3 +19,4 @@ settings-monitor-amber = Bursztyn
 settings-monitor-green = Zielony
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futurystyczny
+settings-monitor-custom=Niestandardowy

@@ -9,15 +9,9 @@ use crate::check_gl_error;
 use crate::get_shader_version;
 use crate::ui::buffer_view::SHADER_SOURCE;
 use crate::BufferView;
+use crate::MonitorType;
 use crate::TerminalOptions;
 
-pub const MONO_COLORS: [(u8, u8, u8); 5] = [
-    (0xFF, 0xFF, 0xFF), // Black / White
-    (0xFF, 0x81, 0x00), // Amber
-    (0x0C, 0xCC, 0x68), // Green
-    (0x00, 0xD5, 0x6D), // Apple ][
-    (0x72, 0x9F, 0xCF), // Futuristic
-];
 pub const INPUT_TEXTURE_SLOT: u32 = 4;
 pub const DATA_TEXTURE_SLOT: u32 = 6;
 
@@ -147,13 +141,15 @@ impl OutputRenderer {
 
         gl.uniform_1_f32(
             gl.get_uniform_location(self.output_shader, "u_use_monochrome").as_ref(),
-            if monitor_settings.monitor_type > 0 { 1.0 } else { 0.0 },
+            if monitor_settings.monitor_type.is_monochrome() { 1.0 } else { 0.0 },
         );
 
-        if monitor_settings.monitor_type > 0 {
-            let r = MONO_COLORS[monitor_settings.monitor_type - 1].0 as f32 / 255.0;
-            let g = MONO_COLORS[monitor_settings.monitor_type - 1].1 as f32 / 255.0;
-            let b = MONO_COLORS[monitor_settings.monitor_type - 1].2 as f32 / 255.0;
+        if monitor_settings.monitor_type != MonitorType::Color {
+            let (r, g, b) = monitor_settings.get_monochrome_color().get_rgb();
+
+            let r = r as f32 / 255.0;
+            let g = g as f32 / 255.0;
+            let b = b as f32 / 255.0;
             gl.uniform_3_f32(gl.get_uniform_location(self.output_shader, "u_monchrome_mask").as_ref(), r, g, b);
         }
 

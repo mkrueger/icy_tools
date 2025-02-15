@@ -10,7 +10,7 @@ use regex::Regex;
 
 use web_time::Instant;
 
-use crate::BufferView;
+use crate::{BufferView, MonitorType};
 
 use crate::MonitorSettings;
 
@@ -550,7 +550,7 @@ impl Animator {
                         if let Value::UserData(data) = &buffer {
                             lua.globals().set("cur_frame", a.lock().unwrap().frames.len() + 2)?;
                             let monitor_type: usize = lua.globals().get("monitor_type")?;
-                            a.lock().unwrap().current_monitor_settings.monitor_type = monitor_type;
+                            a.lock().unwrap().current_monitor_settings.monitor_type = MonitorType::from(monitor_type as i32);
 
                             a.lock().unwrap().current_monitor_settings.gamma = lua.globals().get("monitor_gamma")?;
                             a.lock().unwrap().current_monitor_settings.contrast = lua.globals().get("monitor_contrast")?;
@@ -610,7 +610,8 @@ impl Animator {
             globals.set("cur_frame", 1).unwrap();
             {
                 let lock = animator_thread.lock().unwrap();
-                globals.set("monitor_type", lock.current_monitor_settings.monitor_type).unwrap();
+                let i: i32 = lock.current_monitor_settings.monitor_type as i32;
+                globals.set("monitor_type", i).unwrap();
                 globals.set("monitor_gamma", lock.current_monitor_settings.gamma).unwrap();
                 globals.set("monitor_contrast", lock.current_monitor_settings.contrast).unwrap();
                 globals.set("monitor_saturation", lock.current_monitor_settings.saturation).unwrap();

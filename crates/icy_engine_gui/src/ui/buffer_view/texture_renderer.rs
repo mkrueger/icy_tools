@@ -4,8 +4,6 @@ use glow::HasContext;
 use crate::ui::buffer_view::SHADER_SOURCE;
 use crate::TerminalOptions;
 
-use super::output_renderer::MONO_COLORS;
-
 pub struct TextureRenderer {
     output_shader: glow::Program,
     vertex_array: glow::VertexArray,
@@ -68,13 +66,14 @@ impl TextureRenderer {
 
         gl.uniform_1_f32(
             gl.get_uniform_location(self.output_shader, "u_use_monochrome").as_ref(),
-            if monitor_settings.monitor_type > 0 { 1.0 } else { 0.0 },
+            if monitor_settings.monitor_type.is_monochrome() { 1.0 } else { 0.0 },
         );
 
-        if monitor_settings.monitor_type > 0 {
-            let r = MONO_COLORS[monitor_settings.monitor_type - 1].0 as f32 / 255.0;
-            let g = MONO_COLORS[monitor_settings.monitor_type - 1].1 as f32 / 255.0;
-            let b = MONO_COLORS[monitor_settings.monitor_type - 1].2 as f32 / 255.0;
+        if monitor_settings.monitor_type.is_monochrome() {
+            let (r, g, b) = monitor_settings.get_monochrome_color().get_rgb();
+            let r = r as f32 / 255.0;
+            let g = g as f32 / 255.0;
+            let b = b as f32 / 255.0;
             gl.uniform_3_f32(gl.get_uniform_location(self.output_shader, "u_monchrome_mask").as_ref(), r, g, b);
         }
 

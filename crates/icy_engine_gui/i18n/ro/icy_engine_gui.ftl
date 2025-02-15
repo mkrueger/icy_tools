@@ -19,3 +19,4 @@ settings-monitor-amber = Chihlimbar
 settings-monitor-green = Verde
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futuristic
+settings-monitor-custom=Personalizat

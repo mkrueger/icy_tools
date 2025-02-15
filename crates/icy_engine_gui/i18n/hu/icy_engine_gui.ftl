@@ -19,3 +19,4 @@ settings-monitor-amber = Borostyán
 settings-monitor-green = Zöld
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futurisztikus
+settings-monitor-custom=Egyedi

@@ -1,6 +1,6 @@
 use directories::ProjectDirs;
 use icy_engine::Color;
-use icy_engine_gui::{BackgroundEffect, MonitorSettings};
+use icy_engine_gui::{BackgroundEffect, MonitorSettings, MonitorType};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
@@ -55,7 +55,7 @@ pub static mut SETTINGS: Settings = Settings {
     is_dark_mode: None,
     monitor_settings: MonitorSettings {
         use_filter: false,
-        monitor_type: 0,
+        monitor_type: MonitorType::Color,
         gamma: 50.,
         contrast: 50.,
         saturation: 50.,
@@ -68,6 +68,7 @@ pub static mut SETTINGS: Settings = Settings {
         selection_fg: Color::new(0xAB, 0x00, 0xAB),
         selection_bg: Color::new(0xAB, 0xAB, 0xAB),
         border_color: Color::new(64, 69, 74),
+        custom_monitor_color: Color::new(0xFF, 0xFF, 0xFF),
     },
 };
 
