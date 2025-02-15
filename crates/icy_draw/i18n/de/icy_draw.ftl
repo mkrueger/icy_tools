@@ -367,8 +367,8 @@ font_selector-sauce_font=SAUCE
 select-palette-dialog-title=Palette auswählen ({ $count } verfügbar)
 select-palette-dialog-builtin_palette=BUILTIN
 select-palette-dialog-no-matching-palettes=Keine Paletten gefunden, die die Suche erfüllen
-HEK
-autosave-dialog-title=AutosaveI
+
+autosave-dialog-title=Autosave
 autosave-dialog-description=Icy Draw hat eine Autosave Datei gefunden.
 autosave-dialog-question=Was möchtest du tun?
 autosave-dialog-load_autosave_button=Autosave laden
