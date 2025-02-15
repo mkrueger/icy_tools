@@ -943,6 +943,7 @@ impl Buffer {
 
     pub fn set_use_letter_spacing(&mut self, use_letter_spacing: bool) {
         self.use_letter_spacing = use_letter_spacing;
+        self.is_font_table_dirty = true;
     }
 
     pub fn use_aspect_ratio(&self) -> bool {
