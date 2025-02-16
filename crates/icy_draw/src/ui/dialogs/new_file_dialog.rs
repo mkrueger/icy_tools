@@ -8,7 +8,7 @@ use eframe::{
 use egui::{Image, Vec2};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_engine::{BitFont, Buffer, FontType, Palette, TheDrawFont, ATARI, ATARI_DEFAULT_PALETTE};
+use icy_engine::{font::TheDrawFont, BitFont, Buffer, FontType, Palette, ATARI, ATARI_DEFAULT_PALETTE};
 
 use crate::{add_child, AnsiEditor, MainWindow, Message};
 
@@ -402,6 +402,7 @@ impl Template for TdfFontTemplate {
             FontType::Outline => &crate::OUTLINEFONT_TEMPLATE_IMG,
             FontType::Block => &crate::BLOCKFONT_TEMPLATE_IMG,
             FontType::Color => &crate::COLORFONT_TEMPLATE_IMG,
+            FontType::Figlet => &crate::BLOCKFONT_TEMPLATE_IMG,
         }
     }
 
@@ -410,6 +411,7 @@ impl Template for TdfFontTemplate {
             FontType::Outline => fl!(crate::LANGUAGE_LOADER, "new-file-template-outline_font-title"),
             FontType::Block => fl!(crate::LANGUAGE_LOADER, "new-file-template-block_font-title"),
             FontType::Color => fl!(crate::LANGUAGE_LOADER, "new-file-template-color_font-title"),
+            _ => String::new(),
         }
     }
 
@@ -418,6 +420,7 @@ impl Template for TdfFontTemplate {
             FontType::Outline => fl!(crate::LANGUAGE_LOADER, "new-file-template-outline_font-description"),
             FontType::Block => fl!(crate::LANGUAGE_LOADER, "new-file-template-block_font-description"),
             FontType::Color => fl!(crate::LANGUAGE_LOADER, "new-file-template-color_font-description"),
+            _ => String::new(),
         }
     }
 

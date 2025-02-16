@@ -5,7 +5,7 @@ use eframe::{
     epaint::Vec2,
 };
 use egui::mutex::Mutex;
-use icy_engine::{util::pop_data, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane, TheDrawFont};
+use icy_engine::{util::pop_data, AnsiFont, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane};
 
 use crate::{util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, SETTINGS};
 
@@ -39,7 +39,7 @@ pub enum Message {
 
     ShowAboutDialog,
     ShowCharacterSelectionDialog(Rc<RefCell<char>>),
-    SelectFontDialog(Arc<Mutex<Vec<TheDrawFont>>>, Arc<Mutex<i32>>),
+    SelectFontDialog(Arc<Mutex<Vec<Box<dyn AnsiFont>>>>, Arc<Mutex<i32>>),
     ShowError(String),
     SetFontPage(usize),
     CharTable(char),

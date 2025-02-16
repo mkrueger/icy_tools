@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=Brak zainstalowanych czcionek
 select-font-dialog-color-font=KOLOR
 select-font-dialog-block-font=BLOK
 select-font-dialog-outline-font=KONTUR
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=WITAJ
 select-font-dialog-edit-button=Edytuj czcionkę…
 

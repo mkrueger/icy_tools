@@ -9,13 +9,14 @@ use eframe::{
 };
 use egui::mutex::Mutex;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::OperationType, Size, TextPane, TheDrawFont};
+use icy_engine::{editor::OperationType, figlet::FIGFont, font::TheDrawFont, AnsiFont, Size, TextPane};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use walkdir::{DirEntry, WalkDir};
 pub struct FontTool {
     pub selected_font: Arc<Mutex<i32>>,
-    pub fonts: Arc<Mutex<Vec<TheDrawFont>>>,
+    pub fonts: Arc<Mutex<Vec<Box<dyn AnsiFont>>>>,
     pub sizes: Vec<Size>,
+    pub prev_char: char,
 }
 
 impl FontTool {
@@ -31,8 +32,17 @@ impl FontTool {
         if let Ok(tdf_dir) = Settings::get_tdf_diretory() {
             let fonts = self.fonts.clone();
             thread::spawn(move || loop {
-                if watch(tdf_dir.as_path(), &fonts).is_err() {
-                    return;
+                match watch(tdf_dir.as_path()) {
+                    Ok(Some(new_fonts)) => {
+                        *fonts.lock() = new_fonts;
+                    }
+                    Ok(None) => {
+                        *fonts.lock() = Vec::new();
+                    }
+                    Err(e) => {
+                        log::error!("watch font error: {e:}");
+                        return;
+                    }
                 }
             });
         }
@@ -45,7 +55,7 @@ impl FontTool {
     }
 }
 
-fn load_fonts(tdf_dir: &Path) -> Vec<TheDrawFont> {
+fn load_fonts(tdf_dir: &Path) -> Vec<Box<dyn AnsiFont>> {
     let mut fonts = Vec::new();
     let walker = WalkDir::new(tdf_dir).into_iter();
     for entry in walker.filter_entry(|e| !FontTool::is_hidden(e)) {
@@ -77,7 +87,12 @@ fn load_fonts(tdf_dir: &Path) -> Vec<TheDrawFont> {
 
         if extension == "tdf" {
             if let Ok(loaded_fonts) = TheDrawFont::load(path) {
-                fonts.extend(loaded_fonts);
+                fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
+            }
+        }
+        if extension == "flf" {
+            if let Ok(loaded_fonts) = FIGFont::load(path) {
+                fonts.push(Box::new(loaded_fonts) as Box<dyn AnsiFont>);
             }
         }
 
@@ -98,7 +113,7 @@ fn load_fonts(tdf_dir: &Path) -> Vec<TheDrawFont> {
     fonts
 }
 
-fn read_zip_archive(data: Vec<u8>, fonts: &mut Vec<TheDrawFont>) {
+fn read_zip_archive(data: Vec<u8>, fonts: &mut Vec<Box<dyn AnsiFont>>) {
     let file = std::io::Cursor::new(data);
     match zip::ZipArchive::new(file) {
         Ok(mut archive) => {
@@ -110,8 +125,8 @@ fn read_zip_archive(data: Vec<u8>, fonts: &mut Vec<TheDrawFont>) {
                                 let mut data = Vec::new();
                                 file.read_to_end(&mut data).unwrap_or_default();
 
-                                if let Ok(loaded_fonts) = TheDrawFont::from_tdf_bytes(&data) {
-                                    fonts.extend(loaded_fonts);
+                                if let Ok(loaded_fonts) = TheDrawFont::from_bytes(&data) {
+                                    fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
                                 }
                             } else if name.to_string_lossy().to_ascii_lowercase().ends_with(".zip") {
                                 let mut data = Vec::new();
@@ -161,7 +176,7 @@ impl Tool for FontTool {
 
             if selected_font >= 0 && (selected_font as usize) < font_count {
                 if let Some(font) = self.fonts.lock().get(selected_font as usize) {
-                    selected_text = font.name.clone();
+                    selected_text = font.name().to_string();
                 }
             }
             let selected_text = RichText::new(selected_text).font(FontId::new(18.0, FontFamily::Proportional));
@@ -192,7 +207,7 @@ impl Tool for FontTool {
                     if let Some(font) = self.fonts.lock().get(selected_font as usize) {
                         for ch in '!'..'9' {
                             ui.spacing_mut().item_spacing = eframe::epaint::Vec2::new(0.0, 0.0);
-                            let color = if font.has_char(ch as u8) {
+                            let color = if font.has_char(ch) {
                                 ui.style().visuals.strong_text_color()
                             } else {
                                 ui.style().visuals.text_color()
@@ -209,7 +224,7 @@ impl Tool for FontTool {
                     if let Some(font) = self.fonts.lock().get(selected_font as usize) {
                         for ch in '9'..'Q' {
                             ui.spacing_mut().item_spacing = eframe::epaint::Vec2::new(0.0, 0.0);
-                            let color = if font.has_char(ch as u8) {
+                            let color = if font.has_char(ch) {
                                 ui.style().visuals.strong_text_color()
                             } else {
                                 ui.style().visuals.text_color()
@@ -225,7 +240,7 @@ impl Tool for FontTool {
                     if let Some(font) = self.fonts.lock().get(selected_font as usize) {
                         ui.spacing_mut().item_spacing = eframe::epaint::Vec2::new(0.0, 0.0);
                         for ch in 'Q'..'i' {
-                            let color = if font.has_char(ch as u8) {
+                            let color = if font.has_char(ch) {
                                 ui.style().visuals.strong_text_color()
                             } else {
                                 ui.style().visuals.text_color()
@@ -240,7 +255,7 @@ impl Tool for FontTool {
                     if let Some(font) = self.fonts.lock().get(selected_font as usize) {
                         ui.spacing_mut().item_spacing = eframe::epaint::Vec2::new(0.0, 0.0);
                         for ch in 'i'..='~' {
-                            let color = if font.has_char(ch as u8) {
+                            let color = if font.has_char(ch) {
                                 ui.style().visuals.strong_text_color()
                             } else {
                                 ui.style().visuals.text_color()
@@ -254,19 +269,19 @@ impl Tool for FontTool {
         }
 
         if font_count > 0 {
-            if let Some(font) = self.fonts.lock().get(selected_font as usize) {
-                if matches!(font.font_type, icy_engine::FontType::Outline) {
-                    ui.add_space(32.0);
-                    let mut msg = None;
-                    ui.vertical_centered(|ui| {
-                        if ui.button(fl!(crate::LANGUAGE_LOADER, "font_tool_select_outline_button")).clicked() {
-                            msg = Some(Message::ShowOutlineDialog);
-                        }
-                    });
-                    if msg.is_some() {
-                        return msg;
+            if let Some(_font) = self.fonts.lock().get(selected_font as usize) {
+                // if matches!(font.font_type, icy_engine::FontType::Outline) {
+                ui.add_space(32.0);
+                let mut msg = None;
+                ui.vertical_centered(|ui| {
+                    if ui.button(fl!(crate::LANGUAGE_LOADER, "font_tool_select_outline_button")).clicked() {
+                        msg = Some(Message::ShowOutlineDialog);
                     }
+                });
+                if msg.is_some() {
+                    return msg;
                 }
+                // }
             }
         }
 
@@ -340,7 +355,8 @@ impl Tool for FontTool {
             }
 
             MKey::Return => {
-                editor.set_caret(0, pos.y + font.get_font_height());
+                let pos = font.render_next(editor.buffer_view.lock().get_edit_state_mut(), self.prev_char, '\n');
+                editor.set_caret(pos.x, pos.y);
                 /*
                 if let Some(size) = self.sizes.last() {
                     editor.set_caret(0,pos.y + size.height as i32);
@@ -401,7 +417,6 @@ impl Tool for FontTool {
                 }
             }
             MKey::Character(ch) => {
-                let c_pos = editor.get_caret_position();
                 let _undo = editor
                     .buffer_view
                     .lock()
@@ -416,17 +431,13 @@ impl Tool for FontTool {
                 editor.buffer_view.lock().get_edit_state_mut().set_outline_style(outline_style);
 
                 let _ = editor.buffer_view.lock().get_edit_state_mut().undo_caret_position();
-
-                let opt_size: Option<Size> = font.render(editor.buffer_view.lock().get_edit_state_mut(), ch as u8);
-                if let Some(size) = opt_size {
-                    editor.set_caret(c_pos.x + size.width + font.spaces, c_pos.y);
-                    let new_pos = editor.get_caret_position();
-                    self.sizes.push(Size {
-                        width: (new_pos.x - c_pos.x),
-                        height: size.height,
-                    });
+                let ch = unsafe { char::from_u32_unchecked(ch as u32) };
+                if font.has_char(ch) {
+                    let next_pos = font.render_next(editor.buffer_view.lock().get_edit_state_mut(), self.prev_char, ch);
+                    self.prev_char = ch;
+                    editor.set_caret(next_pos.x, next_pos.y);
                 } else {
-                    editor.type_cp437_key(unsafe { char::from_u32_unchecked(ch as u32) });
+                    editor.type_cp437_key(ch);
                     self.sizes.push(Size::new(1, 1));
                 }
             }
@@ -436,7 +447,7 @@ impl Tool for FontTool {
     }
 }
 
-fn watch(path: &Path, fonts: &Arc<Mutex<Vec<TheDrawFont>>>) -> notify::Result<()> {
+fn watch(path: &Path) -> notify::Result<Option<Vec<Box<dyn AnsiFont>>>> {
     let (tx, rx) = std::sync::mpsc::channel();
 
     // Automatically select the best implementation for your platform.
@@ -450,14 +461,11 @@ fn watch(path: &Path, fonts: &Arc<Mutex<Vec<TheDrawFont>>>) -> notify::Result<()
     for res in rx {
         match res {
             Ok(_) => {
-                fonts.lock().clear();
-                fonts.lock().extend(load_fonts(path));
-
-                break;
+                return Ok(Some(load_fonts(path)));
             }
             Err(e) => log::error!("watch error: {e:}"),
         }
     }
 
-    Ok(())
+    Ok(None)
 }

@@ -8,12 +8,12 @@ use egui::{load::SizedTexture, mutex::Mutex, Image, TextureHandle, TextureOption
 use egui_file::FileDialog;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::EditState, Buffer, Rectangle, Size, TextPane, TheDrawFont};
+use icy_engine::{editor::EditState, AnsiFont, Buffer, Rectangle, TextPane};
 
 use crate::{MainWindow, Message};
 
 pub struct SelectFontDialog {
-    fonts: Arc<Mutex<Vec<TheDrawFont>>>,
+    fonts: Arc<Mutex<Vec<Box<dyn AnsiFont>>>>,
     selected_font_arc: Arc<Mutex<i32>>,
     selected_font: i32,
     pub do_select: bool,
@@ -21,6 +21,7 @@ pub struct SelectFontDialog {
     show_outline: bool,
     show_color: bool,
     show_block: bool,
+    show_figlet: bool,
 
     export_data: Option<Vec<u8>>,
     export_dialog: Option<FileDialog>,
@@ -29,7 +30,7 @@ pub struct SelectFontDialog {
 }
 
 impl SelectFontDialog {
-    pub fn new(fonts: Arc<Mutex<Vec<TheDrawFont>>>, selected_font_arc: Arc<Mutex<i32>>) -> Self {
+    pub fn new(fonts: Arc<Mutex<Vec<Box<dyn AnsiFont>>>>, selected_font_arc: Arc<Mutex<i32>>) -> Self {
         let selected_font = *selected_font_arc.lock();
 
         Self {
@@ -41,6 +42,7 @@ impl SelectFontDialog {
             show_outline: true,
             show_color: true,
             show_block: true,
+            show_figlet: true,
             image_cache: HashMap::default(),
             export_dialog: None,
             export_data: None,
@@ -66,7 +68,7 @@ impl SelectFontDialog {
         };
 
         let font_id = TextStyle::Button.resolve(ui.style());
-        let text: WidgetText = font.name.clone().into();
+        let text: WidgetText = font.name().to_string().into();
         let galley = text.into_galley(ui, Some(egui::TextWrapMode::Truncate), f32::INFINITY, font_id);
         ui.painter().galley_with_override_text_color(
             egui::Align2::LEFT_TOP.align_size_within_rect(galley.size(), rect.shrink(4.0)).min,
@@ -79,7 +81,7 @@ impl SelectFontDialog {
         let mut cnt = 0;
 
         for ch in '!'..='~' {
-            let color = if font.has_char(ch as u8) {
+            let color = if font.has_char(ch) {
                 ui.style().visuals.strong_text_color()
             } else {
                 ui.style().visuals.text_color()
@@ -110,18 +112,16 @@ impl SelectFontDialog {
             let text = fl!(crate::LANGUAGE_LOADER, "select-font-dialog-preview-text");
             let lowercase = text.to_ascii_lowercase();
 
-            let b = if font.has_char(text.chars().next().unwrap() as u8) {
-                text.bytes()
+            let b = if font.has_char(text.chars().next().unwrap()) {
+                text.chars()
             } else {
-                lowercase.bytes()
+                lowercase.chars()
             };
+            let mut prev = ' ';
             for ch in b {
-                let opt_size: Option<Size> = font.render(&mut state, ch);
-                if let Some(size) = opt_size {
-                    let mut pos = state.get_caret().get_position();
-                    pos.x += size.width + font.spaces;
-                    state.get_caret_mut().set_position(pos);
-                }
+                let pos = font.render_next(&mut state, prev, ch);
+                prev = ch;
+                state.get_caret_mut().set_position(pos);
             }
             let img = create_image(ui.ctx(), state.get_buffer());
             self.image_cache.insert(cur_font, img);
@@ -145,7 +145,7 @@ impl SelectFontDialog {
                 Color32::WHITE,
             );*/
 
-            let font_type = match font.font_type {
+            let font_type = match font.font_type() {
                 icy_engine::FontType::Outline => {
                     fl!(crate::LANGUAGE_LOADER, "select-font-dialog-outline-font")
                 }
@@ -154,6 +154,9 @@ impl SelectFontDialog {
                 }
                 icy_engine::FontType::Color => {
                     fl!(crate::LANGUAGE_LOADER, "select-font-dialog-color-font")
+                }
+                icy_engine::FontType::Figlet => {
+                    fl!(crate::LANGUAGE_LOADER, "select-font-dialog-figlet-font")
                 }
             };
 
@@ -232,6 +235,11 @@ impl crate::ModalDialog for SelectFontDialog {
                     if response.clicked() {
                         self.show_outline = !self.show_outline;
                     }
+
+                    let response = ui.selectable_label(self.show_figlet, fl!(crate::LANGUAGE_LOADER, "select-font-dialog-figlet-font"));
+                    if response.clicked() {
+                        self.show_figlet = !self.show_figlet;
+                    }
                 });
                 ui.add_space(4.0);
 
@@ -239,10 +247,11 @@ impl crate::ModalDialog for SelectFontDialog {
 
                 for i in 0..font_count {
                     let font = &self.fonts.lock()[i];
-                    if font.name.to_lowercase().contains(&self.filter.to_lowercase())
-                        && (self.show_outline && matches!(font.font_type, icy_engine::FontType::Outline)
-                            || self.show_block && matches!(font.font_type, icy_engine::FontType::Block)
-                            || self.show_color && matches!(font.font_type, icy_engine::FontType::Color))
+                    if font.name().to_lowercase().contains(&self.filter.to_lowercase())
+                        && (self.show_outline && matches!(font.font_type(), icy_engine::FontType::Outline)
+                            || self.show_block && matches!(font.font_type(), icy_engine::FontType::Block)
+                            || self.show_color && matches!(font.font_type(), icy_engine::FontType::Color)
+                            || self.show_figlet && matches!(font.font_type(), icy_engine::FontType::Figlet))
                     {
                         filtered_fonts.push(i);
                     }
@@ -284,7 +293,7 @@ impl crate::ModalDialog for SelectFontDialog {
                 }
 
                 if ui.button(fl!(crate::LANGUAGE_LOADER, "export-button-title")).clicked() {
-                    match self.fonts.lock()[self.selected_font as usize].as_tdf_bytes() {
+                    match self.fonts.lock()[self.selected_font as usize].as_bytes() {
                         Ok(data) => {
                             let mut initial_path = None;
                             crate::set_default_initial_directory_opt(&mut initial_path);

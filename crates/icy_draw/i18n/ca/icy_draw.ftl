@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=No hi ha fonts instal·lades
 select-font-dialog-color-font=COLOR
 select-font-dialog-block-font=BLOC
 select-font-dialog-outline-font=CONTORN
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=HOLA
 select-font-dialog-edit-button=Editar font…
 

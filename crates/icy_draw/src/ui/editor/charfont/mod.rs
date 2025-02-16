@@ -6,7 +6,7 @@ use eframe::{
 };
 use egui::{load::SizedTexture, Image, Rect, TextureHandle};
 use i18n_embed_fl::fl;
-use icy_engine::{AttributedChar, BitFont, Buffer, EngineResult, FontGlyph, Layer, Size, TextAttribute, TextPane, TheDrawFont};
+use icy_engine::{font::TheDrawFont, AttributedChar, BitFont, Buffer, EngineResult, FontGlyph, Layer, Size, TextAttribute, TextPane};
 use icy_engine_gui::{show_terminal_area, BufferView};
 
 use crate::{
@@ -201,6 +201,7 @@ impl Document for CharFontEditor {
                         icy_engine::FontType::Color => {
                             fl!(crate::LANGUAGE_LOADER, "tdf-editor-font_type_color")
                         }
+                        icy_engine::FontType::Figlet => String::new(),
                     };
                     ui.label(text);
 
@@ -265,6 +266,9 @@ impl Document for CharFontEditor {
                             set_attribute(layer, attr);
                         }
                         icy_engine::FontType::Color => {
+                        }
+                        icy_engine::FontType::Figlet => {
+                            set_attribute(layer, attr);
                         }
                     }
                 }
@@ -616,6 +620,7 @@ impl CharFontEditor {
 
                         font.set_glyph(ch, FontGlyph { size: Size::new(w, h), data });
                     }
+                    icy_engine::FontType::Figlet => {}
                 }
             }
         }

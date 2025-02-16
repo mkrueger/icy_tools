@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=Žádná písma nejsou nainstalována
 select-font-dialog-color-font=BARVA
 select-font-dialog-block-font=BLOK
 select-font-dialog-outline-font=OBRYS
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=HELLO
 select-font-dialog-edit-button=Upravit písmo…
 

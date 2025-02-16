@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=Nenhuma fonte instalada
 select-font-dialog-color-font=COR
 select-font-dialog-block-font=BLOCO
 select-font-dialog-outline-font=CONTORNO
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=OLÁ
 select-font-dialog-edit-button=Editar fonte…
 

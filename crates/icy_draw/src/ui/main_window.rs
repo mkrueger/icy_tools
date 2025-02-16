@@ -20,7 +20,7 @@ use egui::{mutex::Mutex, Layout, Modifiers, Pos2, Rect, TextStyle, Vec2, WidgetT
 use egui_tiles::{Container, TileId};
 use glow::Context;
 use i18n_embed_fl::fl;
-use icy_engine::{BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TextPane, TheDrawFont};
+use icy_engine::{font::TheDrawFont, BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TextPane};
 
 use super::KeyBindings;
 
@@ -79,6 +79,7 @@ impl<'a> MainWindow<'a> {
             selected_font: Arc::new(Mutex::new(0)),
             fonts: Arc::new(Mutex::new(Vec::new())),
             sizes: Vec::new(),
+            prev_char: ' ',
         };
         fnt.load_fonts();
         fnt.install_watcher();
@@ -248,7 +249,7 @@ impl<'a> MainWindow<'a> {
                     if file_name.is_none() {
                         return;
                     }
-                    if let Ok(fonts) = TheDrawFont::from_tdf_bytes(data) {
+                    if let Ok(fonts) = TheDrawFont::from_bytes(data) {
                         add_child(&mut self.document_tree, Some(full_path.clone()), Box::new(CharFontEditor::new(&self.gl, fonts)));
                         return;
                     }

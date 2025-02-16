@@ -12,7 +12,7 @@ icy_engine = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
-egui= { workspace = true }
+egui = { workspace = true }
 egui_glow = { workspace = true }
 image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
 eframe = { workspace = true }

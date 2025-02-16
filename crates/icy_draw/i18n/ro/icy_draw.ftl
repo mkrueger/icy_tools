@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=Nu există fonturi instalate
 select-font-dialog-color-font=COLOR
 select-font-dialog-block-font=BLOC
 select-font-dialog-outline-font=CONTUR
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=SALUT
 select-font-dialog-edit-button=Editează font…
 

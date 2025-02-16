@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=Aucune police installée
 select-font-dialog-color-font=COULEUR
 select-font-dialog-block-font=BLOC
 select-font-dialog-outline-font=CONTOUR
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=BONJOUR
 select-font-dialog-edit-button=Modifier la police…
 

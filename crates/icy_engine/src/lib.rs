@@ -50,8 +50,8 @@ pub use caret::*;
 pub mod formats;
 pub use formats::*;
 
-mod tdf_font;
-pub use tdf_font::*;
+mod ansi_font;
+pub use ansi_font::*;
 
 mod crc;
 pub use crc::*;

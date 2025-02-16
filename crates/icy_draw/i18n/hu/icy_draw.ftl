@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=Nincs telepített betűtípus
 select-font-dialog-color-font=SZÍNES
 select-font-dialog-block-font=BLOKK
 select-font-dialog-outline-font=KÖRVONAL
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=HELLO
 select-font-dialog-edit-button=Betűtípus szerkesztése…
 

@@ -1,83 +1,7 @@
+use crate::{ansi_font::AnsiFont, editor::EditState, EngineResult, Position, Size};
 use std::{error::Error, fs::File, io::Read, path::Path};
 
-use i18n_embed_fl::fl;
-
-use crate::{editor::EditState, AttributedChar, EngineResult, Position, Size, TextAttribute};
-
-#[derive(Copy, Clone, Debug)]
-pub enum FontType {
-    Outline,
-    Block,
-    Color,
-}
-
-#[derive(Clone)]
-pub struct FontGlyph {
-    pub size: Size,
-    pub data: Vec<u8>,
-}
-impl FontGlyph {
-    fn render(&self, editor: &mut EditState, font_type: FontType) -> Position {
-        let pos = editor.get_caret().get_position();
-        let outline_style = editor.get_outline_style();
-        let color = editor.get_caret().attribute;
-        let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-char_font_glyph"));
-
-        let mut cur = pos;
-        let mut char_offset = 0;
-        let mut leading_space = true;
-        while char_offset < self.data.len() {
-            let ch = self.data[char_offset];
-            char_offset += 1;
-
-            if ch == 13 {
-                cur.x = pos.x;
-                cur.y += 1;
-                leading_space = true;
-            } else {
-                let attributed_char = match font_type {
-                    FontType::Outline => {
-                        if ch == b'@' || ch == b' ' && leading_space {
-                            cur.x += 1;
-                            continue;
-                        }
-                        leading_space = false;
-                        if ch == b'O' {
-                            AttributedChar::new(' ', color)
-                        } else {
-                            AttributedChar::new(TheDrawFont::transform_outline(outline_style, ch) as char, color)
-                        }
-                    }
-                    FontType::Block => {
-                        if ch == b' ' {
-                            cur.x += 1;
-                            continue;
-                        }
-                        if ch == 0xF7 {
-                            AttributedChar::new(' ', color)
-                        } else {
-                            AttributedChar::new(ch as char, color)
-                        }
-                    }
-                    FontType::Color => {
-                        let ch = ch as char;
-                        let ch_attr = TextAttribute::from_u8(self.data[char_offset], crate::IceMode::Ice); // tdf fonts don't support ice mode by default
-                        char_offset += 1;
-                        let ch = AttributedChar::new(ch, ch_attr);
-                        if ch.is_transparent() {
-                            cur.x += 1;
-                            continue;
-                        }
-                        ch
-                    }
-                };
-                editor.set_char(cur, attributed_char).unwrap();
-                cur.x += 1;
-            }
-        }
-        cur
-    }
-}
+use super::{FontGlyph, FontType};
 
 #[derive(Clone)]
 pub struct TheDrawFont {
@@ -124,7 +48,7 @@ impl TheDrawFont {
         let mut f = File::open(file_name).expect("error while opening file");
         let mut bytes = Vec::new();
         f.read_to_end(&mut bytes).expect("error while reading file");
-        TheDrawFont::from_tdf_bytes(&bytes)
+        TheDrawFont::from_bytes(&bytes)
     }
 
     /// .
@@ -136,7 +60,7 @@ impl TheDrawFont {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn from_tdf_bytes(bytes: &[u8]) -> EngineResult<Vec<TheDrawFont>> {
+    pub fn from_bytes(bytes: &[u8]) -> EngineResult<Vec<TheDrawFont>> {
         let mut result = Vec::new();
 
         if bytes.len() < THE_DRAW_FONT_HEADER_SIZE {
@@ -300,6 +224,7 @@ impl TheDrawFont {
             FontType::Outline => 0,
             FontType::Block => 1,
             FontType::Color => 2,
+            FontType::Figlet => 3,
         };
         result.push(type_byte);
         if self.spaces > MAX_LETTER_SPACE as i32 {
@@ -518,14 +443,47 @@ impl Error for TdfError {
     }
 }
 
+impl AnsiFont for TheDrawFont {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn has_char(&self, ch: char) -> bool {
+        self.has_char(ch as u8)
+    }
+
+    fn render_next(&self, editor: &mut EditState, _prev_char: char, ch: char) -> Position {
+        if ch == '\n' {
+            return Position::new(0, editor.get_caret().get_position().y + self.get_font_height());
+        }
+        let caret_pos = editor.get_caret().get_position();
+        let char_offset = (ch as i32) - b' ' as i32 - 1;
+        if char_offset < 0 || char_offset > self.char_table.len() as i32 {
+            return caret_pos;
+        }
+        if let Some(Some(glyph)) = &self.char_table.get(char_offset as usize) {
+            return glyph.render(editor, self.font_type);
+        }
+        return caret_pos;
+    }
+
+    fn font_type(&self) -> FontType {
+        self.font_type
+    }
+
+    fn as_bytes(&self) -> EngineResult<Vec<u8>> {
+        self.as_tdf_bytes()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{FontType, TheDrawFont};
+    use super::{FontType, TheDrawFont};
     const TEST_FONT: &[u8] = include_bytes!("CODERX.TDF");
 
     #[test]
     fn test_load() {
-        let result = TheDrawFont::from_tdf_bytes(TEST_FONT).unwrap();
+        let result = TheDrawFont::from_bytes(TEST_FONT).unwrap();
         for r in &result {
             assert!(matches!(r.font_type, FontType::Color));
         }
@@ -540,9 +498,9 @@ mod tests {
 
     #[test]
     fn test_load_save_multi() {
-        let result = TheDrawFont::from_tdf_bytes(TEST_FONT).unwrap();
+        let result = TheDrawFont::from_bytes(TEST_FONT).unwrap();
         let bundle = TheDrawFont::create_font_bundle(&result).unwrap();
-        let result = TheDrawFont::from_tdf_bytes(&bundle).unwrap();
+        let result = TheDrawFont::from_bytes(&bundle).unwrap();
         for r in &result {
             assert!(matches!(r.font_type, FontType::Color));
         }

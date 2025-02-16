@@ -288,6 +288,7 @@ select-font-dialog-no-fonts-installed=No fonts installed
 select-font-dialog-color-font=COLOR
 select-font-dialog-block-font=BLOCK
 select-font-dialog-outline-font=OUTLINE
+select-font-dialog-figlet-font=FIGLET
 select-font-dialog-preview-text=HELLO
 select-font-dialog-edit-button=Edit font…
 
@@ -434,6 +435,7 @@ new-file-template-ansimation-title=Ansimation
 new-file-template-ansimation-description=Create a new ansi animation file
 new-file-template-bit_font-title=Bit Font
 new-file-template-bit_font-description=Create a new bit font file
+
 new-file-template-color_font-title=TDF Color Font
 new-file-template-color_font-description=Create a new TheDraw color font
 new-file-template-block_font-title=TDF Block Font
