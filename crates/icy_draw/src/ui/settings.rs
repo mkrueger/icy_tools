@@ -277,46 +277,64 @@ impl Settings {
                 if fs::create_dir_all(&dir).is_err() {
                     return Err(IcyDrawError::ErrorCreatingDirectory(format!("{dir:?}")).into());
                 }
-                fs::write(dir.join("elite-writing.lua"), include_bytes!("../../external/plugins/elite-writing.lua"))?;
-                fs::write(dir.join("chessboard.lua"), include_bytes!("../../external/plugins/chessboard.lua"))?;
+                fs::write(dir.join("random-colors.lua"), include_bytes!("../../external/plugins/random-colors.lua"))?;
+                fs::write(dir.join("matrix_pattern.lua"), include_bytes!("../../external/plugins/matrix_pattern.lua"))?;
+                fs::write(dir.join("rainbow_gradient.lua"), include_bytes!("../../external/plugins/rainbow_gradient.lua"))?;
                 fs::write(
                     dir.join("color_transformer.lua"),
                     include_bytes!("../../external/plugins/color_transformer.lua"),
                 )?;
+                fs::write(dir.join("lower_intensity.lua"), include_bytes!("../../external/plugins/lower_intensity.lua"))?;
                 fs::write(
-                    dir.join("double_line_frame.lua"),
-                    include_bytes!("../../external/plugins/double_line_frame.lua"),
+                    dir.join("vertical_gradient.lua"),
+                    include_bytes!("../../external/plugins/vertical_gradient.lua"),
                 )?;
-                fs::write(dir.join("elite-writing.lua"), include_bytes!("../../external/plugins/elite-writing.lua"))?;
-                fs::write(dir.join("grid_pattern.lua"), include_bytes!("../../external/plugins/grid_pattern.lua"))?;
+                fs::write(dir.join("random_mandala.lua"), include_bytes!("../../external/plugins/random_mandala.lua"))?;
                 fs::write(
                     dir.join("horizontal_gradient.lua"),
                     include_bytes!("../../external/plugins/horizontal_gradient.lua"),
                 )?;
                 fs::write(
+                    dir.join("double_line_frame.lua"),
+                    include_bytes!("../../external/plugins/double_line_frame.lua"),
+                )?;
+                fs::write(dir.join("radial_gradient.lua"), include_bytes!("../../external/plugins/radial_gradient.lua"))?;
+                fs::write(
                     dir.join("horizontal_stripes.lua"),
                     include_bytes!("../../external/plugins/horizontal_stripes.lua"),
+                )?;
+                fs::write(dir.join("random_blocks.lua"), include_bytes!("../../external/plugins/random_blocks.lua"))?;
+                fs::write(dir.join("grid_pattern.lua"), include_bytes!("../../external/plugins/grid_pattern.lua"))?;
+                fs::write(dir.join("vertical_stripes.lua"), include_bytes!("../../external/plugins/vertical_stripes.lua"))?;
+                fs::write(dir.join("shadow_effect.lua"), include_bytes!("../../external/plugins/shadow_effect.lua"))?;
+                fs::write(
+                    dir.join("grayscale_gradient.lua"),
+                    include_bytes!("../../external/plugins/grayscale_gradient.lua"),
                 )?;
                 fs::write(
                     dir.join("increase_intensity.lua"),
                     include_bytes!("../../external/plugins/increase_intensity.lua"),
                 )?;
-                fs::write(dir.join("lower_intensity.lua"), include_bytes!("../../external/plugins/lower_intensity.lua"))?;
-                fs::write(dir.join("matrix_pattern.lua"), include_bytes!("../../external/plugins/matrix_pattern.lua"))?;
-                fs::write(dir.join("radial_gradient.lua"), include_bytes!("../../external/plugins/radial_gradient.lua"))?;
-                fs::write(dir.join("random_blocks.lua"), include_bytes!("../../external/plugins/random_blocks.lua"))?;
-                fs::write(dir.join("random-colors.lua"), include_bytes!("../../external/plugins/random-colors.lua"))?;
+                fs::write(
+                    dir.join("uppercase_to_lowercase.lua"),
+                    include_bytes!("../../external/plugins/uppercase_to_lowercase.lua"),
+                )?;
+                fs::write(dir.join("barcode_pattern.lua"), include_bytes!("../../external/plugins/barcode_pattern.lua"))?;
+                fs::write(dir.join("elite-writing.lua"), include_bytes!("../../external/plugins/elite-writing.lua"))?;
                 fs::write(
                     dir.join("random_half_blocks.lua"),
                     include_bytes!("../../external/plugins/random_half_blocks.lua"),
                 )?;
-                fs::write(dir.join("shadow_effect.lua"), include_bytes!("../../external/plugins/shadow_effect.lua"))?;
-                fs::write(
-                    dir.join("vertical_gradient.lua"),
-                    include_bytes!("../../external/plugins/vertical_gradient.lua"),
-                )?;
                 fs::write(dir.join("vertical_mirror.lua"), include_bytes!("../../external/plugins/vertical_mirror.lua"))?;
-                fs::write(dir.join("vertical_stripes.lua"), include_bytes!("../../external/plugins/vertical_stripes.lua"))?;
+                fs::write(
+                    dir.join("single_line_frame.lua"),
+                    include_bytes!("../../external/plugins/single_line_frame.lua"),
+                )?;
+                fs::write(
+                    dir.join("lowercase_to_uppercase.lua"),
+                    include_bytes!("../../external/plugins/lowercase_to_uppercase.lua"),
+                )?;
+                fs::write(dir.join("chessboard.lua"), include_bytes!("../../external/plugins/chessboard.lua"))?;
             }
             return Ok(dir);
         }
