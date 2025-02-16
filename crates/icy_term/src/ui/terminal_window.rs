@@ -620,16 +620,17 @@ impl MainWindow {
     fn copy_to_clipboard(&mut self) {
         let buffer_view = self.buffer_view.clone();
         let mut l = buffer_view.lock();
+        let text = l.get_copy_text();
         if self.shift_pressed_during_selection {
             if let Some(data) = l.get_edit_state().get_clipboard_data() {
-                if let Err(err) = icy_engine::util::push_data(icy_engine::util::BUFFER_DATA, &data) {
+                if let Err(err) = icy_engine::util::push_data(icy_engine::util::BUFFER_DATA, &data, text) {
                     log::error!("error while copy:{err}");
                 }
                 return;
             }
         }
 
-        if let Some(txt) = l.get_copy_text() {
+        if let Some(txt) = text {
             let mut clipboard = arboard::Clipboard::new().unwrap();
             clipboard.set_text(txt).unwrap();
         }

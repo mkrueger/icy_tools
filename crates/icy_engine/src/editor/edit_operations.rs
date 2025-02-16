@@ -5,7 +5,7 @@ use std::mem;
 use i18n_embed_fl::fl;
 use icy_sauce::SauceMetaInformation;
 
-use crate::{AttributedChar, EngineResult, Layer, Palette, Position, Rectangle, Sixel, Size, TextPane};
+use crate::{parse_with_parser, parsers, AttributedChar, Buffer, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane};
 
 use super::{
     undo_operations::{Paste, ReverseCaretPosition, ReversedUndo, UndoSetChar, UndoSwapChar},
@@ -77,6 +77,34 @@ impl EditState {
         layer.role = crate::Role::PasteImage;
         layer.properties.has_alpha_channel = true;
         layer.sixels.push(sixel);
+
+        let op = Paste::new(self.get_current_layer()?, layer);
+        self.push_undo_action(Box::new(op))?;
+        self.selection_opt = None;
+        Ok(())
+    }
+
+    pub fn paste_text(&mut self, text: &str) -> EngineResult<()> {
+        let x = self.caret.get_position().x;
+        let y = self.caret.get_position().y;
+
+        let width = self.get_buffer().get_size().width - x;
+        let mut result = Buffer::new((width, 25));
+        result.is_terminal_buffer = false;
+
+        let mut parser = parsers::ansi::Parser::default();
+        parser.bs_is_ctrl_char = false;
+
+        let text = text
+            .chars()
+            .map(|ch| self.unicode_converter.convert_from_unicode(ch, self.caret.get_font_page()))
+            .collect::<String>();
+        parse_with_parser(&mut result, &mut parser, &text, true)?;
+
+        let mut layer = result.layers.remove(0);
+        layer.properties.has_alpha_channel = true;
+        layer.role = Role::PastePreview;
+        layer.set_offset((x, y));
 
         let op = Paste::new(self.get_current_layer()?, layer);
         self.push_undo_action(Box::new(op))?;

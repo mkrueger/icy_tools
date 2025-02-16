@@ -39,7 +39,7 @@ toml = { workspace = true }
 lazy_static = { workspace = true }
 notify = "7.0.0"
 gabi = "0.2.6"
-arboard = { version = "3.4.1" }
+arboard = { workspace = true }
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
 anyhow = "1.0.95"

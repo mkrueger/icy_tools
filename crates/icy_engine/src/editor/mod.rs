@@ -204,7 +204,7 @@ impl EditState {
         (&mut self.buffer, &mut self.caret, &mut self.unicode_converter)
     }
 
-    pub fn get_copy_text(&mut self) -> Option<String> {
+    pub fn get_copy_text(&self) -> Option<String> {
         let Some(selection) = &self.selection_opt else {
             return None;
         };

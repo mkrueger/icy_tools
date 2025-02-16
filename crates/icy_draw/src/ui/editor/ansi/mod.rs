@@ -15,7 +15,7 @@ use i18n_embed_fl::fl;
 use icy_engine::{
     attribute,
     editor::{AtomicUndoGuard, UndoState},
-    util::{pop_data, pop_sixel_image, push_data, BUFFER_DATA},
+    util::{pop_cliboard_text, pop_data, pop_sixel_image, push_data, BUFFER_DATA},
     AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane, UnicodeConverter,
 };
 
@@ -109,16 +109,18 @@ impl ClipboardHandler for AnsiEditor {
     }
 
     fn copy(&mut self) -> EngineResult<()> {
+        let text = self.buffer_view.lock().get_edit_state_mut().get_copy_text();
         if let Some(data) = self.buffer_view.lock().get_edit_state_mut().get_clipboard_data() {
-            push_data(BUFFER_DATA, &data)?;
+            push_data(BUFFER_DATA, &data, text)?;
         } else {
             log::error!("can't get clipboard data!");
         }
+
         Ok(())
     }
 
     fn can_paste(&self) -> bool {
-        pop_data(BUFFER_DATA).is_some() || pop_sixel_image().is_some()
+        pop_data(BUFFER_DATA).is_some() || pop_sixel_image().is_some() || pop_cliboard_text().is_some()
     }
 
     fn paste(&mut self) -> EngineResult<()> {
@@ -130,6 +132,8 @@ impl ClipboardHandler for AnsiEditor {
             self.buffer_view.lock().get_edit_state_mut().paste_clipboard_data(&data)?;
         } else if let Some(sixel) = pop_sixel_image() {
             self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
+        } else if let Some(text) = pop_cliboard_text() {
+            self.buffer_view.lock().get_edit_state_mut().paste_text(&text)?;
         }
         Ok(())
     }
@@ -594,7 +598,7 @@ impl AnsiEditor {
                     egui::Event::Copy => {}
                     egui::Event::Cut => {}
                     egui::Event::Paste(text) => {
-                        self.output_string(text);
+                        let _ = self.buffer_view.lock().get_edit_state_mut().paste_text(text.as_str());
                     }
 
                     /* egui::Event::CompositionEnd(text) |*/

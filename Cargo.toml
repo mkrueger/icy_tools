@@ -45,6 +45,7 @@ regex = "1.10.6"
 directories = "6.0.0"
 tokio = { version = "1.43.0", features = ["full"] }
 rodio = { version = "0.20.1" }
+arboard = { version = "3.4.1" }
 
 egui = "0.30.0"
 eframe = "0.30.0"

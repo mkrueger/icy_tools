@@ -422,7 +422,7 @@ impl ClipboardHandler for BitFontEditor {
     fn copy(&mut self) -> EngineResult<()> {
         if let Some(ch) = self.selected_char_opt {
             if let Some(data) = self.font.get_clipboard_data(ch) {
-                push_data(BITFONT_GLYPH, &data)?;
+                push_data(BITFONT_GLYPH, &data, None)?;
             }
         }
         Ok(())
