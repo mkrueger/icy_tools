@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use character::Character;
+use character::{Character, FIGChar};
 use errors::FigError;
 use header::Header;
 use zip::ZipArchive;
@@ -110,7 +110,11 @@ impl AnsiFont for FIGFont {
         for line in &ch.lines {
             let mut x = caret_pos.x;
             for ch in line {
-                let attributed_char = AttributedChar::new(*ch, color);
+                let ch = match *ch {
+                    FIGChar::HardBlank => ' ',
+                    FIGChar::Char(ch) => ch,
+                };
+                let attributed_char = AttributedChar::new(ch, color);
                 editor.set_char(Position::new(x, y), attributed_char).unwrap();
                 x += 1;
             }

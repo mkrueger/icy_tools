@@ -6,10 +6,16 @@ use crate::EngineResult;
 use super::{errors::FigError, header::Header, read_line};
 
 #[derive(Debug, PartialEq)]
+pub enum FIGChar {
+    HardBlank,
+    Char(char),
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Character {
     pub ch: Option<char>,
     pub comment: Option<String>,
-    pub lines: Vec<Vec<char>>,
+    pub lines: Vec<Vec<FIGChar>>,
 }
 
 lazy_static::lazy_static! {
@@ -48,17 +54,29 @@ impl Character {
             if line.ends_with(&[eol, eol]) {
                 line.pop();
                 line.pop();
-                lines.push(line);
+                lines.push(convert_line(line, header));
                 break;
             } else if line.ends_with(&[eol]) {
                 line.pop();
-                lines.push(line);
+                lines.push(convert_line(line, header));
             } else {
                 return Err(FigError::InvalidCharLine.into());
             }
         }
         Ok(Self { ch, comment, lines })
     }
+}
+
+fn convert_line(line: Vec<char>, header: &Header) -> Vec<FIGChar> {
+    line.into_iter()
+        .map(|c| {
+            if c == header.hard_blank_char() {
+                FIGChar::HardBlank
+            } else {
+                FIGChar::Char(c)
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -83,12 +101,60 @@ mod tests {
         assert_eq!(
             character.lines,
             vec![
-                vec![' ', '_', ' ', ' ', ' ', '_', ' '],
-                vec!['(', '_', ')', ' ', '(', '_', ')'],
-                vec!['|', ' ', '|', ' ', '|', ' ', '|'],
-                vec!['|', ' ', '|', '_', '|', ' ', '|'],
-                vec![' ', '\\', '_', '_', ',', '_', '|',],
-                vec![' ', ' ', ' ', ' ', ' ', ' ', ' ']
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('\\'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(','),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' ')
+                ]
             ]
         );
     }
@@ -112,12 +178,54 @@ mod tests {
         assert_eq!(
             character.lines,
             vec![
-                vec![' ', ' ', ' ', '_', ' ', ' '],
-                vec![' ', ' ', '|', ' ', '|', ' '],
-                vec![' ', '/', ' ', '_', '_', ')'],
-                vec!['|', ' ', '(', '_', '_', ' '],
-                vec![' ', '\\', ' ', ' ', ' ', ')'],
-                vec![' ', ' ', '|', '_', '|', ' ']
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('/'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('\\'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' ')
+                ]
             ]
         );
     }
@@ -141,12 +249,54 @@ mod tests {
         assert_eq!(
             character.lines,
             vec![
-                vec![' ', ' ', ' ', '_', ' ', ' '],
-                vec![' ', ' ', '|', ' ', '|', ' '],
-                vec![' ', '/', ' ', '_', '_', ')'],
-                vec!['|', ' ', '(', '_', '_', ' '],
-                vec![' ', '\\', ' ', ' ', ' ', ')'],
-                vec![' ', ' ', '|', '_', '|', ' ']
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('/'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('\\'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' ')
+                ]
             ]
         );
     }
@@ -170,12 +320,130 @@ mod tests {
         assert_eq!(
             character.lines,
             vec![
-                vec![' ', ' ', ' ', '_', ' ', ' '],
-                vec![' ', ' ', '|', ' ', '|', ' '],
-                vec![' ', '/', ' ', '_', '_', ')'],
-                vec!['|', ' ', '(', '_', '_', ' '],
-                vec![' ', '\\', ' ', ' ', ' ', ')'],
-                vec![' ', ' ', '|', '_', '|', ' ']
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('/'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char('\\'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' ')
+                ]
+            ]
+        );
+    }
+
+    #[test]
+    pub fn test_hard_blank() {
+        let data = r"flf2a$ 6 5 20 15 0 0 143 229
+$_   _ @
+(_) (_)@
+| | | |@
+| |_| |@
+$\__,_|@
+       @@";
+
+        let mut reader = BufReader::new(data.as_bytes());
+        let header = Header::read(&mut reader).unwrap();
+        let character = Character::read(&mut reader, &header, false).unwrap();
+        assert_eq!(character.ch, None);
+        assert_eq!(character.comment, None);
+        assert_eq!(
+            character.lines,
+            vec![
+                vec![
+                    FIGChar::HardBlank,
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(' ')
+                ],
+                vec![
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('('),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(')')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|')
+                ],
+                vec![
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|'),
+                    FIGChar::Char(' '),
+                    FIGChar::Char('|')
+                ],
+                vec![
+                    FIGChar::HardBlank,
+                    FIGChar::Char('\\'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('_'),
+                    FIGChar::Char(','),
+                    FIGChar::Char('_'),
+                    FIGChar::Char('|')
+                ],
+                vec![
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' '),
+                    FIGChar::Char(' ')
+                ]
             ]
         );
     }
