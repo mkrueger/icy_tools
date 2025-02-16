@@ -606,19 +606,31 @@ impl<'a> MainWindow<'a> {
             Message::CenterLine => {
                 self.run_editor_command(0, |_, editor, _| {
                     let mut lock = editor.buffer_view.lock();
-                    to_message(lock.get_edit_state_mut().center_line())
+                    if lock.get_edit_state_mut().is_something_selected() {
+                        to_message(lock.get_edit_state_mut().center())
+                    } else {
+                        to_message(lock.get_edit_state_mut().center_line())
+                    }
                 });
             }
             Message::JustifyLineLeft => {
                 self.run_editor_command(0, |_, editor, _| {
                     let mut lock = editor.buffer_view.lock();
-                    to_message(lock.get_edit_state_mut().justify_line_left())
+                    if lock.get_edit_state_mut().is_something_selected() {
+                        to_message(lock.get_edit_state_mut().justify_left())
+                    } else {
+                        to_message(lock.get_edit_state_mut().justify_line_left())
+                    }
                 });
             }
             Message::JustifyLineRight => {
-                self.run_editor_command(0, |_, editor, _| {
+                self.run_editor_command(0, |_, editor: &mut AnsiEditor, _| {
                     let mut lock = editor.buffer_view.lock();
-                    to_message(lock.get_edit_state_mut().justify_line_right())
+                    if lock.get_edit_state_mut().is_something_selected() {
+                        to_message(lock.get_edit_state_mut().justify_right())
+                    } else {
+                        to_message(lock.get_edit_state_mut().justify_line_right())
+                    }
                 });
             }
             Message::InsertRow => {

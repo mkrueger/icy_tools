@@ -75,15 +75,15 @@ impl EditState {
                 if len == removed_chars {
                     continue;
                 }
-                removed_chars = (removed_chars as f32 / 2.0).ceil() as i32;
-                for x in area.x_range() {
-                    let ch = if area.right() - x - removed_chars >= area.left() {
-                        layer.get_char((area.right() - x - removed_chars, y))
+                let removed_chars = removed_chars / 2;
+                for x in area.x_range().rev() {
+                    let ch = if x - removed_chars >= area.left() {
+                        layer.get_char((x - removed_chars, y))
                     } else {
                         AttributedChar::invisible()
                     };
 
-                    layer.set_char((area.right() - x - 1, y), ch);
+                    layer.set_char((x, y), ch);
                 }
             }
             let new_layer = Layer::from_layer(layer, area);
