@@ -24,7 +24,7 @@ pub enum LayoutMode {
 
 bitflags::bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq)]
-    pub struct HorizontalSmushing: u32 {
+    pub struct HorizontalSmushing: i32 {
         const NONE            =  0;
         const EQUAL_CHARACTER =  1;
         const UNDERSCORE      =  2;
@@ -37,7 +37,7 @@ bitflags::bitflags! {
 
 bitflags::bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq)]
-    pub struct VerticalSmushing: u32 {
+    pub struct VerticalSmushing: i32 {
         const NONE            =  0;
         const EQUAL_CHARACTER =  1;
         const UNDERSCORE      =  2;
@@ -94,7 +94,7 @@ impl Header {
         let vertical_smushing;
 
         if let Some(capture) = captures.get(8) {
-            let bits: u32 = capture.as_str().parse()?;
+            let bits: i32 = capture.as_str().parse()?;
             horizontal_smushing = HorizontalSmushing::from_bits_truncate(bits & 0b111111);
             horiz_layout = if bits & 0x80 != 0 {
                 LayoutMode::Smushing
@@ -120,7 +120,7 @@ impl Header {
                 horizontal_smushing = HorizontalSmushing::NONE;
             } else {
                 horiz_layout = LayoutMode::Smushing;
-                horizontal_smushing = HorizontalSmushing::from_bits_truncate(old_layout as u32);
+                horizontal_smushing = HorizontalSmushing::from_bits_truncate(old_layout);
             }
             vertical_smushing = VerticalSmushing::NONE;
             vert_layout = LayoutMode::Full;
@@ -197,6 +197,63 @@ impl Header {
     pub fn horiz_layout(&self) -> LayoutMode {
         self.horiz_layout
     }
+
+    pub(crate) fn generate_string(&self) -> String {
+        let old_layout;
+        let mut full_layout;
+
+        match self.horiz_layout {
+            LayoutMode::Full => {
+                old_layout = -1;
+                full_layout = 0;
+            }
+            LayoutMode::Fitting => {
+                old_layout = 0;
+                full_layout = 64;
+            }
+            LayoutMode::Smushing => {
+                old_layout = self.horizontal_smushing.bits();
+                full_layout = old_layout;
+                full_layout |= 128;
+            }
+        }
+
+        match self.vert_layout {
+            LayoutMode::Full => {}
+            LayoutMode::Fitting => {
+                full_layout |= 8192;
+            }
+            LayoutMode::Smushing => {
+                full_layout |= 16384;
+                full_layout |= (self.vertical_smushing.bits() << 8) as i32;
+            }
+        }
+
+        format!(
+            "flf2a{} {} {} {} {} {} {} {}{}{}",
+            self.hard_blank_char,
+            self.height,
+            self.baseline,
+            self.max_length,
+            old_layout,
+            self.comment.lines().count(),
+            match self.print_direction {
+                PrintDirection::LeftToRight => 0,
+                PrintDirection::RightToLeft => 1,
+            },
+            full_layout,
+            if let Some(count) = &self.codetag_count {
+                format!(" {}", count)
+            } else {
+                String::new()
+            },
+            if !self.comment.is_empty() {
+                format!("\n{}", self.comment)
+            } else {
+                String::new()
+            }
+        )
+    }
 }
 
 #[cfg(test)]
@@ -230,7 +287,7 @@ mod tests {
     #[test]
     fn test_header_no_codetag() {
         let input = "flf2a$ 6 5 20 15 0 0 143";
-        let mut reader = BufReader::new(input.as_bytes());
+        let mut reader: BufReader<&[u8]> = BufReader::new(input.as_bytes());
         let header = Header::read(&mut reader).unwrap();
         assert_eq!(header.hard_blank_char(), '$');
         assert_eq!(header.height(), 6);
@@ -238,7 +295,6 @@ mod tests {
         assert_eq!(header.max_length(), 20);
         assert_eq!(header.comment(), "");
         assert_eq!(header.print_direction(), PrintDirection::LeftToRight);
-
         assert_eq!(header.horiz_layout(), LayoutMode::Smushing);
         assert_eq!(
             header.horizontal_smushing(),
@@ -281,5 +337,23 @@ mod tests {
         let mut reader = BufReader::new(input.as_bytes());
         let header = Header::read(&mut reader).unwrap();
         assert_eq!(header.comment(), "foo\nbar\nbaz");
+    }
+
+    #[test]
+    fn test_header_generation() {
+        let input = "flf2a$ 6 5 20 15 0 0 143 229";
+        let mut reader = BufReader::new(input.as_bytes());
+        let header = Header::read(&mut reader).unwrap();
+        let generated = header.generate_string();
+        assert_eq!(generated, input);
+    }
+
+    #[test]
+    fn test_header_generation_comments() {
+        let input = "flf2a$ 6 5 20 15 3 0 143 229\nfoo\nbar\nbaz";
+        let mut reader = BufReader::new(input.as_bytes());
+        let header = Header::read(&mut reader).unwrap();
+        let generated = header.generate_string();
+        assert_eq!(generated, input);
     }
 }

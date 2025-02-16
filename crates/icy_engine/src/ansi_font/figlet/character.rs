@@ -65,6 +65,27 @@ impl Character {
         }
         Ok(Self { ch, comment, lines })
     }
+
+    pub(crate) fn generate_string(&self, header: &Header) -> String {
+        let mut res = String::new();
+        if let Some(ch) = self.ch {
+            res.push_str(&format!("0x{:04x}  {}\n", ch as u32, self.comment.as_ref().unwrap()));
+        }
+        for (i, line) in self.lines.iter().enumerate() {
+            if i > 0 {
+                res.push('\n');
+            }
+            for ch in line {
+                match ch {
+                    FIGChar::HardBlank => res.push_str(&format!("{}", header.hard_blank_char())),
+                    FIGChar::Char(ch) => res.push(*ch),
+                }
+            }
+            res.push('@');
+        }
+        res.push_str("@\n");
+        res
+    }
 }
 
 fn convert_line(line: Vec<char>, header: &Header) -> Vec<FIGChar> {
@@ -445,6 +466,62 @@ $\__,_|@
                     FIGChar::Char(' ')
                 ]
             ]
+        );
+    }
+
+    #[test]
+    pub fn test_character_generation() {
+        let data = r"flf2a$ 6 5 20 15 0 0 143 229
+ _   _ @
+(_) (_)@
+| | | |@
+| |_| |@
+ \__,_|@
+       @@";
+
+        let mut reader = BufReader::new(data.as_bytes());
+        let header = Header::read(&mut reader).unwrap();
+        let character = Character::read(&mut reader, &header, false).unwrap();
+        assert_eq!(character.ch, None);
+        assert_eq!(character.comment, None);
+        assert_eq!(
+            character.generate_string(&header),
+            r" _   _ @
+(_) (_)@
+| | | |@
+| |_| |@
+ \__,_|@
+       @@
+"
+        );
+    }
+
+    #[test]
+    pub fn test_character_generation_comment() {
+        let data = r"flf2a$ 6 5 20 15 0 0 143 229
+0x00a2  CENT SIGN
+   _  @
+  | | @
+ / __)@
+| (__ @
+ \   )@
+  |_| @@";
+
+        let mut reader = BufReader::new(data.as_bytes());
+        let header = Header::read(&mut reader).unwrap();
+        let character = Character::read(&mut reader, &header, true).unwrap();
+        assert_eq!(character.ch, Some('¢'));
+        assert_eq!(character.comment, Some("CENT SIGN".to_string()));
+        assert_eq!(
+            character.generate_string(&header),
+            r"0x00a2  CENT SIGN
+   _  @
+  | | @
+ / __)@
+| (__ @
+ \   )@
+  |_| @@
+"
         );
     }
 }

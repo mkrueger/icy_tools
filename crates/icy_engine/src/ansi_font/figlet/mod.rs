@@ -99,18 +99,30 @@ impl AnsiFont for FIGFont {
         if ch == '\n' {
             return Position::new(0, editor.get_caret().get_position().y + self.header.height() as i32);
         }
-
         let Some(ch) = self.chars.get(&ch) else {
             return editor.get_caret().get_position();
         };
+
         let caret_pos = editor.get_caret().get_position();
+
+        match self.header.horiz_layout() {
+            header::LayoutMode::Full => {
+                // already at the right position
+            }
+            header::LayoutMode::Fitting => {
+                // todo
+            }
+            header::LayoutMode::Smushing => {
+                // todo
+            }
+        }
         let color = editor.get_caret().attribute;
 
         let mut y = caret_pos.y;
         for line in &ch.lines {
-            let mut x = caret_pos.x;
+            let mut x: i32 = caret_pos.x;
             for ch in line {
-                let ch = match *ch {
+                let ch: char = match *ch {
                     FIGChar::HardBlank => ' ',
                     FIGChar::Char(ch) => ch,
                 };
@@ -128,7 +140,30 @@ impl AnsiFont for FIGFont {
     }
 
     fn as_bytes(&self) -> EngineResult<Vec<u8>> {
-        todo!()
+        let mut res = String::new();
+        res.push_str(&self.header.generate_string());
+        res.push('\n');
+        for ch in ' '..='~' {
+            if let Some(ch) = self.chars.get(&ch) {
+                res.push_str(&ch.generate_string(&self.header));
+            }
+        }
+        for ch in ADDITIONAL_CHARS_MAP.iter() {
+            if let Some(ch) = self.chars.get(&(*ch as char)) {
+                res.push_str(&ch.generate_string(&self.header));
+            } else {
+                break;
+            }
+        }
+
+        for ch in self.chars.keys().filter(|ch| **ch > '~') {
+            if let Some(ch) = self.chars.get(ch) {
+                if ch.ch.is_some() {
+                    res.push_str(&ch.generate_string(&self.header));
+                }
+            }
+        }
+        Ok(res.into_bytes())
     }
 }
 
