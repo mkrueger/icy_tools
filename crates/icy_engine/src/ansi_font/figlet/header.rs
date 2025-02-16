@@ -2,7 +2,7 @@ use regex::Regex;
 use std::io::{BufReader, Read};
 
 lazy_static::lazy_static! {
-    static ref FIG_HEADER : Regex = Regex::new(r"flf2a(.) (\d+) (\d+) (\d+) (\d+) (\d+) (\d+)\s*(\d+)?\s*(\d+)?").unwrap();
+    static ref FIG_HEADER : Regex = Regex::new(r"flf2a(.) (\d+) (\d+) (\d+) (\d+) (\d+)\s*(\d+)?\s*(\d+)?\s*(\d+)?").unwrap();
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -47,7 +47,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Header {
     hard_blank_char: char,
     height: usize,
@@ -78,10 +78,14 @@ impl Header {
         let max_length = captures[4].parse()?;
         let old_layout: i32 = captures[5].parse()?;
         let comment_lines: usize = captures[6].parse()?;
-        let print_direction = match captures[7].parse()? {
-            0 => PrintDirection::LeftToRight,
-            1 => PrintDirection::RightToLeft,
-            e => return Err(FigError::InvalidHeaderPrintDirection(e).into()),
+        let print_direction = if let Some(capture) = captures.get(7) {
+            match capture.as_str().parse()? {
+                0 => PrintDirection::LeftToRight,
+                1 => PrintDirection::RightToLeft,
+                e => return Err(FigError::InvalidHeaderPrintDirection(e).into()),
+            }
+        } else {
+            PrintDirection::LeftToRight
         };
 
         let horiz_layout;

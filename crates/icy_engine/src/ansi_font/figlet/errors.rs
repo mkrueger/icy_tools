@@ -16,4 +16,7 @@ pub enum FigError {
 
     #[error("Invalid character line without EOL")]
     InvalidCharLine,
+
+    #[error("Invalid FIGLET ZIP archive")]
+    InvalidZIP,
 }

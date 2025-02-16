@@ -5,6 +5,7 @@ use crate::EngineResult;
 
 use super::{errors::FigError, header::Header, read_line};
 
+#[derive(Debug, PartialEq)]
 pub struct Character {
     pub ch: Option<char>,
     pub comment: Option<String>,

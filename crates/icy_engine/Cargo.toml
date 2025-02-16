@@ -34,6 +34,7 @@ arboard = { version = "3.4.1", optional = true }
 icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
 bitflags = "2.8.0"
+zip = { version = "2.2.0" }
 
 [dev-dependencies]
 walkdir = { workspace = true }

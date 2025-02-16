@@ -6,7 +6,9 @@ use std::{
 };
 
 use character::Character;
+use errors::FigError;
 use header::Header;
+use zip::ZipArchive;
 
 use crate::{AttributedChar, EngineResult, Position};
 
@@ -17,8 +19,8 @@ mod errors;
 pub mod header;
 pub struct FIGFont {
     name: String,
-    header: Header,
-    chars: HashMap<char, Character>,
+    pub(crate) header: Header,
+    pub(crate) chars: HashMap<char, Character>,
 }
 
 const ADDITIONAL_CHARS: usize = 7;
@@ -26,9 +28,21 @@ const ADDITIONAL_CHARS_MAP: [u8; ADDITIONAL_CHARS] = [196, 214, 220, 228, 246, 2
 
 impl FIGFont {
     pub fn load(file_name: &Path) -> EngineResult<Self> {
-        let f = File::open(file_name).expect("error while reading file");
-        let mut reader = BufReader::new(f);
-        let mut res = FIGFont::read(&mut reader)?;
+        let mut res = if is_zip(file_name)? {
+            let mut zip = ZipArchive::new(File::open(file_name)?)?;
+            // should be the only file in ZIP archive according to FIGlet spec
+            if zip.len() != 1 {
+                return Err(FigError::InvalidZIP.into());
+            }
+            let f = zip.by_index(0)?;
+            let mut reader = BufReader::new(f);
+            FIGFont::read(&mut reader)?
+        } else {
+            let f = File::open(file_name).expect("error while reading file");
+            let mut reader = BufReader::new(f);
+            FIGFont::read(&mut reader)?
+        };
+
         if let Some(name) = file_name.file_name() {
             res.name = name.to_string_lossy().to_string();
         }
@@ -63,6 +77,13 @@ impl FIGFont {
             chars,
         })
     }
+}
+
+fn is_zip(file_name: &Path) -> EngineResult<bool> {
+    let mut f = File::open(file_name).expect("error while reading file");
+    let mut h = [0; 2];
+    f.read_exact(&mut h)?;
+    Ok(h.eq(b"PK"))
 }
 
 impl AnsiFont for FIGFont {
@@ -117,4 +138,17 @@ pub(crate) fn read_line<R: Read>(reader: &mut BufReader<R>) -> EngineResult<Stri
         data.pop();
     }
     Ok(String::from_utf8(data)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zipped() {
+        let font1 = FIGFont::load(Path::new("src/ansi_font/figlet/doom.flf")).unwrap();
+        let font2 = FIGFont::load(Path::new("src/ansi_font/figlet/doom_zipped.flf")).unwrap();
+        assert_eq!(font1.header, font2.header);
+        assert_eq!(font1.chars, font2.chars);
+    }
 }
