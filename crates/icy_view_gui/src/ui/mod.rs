@@ -70,6 +70,7 @@ pub struct MainWindow<'a> {
 
     toasts: egui_notify::Toasts,
     is_closed: bool,
+    is_file_chooser: bool,
     pub is_canceled: bool,
 
     last_force_load: bool,
@@ -229,6 +230,7 @@ impl<'a> MainWindow<'a> {
             store_options: false,
             sound_thread: Arc::new(Mutex::new(SoundThread::new())),
             last_force_load: false,
+            is_file_chooser: false,
         }
     }
 
@@ -254,6 +256,7 @@ impl<'a> MainWindow<'a> {
 
     pub fn show_file_chooser(&mut self, ctx: &Context, monitor_settins: MonitorSettings) -> bool {
         self.is_closed = false;
+        self.is_file_chooser = true;
         unsafe { SETTINGS.monitor_settings = monitor_settins };
         egui::SidePanel::left("bottom_panel").exact_width(412.0).resizable(false).show(ctx, |ui| {
             let command = self.file_view.show_ui(ui, true);
@@ -597,7 +600,9 @@ impl<'a> MainWindow<'a> {
 
     fn view_selected(&mut self, ctx: &Context, file: usize, force_load: bool) {
         if file >= self.file_view.files.len() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
+            if !self.is_file_chooser {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
+            }
             return;
         }
         if let Ok(thread) = self.sound_thread.lock() {
@@ -618,7 +623,9 @@ impl<'a> MainWindow<'a> {
 
         match self.file_view.files[file].item_type() {
             ItemType::Folder => {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
+                if !self.is_file_chooser {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::DEFAULT_TITLE.clone()));
+                }
                 return;
             }
             ItemType::IcyAnimation => self.load_icy_animation(&path, &data),
@@ -636,7 +643,9 @@ impl<'a> MainWindow<'a> {
             }
             ItemType::Ansi | ItemType::AnsiMusic => self.load_ansi(&path, &data),
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("iCY VIEW {} - {}", *crate::VERSION, label)));
+        if !self.is_file_chooser {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("iCY VIEW {} - {}", *crate::VERSION, label)));
+        }
     }
 
     fn load_igs(&mut self, path: &Path, data: &[u8]) {
