@@ -205,7 +205,18 @@ impl crate::ModalDialog for SelectFontDialog {
 
         let mut result = false;
         let modal = Modal::new(ctx, "select_font_dialog2");
-        let font_count = self.fonts.lock().len();
+        let font_count = self
+            .fonts
+            .lock()
+            .iter()
+            .filter(|font| {
+                (self.filter.is_empty() || font.name().to_lowercase().contains(&self.filter.to_lowercase()))
+                    && (self.show_outline && matches!(font.font_type(), icy_engine::FontType::Outline)
+                        || self.show_block && matches!(font.font_type(), icy_engine::FontType::Block)
+                        || self.show_color && matches!(font.font_type(), icy_engine::FontType::Color)
+                        || self.show_figlet && matches!(font.font_type(), icy_engine::FontType::Figlet))
+            })
+            .count();
         modal.show(|ui| {
             ui.set_width(700.);
             modal.title(ui, fl!(crate::LANGUAGE_LOADER, "select-font-dialog-title", fontcount = font_count));
@@ -245,9 +256,8 @@ impl crate::ModalDialog for SelectFontDialog {
 
                 let mut filtered_fonts = Vec::new();
 
-                for i in 0..font_count {
-                    let font = &self.fonts.lock()[i];
-                    if font.name().to_lowercase().contains(&self.filter.to_lowercase())
+                for (i, font) in self.fonts.lock().iter().enumerate() {
+                    if (self.filter.is_empty() || font.name().to_lowercase().contains(&self.filter.to_lowercase()))
                         && (self.show_outline && matches!(font.font_type(), icy_engine::FontType::Outline)
                             || self.show_block && matches!(font.font_type(), icy_engine::FontType::Block)
                             || self.show_color && matches!(font.font_type(), icy_engine::FontType::Color)
