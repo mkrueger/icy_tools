@@ -1,9 +1,9 @@
 use crate::{MainWindow, Message};
 use eframe::{
     egui::{self, Sense},
-    epaint::{Rect, Rounding, Vec2},
+    epaint::{Rect, Vec2},
 };
-use egui::RichText;
+use egui::{CornerRadius, RichText};
 
 pub fn add_tool_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, arg: &MainWindow<'_>) -> Option<Message> {
     let mut msg = None;
@@ -27,16 +27,24 @@ pub fn add_tool_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, arg: &MainWind
         let response = ui.interact(rect, id.with(i), Sense::click());
         if i == arg.document_behavior.get_selected_tool() {
             ui.painter()
-                .rect_filled(rect.expand(2.0), Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
-            ui.painter()
-                .rect_stroke(rect.expand(2.0), Rounding::same(4.0), ui.style().visuals.window_stroke);
+                .rect_filled(rect.expand(2.0), CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
+            ui.painter().rect_stroke(
+                rect.expand(2.0),
+                CornerRadius::same(4),
+                ui.style().visuals.window_stroke,
+                egui::StrokeKind::Outside,
+            );
         }
 
         if response.hovered() {
             ui.painter()
-                .rect_filled(rect.expand(2.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
-            ui.painter()
-                .rect_stroke(rect.expand(2.0), Rounding::same(4.0), ui.style().visuals.window_stroke);
+                .rect_filled(rect.expand(2.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
+            ui.painter().rect_stroke(
+                rect.expand(2.0),
+                CornerRadius::same(4),
+                ui.style().visuals.window_stroke,
+                egui::StrokeKind::Outside,
+            );
         }
 
         let tint = if i == arg.document_behavior.get_selected_tool() {

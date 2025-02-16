@@ -2,8 +2,9 @@ use std::{fs, io::Read, path::Path};
 
 use eframe::{
     egui::{self, Response, Sense, TextEdit, WidgetText},
-    epaint::{Color32, FontFamily, FontId, Pos2, Rect, Rounding, Stroke, Vec2},
+    epaint::{Color32, FontFamily, FontId, Pos2, Rect, Stroke, Vec2},
 };
+use egui::CornerRadius;
 use egui_file::FileDialog;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
@@ -179,10 +180,10 @@ impl SelectPaletteDialog {
 
         if response.hovered() {
             ui.painter()
-                .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+                .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
         } else if is_selected {
             ui.painter()
-                .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
+                .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
         }
 
         let text_color = if is_selected {
@@ -218,7 +219,7 @@ impl SelectPaletteDialog {
                 Pos2::new(color_rect.left() + (i % num_colors) as f32 * w, color_rect.top() + (i / num_colors) as f32 * h),
                 Vec2::new(w, h),
             );
-            ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_rgb(r, g, b));
+            ui.painter().rect_filled(rect, CornerRadius::ZERO, Color32::from_rgb(r, g, b));
         }
 
         // paint palette tag
@@ -243,9 +244,10 @@ impl SelectPaletteDialog {
             galley.size(),
         );
         ui.painter()
-            .rect_filled(rect.expand(2.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+            .rect_filled(rect.expand(2.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
 
-        ui.painter().rect_stroke(rect.expand(2.0), 4.0, Stroke::new(1.0, text_color));
+        ui.painter()
+            .rect_stroke(rect.expand(2.0), 4.0, Stroke::new(1.0, text_color), egui::StrokeKind::Outside);
 
         ui.painter()
             .galley_with_override_text_color(egui::Align2::CENTER_CENTER.align_size_within_rect(galley.size(), rect).min, galley, text_color);

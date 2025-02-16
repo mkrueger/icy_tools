@@ -3,9 +3,9 @@ use std::path::Path;
 use eframe::{
     egui::{self, Layout, Sense, SidePanel, Ui, WidgetText},
     emath::Align,
-    epaint::{FontId, Pos2, Rect, Rounding},
+    epaint::{FontId, Pos2, Rect},
 };
-use egui::{Image, Vec2};
+use egui::{CornerRadius, Image, Vec2};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
 use icy_engine::{font::TheDrawFont, BitFont, Buffer, FontType, Palette, ATARI, ATARI_DEFAULT_PALETTE};
@@ -487,10 +487,10 @@ impl crate::ModalDialog for NewFileDialog {
                                 let response = ui.interact(rect, id, Sense::click());
                                 if response.hovered() {
                                     ui.painter()
-                                        .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+                                        .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
                                 } else if is_selected {
                                     ui.painter()
-                                        .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
+                                        .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
                                 }
                                 let image = template.image();
                                 let r = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.top() + 4.0), Vec2::new(32.0, 32.0));

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use eframe::{
     egui::{self, CentralPanel, RichText, Sense, TextStyle, TopBottomPanel},
     emath::Align2,
-    epaint::{Color32, Rect, Rounding, Vec2},
+    epaint::{Color32, Rect, Vec2},
 };
-use egui::{mutex::Mutex, Image};
+use egui::{mutex::Mutex, CornerRadius, Image};
 use i18n_embed_fl::fl;
 use icy_engine_gui::BufferView;
 
@@ -179,9 +179,9 @@ impl LayerToolWindow {
                         let back_painter = ui.painter_at(back_rect);
 
                         if response.hovered() {
-                            back_painter.rect_filled(back_rect, Rounding::ZERO, ui.style().visuals.widgets.active.bg_fill);
+                            back_painter.rect_filled(back_rect, CornerRadius::ZERO, ui.style().visuals.widgets.active.bg_fill);
                         } else if i == cur_layer {
-                            back_painter.rect_filled(back_rect, Rounding::ZERO, ui.style().visuals.extreme_bg_color);
+                            back_painter.rect_filled(back_rect, CornerRadius::ZERO, ui.style().visuals.extreme_bg_color);
                         }
 
                         let stroke_rect = Rect::from_min_size(back_rect.min + Vec2::new(0.0, (row_height - 22.0) / 2.0), Vec2::new(22.0, 22.0));
@@ -191,7 +191,7 @@ impl LayerToolWindow {
 
                         if let Some(color) = color {
                             let (r, g, b) = color.into();
-                            painter.rect_filled(stroke_rect, Rounding::ZERO, Color32::from_rgb(r, g, b));
+                            painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::from_rgb(r, g, b));
                         }
 
                         let image: Image<'static> = if is_visible { VISIBLE_SVG.clone() } else { INVISIBLE_SVG.clone() };
@@ -298,7 +298,7 @@ pub fn medium_hover_button(ui: &mut egui::Ui, image: &Image<'_>) -> egui::Respon
     let response = ui.interact(rect, id, Sense::click());
 
     let tint = if response.hovered() {
-        ui.painter().rect_filled(rect, Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
+        ui.painter().rect_filled(rect, CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
 
         ui.visuals().widgets.active.fg_stroke.color
     } else {

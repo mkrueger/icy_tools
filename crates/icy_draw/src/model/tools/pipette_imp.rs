@@ -1,8 +1,8 @@
 use eframe::{
     emath::Align2,
-    epaint::{Color32, FontId, Rounding, Vec2},
+    epaint::{Color32, FontId, Vec2},
 };
-use egui::{Image, TextureHandle, Widget};
+use egui::{CornerRadius, Image, TextureHandle, Widget};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Buffer, TextAttribute};
 
@@ -150,10 +150,10 @@ fn paint_color(ui: &mut egui::Ui, color: &icy_engine::Color) {
     let painter = ui.painter_at(stroke_rect);
 
     let (r, g, b) = color.get_rgb();
-    painter.rect_filled(stroke_rect, Rounding::ZERO, Color32::BLACK);
-    painter.rect_filled(stroke_rect.shrink(1.0), Rounding::ZERO, Color32::WHITE);
+    painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::BLACK);
+    painter.rect_filled(stroke_rect.shrink(1.0), CornerRadius::ZERO, Color32::WHITE);
     let color = Color32::from_rgb(r, g, b);
-    painter.rect_filled(stroke_rect.shrink(2.0), Rounding::ZERO, color);
+    painter.rect_filled(stroke_rect.shrink(2.0), CornerRadius::ZERO, color);
 
     let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
         Color32::BLACK

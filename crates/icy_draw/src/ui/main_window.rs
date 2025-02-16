@@ -61,6 +61,10 @@ pub struct MainWindow<'a> {
     pub plugins: Vec<Plugin>,
     pub key_bindings: KeyBindings,
     pub mru_files: MostRecentlyUsedFiles,
+
+    pub do_paste: bool,
+    pub do_cut: bool,
+    pub do_copy: bool,
 }
 
 pub const PASTE_TOOL: usize = 0;
@@ -108,7 +112,7 @@ impl<'a> MainWindow<'a> {
         let ctx: &egui::Context = &cc.egui_ctx;
 
         let mut style: egui::Style = (*ctx.style()).clone();
-        style.spacing.window_margin = egui::Margin::same(8.0);
+        style.spacing.window_margin = egui::Margin::same(8);
         use egui::FontFamily::Proportional;
         use egui::TextStyle::{Body, Button, Heading, Monospace, Small};
         style.text_styles = [
@@ -198,6 +202,9 @@ impl<'a> MainWindow<'a> {
             key_bindings,
             plugins,
             mru_files,
+            do_copy: false,
+            do_cut: false,
+            do_paste: false,
         }
     }
 
@@ -1039,6 +1046,26 @@ impl<'a> eframe::App for MainWindow<'a> {
         self.handle_message(read_outline_keys(ctx));
         self.handle_message(read_color_keys(ctx));
         let mut force_update_title = false;
+
+        if self.do_paste {
+            self.do_paste = false;
+            if let Some(doc) = self.get_active_document() {
+                let _ = doc.lock().paste(ctx);
+            }
+        }
+
+        if self.do_cut {
+            self.do_cut = false;
+            if let Some(doc) = self.get_active_document() {
+                let _ = doc.lock().cut(ctx);
+            }
+        }
+        if self.do_copy {
+            self.do_copy = false;
+            if let Some(doc) = self.get_active_document() {
+                let _ = doc.lock().copy(ctx);
+            }
+        }
 
         ctx.input(|i| {
             for f in &i.raw.dropped_files {

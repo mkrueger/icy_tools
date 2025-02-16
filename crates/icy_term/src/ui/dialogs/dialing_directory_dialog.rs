@@ -706,7 +706,8 @@ impl egui::Widget for AddressRow {
 
             if selected || response.hovered() || response.highlighted() || response.has_focus() {
                 let rect = rect.expand(visuals.expansion);
-                ui.painter().rect(rect, visuals.rounding, visuals.weak_bg_fill, visuals.bg_stroke);
+                ui.painter()
+                    .rect(rect, visuals.corner_radius, visuals.weak_bg_fill, visuals.bg_stroke, egui::StrokeKind::Outside);
             }
             if centered {
                 let text_pos = rect.left_top() + Vec2::new((rect.width() - name_text_size.x) / 2.0, rect.height() / 2.0 - name_text_size.y / 2.0);

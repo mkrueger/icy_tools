@@ -38,24 +38,24 @@ impl ClipboardHandler for CharFontEditor {
     fn can_cut(&self) -> bool {
         self.ansi_editor.can_cut()
     }
-    fn cut(&mut self) -> EngineResult<()> {
-        self.ansi_editor.cut()
+    fn cut(&mut self, ctx: &egui::Context) -> EngineResult<()> {
+        self.ansi_editor.cut(ctx)
     }
 
     fn can_copy(&self) -> bool {
         self.ansi_editor.can_copy()
     }
 
-    fn copy(&mut self) -> EngineResult<()> {
-        self.ansi_editor.copy()
+    fn copy(&mut self, ctx: &egui::Context) -> EngineResult<()> {
+        self.ansi_editor.copy(ctx)
     }
 
     fn can_paste(&self) -> bool {
         self.ansi_editor.can_paste()
     }
 
-    fn paste(&mut self) -> EngineResult<()> {
-        self.ansi_editor.paste()
+    fn paste(&mut self, ctx: &egui::Context) -> EngineResult<()> {
+        self.ansi_editor.paste(ctx)
     }
 }
 

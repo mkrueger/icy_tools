@@ -1,5 +1,5 @@
 use eframe::egui::{self, RichText};
-use egui::{load::SizedTexture, Color32, FontId, Image, Rect, Rounding, Sense, Stroke, TextureHandle, Vec2, Widget};
+use egui::{load::SizedTexture, Color32, CornerRadius, FontId, Image, Rect, Sense, Stroke, TextureHandle, Vec2, Widget};
 use i18n_embed_fl::fl;
 use icy_engine::{font::TheDrawFont, paint::HalfBlock, AttributedChar, Position, TextAttribute, TextPane};
 use icy_engine_gui::BufferView;
@@ -172,7 +172,7 @@ impl BrushMode {
                 min + Vec2::new((fw * (x % 16) as f32).floor() + 0.5, (fh * (x / 16) as f32).floor() + 0.5),
                 Vec2::new(fw, fh),
             );
-            ui.painter().rect_stroke(r, Rounding::ZERO, stroke);
+            ui.painter().rect_stroke(r, CornerRadius::ZERO, stroke, egui::StrokeKind::Outside);
 
             unsafe {
                 HOVER_CHAR = None;

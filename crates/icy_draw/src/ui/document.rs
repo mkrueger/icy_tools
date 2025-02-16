@@ -9,21 +9,21 @@ pub trait ClipboardHandler {
     fn can_cut(&self) -> bool {
         false
     }
-    fn cut(&mut self) -> EngineResult<()> {
+    fn cut(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         Ok(())
     }
 
     fn can_copy(&self) -> bool {
         false
     }
-    fn copy(&mut self) -> EngineResult<()> {
+    fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         Ok(())
     }
 
     fn can_paste(&self) -> bool {
         false
     }
-    fn paste(&mut self) -> EngineResult<()> {
+    fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         Ok(())
     }
 }

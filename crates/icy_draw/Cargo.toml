@@ -1,6 +1,6 @@
 [package]
 name = "icy_draw"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 description = "A drawing program for ANSI & ASCII art and other text-based art forms."
@@ -17,7 +17,7 @@ egui_glow = { workspace = true }
 egui-modal = { workspace = true }
 glow = { workspace = true }
 egui_file = { workspace = true }
-egui_tiles = "0.11.0"
+egui_tiles = "0.12.0"
 egui-bind = { workspace = true }
 egui-notify = { workspace = true }
 log = { workspace = true }
@@ -42,13 +42,13 @@ codepages = { workspace = true }
 
 bstr = { workspace = true }
 
-egui_code_editor = "0.2.11"
-mlua = { version = "0.10.2", features = ["lua54", "vendored"] }
+egui_code_editor = "0.2.12"
+mlua = { version = "0.10.3", features = ["lua54", "vendored"] }
 regex = { workspace = true }
 
 walkdir = { workspace = true }
 serde = { workspace = true }
-serde_json = "1.0.135"
+serde_json = "1.0.138"
 lazy_static = { workspace = true }
 directories = { workspace = true }
 image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
@@ -58,7 +58,6 @@ i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
-arboard = { workspace = true  }
 
 [features]
 default = []

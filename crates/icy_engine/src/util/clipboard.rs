@@ -11,7 +11,7 @@ pub const BITFONT_GLYPH: u16 = 0x0100;
 /// # Errors
 ///
 /// This function will return an error if .
-pub fn push_data(data_type: u16, data: &[u8], text: Option<String>) -> EngineResult<()> {
+pub fn push_data(data_type: u16, data: &[u8], _text: Option<String>) -> EngineResult<()> {
     match Clipboard::new() {
         Ok(mut clipboard) => {
             let mut clipboard_data: Vec<u8> = Vec::new();
@@ -28,9 +28,6 @@ pub fn push_data(data_type: u16, data: &[u8], text: Option<String>) -> EngineRes
                 bytes: clipboard_data.into(),
             };
             clipboard.clear()?;
-            /* if let Some(text) = text {
-                clipboard.set_text(text)?;
-            }*/
             if let Err(err) = clipboard.set_image(image) {
                 return Err(ClipboardError::ErrorInSetImage(format!("{err}")).into());
             }

@@ -114,6 +114,7 @@ impl MinimapToolWindow {
             Rect::from_min_size(min, view_size),
             0.0,
             Stroke::new(1.0, Color32::from_rgba_premultiplied(157, 157, 157, 220)),
+            egui::StrokeKind::Outside,
         );
 
         if pos.x < 0.0 || pos.y < 0.0 {

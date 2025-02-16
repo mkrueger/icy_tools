@@ -123,7 +123,7 @@ impl MainWindow {
         parse_command_line(&ctx, &mut view);
 
         let mut style: egui::Style = (*ctx.style()).clone();
-        style.spacing.window_margin = egui::Margin::same(8.0);
+        style.spacing.window_margin = egui::Margin::same(8);
 
         //        style.spacing.button_padding = Vec2::new(4., 2.);
         style.text_styles = [

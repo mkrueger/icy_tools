@@ -1,7 +1,8 @@
 use eframe::{
     egui::{self},
-    epaint::{Color32, Rect, Rounding, Vec2},
+    epaint::{Color32, Rect, Vec2},
 };
+use egui::CornerRadius;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
 use icy_engine::{font::TheDrawFont, BitFont};
@@ -63,7 +64,7 @@ impl SelectOutlineDialog {
                 col = Color32::WHITE;
             }
         }
-        painter.rect_filled(stroke_rect, Rounding::ZERO, bg_color);
+        painter.rect_filled(stroke_rect, CornerRadius::ZERO, bg_color);
 
         for h in 0..OUTLINE_HEIGHT {
             for w in 0..OUTLINE_WIDTH {
@@ -84,7 +85,7 @@ impl SelectOutlineDialog {
                                         ),
                                         Vec2::new(scale, scale),
                                     ),
-                                    Rounding::ZERO,
+                                    CornerRadius::ZERO,
                                     col,
                                 );
                             }

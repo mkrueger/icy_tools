@@ -3,8 +3,9 @@ use std::sync::Arc;
 use crate::{AnsiEditor, Message, TerminalResult};
 use eframe::{
     egui::{self, Button, Sense, TextStyle, TopBottomPanel, WidgetText},
-    epaint::{FontFamily, FontId, Rounding},
+    epaint::{FontFamily, FontId},
 };
+use egui::CornerRadius;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
 
@@ -55,10 +56,10 @@ impl crate::ModalDialog for FontManager {
                             let response = ui.interact(rect, id, Sense::click());
                             if response.hovered() {
                                 ui.painter()
-                                    .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+                                    .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
                             } else if is_selected {
                                 ui.painter()
-                                    .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
+                                    .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
                             }
 
                             let font_id = FontId::new(12.0, FontFamily::Monospace);
@@ -186,7 +187,7 @@ impl crate::ModalDialog for FontManager {
                 if copy_font_button.clicked() {
                     let lock = &self.buffer_view.lock();
                     if let Some(font) = lock.get_buffer().get_font(self.selected) {
-                        ui.output_mut(|o| o.copied_text = font.encode_as_ansi(self.selected));
+                        ui.ctx().copy_text(font.encode_as_ansi(self.selected));
                     }
                 }
                 let remove_font_button = &ui.add_enabled(self.selected > 0, Button::new(fl!(crate::LANGUAGE_LOADER, "manage-font-remove_font_button")));

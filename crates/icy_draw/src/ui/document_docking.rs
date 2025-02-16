@@ -227,7 +227,7 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
                 if let Some(egui_tiles::Tile::Pane(pane)) = tiles.get(tile_id) {
                     if let Some(path) = &pane.full_path {
                         let text = path.to_string_lossy().to_string();
-                        ui.output_mut(|o| o.copied_text = text);
+                        ui.ctx().copy_text(text);
                     }
                 }
                 ui.close_menu();

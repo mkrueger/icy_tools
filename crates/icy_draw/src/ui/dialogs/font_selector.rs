@@ -2,9 +2,9 @@ use std::{fs, io::Read, path::Path};
 
 use eframe::{
     egui::{self, Button, Response, Sense, TextEdit, WidgetText},
-    epaint::{ahash::HashMap, Color32, FontFamily, FontId, Pos2, Rect, Rounding, Stroke, Vec2},
+    epaint::{ahash::HashMap, Color32, FontFamily, FontId, Pos2, Rect, Stroke, Vec2},
 };
-use egui::{load::SizedTexture, Image, TextureHandle};
+use egui::{load::SizedTexture, CornerRadius, Image, TextureHandle};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, BitFont, Buffer, TextAttribute, ANSI_FONTS, SAUCE_FONT_NAMES};
@@ -319,10 +319,10 @@ impl FontSelector {
 
         if response.hovered() {
             ui.painter()
-                .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+                .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
         } else if is_selected {
             ui.painter()
-                .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
+                .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
         }
 
         let text_color = if is_selected {
@@ -397,9 +397,10 @@ fn print_source(font_type: String, ui: &egui::Ui, rect: Rect, text_color: Color3
     let rect = Rect::from_min_size(Pos2::new((left_side).floor(), (rect.top() + 8.0).floor()), galley_size);
 
     ui.painter()
-        .rect_filled(rect.expand(2.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+        .rect_filled(rect.expand(2.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
 
-    ui.painter().rect_stroke(rect.expand(2.0), 4.0, Stroke::new(1.0, text_color));
+    ui.painter()
+        .rect_stroke(rect.expand(2.0), 4.0, Stroke::new(1.0, text_color), egui::StrokeKind::Outside);
 
     ui.painter()
         .galley_with_override_text_color(egui::Align2::CENTER_CENTER.align_size_within_rect(galley_size, rect).min, galley, text_color);

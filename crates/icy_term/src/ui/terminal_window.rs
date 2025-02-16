@@ -25,7 +25,7 @@ fn encode_mouse_position(pos: i32) -> char {
 impl MainWindow {
     pub fn update_terminal_window(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, show_dialing_directory: bool) {
         let toolbar_bg_color = ctx.style().visuals.extreme_bg_color;
-        let button_frame = egui::containers::Frame::none().fill(toolbar_bg_color).inner_margin(Margin::same(6.0));
+        let button_frame = egui::containers::Frame::NONE.fill(toolbar_bg_color).inner_margin(Margin::same(6));
 
         let enable_ui = matches!(self.get_mode(), MainWindowMode::ShowTerminal);
 
@@ -35,11 +35,7 @@ impl MainWindow {
                     ui.disable();
                 }
                 ui.horizontal(|ui| {
-                    let sense = Sense {
-                        click: true,
-                        drag: false,
-                        focusable: false,
-                    };
+                    let sense = Sense::HOVER;
                     let r = ui
                         .add(ImageButton::new(UPLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
                         .on_hover_ui(|ui| {
@@ -190,7 +186,7 @@ impl MainWindow {
                 });
             });
         }
-        let frame_no_margins = egui::containers::Frame::none().outer_margin(Margin::same(0.0)).inner_margin(Margin::same(0.0));
+        let frame_no_margins = egui::containers::Frame::NONE.outer_margin(Margin::same(0)).inner_margin(Margin::same(0));
 
         egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| {
             if !enable_ui {
@@ -570,9 +566,7 @@ impl MainWindow {
                                 if response.clicked_by(PointerButton::Primary)
                                 /* && response.is_pointer_button_down_on() */
                                 {
-                                    ui.ctx().output_mut(|o| {
-                                        o.open_url = Some(egui::output::OpenUrl { url, new_tab: false });
-                                    });
+                                    ui.ctx().open_url(egui::output::OpenUrl { url, new_tab: false });
                                 }
                                 break;
                             }

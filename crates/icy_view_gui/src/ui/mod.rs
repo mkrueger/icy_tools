@@ -97,9 +97,9 @@ impl<'a> App for MainWindow<'a> {
                 self.handle_command(ctx, command);
             });
         }
-        let frame_no_margins = egui::containers::Frame::none()
-            .outer_margin(Margin::same(0.0))
-            .inner_margin(Margin::same(0.0))
+        let frame_no_margins = egui::containers::Frame::NONE
+            .outer_margin(Margin::same(0))
+            .inner_margin(Margin::same(0))
             .fill(Color32::BLACK);
         egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| {
             if !(self.sauce_dialog.is_none() && self.help_dialog.is_none()) {
@@ -260,9 +260,9 @@ impl<'a> MainWindow<'a> {
             self.handle_command(ctx, command);
         });
 
-        let frame_no_margins = egui::containers::Frame::none()
-            .outer_margin(Margin::same(0.0))
-            .inner_margin(Margin::same(0.0))
+        let frame_no_margins = egui::containers::Frame::NONE
+            .outer_margin(Margin::same(0))
+            .inner_margin(Margin::same(0))
             .fill(Color32::BLACK);
         egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| self.paint_main_area(ui));
         self.file_view.options.show_settings = false;

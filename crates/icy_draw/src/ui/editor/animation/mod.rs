@@ -103,7 +103,7 @@ impl ClipboardHandler for AnimationEditor {
         false
     }
 
-    fn copy(&mut self) -> EngineResult<()> {
+    fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         Ok(())
     }
 
@@ -111,7 +111,7 @@ impl ClipboardHandler for AnimationEditor {
         false
     }
 
-    fn paste(&mut self) -> EngineResult<()> {
+    fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         Ok(())
     }
 }
@@ -421,7 +421,7 @@ impl Document for AnimationEditor {
                     self.cursor_index = 0;
                 }
             }
-            if r.response.changed {
+            if r.response.changed() {
                 self.shedule_update = true;
                 self.last_update = Instant::now();
                 self.undostack += 1;

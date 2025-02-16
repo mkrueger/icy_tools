@@ -5,8 +5,9 @@ use std::{path::Path, sync::Arc};
 use eframe::{
     egui::{self, Layout, RichText, Sense},
     emath::Align2,
-    epaint::{mutex::Mutex, Color32, FontFamily, FontId, Pos2, Rect, Rounding, Vec2},
+    epaint::{mutex::Mutex, Color32, FontFamily, FontId, Pos2, Rect, Vec2},
 };
+use egui::CornerRadius;
 use i18n_embed_fl::fl;
 use icy_engine::{
     util::{pop_data, push_data, BITFONT_GLYPH},
@@ -87,7 +88,7 @@ impl BitFontEditor {
         };
 
         let painter = ui.painter_at(stroke_rect);
-        painter.rect_filled(stroke_rect, Rounding::ZERO, Color32::BLACK);
+        painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::BLACK);
         let s = font.size;
         if let Some(glyph) = font.get_glyph(ch) {
             for y in 0..s.height {
@@ -98,7 +99,7 @@ impl BitFontEditor {
                                 Pos2::new(stroke_rect.left() + x as f32 * scale, stroke_rect.top() + y as f32 * scale),
                                 Vec2::new(scale, scale),
                             ),
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             col,
                         );
                     }
@@ -144,7 +145,7 @@ impl BitFontEditor {
             let mut response = ui.interact(stroke_rect, id, Sense::click_and_drag());
 
             let painter = ui.painter_at(stroke_rect);
-            painter.rect_filled(stroke_rect, Rounding::ZERO, Color32::DARK_GRAY);
+            painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::DARK_GRAY);
 
             let s = self.font.size;
 
@@ -214,7 +215,7 @@ impl BitFontEditor {
                                 2. + top_ruler + s.height as f32 * (border + scale),
                             ),
                         ),
-                        Rounding::ZERO,
+                        CornerRadius::ZERO,
                         ui.style().visuals.extreme_bg_color,
                     );
 
@@ -293,7 +294,7 @@ impl BitFontEditor {
                             } else {
                                 Color32::BLACK
                             };
-                            painter.rect_filled(rect, Rounding::ZERO, col);
+                            painter.rect_filled(rect, CornerRadius::ZERO, col);
                         }
                     }
                 }
@@ -419,7 +420,7 @@ impl ClipboardHandler for BitFontEditor {
         self.selected_char_opt.is_some()
     }
 
-    fn copy(&mut self) -> EngineResult<()> {
+    fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         if let Some(ch) = self.selected_char_opt {
             if let Some(data) = self.font.get_clipboard_data(ch) {
                 push_data(BITFONT_GLYPH, &data, None)?;
@@ -436,7 +437,7 @@ impl ClipboardHandler for BitFontEditor {
         pop_data(BITFONT_GLYPH).is_some()
     }
 
-    fn paste(&mut self) -> EngineResult<()> {
+    fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         if let Some(data) = pop_data(BITFONT_GLYPH) {
             let (_, g) = Glyph::from_clipbard_data(&data);
             if let Some(ch) = self.selected_char_opt {

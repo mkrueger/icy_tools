@@ -97,9 +97,9 @@ impl ClipboardHandler for AnsiEditor {
     fn can_cut(&self) -> bool {
         self.buffer_view.lock().get_selection().is_some()
     }
-    fn cut(&mut self) -> EngineResult<()> {
+    fn cut(&mut self, ctx: &egui::Context) -> EngineResult<()> {
         let _cut = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-cut"));
-        self.copy()?;
+        self.copy(ctx)?;
         self.buffer_view.lock().get_edit_state_mut().erase_selection()?;
         Ok(())
     }
@@ -108,10 +108,25 @@ impl ClipboardHandler for AnsiEditor {
         self.buffer_view.lock().get_selection().is_some()
     }
 
-    fn copy(&mut self) -> EngineResult<()> {
-        let text = self.buffer_view.lock().get_edit_state_mut().get_copy_text();
+    fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
+        /*  let text = self.buffer_view.lock().get_edit_state_mut().get_copy_text();
+        if let Some(text) = text {
+            ctx.copy_text(text);
+        }*/
+
         if let Some(data) = self.buffer_view.lock().get_edit_state_mut().get_clipboard_data() {
-            push_data(BUFFER_DATA, &data, text)?;
+            push_data(BUFFER_DATA, &data, None)?;
+            /*
+            let mut clipboard_data: Vec<u8> = Vec::new();
+            clipboard_data.extend(b"iced");
+            clipboard_data.extend(u16::to_le_bytes(BUFFER_DATA));
+            clipboard_data.extend(data);
+            while clipboard_data.len() % 4 != 0 {
+                clipboard_data.push(0);
+            }
+            println!("copy image!");
+            let image = ColorImage::from_rgba_unmultiplied([clipboard_data.len() / 4, 1], &clipboard_data);
+            ctx.copy_image(image);*/
         } else {
             log::error!("can't get clipboard data!");
         }
@@ -123,7 +138,7 @@ impl ClipboardHandler for AnsiEditor {
         pop_data(BUFFER_DATA).is_some() || pop_sixel_image().is_some() || pop_cliboard_text().is_some()
     }
 
-    fn paste(&mut self) -> EngineResult<()> {
+    fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         if self.buffer_view.lock().get_edit_state_mut().has_floating_layer() {
             return Ok(());
         }

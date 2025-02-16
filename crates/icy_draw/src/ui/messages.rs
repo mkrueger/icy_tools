@@ -506,20 +506,14 @@ impl<'a> MainWindow<'a> {
             }
 
             Message::Paste => {
-                if let Some(doc) = self.get_active_document() {
-                    self.handle_result(doc.lock().paste());
-                }
+                self.do_paste = true;
             }
 
             Message::Cut => {
-                if let Some(doc) = self.get_active_document() {
-                    self.handle_result(doc.lock().cut());
-                }
+                self.do_cut = true;
             }
             Message::Copy => {
-                if let Some(doc) = self.get_active_document() {
-                    self.handle_result(doc.lock().copy());
-                }
+                self.do_copy = true;
             }
 
             Message::JustifyLeft => {

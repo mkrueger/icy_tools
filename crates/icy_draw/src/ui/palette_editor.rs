@@ -1,6 +1,7 @@
 use crate::{Message, SWAP_SVG};
 use eframe::egui::{self, Sense};
-use eframe::epaint::{Color32, Pos2, Rect, Rounding, Stroke, Vec2};
+use eframe::epaint::{Color32, Pos2, Rect, Stroke, Vec2};
+use egui::CornerRadius;
 use icy_engine::{Palette, TextAttribute};
 use std::cmp::min;
 
@@ -19,7 +20,7 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
             Pos2::new(height - rect_height, height - rect_height) + rect.left_top().to_vec2(),
             Vec2::new(rect_height, rect_height),
         ),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::BLACK,
     );
 
@@ -28,7 +29,7 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
             Pos2::new(height - rect_height + 1., height - rect_height + 1.) + rect.left_top().to_vec2(),
             Vec2::new(rect_height - 2., rect_height - 2.),
         ),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::WHITE,
     );
 
@@ -38,26 +39,26 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
             Pos2::new(height - rect_height + 2., height - rect_height + 2.) + rect.left_top().to_vec2(),
             Vec2::new(rect_height - 4., rect_height - 4.),
         ),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::from_rgb(r, g, b),
     );
 
     painter.rect_filled(
         Rect::from_min_size(Pos2::new(0., 0.) + rect.left_top().to_vec2(), Vec2::new(rect_height, rect_height)),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::BLACK,
     );
 
     painter.rect_filled(
         Rect::from_min_size(Pos2::new(1., 1.) + rect.left_top().to_vec2(), Vec2::new(rect_height - 2., rect_height - 2.)),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::WHITE,
     );
 
     let (r, g, b) = palette.get_rgb(caret_attr.get_foreground());
     painter.rect_filled(
         Rect::from_min_size(Pos2::new(2., 2.) + rect.left_top().to_vec2(), Vec2::new(rect_height - 4., rect_height - 4.)),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::from_rgb(r, g, b),
     );
 
@@ -69,7 +70,7 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
 
     painter.rect_filled(
         Rect::from_min_size(Pos2::new(rh - overlap, height - rh - overlap) + rect.left_top().to_vec2(), Vec2::new(rh, rh)),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::from_rgb(r ^ 0xFF, g ^ 0xFF, b ^ 0xFF),
     );
 
@@ -78,7 +79,7 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
             Pos2::new(rh - overlap + 1., height - rh - overlap + 1.) + rect.left_top().to_vec2(),
             Vec2::new(rh - 2., rh - 2.),
         ),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::from_rgb(r, g, b),
     );
 
@@ -88,7 +89,7 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
             Pos2::new(overlap, height - 2. * rh + 2. + overlap) + rect.left_top().to_vec2(),
             Vec2::new(rh, rh),
         ),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::from_rgb(r ^ 0xFF, g ^ 0xFF, b ^ 0xFF),
     );
 
@@ -97,7 +98,7 @@ pub fn palette_switcher(_ctx: &egui::Context, ui: &mut egui::Ui, caret_attr: &Te
             Pos2::new(1. + overlap, height - 2. * rh + 3. + overlap) + rect.left_top().to_vec2(),
             Vec2::new(rh - 2., rh - 2.),
         ),
-        Rounding::ZERO,
+        CornerRadius::ZERO,
         Color32::from_rgb(r, g, b),
     );
     let mut tex_id = SWAP_SVG.clone();
@@ -162,7 +163,7 @@ pub fn palette_editor_16(
                     ),
                     Vec2::new(height, height),
                 ),
-                Rounding::ZERO,
+                CornerRadius::ZERO,
                 Color32::from_rgb(r, g, b),
             );
         }

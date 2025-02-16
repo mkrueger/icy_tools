@@ -1,7 +1,7 @@
 use directories::UserDirs;
 use eframe::{
-    egui::{self, Layout, RichText, Sense, TopBottomPanel, WidgetText},
-    epaint::{FontFamily, FontId, Rounding},
+    egui::{self, CornerRadius, Layout, RichText, Sense, TopBottomPanel, WidgetText},
+    epaint::{FontFamily, FontId},
 };
 use egui::{ScrollArea, TextEdit, Ui};
 use i18n_embed_fl::fl;
@@ -280,10 +280,10 @@ impl FileView {
                 let mut response = ui.interact(rect, id, Sense::click());
                 if response.hovered() {
                     ui.painter()
-                        .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.widgets.active.bg_fill);
+                        .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.widgets.active.bg_fill);
                 } else if is_selected {
                     ui.painter()
-                        .rect_filled(rect.expand(1.0), Rounding::same(4.0), ui.style().visuals.extreme_bg_color);
+                        .rect_filled(rect.expand(1.0), CornerRadius::same(4), ui.style().visuals.extreme_bg_color);
                 }
 
                 let label = if !ui.is_rect_visible(rect) {

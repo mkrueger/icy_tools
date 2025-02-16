@@ -47,23 +47,23 @@ tokio = { version = "1.43.0", features = ["full"] }
 rodio = { version = "0.20.1" }
 arboard = { version = "3.4.1" }
 
-egui = "0.30.0"
-eframe = "0.30.0"
+egui = "0.31.0"
+eframe = "0.31.0"
 # eframe = { version = "0.27.2", default-features = false, features = [
 #     "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
 #     "default_fonts", # Embed the default egui fonts.
 #     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
 #     "persistence",   # Enable restoring app state when restarting the app.
 # ], optional = true }
-egui_extras = { version="0.30.0", features = ["all_loaders", "svg", "image"] }
-egui_glow = "0.30.0"
+egui_extras = { version="0.31.0", features = ["all_loaders", "svg", "image"] }
+egui_glow = "0.31.0"
 glow = "0.16.0"
-egui-modal = "0.6.0"
-egui-bind = "0.15.0"
-#egui_file = "0.19.0"
-egui_file = { git = "https://github.com/mkrueger/egui_file", branch = "bump_egui" }
+#egui-modal = "0.6.0"
+egui-modal = { git = "https://github.com/mkrueger/egui-modal.git" }
+egui-bind = "0.16.0"
+egui_file = "0.22.0"
 
-egui-notify = "0.18.0"
+egui-notify = "0.19.0"
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
