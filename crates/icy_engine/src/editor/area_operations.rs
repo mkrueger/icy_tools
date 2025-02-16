@@ -405,7 +405,7 @@ impl EditState {
     }
 }
 
-fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, char> {
+fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, (bool, char)> {
     let mut flip_table = HashMap::new();
 
     for (ch, cur_glyph) in &font.glyphs {
@@ -413,6 +413,7 @@ fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, char> {
         let Some(flipped_glyhps) = flipped_glyhps else {
             continue;
         };
+        let neg_glyphs = negate_glyphs(&flipped_glyhps);
 
         for (ch2, cmp_glyph) in &font.glyphs {
             if ch == ch2 {
@@ -420,9 +421,15 @@ fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, char> {
             }
             let cmp_glyphs = generate_y_variants(cmp_glyph);
             for cmp_glyph in cmp_glyphs {
-                if flipped_glyhps.iter().any(|g| g.data == cmp_glyph.data) {
-                    flip_table.insert(*ch, *ch2);
-                    break;
+                for i in 0..flipped_glyhps.len() {
+                    if flipped_glyhps[i].data == cmp_glyph.data {
+                        flip_table.insert(*ch, (false, *ch2));
+                        break;
+                    }
+                    if neg_glyphs[i].data == cmp_glyph.data {
+                        flip_table.insert(*ch, (true, *ch2));
+                        break;
+                    }
                 }
             }
         }
@@ -431,25 +438,26 @@ fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, char> {
     flip_table
 }
 
-fn check_bidirect(flip_table: &mut HashMap<char, char>) {
-    for (ch, ch2) in &flip_table.clone() {
+fn check_bidirect(flip_table: &mut HashMap<char, (bool, char)>) {
+    for (ch, (_b, ch2)) in &flip_table.clone() {
         if !flip_table.contains_key(ch2) {
             flip_table.remove(ch);
         }
     }
 }
 
-fn generate_flipx_table(font: &crate::BitFont) -> HashMap<char, char> {
+fn generate_flipx_table(font: &crate::BitFont) -> HashMap<char, (bool, char)> {
     let mut flip_table = HashMap::new();
 
-    flip_table.insert('\\', '/');
-    flip_table.insert('/', '\\');
+    flip_table.insert('\\', (false, '/'));
+    flip_table.insert('/', (false, '\\'));
 
     for (ch, cur_glyph) in &font.glyphs {
-        let flipped_glyhps = generate_flipx_variants(cur_glyph, font.size.width);
+        let flipped_glyhps: Option<Vec<crate::Glyph>> = generate_flipx_variants(cur_glyph, font.size.width);
         let Some(flipped_glyhps) = flipped_glyhps else {
             continue;
         };
+        let neg_glyphs = negate_glyphs(&flipped_glyhps);
 
         for (ch2, cmp_glyph) in &font.glyphs {
             if ch == ch2 {
@@ -458,15 +466,33 @@ fn generate_flipx_table(font: &crate::BitFont) -> HashMap<char, char> {
             let cmp_glyphs = generate_x_variants(cmp_glyph, font.size.width);
 
             for cmp_glyph in cmp_glyphs {
-                if flipped_glyhps.iter().any(|g| g.data == cmp_glyph.data) {
-                    flip_table.insert(*ch, *ch2);
-                    break;
+                for i in 0..flipped_glyhps.len() {
+                    if flipped_glyhps[i].data == cmp_glyph.data {
+                        flip_table.insert(*ch, (false, *ch2));
+                        break;
+                    }
+                    if neg_glyphs[i].data == cmp_glyph.data {
+                        flip_table.insert(*ch, (true, *ch2));
+                        break;
+                    }
                 }
             }
         }
     }
     check_bidirect(&mut flip_table);
     flip_table
+}
+
+fn negate_glyphs(flipped_glyhps: &Vec<crate::Glyph>) -> Vec<crate::Glyph> {
+    let mut neg_glyhps = Vec::new();
+    for flipped_glyph in flipped_glyhps {
+        let mut neg_glyph = flipped_glyph.clone();
+        for i in 0..neg_glyph.data.len() {
+            neg_glyph.data[i] = (!neg_glyph.data[i]) & 0xFF;
+        }
+        neg_glyhps.push(neg_glyph);
+    }
+    neg_glyhps
 }
 
 fn generate_flipx_variants(cur_glyph: &crate::Glyph, font_width: i32) -> Option<Vec<crate::Glyph>> {
@@ -551,9 +577,14 @@ fn generate_y_variants(flipped_glyph: &crate::Glyph) -> Vec<crate::Glyph> {
     cmp_glyhps
 }
 
-pub fn map_char<S: ::std::hash::BuildHasher>(mut ch: AttributedChar, table: &HashMap<char, char, S>) -> AttributedChar {
-    if let Some(repl) = table.get(&(ch.ch)) {
+pub fn map_char<S: ::std::hash::BuildHasher>(mut ch: AttributedChar, table: &HashMap<char, (bool, char), S>) -> AttributedChar {
+    if let Some((flip, repl)) = table.get(&(ch.ch)) {
         ch.ch = *repl;
+        if *flip {
+            let tmp = ch.attribute.get_foreground();
+            ch.attribute.set_foreground(ch.attribute.get_background());
+            ch.attribute.set_background(tmp);
+        }
     }
     ch
 }
