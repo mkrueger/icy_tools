@@ -136,31 +136,11 @@ impl DialogState {
                     });
                 ui.end_row();
 
-                // Screen mode row
-                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
-                });
-
-                egui::ComboBox::from_id_salt("combobox2")
-                    .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).screen_mode)))
-                    .width(250.)
-                    .show_ui(ui, |ui| {
-                        for mode in &DEFAULT_MODES {
-                            if matches!(mode, ScreenMode::Default) {
-                                ui.separator();
-                                continue;
-                            }
-                            let label = RichText::new(format!("{mode}"));
-                            ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).screen_mode, *mode, label);
-                        }
-                    });
-                ui.end_row();
-
                 // Terminal type row
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
                 });
-                egui::ComboBox::from_id_salt("combobox3")
+                let res = egui::ComboBox::from_id_salt("combobox3")
                     .selected_text(RichText::new(fmt_terminal_emulation(&self.get_address_mut(self.selected_bbs).terminal_type)))
                     .width(250.)
                     .show_ui(ui, |ui| {
@@ -169,6 +149,68 @@ impl DialogState {
                             ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).terminal_type, *t, label);
                         }
                     });
+                ui.end_row();
+
+                let is_enabled = match self.get_address_mut(self.selected_bbs).terminal_type {
+                    TerminalEmulation::Ansi |
+                    TerminalEmulation::Ascii |
+                    TerminalEmulation::Avatar |
+                    TerminalEmulation::Rip => {
+                        if res.response.changed() {
+                            self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vga(80, 25);
+                        }
+                        true
+                    }
+
+                    TerminalEmulation::PETscii => {
+                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vic;
+                        true
+                    },
+                    TerminalEmulation::ATAscii => {
+                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Antic;
+                        false
+                    }
+                    TerminalEmulation::ViewData => {
+                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Videotex;
+                        false
+                    }
+                    TerminalEmulation::Mode7 => {
+                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Videotex;
+                        false
+                    }
+
+                    TerminalEmulation::Skypix => {
+                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::SkyPix;
+                        false
+                    }
+
+                    TerminalEmulation::AtariST => {
+                        if res.response.changed() {
+                            self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::AtariST(80);
+                        }
+                        true
+                    }
+                };
+                
+                // Screen mode row
+                ui.add_enabled_ui(is_enabled, |ui| {
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
+                    });
+                    egui::ComboBox::from_id_salt("combobox2")
+                        .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).screen_mode)))
+                        .width(250.)
+                        .show_ui(ui, |ui| {
+                            for mode in &DEFAULT_MODES {
+                                if matches!(mode, ScreenMode::Default) {
+                                    ui.separator();
+                                    continue;
+                                }
+                                let label = RichText::new(format!("{mode}"));
+                                ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).screen_mode, *mode, label);
+                            }
+                        });
+                });
                 ui.end_row();
 
                 // Baud emulation

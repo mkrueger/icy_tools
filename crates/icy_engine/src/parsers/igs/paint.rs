@@ -4,7 +4,7 @@ use super::{
     cmd::IgsCommands,
     sound::SOUND_DATA,
     vdi::{color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx, TWOPI},
-    CommandExecutor, IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
+    IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
 };
 use crate::{
     igs::{vdi::blit_px, HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
@@ -134,8 +134,8 @@ pub struct DrawExecutor {
     pen_colors: Vec<Color>,
     polymarker_color: u8,
     line_color: u8,
-    fill_color: u8,
-    text_color: u8,
+    pub fill_color: u8,
+    pub text_color: u8,
 
     text_effects: TextEffects,
     text_size: i32,
@@ -169,16 +169,31 @@ unsafe impl Send for DrawExecutor {}
 
 unsafe impl Sync for DrawExecutor {}
 
+pub enum ClearCommand {
+    /// Clear screen home cursor.
+    ClearScreen,
+    /// Clear from home to cursor.
+    ClearFromHomeToCursor,
+    /// Clear from cursor to bottom of screen.
+    ClearFromCursorToBottom,
+}
+
 impl Default for DrawExecutor {
     fn default() -> Self {
+        DrawExecutor::new(TerminalResolution::Low)
+    }
+}
+
+impl DrawExecutor {
+    pub fn new(terminal_resolution: TerminalResolution) -> Self {
         let fonts = load_atari_fonts();
         let font_7px = BitFont::from_str(fonts[0].2).unwrap();
         let font_9px = BitFont::from_str(fonts[1].2).unwrap();
         let font_16px = BitFont::from_str(fonts[2].2).unwrap();
-
+        let res = terminal_resolution.get_resolution();
         Self {
-            screen: vec![1; 320 * 200],
-            terminal_resolution: TerminalResolution::Low,
+            screen: vec![1; res.width as usize * res.height as usize],
+            terminal_resolution,
             pen_colors: IGS_SYSTEM_PALETTE.to_vec(),
             polymarker_color: 1,
             line_color: 1,
@@ -208,13 +223,24 @@ impl Default for DrawExecutor {
             double_step: -1.0,
         }
     }
-}
+    pub fn clear(&mut self, _cmd: ClearCommand, caret: &mut Caret) {
+        // TODO: Clear command
+        caret.set_position(Position::default());
+        self.screen.fill(1);
+    }
 
-impl DrawExecutor {
-    pub fn clear(&mut self, buf: &mut Buffer, caret: &mut Caret) {
-        buf.clear_screen(0, caret);
+    pub fn scroll(&mut self, amount: i32) {
+        if amount == 0 {
+            return;
+        }
         let res = self.get_resolution();
-        self.screen = vec![0; (res.width * res.height) as usize];
+        if amount < 0 {
+            self.screen.splice(0..0, vec![1; res.width as usize * amount.abs() as usize]);
+            self.screen.truncate(res.width as usize * res.height as usize);
+        } else {
+            self.screen.splice(0..res.width as usize * amount.abs() as usize, vec![]);
+            self.screen.extend(vec![1; res.width as usize * amount.abs() as usize]);
+        }
     }
 
     pub fn set_resolution(&mut self, res: TerminalResolution) {
@@ -227,6 +253,11 @@ impl DrawExecutor {
         buf.clear_screen(0, caret);
         let res = self.get_resolution();
         self.screen = vec![1; (res.width * res.height) as usize];
+    }
+
+    pub fn get_char_resolution(&self) -> Size {
+        let res = self.get_resolution();
+        Size::new(res.width / 8, res.height / 8)
     }
 
     pub fn reset_attributes(&mut self) {
@@ -351,6 +382,20 @@ impl DrawExecutor {
         }
     }
 
+    fn draw_vline(&mut self, x: i32, mut y0: i32, mut y1: i32, color: u8, mask: usize) {
+        if y1 < y0 {
+            swap(&mut y0, &mut y1);
+        }
+        let mut line_mask = LINE_STYLE[mask];
+        line_mask = line_mask.rotate_left((y0 & 0x0f) as u32);
+        for y in y0..=y1 {
+            line_mask = line_mask.rotate_left(1);
+            if 1 & line_mask != 0 {
+                self.set_pixel(x, y, color);
+            }
+        }
+    }
+
     fn draw_hline(&mut self, y: i32, x0: i32, x1: i32, color: u8, mask: usize) {
         let mut line_mask = LINE_STYLE[mask];
         line_mask = line_mask.rotate_left((x0 & 0x0f) as u32);
@@ -366,6 +411,10 @@ impl DrawExecutor {
         if x1 < x0 {
             swap(&mut x0, &mut x1);
             swap(&mut y0, &mut y1);
+        }
+        if x0 == x1 {
+            self.draw_vline(x0, y0, y1, color, mask);
+            return;
         }
         if y0 == y1 {
             self.draw_hline(y0, x0, x1, color, mask);
@@ -454,7 +503,7 @@ impl DrawExecutor {
         self.fill_poly(&points);
     }
 
-    fn fill_rect(&mut self, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32) {
+    pub fn fill_rect(&mut self, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32) {
         if y0 > y1 {
             std::mem::swap(&mut y0, &mut y1);
         }
@@ -614,7 +663,7 @@ impl DrawExecutor {
         }
     }
 
-    fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
+    pub fn write_text(&mut self, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
         let y_off;
         let font = match self.text_size {
@@ -923,15 +972,13 @@ impl DrawExecutor {
         };
         xrad * x_size / 372
     }
-}
 
-impl CommandExecutor for DrawExecutor {
-    fn get_resolution(&self) -> Size {
+    pub fn get_resolution(&self) -> Size {
         let s = self.terminal_resolution.get_resolution();
         Size::new(s.width, s.height)
     }
 
-    fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
+    pub fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
         let mut pixels = Vec::new();
         for i in &self.screen {
             let (r, g, b) = self.pen_colors[(*i as usize) & 0xF].get_rgb();
@@ -947,7 +994,7 @@ impl CommandExecutor for DrawExecutor {
         Some((self.get_resolution(), pixels))
     }
 
-    fn execute_command(
+    pub fn execute_command(
         &mut self,
         buf: &mut Buffer,
         caret: &mut Caret,
@@ -983,7 +1030,16 @@ impl CommandExecutor for DrawExecutor {
                 Ok(CallbackAction::Update)
             }
             IgsCommands::ScreenClear => {
-                self.clear(buf, caret);
+                let cmd = match parameters[0] {
+                    0 => ClearCommand::ClearScreen,
+                    1 => ClearCommand::ClearFromHomeToCursor,
+                    2 => ClearCommand::ClearFromCursorToBottom,
+                    3 => ClearCommand::ClearScreen,
+                    4 => ClearCommand::ClearScreen,
+                    5 => ClearCommand::ClearScreen,
+                    _ => return Err(anyhow::anyhow!("ScreenClear unknown/unsupported argument: {}", parameters[0])),
+                };
+                self.clear(cmd, caret);
                 Ok(CallbackAction::Update)
             }
             IgsCommands::AskIG => {
@@ -1376,6 +1432,7 @@ impl CommandExecutor for DrawExecutor {
                 }
                 if parameters[0] == 1 {
                     match parameters[1] {
+                        0 => {} // no change
                         1 => self.polymaker_type = PolymarkerType::Point,
                         2 => self.polymaker_type = PolymarkerType::Plus,
                         3 => self.polymaker_type = PolymarkerType::Star,
@@ -1387,6 +1444,7 @@ impl CommandExecutor for DrawExecutor {
                     self.polymarker_size = parameters[2] as usize;
                 } else if parameters[0] == 2 {
                     match parameters[1] {
+                        0 => {} // no change
                         1 => self.line_type = LineType::Solid,
                         2 => self.line_type = LineType::LongDash,
                         3 => self.line_type = LineType::DottedLine,

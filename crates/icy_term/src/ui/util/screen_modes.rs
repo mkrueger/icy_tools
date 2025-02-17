@@ -22,7 +22,7 @@ pub enum ScreenMode {
     Mode7,
     Rip,
     SkyPix,
-    Igs,
+    AtariST(i32),
 }
 
 impl Default for ScreenMode {
@@ -40,7 +40,7 @@ impl ScreenMode {
     }
 }
 
-pub const DEFAULT_MODES: [ScreenMode; 15] = [
+pub const DEFAULT_MODES: [ScreenMode; 16] = [
     ScreenMode::Vga(80, 25),
     ScreenMode::Vga(80, 50),
     ScreenMode::Vga(132, 37),
@@ -54,7 +54,8 @@ pub const DEFAULT_MODES: [ScreenMode; 15] = [
     ScreenMode::Rip,
     ScreenMode::Videotex,
     ScreenMode::SkyPix,
-    ScreenMode::Igs,
+    ScreenMode::AtariST(80),
+    ScreenMode::AtariST(40),
     ScreenMode::Mode7,
 ];
 
@@ -76,7 +77,13 @@ impl Display for ScreenMode {
             ScreenMode::Default => write!(f, "Default"),
             ScreenMode::Rip => write!(f, "RIPscrip"),
             ScreenMode::SkyPix => write!(f, "SkyPix"),
-            ScreenMode::Igs => write!(f, "Igs"),
+            ScreenMode::AtariST(x) => {
+                if *x == 80 {
+                    write!(f, "Atari ST 80 cols")
+                } else {
+                    write!(f, "Atari ST 40 cols")
+                }
+            }
             ScreenMode::Mode7 => write!(f, "Mode7"),
         }
     }
@@ -86,9 +93,9 @@ impl ScreenMode {
     pub fn get_input_mode(&self) -> BufferInputMode {
         match self {
             //ScreenMode::Cga(_, _) | ScreenMode::Ega(_, _) |
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix | ScreenMode::Igs => BufferInputMode::CP437,
+            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => BufferInputMode::CP437,
             ScreenMode::Vic => BufferInputMode::PETscii,
-            ScreenMode::Antic => BufferInputMode::ATAscii,
+            ScreenMode::AtariST(_) | ScreenMode::Antic => BufferInputMode::ATAscii,
             ScreenMode::Videotex => BufferInputMode::ViewData,
             ScreenMode::Mode7 => BufferInputMode::CP437,
         }
@@ -98,7 +105,8 @@ impl ScreenMode {
         match self {
             // ScreenMode::Cga(w, h) | ScreenMode::Ega(w, h) |
             ScreenMode::Vga(w, h) => Size::new(*w, *h),
-            ScreenMode::Vic | ScreenMode::Igs | ScreenMode::Mode7 => Size::new(40, 25),
+            ScreenMode::Vic | ScreenMode::Mode7 => Size::new(40, 25),
+            ScreenMode::AtariST(cols) => Size::new(*cols, 25),
             ScreenMode::Antic | ScreenMode::Videotex => Size::new(40, 24),
             ScreenMode::Default => Size::new(80, 25),
             ScreenMode::Rip => Size::new(80, 44),
@@ -190,7 +198,7 @@ impl ScreenMode {
                 main_window.buffer_view.lock().get_buffer_mut().terminal_state.fixed_size = true;
             }
 
-            ScreenMode::Igs => {
+            ScreenMode::AtariST(_x) => {
                 main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
                 main_window
                     .buffer_view
@@ -212,7 +220,7 @@ impl ScreenMode {
             ScreenMode::Vic => Color::new(0x37, 0x39, 0xC4),
             ScreenMode::Antic => Color::new(0x09, 0x51, 0x83),
             ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0, 0, 0),
-            ScreenMode::Igs => Color::new(0, 0, 0),
+            ScreenMode::AtariST(_) => Color::new(0, 0, 0),
         }
     }
 
@@ -223,7 +231,7 @@ impl ScreenMode {
             ScreenMode::Vic => Color::new(0xB0, 0x3F, 0xB6),
             ScreenMode::Antic => Color::new(0xFF, 0xFF, 0xFF),
             ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0xFF, 0xFF, 0xFF),
-            ScreenMode::Igs => Color::new(0xFF, 0xFF, 0xFF),
+            ScreenMode::AtariST(_) => Color::new(0xFF, 0xFF, 0xFF),
         }
     }
 }

@@ -1,17 +1,17 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
 use super::BufferParser;
-use crate::{ansi, Buffer, CallbackAction, Caret, EngineResult, Size};
+use crate::{Buffer, CallbackAction, Caret, EngineResult, Position, Size};
 
 mod cmd;
 use cmd::IgsCommands;
 
-mod paint;
+pub mod paint;
+use igs_loop::{count_params, Loop, LoopParameters};
 pub use paint::*;
 
+pub mod patterns;
+pub use patterns::*;
+
+mod igs_loop;
 mod sound;
 mod vdi;
 
@@ -27,6 +27,13 @@ enum State {
     ReadCommandStart,
     SkipNewLine,
     ReadCommand(IgsCommands),
+
+    // VT52
+    EscapeSequence,
+    // true == fg
+    ReadColor(bool),
+    //
+    VT52SetCursorPos(i32),
 }
 
 #[derive(Default, Debug)]
@@ -40,35 +47,7 @@ enum LoopState {
     EndChain,
 }
 
-pub trait CommandExecutor: Send + Sync {
-    fn get_resolution(&self) -> Size;
-    fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
-        None
-    }
-
-    /// .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    fn execute_command(
-        &mut self,
-        buf: &mut Buffer,
-        caret: &mut Caret,
-        command: IgsCommands,
-        parameters: &[i32],
-        string_parameter: &str,
-    ) -> EngineResult<CallbackAction>;
-}
-
-type LoopParameters = Vec<Vec<String>>;
-
-fn count_params(params: &LoopParameters) -> i32 {
-    params.iter().map(|x| x.len() as i32).sum()
-}
-
 pub struct Parser {
-    fallback_parser: ansi::Parser,
     state: State,
     parsed_numbers: Vec<i32>,
 
@@ -80,120 +59,19 @@ pub struct Parser {
     loop_parameters: LoopParameters,
     chain_gang: String,
 
-    command_executor: Arc<Mutex<dyn CommandExecutor>>,
+    command_executor: DrawExecutor,
     got_double_colon: bool,
     cur_loop: Option<Loop>,
-}
-struct Loop {
-    i: i32,
-    from: i32,
-    to: i32,
-    step: i32,
-    delay: i32,
-    cur_cmd: usize,
-    command: Vec<IgsCommands>,
-    parsed_string: String,
-    parameters: LoopParameters,
-}
-
-impl Loop {
-    fn new(from: i32, to: i32, step: i32, delay: i32, cmd_str: String, parsed_string: String, loop_parameters: LoopParameters) -> EngineResult<Self> {
-        let mut command = Vec::new();
-        for ch in cmd_str.chars() {
-            command.push(IgsCommands::from_char(ch)?);
-        }
-        Ok(Self {
-            i: from,
-            from,
-            to,
-            step,
-            delay,
-            cur_cmd: 0,
-            command,
-            parsed_string,
-            parameters: loop_parameters,
-        })
-    }
-
-    fn next_step(&mut self, exe: &Arc<Mutex<dyn CommandExecutor>>, buf: &mut Buffer, caret: &mut Caret) -> Option<EngineResult<CallbackAction>> {
-        let is_running = if self.from < self.to { self.i < self.to } else { self.i > self.to };
-        if !is_running {
-            return None;
-        }
-        let mut parameters = Vec::new();
-        for p in &self.parameters[self.cur_cmd % self.parameters.len()] {
-            let mut p = p.clone();
-            let mut add_step_value = false;
-            let mut subtract_const_value = false;
-            let mut subtract_x_step = false;
-            if p.starts_with('+') {
-                add_step_value = true;
-                p.remove(0);
-            } else if p.starts_with('-') {
-                subtract_const_value = true;
-                p.remove(0);
-            } else if p.starts_with('!') {
-                subtract_x_step = true;
-                p.remove(0);
-            }
-
-            let x = (self.i).abs();
-            let y = (self.to - 1 - self.i).abs();
-            let mut value = if p == "x" {
-                x
-            } else if p == "y" {
-                y
-            } else {
-                match p.parse::<i32>() {
-                    Err(_) => {
-                        continue;
-                    }
-                    Ok(i) => i,
-                }
-            };
-
-            if add_step_value {
-                value += x;
-            }
-            if subtract_const_value {
-                value = x - value;
-            }
-            if subtract_x_step {
-                value -= x;
-            }
-            parameters.push(value);
-        }
-
-        // println!("step: {:?} => {:?}", self.loop_parameters[cur_parameter], parameters);
-        let res = exe
-            .lock()
-            .unwrap()
-            .execute_command(buf, caret, self.command[self.cur_cmd], &parameters, &self.parsed_string);
-        // todo: correct delay?
-        std::thread::sleep(Duration::from_millis(200 * self.delay as u64));
-        self.cur_cmd += 1;
-        if self.cur_cmd >= self.command.len() {
-            self.cur_cmd = 0;
-            if self.from < self.to {
-                self.i += self.step;
-            } else {
-                self.i -= self.step;
-            }
-        }
-        match res {
-            Ok(r) => Some(Ok(r)),
-            Err(err) => Some(Err(err)),
-        }
-    }
+    saved_caret_pos: Position,
+    wrap_text: bool,
 }
 
 impl Parser {
-    pub fn new(command_executor: Arc<Mutex<dyn CommandExecutor>>) -> Self {
+    pub fn new(resolution: TerminalResolution) -> Self {
         Self {
-            fallback_parser: ansi::Parser::default(),
             state: State::Default,
             parsed_numbers: Vec::new(),
-            command_executor,
+            command_executor: DrawExecutor::new(resolution),
             parsed_string: String::new(),
             loop_state: LoopState::Start,
             loop_parameters: Vec::new(),
@@ -202,14 +80,39 @@ impl Parser {
             cur_loop: None,
             chain_gang: String::new(),
             loop_parameter_count: 0,
+            saved_caret_pos: Position::default(),
+            wrap_text: false,
         }
+    }
+
+    fn write_char(&mut self, _buf: &mut Buffer, _current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+        let caret_pos = caret.get_position();
+
+        let p = Position::new(caret_pos.x * 8, caret_pos.y * 8);
+        self.command_executor.fill_color = caret.attribute.background_color as u8;
+        self.command_executor.fill_rect(p.x, p.x, p.x + 8, p.y + 8);
+
+        self.command_executor.text_color = caret.attribute.foreground_color as u8;
+        self.command_executor.write_text(p, &ch.to_string());
+
+        caret.set_x_position(caret_pos.x + 1);
+
+        Ok(CallbackAction::Update)
+    }
+
+    fn clear_line(&mut self, y: i32, x0: i32, x1: i32) {
+        let y = y * 8;
+        let x0 = x0 * 8;
+        let x1 = x1 * 8;
+        self.command_executor.fill_color = 1;
+        self.command_executor.fill_rect(x0, y, x1, y);
     }
 }
 
 impl BufferParser for Parser {
     fn get_next_action(&mut self, buffer: &mut Buffer, caret: &mut Caret, _current_layer: usize) -> Option<CallbackAction> {
         if let Some(l) = &mut self.cur_loop {
-            if let Some(x) = l.next_step(&self.command_executor, buffer, caret) {
+            if let Some(x) = l.next_step(&mut self.command_executor, buffer, caret) {
                 if let Ok(act) = x {
                     return Some(act);
                 }
@@ -226,11 +129,7 @@ impl BufferParser for Parser {
                 if *command == IgsCommands::WriteText && self.parsed_numbers.len() >= 3 {
                     if ch == '@' {
                         let parameters: Vec<_> = self.parsed_numbers.drain(..).collect();
-                        let res = self
-                            .command_executor
-                            .lock()
-                            .unwrap()
-                            .execute_command(buf, caret, *command, &parameters, &self.parsed_string);
+                        let res = self.command_executor.execute_command(buf, caret, *command, &parameters, &self.parsed_string);
                         self.state = State::ReadCommandStart;
                         self.parsed_string.clear();
                         return res;
@@ -306,7 +205,7 @@ impl BufferParser for Parser {
                                         self.loop_parameters.clone(),
                                     )?;
 
-                                    if let Some(x) = l.next_step(&self.command_executor, buf, caret) {
+                                    if let Some(x) = l.next_step(&mut self.command_executor, buf, caret) {
                                         self.cur_loop = Some(l);
                                         return x;
                                     }
@@ -331,7 +230,7 @@ impl BufferParser for Parser {
                                         self.loop_parameters.clone(),
                                     )?;
 
-                                    if let Some(x) = l.next_step(&self.command_executor, buf, caret) {
+                                    if let Some(x) = l.next_step(&mut self.command_executor, buf, caret) {
                                         self.cur_loop = Some(l);
                                         return x;
                                     }
@@ -404,11 +303,7 @@ impl BufferParser for Parser {
                         }
                         self.got_double_colon = true;
                         let parameters: Vec<_> = self.parsed_numbers.drain(..).collect();
-                        let res = self
-                            .command_executor
-                            .lock()
-                            .unwrap()
-                            .execute_command(buf, caret, *command, &parameters, &self.parsed_string);
+                        let res = self.command_executor.execute_command(buf, caret, *command, &parameters, &self.parsed_string);
                         self.state = State::ReadCommandStart;
                         return res;
                     }
@@ -454,8 +349,8 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::NoUpdate);
                 }
                 self.state = State::Default;
-                let _ = self.fallback_parser.print_char(buf, current_layer, caret, 'G');
-                self.fallback_parser.print_char(buf, current_layer, caret, ch)
+                let _ = self.write_char(buf, current_layer, caret, 'G');
+                self.write_char(buf, current_layer, caret, ch)
             }
             State::SkipNewLine => {
                 self.state = State::Default;
@@ -466,137 +361,193 @@ impl BufferParser for Parser {
                     self.state = State::GotIgsStart;
                     return Ok(CallbackAction::NoUpdate);
                 }
-                self.fallback_parser.print_char(buf, current_layer, caret, ch)
+                self.write_char(buf, current_layer, caret, ch)
             }
-            State::Default => {
-                if ch == 'G' {
-                    self.state = State::GotIgsStart;
+
+            State::VT52SetCursorPos(x_pos) => {
+                let pos = (ch as u8) - b' ';
+                if *x_pos < 0 {
+                    State::VT52SetCursorPos(pos as i32);
                     return Ok(CallbackAction::NoUpdate);
                 }
-                self.fallback_parser.print_char(buf, current_layer, caret, ch)
+                caret.set_position_xy(*x_pos, pos as i32);
+                self.state = State::Default;
+                Ok(CallbackAction::Update)
             }
+            State::ReadColor(fg) => {
+                let color = ((ch as u8) - b'0') as u32;
+                if *fg {
+                    caret.attribute.set_foreground(color);
+                } else {
+                    caret.attribute.set_background(color);
+                }
+                self.state = State::Default;
+                Ok(CallbackAction::Update)
+            }
+            State::EscapeSequence => {
+                match ch {
+                    'A' => {
+                        if caret.pos.y > 0 {
+                            caret.pos.y -= 1;
+                        }
+                    }
+                    'B' => {
+                        let size = self.command_executor.get_char_resolution();
+                        if caret.pos.y < size.height {
+                            caret.pos.y += 1;
+                        }
+                    }
+                    'C' => {
+                        let size = self.command_executor.get_char_resolution();
+                        if caret.pos.x < size.width {
+                            caret.pos.x += 1;
+                        }
+                    }
+                    'D' => {
+                        if caret.pos.x > 0 {
+                            caret.pos.x -= 1;
+                        }
+                    }
+                    'E' => {
+                        self.command_executor.clear(ClearCommand::ClearScreen, caret);
+                    }
+                    'F' => { // Enter graphics mode
+                    }
+                    'G' => { // Leave graphics mode
+                    }
+                    'H' => {
+                        caret.set_position(Position::default());
+                    }
+                    'I' => {
+                        if caret.pos.y > 0 {
+                            caret.pos.y -= 1;
+                        } else {
+                            self.command_executor.scroll(-8);
+                        }
+                    }
+                    'J' => {
+                        // erase to end of screen
+                        self.command_executor.clear(ClearCommand::ClearFromCursorToBottom, caret);
+                    }
+                    'K' => {
+                        // erase to end of line
+                        self.clear_line(
+                            caret.get_position().y,
+                            caret.get_position().x * 8,
+                            self.command_executor.get_resolution().width / 8,
+                        );
+                    }
+                    'Y' => {
+                        self.state = State::VT52SetCursorPos(-1);
+                        return Ok(CallbackAction::NoUpdate);
+                    }
+                    'Z' => { // Identify terminal
+                    }
+                    '[' => { // Enter hold-screen mode
+                    }
+                    '\\' => { // Exit hold screen mode
+                    }
+                    '=' => { // Alt keypad mode
+                    }
+                    '>' => { // Exit alt keypad mode
+                    }
+                    'b' => {
+                        // FG Color mode
+                        self.state = State::ReadColor(true);
+                        return Ok(CallbackAction::NoUpdate);
+                    }
+                    'c' => {
+                        // BG Color mode
+                        self.state = State::ReadColor(false);
+                        return Ok(CallbackAction::NoUpdate);
+                    }
+                    'd' => {
+                        // Clear to start of screen
+                        self.command_executor.clear(ClearCommand::ClearFromHomeToCursor, caret);
+                    }
+                    'e' => {
+                        // Enable cursor
+                        caret.set_is_visible(true);
+                    }
+                    'f' => {
+                        // Disable cursor
+                        caret.set_is_visible(false);
+                    }
+                    'j' => {
+                        // Save cursor pos
+                        self.saved_caret_pos = caret.get_position();
+                    }
+                    'k' => {
+                        // Restore cursor pos
+                        caret.set_position(self.saved_caret_pos);
+                    }
+                    'l' => {
+                        // Clear line
+                        self.clear_line(caret.get_position().y, 0, self.command_executor.get_resolution().width / 8);
+                        caret.set_x_position(0);
+                    }
+                    'o' => {
+                        // Clear to start of line
+                        self.clear_line(caret.get_position().y, 0, caret.get_position().x * 8);
+                    }
+                    'p' => { // Reverse video
+                    }
+                    'q' => { // Normal video
+                    }
+                    'v' => {
+                        // Wrap on
+                        self.wrap_text = true;
+                    }
+                    'w' => {
+                        // Wrap off
+                        self.wrap_text = false;
+                    }
+                    _ => {
+                        // Ignore
+                        log::info!("Ignoring VT-52 escape sequence: {}", ch);
+                    }
+                }
+                self.state = State::Default;
+                Ok(CallbackAction::Update)
+            }
+            State::Default => match ch as u8 {
+                b'G' => {
+                    self.state = State::GotIgsStart;
+                    Ok(CallbackAction::NoUpdate)
+                }
+                0..=6 => Ok(CallbackAction::NoUpdate),
+                0x07 => Ok(CallbackAction::Beep),
+                0x0B | 0x0C => {
+                    caret.set_y_position(caret.get_position().y + 1);
+                    caret.set_x_position(0);
+                    Ok(CallbackAction::NoUpdate)
+                }
+                0x0D => {
+                    caret.set_x_position(0);
+                    let size = self.command_executor.get_char_resolution();
+                    if caret.pos.y < size.height {
+                        caret.pos.y += 1;
+                    } else {
+                        self.command_executor.scroll(8);
+                    }
+                    Ok(CallbackAction::NoUpdate)
+                }
+                0x0E..=0x1A => Ok(CallbackAction::NoUpdate),
+                0x1B => {
+                    self.state = State::EscapeSequence;
+                    Ok(CallbackAction::NoUpdate)
+                }
+                0x1C..=0x1F => Ok(CallbackAction::NoUpdate),
+                _ => self.write_char(buf, current_layer, caret, ch),
+            },
         }
     }
 
     fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
-        self.command_executor.lock().unwrap().get_picture_data()
+        self.command_executor.get_picture_data()
     }
 }
 
 pub fn parse_next_number(x: i32, ch: u8) -> i32 {
     x.saturating_mul(10).saturating_add(ch as i32).saturating_sub(b'0' as i32)
 }
-
-const RANDOM_PATTERN: [u16; 100] = [
-    0x1c8c, 0x6987, 0x4b96, 0xbfbc, 0xaa0e, 0x1a66, 0x052b, 0xc73d, 0xf810, 0xad4e, 0xf44a, 0x49d3, 0x66c9, 0x0677, 0xadf1, 0x718a, 0xb2e4, 0xbf43, 0x2ca1,
-    0xf3af, 0x9530, 0xaf5c, 0xb4e8, 0x2ba6, 0x9b5a, 0x75f9, 0x5476, 0x7008, 0x1a3c, 0x923b, 0x08eb, 0xf214, 0xb30c, 0xafd4, 0x6fcc, 0xdd74, 0x7b9d, 0xd39f,
-    0x74ca, 0x7866, 0x4b0f, 0xb865, 0xdff6, 0x3832, 0x26c6, 0x0deb, 0x9c36, 0x182a, 0xd369, 0xae2a, 0xc5cf, 0x6179, 0xd346, 0x88a0, 0x4ffa, 0xefbf, 0x4afb,
-    0x3c3f, 0xd4b1, 0x9b87, 0x0ba9, 0x2a44, 0xb8d4, 0x4550, 0x4a9b, 0x0426, 0x9975, 0xe674, 0x679f, 0x7eac, 0xda39, 0x27a6, 0xe41d, 0x8794, 0x6a77, 0xfcd3,
-    0xaf0e, 0x084d, 0x1264, 0x39ce, 0x14f2, 0x130f, 0x6114, 0xaeeb, 0xd908, 0x7d4c, 0xd74b, 0xb139, 0xbdd3, 0xb642, 0x9e2b, 0x0c51, 0xccd3, 0x0691, 0xfa29,
-    0x6f35, 0x45c4, 0x2da8, 0xe7ba, 0x993f,
-];
-
-const HOLLOW_PATTERN: [u16; 1] = [0x0000];
-const SOLID_PATTERN: [u16; 1] = [0xFFFF];
-const TYPE_PATTERN: [[u16; 8]; 24] = [
-    // intensity level 2
-    [0x0000, 0x4444, 0x0000, 0x1111, 0x0000, 0x4444, 0x0000, 0x1111],
-    // intensity level 4
-    [0x0000, 0x5555, 0x0000, 0x5555, 0x0000, 0x5555, 0x0000, 0x5555],
-    // intensity level 6
-    [0x8888, 0x5555, 0x2222, 0x5555, 0x8888, 0x5555, 0x2222, 0x5555],
-    // intensity level 8
-    [0xAAAA, 0x5555, 0xAAAA, 0x5555, 0xAAAA, 0x5555, 0xAAAA, 0x5555],
-    // intensity level 10
-    [0xAAAA, 0xDDDD, 0xAAAA, 0x7777, 0xAAAA, 0xDDDD, 0xAAAA, 0x7777],
-    // intensity level 12
-    [0xAAAA, 0xFFFF, 0xAAAA, 0xFFFF, 0xAAAA, 0xFFFF, 0xAAAA, 0xFFFF],
-    // intensity level 14
-    [0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF, 0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF],
-    // intensity level 16
-    [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF],
-    // Brick
-    [0xFFFF, 0x8080, 0x8080, 0x8080, 0xFFFF, 0x0808, 0x0808, 0x0808],
-    // Diagonal Bricks
-    [0x2020, 0x4040, 0x8080, 0x4141, 0x2222, 0x1414, 0x0808, 0x1010],
-    // Grass
-    [0x0000, 0x0000, 0x1010, 0x2828, 0x0000, 0x0000, 0x0101, 0x8282],
-    // Trees
-    [0x0202, 0x0202, 0xAAAA, 0x5050, 0x2020, 0x2020, 0xAAAA, 0x0505],
-    // Dashed x's
-    [0x4040, 0x8080, 0x0000, 0x0808, 0x0404, 0x0202, 0x0000, 0x2020],
-    // Cobble Stones
-    [0x6606, 0xC6C6, 0xD8D8, 0x1818, 0x8181, 0x8DB1, 0x0C33, 0x6000],
-    // Sand
-    [0x0000, 0x0000, 0x0400, 0x0000, 0x0010, 0x0000, 0x8000, 0x0000],
-    // Rough Weave
-    [0xF8F8, 0x6C6C, 0xC6C6, 0x8F8F, 0x1F1F, 0x3636, 0x6363, 0xF1F1],
-    // Quilt
-    [0xAAAA, 0x0000, 0x8888, 0x1414, 0x2222, 0x4141, 0x8888, 0x0000],
-    // Patterned Cross
-    [0x0808, 0x0000, 0xAAAA, 0x0000, 0x0808, 0x0000, 0x8888, 0x0000],
-    // Balls
-    [0x7777, 0x9898, 0xF8F8, 0xF8F8, 0x7777, 0x8989, 0x8F8F, 0x8F8F],
-    // Vertical Scales
-    [0x8080, 0x8080, 0x4141, 0x3E3E, 0x0808, 0x0808, 0x1414, 0xE3E3],
-    // Diagonal scales
-    [0x8181, 0x4242, 0x2424, 0x1818, 0x0606, 0x0101, 0x8080, 0x8080],
-    // Checker Board
-    [0xF0F0, 0xF0F0, 0xF0F0, 0xF0F0, 0x0F0F, 0x0F0F, 0x0F0F, 0x0F0F],
-    // Filled Diamond
-    [0x0808, 0x1C1C, 0x3E3E, 0x7F7F, 0xFFFF, 0x7F7F, 0x3E3E, 0x1C1C],
-    // Herringbone
-    [0x1111, 0x2222, 0x4444, 0xFFFF, 0x8888, 0x4444, 0x2222, 0xFFFF],
-];
-
-const HATCH_PATTERN: [[u16; 8]; 6] = [
-    // narrow spaced + 45
-    [0x0101, 0x0202, 0x0404, 0x0808, 0x1010, 0x2020, 0x4040, 0x8080],
-    // medium spaced thick 45 deg
-    [0x6060, 0xC0C0, 0x8181, 0x0303, 0x0606, 0x0C0C, 0x1818, 0x3030],
-    // medium +-45 deg
-    [0x4242, 0x8181, 0x8181, 0x4242, 0x2424, 0x1818, 0x1818, 0x2424],
-    // medium spaced vertical
-    [0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080],
-    // medium spaced horizontal
-    [0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000],
-    // medium spaced cross
-    [0xFFFF, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080],
-];
-
-const HATCH_WIDE_PATTERN: [[u16; 16]; 6] = [
-    // wide +45 deg
-    [
-        0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000,
-    ],
-    // widely spaced thick 45 deg
-    [
-        0x8003, 0x0007, 0x000E, 0x001C, 0x0038, 0x0070, 0x00E0, 0x01C0, 0x0380, 0x0700, 0x0E00, 0x1C00, 0x3800, 0x7000, 0x0E000, 0x0C001,
-    ],
-    // widely +- 45 deg
-    [
-        0x8001, 0x4002, 0x2004, 0x1008, 0x0810, 0x0420, 0x0240, 0x0180, 0x0180, 0x0240, 0x0420, 0x0810, 0x1008, 0x2004, 0x4002, 0x8001,
-    ],
-    // widely spaced vertical
-    [
-        0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
-    ],
-    // widely spaced horizontal
-    [
-        0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-    ],
-    // widely spaced horizontal/vert cross
-    [
-        0xFFFF, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0xFFFF, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080,
-    ],
-];
-
-const LINE_STYLE: [u16; 6] = [
-    // Solid
-    0xFFFF, // Long Dash
-    0xFFF0, // Dotted
-    0xC0C0, // Dash Dot
-    0xFF18, // Dashed
-    0xFF00, // DASH Dot Dot
-    0xF191,
-];

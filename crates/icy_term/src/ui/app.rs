@@ -86,6 +86,7 @@ impl MainWindow {
                 terminal: TerminalEmulation::Ascii,
             },
             modem: None,
+            screen_mode: ScreenMode::default(),
         };
 
         let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(&cc.egui_ctx, data, buffer_update_thread.clone());

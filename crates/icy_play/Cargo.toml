@@ -15,6 +15,3 @@ icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
 clap = { workspace = true }
 anyhow = "1.0.75"
-
-[profile.release]
-strip = "symbols"

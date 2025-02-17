@@ -10,7 +10,6 @@ use regex::Regex;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
 use std::{
     fs::{self},
     path::PathBuf,
@@ -27,7 +26,7 @@ pub const ALL_TERMINALS: [TerminalEmulation; 10] = [
     TerminalEmulation::ViewData,
     TerminalEmulation::Rip,
     TerminalEmulation::Skypix,
-    TerminalEmulation::IGS,
+    TerminalEmulation::AtariST,
     TerminalEmulation::Mode7,
 ];
 
@@ -42,12 +41,12 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
         TerminalEmulation::Mode7 => "Mode7",
         TerminalEmulation::Rip => "RIPscrip",
         TerminalEmulation::Skypix => "Skypix",
-        TerminalEmulation::IGS => "IGS (Experimental)",
+        TerminalEmulation::AtariST => "Atari ST",
     }
 }
 
 #[must_use]
-pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cache_directory: PathBuf) -> Box<dyn BufferParser> {
+pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, screen_mode: ScreenMode, cache_directory: PathBuf) -> Box<dyn BufferParser> {
     match emulator {
         TerminalEmulation::Ansi => {
             let mut parser = ansi::Parser::default();
@@ -75,9 +74,18 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cac
             let parser = skypix::Parser::new(Box::new(parser), cache_directory);
             Box::new(parser)
         }
-        TerminalEmulation::IGS => {
-            let ig_executor = Arc::new(std::sync::Mutex::new(icy_engine::parsers::igs::DrawExecutor::default()));
-            Box::new(icy_engine::igs::Parser::new(ig_executor))
+        TerminalEmulation::AtariST => {
+            let res = if let ScreenMode::AtariST(cols) = screen_mode {
+                if cols == 80 {
+                    icy_engine::igs::TerminalResolution::Medium
+                } else {
+                    icy_engine::igs::TerminalResolution::Low
+                }
+            } else {
+                icy_engine::igs::TerminalResolution::Low
+            };
+
+            Box::new(icy_engine::igs::Parser::new(res))
         }
     }
 }
@@ -85,14 +93,11 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, cac
 #[must_use]
 pub fn get_unicode_converter(emulator: &TerminalEmulation) -> Box<dyn UnicodeConverter> {
     match emulator {
-        TerminalEmulation::Ansi
-        | TerminalEmulation::Avatar
-        | TerminalEmulation::Ascii
-        | TerminalEmulation::Rip
-        | TerminalEmulation::Skypix
-        | TerminalEmulation::IGS => Box::<ascii::CP437Converter>::default(),
+        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii | TerminalEmulation::Rip | TerminalEmulation::Skypix => {
+            Box::<ascii::CP437Converter>::default()
+        }
         TerminalEmulation::PETscii => Box::<petscii::CharConverter>::default(),
-        TerminalEmulation::ATAscii => Box::<atascii::CharConverter>::default(),
+        TerminalEmulation::ATAscii | TerminalEmulation::AtariST => Box::<atascii::CharConverter>::default(),
         TerminalEmulation::ViewData => Box::<viewdata::CharConverter>::default(),
         TerminalEmulation::Mode7 => Box::<mode7::CharConverter>::default(),
     }
@@ -583,7 +588,7 @@ fn parse_address(value: &Value) -> Address {
                 "viewdata" => result.terminal_type = TerminalEmulation::ViewData,
                 "rip" => result.terminal_type = TerminalEmulation::Rip,
                 "skypix" => result.terminal_type = TerminalEmulation::Skypix,
-                "igs" => result.terminal_type = TerminalEmulation::IGS,
+                "igs" | "atarist" => result.terminal_type = TerminalEmulation::AtariST,
                 "mode7" => result.terminal_type = TerminalEmulation::Mode7,
                 _ => {}
             }
@@ -608,7 +613,8 @@ fn parse_address(value: &Value) -> Address {
                 "videotex" => result.screen_mode = ScreenMode::Videotex,
                 "rip" => result.screen_mode = ScreenMode::Rip,
                 "skypix" => result.screen_mode = ScreenMode::SkyPix,
-                "igs" => result.screen_mode = ScreenMode::Igs,
+                "atarist40" => result.screen_mode = ScreenMode::AtariST(40),
+                "igs" | "atarist80" => result.screen_mode = ScreenMode::AtariST(80),
                 "mode7" => result.screen_mode = ScreenMode::Mode7,
                 _ => {
                     if let Some(caps) = vga_regex.captures(lowercase) {
@@ -792,8 +798,8 @@ fn parse_legacy_address(value: &Value) -> Address {
                         result.terminal_type = TerminalEmulation::Rip;
                     }
                     "Igs" => {
-                        result.screen_mode = ScreenMode::Igs;
-                        result.terminal_type = TerminalEmulation::IGS;
+                        result.screen_mode = ScreenMode::AtariST(80);
+                        result.terminal_type = TerminalEmulation::AtariST;
                     }
                     _ => {}
                 }

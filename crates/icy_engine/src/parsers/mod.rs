@@ -26,6 +26,7 @@ pub const BEL: char = '\x07';
 pub const LF: char = '\n';
 pub const CR: char = '\r';
 pub const BS: char = '\x08';
+pub const VT: char = '\x0B';
 pub const FF: char = '\x0C';
 pub const TAB: char = '\t';
 

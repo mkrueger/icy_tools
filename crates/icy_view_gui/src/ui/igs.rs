@@ -6,10 +6,7 @@ use std::{
 };
 
 use eframe::egui::ColorImage;
-use icy_engine::{
-    igs::{CommandExecutor, DrawExecutor},
-    Buffer, BufferParser, CallbackAction, Caret,
-};
+use icy_engine::{Buffer, BufferParser, CallbackAction, Caret};
 /*
 use rodio::{
     cpal::SampleRate,
@@ -22,12 +19,11 @@ pub struct IGS {
     exit_requested: Arc<AtomicBool>,
 
     run_thread: Option<thread::JoinHandle<()>>,
-    executor: Arc<Mutex<dyn CommandExecutor>>,
     pub texture_handle: ColorImage,
 }
 
-fn make_texture(executor: &Arc<Mutex<dyn CommandExecutor>>) -> ColorImage {
-    let Some((size, pixels)) = executor.lock().unwrap().get_picture_data() else {
+fn make_texture(executor: &mut icy_engine::parsers::igs::Parser) -> ColorImage {
+    let Some((size, pixels)) = executor.get_picture_data() else {
         return ColorImage::example();
     };
     ColorImage::from_rgba_premultiplied([size.width as usize, size.height as usize], &pixels)
@@ -39,12 +35,10 @@ impl IGS {
     }
 
     pub fn run(_parent: &Option<PathBuf>, in_txt: String) -> Arc<Mutex<Self>> {
-        let executor: Arc<Mutex<dyn CommandExecutor>> = Arc::new(Mutex::new(DrawExecutor::default()));
-        let texture_handle = make_texture(&executor);
+        let texture_handle = ColorImage::example();
         let exit_requested = Arc::new(AtomicBool::new(false));
 
         let igs = Arc::new(Mutex::new(IGS {
-            executor: executor.clone(),
             run_thread: None,
             is_playing: false,
             texture_handle,
@@ -57,7 +51,7 @@ impl IGS {
             let mut caret = Caret::default();
             let vec = in_txt.chars().collect::<Vec<_>>();
             let mut i = 0;
-            let mut parser = icy_engine::parsers::igs::Parser::new(executor);
+            let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
             // let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             // let sample_rate = SampleRate(48000);
 
@@ -72,13 +66,13 @@ impl IGS {
                 let c = vec[i];
                 i += 1;
                 match parser.print_char(&mut buffer, 0, &mut caret, c) {
-                    Ok(act) => run_action(&igs, act),
+                    Ok(act) => run_action(&igs, &mut parser, act),
                     Err(err) => {
                         eprintln!("IGS Error: {:?}", err);
                     }
                 }
                 while let Some(act) = parser.get_next_action(&mut buffer, &mut caret, 0) {
-                    run_action(&igs, act);
+                    run_action(&igs, &mut parser, act);
                 }
             }
         });
@@ -88,10 +82,10 @@ impl IGS {
     }
 }
 
-fn run_action(igs: &Arc<Mutex<IGS>>, act: CallbackAction) {
+fn run_action(igs: &Arc<Mutex<IGS>>, parser: &mut icy_engine::parsers::igs::Parser, act: CallbackAction) {
     match act {
         CallbackAction::Update => {
-            let texture_handle = make_texture(&igs.lock().unwrap().executor);
+            let texture_handle = make_texture(parser);
             igs.lock().unwrap().texture_handle = texture_handle;
         }
         CallbackAction::Pause(ms) => {

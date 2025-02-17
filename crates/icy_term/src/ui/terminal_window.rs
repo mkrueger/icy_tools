@@ -35,7 +35,7 @@ impl MainWindow {
                     ui.disable();
                 }
                 ui.horizontal(|ui| {
-                    let sense = Sense::HOVER;
+                    let sense = Sense::HOVER | Sense::CLICK;
                     let r = ui
                         .add(ImageButton::new(UPLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
                         .on_hover_ui(|ui| {

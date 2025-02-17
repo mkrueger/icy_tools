@@ -4,6 +4,8 @@ use icy_net::{protocol::TransferProtocolType, telnet::TermCaps, ConnectionType};
 use std::path::PathBuf;
 use web_time::Duration;
 
+use super::ScreenMode;
+
 /// A more lightweight version of `Address` that is used for the connection
 ///Using Addreess in `SendData` makes just the enum larger without adding any value.
 #[derive(Clone, Debug)]
@@ -18,6 +20,7 @@ pub struct OpenConnectionData {
     pub term_caps: TermCaps,
     pub modem: Option<Modem>,
     pub proxy_command: Option<String>,
+    pub screen_mode: ScreenMode,
 }
 
 impl OpenConnectionData {
@@ -26,6 +29,7 @@ impl OpenConnectionData {
             panic!("Timeout must be greater than 0");
         }
         Self {
+            screen_mode: call_adr.screen_mode,
             address: call_adr.address.clone(),
             connection_type: call_adr.protocol.clone(),
             baud_emulation: call_adr.baud_emulation.clone(),

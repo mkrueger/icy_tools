@@ -1,13 +1,9 @@
 use std::{
     fs::{self, File},
     io,
-    sync::{Arc, Mutex},
 };
 
-use icy_engine::{
-    igs::{CommandExecutor, DrawExecutor},
-    Buffer, BufferParser, Caret, Color,
-};
+use icy_engine::{Buffer, BufferParser, Caret, Color};
 
 #[test]
 pub fn test_igs() {
@@ -24,16 +20,15 @@ pub fn test_igs() {
         png::Decoder::new(reader).read_info().unwrap().next_frame(&mut img_buf).unwrap();
 
         let data = fs::read_to_string(cur_entry).expect("Error reading file.");
-        let executor: Arc<Mutex<dyn CommandExecutor>> = Arc::new(Mutex::new(DrawExecutor::default()));
         let mut buffer = Buffer::new((80, 24));
         let mut caret = Caret::default();
-        let mut parser = icy_engine::parsers::igs::Parser::new(executor.clone());
+        let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
 
         for c in data.chars() {
             parser.print_char(&mut buffer, 0, &mut caret, c).unwrap();
         }
 
-        let (_, rendered_data) = executor.lock().unwrap().get_picture_data().unwrap();
+        let (_, rendered_data) = parser.get_picture_data().unwrap();
 
         check_output(&rendered_data, &img_buf);
     }

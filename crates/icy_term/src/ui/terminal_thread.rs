@@ -166,6 +166,7 @@ pub fn start_update_thread(
                     let mut buffer_parser: Box<dyn BufferParser> = get_parser(
                         &connection_data.term_caps.terminal,
                         connection_data.use_ansi_music,
+                        connection_data.screen_mode,
                         update_thread.lock().cache_directory.clone(),
                     );
                     let com: Box<dyn Connection> = match open_connection(&connection_data).await {

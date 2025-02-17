@@ -29,11 +29,12 @@ fn icos(angle: u16) -> u16 {
     isin(HALFPI.wrapping_sub(angle))
 }
 
-pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> Position {
+pub fn calculate_point(xc: i32, yc: i32, x_rad: i32, y_rad: i32, angle: u16) -> Position {
     let mut delta_x;
     let mut delta_y;
 
     let mut angle = angle % TWOPI;
+
     let mut negative = 1;
     if angle > 3 * HALFPI {
         angle = TWOPI - angle;
@@ -47,13 +48,13 @@ pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> 
     }
     if angle > MAX_TABLE_ANGLE {
         delta_x = 0;
-        delta_y = y_rad as i32;
+        delta_y = y_rad as i16;
     } else if angle < HALFPI - MAX_TABLE_ANGLE {
-        delta_x = x_rad as i32;
+        delta_x = x_rad as i16;
         delta_y = 0;
     } else {
-        delta_x = umul_shift(icos(angle), x_rad as u16) as i32;
-        delta_y = umul_shift(isin(angle), y_rad as u16) as i32;
+        delta_x = umul_shift(icos(angle), x_rad) as i16;
+        delta_y = umul_shift(isin(angle), y_rad) as i16;
     }
     if negative & 2 != 0 {
         delta_x = -delta_x;
@@ -61,12 +62,11 @@ pub fn calculate_point(xm: i32, ym: i32, x_rad: i32, y_rad: i32, angle: u16) -> 
     if negative & 1 != 0 {
         delta_y = -delta_y;
     }
-    Position::new(xm + delta_x, ym + delta_y)
+    Position::new(xc + delta_x as i32, yc + delta_y as i32)
 }
 
-fn umul_shift(a: u16, b: u16) -> u16 {
+fn umul_shift(a: u16, b: i32) -> u16 {
     let a = a as i32;
-    let b = b as i32;
     ((a * b + 32768) >> 16) as u16
 }
 
@@ -214,6 +214,40 @@ mod test_loop_bug2 {
             63302, // isin(750)
             64540, // isin(800)
             65285, // isin(850)
+        ];
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    pub fn test_isin2() {
+        assert_eq!(0, isin(0));
+        assert_eq!(56216, isin(898));
+        assert_eq!(51558, isin(899));
+        assert_eq!(46899, isin(900));
+    }
+
+    #[test]
+    pub fn test_isin_interpolation() {
+        let vec = (0..90).step_by(5).map(|i| isin(i * 10 + 20)).collect::<Vec<_>>();
+        let expected = vec![
+            2287,  // sin(20)
+            7986,  // sin(70)
+            13626, // sin(120)
+            19160, // sin(170)
+            24549, // sin(220)
+            29752, // sin(270)
+            34729, // sin(320)
+            39440, // sin(370)
+            43851, // sin(420)
+            47929, // sin(470)
+            51643, // sin(520)
+            54962, // sin(570)
+            57863, // sin(620)
+            60325, // sin(670)
+            62328, // sin(720)
+            63854, // sin(770)
+            64896, // sin(820)
+            65445, // sin(870)
         ];
         assert_eq!(vec, expected);
     }

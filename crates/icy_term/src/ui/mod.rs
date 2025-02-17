@@ -306,7 +306,7 @@ impl MainWindow {
         if let Some(_handle) = self.terminal_thread_handle.take() {
             self.send_data(SendData::Disconnect);
         }
-        self.buffer_parser = get_parser(&data.term_caps.terminal, data.use_ansi_music, PathBuf::new());
+        self.buffer_parser = get_parser(&data.term_caps.terminal, data.use_ansi_music, cloned_addr.screen_mode, PathBuf::new());
         let (update_thread_handle, tx, rx) = crate::ui::terminal_thread::start_update_thread(ctx, data, self.terminal_thread.clone());
         self.terminal_thread_handle = Some(update_thread_handle);
         self.tx = tx;
