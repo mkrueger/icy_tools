@@ -2,7 +2,7 @@ use regex::Regex;
 use std::io::{BufReader, Read};
 
 lazy_static::lazy_static! {
-    static ref FIG_HEADER : Regex = Regex::new(r"flf2a(.) (\d+) (\d+) (\d+) (\d+) (\d+)\s*(\d+)?\s*(\d+)?\s*(\d+)?").unwrap();
+    static ref FIG_HEADER : Regex = Regex::new(r"flf2a(.) (\d+) (\d+) (\d+) ([-]?\d+) (\d+)\s*(\d+)?\s*(\d+)?\s*(\d+)?").unwrap();
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

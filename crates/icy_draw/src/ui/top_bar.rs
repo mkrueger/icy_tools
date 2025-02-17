@@ -416,7 +416,6 @@ impl<'a> MainWindow<'a> {
 
                 ui.separator();
                 self.commands[0].open_font_directory.ui(ui, &mut result);
-                self.commands[0].open_tdf_directory.ui(ui, &mut result);
             });
             ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-view"), |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);

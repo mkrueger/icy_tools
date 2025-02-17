@@ -106,7 +106,6 @@ pub enum Message {
     OpenAddFonts,
     OpenFontManager,
     OpenFontDirectory,
-    OpenTdfDirectory,
     OpenPalettesDirectory,
     ToggleMirrorMode,
     ClearRecentOpenFiles,
@@ -840,18 +839,6 @@ impl<'a> MainWindow<'a> {
                     self.handle_message(Some(Message::ShowError(format!("{err}"))));
                 }
             },
-
-            Message::OpenTdfDirectory => match Settings::get_tdf_diretory() {
-                Ok(dir) => {
-                    if let Err(err) = open::that(dir) {
-                        self.handle_message(Some(Message::ShowError(format!("Can't open font directory: {err}"))));
-                    }
-                }
-                Err(err) => {
-                    self.handle_message(Some(Message::ShowError(format!("{err}"))));
-                }
-            },
-
             Message::OpenPalettesDirectory => match Settings::get_palettes_diretory() {
                 Ok(dir) => {
                     if let Err(err) = open::that(dir) {

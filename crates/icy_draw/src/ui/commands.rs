@@ -559,7 +559,6 @@ keys![
     (zoom_reset, "menu-zoom_reset", ZoomReset, BufferOpenState, Backspace, CTRL),
     (zoom_in, "menu-zoom_in", ZoomIn, BufferOpenState, Plus, CTRL),
     (zoom_out, "menu-zoom_out", ZoomOut, BufferOpenState, Minus, CTRL),
-    (open_tdf_directory, "menu-open_tdf_directoy", OpenTdfDirectory, AlwaysEnabledState),
     (open_font_selector, "menu-open_font_selector", OpenFontSelector, BufferOpenState),
     (add_fonts, "menu-add_fonts", OpenAddFonts, BufferOpenState),
     (open_font_manager, "menu-open_font_manager", OpenFontManager, BufferOpenState),

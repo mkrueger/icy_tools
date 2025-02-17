@@ -45,9 +45,9 @@ impl TheDrawFont {
     ///
     /// This function will return an error if .
     pub fn load(file_name: &Path) -> EngineResult<Vec<TheDrawFont>> {
-        let mut f = File::open(file_name).expect("error while opening file");
+        let mut f = File::open(file_name)?;
         let mut bytes = Vec::new();
-        f.read_to_end(&mut bytes).expect("error while reading file");
+        f.read_to_end(&mut bytes)?;
         TheDrawFont::from_bytes(&bytes)
     }
 

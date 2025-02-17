@@ -211,18 +211,6 @@ impl Settings {
         Err(IcyDrawError::ErrorCreatingDirectory("font directory".to_string()).into())
     }
 
-    pub(crate) fn get_tdf_diretory() -> TerminalResult<PathBuf> {
-        if let Some(proj_dirs) = ProjectDirs::from("com", "GitHub", "icy_draw") {
-            let dir = proj_dirs.config_dir().join("data/tdf");
-
-            if !dir.exists() && fs::create_dir_all(&dir).is_err() {
-                return Err(IcyDrawError::ErrorCreatingDirectory(format!("{dir:?}")).into());
-            }
-            return Ok(dir);
-        }
-        Err(IcyDrawError::ErrorCreatingDirectory("tdf directory".to_string()).into())
-    }
-
     pub(crate) fn get_palettes_diretory() -> TerminalResult<PathBuf> {
         if let Some(proj_dirs) = ProjectDirs::from("com", "GitHub", "icy_draw") {
             let dir = proj_dirs.config_dir().join("data/palettes");

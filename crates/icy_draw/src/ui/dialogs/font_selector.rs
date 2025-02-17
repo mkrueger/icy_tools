@@ -281,17 +281,19 @@ impl FontSelector {
                         Ok(mut file) => {
                             if let Some(path) = file.enclosed_name() {
                                 let file_name = path.to_string_lossy().to_string();
-                                let ext = path.extension().unwrap().to_str().unwrap();
-                                if is_font_extensions(&ext.to_ascii_lowercase()) {
-                                    let mut data = Vec::new();
-                                    file.read_to_end(&mut data).unwrap_or_default();
-                                    if let Ok(font) = BitFont::from_bytes(file_name, &data) {
-                                        fonts.push(font)
+                                if let Some(ext) = path.extension() {
+                                    let ext = ext.to_string_lossy();
+                                    if is_font_extensions(&ext.to_ascii_lowercase()) {
+                                        let mut data = Vec::new();
+                                        file.read_to_end(&mut data).unwrap_or_default();
+                                        if let Ok(font) = BitFont::from_bytes(file_name, &data) {
+                                            fonts.push(font)
+                                        }
+                                    } else if ext == "zip" {
+                                        let mut data = Vec::new();
+                                        file.read_to_end(&mut data).unwrap_or_default();
+                                        FontSelector::read_zip_archive(data, fonts);
                                     }
-                                } else if ext == "zip" {
-                                    let mut data = Vec::new();
-                                    file.read_to_end(&mut data).unwrap_or_default();
-                                    FontSelector::read_zip_archive(data, fonts);
                                 }
                             }
                         }

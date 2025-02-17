@@ -38,7 +38,7 @@ impl FIGFont {
             let mut reader = BufReader::new(f);
             FIGFont::read(&mut reader)?
         } else {
-            let f = File::open(file_name).expect("error while reading file");
+            let f = File::open(file_name)?;
             let mut reader = BufReader::new(f);
             FIGFont::read(&mut reader)?
         };
@@ -49,7 +49,7 @@ impl FIGFont {
         Ok(res)
     }
 
-    pub(crate) fn read<R: Read>(reader: &mut BufReader<R>) -> EngineResult<Self> {
+    pub fn read<R: Read>(reader: &mut BufReader<R>) -> EngineResult<Self> {
         let header = Header::read(reader)?;
         let mut chars = HashMap::new();
         let mut char_number = b' ' as usize;
@@ -77,13 +77,20 @@ impl FIGFont {
             chars,
         })
     }
+
+    pub fn set_name(&mut self, new_name: String) {
+        self.name = new_name;
+    }
 }
 
 fn is_zip(file_name: &Path) -> EngineResult<bool> {
-    let mut f = File::open(file_name).expect("error while reading file");
-    let mut h = [0; 2];
-    f.read_exact(&mut h)?;
-    Ok(h.eq(b"PK"))
+    if let Ok(mut f) = File::open(file_name) {
+        let mut h = [0; 2];
+        f.read_exact(&mut h)?;
+        Ok(h.eq(b"PK"))
+    } else {
+        Ok(false)
+    }
 }
 
 impl AnsiFont for FIGFont {

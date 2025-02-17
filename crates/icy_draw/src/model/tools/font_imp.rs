@@ -1,4 +1,10 @@
-use std::{fs, io::Read, path::Path, sync::Arc, thread};
+use std::{
+    fs,
+    io::{BufReader, Read},
+    path::Path,
+    sync::Arc,
+    thread,
+};
 
 use crate::{AnsiEditor, Message, Settings};
 
@@ -10,7 +16,10 @@ use eframe::{
 use egui::mutex::Mutex;
 use i18n_embed_fl::fl;
 use icy_engine::{editor::OperationType, figlet::FIGFont, font::TheDrawFont, AnsiFont, Size, TextPane};
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{
+    event::{CreateKind, ModifyKind},
+    Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use walkdir::{DirEntry, WalkDir};
 pub struct FontTool {
     pub selected_font: Arc<Mutex<i32>>,
@@ -29,7 +38,7 @@ impl FontTool {
     }
 
     pub fn install_watcher(&self) {
-        if let Ok(tdf_dir) = Settings::get_tdf_diretory() {
+        if let Ok(tdf_dir) = Settings::get_font_diretory() {
             let fonts = self.fonts.clone();
             thread::spawn(move || loop {
                 match watch(tdf_dir.as_path()) {
@@ -49,7 +58,7 @@ impl FontTool {
     }
 
     pub fn load_fonts(&mut self) {
-        if let Ok(tdf_dir) = Settings::get_tdf_diretory() {
+        if let Ok(tdf_dir) = Settings::get_font_diretory() {
             self.fonts = Arc::new(Mutex::new(load_fonts(tdf_dir.as_path())));
         }
     }
@@ -86,13 +95,23 @@ fn load_fonts(tdf_dir: &Path) -> Vec<Box<dyn AnsiFont>> {
         let extension = extension.to_lowercase();
 
         if extension == "tdf" {
-            if let Ok(loaded_fonts) = TheDrawFont::load(path) {
-                fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
+            match TheDrawFont::load(path) {
+                Ok(loaded_fonts) => {
+                    fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
+                }
+                Err(err) => {
+                    log::error!("Failed to load tdf '{}' font: {err}", path.display());
+                }
             }
         }
         if extension == "flf" {
-            if let Ok(loaded_fonts) = FIGFont::load(path) {
-                fonts.push(Box::new(loaded_fonts) as Box<dyn AnsiFont>);
+            match FIGFont::load(path) {
+                Ok(loaded_fonts) => {
+                    fonts.push(Box::new(loaded_fonts) as Box<dyn AnsiFont>);
+                }
+                Err(err) => {
+                    log::error!("Failed to load figlet '{}' font: {err}", path.display());
+                }
             }
         }
 
@@ -125,8 +144,24 @@ fn read_zip_archive(data: Vec<u8>, fonts: &mut Vec<Box<dyn AnsiFont>>) {
                                 let mut data = Vec::new();
                                 file.read_to_end(&mut data).unwrap_or_default();
 
-                                if let Ok(loaded_fonts) = TheDrawFont::from_bytes(&data) {
-                                    fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
+                                match TheDrawFont::from_bytes(&data) {
+                                    Ok(loaded_fonts) => {
+                                        fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
+                                    }
+                                    Err(err) => {
+                                        log::error!("Error reading tdf file '{}' from zip: {}", name.display(), err);
+                                    }
+                                }
+                            } else if name.to_string_lossy().to_ascii_lowercase().ends_with(".flf") {
+                                let mut reader = BufReader::new(file);
+                                match FIGFont::read(&mut reader) {
+                                    Ok(mut loaded_fonts) => {
+                                        loaded_fonts.set_name(name.to_string_lossy().to_string());
+                                        fonts.push(Box::new(loaded_fonts));
+                                    }
+                                    Err(err) => {
+                                        log::error!("Error reading figlet '{}' file from zip: {}", name.display(), err);
+                                    }
                                 }
                             } else if name.to_string_lossy().to_ascii_lowercase().ends_with(".zip") {
                                 let mut data = Vec::new();
@@ -189,7 +224,7 @@ impl Tool for FontTool {
             ui.vertical_centered(|ui| {
                 ui.label(fl!(crate::LANGUAGE_LOADER, "font_tool_no_fonts_label"));
                 if ui.button(fl!(crate::LANGUAGE_LOADER, "font_tool_open_directory_button")).clicked() {
-                    msg = Some(Message::OpenTdfDirectory);
+                    msg = Some(Message::OpenFontDirectory);
                 }
             });
             if msg.is_some() {
@@ -460,9 +495,15 @@ fn watch(path: &Path) -> notify::Result<Option<Vec<Box<dyn AnsiFont>>>> {
 
     for res in rx {
         match res {
-            Ok(_) => {
-                return Ok(Some(load_fonts(path)));
-            }
+            Ok(evt) => match evt.kind {
+                EventKind::Create(CreateKind::File)
+                | EventKind::Modify(ModifyKind::Data(_))
+                | EventKind::Modify(ModifyKind::Name(_))
+                | EventKind::Remove(_) => {
+                    return Ok(Some(load_fonts(path)));
+                }
+                _ => {}
+            },
             Err(e) => log::error!("watch error: {e:}"),
         }
     }
