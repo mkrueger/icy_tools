@@ -13,7 +13,7 @@ use crate::{
     addresses::{self, Address},
     fmt_terminal_emulation,
     icons::{ADD, CLOSE, DELETE, STAR, UNSTAR, VISIBILITY, VISIBILITY_OFF},
-    ui::{MainWindow, MainWindowMode, ScreenMode, DEFAULT_MODES},
+    ui::{MainWindow, MainWindowMode, ScreenMode, ATARI_MODES, VGA_MODES},
     util::Rng,
     AddressBook, ALL_TERMINALS,
 };
@@ -136,82 +136,7 @@ impl DialogState {
                     });
                 ui.end_row();
 
-                // Terminal type row
-                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
-                });
-                let res = egui::ComboBox::from_id_salt("combobox3")
-                    .selected_text(RichText::new(fmt_terminal_emulation(&self.get_address_mut(self.selected_bbs).terminal_type)))
-                    .width(250.)
-                    .show_ui(ui, |ui| {
-                        for t in &ALL_TERMINALS {
-                            let label = RichText::new(fmt_terminal_emulation(t));
-                            ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).terminal_type, *t, label);
-                        }
-                    });
-                ui.end_row();
-
-                let is_enabled = match self.get_address_mut(self.selected_bbs).terminal_type {
-                    TerminalEmulation::Ansi |
-                    TerminalEmulation::Ascii |
-                    TerminalEmulation::Avatar |
-                    TerminalEmulation::Rip => {
-                        if res.response.changed() {
-                            self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vga(80, 25);
-                        }
-                        true
-                    }
-
-                    TerminalEmulation::PETscii => {
-                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vic;
-                        true
-                    },
-                    TerminalEmulation::ATAscii => {
-                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Antic;
-                        false
-                    }
-                    TerminalEmulation::ViewData => {
-                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Videotex;
-                        false
-                    }
-                    TerminalEmulation::Mode7 => {
-                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Videotex;
-                        false
-                    }
-
-                    TerminalEmulation::Skypix => {
-                        self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::SkyPix;
-                        false
-                    }
-
-                    TerminalEmulation::AtariST => {
-                        if res.response.changed() {
-                            self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::AtariST(80);
-                        }
-                        true
-                    }
-                };
-                
-                // Screen mode row
-                ui.add_enabled_ui(is_enabled, |ui| {
-                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
-                    });
-                    egui::ComboBox::from_id_salt("combobox2")
-                        .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).screen_mode)))
-                        .width(250.)
-                        .show_ui(ui, |ui| {
-                            for mode in &DEFAULT_MODES {
-                                if matches!(mode, ScreenMode::Default) {
-                                    ui.separator();
-                                    continue;
-                                }
-                                let label = RichText::new(format!("{mode}"));
-                                ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).screen_mode, *mode, label);
-                            }
-                        });
-                });
-                ui.end_row();
+                self.show_terminal_selector(ui);
 
                 // Baud emulation
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
@@ -248,6 +173,112 @@ impl DialogState {
                 self.scroll_address_list_to_bottom = true;
             }
         }
+    }
+
+    fn show_terminal_selector(&mut self, ui: &mut egui::Ui) {
+        // Terminal type row
+        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
+        });
+        let mut is_changed = false;
+        egui::ComboBox::from_id_salt("combobox3")
+            .selected_text(RichText::new(fmt_terminal_emulation(&self.get_address_mut(self.selected_bbs).terminal_type)))
+            .width(250.)
+            .show_ui(ui, |ui| {
+                for t in &ALL_TERMINALS {
+                    let label = RichText::new(fmt_terminal_emulation(t));
+                    if ui
+                        .selectable_value(&mut self.get_address_mut(self.selected_bbs).terminal_type, *t, label)
+                        .changed()
+                    {
+                        is_changed = true;
+                    }
+                }
+            });
+        ui.end_row();
+
+        let (is_enabled, modes): (bool, &Vec<ScreenMode>) = match self.get_address_mut(self.selected_bbs).terminal_type {
+            TerminalEmulation::Ansi | TerminalEmulation::Ascii | TerminalEmulation::Avatar | TerminalEmulation::Rip => {
+                if is_changed {
+                    self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vga(80, 25);
+                }
+                (true, &VGA_MODES)
+            }
+
+            TerminalEmulation::PETscii => {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vic;
+                (false, &VGA_MODES)
+            }
+            TerminalEmulation::ATAscii => {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Antic;
+                (false, &VGA_MODES)
+            }
+            TerminalEmulation::ViewData => {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Videotex;
+                (false, &VGA_MODES)
+            }
+            TerminalEmulation::Mode7 => {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Videotex;
+                (false, &VGA_MODES)
+            }
+
+            TerminalEmulation::Skypix => {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::SkyPix;
+                (false, &VGA_MODES)
+            }
+
+            TerminalEmulation::AtariST => {
+                if is_changed {
+                    self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::AtariST(80);
+                }
+                (true, &ATARI_MODES)
+            }
+        };
+
+        // Screen mode row
+        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
+        });
+
+        ui.add_enabled_ui(is_enabled, |ui| {
+            egui::ComboBox::from_id_salt("combobox2")
+                .selected_text(RichText::new(format!("{}", self.get_address_mut(self.selected_bbs).screen_mode)))
+                .width(250.)
+                .show_ui(ui, |ui| {
+                    for mode in modes {
+                        if matches!(mode, ScreenMode::Default) {
+                            ui.separator();
+                            continue;
+                        }
+                        let label = RichText::new(format!("{mode}"));
+                        ui.selectable_value(&mut self.get_address_mut(self.selected_bbs).screen_mode, *mode, label);
+                    }
+                });
+        });
+
+        if self.get_address_mut(self.selected_bbs).screen_mode.is_custom_vga() {
+            ui.label("Width:");
+            let mut txt = if let ScreenMode::Vga(w, _) = self.get_address_mut(self.selected_bbs).screen_mode {
+                w.to_string()
+            } else {
+                "0".to_string()
+            };
+            ui.add(TextEdit::singleline(&mut txt).desired_width(50.));
+            if let ScreenMode::Vga(w, h) = self.get_address_mut(self.selected_bbs).screen_mode {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vga(txt.parse().unwrap_or(w), h);
+            }
+            ui.label("Height:");
+            let mut txt = if let ScreenMode::Vga(_, h) = self.get_address_mut(self.selected_bbs).screen_mode {
+                h.to_string()
+            } else {
+                "0".to_string()
+            };
+            ui.add(TextEdit::singleline(&mut txt).desired_width(50.));
+            if let ScreenMode::Vga(w, h) = self.get_address_mut(self.selected_bbs).screen_mode {
+                self.get_address_mut(self.selected_bbs).screen_mode = ScreenMode::Vga(w, txt.parse().unwrap_or(h));
+            }
+        }
+        ui.end_row();
     }
 
     fn render_list(&mut self, ui: &mut egui::Ui) -> Option<usize> {
@@ -449,69 +480,14 @@ impl DialogState {
     const MUSIC_OPTIONS: [MusicOption; 4] = [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both];
 
     fn render_terminal_category(&mut self, ui: &mut egui::Ui) {
-        let adr = self.get_address_mut(self.selected_bbs);
         egui::Grid::new("some_unique_id")
             .num_columns(2)
             .spacing([4.0, 8.0])
             .min_row_height(24.)
             .show(ui, |ui| {
-                // Screen mode row
-                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
-                });
-                ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_salt("combobox2")
-                        .selected_text(RichText::new(format!("{}", adr.screen_mode)))
-                        .width(250.)
-                        .show_ui(ui, |ui| {
-                            for mode in &DEFAULT_MODES {
-                                if matches!(mode, ScreenMode::Default) {
-                                    ui.separator();
-                                    continue;
-                                }
-                                let label = RichText::new(format!("{mode}"));
-                                ui.selectable_value(&mut adr.screen_mode, *mode, label);
-                            }
-                        });
+                self.show_terminal_selector(ui);
 
-                    if adr.screen_mode.is_custom_vga() {
-                        ui.label("Width:");
-                        let mut txt = if let ScreenMode::Vga(w, _) = adr.screen_mode {
-                            w.to_string()
-                        } else {
-                            "0".to_string()
-                        };
-                        ui.add(TextEdit::singleline(&mut txt).desired_width(50.));
-                        if let ScreenMode::Vga(w, h) = adr.screen_mode {
-                            adr.screen_mode = ScreenMode::Vga(txt.parse().unwrap_or(w), h);
-                        }
-                        ui.label("Height:");
-                        let mut txt = if let ScreenMode::Vga(_, h) = adr.screen_mode {
-                            h.to_string()
-                        } else {
-                            "0".to_string()
-                        };
-                        ui.add(TextEdit::singleline(&mut txt).desired_width(50.));
-                        if let ScreenMode::Vga(w, h) = adr.screen_mode {
-                            adr.screen_mode = ScreenMode::Vga(w, txt.parse().unwrap_or(h));
-                        }
-                    }
-                });
-                ui.end_row();
-
-                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")));
-                });
-                egui::ComboBox::from_id_salt("combobox3")
-                    .selected_text(RichText::new(fmt_terminal_emulation(&adr.terminal_type)))
-                    .width(250.)
-                    .show_ui(ui, |ui| {
-                        for t in &ALL_TERMINALS {
-                            let label = RichText::new(fmt_terminal_emulation(t));
-                            ui.selectable_value(&mut adr.terminal_type, *t, label);
-                        }
-                    });
-
+                let adr = self.get_address_mut(self.selected_bbs);
                 if adr.terminal_type == TerminalEmulation::Rip && ui.button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-open_cache_button")).clicked() {
                     if let Some(path) = adr.get_rip_cache() {
                         if let Err(err) = open::that(path) {
@@ -519,7 +495,6 @@ impl DialogState {
                         }
                     }
                 }
-                ui.end_row();
 
                 if adr.terminal_type == TerminalEmulation::Ansi {
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {

@@ -34,31 +34,25 @@ impl Default for ScreenMode {
 impl ScreenMode {
     pub fn is_custom_vga(self) -> bool {
         match self {
-            ScreenMode::Vga(w, h) => w == 40 && h == 25 || !DEFAULT_MODES.contains(&self),
+            ScreenMode::Vga(w, h) => w == 40 && h == 25,
             _ => false,
         }
     }
 }
+lazy_static::lazy_static! {
+    pub static ref VGA_MODES: Vec<ScreenMode> = vec![
+        ScreenMode::Vga(80, 25),
+        ScreenMode::Vga(80, 50),
+        ScreenMode::Vga(132, 37),
+        ScreenMode::Vga(132, 52),
+        ScreenMode::Vga(40, 25), // Custom VGA
+    ];
 
-pub const DEFAULT_MODES: [ScreenMode; 16] = [
-    ScreenMode::Vga(80, 25),
-    ScreenMode::Vga(80, 50),
-    ScreenMode::Vga(132, 37),
-    ScreenMode::Vga(132, 52),
-    ScreenMode::Vga(40, 25), // Custom VGA
-    ScreenMode::Default,
-    ScreenMode::Vic,
-    ScreenMode::Default,
-    ScreenMode::Antic,
-    ScreenMode::Default,
-    ScreenMode::Rip,
-    ScreenMode::Videotex,
-    ScreenMode::SkyPix,
-    ScreenMode::AtariST(80),
-    ScreenMode::AtariST(40),
-    ScreenMode::Mode7,
-];
-
+    pub static ref ATARI_MODES: Vec<ScreenMode> = vec![
+        ScreenMode::AtariST(80),
+        ScreenMode::AtariST(40),
+    ];
+}
 impl Display for ScreenMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
