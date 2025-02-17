@@ -758,7 +758,11 @@ impl Buffer {
 
     #[must_use]
     pub fn get_font_dimensions(&self) -> Size {
-        self.font_table[&0].size
+        if let Some(font) = self.get_font(0) {
+            font.size
+        } else {
+            Size::new(8, 16)
+        }
     }
 
     /// .
