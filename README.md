@@ -12,4 +12,12 @@ a drawing tool supporting almost all ANSI formats.
 a viewer to browse/view Ansi screens.
 
 [Icy Play](https://github.com/mkrueger/icy_tools/blob/master/crates/icy_play/README.md)
-a tool that shows icy draw animations on cmd line/bbs. 
+a tool that shows icy draw animations on cmd line/bbs.
+
+# Build instructions
+
+* Install rust toolchain: https://www.rust-lang.org/tools/install
+* On linux you need "sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev"
+- if you don't have apt-get installing these libraries is similiar the next step will tell you what's missing exactly.
+* Then you're ready to go "cargo build --release"
+* Exectuables for all tools are in target/release 

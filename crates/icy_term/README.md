@@ -80,9 +80,3 @@ Tried Druid/Egui/Iced and decided to do a smaller project that relies on an ansi
 So I decided to do a terminal program. After a first implementation with iced (cool library, can recommend) I switched to egui because I needed an opengl control and the support in iced for that was lacking at that point of time.
 
 So this was more of a test project for the ansi engine & writing rust UI apps but it got a bit larger than I thought and now IcyTerm is a fully featured terminal app for BBSes.
-
-# Build instructions
-
-* Install rust toolchain: https://www.rust-lang.org/tools/install
-* On linux you need "sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev"
-* Then you're ready to go "cargo run"
