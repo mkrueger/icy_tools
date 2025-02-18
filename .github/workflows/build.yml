@@ -1,55 +1,137 @@
 name: Build
-
 on:
   workflow_run:
     workflows: ["Run Tests"]
     branches: [master]
-    types:
+    types: 
       - completed
-
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
   build_linux:
+   strategy:
+     matrix:
+       app: [icy_term, icy_draw, icy_view]
+   runs-on: ubuntu-latest
+   steps:
+   - uses: actions/checkout@v4
+   - name: Install required libraries
+     run: |
+       sudo apt-get install build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
+       git submodule update --init
+   - name: Build deb
+     id: build-deb
+     run: |
+       cargo install cargo-deb
+       export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
+       echo "VERSION=$version" >> $GITHUB_ENV
+       echo "Version: $version"
+       cd crates/${{ matrix.app }}
+       export DEB=$(cargo deb)
+       echo "Copy $DEB to ${{ matrix.app }}.deb"
+       mv $DEB "../../${{ matrix.app }}.deb"
+       cd ../..
+   - name: 'Upload deb'
+     uses: actions/upload-artifact@v4
+     with:
+       name: ${{ matrix.app }}_linux_${{ env.VERSION }}
+       path: |
+         ${{ matrix.app }}.deb
+         file_id.diz
+  build_windows:
+    strategy:
+      matrix:
+        app: [icy_term, icy_draw, icy_view, icy_play]
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Prepare FILE_ID.DIZ
+      run: |
+        $VERSION=$(python tools\prep_diz.py "${{ matrix.app }}" "file_id.diz")
+        Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
+        echo "Version: $VERSION"
+    - name: Build exe
+      run: |
+        git submodule update --init
+        cd .\crates\${{ matrix.app }}
+        cargo build --release
+        cd ..\..
+        move .\target\release\${{ matrix.app }}.exe .
+    - name: 'Upload executable'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app }}_windows_${{ env.VERSION }}
+        path: |
+          ${{ matrix.app }}.exe
+          file_id.diz
+  build_mac:
     strategy:
       matrix:
         app: [icy_term, icy_draw, icy_view]
-    runs-on: ubuntu-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Debian stable environment
+      - name: Install cargo bundle & get
         run: |
-          sudo apt-get update
-          sudo apt-get install -y debootstrap schroot
-          sudo debootstrap stable /srv/chroot/stable http://deb.debian.org/debian/
-          echo "[stable]
-description=Debian stable
-directory=/srv/chroot/stable
-users=$USER
-root-users=$USER
-type=directory
-" | sudo tee /etc/schroot/chroot.d/stable.conf
-      - name: Install required libraries
-        run: |
-          sudo schroot -c stable -- apt-get update
-          sudo schroot -c stable -- apt-get install -y build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+          cargo install cargo-bundle
+          brew install create-dmg
           git submodule update --init
-      - name: Build deb
-        id: build-deb
+      - name: Build app
         run: |
-          sudo schroot -c stable -- cargo install cargo-deb
+          cd crates/${{ matrix.app }}
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          cd ../..
+
+          export app=$(python3 tools/get_name.py "${{ matrix.app }}")
+          echo "Build bundle for: $app"
+          echo "APP=$app" >> $GITHUB_ENV
+
+          echo "Creating dir '$app.app/Contents/MacOS'"
+          mkdir -p "$app.app/Contents/MacOS"
+          echo "Creating dir '$app.app/Contents/Resources'"
+          mkdir -p "$app.app/Contents/Resources"
+
+          cp crates/${{ matrix.app }}/build/mac/Info.plist "${app}.app/Contents/Info.plist"
+
+          mkdir -p AppIcon.iconset
+          sips -z 16 16 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_16x16.png
+          sips -z 32 32 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_16x16@2x.png
+          sips -z 32 32 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_32x32.png
+          sips -z 64 64 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_32x32@2.png
+          sips -z 128 128 crates/${{ matrix.app }}/build/mac/128x128@2x.png --out AppIcon.iconset/icon_128x128.png
+          cp crates/${{ matrix.app }}/build/mac/128x128@2x.png AppIcon.iconset/icon_128x128@2x.png
+          iconutil -c icns AppIcon.iconset
+          cp AppIcon.icns "$app.app/Contents/Resources"
+          
           export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
           echo "VERSION=$version" >> $GITHUB_ENV
           echo "Version: $version"
-          cd crates/${{ matrix.app }}
-          sudo schroot -c stable -- cargo deb
-          mv target/debian/*.deb "../../${{ matrix.app }}.deb"
-          cd ../..
-      - name: 'Upload deb'
+
+          echo "Creating universal binary $app.app/Contents/MacOS/${{ matrix.app }}"
+          lipo "target/x86_64-apple-darwin/release/${{ matrix.app }}" \
+               "target/aarch64-apple-darwin/release/${{ matrix.app }}" \
+               -create -output "$app.app/Contents/MacOS/${{ matrix.app }}"
+
+      - name: Sign dmg
+        id: sign-bundle
+        run: |
+          create-dmg \
+            --volname "${{ env.APP }} Installer" \
+            --volicon "AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 128 \
+            --hide-extension "${{ env.APP }}.app" \
+            --app-drop-link 600 185 \
+            "${{ matrix.app }}-${{ env.VERSION }}-universal.dmg" \
+            "${{ env.APP }}.app"
+      - name: 'Upload dmg'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app }}_linux_${{ env.VERSION }}
+          name: ${{ matrix.app }}_osx_${{ env.VERSION }}${{ matrix.target }}
           path: |
-            ${{ matrix.app }}.deb
+            ${{ matrix.app }}-${{ env.VERSION }}-universal.dmg
             file_id.diz
