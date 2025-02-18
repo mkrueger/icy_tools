@@ -124,7 +124,6 @@ impl ClipboardHandler for AnsiEditor {
             while clipboard_data.len() % 4 != 0 {
                 clipboard_data.push(0);
             }
-            println!("copy image!");
             let image = ColorImage::from_rgba_unmultiplied([clipboard_data.len() / 4, 1], &clipboard_data);
             ctx.copy_image(image);*/
         } else {
@@ -337,6 +336,9 @@ impl AnsiEditor {
         let _undo = self.begin_atomic_undo(description.into());
         let opt_layer = self.buffer_view.lock().get_buffer_mut().remove_overlay();
         let use_selection = self.buffer_view.lock().get_edit_state().is_something_selected();
+        let Ok(cur_layer) = self.buffer_view.lock().get_edit_state_mut().get_current_layer() else {
+            return;
+        };
 
         if let Some(layer) = &opt_layer {
             for y in 0..layer.lines.len() {
@@ -345,7 +347,9 @@ impl AnsiEditor {
                     let ch = line.chars[x];
                     let pos = Position::new(x as i32, y as i32);
                     if ch.is_visible() && (!use_selection || self.buffer_view.lock().get_edit_state().get_is_selected(pos + layer.get_offset())) {
-                        self.set_char(pos, ch);
+                        let underlying_char = self.buffer_view.lock().get_edit_state_mut().get_buffer().layers[cur_layer].get_char(pos);
+                        let solid = self.buffer_view.lock().get_edit_state_mut().get_buffer().make_solid_color(ch, underlying_char);
+                        self.set_char(pos, solid);
                     }
                 }
             }
@@ -784,13 +788,16 @@ impl AnsiEditor {
     }
 
     pub(crate) fn clear_overlay_layer(&self) {
-        let cur_offset = self.buffer_view.lock().get_edit_state().get_cur_layer().unwrap().get_offset();
+        let mut lock = self.buffer_view.lock();
+        let cur_offset = lock.get_edit_state().get_cur_layer().unwrap().get_offset();
 
-        if let Some(layer) = self.buffer_view.lock().get_edit_state_mut().get_overlay_layer() {
+        {
+            let cur_layer = lock.get_edit_state().get_current_layer().unwrap_or(0);
+            let layer = lock.get_edit_state_mut().get_overlay_layer(cur_layer);
             layer.set_offset(cur_offset);
             layer.clear();
         }
-        self.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
+        lock.get_edit_state_mut().set_is_buffer_dirty();
     }
 
     pub fn backspace(&mut self) {

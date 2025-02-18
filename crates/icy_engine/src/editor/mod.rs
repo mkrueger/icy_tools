@@ -337,8 +337,8 @@ impl EditState {
         Some(layer)
     }
 
-    pub fn get_overlay_layer(&mut self) -> &mut Option<Layer> {
-        self.buffer.get_overlay_layer()
+    pub fn get_overlay_layer(&mut self, cur_layer: usize) -> &mut Layer {
+        self.buffer.get_overlay_layer(cur_layer)
     }
 
     /// Returns the get current layer of this [`EditState`].

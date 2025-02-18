@@ -231,6 +231,9 @@ pub struct Buffer {
     sauce_data: SauceMetaInformation,
 
     pub palette: Palette,
+
+    /// the layer the overlay is displayed upon (there could be layers above the overlay layer)
+    overlay_index: usize,
     overlay_layer: Option<Layer>,
 
     font_table: HashMap<usize, BitFont>,
@@ -493,6 +496,7 @@ impl Buffer {
 
             font_table,
             is_font_table_dirty: false,
+            overlay_index: 0,
             overlay_layer: None,
             layers: vec![Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-background-name"), size)],
             sixel_threads: VecDeque::new(), // file_name_changed: Box::new(|| {}),
@@ -757,14 +761,14 @@ impl Buffer {
         res
     }
 
-    pub fn get_overlay_layer(&mut self) -> &mut Option<Layer> {
+    pub fn get_overlay_layer(&mut self, index: usize) -> &mut Layer {
         if self.overlay_layer.is_none() {
+            self.overlay_index = index;
             let mut l = Layer::new("Overlay", self.get_size());
             l.properties.has_alpha_channel = true;
             self.overlay_layer = Some(l);
         }
-
-        &mut self.overlay_layer
+        self.overlay_layer.as_mut().unwrap()
     }
 
     pub fn remove_overlay(&mut self) -> Option<Layer> {
@@ -1050,18 +1054,20 @@ impl TextPane for Buffer {
         let mut found_char = AttributedChar::invisible();
         for i in 0..self.layers.len() {
             let cur_layer = &self.layers[i];
-            if !cur_layer.properties.is_visible {
-                continue;
+            if cur_layer.properties.is_visible {
+                let pos: Position = pos - cur_layer.get_offset();
+                if pos.x >= 0 && pos.y >= 0 && pos.x < cur_layer.get_width() && pos.y < cur_layer.get_height() {
+                    self.merge_layer_char(&mut found_char, cur_layer, pos);
+                }
             }
-            let pos: Position = pos - cur_layer.get_offset();
-            if pos.x < 0 || pos.y < 0 || pos.x >= cur_layer.get_width() || pos.y >= cur_layer.get_height() {
-                continue;
+
+            if self.overlay_index == i {
+                if let Some(overlay) = &self.overlay_layer {
+                    self.merge_layer_char(&mut found_char, overlay, pos);
+                }
             }
-            self.merge_layer_char(&mut found_char, cur_layer, pos);
         }
-        if let Some(overlay) = &self.overlay_layer {
-            self.merge_layer_char(&mut found_char, overlay, pos);
-        }
+
         found_char
     }
 

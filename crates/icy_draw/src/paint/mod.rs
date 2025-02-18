@@ -288,14 +288,10 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
     if color_mode.use_back() {
         attribute.set_background(editor_attr.get_background());
     }
-
-    if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-        let overlay_ch = layer.get_char(text_pos);
-        if overlay_ch.is_visible() {
-            ch = overlay_ch;
-        }
-    } else {
-        return;
+    let cur_layer = buffer_view.get_edit_state().get_current_layer().unwrap_or(0);
+    let overlay_ch = buffer_view.get_edit_state_mut().get_overlay_layer(cur_layer).get_char(text_pos);
+    if overlay_ch.is_visible() {
+        ch = overlay_ch;
     }
 
     if matches!(mode, BrushMode::HalfBlock) && matches!(point_role, PointRole::Fill) {
@@ -304,8 +300,8 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
     let mirror_mode = buffer_view.get_edit_state().get_mirror_mode();
     let ch = match mode {
         BrushMode::HalfBlock => {
-            let cur_layer = buffer_view.get_edit_state().get_current_layer().unwrap();
-            let half_block = HalfBlock::from(&buffer_view.get_edit_state_mut().get_buffer_mut().layers[cur_layer], pos);
+            let cur_layer = buffer_view.get_edit_state().get_current_layer().unwrap_or(0);
+            let half_block = HalfBlock::from(buffer_view.get_edit_state_mut().get_overlay_layer(cur_layer), pos);
             half_block.get_half_block_char(attribute.get_foreground(), true)
         }
         BrushMode::Block => AttributedChar::new(219 as char, attribute),
@@ -332,12 +328,11 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
             return;
         }
     };
-    if let Some(layer) = buffer_view.get_edit_state_mut().get_overlay_layer() {
-        layer.set_char(text_pos, ch);
-        if mirror_mode {
-            let mirror_pos = Position::new(layer.get_width() - text_pos.x - 1, text_pos.y);
-            layer.set_char(mirror_pos, ch);
-        }
+    let layer = buffer_view.get_edit_state_mut().get_overlay_layer(cur_layer);
+    layer.set_char(text_pos, ch);
+    if mirror_mode {
+        let mirror_pos = Position::new(layer.get_width() - text_pos.x - 1, text_pos.y);
+        layer.set_char(mirror_pos, ch);
     }
 }
 
