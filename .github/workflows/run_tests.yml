@@ -1,26 +1,55 @@
-name: Run tests
+name: Build
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+  workflow_run:
+    workflows: ["Run Tests"]
+    branches: [master]
+    types:
+      - completed
+
 env:
   CARGO_TERM_COLOR: always
+
 jobs:
-  run_checks:
+  build_linux:
+    strategy:
+      matrix:
+        app: [icy_term, icy_draw, icy_view]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4   
-    - name: Check formatting
-      run: |
-        cargo fmt --all -- --check
-    - run: rustup component add clippy
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
-        git submodule update --init
-    - name: Run tests
-      run: |
-        cargo test --all-features
+      - uses: actions/checkout@v4
+      - name: Set up Debian stable environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap schroot
+          sudo debootstrap stable /srv/chroot/stable http://deb.debian.org/debian/
+          echo "[stable]
+description=Debian stable
+directory=/srv/chroot/stable
+users=$USER
+root-users=$USER
+type=directory
+" | sudo tee /etc/schroot/chroot.d/stable.conf
+      - name: Install required libraries
+        run: |
+          sudo schroot -c stable -- apt-get update
+          sudo schroot -c stable -- apt-get install -y build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          git submodule update --init
+      - name: Build deb
+        id: build-deb
+        run: |
+          sudo schroot -c stable -- cargo install cargo-deb
+          export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
+          echo "VERSION=$version" >> $GITHUB_ENV
+          echo "Version: $version"
+          cd crates/${{ matrix.app }}
+          sudo schroot -c stable -- cargo deb
+          mv target/debian/*.deb "../../${{ matrix.app }}.deb"
+          cd ../..
+      - name: 'Upload deb'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}_linux_${{ env.VERSION }}
+          path: |
+            ${{ matrix.app }}.deb
+            file_id.diz
