@@ -15,7 +15,7 @@ use crate::ansi::sound::AnsiMusic;
 use crate::ansi::MusicOption;
 use crate::paint::HalfBlock;
 use crate::{
-    parsers, EngineResult, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    attribute, parsers, EngineResult, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
     UnicodeConverter, FORMATS,
 };
 
@@ -414,16 +414,22 @@ impl Buffer {
                 let underlying_char = *found_char;
                 if cur_char.is_visible() {
                     *found_char = cur_char;
-                } else if !cur_layer.properties.has_alpha_channel {
-                    if !found_char.is_visible() {
-                        *found_char = AttributedChar::default();
-                    }
                 }
 
                 if found_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR
                     || found_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR
                 {
                     *found_char = self.make_solid_color(*found_char, underlying_char);
+                }
+
+                if !cur_layer.properties.has_alpha_channel {
+                    found_char.attribute.attr &= !attribute::INVISIBLE;
+                    if found_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR {
+                        found_char.attribute.background_color = 0;
+                    }
+                    if found_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {
+                        found_char.attribute.foreground_color = 0;
+                    }
                 }
             }
             crate::Mode::Chars => {
