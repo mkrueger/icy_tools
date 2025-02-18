@@ -82,10 +82,19 @@ Note that fonts/palettes etc. do not need to be unzipped. Just throw a .zip file
 
 ## Translations
 
-| Language| user | e-mail |
-| :... | :... | :... |
-| German  | mkrueger | mkrueger@posteo.de |
-| Spanish | lu9dce   | hellocodelinux@gmail.com |
+| Language  | User    | E-mail                        |
+|-----------|---------|-------------------------------|
+| German    | mkrueger| mkrueger@posteo.de             |
+| English   | mkrueger| mkrueger@posteo.de             |
+| Spanish   | lu9dce  | hellocodelinux@gmail.com      |
+| Brazilian | lu9dce  | hellocodelinux@gmail.com      |
+| Czech     | lu9dce  | hellocodelinux@gmail.com      |
+| French    | lu9dce  | hellocodelinux@gmail.com      |
+| Hungarian | lu9dce  | hellocodelinux@gmail.com      |
+| Italian   | lu9dce  | hellocodelinux@gmail.com      |
+| Polish    | lu9dce  | hellocodelinux@gmail.com      |
+| Romanian  | lu9dce  | hellocodelinux@gmail.com      |
+| Catalan   | lu9dce  | hellocodelinux@gmail.com      |
 
 ## Help
 
