@@ -246,7 +246,7 @@ impl FillHalfBlockOperation {
             }
             let block = HalfBlock::from(&editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers[cur_layer], to);
             if block.is_blocky() && (block.is_top && block.upper_block_color == target_color) || (!block.is_top && block.lower_block_color == target_color) {
-                let ch = block.get_half_block_char(self.color);
+                let ch = block.get_half_block_char(self.color, true);
                 let _ = editor.buffer_view.lock().get_edit_state_mut().set_char(text_pos, ch);
 
                 pos_stack.push((to, to + Position::new(-1, 0)));

@@ -114,20 +114,62 @@ impl HalfBlock {
         self.block_type == HalfBlockType::Left || self.block_type == HalfBlockType::Right
     }
 
-    pub fn get_half_block_char(&self, col: u32) -> AttributedChar {
+    pub fn get_half_block_char(&self, col: u32, transparent_color: bool) -> AttributedChar {
+        let transparent_color = self.ch.is_transparent() && transparent_color;
+
         let block = if self.is_blocky() {
             if self.is_top && self.lower_block_color == col || !self.is_top && self.upper_block_color == col {
                 AttributedChar::new(FULL_BLOCK, TextAttribute::new(col, 0))
             } else if self.is_top {
-                AttributedChar::new(HALF_BLOCK_TOP, TextAttribute::new(col, self.lower_block_color))
+                AttributedChar::new(
+                    HALF_BLOCK_TOP,
+                    TextAttribute::new(
+                        col,
+                        if transparent_color {
+                            TextAttribute::TRANSPARENT_COLOR
+                        } else {
+                            self.lower_block_color
+                        },
+                    ),
+                )
             } else {
-                AttributedChar::new(HALF_BLOCK_BOTTOM, TextAttribute::new(col, self.upper_block_color))
+                AttributedChar::new(
+                    HALF_BLOCK_BOTTOM,
+                    TextAttribute::new(
+                        col,
+                        if transparent_color {
+                            TextAttribute::TRANSPARENT_COLOR
+                        } else {
+                            self.upper_block_color
+                        },
+                    ),
+                )
             }
         } else {
             if self.is_top {
-                AttributedChar::new(HALF_BLOCK_TOP, TextAttribute::new(col, self.ch.attribute.background_color))
+                AttributedChar::new(
+                    HALF_BLOCK_TOP,
+                    TextAttribute::new(
+                        col,
+                        if transparent_color {
+                            TextAttribute::TRANSPARENT_COLOR
+                        } else {
+                            self.ch.attribute.background_color
+                        },
+                    ),
+                )
             } else {
-                AttributedChar::new(HALF_BLOCK_BOTTOM, TextAttribute::new(col, self.ch.attribute.background_color))
+                AttributedChar::new(
+                    HALF_BLOCK_BOTTOM,
+                    TextAttribute::new(
+                        col,
+                        if transparent_color {
+                            TextAttribute::TRANSPARENT_COLOR
+                        } else {
+                            self.ch.attribute.background_color
+                        },
+                    ),
+                )
             }
         };
         self.optimize_block(block)

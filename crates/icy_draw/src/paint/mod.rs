@@ -304,8 +304,9 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
     let mirror_mode = buffer_view.get_edit_state().get_mirror_mode();
     let ch = match mode {
         BrushMode::HalfBlock => {
-            let half_block: HalfBlock = HalfBlock::from(buffer_view.get_buffer(), pos);
-            half_block.get_half_block_char(attribute.get_foreground())
+            let cur_layer = buffer_view.get_edit_state().get_current_layer().unwrap();
+            let half_block = HalfBlock::from(&buffer_view.get_edit_state_mut().get_buffer_mut().layers[cur_layer], pos);
+            half_block.get_half_block_char(attribute.get_foreground(), true)
         }
         BrushMode::Block => AttributedChar::new(219 as char, attribute),
         BrushMode::Char(ch) => AttributedChar::new(*ch.borrow(), attribute),

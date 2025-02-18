@@ -21,6 +21,8 @@ impl AttributedChar {
             ch: ' ',
             attribute: super::TextAttribute {
                 attr: crate::attribute::INVISIBLE,
+                foreground_color: TextAttribute::TRANSPARENT_COLOR,
+                background_color: TextAttribute::TRANSPARENT_COLOR,
                 ..Default::default()
             },
         }

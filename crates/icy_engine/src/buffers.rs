@@ -231,7 +231,6 @@ pub struct Buffer {
     sauce_data: SauceMetaInformation,
 
     pub palette: Palette,
-    overlay_layer_index: usize,
     overlay_layer: Option<Layer>,
 
     font_table: HashMap<usize, BitFont>,
@@ -407,6 +406,39 @@ impl Buffer {
     pub(crate) fn has_sauce(&self) -> bool {
         !self.get_sauce_meta().is_empty()
     }
+
+    fn merge_layer_char(&self, found_char: &mut AttributedChar, cur_layer: &Layer, pos: Position) {
+        let cur_char = cur_layer.get_char(pos);
+        match cur_layer.properties.mode {
+            crate::Mode::Normal => {
+                let underlying_char = *found_char;
+                if cur_char.is_visible() {
+                    *found_char = cur_char;
+                } else if !cur_layer.properties.has_alpha_channel {
+                    if !found_char.is_visible() {
+                        *found_char = AttributedChar::default();
+                    }
+                }
+
+                if found_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR
+                    || found_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR
+                {
+                    *found_char = self.make_solid_color(*found_char, underlying_char);
+                }
+            }
+            crate::Mode::Chars => {
+                if !cur_char.is_transparent() {
+                    found_char.ch = cur_char.ch;
+                    found_char.set_font_page(cur_char.get_font_page());
+                }
+            }
+            crate::Mode::Attributes => {
+                if cur_char.is_visible() {
+                    found_char.attribute = cur_char.attribute;
+                }
+            }
+        }
+    }
 }
 
 pub fn analyze_font_usage(buf: &Buffer) -> Vec<usize> {
@@ -433,19 +465,6 @@ pub struct BufferFeatures {
     pub use_extended_attributes: bool,
 }
 
-fn merge(mut input_char: AttributedChar, ch_opt: Option<char>, attr_opt: Option<crate::TextAttribute>) -> AttributedChar {
-    if !input_char.is_visible() {
-        return input_char;
-    }
-    if let Some(ch) = ch_opt {
-        input_char.ch = ch;
-    }
-    if let Some(attr) = attr_opt {
-        input_char.attribute = attr;
-    }
-    input_char
-}
-
 impl Buffer {
     pub fn new(size: impl Into<Size>) -> Self {
         let mut font_table = HashMap::new();
@@ -468,7 +487,6 @@ impl Buffer {
 
             font_table,
             is_font_table_dirty: false,
-            overlay_layer_index: 0,
             overlay_layer: None,
             layers: vec![Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-background-name"), size)],
             sixel_threads: VecDeque::new(), // file_name_changed: Box::new(|| {}),
@@ -733,8 +751,7 @@ impl Buffer {
         res
     }
 
-    pub fn get_overlay_layer(&mut self, index: usize) -> &mut Option<Layer> {
-        self.overlay_layer_index = index;
+    pub fn get_overlay_layer(&mut self) -> &mut Option<Layer> {
         if self.overlay_layer.is_none() {
             let mut l = Layer::new("Overlay", self.get_size());
             l.properties.has_alpha_channel = true;
@@ -960,6 +977,7 @@ impl Buffer {
 
     pub fn make_solid_color(&self, mut transparent_char: AttributedChar, underlying_char: AttributedChar) -> AttributedChar {
         let half_block = HalfBlock::from_char(underlying_char, Position::default());
+
         match transparent_char.ch {
             crate::paint::HALF_BLOCK_TOP => {
                 if transparent_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {
@@ -1023,94 +1041,24 @@ impl TextPane for Buffer {
                 }
             }
         }
-
-        let mut ch_opt = None;
-        let mut attr_opt = None;
-        let mut default_font_page = 0;
-        let mut transparent_char = None;
-        for i in (0..self.layers.len()).rev() {
-            if i == self.overlay_layer_index {
-                if let Some(overlay) = &self.overlay_layer {
-                    let pos = pos - overlay.get_offset();
-                    let ch = overlay.get_char(pos);
-                    if ch.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR || ch.attribute.background_color == TextAttribute::TRANSPARENT_COLOR {
-                        if transparent_char.is_none() {
-                            transparent_char = Some(ch);
-                        }
-                    } else if ch.is_visible() {
-                        if let Some(transparent_char) = transparent_char {
-                            return self.make_solid_color(transparent_char, ch);
-                        }
-                        return ch;
-                    }
-                }
-            }
-
+        let mut found_char = AttributedChar::invisible();
+        for i in 0..self.layers.len() {
             let cur_layer = &self.layers[i];
             if !cur_layer.properties.is_visible {
                 continue;
             }
-            let pos = pos - cur_layer.get_offset();
+            let pos: Position = pos - cur_layer.get_offset();
             if pos.x < 0 || pos.y < 0 || pos.x >= cur_layer.get_width() || pos.y >= cur_layer.get_height() {
                 continue;
             }
-            let ch = cur_layer.get_char(pos);
-            default_font_page = cur_layer.default_font_page;
-            match cur_layer.properties.mode {
-                crate::Mode::Normal => {
-                    if ch.is_visible() {
-                        let found_char = merge(ch, ch_opt, attr_opt);
-
-                        if found_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR
-                            || found_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR
-                        {
-                            if transparent_char.is_none() {
-                                transparent_char = Some(found_char);
-                            }
-                        } else {
-                            if let Some(transparent_char) = transparent_char {
-                                return self.make_solid_color(transparent_char, found_char);
-                            }
-                            return found_char;
-                        }
-                    }
-                    if !cur_layer.properties.has_alpha_channel {
-                        let mut res = merge(AttributedChar::default().with_font_page(default_font_page), ch_opt, attr_opt);
-                        if ch_opt.is_some() || attr_opt.is_some() {
-                            transparent_char = Some(res);
-                            res = AttributedChar::default();
-                        }
-                        if let Some(transparent_char) = transparent_char {
-                            return self.make_solid_color(transparent_char, res);
-                        }
-                        return res;
-                    }
-                }
-                crate::Mode::Chars => {
-                    if !ch.is_transparent() {
-                        ch_opt = Some(ch.ch);
-                    }
-                }
-                crate::Mode::Attributes => {
-                    if ch.is_visible() {
-                        attr_opt = Some(ch.attribute);
-                    }
-                }
-            }
+            self.merge_layer_char(&mut found_char, cur_layer, pos);
         }
-
-        if let Some(transparent_char) = transparent_char {
-            return transparent_char;
+        if let Some(overlay) = &self.overlay_layer {
+            self.merge_layer_char(&mut found_char, overlay, pos);
         }
-
-        let mut ch = if self.is_terminal_buffer || ch_opt.is_some() || attr_opt.is_some() {
-            merge(AttributedChar::default(), ch_opt, attr_opt)
-        } else {
-            AttributedChar::invisible()
-        };
-        ch.attribute.set_font_page(default_font_page);
-        ch
+        found_char
     }
+
     fn get_line_length(&self, line: i32) -> i32 {
         let mut length = 0;
         let mut pos = Position::new(0, line);
