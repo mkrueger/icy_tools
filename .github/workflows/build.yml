@@ -38,6 +38,25 @@ jobs:
        path: |
          ${{ matrix.app }}.deb
          file_id.diz
+   - name: Build AppImage
+     id: build-appimage
+     run: |
+       wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+       chmod +x appimagetool-x86_64.AppImage
+       mkdir -p ${{ matrix.app }}-appimage/usr/bin
+       cp crates/${{ matrix.app }}/build/linux/256x256.png ${{ matrix.app }}-appimage/${{ matrix.app }}.png
+       cp crates/${{ matrix.app }}/build/linux/${{ matrix.app }}.desktop ${{ matrix.app }}-appimage/
+       cp target/release/${{ matrix.app }} ${{ matrix.app }}-appimage/usr/bin/
+       echo "#!/bin/bash" > ${{ matrix.app }}-appimage/AppRun
+       echo "exec \"\$(dirname \"\$0\")/usr/bin/${{ matrix.app }}\" \"\$@\"" >> ${{ matrix.app }}-appimage/AppRun
+       chmod +x ${{ matrix.app }}-appimage/AppRun
+       ./appimagetool-x86_64.AppImage ${{ matrix.app }}-appimage
+       rm appimagetool-x86_64.AppImage
+   - name: 'Upload AppImage'
+     uses: actions/upload-artifact@v4
+     with:
+      name: ${{ matrix.app }}_linux_${{ env.VERSION }}_appimage
+      path: ./*.AppImage
   build_windows:
     strategy:
       matrix:
