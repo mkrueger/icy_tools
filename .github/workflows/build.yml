@@ -49,14 +49,18 @@ jobs:
        cp target/release/${{ matrix.app }} ${{ matrix.app }}-appimage/usr/bin/
        echo "#!/bin/bash" > ${{ matrix.app }}-appimage/AppRun
        echo "exec \"\$(dirname \"\$0\")/usr/bin/${{ matrix.app }}\" \"\$@\"" >> ${{ matrix.app }}-appimage/AppRun
-       chmod +x ${{ matrix.app }}-appimage/AppRun
-       ./appimagetool-x86_64.AppImage ${{ matrix.app }}-appimage
+       chmod +x ${{ matrix.app }}-appimage/
+       
+       export app_img=$(python3 tools/get_app_img.py "${{ matrix.app }}" "${{ env.VERSION }}")
+       echo "APP_IMG=$app_img" >> $GITHUB_ENV
+
+       ./appimagetool-x86_64.AppImage ${{ matrix.app }}-appimage ${{ env.APP_IMG }}
        rm appimagetool-x86_64.AppImage
    - name: 'Upload AppImage'
      uses: actions/upload-artifact@v4
      with:
-      name: ${{ matrix.app }}_linux_${{ env.VERSION }}_appimage
-      path: ./*.AppImage
+      name: ${{ env.APP_IMG }}
+      path: ${{ env.APP_IMG }}
   build_windows:
     strategy:
       matrix:
