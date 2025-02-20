@@ -100,7 +100,7 @@ impl Tool for PipetteTool {
         if self.cur_pos != Some(cur) {
             self.cur_pos = Some(cur);
             let lock = &mut editor.buffer_view.lock();
-            let get_tool_overlay_mask_mut = lock.get_edit_state_mut().get_tool_overlay_mask_mut();
+            let get_tool_overlay_mask_mut: &mut icy_engine::overlay_mask::OverlayMask = lock.get_edit_state_mut().get_tool_overlay_mask_mut();
             get_tool_overlay_mask_mut.clear();
             get_tool_overlay_mask_mut.set_is_selected(cur_abs, true);
             lock.get_edit_state_mut().set_is_buffer_dirty();

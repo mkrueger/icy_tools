@@ -772,7 +772,7 @@ impl<'a> MainWindow<'a> {
                     let pos = bv.get_caret().get_position();
 
                     let attr = if let Some(layer) = bv.get_edit_state().get_cur_layer() {
-                        bv.get_buffer().get_char(pos + layer.get_offset()).attribute
+                        layer.get_char(pos + layer.get_offset()).attribute
                     } else {
                         bv.get_buffer().get_char(pos).attribute
                     };
