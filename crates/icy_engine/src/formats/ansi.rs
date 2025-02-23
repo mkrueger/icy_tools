@@ -474,12 +474,20 @@ impl StringGenerator {
     }
 
     pub fn screen_end(&mut self, buf: &Buffer) {
+        let mut end_tags = 0;
         for tag in buf.tags.iter() {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                if end_tags == 0 {
+                    self.output.extend_from_slice(b"\x1b[s");
+                }
+                end_tags += 1;
                 self.output
                     .extend_from_slice(format!("\x1b[{};{}H", tag.position.y + 1, tag.position.x + 1).as_bytes());
                 self.output.extend_from_slice(tag.replacement_value.as_bytes());
             }
+        }
+        if end_tags > 0 {
+            self.output.extend_from_slice(b"\x1b[u");
         }
 
         if matches!(buf.ice_mode, crate::IceMode::Ice) {

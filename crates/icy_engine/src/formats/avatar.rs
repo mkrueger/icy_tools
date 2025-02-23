@@ -131,14 +131,25 @@ impl OutputFormat for Avatar {
             pos.x = 0;
             pos.y += 1;
         }
+        let mut end_tags = 0;
+
         for tag in &buf.tags {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                if end_tags == 0 {
+                    result.extend_from_slice(b"\x1b[s");
+                }
+                end_tags += 1;
+
                 result.push(AVT_CMD);
                 result.push(AVT_MOVE_CURSOR); // move caret
                 result.push(tag.position.x as u8 + 1); // x
                 result.push(tag.position.y as u8 + 1); // y
                 result.extend(tag.replacement_value.as_bytes());
             }
+        }
+
+        if end_tags > 0 {
+            result.extend_from_slice(b"\x1b[u");
         }
 
         if options.save_sauce {

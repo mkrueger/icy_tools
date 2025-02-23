@@ -95,12 +95,22 @@ impl OutputFormat for PCBoard {
             pos.x = 0;
             pos.y += 1;
         }
+        let mut end_tags = 0;
 
         for tag in &buf.tags {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                if end_tags == 0 {
+                    result.extend_from_slice(b"\x1b[s");
+                }
+                end_tags += 1;
+
                 result.extend(format!("\x1B[{};{}H", tag.position.y + 1, tag.position.x + 1).as_bytes());
                 result.extend(tag.replacement_value.as_bytes());
             }
+        }
+
+        if end_tags > 0 {
+            result.extend_from_slice(b"\x1b[u");
         }
 
         if options.save_sauce {
