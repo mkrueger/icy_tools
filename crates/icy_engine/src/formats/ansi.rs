@@ -40,8 +40,8 @@ impl OutputFormat for Ansi {
         gen.tags = buf.tags.clone();
 
         gen.screen_prep(buf);
-        gen.generate(buf, buf);
-        gen.screen_end(buf);
+        let state = gen.generate(buf, buf);
+        gen.screen_end(buf, state);
         gen.add_sixels(buf);
         result.extend(gen.get_data());
 
@@ -94,7 +94,7 @@ pub struct StringGenerator {
 }
 
 #[derive(Debug, Clone)]
-struct AnsiState {
+pub struct AnsiState {
     pub is_bold: bool,
     pub is_blink: bool,
     pub is_faint: bool,
@@ -320,8 +320,8 @@ impl StringGenerator {
         (state, sgr, sgr_tc)
     }
 
-    fn generate_cells<T: TextPane>(&self, buf: &Buffer, layer: &T, area: Rectangle, font_map: &HashMap<usize, usize>) -> Vec<Vec<CharCell>> {
-        let mut result = Vec::new();
+    fn generate_cells<T: TextPane>(&self, buf: &Buffer, layer: &T, area: Rectangle, font_map: &HashMap<usize, usize>) -> (AnsiState, Vec<Vec<CharCell>>) {
+        let mut result: Vec<Vec<CharCell>> = Vec::new();
         let mut state = AnsiState {
             is_bold: false,
             is_blink: false,
@@ -433,7 +433,7 @@ impl StringGenerator {
             }
             result.push(line);
         }
-        result
+        (state, result)
     }
 
     fn generate_ansi_font_map(buf: &Buffer) -> HashMap<usize, usize> {
@@ -473,10 +473,22 @@ impl StringGenerator {
         }
     }
 
-    pub fn screen_end(&mut self, buf: &Buffer) {
+    pub fn screen_end(&mut self, buf: &Buffer, mut state: AnsiState) {
         let mut end_tags = 0;
         for tag in buf.tags.iter() {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
+                let (new_state, sgr, _) = self.get_color(buf, tag.attribute, state);
+                state = new_state;
+                if !sgr.is_empty() {
+                    self.output.extend_from_slice(b"\x1b[");
+                    for i in 0..sgr.len() - 1 {
+                        self.output.extend_from_slice(sgr[i].to_string().as_bytes());
+                        self.output.push(b';');
+                    }
+                    self.output.extend_from_slice(sgr.last().unwrap().to_string().as_bytes());
+                    self.output.push(b'm');
+                }
+
                 if end_tags == 0 {
                     self.output.extend_from_slice(b"\x1b[s");
                 }
@@ -500,7 +512,7 @@ impl StringGenerator {
     /// # Panics
     ///
     /// Panics if .
-    pub fn generate<T: TextPane>(&mut self, buf: &Buffer, layer: &T) {
+    pub fn generate<T: TextPane>(&mut self, buf: &Buffer, layer: &T) -> AnsiState {
         let mut result = Vec::new();
 
         let used_fonts = analyze_font_usage(buf);
@@ -512,7 +524,7 @@ impl StringGenerator {
             }
         }
         let font_map = StringGenerator::generate_ansi_font_map(buf);
-        let cells = self.generate_cells(buf, layer, layer.get_rectangle(), &font_map);
+        let (state, cells) = self.generate_cells(buf, layer, layer.get_rectangle(), &font_map);
         let mut cur_font_page = 0;
 
         let mut is_first_output_line = true;
@@ -673,6 +685,7 @@ impl StringGenerator {
                 self.last_line_break = result.len();
             }
         }
+        state
     }
 
     const CONTROL_CHARS: &'static str = "\x1b\x07\x08\x09\x0C\x7F\r\n";

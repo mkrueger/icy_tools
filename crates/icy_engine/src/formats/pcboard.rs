@@ -51,6 +51,11 @@ impl OutputFormat for PCBoard {
                 let mut found_tag = false;
                 for tag in &buf.tags {
                     if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                        if first_char || tag.attribute != last_attr {
+                            result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
+                            last_attr = tag.attribute;
+                        }
+
                         result.extend(tag.replacement_value.as_bytes());
                         pos.x += (tag.len() as i32).max(1);
                         found_tag = true;
@@ -104,6 +109,10 @@ impl OutputFormat for PCBoard {
                 }
                 end_tags += 1;
 
+                if first_char || tag.attribute != last_attr {
+                    result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
+                    last_attr = tag.attribute;
+                }
                 result.extend(format!("\x1B[{};{}H", tag.position.y + 1, tag.position.x + 1).as_bytes());
                 result.extend(tag.replacement_value.as_bytes());
             }
