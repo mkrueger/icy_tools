@@ -70,6 +70,10 @@ impl ExportFileDialog {
             buffer_type: buf.buffer_type,
         } // self.file_name.set_extension(TYPE_DESCRIPTIONS[format_type].2);
     }
+
+    fn current_output_path(&self) -> PathBuf {
+        self.folder_name.join(&self.file_name)
+    }
 }
 
 fn get_format_type(buf: BufferType, path: &std::path::Path) -> i32 {
@@ -218,7 +222,7 @@ impl ModalDialog for ExportFileDialog {
                     let image_buffer = image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels);
                     match image_buffer {
                         Some(img) => {
-                            if let Err(err) = img.save(&self.file_name) {
+                            if let Err(err) = img.save(&self.current_output_path()) {
                                 return Ok(Some(Message::ShowError(format!("Failed to save image: {}", err))));
                             }
                         }
@@ -248,7 +252,7 @@ impl ModalDialog for ExportFileDialog {
 
                     let (c, w) = gifski::new(settings)?;
 
-                    let fs = std::fs::File::create(&self.file_name)?;
+                    let fs = std::fs::File::create(&self.current_output_path())?;
                     let mut pb = NoProgress {};
                     std::thread::spawn(move || w.write(fs, &mut pb).unwrap());
 
@@ -264,7 +268,7 @@ impl ModalDialog for ExportFileDialog {
             }
         }
         unsafe {
-            editor.save_content(&self.folder_name.join(&self.file_name).as_path(), &SETTINGS.save_options)?;
+            editor.save_content(&self.current_output_path(), &SETTINGS.save_options)?;
             SETTINGS.save_options.format_type = self.format_type;
         }
         Ok(None)

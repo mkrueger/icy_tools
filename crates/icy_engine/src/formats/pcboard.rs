@@ -113,6 +113,7 @@ impl OutputFormat for PCBoard {
                     result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
                     last_attr = tag.attribute;
                 }
+
                 result.extend(format!("\x1B[{};{}H", tag.position.y + 1, tag.position.x + 1).as_bytes());
                 result.extend(tag.replacement_value.as_bytes());
             }
