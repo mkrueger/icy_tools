@@ -9,7 +9,7 @@ use i18n_embed_fl::fl;
 use icy_engine::TextPane;
 use icy_engine_gui::BufferView;
 
-use crate::{AnsiEditor, Document, Message, ToolWindow, SETTINGS};
+use crate::{AnsiEditor, Document, Message, SETTINGS, ToolWindow};
 
 pub struct MinimapToolWindow {
     buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,

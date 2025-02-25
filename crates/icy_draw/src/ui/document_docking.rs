@@ -1,16 +1,15 @@
 use std::{fs, path::PathBuf, sync::Arc, time::Instant};
 
 use crate::{
-    create_image,
+    DEFAULT_CHAR_SET_TABLE, Document, DocumentOptions, FIRST_TOOL, Message, Settings, create_image,
     model::Tool,
     util::autosave::{remove_autosave, store_auto_save},
-    Document, DocumentOptions, Message, Settings, DEFAULT_CHAR_SET_TABLE, FIRST_TOOL,
 };
 use eframe::{
     egui::{self, Response, Ui},
     epaint::Rgba,
 };
-use egui::{mutex::Mutex, Sense, TextureHandle, Widget};
+use egui::{Sense, TextureHandle, Widget, mutex::Mutex};
 use egui_tiles::{Tabs, TileId, Tiles};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Buffer, TextAttribute, TextPane};

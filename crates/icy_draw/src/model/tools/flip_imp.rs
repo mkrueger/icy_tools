@@ -2,7 +2,7 @@ use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine::attribute;
 
-use crate::{paint::ColorMode, AnsiEditor, Message};
+use crate::{AnsiEditor, Message, paint::ColorMode};
 
 use super::{Position, Tool};
 pub struct FlipTool {

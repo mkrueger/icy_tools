@@ -594,8 +594,8 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        editor::{EditState, UndoState},
         BitFont, Layer, Position, Rectangle, Size, TextPane,
+        editor::{EditState, UndoState},
     };
 
     use super::{generate_flipx_table, generate_flipy_table};

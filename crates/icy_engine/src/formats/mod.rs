@@ -40,8 +40,8 @@ mod renegade;
 mod seq;
 
 use crate::{
-    ansi::MusicOption, BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, Size, TextPane, ANSI_FONTS,
-    SAUCE_FONT_NAMES,
+    ANSI_FONTS, BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, SAUCE_FONT_NAMES, Size, TextPane,
+    ansi::MusicOption,
 };
 
 use super::{Position, TextAttribute};
@@ -458,18 +458,15 @@ mod tests {
     fn test_palette_color_bug() {
         let mut buf = Buffer::new((3, 1));
         buf.palette.set_color(7, Color::new(0xD3, 0xD3, 0xD3));
-        buf.layers[0].set_char(
-            (1, 0),
-            crate::AttributedChar {
-                ch: ' ',
-                attribute: crate::TextAttribute {
-                    font_page: 0,
-                    foreground_color: 15,
-                    background_color: 0,
-                    attr: 0,
-                },
+        buf.layers[0].set_char((1, 0), crate::AttributedChar {
+            ch: ' ',
+            attribute: crate::TextAttribute {
+                font_page: 0,
+                foreground_color: 15,
+                background_color: 0,
+                attr: 0,
             },
-        );
+        });
 
         let bytes = buf.to_bytes("ans", &SaveOptions::default()).unwrap();
         let str = String::from_utf8_lossy(&bytes).to_string();

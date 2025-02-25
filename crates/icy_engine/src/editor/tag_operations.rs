@@ -1,7 +1,7 @@
 #![allow(clippy::missing_errors_doc)]
 use crate::{EngineResult, Position, Tag};
 
-use super::{undo_operations, EditState};
+use super::{EditState, undo_operations};
 
 impl EditState {
     pub fn add_new_tag(&mut self, new_tag: Tag) -> EngineResult<()> {

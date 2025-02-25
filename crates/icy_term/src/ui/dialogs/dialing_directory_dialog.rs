@@ -10,12 +10,12 @@ use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::telnet::TerminalEmulation;
 
 use crate::{
+    ALL_TERMINALS, AddressBook,
     addresses::{self, Address},
     fmt_terminal_emulation,
     icons::{ADD, CLOSE, DELETE, STAR, UNSTAR, VISIBILITY, VISIBILITY_OFF},
-    ui::{MainWindow, MainWindowMode, ScreenMode, ATARI_MODES, VGA_MODES},
+    ui::{ATARI_MODES, MainWindow, MainWindowMode, ScreenMode, VGA_MODES},
     util::Rng,
-    AddressBook, ALL_TERMINALS,
 };
 
 #[derive(Default)]

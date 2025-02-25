@@ -4,9 +4,9 @@ use eframe::{
 };
 use egui::global_theme_preference_switch;
 use i18n_embed_fl::fl;
-use icy_engine_gui::{show_monitor_settings, MonitorSettings};
+use icy_engine_gui::{MonitorSettings, show_monitor_settings};
 
-use super::settings::{Settings, SETTINGS};
+use super::settings::{SETTINGS, Settings};
 
 pub struct SettingsDialog {
     settings_category: usize,

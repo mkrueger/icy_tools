@@ -1,4 +1,4 @@
-use crate::{ansi_font::AnsiFont, editor::EditState, EngineResult, Position, Size};
+use crate::{EngineResult, Position, Size, ansi_font::AnsiFont, editor::EditState};
 use std::{error::Error, fs::File, io::Read, path::Path};
 
 use super::{FontGlyph, FontType};
@@ -287,11 +287,7 @@ impl TheDrawFont {
 
     pub fn get_font_height(&self) -> i32 {
         let f = self.char_table.iter().flatten().next();
-        if let Some(glyph) = f {
-            glyph.size.height
-        } else {
-            0
-        }
+        if let Some(glyph) = f { glyph.size.height } else { 0 }
     }
 
     pub fn has_char(&self, char_code: u8) -> bool {

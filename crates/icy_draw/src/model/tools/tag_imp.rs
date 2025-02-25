@@ -4,7 +4,7 @@ use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, Tag, TextAttribute};
 use icy_engine_gui::TerminalCalc;
 
-use crate::{medium_hover_button, AnsiEditor, Document, Event, Message};
+use crate::{AnsiEditor, Document, Event, Message, medium_hover_button};
 
 use super::{Position, Tool};
 

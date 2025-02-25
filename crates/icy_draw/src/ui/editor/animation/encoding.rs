@@ -1,11 +1,11 @@
 use egui::Vec2;
 use icy_engine::{Buffer, TextPane};
-use icy_engine_gui::{animations::Animator, BufferView, TerminalCalc};
+use icy_engine_gui::{BufferView, TerminalCalc, animations::Animator};
 use std::{
     path::{Path, PathBuf},
     sync::{
-        mpsc::{Receiver, Sender},
         Arc,
+        mpsc::{Receiver, Sender},
     },
     thread::{self, JoinHandle},
 };

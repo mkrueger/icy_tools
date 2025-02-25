@@ -1,6 +1,6 @@
 use bstr::BString;
 
-use crate::{sauce_pad, sauce_trim, zero_pad, SauceDataType, SauceError};
+use crate::{SauceDataType, SauceError, sauce_pad, sauce_trim, zero_pad};
 
 pub(crate) const HDR_LEN: usize = 128;
 const SAUCE_ID: &[u8; 5] = b"SAUCE";

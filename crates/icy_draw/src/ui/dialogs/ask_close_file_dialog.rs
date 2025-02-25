@@ -3,7 +3,7 @@ use egui_modal::Modal;
 use egui_tiles::TileId;
 use i18n_embed_fl::fl;
 
-use crate::{util::autosave::remove_autosave, MainWindow, Message, SaveFileDialog, TerminalResult};
+use crate::{MainWindow, Message, SaveFileDialog, TerminalResult, util::autosave::remove_autosave};
 
 pub struct AskCloseFileDialog {
     do_commit: bool,

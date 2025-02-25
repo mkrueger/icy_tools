@@ -183,10 +183,6 @@ impl FileTransferDialog {
                     }
                 });
             });
-        if open {
-            res
-        } else {
-            FileTransferDialogAction::Close
-        }
+        if open { res } else { FileTransferDialogAction::Close }
     }
 }

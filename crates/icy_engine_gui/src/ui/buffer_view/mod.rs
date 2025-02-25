@@ -2,11 +2,11 @@ use std::{path::PathBuf, sync::Arc};
 
 use egui::{Response, Vec2};
 use glow::HasContext;
-use icy_engine::{editor::EditState, AttributedChar, Buffer, CallbackAction, Caret, EngineResult, Position, Selection, Size, TextPane, UnicodeConverter};
+use icy_engine::{AttributedChar, Buffer, CallbackAction, Caret, EngineResult, Position, Selection, Size, TextPane, UnicodeConverter, editor::EditState};
 
 pub mod glerror;
 
-use crate::{buffer_view::texture_renderer::TextureRenderer, check_gl_error, TerminalCalc, TerminalOptions};
+use crate::{TerminalCalc, TerminalOptions, buffer_view::texture_renderer::TextureRenderer, check_gl_error};
 
 mod output_renderer;
 mod sixel_renderer;

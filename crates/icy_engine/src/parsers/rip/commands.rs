@@ -2,13 +2,14 @@ use std::{fs, io::Cursor, path, time::UNIX_EPOCH, vec};
 
 use chrono::{DateTime, Datelike, Timelike};
 
-use crate::{rip::to_base_36, Buffer, CallbackAction, Caret, EngineResult, Position, Size};
+use crate::{Buffer, CallbackAction, Caret, EngineResult, Position, Size, rip::to_base_36};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::prelude::*;
 
 use super::{
+    Command,
     bgi::{Bgi, ButtonStyle2, Direction, FontType, LabelOrientation, MouseField},
-    parse_base_36, Command,
+    parse_base_36,
 };
 
 #[derive(Default, Clone, Debug)]

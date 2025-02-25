@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    petscii, AttributedChar, BitFont, Buffer, BufferFeatures, BufferParser, Caret, EngineResult, OutputFormat, Palette, TextPane, C64_DEFAULT_PALETTE,
-    C64_LOWER, C64_UPPER,
+    AttributedChar, BitFont, Buffer, BufferFeatures, BufferParser, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, Caret, EngineResult, OutputFormat, Palette,
+    TextPane, petscii,
 };
 
 #[derive(Default)]

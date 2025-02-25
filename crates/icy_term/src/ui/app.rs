@@ -4,21 +4,21 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use directories::UserDirs;
 use eframe::egui::{self};
-use egui::{mutex::Mutex, FontId, Rect};
+use egui::{FontId, Rect, mutex::Mutex};
 use icy_engine::Position;
 use icy_net::{
+    ConnectionType,
     protocol::TransferState,
     telnet::{TermCaps, TerminalEmulation},
-    ConnectionType,
 };
 use web_time::Instant;
 
 use crate::{
+    AddressBook, Options,
     features::AutoFileTransfer,
     get_unicode_converter,
-    ui::{connect::OpenConnectionData, dialogs, terminal_thread::TerminalThread, BufferView, MainWindowState, ScreenMode},
+    ui::{BufferView, MainWindowState, ScreenMode, connect::OpenConnectionData, dialogs, terminal_thread::TerminalThread},
     util::SoundThread,
-    AddressBook, Options,
 };
 
 use super::{MainWindow, MainWindowMode};

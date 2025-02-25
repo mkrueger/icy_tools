@@ -1,12 +1,12 @@
 use std::{fs, path::Path, sync::Arc};
 
 use i18n_embed_fl::fl;
-use icy_engine::{attribute, AttributedChar, Position, TextPane, UnicodeConverter};
+use icy_engine::{AttributedChar, Position, TextPane, UnicodeConverter, attribute};
 use mlua::{Lua, UserData};
 use regex::Regex;
 use walkdir::WalkDir;
 
-use crate::{model::font_imp::FontTool, Settings};
+use crate::{Settings, model::font_imp::FontTool};
 
 #[derive(Clone)]
 pub struct Plugin {
@@ -79,12 +79,9 @@ impl Plugin {
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
         globals
-            .set(
-                "buf",
-                LuaBufferView {
-                    buffer_view: editor.buffer_view.clone(),
-                },
-            )
+            .set("buf", LuaBufferView {
+                buffer_view: editor.buffer_view.clone(),
+            })
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
         let sel = editor.buffer_view.lock().get_selection();

@@ -5,11 +5,11 @@ use eframe::{
     emath::Align2,
     epaint::{Color32, Rect, Vec2},
 };
-use egui::{mutex::Mutex, CornerRadius, Image};
+use egui::{CornerRadius, Image, mutex::Mutex};
 use i18n_embed_fl::fl;
 use icy_engine_gui::BufferView;
 
-use crate::{AnsiEditor, Document, Message, ToolWindow, INVISIBLE_SVG, VISIBLE_SVG};
+use crate::{AnsiEditor, Document, INVISIBLE_SVG, Message, ToolWindow, VISIBLE_SVG};
 
 pub struct LayerToolWindow {
     gl: Arc<glow::Context>,

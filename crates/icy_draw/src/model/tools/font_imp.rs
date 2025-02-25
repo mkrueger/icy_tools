@@ -15,10 +15,10 @@ use eframe::{
 };
 use egui::mutex::Mutex;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::OperationType, figlet::FIGFont, font::TheDrawFont, AnsiFont, Size, TextPane};
+use icy_engine::{AnsiFont, Size, TextPane, editor::OperationType, figlet::FIGFont, font::TheDrawFont};
 use notify::{
-    event::{CreateKind, ModifyKind},
     Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+    event::{CreateKind, ModifyKind},
 };
 use walkdir::{DirEntry, WalkDir};
 pub struct FontTool {
@@ -40,17 +40,19 @@ impl FontTool {
     pub fn install_watcher(&self) {
         if let Ok(tdf_dir) = Settings::get_font_diretory() {
             let fonts = self.fonts.clone();
-            thread::spawn(move || loop {
-                match watch(tdf_dir.as_path()) {
-                    Ok(Some(new_fonts)) => {
-                        *fonts.lock() = new_fonts;
-                    }
-                    Ok(None) => {
-                        *fonts.lock() = Vec::new();
-                    }
-                    Err(e) => {
-                        log::error!("watch font error: {e:}");
-                        return;
+            thread::spawn(move || {
+                loop {
+                    match watch(tdf_dir.as_path()) {
+                        Ok(Some(new_fonts)) => {
+                            *fonts.lock() = new_fonts;
+                        }
+                        Ok(None) => {
+                            *fonts.lock() = Vec::new();
+                        }
+                        Err(e) => {
+                            log::error!("watch font error: {e:}");
+                            return;
+                        }
                     }
                 }
             });

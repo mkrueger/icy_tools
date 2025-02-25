@@ -4,7 +4,7 @@ use egui_modal::Modal;
 use i18n_embed_fl::fl;
 use icy_sauce::SauceMetaInformation;
 
-use crate::{to_message, AnsiEditor, Message, ModalDialog, TerminalResult};
+use crate::{AnsiEditor, Message, ModalDialog, TerminalResult, to_message};
 
 pub struct EditSauceDialog {
     pub should_commit: bool,

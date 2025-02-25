@@ -1,14 +1,16 @@
 use crate::{
+    Res,
     features::{AutoFileTransfer, AutoLogin},
     get_parser,
     util::SoundThread,
-    Res,
 };
 use directories::UserDirs;
 use egui::mutex::Mutex;
-use icy_engine::{ansi::MusicOption, rip::bgi::MouseField, BufferParser, Caret};
+use icy_engine::{BufferParser, Caret, ansi::MusicOption, rip::bgi::MouseField};
 use icy_engine_gui::BufferView;
 use icy_net::{
+    Connection,
+    NullConnection,
     // modem::{ModemConfiguration, ModemConnection, Serial},
     modem::{ModemConfiguration, ModemConnection},
     protocol::{Protocol, TransferProtocolType, TransferState},
@@ -16,8 +18,6 @@ use icy_net::{
     serial::Serial,
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TerminalEmulation},
-    Connection,
-    NullConnection,
 };
 use std::{collections::VecDeque, mem, path::PathBuf, sync::Arc, thread};
 use tokio::sync::mpsc;
@@ -282,15 +282,11 @@ async fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Co
             TelnetConnection::open(&connection_data.address, connection_data.term_caps.clone(), connection_data.timeout.clone()).await?,
         )),
         icy_net::ConnectionType::SSH => Ok(Box::new(
-            SSHConnection::open(
-                &connection_data.address,
-                connection_data.term_caps.clone(),
-                Credentials {
-                    user_name: connection_data.user_name.clone(),
-                    password: connection_data.password.clone(),
-                    proxy_command: connection_data.proxy_command.clone(),
-                },
-            )
+            SSHConnection::open(&connection_data.address, connection_data.term_caps.clone(), Credentials {
+                user_name: connection_data.user_name.clone(),
+                password: connection_data.password.clone(),
+                proxy_command: connection_data.proxy_command.clone(),
+            })
             .await?,
         )),
         icy_net::ConnectionType::Modem => {

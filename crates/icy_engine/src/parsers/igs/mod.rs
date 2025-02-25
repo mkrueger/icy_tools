@@ -5,7 +5,7 @@ mod cmd;
 use cmd::IgsCommands;
 
 pub mod paint;
-use igs_loop::{count_params, Loop, LoopParameters};
+use igs_loop::{Loop, LoopParameters, count_params};
 pub use paint::*;
 
 pub mod patterns;
@@ -241,11 +241,7 @@ impl BufferParser for Parser {
                             _ => {
                                 if let Some((pos, _)) = self.chain_gang.chars().enumerate().find(|(_i, x)| *x == ch) {
                                     let is_next_chain = if let Some(p) = self.loop_parameters.last() {
-                                        if let Some(last_par) = p.last() {
-                                            *last_par == pos.to_string()
-                                        } else {
-                                            false
-                                        }
+                                        if let Some(last_par) = p.last() { *last_par == pos.to_string() } else { false }
                                     } else {
                                         false
                                     };

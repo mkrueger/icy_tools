@@ -5,9 +5,9 @@ use eframe::{
     epaint::Vec2,
 };
 use egui::mutex::Mutex;
-use icy_engine::{util::pop_data, AnsiFont, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane};
+use icy_engine::{AnsiFont, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane, util::pop_data};
 
-use crate::{util::autosave, AnsiEditor, Document, MainWindow, NewFileDialog, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, SETTINGS};
+use crate::{AnsiEditor, Document, MainWindow, NewFileDialog, SETTINGS, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, util::autosave};
 
 #[derive(Clone)]
 pub enum Message {

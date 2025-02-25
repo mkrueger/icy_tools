@@ -5,7 +5,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, EngineResult, Layer, Position, Properties, Role, Size, TextAttribute, TextPane};
 
-use super::{undo_operations, EditState};
+use super::{EditState, undo_operations};
 
 impl EditState {
     pub fn add_new_layer(&mut self, layer: usize) -> EngineResult<()> {
@@ -403,8 +403,8 @@ lazy_static::lazy_static! {
 #[cfg(test)]
 mod tests {
     use crate::{
-        editor::{EditState, UndoState},
         AttributedChar, Layer, Position, Size, TextAttribute, TextPane,
+        editor::{EditState, UndoState},
     };
 
     #[test]

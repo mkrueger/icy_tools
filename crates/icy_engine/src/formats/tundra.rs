@@ -2,8 +2,8 @@ use std::{collections::HashSet, io, path::Path};
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    analyze_font_usage, AttributedChar, Buffer, BufferFeatures, BufferType, EngineResult, IceMode, LoadingError, OutputFormat, PaletteMode, Position,
-    SavingError, TextPane,
+    AttributedChar, Buffer, BufferFeatures, BufferType, EngineResult, IceMode, LoadingError, OutputFormat, PaletteMode, Position, SavingError, TextPane,
+    analyze_font_usage,
 };
 
 // http://fileformats.archiveteam.org/wiki/TUNDRA
@@ -271,7 +271,7 @@ pub fn get_save_sauce_default_tnd(buf: &Buffer) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{compare_buffers, AttributedChar, Buffer, OutputFormat, TextAttribute};
+    use crate::{AttributedChar, Buffer, OutputFormat, TextAttribute, compare_buffers};
 
     #[test]
     pub fn test_ice() {

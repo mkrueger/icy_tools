@@ -19,8 +19,8 @@ mod selection_operations;
 mod tag_operations;
 
 use crate::{
-    ascii, overlay_mask::OverlayMask, AttributedChar, Buffer, BufferType, Caret, EngineResult, Layer, Position, Role, Selection, SelectionMask, Shape,
-    TextAttribute, TextPane, UnicodeConverter,
+    AttributedChar, Buffer, BufferType, Caret, EngineResult, Layer, Position, Role, Selection, SelectionMask, Shape, TextAttribute, TextPane, UnicodeConverter,
+    ascii, overlay_mask::OverlayMask,
 };
 
 pub struct EditState {
@@ -361,11 +361,7 @@ impl EditState {
 
     pub fn get_current_tag(&self) -> EngineResult<usize> {
         let len = self.buffer.tags.len();
-        if len > 0 {
-            Ok(self.current_tag.clamp(0, len - 1))
-        } else {
-            Ok(0)
-        }
+        if len > 0 { Ok(self.current_tag.clamp(0, len - 1)) } else { Ok(0) }
     }
 
     pub fn set_current_tag(&mut self, tag: usize) {

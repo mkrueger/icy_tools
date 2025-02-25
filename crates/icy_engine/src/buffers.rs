@@ -11,12 +11,12 @@ use i18n_embed_fl::fl;
 use icy_sauce::char_caps::{CharCaps, ContentType};
 use icy_sauce::{SauceDataType, SauceInformation, SauceMetaInformation};
 
-use crate::ansi::sound::AnsiMusic;
 use crate::ansi::MusicOption;
+use crate::ansi::sound::AnsiMusic;
 use crate::paint::HalfBlock;
 use crate::{
-    attribute, parsers, EngineResult, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
-    UnicodeConverter, FORMATS,
+    EngineResult, FORMATS, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    UnicodeConverter, attribute, parsers,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
@@ -785,11 +785,7 @@ impl Buffer {
 
     #[must_use]
     pub fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(0) {
-            font.size
-        } else {
-            Size::new(8, 16)
-        }
+        if let Some(font) = self.get_font(0) { font.size } else { Size::new(8, 16) }
     }
 
     /// .

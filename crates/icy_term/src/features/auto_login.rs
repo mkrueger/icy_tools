@@ -1,7 +1,7 @@
 use icy_net::iemsi::IEmsi;
 use web_time::Instant;
 
-use crate::{util::PatternRecognizer, Res};
+use crate::{Res, util::PatternRecognizer};
 
 pub struct AutoLogin {
     pub logged_in: bool,

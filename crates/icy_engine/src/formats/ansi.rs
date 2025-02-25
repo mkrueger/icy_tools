@@ -6,8 +6,8 @@ use icy_sauce::char_caps::ContentType;
 
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
-    analyze_font_usage, parse_with_parser, parsers, BitFont, Buffer, BufferFeatures, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, ANSI_FONTS,
-    DOS_DEFAULT_PALETTE, XTERM_256_PALETTE,
+    ANSI_FONTS, BitFont, Buffer, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, XTERM_256_PALETTE,
+    analyze_font_usage, parse_with_parser, parsers,
 };
 use crate::{Color, TextAttribute};
 
@@ -36,14 +36,14 @@ impl OutputFormat for Ansi {
     fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
         let mut result = Vec::new();
 
-        let mut gen = StringGenerator::new(options.clone());
-        gen.tags = buf.tags.clone();
+        let mut str_gen = StringGenerator::new(options.clone());
+        str_gen.tags = buf.tags.clone();
 
-        gen.screen_prep(buf);
-        let state = gen.generate(buf, buf);
-        gen.screen_end(buf, state);
-        gen.add_sixels(buf);
-        result.extend(gen.get_data());
+        str_gen.screen_prep(buf);
+        let state = str_gen.generate(buf, buf);
+        str_gen.screen_end(buf, state);
+        str_gen.add_sixels(buf);
+        result.extend(str_gen.get_data());
 
         if options.save_sauce {
             buf.write_sauce_info(icy_sauce::SauceDataType::Character, ContentType::Ansi, &mut result)?;

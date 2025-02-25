@@ -76,13 +76,10 @@ fn sumcompare(b1: &bbox, b2: &bbox) -> Ordering {
 pub fn newColorMap(newcolors: i32, depth: i32) -> HashMap<i32, Tuple> {
     let mut colormap = HashMap::new();
     for i in 0..newcolors {
-        colormap.insert(
-            i,
-            Tuple {
-                value: 0,
-                tuple: vec![0; depth as usize],
-            },
-        );
+        colormap.insert(i, Tuple {
+            value: 0,
+            tuple: vec![0; depth as usize],
+        });
     }
     colormap
 }
@@ -436,13 +433,10 @@ pub fn computeHistogram(data: &[u8], length: i32, depth: i32, qualityMode: Quali
             for n in 0..depth {
                 tuple[(depth - 1 - n) as usize] = ((memory[it] >> (n * 5) & 0x1f) << 3) as i32;
             }
-            colorfreqtable.insert(
-                i as i32,
-                Tuple {
-                    value: histogram[memory[i]],
-                    tuple,
-                },
-            );
+            colorfreqtable.insert(i as i32, Tuple {
+                value: histogram[memory[i]],
+                tuple,
+            });
         }
         it += 1;
     }
@@ -645,8 +639,8 @@ pub fn mask_x(x: i32, y: i32, c: i32) -> f32 {
 
 use std::collections::HashMap;
 
-use crate::{pixelformat::sixel_helper_compute_depth, MethodForLargest, PixelFormat, Quality, SixelResult};
 use crate::{DiffusionMethod, MethodForRep, SixelError};
+use crate::{MethodForLargest, PixelFormat, Quality, SixelResult, pixelformat::sixel_helper_compute_depth};
 
 /* lookup closest color from palette with "normal" strategy */
 pub fn lookup_normal(pixel: &[u8], depth: i32, palette: &[u8], reqcolor: i32, _cachetable: &mut [u16], complexion: i32) -> i32 {
@@ -713,11 +707,7 @@ pub fn lookup_mono_darkbg(pixel: &[u8], depth: i32, _palette: &[u8], reqcolor: i
     for n in 0..depth {
         distant += pixel[n as usize] as i32;
     }
-    if distant >= 128 * reqcolor {
-        1
-    } else {
-        0
-    }
+    if distant >= 128 * reqcolor { 1 } else { 0 }
 }
 
 pub fn lookup_mono_lightbg(pixel: &[u8], depth: i32, _palette: &[u8], reqcolor: i32, _cachetable: &mut [u16], _complexion: i32) -> i32 {
@@ -725,11 +715,7 @@ pub fn lookup_mono_lightbg(pixel: &[u8], depth: i32, _palette: &[u8], reqcolor: 
     for n in 0..depth {
         distant += pixel[n as usize] as i32;
     }
-    if distant < 128 * reqcolor {
-        1
-    } else {
-        0
-    }
+    if distant < 128 * reqcolor { 1 } else { 0 }
 }
 
 /* choose colors using median-cut method */

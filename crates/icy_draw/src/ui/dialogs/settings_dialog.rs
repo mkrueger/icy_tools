@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use eframe::{
-    egui::{self, color_picker, Layout, RichText},
-    epaint::{mutex::Mutex, Color32, Vec2},
+    egui::{self, Layout, RichText, color_picker},
+    epaint::{Color32, Vec2, mutex::Mutex},
 };
-use egui::{global_theme_preference_switch, Context};
+use egui::{Context, global_theme_preference_switch};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, BitFont, Buffer, Color, Position, Size, TextAttribute};
-use icy_engine_gui::{show_monitor_settings, show_terminal_area, BufferView, MarkerSettings, MonitorSettings};
+use icy_engine_gui::{BufferView, MarkerSettings, MonitorSettings, show_monitor_settings, show_terminal_area};
 
-use crate::{CharSetMapping, CharTableToolWindow, FontSelector, KeyBindings, ModalDialog, SelectOutlineDialog, Settings, SETTINGS};
+use crate::{CharSetMapping, CharTableToolWindow, FontSelector, KeyBindings, ModalDialog, SETTINGS, SelectOutlineDialog, Settings};
 pub struct SettingsDialog {
     settings_category: usize,
     select_outline_dialog: SelectOutlineDialog,

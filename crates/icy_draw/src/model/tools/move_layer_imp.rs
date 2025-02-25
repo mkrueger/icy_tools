@@ -1,5 +1,5 @@
 use super::{Event, MKey, Position, Tool};
-use crate::{to_message, AnsiEditor, Message};
+use crate::{AnsiEditor, Message, to_message};
 use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine_gui::TerminalCalc;

@@ -8,10 +8,10 @@ use egui::CornerRadius;
 use egui_file::FileDialog;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_engine::{Palette, PaletteFormat, PaletteMode, C64_DEFAULT_PALETTE, DOS_DEFAULT_PALETTE, EGA_PALETTE, VIEWDATA_PALETTE, XTERM_256_PALETTE};
+use icy_engine::{C64_DEFAULT_PALETTE, DOS_DEFAULT_PALETTE, EGA_PALETTE, Palette, PaletteFormat, PaletteMode, VIEWDATA_PALETTE, XTERM_256_PALETTE};
 use walkdir::WalkDir;
 
-use crate::{to_message, AnsiEditor, Message, Settings, TerminalResult};
+use crate::{AnsiEditor, Message, Settings, TerminalResult, to_message};
 
 enum PaletteSource {
     BuiltIn,

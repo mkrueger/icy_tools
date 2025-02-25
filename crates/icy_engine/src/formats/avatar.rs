@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::{
-    avatar::AVT_MOVE_CURSOR, parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane,
+    Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, avatar::AVT_MOVE_CURSOR, parse_with_parser, parsers,
 };
 
 use super::{LoadData, SaveOptions};

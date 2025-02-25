@@ -2,7 +2,7 @@ use eframe::egui;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
 
-use crate::{util::autosave::remove_autosave, MainWindow, Message, TerminalResult};
+use crate::{MainWindow, Message, TerminalResult, util::autosave::remove_autosave};
 
 #[derive(Default)]
 pub struct AutoSaveDialog {

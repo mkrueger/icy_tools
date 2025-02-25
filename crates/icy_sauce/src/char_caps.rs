@@ -1,6 +1,6 @@
 use bstr::BString;
 
-use crate::{header::SauceHeader, SauceDataType};
+use crate::{SauceDataType, header::SauceHeader};
 
 /// | Field    | Type | Size | Descritption
 /// |----------|------|------|-------------

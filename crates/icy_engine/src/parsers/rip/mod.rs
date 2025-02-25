@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use self::bgi::{Bgi, MouseField};
 
-use super::{ansi, BufferParser};
-use crate::{ansi::EngineState, Buffer, CallbackAction, Caret, EngineResult, ParserError, Rectangle, Size};
+use super::{BufferParser, ansi};
+use crate::{Buffer, CallbackAction, Caret, EngineResult, ParserError, Rectangle, Size, ansi::EngineState};
 
 pub mod bgi;
 mod commands;

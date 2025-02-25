@@ -1,6 +1,6 @@
 use icy_engine::{
-    editor::{EditState, UndoState},
     Buffer,
+    editor::{EditState, UndoState},
 };
 
 #[test]

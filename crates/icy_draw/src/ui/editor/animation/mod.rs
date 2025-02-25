@@ -1,10 +1,10 @@
 use std::{
     path::{Path, PathBuf},
-    sync::{mpsc::Receiver, Arc},
+    sync::{Arc, mpsc::Receiver},
     time::Instant,
 };
 
-use crate::{model::Tool, AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, TerminalResult, UndoHandler};
+use crate::{AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, TerminalResult, UndoHandler, model::Tool};
 use eframe::{
     egui::{self, ImageButton, RichText, Slider, TextEdit, TopBottomPanel},
     epaint::Vec2,
@@ -12,10 +12,10 @@ use eframe::{
 use egui::{Image, ProgressBar};
 use egui_code_editor::{CodeEditor, Syntax};
 use i18n_embed_fl::fl;
-use icy_engine::{ascii, AttributedChar, Buffer, EngineResult, Size, TextAttribute, UnicodeConverter};
-use icy_engine_gui::{animations::Animator, show_terminal_area, BufferView, MonitorSettings};
+use icy_engine::{AttributedChar, Buffer, EngineResult, Size, TextAttribute, UnicodeConverter, ascii};
+use icy_engine_gui::{BufferView, MonitorSettings, animations::Animator, show_terminal_area};
 
-use self::encoding::{start_encoding_thread, ENCODERS};
+use self::encoding::{ENCODERS, start_encoding_thread};
 mod asciicast_encoder;
 mod encoding;
 mod gif_encoder;

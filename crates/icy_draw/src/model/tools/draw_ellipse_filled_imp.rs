@@ -3,8 +3,8 @@ use i18n_embed_fl::fl;
 use icy_engine_gui::TerminalCalc;
 
 use crate::{
-    paint::{fill_ellipse, BrushMode, ColorMode},
     AnsiEditor, Event, Message,
+    paint::{BrushMode, ColorMode, fill_ellipse},
 };
 
 use super::{Position, Tool};

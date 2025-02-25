@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use icy_engine::{attribute, AttributedChar, Buffer, Caret, Position, TextPane, UnicodeConverter};
+use icy_engine::{AttributedChar, Buffer, Caret, Position, TextPane, UnicodeConverter, attribute};
 use mlua::{Lua, UserData, Value};
 use regex::Regex;
 

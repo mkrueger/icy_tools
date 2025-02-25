@@ -12,11 +12,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn handle_reverse_mode(&self, ch: u8) -> u8 {
-        if self.reverse_mode {
-            ch + 0x80
-        } else {
-            ch
-        }
+        if self.reverse_mode { ch + 0x80 } else { ch }
     }
 
     /// .

@@ -1,6 +1,6 @@
 use std::{
     path::PathBuf,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
     thread,
     time::Duration,
 };

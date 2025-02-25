@@ -1,9 +1,9 @@
-use egui::{color_picker, Color32, RichText};
+use egui::{Color32, RichText, color_picker};
 use i18n_embed_fl::fl;
 use icy_engine::Color;
 use lazy_static::lazy_static;
 
-use crate::{ui::LANGUAGE_LOADER, MonitorSettings, MonitorType};
+use crate::{MonitorSettings, MonitorType, ui::LANGUAGE_LOADER};
 lazy_static! {
     static ref MONITOR_NAMES: [String; 7] = [
         fl!(LANGUAGE_LOADER, "settings-monitor-color"),

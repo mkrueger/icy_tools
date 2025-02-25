@@ -1,4 +1,4 @@
-use crate::{ansi::BaudEmulation, Buffer, Caret, Rectangle, Size};
+use crate::{Buffer, Caret, Rectangle, Size, ansi::BaudEmulation};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalScrolling {
@@ -154,11 +154,7 @@ impl TerminalState {
         while i < self.tab_stops.len() && self.tab_stops[i] <= x {
             i += 1;
         }
-        if i < self.tab_stops.len() {
-            self.tab_stops[i]
-        } else {
-            self.get_width()
-        }
+        if i < self.tab_stops.len() { self.tab_stops[i] } else { self.get_width() }
     }
 
     pub fn prev_tab_stop(&mut self, x: i32) -> i32 {
@@ -166,11 +162,7 @@ impl TerminalState {
         while i >= 0 && self.tab_stops[i as usize] >= x {
             i -= 1;
         }
-        if i >= 0 {
-            self.tab_stops[i as usize]
-        } else {
-            0
-        }
+        if i >= 0 { self.tab_stops[i as usize] } else { 0 }
     }
 
     pub fn set_tab_at(&mut self, x: i32) {

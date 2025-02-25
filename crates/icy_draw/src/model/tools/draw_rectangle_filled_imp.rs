@@ -4,8 +4,8 @@ use icy_engine::Position;
 use icy_engine_gui::TerminalCalc;
 
 use crate::{
-    paint::{fill_rectangle, BrushMode, ColorMode},
     AnsiEditor, Event, Message,
+    paint::{BrushMode, ColorMode, fill_rectangle},
 };
 
 use super::Tool;

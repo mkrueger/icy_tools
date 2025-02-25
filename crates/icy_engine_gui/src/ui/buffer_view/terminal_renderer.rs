@@ -2,15 +2,15 @@
 use std::cmp::max;
 
 use codepages::tables::UNICODE_TO_CP437_NO_CTRL_CODES;
-use egui::epaint::ahash::HashMap;
 use egui::Vec2;
+use egui::epaint::ahash::HashMap;
 use glow::HasContext as _;
-use icy_engine::editor::EditState;
 use icy_engine::Buffer;
 use icy_engine::BufferType;
 use icy_engine::Size;
 use icy_engine::TextAttribute;
 use icy_engine::TextPane;
+use icy_engine::editor::EditState;
 use image::EncodableLayout;
 use image::RgbaImage;
 use web_time::Instant;
@@ -545,157 +545,153 @@ impl TerminalRenderer {
         }
     }
 
-    unsafe fn run_shader(
-        &self,
-        gl: &glow::Context,
-        buffer_view: &BufferView,
-        render_buffer_size: egui::Vec2,
-        terminal_options: &TerminalOptions,
-        has_focus: bool,
-    ) {
-        let fontdim = buffer_view.get_buffer().get_font_dimensions();
-        let font_height = fontdim.height as f32;
-        let font_width = fontdim.width as f32 + if buffer_view.get_buffer().use_letter_spacing() { 1.0 } else { 0.0 };
+    fn run_shader(&self, gl: &glow::Context, buffer_view: &BufferView, render_buffer_size: egui::Vec2, terminal_options: &TerminalOptions, has_focus: bool) {
+        unsafe {
+            let fontdim = buffer_view.get_buffer().get_font_dimensions();
+            let font_height = fontdim.height as f32;
+            let font_width = fontdim.width as f32 + if buffer_view.get_buffer().use_letter_spacing() { 1.0 } else { 0.0 };
 
-        gl.use_program(Some(self.terminal_shader));
-        gl.uniform_2_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_resolution").as_ref(),
-            render_buffer_size.x,
-            render_buffer_size.y,
-        );
+            gl.use_program(Some(self.terminal_shader));
+            gl.uniform_2_f32(
+                gl.get_uniform_location(self.terminal_shader, "u_resolution").as_ref(),
+                render_buffer_size.x,
+                render_buffer_size.y,
+            );
 
-        gl.uniform_2_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_output_resolution").as_ref(),
-            render_buffer_size.x + font_width,
-            render_buffer_size.y + font_height,
-        );
-        let viewport_top = buffer_view.calc.viewport_top();
-        let top_pos = viewport_top.floor();
-        let c_width = buffer_view.calc.char_size.x;
-        let c_height = buffer_view.calc.char_size.y;
-        let scroll_offset_x = -(((viewport_top.x / c_width) * font_width) % font_width).floor();
-        let scroll_offset_y = (((viewport_top.y / c_height) * font_height) % font_height).floor();
-        gl.uniform_2_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_position").as_ref(),
-            scroll_offset_x,
-            scroll_offset_y - font_height,
-        );
+            gl.uniform_2_f32(
+                gl.get_uniform_location(self.terminal_shader, "u_output_resolution").as_ref(),
+                render_buffer_size.x + font_width,
+                render_buffer_size.y + font_height,
+            );
+            let viewport_top = buffer_view.calc.viewport_top();
+            let top_pos = viewport_top.floor();
+            let c_width = buffer_view.calc.char_size.x;
+            let c_height = buffer_view.calc.char_size.y;
+            let scroll_offset_x = -(((viewport_top.x / c_width) * font_width) % font_width).floor();
+            let scroll_offset_y = (((viewport_top.y / c_height) * font_height) % font_height).floor();
+            gl.uniform_2_f32(
+                gl.get_uniform_location(self.terminal_shader, "u_position").as_ref(),
+                scroll_offset_x,
+                scroll_offset_y - font_height,
+            );
 
-        gl.uniform_2_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_scroll_pos").as_ref(),
-            (viewport_top.x / c_width) * font_height,
-            (viewport_top.y / c_height) * font_height,
-        );
+            gl.uniform_2_f32(
+                gl.get_uniform_location(self.terminal_shader, "u_scroll_pos").as_ref(),
+                (viewport_top.x / c_width) * font_height,
+                (viewport_top.y / c_height) * font_height,
+            );
 
-        let mut caret_pos = buffer_view.get_caret().get_position();
-        if let Some(layer) = buffer_view.edit_state.get_cur_layer() {
-            caret_pos += layer.get_offset();
-        }
-
-        if let Some(window) = &buffer_view.get_buffer().terminal_state.text_window {
-            caret_pos += window.top_left();
-        }
-
-        let caret_x = caret_pos.x as f32 * font_width - (top_pos.x / buffer_view.calc.char_size.x * font_width) - scroll_offset_x;
-
-        let caret_h = if buffer_view.get_caret().insert_mode {
-            fontdim.height as f32 / 2.0
-        } else {
-            match terminal_options.caret_shape {
-                crate::CaretShape::Block => fontdim.height as f32,
-                crate::CaretShape::Underline => 2.0,
+            let mut caret_pos = buffer_view.get_caret().get_position();
+            if let Some(layer) = buffer_view.edit_state.get_cur_layer() {
+                caret_pos += layer.get_offset();
             }
-        };
 
-        let caret_y = caret_pos.y as f32 * fontdim.height as f32 + fontdim.height as f32 - caret_h - (top_pos.y / buffer_view.calc.char_size.y * font_height)
-            + scroll_offset_y;
-        let caret_w = if self.caret_blink.is_on() && buffer_view.get_caret().is_visible() && (has_focus || terminal_options.force_focus) {
-            font_width
-        } else {
-            0.0
-        };
-        gl.uniform_4_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_caret_rectangle").as_ref(),
-            caret_x / (render_buffer_size.x + font_width),
-            caret_y / (render_buffer_size.y + font_height),
-            (caret_x + caret_w) / (render_buffer_size.x + font_width),
-            (caret_y + caret_h) / (render_buffer_size.y + font_height),
-        );
+            if let Some(window) = &buffer_view.get_buffer().terminal_state.text_window {
+                caret_pos += window.top_left();
+            }
 
-        gl.uniform_1_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_character_blink").as_ref(),
-            if self.character_blink.is_on() { 1.0 } else { 0.0 },
-        );
-        gl.uniform_2_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_terminal_size").as_ref(),
-            buffer_view.calc.forced_width as f32 - 0.0001,
-            buffer_view.calc.forced_height as f32 - 0.0001,
-        );
+            let caret_x = caret_pos.x as f32 * font_width - (top_pos.x / buffer_view.calc.char_size.x * font_width) - scroll_offset_x;
 
-        gl.uniform_1_i32(gl.get_uniform_location(self.terminal_shader, "u_fonts").as_ref(), FONT_TEXTURE_SLOT as i32);
+            let caret_h = if buffer_view.get_caret().insert_mode {
+                fontdim.height as f32 / 2.0
+            } else {
+                match terminal_options.caret_shape {
+                    crate::CaretShape::Block => fontdim.height as f32,
+                    crate::CaretShape::Underline => 2.0,
+                }
+            };
 
-        gl.uniform_1_i32(
-            gl.get_uniform_location(self.terminal_shader, "u_terminal_buffer").as_ref(),
-            BUFFER_TEXTURE_SLOT as i32,
-        );
-
-        gl.uniform_1_i32(
-            gl.get_uniform_location(self.terminal_shader, "u_reference_image").as_ref(),
-            REFERENCE_IMAGE_TEXTURE_SLOT as i32,
-        );
-
-        let has_ref_image = if self.show_reference_image && self.reference_image.is_some() || self.igs_executor.is_some() || self.color_image.is_some() {
-            1.0
-        } else {
-            0.0
-        };
-        if let Some(img) = &self.reference_image {
-            gl.uniform_2_f32(
-                gl.get_uniform_location(self.terminal_shader, "u_reference_image_size").as_ref(),
-                img.width() as f32,
-                img.height() as f32,
+            let caret_y =
+                caret_pos.y as f32 * fontdim.height as f32 + fontdim.height as f32 - caret_h - (top_pos.y / buffer_view.calc.char_size.y * font_height)
+                    + scroll_offset_y;
+            let caret_w = if self.caret_blink.is_on() && buffer_view.get_caret().is_visible() && (has_focus || terminal_options.force_focus) {
+                font_width
+            } else {
+                0.0
+            };
+            gl.uniform_4_f32(
+                gl.get_uniform_location(self.terminal_shader, "u_caret_rectangle").as_ref(),
+                caret_x / (render_buffer_size.x + font_width),
+                caret_y / (render_buffer_size.y + font_height),
+                (caret_x + caret_w) / (render_buffer_size.x + font_width),
+                (caret_y + caret_h) / (render_buffer_size.y + font_height),
             );
+
             gl.uniform_1_f32(
-                gl.get_uniform_location(self.terminal_shader, "u_reference_image_alpha").as_ref(),
-                terminal_options.marker_settings.reference_image_alpha,
+                gl.get_uniform_location(self.terminal_shader, "u_character_blink").as_ref(),
+                if self.character_blink.is_on() { 1.0 } else { 0.0 },
             );
-        }
-
-        if let Some((size, _img)) = &self.igs_executor {
             gl.uniform_2_f32(
-                gl.get_uniform_location(self.terminal_shader, "u_reference_image_size").as_ref(),
-                size.width as f32,
-                size.height as f32,
+                gl.get_uniform_location(self.terminal_shader, "u_terminal_size").as_ref(),
+                buffer_view.calc.forced_width as f32 - 0.0001,
+                buffer_view.calc.forced_height as f32 - 0.0001,
             );
 
-            gl.uniform_1_f32(gl.get_uniform_location(self.terminal_shader, "u_reference_image_alpha").as_ref(), 1.0);
-        }
+            gl.uniform_1_i32(gl.get_uniform_location(self.terminal_shader, "u_fonts").as_ref(), FONT_TEXTURE_SLOT as i32);
 
-        if let Some((size, _img)) = &self.color_image {
-            gl.uniform_2_f32(
-                gl.get_uniform_location(self.terminal_shader, "u_reference_image_size").as_ref(),
-                size.width as f32,
-                320 as f32,
+            gl.uniform_1_i32(
+                gl.get_uniform_location(self.terminal_shader, "u_terminal_buffer").as_ref(),
+                BUFFER_TEXTURE_SLOT as i32,
             );
 
-            gl.uniform_1_f32(gl.get_uniform_location(self.terminal_shader, "u_reference_image_alpha").as_ref(), 1.0);
+            gl.uniform_1_i32(
+                gl.get_uniform_location(self.terminal_shader, "u_reference_image").as_ref(),
+                REFERENCE_IMAGE_TEXTURE_SLOT as i32,
+            );
+
+            let has_ref_image = if self.show_reference_image && self.reference_image.is_some() || self.igs_executor.is_some() || self.color_image.is_some() {
+                1.0
+            } else {
+                0.0
+            };
+            if let Some(img) = &self.reference_image {
+                gl.uniform_2_f32(
+                    gl.get_uniform_location(self.terminal_shader, "u_reference_image_size").as_ref(),
+                    img.width() as f32,
+                    img.height() as f32,
+                );
+                gl.uniform_1_f32(
+                    gl.get_uniform_location(self.terminal_shader, "u_reference_image_alpha").as_ref(),
+                    terminal_options.marker_settings.reference_image_alpha,
+                );
+            }
+
+            if let Some((size, _img)) = &self.igs_executor {
+                gl.uniform_2_f32(
+                    gl.get_uniform_location(self.terminal_shader, "u_reference_image_size").as_ref(),
+                    size.width as f32,
+                    size.height as f32,
+                );
+
+                gl.uniform_1_f32(gl.get_uniform_location(self.terminal_shader, "u_reference_image_alpha").as_ref(), 1.0);
+            }
+
+            if let Some((size, _img)) = &self.color_image {
+                gl.uniform_2_f32(
+                    gl.get_uniform_location(self.terminal_shader, "u_reference_image_size").as_ref(),
+                    size.width as f32,
+                    320 as f32,
+                );
+
+                gl.uniform_1_f32(gl.get_uniform_location(self.terminal_shader, "u_reference_image_alpha").as_ref(), 1.0);
+            }
+
+            gl.uniform_1_f32(gl.get_uniform_location(self.terminal_shader, "u_has_reference_image").as_ref(), has_ref_image);
+            let (r, g, b) = terminal_options.monitor_settings.selection_fg.get_rgb_f32();
+
+            gl.uniform_4_f32(gl.get_uniform_location(self.terminal_shader, "u_selection_fg").as_ref(), r, g, b, 1.0);
+
+            let (r, g, b) = terminal_options.monitor_settings.selection_bg.get_rgb_f32();
+
+            gl.uniform_4_f32(gl.get_uniform_location(self.terminal_shader, "u_selection_bg").as_ref(), r, g, b, 1.0);
+
+            gl.uniform_1_f32(
+                gl.get_uniform_location(self.terminal_shader, "u_selection_attr").as_ref(),
+                if buffer_view.get_buffer().is_terminal_buffer { 1.0 } else { 0.0 },
+            );
+
+            crate::check_gl_error!(gl, "run_shader");
         }
-
-        gl.uniform_1_f32(gl.get_uniform_location(self.terminal_shader, "u_has_reference_image").as_ref(), has_ref_image);
-        let (r, g, b) = terminal_options.monitor_settings.selection_fg.get_rgb_f32();
-
-        gl.uniform_4_f32(gl.get_uniform_location(self.terminal_shader, "u_selection_fg").as_ref(), r, g, b, 1.0);
-
-        let (r, g, b) = terminal_options.monitor_settings.selection_bg.get_rgb_f32();
-
-        gl.uniform_4_f32(gl.get_uniform_location(self.terminal_shader, "u_selection_bg").as_ref(), r, g, b, 1.0);
-
-        gl.uniform_1_f32(
-            gl.get_uniform_location(self.terminal_shader, "u_selection_attr").as_ref(),
-            if buffer_view.get_buffer().is_terminal_buffer { 1.0 } else { 0.0 },
-        );
-
-        crate::check_gl_error!(gl, "run_shader");
     }
 
     pub(crate) fn reset_caret_blink(&mut self) {
@@ -704,72 +700,80 @@ impl TerminalRenderer {
     }
 }
 
-unsafe fn compile_shader(gl: &glow::Context) -> glow::Program {
-    let program = gl.create_program().expect("Cannot create program");
+fn compile_shader(gl: &glow::Context) -> glow::Program {
+    unsafe {
+        let program = gl.create_program().expect("Cannot create program");
 
-    let (vertex_shader_source, fragment_shader_source) = (crate::ui::buffer_view::SHADER_SOURCE, include_str!("terminal_renderer.shader.frag"));
-    let shader_sources = [(glow::VERTEX_SHADER, vertex_shader_source), (glow::FRAGMENT_SHADER, fragment_shader_source)];
+        let (vertex_shader_source, fragment_shader_source) = (crate::ui::buffer_view::SHADER_SOURCE, include_str!("terminal_renderer.shader.frag"));
+        let shader_sources = [(glow::VERTEX_SHADER, vertex_shader_source), (glow::FRAGMENT_SHADER, fragment_shader_source)];
 
-    let shaders: Vec<_> = shader_sources
-        .iter()
-        .map(|(shader_type, shader_source)| {
-            let shader = gl.create_shader(*shader_type).expect("Cannot create shader");
+        let shaders: Vec<_> = shader_sources
+            .iter()
+            .map(|(shader_type, shader_source)| {
+                let shader = gl.create_shader(*shader_type).expect("Cannot create shader");
 
-            let shader_source = shader_source
-                .replace("%LAYOUT0%", "layout(location = 0)")
-                .replace("%LAYOUT1%", "layout(location = 1)");
+                let shader_source = shader_source
+                    .replace("%LAYOUT0%", "layout(location = 0)")
+                    .replace("%LAYOUT1%", "layout(location = 1)");
 
-            gl.shader_source(shader, &format!("{}\n{}", crate::get_shader_version(gl), shader_source));
-            gl.compile_shader(shader);
-            assert!(gl.get_shader_compile_status(shader), "{}", gl.get_shader_info_log(shader));
-            gl.attach_shader(program, shader);
-            shader
-        })
-        .collect();
+                gl.shader_source(shader, &format!("{}\n{}", crate::get_shader_version(gl), shader_source));
+                gl.compile_shader(shader);
+                assert!(gl.get_shader_compile_status(shader), "{}", gl.get_shader_info_log(shader));
+                gl.attach_shader(program, shader);
+                shader
+            })
+            .collect();
 
-    gl.link_program(program);
-    assert!(gl.get_program_link_status(program), "{}", gl.get_program_info_log(program));
+        gl.link_program(program);
+        assert!(gl.get_program_link_status(program), "{}", gl.get_program_info_log(program));
 
-    for shader in shaders {
-        gl.detach_shader(program, shader);
-        gl.delete_shader(shader);
+        for shader in shaders {
+            gl.detach_shader(program, shader);
+            gl.delete_shader(shader);
+        }
+        crate::check_gl_error!(gl, "compile_shader");
+
+        program
     }
-    crate::check_gl_error!(gl, "compile_shader");
-
-    program
 }
 
-unsafe fn create_buffer_texture(gl: &glow::Context) -> glow::Texture {
-    let buffer_texture = gl.create_texture().unwrap();
-    gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(buffer_texture));
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
-    crate::check_gl_error!(gl, "create_buffer_texture");
+fn create_buffer_texture(gl: &glow::Context) -> glow::Texture {
+    unsafe {
+        let buffer_texture = gl.create_texture().unwrap();
+        gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(buffer_texture));
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+        crate::check_gl_error!(gl, "create_buffer_texture");
 
-    buffer_texture
+        buffer_texture
+    }
 }
 
-unsafe fn create_reference_image_texture(gl: &glow::Context) -> glow::Texture {
-    let reference_image_texture: glow::Texture = gl.create_texture().unwrap();
-    gl.bind_texture(glow::TEXTURE_2D, Some(reference_image_texture));
-    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
-    crate::check_gl_error!(gl, "create_refeference_image_texture");
+fn create_reference_image_texture(gl: &glow::Context) -> glow::Texture {
+    unsafe {
+        let reference_image_texture: glow::Texture = gl.create_texture().unwrap();
+        gl.bind_texture(glow::TEXTURE_2D, Some(reference_image_texture));
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+        crate::check_gl_error!(gl, "create_refeference_image_texture");
 
-    reference_image_texture
+        reference_image_texture
+    }
 }
 
-unsafe fn create_font_texture(gl: &glow::Context) -> glow::Texture {
-    let font_texture = gl.create_texture().unwrap();
-    gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(font_texture));
+fn create_font_texture(gl: &glow::Context) -> glow::Texture {
+    unsafe {
+        let font_texture = gl.create_texture().unwrap();
+        gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(font_texture));
 
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
-    crate::check_gl_error!(gl, "create_font_texture");
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+        crate::check_gl_error!(gl, "create_font_texture");
 
-    font_texture
+        font_texture
+    }
 }

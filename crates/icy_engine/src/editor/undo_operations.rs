@@ -814,7 +814,7 @@ impl UndoOperation for InsertColumn {
 }
 
 mod scroll_util {
-    use crate::{editor::EditorError, EngineResult};
+    use crate::{EngineResult, editor::EditorError};
 
     pub(crate) fn scroll_layer_up(edit_state: &mut crate::editor::EditState, layer: usize) -> EngineResult<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(layer) {

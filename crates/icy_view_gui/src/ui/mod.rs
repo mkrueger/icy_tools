@@ -1,22 +1,23 @@
 #![allow(static_mut_refs)]
 use eframe::{
-    egui::{self, load::SizedTexture, Context, CursorIcon, Image, Margin, RichText, ScrollArea, TextureOptions},
-    epaint::{Color32, ColorImage, Rect, Vec2},
     App, Frame,
+    egui::{self, Context, CursorIcon, Image, Margin, RichText, ScrollArea, TextureOptions, load::SizedTexture},
+    epaint::{Color32, ColorImage, Rect, Vec2},
 };
 
 use i18n_embed_fl::fl;
 use icy_engine::{
+    Buffer,
     ansi::{
-        sound::{MusicAction, FREQ},
         MusicOption,
+        sound::{FREQ, MusicAction},
     },
-    parse_with_parser, rip, Buffer,
+    parse_with_parser, rip,
 };
-use icy_engine_gui::{animations::Animator, BufferView, MonitorSettings};
+use icy_engine_gui::{BufferView, MonitorSettings, animations::Animator};
 use igs::IGS;
 use music::SoundThread;
-use settings::{Settings, SETTINGS};
+use settings::{SETTINGS, Settings};
 use settings_dialog::SettingsDialog;
 
 use std::{

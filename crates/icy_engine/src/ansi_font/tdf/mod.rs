@@ -1,4 +1,4 @@
-use crate::{editor::EditState, AttributedChar, Position, Size, TextAttribute};
+use crate::{AttributedChar, Position, Size, TextAttribute, editor::EditState};
 use i18n_embed_fl::fl;
 
 pub mod font;

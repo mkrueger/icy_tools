@@ -2,9 +2,10 @@ use bstr::{BString, ByteSlice};
 use chrono::NaiveDate;
 
 use crate::{
+    SauceDataType, SauceError, SauceInformationBuilder,
     char_caps::CharCaps,
-    header::{SauceHeader, HDR_LEN},
-    sauce_pad, sauce_trim, SauceDataType, SauceError, SauceInformationBuilder,
+    header::{HDR_LEN, SauceHeader},
+    sauce_pad, sauce_trim,
 };
 
 pub(crate) const COMMENT_LEN: usize = 64;

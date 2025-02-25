@@ -1,7 +1,7 @@
 #![allow(clippy::missing_errors_doc)]
 use i18n_embed_fl::fl;
 
-use super::{undo_operations, EditState};
+use super::{EditState, undo_operations};
 use crate::{AddType, AttributedChar, EngineResult, Position, Rectangle, Selection, TextPane};
 
 impl EditState {

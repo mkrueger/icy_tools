@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use icy_engine::{editor::EditState, update_crc32, Buffer, SaveOptions, TextPane};
+use icy_engine::{Buffer, SaveOptions, TextPane, editor::EditState, update_crc32};
 use icy_engine_gui::animations::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 

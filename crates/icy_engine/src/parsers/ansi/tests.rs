@@ -1,9 +1,9 @@
 #![allow(clippy::float_cmp)]
 
 use crate::{
-    ansi::{sound::MusicAction, BaudEmulation, MusicOption},
-    parsers::{ansi, create_buffer, get_action, get_simple_action, update_buffer, update_buffer_force},
     AttributedChar, CallbackAction, Caret, Color, IceMode, OutputFormat, Position, SaveOptions, TerminalScrolling, TextAttribute, TextPane, XTERM_256_PALETTE,
+    ansi::{BaudEmulation, MusicOption, sound::MusicAction},
+    parsers::{ansi, create_buffer, get_action, get_simple_action, update_buffer, update_buffer_force},
 };
 
 #[test]

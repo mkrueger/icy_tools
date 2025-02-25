@@ -3,10 +3,10 @@ use std::sync::Arc;
 use eframe::egui;
 use egui::mutex::Mutex;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::AtomicUndoGuard, AddType, Rectangle, TextPane};
+use icy_engine::{AddType, Rectangle, TextPane, editor::AtomicUndoGuard};
 use icy_engine_gui::TerminalCalc;
 
-use crate::{model::MKey, AnsiEditor, CharTableToolWindow, Document, Message};
+use crate::{AnsiEditor, CharTableToolWindow, Document, Message, model::MKey};
 
 use super::{Event, MModifiers, Position, Tool};
 

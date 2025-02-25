@@ -1,14 +1,15 @@
 use std::{mem::swap, str::FromStr};
 
 use super::{
+    IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
     cmd::IgsCommands,
     sound::SOUND_DATA,
-    vdi::{color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx, TWOPI},
-    IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
+    vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
 };
 use crate::{
-    igs::{vdi::blit_px, HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN},
-    load_atari_fonts, BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Position, Size, IGS_PALETTE, IGS_SYSTEM_PALETTE,
+    BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, IGS_PALETTE, IGS_SYSTEM_PALETTE, Position, Size,
+    igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN, vdi::blit_px},
+    load_atari_fonts,
 };
 
 #[derive(Default)]

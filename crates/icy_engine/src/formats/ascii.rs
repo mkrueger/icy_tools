@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextPane};
+use crate::{Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TextPane, parse_with_parser, parsers};
 
 use super::{LoadData, SaveOptions};
 

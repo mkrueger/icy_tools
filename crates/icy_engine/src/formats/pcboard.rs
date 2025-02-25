@@ -2,7 +2,7 @@ use std::path::Path;
 
 use codepages::tables::CP437_TO_UNICODE;
 
-use crate::{parse_with_parser, parsers, Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane};
+use crate::{Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, parse_with_parser, parsers};
 
 use super::{LoadData, SaveOptions};
 

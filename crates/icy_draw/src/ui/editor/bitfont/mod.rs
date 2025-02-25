@@ -5,17 +5,17 @@ use std::{path::Path, sync::Arc};
 use eframe::{
     egui::{self, Layout, RichText, Sense},
     emath::Align2,
-    epaint::{mutex::Mutex, Color32, FontFamily, FontId, Pos2, Rect, Vec2},
+    epaint::{Color32, FontFamily, FontId, Pos2, Rect, Vec2, mutex::Mutex},
 };
 use egui::CornerRadius;
 use i18n_embed_fl::fl;
 use icy_engine::{
-    util::{pop_data, push_data, BITFONT_GLYPH},
     BitFont, Buffer, EngineResult, Glyph, Size, TextAttribute, TextPane,
+    util::{BITFONT_GLYPH, pop_data, push_data},
 };
-use icy_engine_gui::{show_terminal_area, BufferView};
+use icy_engine_gui::{BufferView, show_terminal_area};
 
-use crate::{model::Tool, to_message, AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, TerminalResult, UndoHandler, SETTINGS};
+use crate::{AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, SETTINGS, TerminalResult, UndoHandler, model::Tool, to_message};
 
 use self::undo::UndoOperation;
 
@@ -117,13 +117,10 @@ impl BitFontEditor {
         let ch = self.selected_char_opt.unwrap_or(' ');
         for y in 0..buf.get_width() {
             for x in 0..buf.get_height() {
-                buf.layers[0].set_char(
-                    (x, y),
-                    icy_engine::AttributedChar {
-                        ch,
-                        attribute: TextAttribute::default(),
-                    },
-                );
+                buf.layers[0].set_char((x, y), icy_engine::AttributedChar {
+                    ch,
+                    attribute: TextAttribute::default(),
+                });
             }
         }
         self.send_update_message = true;
@@ -277,20 +274,12 @@ impl BitFontEditor {
                             );
                             let col = if glyph.data[y as usize] & (128 >> x) != 0 {
                                 if let Some(pos) = response.hover_pos() {
-                                    if rect.contains(pos) {
-                                        Color32::WHITE
-                                    } else {
-                                        Color32::GRAY
-                                    }
+                                    if rect.contains(pos) { Color32::WHITE } else { Color32::GRAY }
                                 } else {
                                     Color32::GRAY
                                 }
                             } else if let Some(pos) = response.hover_pos() {
-                                if rect.contains(pos) {
-                                    Color32::DARK_GRAY
-                                } else {
-                                    Color32::BLACK
-                                }
+                                if rect.contains(pos) { Color32::DARK_GRAY } else { Color32::BLACK }
                             } else {
                                 Color32::BLACK
                             };

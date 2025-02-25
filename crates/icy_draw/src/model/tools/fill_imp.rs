@@ -2,11 +2,11 @@ use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use eframe::egui;
 use i18n_embed_fl::fl;
-use icy_engine::{paint::HalfBlock, AttributedChar, Size, TextAttribute, TextPane};
+use icy_engine::{AttributedChar, Size, TextAttribute, TextPane, paint::HalfBlock};
 
 use crate::{
-    paint::{BrushMode, ColorMode},
     AnsiEditor, Message,
+    paint::{BrushMode, ColorMode},
 };
 
 use super::{Position, Tool};

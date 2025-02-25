@@ -1,9 +1,9 @@
 use std::vec;
 
 use crate::{
+    BuiltinDither, DiffusionMethod, MethodForLargest, MethodForRep, PixelFormat, Quality, SIXEL_PALETTE_MAX, SixelError, SixelResult,
     pixelformat::sixel_helper_normalize_pixelformat,
     quant::{sixel_quant_apply_palette, sixel_quant_make_palette},
-    BuiltinDither, DiffusionMethod, MethodForLargest, MethodForRep, PixelFormat, Quality, SixelError, SixelResult, SIXEL_PALETTE_MAX,
 };
 
 pub struct sixel_dither {
@@ -225,11 +225,7 @@ impl sixel_dither {
 
     pub fn set_quality_mode(&mut self, quality_mode: Quality) {
         self.quality_mode = if matches!(quality_mode, Quality::AUTO) {
-            if self.ncolors <= 8 {
-                Quality::HIGH
-            } else {
-                Quality::LOW
-            }
+            if self.ncolors <= 8 { Quality::HIGH } else { Quality::LOW }
         } else {
             quality_mode
         };
@@ -284,11 +280,7 @@ impl sixel_dither {
     /// set diffusion type, choose from enum methodForDiffuse
     pub fn set_diffusion_type(&mut self, method_for_diffuse: DiffusionMethod) {
         self.method_for_diffuse = if matches!(method_for_diffuse, DiffusionMethod::Auto) {
-            if self.ncolors > 16 {
-                DiffusionMethod::FS
-            } else {
-                DiffusionMethod::Atkinson
-            }
+            if self.ncolors > 16 { DiffusionMethod::FS } else { DiffusionMethod::Atkinson }
         } else {
             method_for_diffuse
         };

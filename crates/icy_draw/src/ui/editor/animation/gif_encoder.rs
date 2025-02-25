@@ -1,6 +1,6 @@
 use std::{path::Path, sync::mpsc::Sender};
 
-use gifski::{progress::NoProgress, Repeat};
+use gifski::{Repeat, progress::NoProgress};
 use imgref::ImgVec;
 use rgb::RGBA8;
 

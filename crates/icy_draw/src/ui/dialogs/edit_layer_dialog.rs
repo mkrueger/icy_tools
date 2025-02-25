@@ -1,4 +1,4 @@
-use eframe::egui::{self, color_picker, Layout, RichText};
+use eframe::egui::{self, Layout, RichText, color_picker};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
 use icy_engine::{Color, Mode, Properties};

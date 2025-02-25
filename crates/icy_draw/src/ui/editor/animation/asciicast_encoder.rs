@@ -4,7 +4,7 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
-    sync::{mpsc::Sender, Arc},
+    sync::{Arc, mpsc::Sender},
 };
 
 use super::encoding::AnimationEncoder;
@@ -59,17 +59,17 @@ impl AnimationEncoder for AsciiCast {
             opt.preserve_line_length = true;
             opt.modern_terminal_output = true;
 
-            let mut gen = StringGenerator::new(opt.clone());
+            let mut str_gen = StringGenerator::new(opt.clone());
             {
                 let optimizer = ColorOptimizer::new(&animator.lock().unwrap().frames[frame].0, &opt);
                 let buf = optimizer.optimize(&animator.lock().unwrap().frames[frame].0);
-                gen.generate(&buf, &buf);
+                str_gen.generate(&buf, &buf);
             }
-            gen.line_offsets.push(gen.get_data().len());
+            str_gen.line_offsets.push(str_gen.get_data().len());
 
-            let data = gen.get_data();
+            let data = str_gen.get_data();
             let mut cur = 0;
-            for i in &gen.line_offsets {
+            for i in &str_gen.line_offsets {
                 if cur < *i {
                     output_line(&mut f, cur, *i, data, timestamp)?;
                 }

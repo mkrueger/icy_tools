@@ -1,9 +1,9 @@
 use eframe::egui;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::AtomicUndoGuard, AddType, Rectangle};
+use icy_engine::{AddType, Rectangle, editor::AtomicUndoGuard};
 use icy_engine_gui::TerminalCalc;
 
-use crate::{to_message, AnsiEditor, Message};
+use crate::{AnsiEditor, Message, to_message};
 
 use super::{Event, Position, Tool};
 

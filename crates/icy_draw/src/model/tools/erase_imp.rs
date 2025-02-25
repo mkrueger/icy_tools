@@ -1,6 +1,6 @@
 use eframe::egui;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::AtomicUndoGuard, AttributedChar, TextAttribute};
+use icy_engine::{AttributedChar, TextAttribute, editor::AtomicUndoGuard};
 use icy_engine_gui::TerminalCalc;
 
 use crate::{AnsiEditor, Event, Message};

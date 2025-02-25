@@ -119,65 +119,62 @@ mod tests {
         let character = Character::read(&mut reader, &header, false).unwrap();
         assert_eq!(character.ch, None);
         assert_eq!(character.comment, None);
-        assert_eq!(
-            character.lines,
+        assert_eq!(character.lines, vec![
             vec![
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('\\'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(','),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' ')
-                ]
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char(')'),
+                FIGChar::Char(' '),
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char('_'),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('\\'),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(','),
+                FIGChar::Char('_'),
+                FIGChar::Char('|')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' ')
             ]
-        );
+        ]);
     }
 
     #[test]
@@ -196,59 +193,56 @@ mod tests {
         let character = Character::read(&mut reader, &header, true).unwrap();
         assert_eq!(character.ch, Some('¢'));
         assert_eq!(character.comment, Some("CENT SIGN".to_string()));
-        assert_eq!(
-            character.lines,
+        assert_eq!(character.lines, vec![
             vec![
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('/'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('\\'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' ')
-                ]
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('/'),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('\\'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char('_'),
+                FIGChar::Char('|'),
+                FIGChar::Char(' ')
             ]
-        );
+        ]);
     }
 
     #[test]
@@ -267,59 +261,56 @@ mod tests {
         let character = Character::read(&mut reader, &header, true).unwrap();
         assert_eq!(character.ch, Some('¢'));
         assert_eq!(character.comment, Some("CENT SIGN".to_string()));
-        assert_eq!(
-            character.lines,
+        assert_eq!(character.lines, vec![
             vec![
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('/'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('\\'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' ')
-                ]
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('/'),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('\\'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char('_'),
+                FIGChar::Char('|'),
+                FIGChar::Char(' ')
             ]
-        );
+        ]);
     }
 
     #[test]
@@ -338,59 +329,56 @@ mod tests {
         let character = Character::read(&mut reader, &header, true).unwrap();
         assert_eq!(character.ch, Some('¢'));
         assert_eq!(character.comment, Some("CENT SIGN".to_string()));
-        assert_eq!(
-            character.lines,
+        assert_eq!(character.lines, vec![
             vec![
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('/'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char('\\'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' ')
-                ]
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('/'),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char('\\'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char('_'),
+                FIGChar::Char('|'),
+                FIGChar::Char(' ')
             ]
-        );
+        ]);
     }
 
     #[test]
@@ -408,65 +396,62 @@ $\__,_|@
         let character = Character::read(&mut reader, &header, false).unwrap();
         assert_eq!(character.ch, None);
         assert_eq!(character.comment, None);
-        assert_eq!(
-            character.lines,
+        assert_eq!(character.lines, vec![
             vec![
-                vec![
-                    FIGChar::HardBlank,
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(' ')
-                ],
-                vec![
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('('),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(')')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|')
-                ],
-                vec![
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|'),
-                    FIGChar::Char(' '),
-                    FIGChar::Char('|')
-                ],
-                vec![
-                    FIGChar::HardBlank,
-                    FIGChar::Char('\\'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('_'),
-                    FIGChar::Char(','),
-                    FIGChar::Char('_'),
-                    FIGChar::Char('|')
-                ],
-                vec![
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' '),
-                    FIGChar::Char(' ')
-                ]
+                FIGChar::HardBlank,
+                FIGChar::Char('_'),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char('_'),
+                FIGChar::Char(' ')
+            ],
+            vec![
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char(')'),
+                FIGChar::Char(' '),
+                FIGChar::Char('('),
+                FIGChar::Char('_'),
+                FIGChar::Char(')')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|')
+            ],
+            vec![
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|'),
+                FIGChar::Char('_'),
+                FIGChar::Char('|'),
+                FIGChar::Char(' '),
+                FIGChar::Char('|')
+            ],
+            vec![
+                FIGChar::HardBlank,
+                FIGChar::Char('\\'),
+                FIGChar::Char('_'),
+                FIGChar::Char('_'),
+                FIGChar::Char(','),
+                FIGChar::Char('_'),
+                FIGChar::Char('|')
+            ],
+            vec![
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' '),
+                FIGChar::Char(' ')
             ]
-        );
+        ]);
     }
 
     #[test]

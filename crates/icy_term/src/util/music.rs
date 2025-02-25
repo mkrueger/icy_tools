@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::mpsc::{channel, Receiver, SendError, Sender, TryRecvError},
+    sync::mpsc::{Receiver, SendError, Sender, TryRecvError, channel},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -10,9 +10,9 @@ use wasm_thread as thread;
 
 use icy_engine::ansi::sound::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
+    OutputStream, Source,
     cpal::SampleRate,
     source::{Function, SignalGenerator},
-    OutputStream, Source,
 };
 use web_time::{Duration, Instant};
 

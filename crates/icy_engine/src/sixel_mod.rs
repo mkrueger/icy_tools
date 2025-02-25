@@ -1,4 +1,4 @@
-use crate::{ansi::parse_next_number, EngineResult, Palette, ParserError, Position, Rectangle, Size};
+use crate::{EngineResult, Palette, ParserError, Position, Rectangle, Size, ansi::parse_next_number};
 
 #[derive(Clone, Debug, Copy)]
 pub enum SixelState {

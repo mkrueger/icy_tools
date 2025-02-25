@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use eframe::{
     egui::{self, RichText},
-    epaint::{mutex::Mutex, Color32, Rect, Vec2},
+    epaint::{Color32, Rect, Vec2, mutex::Mutex},
 };
 use egui::CornerRadius;
 use egui_modal::Modal;

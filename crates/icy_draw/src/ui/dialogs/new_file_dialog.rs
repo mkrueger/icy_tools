@@ -8,9 +8,9 @@ use eframe::{
 use egui::{CornerRadius, Image, Vec2};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_engine::{font::TheDrawFont, BitFont, Buffer, FontType, Palette, ATARI, ATARI_DEFAULT_PALETTE};
+use icy_engine::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, Buffer, FontType, Palette, font::TheDrawFont};
 
-use crate::{add_child, AnsiEditor, MainWindow, Message};
+use crate::{AnsiEditor, MainWindow, Message, add_child};
 
 trait Template {
     fn image(&self) -> &Image<'static>;

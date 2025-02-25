@@ -7,20 +7,20 @@ use std::{
 };
 
 use crate::{
-    add_child, model::Tool, plugins::Plugin, util::autosave, AnsiEditor, AskCloseFileDialog, BitFontEditor, ChannelToolWindow, CharFontEditor, Commands,
-    Document, DocumentBehavior, DocumentTab, LayerToolWindow, Message, MinimapToolWindow, ModalDialog, MostRecentlyUsedFiles, SettingsDialog, ToolBehavior,
-    ToolTab, TopBar, SETTINGS,
+    AnsiEditor, AskCloseFileDialog, BitFontEditor, ChannelToolWindow, CharFontEditor, Commands, Document, DocumentBehavior, DocumentTab, LayerToolWindow,
+    Message, MinimapToolWindow, ModalDialog, MostRecentlyUsedFiles, SETTINGS, SettingsDialog, ToolBehavior, ToolTab, TopBar, add_child, model::Tool,
+    plugins::Plugin, util::autosave,
 };
 use eframe::egui::{Button, PointerButton};
 use eframe::{
     egui::{self, Key, Response, SidePanel, Ui},
     epaint::FontId,
 };
-use egui::{mutex::Mutex, Layout, Modifiers, Pos2, Rect, TextStyle, Vec2, WidgetText};
+use egui::{Layout, Modifiers, Pos2, Rect, TextStyle, Vec2, WidgetText, mutex::Mutex};
 use egui_tiles::{Container, TileId};
 use glow::Context;
 use i18n_embed_fl::fl;
-use icy_engine::{font::TheDrawFont, BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TextPane};
+use icy_engine::{BitFont, Buffer, BufferType, EngineResult, Palette, TextAttribute, TextPane, font::TheDrawFont};
 
 use super::KeyBindings;
 

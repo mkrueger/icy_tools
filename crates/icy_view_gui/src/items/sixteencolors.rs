@@ -2,7 +2,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use i18n_embed_fl::fl;
 
-use super::{sort_folder, zip::ZipFile, Item, ItemType};
+use super::{Item, ItemType, sort_folder, zip::ZipFile};
 
 pub struct SixteenFolder {}
 

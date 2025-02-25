@@ -420,8 +420,8 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
 }
 
 use i18n_embed::{
-    fluent::{fluent_language_loader, FluentLanguageLoader},
     DesktopLanguageRequester,
+    fluent::{FluentLanguageLoader, fluent_language_loader},
 };
 use rust_embed::RustEmbed;
 

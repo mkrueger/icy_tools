@@ -1,4 +1,4 @@
-use super::{sort_folder, Item, ItemType};
+use super::{Item, ItemType, sort_folder};
 use std::{io::Read, path::PathBuf};
 
 pub struct ZipFile {

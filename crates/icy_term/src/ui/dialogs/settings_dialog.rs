@@ -5,8 +5,8 @@ use icy_engine_gui::show_monitor_settings;
 use icy_net::serial::{CharSize, Parity, StopBits};
 
 use crate::{
-    ui::{MainWindowMode, MainWindowState},
     KeyBindings, Modem,
+    ui::{MainWindowMode, MainWindowState},
 };
 
 #[derive(Default)]
@@ -345,11 +345,11 @@ mod tests {
     use icy_engine_gui::MonitorSettings;
 
     use crate::{
-        ui::{
-            dialogs::settings_dialog::{update_state, SETTING_CATEGORIES},
-            MainWindowState,
-        },
         IEMSISettings, KeyBindings, Options, Scaling,
+        ui::{
+            MainWindowState,
+            dialogs::settings_dialog::{SETTING_CATEGORIES, update_state},
+        },
     };
 
     #[test]

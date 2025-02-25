@@ -1,4 +1,4 @@
-use super::{ansi, BufferParser};
+use super::{BufferParser, ansi};
 use crate::{Buffer, CallbackAction, Caret, EngineResult, TextAttribute};
 
 pub struct Parser {

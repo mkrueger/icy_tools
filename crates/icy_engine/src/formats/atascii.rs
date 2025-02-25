@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    atascii, BitFont, Buffer, BufferFeatures, BufferParser, Caret, EngineResult, OutputFormat, Palette, Position, TextPane, ATARI, ATARI_DEFAULT_PALETTE,
+    ATARI, ATARI_DEFAULT_PALETTE, BitFont, Buffer, BufferFeatures, BufferParser, Caret, EngineResult, OutputFormat, Palette, Position, TextPane, atascii,
 };
 
 #[derive(Default)]

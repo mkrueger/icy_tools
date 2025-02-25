@@ -2,7 +2,7 @@
 use icy_engine::Position;
 use icy_engine_gui::BufferView;
 
-use super::{plot_point, BrushMode, ColorMode, PointRole};
+use super::{BrushMode, ColorMode, PointRole, plot_point};
 
 fn get_line_points(from: Position, to: Position) -> Vec<Position> {
     let dx = (to.x - from.x).abs();

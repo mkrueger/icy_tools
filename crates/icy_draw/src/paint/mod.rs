@@ -1,10 +1,10 @@
 use eframe::egui::{self, RichText};
-use egui::{load::SizedTexture, Color32, CornerRadius, FontId, Image, Rect, Sense, Stroke, TextureHandle, Vec2, Widget};
+use egui::{Color32, CornerRadius, FontId, Image, Rect, Sense, Stroke, TextureHandle, Vec2, Widget, load::SizedTexture};
 use i18n_embed_fl::fl;
-use icy_engine::{font::TheDrawFont, paint::HalfBlock, AttributedChar, Position, TextAttribute, TextPane};
+use icy_engine::{AttributedChar, Position, TextAttribute, TextPane, font::TheDrawFont, paint::HalfBlock};
 use icy_engine_gui::BufferView;
 
-use crate::{create_font_image, create_hover_image, AnsiEditor, Message};
+use crate::{AnsiEditor, Message, create_font_image, create_hover_image};
 
 mod rectangle;
 pub use rectangle::*;

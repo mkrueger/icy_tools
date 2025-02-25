@@ -1,9 +1,9 @@
 use std::{thread, time::Duration};
 
 use crate::{
+    Buffer, Position, TextAttribute,
     ansi::Parser,
     parsers::{create_buffer, update_buffer},
-    Buffer, Position, TextAttribute,
 };
 
 fn update_sixels(buf: &mut Buffer) {

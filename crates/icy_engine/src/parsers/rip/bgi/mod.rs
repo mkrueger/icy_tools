@@ -1,6 +1,6 @@
 use std::{f64::consts, path::PathBuf};
 
-use crate::{rip::bgi::font::Font, BitFont, Palette, Position, Rectangle, Size, EGA_PALETTE};
+use crate::{BitFont, EGA_PALETTE, Palette, Position, Rectangle, Size, rip::bgi::font::Font};
 
 mod character;
 mod font;
@@ -651,11 +651,7 @@ impl Bgi {
 
     pub fn get_pixel(&self, x: i32, y: i32) -> u8 {
         let o = (y * self.window.width + x) as usize;
-        if o < self.screen.len() {
-            self.screen[o]
-        } else {
-            0
-        }
+        if o < self.screen.len() { self.screen[o] } else { 0 }
     }
 
     pub fn get_fill_pattern(&self) -> &Vec<u8> {

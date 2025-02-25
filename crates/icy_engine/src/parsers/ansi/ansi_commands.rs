@@ -1,6 +1,6 @@
 #![allow(clippy::unnecessary_wraps)]
-use super::{constants::COLOR_OFFSETS, set_font_selection_success, BaudEmulation, EngineState, Parser};
-use crate::{update_crc16, AttributedChar, BitFont, Buffer, CallbackAction, Caret, EngineResult, FontSelectionState, ParserError, TextPane, XTERM_256_PALETTE};
+use super::{BaudEmulation, EngineState, Parser, constants::COLOR_OFFSETS, set_font_selection_success};
+use crate::{AttributedChar, BitFont, Buffer, CallbackAction, Caret, EngineResult, FontSelectionState, ParserError, TextPane, XTERM_256_PALETTE, update_crc16};
 
 impl Parser {
     /// Sequence: `CSI Ps ... m`</p>

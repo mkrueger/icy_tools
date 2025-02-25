@@ -5,7 +5,7 @@ use egui_bind::{BindTarget, KeyOrPointer};
 use i18n_embed_fl::fl;
 use icy_engine::PaletteMode;
 
-use crate::{button_with_shortcut, DocumentTab, Message, SETTINGS};
+use crate::{DocumentTab, Message, SETTINGS, button_with_shortcut};
 
 pub trait CommandState {
     fn is_enabled(&self, _open_tab_opt: Option<&DocumentTab>) -> bool {
@@ -86,11 +86,7 @@ pub struct FileIsDirtyState {}
 
 impl CommandState for FileIsDirtyState {
     fn is_enabled(&self, open_tab_opt: Option<&DocumentTab>) -> bool {
-        if let Some(pane) = open_tab_opt {
-            pane.is_dirty()
-        } else {
-            false
-        }
+        if let Some(pane) = open_tab_opt { pane.is_dirty() } else { false }
     }
 }
 

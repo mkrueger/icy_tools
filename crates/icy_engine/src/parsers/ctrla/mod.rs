@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{ansi, Buffer, CallbackAction, Caret, EngineResult, Position};
+use crate::{Buffer, CallbackAction, Caret, EngineResult, Position, ansi};
 
 const CTRL_A: char = 1 as char;
 pub const FG: &[u8] = b"KBGCRMYW";

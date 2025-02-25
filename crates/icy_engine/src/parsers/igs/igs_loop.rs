@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{Buffer, CallbackAction, Caret, EngineResult};
 
-use super::{cmd::IgsCommands, DrawExecutor};
+use super::{DrawExecutor, cmd::IgsCommands};
 
 pub type LoopParameters = Vec<Vec<String>>;
 

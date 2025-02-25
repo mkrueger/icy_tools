@@ -3,8 +3,8 @@ use std::fs;
 use bstr::BString;
 use chrono::NaiveDate;
 use icy_sauce::{
-    char_caps::{CharCaps, ContentType},
     SauceInformation, SauceInformationBuilder,
+    char_caps::{CharCaps, ContentType},
 };
 
 #[test]

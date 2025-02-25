@@ -1,10 +1,10 @@
 use std::thread;
 
-use base64::{engine::general_purpose, Engine};
+use base64::{Engine, engine::general_purpose};
 
-use crate::{BitFont, Buffer, CallbackAction, Caret, EngineResult, ParserError, Sixel, HEX_TABLE};
+use crate::{BitFont, Buffer, CallbackAction, Caret, EngineResult, HEX_TABLE, ParserError, Sixel};
 
-use super::{parse_next_number, Parser};
+use super::{Parser, parse_next_number};
 
 #[derive(Debug, Clone, Copy)]
 enum HexMacroState {
@@ -91,7 +91,7 @@ impl Parser {
                         "encountered p3 in macro definition: '{}' only 0 and 1 are valid.",
                         self.parse_string
                     ))
-                    .into())
+                    .into());
                 }
             };
             return Ok(CallbackAction::NoUpdate);

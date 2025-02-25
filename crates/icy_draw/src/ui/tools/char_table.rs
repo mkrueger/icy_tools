@@ -5,11 +5,11 @@ use eframe::{
     egui::{self, RichText, Sense},
     epaint::{Color32, FontId, Pos2, Rect, Vec2},
 };
-use egui::{load::SizedTexture, mutex::Mutex, Context, Image, TextureHandle};
+use egui::{Context, Image, TextureHandle, load::SizedTexture, mutex::Mutex};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, BitFont, Buffer, TextAttribute};
 
-use crate::{create_image, AnsiEditor, Document, Message, ToolWindow};
+use crate::{AnsiEditor, Document, Message, ToolWindow, create_image};
 
 pub struct CharTableToolWindow {
     font: BitFont,

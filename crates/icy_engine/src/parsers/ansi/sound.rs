@@ -1,6 +1,6 @@
 use crate::{CallbackAction, EngineResult, ParserError};
 
-use super::{parse_next_number, EngineState, Parser};
+use super::{EngineState, Parser, parse_next_number};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MusicState {

@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use eframe::egui::{self, TextEdit, Ui};
 use egui_file::FileDialog;
 use egui_modal::Modal;
-use gifski::{progress::NoProgress, Repeat};
+use gifski::{Repeat, progress::NoProgress};
 use i18n_embed_fl::fl;
 use icy_engine::{BufferType, Rectangle, SaveOptions, TextPane};
 
-use crate::{AnsiEditor, Message, ModalDialog, TerminalResult, SETTINGS};
+use crate::{AnsiEditor, Message, ModalDialog, SETTINGS, TerminalResult};
 
 mod ansi;
 mod artworx;

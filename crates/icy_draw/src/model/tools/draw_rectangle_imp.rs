@@ -3,8 +3,8 @@ use i18n_embed_fl::fl;
 use icy_engine_gui::TerminalCalc;
 
 use crate::{
-    paint::{draw_rectangle, BrushMode, ColorMode},
     AnsiEditor, Event, Message,
+    paint::{BrushMode, ColorMode, draw_rectangle},
 };
 
 use super::{Position, Tool};

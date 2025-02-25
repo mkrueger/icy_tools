@@ -2,12 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use eframe::egui::{self};
 use i18n_embed_fl::fl;
-use icy_engine::{editor::AtomicUndoGuard, TextAttribute};
+use icy_engine::{TextAttribute, editor::AtomicUndoGuard};
 use icy_engine_gui::TerminalCalc;
 
 use crate::{
-    paint::{plot_point, BrushMode, ColorMode, PointRole},
     AnsiEditor, Event, Message,
+    paint::{BrushMode, ColorMode, PointRole, plot_point},
 };
 
 use super::{Position, Tool};

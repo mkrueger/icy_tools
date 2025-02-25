@@ -188,7 +188,7 @@ pub fn blit_px(write_mode: i32, colors: usize, s: u8, d: u8) -> u8 {
 
 #[cfg(test)]
 mod test_loop_bug2 {
-    use crate::{igs::vdi::icos, Position};
+    use crate::{Position, igs::vdi::icos};
     use pretty_assertions::assert_eq;
 
     use super::isin;

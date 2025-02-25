@@ -1,14 +1,13 @@
 use eframe::egui::Response;
-use egui::{load::SizedTexture, Image, TextureHandle, Widget};
+use egui::{Image, TextureHandle, Widget, load::SizedTexture};
 use i18n_embed_fl::fl;
-use icy_engine::{editor::AtomicUndoGuard, AttributedChar, Layer, TextPane};
+use icy_engine::{AttributedChar, Layer, TextPane, editor::AtomicUndoGuard};
 use icy_engine_gui::TerminalCalc;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    create_image,
+    AnsiEditor, DragMode, Event, Message, create_image,
     paint::{BrushMode, ColorMode},
-    AnsiEditor, DragMode, Event, Message,
 };
 
 use super::{Position, Tool};

@@ -23,9 +23,9 @@ struct TestExecutor {
 use std::sync::{Arc, Mutex};
 */
 use crate::{
+    TextPane,
     igs::Parser,
     parsers::{create_buffer, update_buffer_force},
-    TextPane,
 };
 /*
 #[test]

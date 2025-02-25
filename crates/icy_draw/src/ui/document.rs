@@ -3,7 +3,7 @@ use std::path::Path;
 use eframe::egui;
 use icy_engine::EngineResult;
 
-use crate::{model::Tool, AnsiEditor, Commands, Message, TerminalResult};
+use crate::{AnsiEditor, Commands, Message, TerminalResult, model::Tool};
 
 pub trait ClipboardHandler {
     fn can_cut(&self) -> bool {

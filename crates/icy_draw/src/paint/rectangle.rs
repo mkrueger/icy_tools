@@ -1,7 +1,7 @@
 use icy_engine::Position;
 use icy_engine_gui::BufferView;
 
-use super::{plot_point, BrushMode, ColorMode, PointRole};
+use super::{BrushMode, ColorMode, PointRole, plot_point};
 
 pub fn draw_rectangle(buffer_view: &mut BufferView, from: impl Into<Position>, to: impl Into<Position>, mode: BrushMode, color_mode: ColorMode) {
     let mut from = from.into();

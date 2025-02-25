@@ -1,6 +1,6 @@
 use crate::{Address, Modem};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_net::{protocol::TransferProtocolType, telnet::TermCaps, ConnectionType};
+use icy_net::{ConnectionType, protocol::TransferProtocolType, telnet::TermCaps};
 use std::path::PathBuf;
 use web_time::Duration;
 

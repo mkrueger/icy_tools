@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{LoadData, Position, SaveOptions, TextAttribute};
 use crate::{
-    analyze_font_usage, guess_font_name, AttributedChar, BitFont, Buffer, BufferFeatures, BufferType, Color, EngineResult, FontMode, IceMode, LoadingError,
-    OutputFormat, Palette, SavingError, TextPane, EGA_PALETTE,
+    AttributedChar, BitFont, Buffer, BufferFeatures, BufferType, Color, EGA_PALETTE, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette,
+    SavingError, TextPane, analyze_font_usage, guess_font_name,
 };
 
 // http://fileformats.archiveteam.org/wiki/ArtWorx_Data_Format
@@ -187,7 +187,7 @@ pub fn get_save_sauce_default_adf(buf: &Buffer) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{compare_buffers, AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane};
+    use crate::{AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane, compare_buffers};
 
     #[test]
     pub fn test_ice() {

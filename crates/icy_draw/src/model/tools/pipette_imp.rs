@@ -6,7 +6,7 @@ use egui::{CornerRadius, Image, TextureHandle, Widget};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Buffer, TextAttribute};
 
-use crate::{create_image, AnsiEditor, Message};
+use crate::{AnsiEditor, Message, create_image};
 
 use super::{Position, Tool};
 

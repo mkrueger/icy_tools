@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{sort_folder, zip::ZipFile, Item, ItemType, SixteenFolder};
+use super::{Item, ItemType, SixteenFolder, sort_folder, zip::ZipFile};
 
 pub struct ItemFolder {
     pub path: PathBuf,

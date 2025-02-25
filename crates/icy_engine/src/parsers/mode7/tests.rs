@@ -1,4 +1,4 @@
-use crate::{parsers::update_buffer, Buffer, BufferParser, Caret};
+use crate::{Buffer, BufferParser, Caret, parsers::update_buffer};
 
 fn _create_mode7_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (Buffer, Caret) {
     let mut buf = Buffer::create((40, 25));

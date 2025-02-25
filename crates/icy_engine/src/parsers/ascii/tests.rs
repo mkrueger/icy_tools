@@ -1,6 +1,6 @@
 use crate::{
-    parsers::{ascii::Parser, create_buffer, update_buffer},
     OutputFormat, Position, SaveOptions, TextPane,
+    parsers::{ascii::Parser, create_buffer, update_buffer},
 };
 
 fn test_ascii(data: &[u8]) {

@@ -1,7 +1,7 @@
 pub mod tdf;
 pub use tdf::*;
 
-use crate::{editor::EditState, EngineResult, Position};
+use crate::{EngineResult, Position, editor::EditState};
 
 pub mod figlet;
 

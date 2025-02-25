@@ -5,7 +5,7 @@ use eframe::{
 use egui::CornerRadius;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_engine::{font::TheDrawFont, BitFont};
+use icy_engine::{BitFont, font::TheDrawFont};
 
 use crate::{AnsiEditor, Message, ModalDialog, Settings, TerminalResult};
 

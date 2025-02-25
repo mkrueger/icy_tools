@@ -1,11 +1,11 @@
 use std::{path::PathBuf, str::FromStr};
 
-use super::{ansi, BufferParser};
+use super::{BufferParser, ansi};
 use crate::{
+    BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Palette, Position, SKYPIX_PALETTE, Size, Spacing,
     ansi::EngineState,
     load_amiga_fonts,
     rip::bgi::{Bgi, Image, WriteMode},
-    BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Palette, Position, Size, Spacing, SKYPIX_PALETTE,
 };
 const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
@@ -77,9 +77,9 @@ impl Parser {
                             self.bgi.get_color(),
                         );
                     } /* else {
-                          self.bgi
-                              .put_pixel(glyph.left_bearing + x + j as i32, glyph.top_bearing + y + i as i32, self.bgi.get_bk_color());
-                      }*/
+                    self.bgi
+                    .put_pixel(glyph.left_bearing + x + j as i32, glyph.top_bearing + y + i as i32, self.bgi.get_bk_color());
+                    }*/
                 }
             }
             match font.spacing {

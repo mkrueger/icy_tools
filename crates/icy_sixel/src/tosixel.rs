@@ -2,10 +2,10 @@
 use std::io::Write;
 
 use crate::{
+    DiffusionMethod, EncodePolicy, PaletteType, PixelFormat, SIXEL_OUTPUT_PACKET_SIZE, SIXEL_PALETTE_MAX, SixelError, SixelResult,
     dither::sixel_dither,
     output::{sixel_node, sixel_output},
     pixelformat::sixel_helper_normalize_pixelformat,
-    DiffusionMethod, EncodePolicy, PaletteType, PixelFormat, SixelError, SixelResult, SIXEL_OUTPUT_PACKET_SIZE, SIXEL_PALETTE_MAX,
 };
 
 const DCS_START_7BIT: &str = "\x1BP";

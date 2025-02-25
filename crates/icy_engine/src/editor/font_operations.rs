@@ -2,7 +2,7 @@
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, BitFont, EngineResult, IceMode, Layer, Palette, PaletteMode, TextPane, DOS_DEFAULT_PALETTE};
+use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, EngineResult, IceMode, Layer, Palette, PaletteMode, TextPane};
 
 use super::EditState;
 

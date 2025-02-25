@@ -1,17 +1,17 @@
 use std::{collections::HashMap, time::Instant};
 
 use eframe::{
-    egui::{self, menu, ImageButton, TopBottomPanel, Ui},
+    egui::{self, ImageButton, TopBottomPanel, Ui, menu},
     epaint::Vec2,
 };
-use egui::{text::LayoutJob, FontId, Image, TextFormat};
+use egui::{FontId, Image, TextFormat, text::LayoutJob};
 use i18n_embed_fl::fl;
 use icy_engine::{
-    util::{pop_data, BUFFER_DATA},
     FontMode, IceMode, PaletteMode,
+    util::{BUFFER_DATA, pop_data},
 };
 
-use crate::{button_with_shortcut, MainWindow, Message, Settings, LATEST_VERSION, SETTINGS, VERSION};
+use crate::{LATEST_VERSION, MainWindow, Message, SETTINGS, Settings, VERSION, button_with_shortcut};
 
 lazy_static::lazy_static! {
     pub static ref DOCK_LEFT_SVG: Image<'static> = Image::new(egui::include_image!("../../data/icons/dock_left.svg"));

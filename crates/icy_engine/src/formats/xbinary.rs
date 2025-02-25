@@ -1,6 +1,6 @@
 use crate::{
-    analyze_font_usage, guess_font_name, AttributedChar, BitFont, Buffer, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette,
-    PaletteMode, Position, SavingError, TextPane,
+    AttributedChar, BitFont, Buffer, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
+    TextPane, analyze_font_usage, guess_font_name,
 };
 use std::path::Path;
 
@@ -587,7 +587,7 @@ pub fn get_save_sauce_default_xb(buf: &Buffer) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{compare_buffers, AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane};
+    use crate::{AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane, compare_buffers};
 
     #[test]
     pub fn test_blink() {

@@ -11,7 +11,7 @@ use icy_net::telnet::TerminalEmulation;
 use std::mem;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread::{sleep, JoinHandle};
+use std::thread::{JoinHandle, sleep};
 use std::time::Instant;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
@@ -20,7 +20,7 @@ use eframe::egui::Key;
 
 use crate::features::AutoLogin;
 use crate::ui::connect::OpenConnectionData;
-use crate::{get_parser, get_unicode_converter, Options};
+use crate::{Options, get_parser, get_unicode_converter};
 
 pub mod app;
 pub mod com_thread;

@@ -2,17 +2,17 @@ use std::{path::Path, sync::Arc};
 
 use eframe::{
     egui::{self, Button, ScrollArea, SidePanel, TextEdit, TopBottomPanel},
-    epaint::{mutex::Mutex, Vec2},
+    epaint::{Vec2, mutex::Mutex},
 };
-use egui::{load::SizedTexture, Image, Rect, TextureHandle};
+use egui::{Image, Rect, TextureHandle, load::SizedTexture};
 use i18n_embed_fl::fl;
-use icy_engine::{font::TheDrawFont, AttributedChar, BitFont, Buffer, EngineResult, FontGlyph, Layer, Size, TextAttribute, TextPane};
-use icy_engine_gui::{show_terminal_area, BufferView};
+use icy_engine::{AttributedChar, BitFont, Buffer, EngineResult, FontGlyph, Layer, Size, TextAttribute, TextPane, font::TheDrawFont};
+use icy_engine_gui::{BufferView, show_terminal_area};
 
 use crate::{
-    model::{click_imp::VALID_OUTLINE_CHARS, Tool},
-    AnsiEditor, BitFontEditor, ClipboardHandler, Document, DocumentOptions, DrawGlyphStyle, Message, SelectOutlineDialog, TerminalResult, UndoHandler,
-    SETTINGS,
+    AnsiEditor, BitFontEditor, ClipboardHandler, Document, DocumentOptions, DrawGlyphStyle, Message, SETTINGS, SelectOutlineDialog, TerminalResult,
+    UndoHandler,
+    model::{Tool, click_imp::VALID_OUTLINE_CHARS},
 };
 
 pub struct CharFontEditor {

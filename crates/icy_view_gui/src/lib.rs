@@ -10,8 +10,8 @@ use rust_embed::RustEmbed;
 struct Localizations;
 
 use i18n_embed::{
-    fluent::{fluent_language_loader, FluentLanguageLoader},
     DesktopLanguageRequester,
+    fluent::{FluentLanguageLoader, fluent_language_loader},
 };
 
 lazy_static::lazy_static! {

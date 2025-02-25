@@ -107,7 +107,7 @@ impl Parser {
             self.caret_down(buf, caret);
         }
     } // 9PSYRNY2
-      // ADGJ
+    // ADGJ
 
     #[allow(clippy::unused_self)]
     fn caret_left(&self, buf: &Buffer, caret: &mut Caret) {

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use eframe::{egui, icon_data::from_png_bytes};
-use icy_view_gui::{options::Options, MainWindow};
+use icy_view_gui::{MainWindow, options::Options};
 use semver::Version;
 
 lazy_static::lazy_static! {

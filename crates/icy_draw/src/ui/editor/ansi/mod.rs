@@ -9,22 +9,21 @@ use std::{
 
 use eframe::{
     egui::{self, Key, Response},
-    epaint::{mutex::Mutex, Vec2},
+    epaint::{Vec2, mutex::Mutex},
 };
 use i18n_embed_fl::fl;
 use icy_engine::{
-    attribute,
+    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane, UnicodeConverter, attribute,
     editor::{AtomicUndoGuard, UndoState},
-    util::{pop_cliboard_text, pop_data, pop_sixel_image, push_data, BUFFER_DATA},
-    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane, UnicodeConverter,
+    util::{BUFFER_DATA, pop_cliboard_text, pop_data, pop_sixel_image, push_data},
 };
 
-use icy_engine_gui::{show_terminal_area, BufferView, CaretShape, TerminalCalc};
+use icy_engine_gui::{BufferView, CaretShape, TerminalCalc, show_terminal_area};
 
 use crate::{
+    ClipboardHandler, Commands, Document, DocumentOptions, Message, SETTINGS, SavingError, TerminalResult, UndoHandler,
     model::{DragPos, MKey, MModifiers, Tool},
     paint::ColorMode,
-    ClipboardHandler, Commands, Document, DocumentOptions, Message, SavingError, TerminalResult, UndoHandler, SETTINGS,
 };
 
 pub enum Event {

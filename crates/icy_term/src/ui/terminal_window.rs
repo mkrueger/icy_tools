@@ -9,11 +9,11 @@ use icy_engine::{Position, Selection, TextPane};
 use web_time::Duration;
 
 use crate::{
-    icons::{CALL, DOWNLOAD, KEY, LOGOUT, MENU, UPLOAD},
     LATEST_VERSION, VERSION,
+    icons::{CALL, DOWNLOAD, KEY, LOGOUT, MENU, UPLOAD},
 };
 
-use super::{dialogs, MainWindow, MainWindowMode};
+use super::{MainWindow, MainWindowMode, dialogs};
 
 fn encode_mouse_button(button: i32) -> char {
     unsafe { char::from_u32_unchecked(b' '.saturating_add(button as u8) as u32) }

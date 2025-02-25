@@ -2,13 +2,13 @@ use std::{fs, sync::Arc};
 
 use eframe::{
     egui::{self, Response, Sense, TextEdit, TextStyle, WidgetText},
-    epaint::{ahash::HashMap, ColorImage, FontFamily, FontId, Pos2, Rect, Stroke, Vec2},
+    epaint::{ColorImage, FontFamily, FontId, Pos2, Rect, Stroke, Vec2, ahash::HashMap},
 };
-use egui::{load::SizedTexture, mutex::Mutex, CornerRadius, Image, TextureHandle, TextureOptions};
+use egui::{CornerRadius, Image, TextureHandle, TextureOptions, load::SizedTexture, mutex::Mutex};
 use egui_file::FileDialog;
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_engine::{editor::EditState, AnsiFont, Buffer, Rectangle, TextPane};
+use icy_engine::{AnsiFont, Buffer, Rectangle, TextPane, editor::EditState};
 
 use crate::{MainWindow, Message};
 

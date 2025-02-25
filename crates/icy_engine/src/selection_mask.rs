@@ -1,4 +1,4 @@
-use crate::{overlay_mask::OverlayMask, Position, Rectangle, Selection, Size};
+use crate::{Position, Rectangle, Selection, Size, overlay_mask::OverlayMask};
 
 #[derive(Default, Clone, PartialEq)]
 pub struct SelectionMask {

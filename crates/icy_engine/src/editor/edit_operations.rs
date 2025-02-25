@@ -5,11 +5,11 @@ use std::mem;
 use i18n_embed_fl::fl;
 use icy_sauce::SauceMetaInformation;
 
-use crate::{parse_with_parser, parsers, AttributedChar, Buffer, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane};
+use crate::{AttributedChar, Buffer, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, parse_with_parser, parsers};
 
 use super::{
-    undo_operations::{Paste, ReverseCaretPosition, ReversedUndo, UndoSetChar, UndoSwapChar},
     EditState, OperationType, UndoOperation,
+    undo_operations::{Paste, ReverseCaretPosition, ReversedUndo, UndoSetChar, UndoSwapChar},
 };
 
 impl EditState {
@@ -345,8 +345,8 @@ impl EditState {
 #[cfg(test)]
 mod tests {
     use crate::{
-        editor::{EditState, UndoState},
         Size, TextPane,
+        editor::{EditState, UndoState},
     };
 
     #[test]
