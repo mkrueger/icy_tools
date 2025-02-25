@@ -16,9 +16,30 @@ a tool that shows icy draw animations on cmd line/bbs.
 
 # Build instructions
 
-* Install rust toolchain: https://www.rust-lang.org/tools/install
-* On linux you need "sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev"
-- if you don't have apt-get installing these libraries is similiar the next step will tell you what's missing exactly.
-* Then you're ready to go "cargo build --release"
-* Exectuables for all tools are in target/release
-* Note: Initalizing submodules "git update --init" may be required on first checkout with git.
+```
+# Clone the repository  
+git clone https://github.com/mkrueger/icy_tools.git  
+cd icy_tools  
+
+# Update the repository and submodules  
+git pull  
+git submodule update --init --recursive  
+
+# Install Rust toolchain  
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  
+source $HOME/.cargo/env  
+
+# Install dependencies (for Debian/Ubuntu)  
+sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev  
+# If you don't have apt-get, installing these libraries is similar.  
+# The next step will tell you what's missing exactly.  
+
+# Update Rust dependencies  
+cargo update  
+
+# Build the project  
+cargo build --release  
+
+# Executables for all tools are in  
+ls target/release  
+```
