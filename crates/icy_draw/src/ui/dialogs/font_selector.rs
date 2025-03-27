@@ -42,10 +42,13 @@ impl FontSelector {
     pub fn new(editor: &AnsiEditor, should_add: bool) -> Self {
         let mut fonts = Vec::new();
         for f in SAUCE_FONT_NAMES {
-            fonts.push((BitFont::from_sauce_name(f).unwrap(), BitfontSource {
-                sauce: Some(f.to_string()),
-                ..Default::default()
-            }));
+            fonts.push((
+                BitFont::from_sauce_name(f).unwrap(),
+                BitfontSource {
+                    sauce: Some(f.to_string()),
+                    ..Default::default()
+                },
+            ));
         }
 
         let only_sauce_fonts = matches!(editor.buffer_view.lock().get_buffer().font_mode, icy_engine::FontMode::Sauce);
@@ -64,10 +67,13 @@ impl FontSelector {
                 if found {
                     continue;
                 }
-                fonts.push((ansi_font, BitfontSource {
-                    ansi_slot: Some(slot),
-                    ..Default::default()
-                }));
+                fonts.push((
+                    ansi_font,
+                    BitfontSource {
+                        ansi_slot: Some(slot),
+                        ..Default::default()
+                    },
+                ));
             }
 
             if let Ok(font_dir) = Settings::get_font_diretory() {
@@ -84,10 +90,13 @@ impl FontSelector {
                         continue;
                     }
 
-                    fonts.push((lib_font, BitfontSource {
-                        library: true,
-                        ..Default::default()
-                    }));
+                    fonts.push((
+                        lib_font,
+                        BitfontSource {
+                            library: true,
+                            ..Default::default()
+                        },
+                    ));
                 }
             }
         }
@@ -111,10 +120,13 @@ impl FontSelector {
                 if *id == cur_font {
                     selected_font = fonts.len() as i32;
                 }
-                fonts.push((file_font.clone(), BitfontSource {
-                    file_slot: Some(*id),
-                    ..Default::default()
-                }));
+                fonts.push((
+                    file_font.clone(),
+                    BitfontSource {
+                        file_slot: Some(*id),
+                        ..Default::default()
+                    },
+                ));
             }
         }
 
@@ -138,10 +150,13 @@ impl FontSelector {
     pub fn font_library() -> Self {
         let mut fonts = Vec::new();
         for f in SAUCE_FONT_NAMES {
-            fonts.push((BitFont::from_sauce_name(f).unwrap(), BitfontSource {
-                sauce: Some(f.to_string()),
-                ..Default::default()
-            }));
+            fonts.push((
+                BitFont::from_sauce_name(f).unwrap(),
+                BitfontSource {
+                    sauce: Some(f.to_string()),
+                    ..Default::default()
+                },
+            ));
         }
 
         for slot in 0..ANSI_FONTS {
@@ -157,10 +172,13 @@ impl FontSelector {
             if found {
                 continue;
             }
-            fonts.push((ansi_font, BitfontSource {
-                ansi_slot: Some(slot),
-                ..Default::default()
-            }));
+            fonts.push((
+                ansi_font,
+                BitfontSource {
+                    ansi_slot: Some(slot),
+                    ..Default::default()
+                },
+            ));
         }
 
         if let Ok(font_dir) = Settings::get_font_diretory() {
@@ -177,10 +195,13 @@ impl FontSelector {
                     continue;
                 }
 
-                fonts.push((lib_font, BitfontSource {
-                    library: true,
-                    ..Default::default()
-                }));
+                fonts.push((
+                    lib_font,
+                    BitfontSource {
+                        library: true,
+                        ..Default::default()
+                    },
+                ));
             }
         }
         Self {

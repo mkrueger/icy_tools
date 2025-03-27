@@ -477,8 +477,14 @@ impl DrawExecutor {
         }
     }
 
+    fn fill_circle(&mut self, xm: i32, ym: i32, r: i32) {
+        let y_rad = self.calc_circle_y_rad(r).max(1);
+        self.fill_ellipse(xm, ym, r, y_rad);
+    }
+
     fn draw_circle(&mut self, xm: i32, ym: i32, r: i32) {
-        let points = gdp_curve(xm, ym, r, r, 0, TWOPI as i32);
+        let y_rad = self.calc_circle_y_rad(r);
+        let points = gdp_curve(xm, ym, r, y_rad, 0, TWOPI as i32);
         self.draw_poly(&points, self.line_color, false);
     }
 
@@ -1252,11 +1258,10 @@ impl DrawExecutor {
                 if parameters.len() < 3 {
                     return Err(anyhow::anyhow!("AttributeForFills command requires 3 arguments"));
                 }
-                let xrad = parameters[2];
-                let yrad = self.calc_circle_y_rad(xrad).max(1);
-                self.fill_ellipse(parameters[0], parameters[1], xrad, yrad);
+                let r = parameters[2];
+                self.fill_circle(parameters[0], parameters[1], r);
                 if self.draw_border {
-                    self.draw_circle(parameters[0], parameters[1], xrad);
+                    self.draw_circle(parameters[0], parameters[1], r);
                 }
                 Ok(CallbackAction::Update)
             }

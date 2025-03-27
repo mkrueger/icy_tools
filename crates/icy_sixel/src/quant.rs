@@ -76,10 +76,13 @@ fn sumcompare(b1: &bbox, b2: &bbox) -> Ordering {
 pub fn newColorMap(newcolors: i32, depth: i32) -> HashMap<i32, Tuple> {
     let mut colormap = HashMap::new();
     for i in 0..newcolors {
-        colormap.insert(i, Tuple {
-            value: 0,
-            tuple: vec![0; depth as usize],
-        });
+        colormap.insert(
+            i,
+            Tuple {
+                value: 0,
+                tuple: vec![0; depth as usize],
+            },
+        );
     }
     colormap
 }
@@ -433,10 +436,13 @@ pub fn computeHistogram(data: &[u8], length: i32, depth: i32, qualityMode: Quali
             for n in 0..depth {
                 tuple[(depth - 1 - n) as usize] = ((memory[it] >> (n * 5) & 0x1f) << 3) as i32;
             }
-            colorfreqtable.insert(i as i32, Tuple {
-                value: histogram[memory[i]],
-                tuple,
-            });
+            colorfreqtable.insert(
+                i as i32,
+                Tuple {
+                    value: histogram[memory[i]],
+                    tuple,
+                },
+            );
         }
         it += 1;
     }

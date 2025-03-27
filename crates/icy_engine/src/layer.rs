@@ -377,10 +377,13 @@ mod tests {
         for i in 0..25 {
             for x in 0..80 {
                 state
-                    .set_char((x, i), AttributedChar {
-                        ch: unsafe { char::from_u32_unchecked((b'0' + (x % 10)) as u32) },
-                        attribute: TextAttribute::default(),
-                    })
+                    .set_char(
+                        (x, i),
+                        AttributedChar {
+                            ch: unsafe { char::from_u32_unchecked((b'0' + (x % 10)) as u32) },
+                            attribute: TextAttribute::default(),
+                        },
+                    )
                     .unwrap();
             }
         }

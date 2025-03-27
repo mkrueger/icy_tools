@@ -79,9 +79,12 @@ impl Plugin {
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
         globals
-            .set("buf", LuaBufferView {
-                buffer_view: editor.buffer_view.clone(),
-            })
+            .set(
+                "buf",
+                LuaBufferView {
+                    buffer_view: editor.buffer_view.clone(),
+                },
+            )
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
         let sel = editor.buffer_view.lock().get_selection();

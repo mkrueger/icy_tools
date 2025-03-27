@@ -30,7 +30,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env  
 
 # Install dependencies (for Debian/Ubuntu)  
-sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev  
+sudo apt-get install build-essential libssl-dev libasound2-dev
 # If you don't have apt-get, installing these libraries is similar.  
 # The next step will tell you what's missing exactly.  
 

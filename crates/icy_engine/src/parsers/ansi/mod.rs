@@ -152,7 +152,7 @@ impl Default for Parser {
             state: EngineState::Default,
             saved_pos: Position::default(),
             parsed_numbers: Vec::new(),
-            current_escape_sequence: String::new(),
+            current_escape_sequence: String::with_capacity(32),
             saved_cursor_opt: None,
             ansi_music: MusicOption::Off,
             cur_music: None,
@@ -160,8 +160,8 @@ impl Default for Parser {
             cur_length: 4,
             cur_tempo: 120,
             dotted_note: false,
-            parse_string: String::new(),
-            macro_dcs: String::new(),
+            parse_string: String::with_capacity(64),
+            macro_dcs: String::with_capacity(256),
             macros: HashMap::new(),
             last_char: '\0',
             hyper_links: Vec::new(),
@@ -267,7 +267,7 @@ impl BufferParser for Parser {
                         }
                         _ => {
                             self.state = EngineState::Default;
-                            Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into())
+                            self.unsupported_escape_error()
                         }
                     }
                 };
@@ -401,7 +401,7 @@ impl BufferParser for Parser {
                     'l' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(4) => buf.terminal_state.scroll_state = TerminalScrolling::Fast,
@@ -422,14 +422,14 @@ impl BufferParser for Parser {
                                 buf.terminal_state.mouse_mode = MouseMode::Default;
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                     }
                     'h' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(4) => buf.terminal_state.scroll_state = TerminalScrolling::Smooth,
@@ -469,7 +469,7 @@ impl BufferParser for Parser {
                             Some(cmd) => {
                                 return Err(ParserError::UnsupportedCustomCommand(*cmd).into());
                             }
-                            None => return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into()),
+                            None => return self.unsupported_escape_error(),
                         }
                     }
                     '0'..='9' => {
@@ -510,14 +510,14 @@ impl BufferParser for Parser {
                                 return Ok(CallbackAction::SendString(format!("\x1BP{}!~{crc16:04X}\x1B\\", self.parsed_numbers[1])));
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                     }
                     _ => {
                         self.state = EngineState::Default;
                         // error in control sequence, terminate reading
-                        return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                        return self.unsupported_escape_error();
                     }
                 }
             }
@@ -528,7 +528,7 @@ impl BufferParser for Parser {
                     'n' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(1) => {
@@ -549,43 +549,43 @@ impl BufferParser for Parser {
                             }
                             Some(2) => {
                                 // font mode report
-                                let mut mode_report = "\x1B[=2".to_string();
+                                let mut params = Vec::new();
                                 if buf.terminal_state.origin_mode == OriginMode::WithinMargins {
-                                    mode_report.push_str(";6");
+                                    params.push("6");
                                 }
                                 if buf.terminal_state.auto_wrap_mode == AutoWrapMode::AutoWrap {
-                                    mode_report.push_str(";7");
+                                    params.push("7");
                                 }
                                 if caret.is_visible() {
-                                    mode_report.push_str(";25");
+                                    params.push("25");
                                 }
-
                                 if caret.ice_mode() {
-                                    mode_report.push_str(";33");
+                                    params.push("33");
+                                }
+                                if caret.is_blinking {
+                                    params.push("35");
                                 }
 
-                                if caret.is_blinking {
-                                    mode_report.push_str(";35");
-                                }
                                 match buf.terminal_state.mouse_mode {
                                     MouseMode::Default => {}
-                                    MouseMode::X10 => mode_report.push_str(";9"),
-                                    MouseMode::VT200 => mode_report.push_str(";1000"),
-                                    MouseMode::VT200_Highlight => mode_report.push_str(";1001"),
-                                    MouseMode::ButtonEvents => mode_report.push_str(";1002"),
-                                    MouseMode::AnyEvents => mode_report.push_str(";1003"),
-                                    MouseMode::FocusEvent => mode_report.push_str(";1004"),
-                                    MouseMode::AlternateScroll => mode_report.push_str(";1007"),
-                                    MouseMode::ExtendedMode => mode_report.push_str(";1005"),
-                                    MouseMode::SGRExtendedMode => mode_report.push_str(";1006"),
-                                    MouseMode::URXVTExtendedMode => mode_report.push_str(";1015"),
-                                    MouseMode::PixelPosition => mode_report.push_str(";1016"),
+                                    MouseMode::X10 => params.push("9"),
+                                    MouseMode::VT200 => params.push("1000"),
+                                    MouseMode::VT200_Highlight => params.push("1001"),
+                                    MouseMode::ButtonEvents => params.push("1002"),
+                                    MouseMode::AnyEvents => params.push("1003"),
+                                    MouseMode::FocusEvent => params.push("1004"),
+                                    MouseMode::AlternateScroll => params.push("1007"),
+                                    MouseMode::ExtendedMode => params.push("1005"),
+                                    MouseMode::SGRExtendedMode => params.push("1006"),
+                                    MouseMode::URXVTExtendedMode => params.push("1015"),
+                                    MouseMode::PixelPosition => params.push("1016"),
                                 }
 
-                                if mode_report.len() == "\x1B[=2".len() {
-                                    mode_report.push(';');
-                                }
-                                mode_report.push('n');
+                                let mode_report = if params.is_empty() {
+                                    "\x1B[=2;n".to_string()
+                                } else {
+                                    format!("\x1B[=2;{}n", params.join(";"))
+                                };
 
                                 return Ok(CallbackAction::SendString(mode_report));
                             }
@@ -595,7 +595,7 @@ impl BufferParser for Parser {
                                 return Ok(CallbackAction::SendString(format!("\x1B[=3;{};{}n", dim.height, dim.width)));
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                     }
@@ -613,7 +613,7 @@ impl BufferParser for Parser {
                     'm' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 2 {
-                            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                            return self.unsupported_escape_error();
                         }
                         return self.set_specific_margin(buf);
                     }
@@ -672,7 +672,7 @@ impl BufferParser for Parser {
                     _ => {
                         self.state = EngineState::Default;
                         // error in control sequence, terminate reading
-                        return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                        return self.unsupported_escape_error();
                     }
                 }
             }
@@ -720,13 +720,13 @@ impl BufferParser for Parser {
                             'd' => return self.tabulation_stop_remove(buf),
                             _ => {
                                 self.current_escape_sequence.push(ch);
-                                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                     }
                     _ => {
                         self.state = EngineState::Default;
-                        return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                        return self.unsupported_escape_error();
                     }
                 }
             }
@@ -912,14 +912,10 @@ impl BufferParser for Parser {
                         // DSR - Device Status Report
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(5) => {
@@ -944,9 +940,7 @@ impl BufferParser for Parser {
                                 return Ok(CallbackAction::SendString(s));
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                     }
@@ -967,9 +961,7 @@ impl BufferParser for Parser {
                         } else {
                             caret.ins(buf, current_layer);
                             if self.parsed_numbers.len() != 1 {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -993,9 +985,7 @@ impl BufferParser for Parser {
                             }
                         } else {
                             if self.parsed_numbers.len() != 1 {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 let mut number = *number;
@@ -1008,9 +998,7 @@ impl BufferParser for Parser {
                                     buf.remove_terminal_line(current_layer, caret.pos.y);
                                 }
                             } else {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -1042,18 +1030,14 @@ impl BufferParser for Parser {
                             caret.del(buf, current_layer);
                         } else {
                             if self.parsed_numbers.len() != 1 {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 for _ in 0..*number {
                                     caret.del(buf,current_layer);
                                 }
                             } else {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -1066,18 +1050,14 @@ impl BufferParser for Parser {
                             buf.insert_terminal_line( current_layer, caret.pos.y);
                         } else {
                             if self.parsed_numbers.len() != 1 {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 for _ in 0..*number {
                                     buf.insert_terminal_line(current_layer,caret.pos.y);
                                 }
                             } else {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into());
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -1102,13 +1082,11 @@ impl BufferParser for Parser {
                                 }
                                 _ => {
                                     buf.clear_buffer_down(current_layer,caret);
-                                    return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                                    return self.unsupported_escape_error();
                                 }
                             }
                         } else {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         return Ok(CallbackAction::Update);
                     }
@@ -1116,9 +1094,7 @@ impl BufferParser for Parser {
                     '?' => {
                         if !is_start {
                             self.state = EngineState::Default;
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         // read custom command
                         self.state = EngineState::ReadCSICommand;
@@ -1127,9 +1103,7 @@ impl BufferParser for Parser {
                     '=' => {
                         if !is_start {
                             self.state = EngineState::Default;
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         // read custom command
                         self.state = EngineState::ReadCSIRequest;
@@ -1147,9 +1121,7 @@ impl BufferParser for Parser {
                     '<' => {
                         if !is_start {
                             self.state = EngineState::Default;
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         // read custom command
                         self.state = EngineState::ReadDeviceAttrs;
@@ -1183,9 +1155,7 @@ impl BufferParser for Parser {
                                     buf.clear_line(current_layer,caret);
                                 }
                                 _ => {
-                                    return Err(ParserError::UnsupportedEscapeSequence(
-                                        self.current_escape_sequence.clone(),
-                                    ).into());
+                                    return self.unsupported_escape_error();
                                 }
                             }
                         }
@@ -1200,18 +1170,14 @@ impl BufferParser for Parser {
                     'h' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(4) => {
                                 caret.insert_mode = true;
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into())
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -1220,18 +1186,14 @@ impl BufferParser for Parser {
                     'l' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(4) => {
                                 caret.insert_mode = false;
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into())
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -1239,9 +1201,7 @@ impl BufferParser for Parser {
                     '~' => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() != 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
                             Some(1) => {
@@ -1258,9 +1218,7 @@ impl BufferParser for Parser {
                             }
                             Some(5 | 6) => {} // pg up/downf
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    self.current_escape_sequence.clone(),
-                                ).into())
+                                return self.unsupported_escape_error();
                             }
                         }
                         return Ok(CallbackAction::Update);
@@ -1268,13 +1226,11 @@ impl BufferParser for Parser {
 
                     't' => {
                         self.state = EngineState::Default;
-                        match self.parsed_numbers.len() {
-                            3 => return self.window_manipulation(buf),
-                            4 => return self.select_24bit_color(buf, caret),
-                            _ => return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into())
-                        }
+                        return match self.parsed_numbers.len() {
+                            3 => self.window_manipulation(buf),
+                            4 => self.select_24bit_color(buf, caret),
+                            _ => self.unsupported_escape_error()
+                        };
                     }
                     'S' => {
                         // Scroll Up
@@ -1379,9 +1335,7 @@ impl BufferParser for Parser {
                         if ('\x40'..='\x7E').contains(&ch) {
                             // unknown control sequence, terminate reading
                             self.state = EngineState::Default;
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
 
                         if ch.is_ascii_digit() {
@@ -1395,9 +1349,7 @@ impl BufferParser for Parser {
                         } else {
                             self.state = EngineState::Default;
                             // error in control sequence, terminate reading
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                self.current_escape_sequence.clone(),
-                            ).into());
+                            return self.unsupported_escape_error();
                         }
                         return Ok(CallbackAction::NoUpdate);
                     }
@@ -1406,8 +1358,7 @@ impl BufferParser for Parser {
 
             EngineState::Default => match ch {
                 '\x1B' => {
-                    self.current_escape_sequence.clear();
-                    self.current_escape_sequence.push_str("<ESC>");
+                    self.reset_escape_sequence();
                     self.state = EngineState::Default;
                     self.state = EngineState::ReadEscapeSequence;
                     return Ok(CallbackAction::NoUpdate);
@@ -1465,6 +1416,15 @@ impl Parser {
 
     fn execute_aps_command(&self, _buf: &mut Buffer, _caret: &mut Caret) {
         log::warn!("TODO execute APS command: {}", fmt_error_string(&self.parse_string));
+    }
+
+    fn reset_escape_sequence(&mut self) {
+        self.current_escape_sequence.clear();
+        self.current_escape_sequence.push_str("<ESC>");
+    }
+
+    fn unsupported_escape_error(&self) -> EngineResult<CallbackAction> {
+        Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into())
     }
 }
 

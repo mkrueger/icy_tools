@@ -1,4 +1,4 @@
-use crate::{CallbackAction, EngineResult, ParserError};
+use crate::{CallbackAction, EngineResult};
 
 use super::{EngineState, Parser, parse_next_number};
 
@@ -130,7 +130,7 @@ impl Parser {
                         self.cur_octave = ((ch as u8) - b'0') as usize;
                         self.state = EngineState::ParseAnsiMusic(MusicState::Default);
                     } else {
-                        return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                        return self.unsupported_escape_error();
                     }
                 }
                 MusicState::Note(n, len) => {

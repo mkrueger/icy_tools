@@ -118,12 +118,15 @@ impl SmoothScroll {
         }
         if self.interactive && ui.memory(|mem| mem.has_focus(id)) {
             ui.memory_mut(|mem: &mut egui::Memory| {
-                mem.set_focus_lock_filter(id, EventFilter {
-                    tab: true,
-                    horizontal_arrows: true,
-                    vertical_arrows: true,
-                    escape: true,
-                })
+                mem.set_focus_lock_filter(
+                    id,
+                    EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        escape: true,
+                    },
+                )
             });
         }
 

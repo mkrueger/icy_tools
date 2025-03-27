@@ -629,15 +629,18 @@ impl OutputFormat for IcyDraw {
                                                             (ch, fg, bg, font_page)
                                                         };
 
-                                                        layer.set_char((x, y), crate::AttributedChar {
-                                                            ch: unsafe { char::from_u32_unchecked(ch) },
-                                                            attribute: crate::TextAttribute {
-                                                                foreground_color: fg,
-                                                                background_color: bg,
-                                                                font_page: font_page as usize,
-                                                                attr,
+                                                        layer.set_char(
+                                                            (x, y),
+                                                            crate::AttributedChar {
+                                                                ch: unsafe { char::from_u32_unchecked(ch) },
+                                                                attribute: crate::TextAttribute {
+                                                                    foreground_color: fg,
+                                                                    background_color: bg,
+                                                                    font_page: font_page as usize,
+                                                                    attr,
+                                                                },
                                                             },
-                                                        });
+                                                        );
                                                     }
                                                 }
                                                 continue;
@@ -792,15 +795,18 @@ impl OutputFormat for IcyDraw {
                                                     (ch, fg, bg, font_page)
                                                 };
 
-                                                layer.set_char((x, y), crate::AttributedChar {
-                                                    ch: unsafe { char::from_u32_unchecked(ch) },
-                                                    attribute: crate::TextAttribute {
-                                                        foreground_color: fg,
-                                                        background_color: bg,
-                                                        font_page: font_page as usize,
-                                                        attr,
+                                                layer.set_char(
+                                                    (x, y),
+                                                    crate::AttributedChar {
+                                                        ch: unsafe { char::from_u32_unchecked(ch) },
+                                                        attribute: crate::TextAttribute {
+                                                            foreground_color: fg,
+                                                            background_color: bg,
+                                                            font_page: font_page as usize,
+                                                            attr,
+                                                        },
                                                     },
-                                                });
+                                                );
                                             }
                                         }
                                         result.layers.push(layer);
@@ -1006,15 +1012,21 @@ mod tests {
     fn test_rgb_serialization_bug() {
         let mut buf = Buffer::new((2, 2));
         let fg = buf.palette.insert_color(Color::new(82, 85, 82));
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: '²',
-            attribute: TextAttribute::new(fg, 0),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: '²',
+                attribute: TextAttribute::new(fg, 0),
+            },
+        );
         let bg = buf.palette.insert_color(Color::new(182, 185, 82));
-        buf.layers[0].set_char((1, 0), AttributedChar {
-            ch: '²',
-            attribute: TextAttribute::new(fg, bg),
-        });
+        buf.layers[0].set_char(
+            (1, 0),
+            AttributedChar {
+                ch: '²',
+                attribute: TextAttribute::new(fg, bg),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1030,10 +1042,13 @@ mod tests {
         let _ = buf.palette.insert_color(Color::new(1, 2, 3));
         let fg = buf.palette.insert_color(Color::new(4, 5, 6)); // 17
         let bg = buf.palette.insert_color(Color::new(7, 8, 9)); // 18
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: 'A',
-            attribute: TextAttribute::new(fg, bg),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: 'A',
+                attribute: TextAttribute::new(fg, bg),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1048,10 +1063,13 @@ mod tests {
         buf.palette.set_color(9, Color::new(4, 5, 6));
         buf.palette.set_color(10, Color::new(7, 8, 9));
 
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: 'A',
-            attribute: TextAttribute::new(9, 10),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: 'A',
+                attribute: TextAttribute::new(9, 10),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1067,10 +1085,13 @@ mod tests {
         let mut attribute = TextAttribute::new(1, 1);
         attribute.set_is_bold(true);
         buf.layers[0].set_char((0, 0), AttributedChar { ch: 'A', attribute });
-        buf.layers[0].set_char((1, 0), AttributedChar {
-            ch: 'A',
-            attribute: TextAttribute::new(2, 1),
-        });
+        buf.layers[0].set_char(
+            (1, 0),
+            AttributedChar {
+                ch: 'A',
+                attribute: TextAttribute::new(2, 1),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1082,10 +1103,13 @@ mod tests {
     #[test]
     fn test_escape_char() {
         let mut buf = Buffer::new((2, 2));
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: '\x1b',
-            attribute: TextAttribute::default(),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: '\x1b',
+                attribute: TextAttribute::default(),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1096,14 +1120,20 @@ mod tests {
     #[test]
     fn test_0_255_chars() {
         let mut buf = Buffer::new((2, 2));
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: '\0',
-            attribute: TextAttribute::default(),
-        });
-        buf.layers[0].set_char((0, 1), AttributedChar {
-            ch: '\u{FF}',
-            attribute: TextAttribute::default(),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: '\0',
+                attribute: TextAttribute::default(),
+            },
+        );
+        buf.layers[0].set_char(
+            (0, 1),
+            AttributedChar {
+                ch: '\u{FF}',
+                attribute: TextAttribute::default(),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1114,18 +1144,27 @@ mod tests {
     #[test]
     fn test_too_long_lines() {
         let mut buf = Buffer::new((2, 2));
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: '1',
-            attribute: TextAttribute::default(),
-        });
-        buf.layers[0].set_char((0, 1), AttributedChar {
-            ch: '2',
-            attribute: TextAttribute::default(),
-        });
-        buf.layers[0].lines[0].chars.resize(80, AttributedChar {
-            ch: ' ',
-            attribute: TextAttribute::default(),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: '1',
+                attribute: TextAttribute::default(),
+            },
+        );
+        buf.layers[0].set_char(
+            (0, 1),
+            AttributedChar {
+                ch: '2',
+                attribute: TextAttribute::default(),
+            },
+        );
+        buf.layers[0].lines[0].chars.resize(
+            80,
+            AttributedChar {
+                ch: ' ',
+                attribute: TextAttribute::default(),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
@@ -1136,10 +1175,13 @@ mod tests {
     #[test]
     fn test_space_persistance_buffer() {
         let mut buf = Buffer::default();
-        buf.layers[0].set_char((0, 0), AttributedChar {
-            ch: ' ',
-            attribute: TextAttribute::default(),
-        });
+        buf.layers[0].set_char(
+            (0, 0),
+            AttributedChar {
+                ch: ' ',
+                attribute: TextAttribute::default(),
+            },
+        );
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();

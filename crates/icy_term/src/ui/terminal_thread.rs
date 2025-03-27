@@ -282,11 +282,15 @@ async fn open_connection(connection_data: &OpenConnectionData) -> Res<Box<dyn Co
             TelnetConnection::open(&connection_data.address, connection_data.term_caps.clone(), connection_data.timeout.clone()).await?,
         )),
         icy_net::ConnectionType::SSH => Ok(Box::new(
-            SSHConnection::open(&connection_data.address, connection_data.term_caps.clone(), Credentials {
-                user_name: connection_data.user_name.clone(),
-                password: connection_data.password.clone(),
-                proxy_command: connection_data.proxy_command.clone(),
-            })
+            SSHConnection::open(
+                &connection_data.address,
+                connection_data.term_caps.clone(),
+                Credentials {
+                    user_name: connection_data.user_name.clone(),
+                    password: connection_data.password.clone(),
+                    proxy_command: connection_data.proxy_command.clone(),
+                },
+            )
             .await?,
         )),
         icy_net::ConnectionType::Modem => {

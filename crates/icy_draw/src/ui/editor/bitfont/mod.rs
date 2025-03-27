@@ -117,10 +117,13 @@ impl BitFontEditor {
         let ch = self.selected_char_opt.unwrap_or(' ');
         for y in 0..buf.get_width() {
             for x in 0..buf.get_height() {
-                buf.layers[0].set_char((x, y), icy_engine::AttributedChar {
-                    ch,
-                    attribute: TextAttribute::default(),
-                });
+                buf.layers[0].set_char(
+                    (x, y),
+                    icy_engine::AttributedChar {
+                        ch,
+                        attribute: TextAttribute::default(),
+                    },
+                );
             }
         }
         self.send_update_message = true;
