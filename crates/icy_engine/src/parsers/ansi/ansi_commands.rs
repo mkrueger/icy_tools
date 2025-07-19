@@ -216,7 +216,7 @@ impl Parser {
                 25 => caret.attribute.set_is_blinking(false),
                 27 => {
                     // 27  positive image ?
-                    return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                    return Err(ParserError::UnsupportedEscapeSequence.into());
                 }
                 28 => caret.attribute.set_is_concealed(false),
                 29 => caret.attribute.set_is_crossed_out(false),
@@ -250,9 +250,7 @@ impl Parser {
                 100..=107 => caret.attribute.set_background(8 + COLOR_OFFSETS[n as usize - 100] as u32),
 
                 _ => {
-                    return Err(
-                        ParserError::UnsupportedEscapeSequence(format!("unsupported graphic rendition {} ", self.current_escape_sequence.clone())).into(),
-                    );
+                    return Err(ParserError::UnsupportedEscapeSequence.into());
                 }
             }
             i += 1;
@@ -263,13 +261,13 @@ impl Parser {
 
     fn parse_extended_colors(&mut self, buf: &mut Buffer, i: &mut usize) -> EngineResult<u32> {
         if *i + 1 >= self.parsed_numbers.len() {
-            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         match self.parsed_numbers.get(*i + 1) {
             Some(5) => {
                 // ESC[38/48;5;⟨n⟩m Select fg/bg color from 256 color lookup
                 if *i + 3 > self.parsed_numbers.len() {
-                    return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                    return Err(ParserError::UnsupportedEscapeSequence.into());
                 }
                 let color = self.parsed_numbers[*i + 2];
                 *i += 3;
@@ -277,13 +275,13 @@ impl Parser {
                     let color = buf.palette.insert_color(XTERM_256_PALETTE[color as usize].1.clone());
                     Ok(color)
                 } else {
-                    Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into())
+                    Err(ParserError::UnsupportedEscapeSequence.into())
                 }
             }
             Some(2) => {
                 // ESC[38/48;2;⟨r⟩;⟨g⟩;⟨b⟩ m Select RGB fg/bg color
                 if *i + 5 > self.parsed_numbers.len() {
-                    return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                    return Err(ParserError::UnsupportedEscapeSequence.into());
                 }
                 let r = self.parsed_numbers[*i + 2];
                 let g = self.parsed_numbers[*i + 3];
@@ -293,10 +291,10 @@ impl Parser {
                     let color = buf.palette.insert_color_rgb(r as u8, g as u8, b as u8);
                     Ok(color)
                 } else {
-                    Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into())
+                    Err(ParserError::UnsupportedEscapeSequence.into())
                 }
             }
-            _ => Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into()),
+            _ => Err(ParserError::UnsupportedEscapeSequence.into()),
         }
     }
 
@@ -360,7 +358,7 @@ impl Parser {
             1 => (0, self.parsed_numbers[0] - 1),
             0 => (0, buf.terminal_state.get_height()),
             _ => {
-                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         };
         // CSI Pt ; Pb r
@@ -386,7 +384,7 @@ impl Parser {
             1 => (0, self.parsed_numbers[0] - 1),
             0 => (0, buf.terminal_state.get_height()),
             _ => {
-                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         };
         // Set Left and Right Margins
@@ -428,7 +426,7 @@ impl Parser {
                 self.parsed_numbers[3] - 1,
             ),
             _ => {
-                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         };
 
@@ -489,11 +487,11 @@ impl Parser {
                 };
                 buf.terminal_state.set_margins_left_right(n, right);
             }
-            Some(n) => {
-                return Err(ParserError::UnsupportedEscapeSequence(format!("Set specific margin '{n}' is invalid.")).into());
+            Some(_n) => {
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
             None => {
-                return Err(ParserError::UnsupportedEscapeSequence("No argument found for SSM.".to_string()).into());
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         }
         Ok(CallbackAction::NoUpdate)
@@ -578,7 +576,7 @@ impl Parser {
         } else {
             caret.erase_charcter(buf, current_layer, 1);
             if self.parsed_numbers.len() != 1 {
-                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         }
         Ok(CallbackAction::NoUpdate)
@@ -615,8 +613,7 @@ impl Parser {
     pub(crate) fn font_selection(&mut self, buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if self.parsed_numbers.len() != 2 {
-            self.current_escape_sequence.push('D');
-            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
 
         // Ignore Ps1 for now
@@ -656,7 +653,7 @@ impl Parser {
     /// Status: standard
     pub(crate) fn tabulation_stop_remove(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
         if self.parsed_numbers.len() != 1 {
-            return Err(ParserError::UnsupportedEscapeSequence(format!("Invalid parameter number in remove tab stops: {}", self.parsed_numbers.len())).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         // tab stop remove
         if let Some(num) = self.parsed_numbers.first() {
@@ -774,14 +771,14 @@ impl Parser {
     pub(crate) fn request_checksum_of_rectangular_area(&mut self, buf: &Buffer) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if self.parsed_numbers.len() != 6 {
-            return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         let pt = self.parsed_numbers[2];
         let pl = self.parsed_numbers[3];
         let pb = self.parsed_numbers[4];
         let pr = self.parsed_numbers[5];
         if pt > pb || pl > pr || pr > buf.terminal_state.get_width() || pb > buf.terminal_state.get_height() || pl < 0 || pt < 0 {
-            return Err(ParserError::UnsupportedEscapeSequence(format!("invalid area for requesting checksum pt:{pt} pl:{pl} pb:{pb} pr:{pr}")).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         let mut crc16 = 0;
         for y in pt..pb {
@@ -878,7 +875,7 @@ impl Parser {
                 caret.attribute.set_foreground(color);
             }
             _ => {
-                return Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into());
+                return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         }
         Ok(CallbackAction::Update)
@@ -934,11 +931,7 @@ impl Parser {
         match self.parsed_numbers.first() {
             Some(8) => {
                 if self.parsed_numbers.len() != 3 {
-                    return Err(ParserError::UnsupportedEscapeSequence(format!(
-                        "Resize window manipulation needs 3 parameters {:?}",
-                        self.current_escape_sequence
-                    ))
-                    .into());
+                    return Err(ParserError::UnsupportedEscapeSequence.into());
                 }
                 let width = self.parsed_numbers[2].min(132).max(1);
                 let height = self.parsed_numbers[1].min(60).max(1);
@@ -946,7 +939,7 @@ impl Parser {
                 buf.terminal_state.set_height(height);
                 Ok(CallbackAction::ResizeTerminal(width, height))
             }
-            _ => Err(ParserError::UnsupportedEscapeSequence(format!("Unsupported window manipulation sequence {:?}", self.current_escape_sequence)).into()),
+            _ => Err(ParserError::UnsupportedEscapeSequence.into()),
         }
     }
 
@@ -973,7 +966,7 @@ impl Parser {
         self.state = EngineState::Default;
 
         if self.parsed_numbers.len() != 5 {
-            return Err(ParserError::UnsupportedEscapeSequence(format!("Fill rectangular area needs 5 parameters {:?}", self.current_escape_sequence)).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         let ch: char = unsafe { char::from_u32_unchecked(self.parsed_numbers[0] as u32) };
 
@@ -1023,7 +1016,7 @@ impl Parser {
         self.state = EngineState::Default;
 
         if self.parsed_numbers.len() != 4 {
-            return Err(ParserError::UnsupportedEscapeSequence(format!("Erase rectangular area needs 4 parameters {:?}", self.current_escape_sequence)).into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
 
         let (top_line, left_column, bottom_line, right_column) = self.get_rect_area(buf, 0);
@@ -1061,11 +1054,7 @@ impl Parser {
         self.state = EngineState::Default;
 
         if self.parsed_numbers.len() != 4 {
-            return Err(ParserError::UnsupportedEscapeSequence(format!(
-                "Selective erase rectangular area needs 4 parameters {:?}",
-                self.current_escape_sequence
-            ))
-            .into());
+            return Err(ParserError::UnsupportedEscapeSequence.into());
         }
 
         let (top_line, left_column, bottom_line, right_column) = self.get_rect_area(buf, 0);

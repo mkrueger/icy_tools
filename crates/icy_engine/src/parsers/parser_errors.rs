@@ -6,7 +6,7 @@ use crate::ansi::fmt_error_string;
 pub enum ParserError {
     InvalidChar(char),
     InvalidBuffer,
-    UnsupportedEscapeSequence(String),
+    UnsupportedEscapeSequence,
     UnsupportedDCSSequence(String),
     UnsupportedOSCSequence(String),
     UnsupportedCustomCommand(i32),
@@ -31,8 +31,8 @@ impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParserError::InvalidChar(ch) => write!(f, "invalid character {ch}"),
-            ParserError::UnsupportedEscapeSequence(seq) => {
-                write!(f, "unsupported escape sequence {}", fmt_error_string(&seq))
+            ParserError::UnsupportedEscapeSequence => {
+                write!(f, "unsupported escape sequence")
             }
             ParserError::UnsupportedDCSSequence(seq) => {
                 write!(f, "unsupported DCS sequence {}", fmt_error_string(&seq))

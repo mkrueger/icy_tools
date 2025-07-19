@@ -125,8 +125,6 @@ pub struct Parser {
 
     pub hyper_links: Vec<HyperLink>,
 
-    current_escape_sequence: String,
-
     /*     current_sixel_color: i32,
         sixel_cursor: Position,
         current_sixel_palette: Palette,
@@ -151,8 +149,7 @@ impl Default for Parser {
         Parser {
             state: EngineState::Default,
             saved_pos: Position::default(),
-            parsed_numbers: Vec::new(),
-            current_escape_sequence: String::with_capacity(32),
+            parsed_numbers: Vec::with_capacity(8),
             saved_cursor_opt: None,
             ansi_music: MusicOption::Off,
             cur_music: None,
@@ -181,7 +178,6 @@ impl BufferParser for Parser {
             EngineState::ReadEscapeSequence => {
                 return {
                     self.state = EngineState::Default;
-                    self.current_escape_sequence.push(ch);
 
                     match ch {
                         '[' => {
@@ -396,7 +392,6 @@ impl BufferParser for Parser {
             }
 
             EngineState::ReadCSICommand => {
-                self.current_escape_sequence.push(ch);
                 match ch {
                     'l' => {
                         self.state = EngineState::Default;
@@ -492,9 +487,7 @@ impl BufferParser for Parser {
                             Some(63) => {
                                 // Memory Checksum Report (DECCKSR)
                                 if self.parsed_numbers.len() != 2 {
-                                    return Err(
-                                        ParserError::UnsupportedEscapeSequence("Memory Checksum Report (DECCKSR) requires 2 parameters.".to_string()).into(),
-                                    );
+                                    return Err(ParserError::UnsupportedEscapeSequence.into());
                                 }
                                 let mut crc16 = 0;
                                 for i in 0..64 {
@@ -523,7 +516,6 @@ impl BufferParser for Parser {
             }
 
             EngineState::ReadCSIRequest => {
-                self.current_escape_sequence.push(ch);
                 match ch {
                     'n' => {
                         self.state = EngineState::Default;
@@ -620,13 +612,12 @@ impl BufferParser for Parser {
                     _ => {
                         self.state = EngineState::Default;
                         // error in control sequence, terminate reading
-                        return Err(ParserError::UnsupportedEscapeSequence(format!("Error in CSI request: {}", self.current_escape_sequence)).into());
+                        return Err(ParserError::UnsupportedEscapeSequence.into());
                     }
                 }
             }
 
             EngineState::ReadRIPSupportRequest => {
-                self.current_escape_sequence.push(ch);
                 if let 'p' = ch {
                     self.soft_terminal_reset(buf, caret);
                 } else {
@@ -638,7 +629,6 @@ impl BufferParser for Parser {
             }
 
             EngineState::ReadDeviceAttrs => {
-                self.current_escape_sequence.push(ch);
                 match ch {
                     '0'..='9' => {
                         let d = match self.parsed_numbers.pop() {
@@ -654,7 +644,7 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
 
                         if self.parsed_numbers.len() > 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence("CSI < Ps c more than 1 number.".to_string()).into());
+                            return Err(ParserError::UnsupportedEscapeSequence.into());
                         }
                         /*
                            1 - Loadable fonts are availabe via Device Control Strings
@@ -677,61 +667,56 @@ impl BufferParser for Parser {
                 }
             }
 
-            EngineState::EndCSI(func) => {
-                self.current_escape_sequence.push(ch);
-                match *func {
-                    '*' => match ch {
-                        'z' => return self.invoke_macro(buf, current_layer, caret),
-                        'r' => return self.select_communication_speed(buf),
-                        'y' => return self.request_checksum_of_rectangular_area(buf),
-                        _ => {}
-                    },
+            EngineState::EndCSI(func) => match *func {
+                '*' => match ch {
+                    'z' => return self.invoke_macro(buf, current_layer, caret),
+                    'r' => return self.select_communication_speed(buf),
+                    'y' => return self.request_checksum_of_rectangular_area(buf),
+                    _ => {}
+                },
 
-                    '$' => match ch {
-                        'w' => {
-                            self.state = EngineState::Default;
-                            if let Some(2) = self.parsed_numbers.first() {
-                                let mut str = "\x1BP2$u".to_string();
-                                (0..buf.terminal_state.tab_count()).for_each(|i| {
-                                    let tab = buf.terminal_state.get_tabs()[i];
-                                    str.push_str(&(tab + 1).to_string());
-                                    if i < buf.terminal_state.tab_count().saturating_sub(1) {
-                                        str.push('/');
-                                    }
-                                });
-                                str.push_str("\x1B\\");
-                                return Ok(CallbackAction::SendString(str));
-                            }
-                        }
-                        'x' => return self.fill_rectangular_area(buf, caret),
-                        'z' => return self.erase_rectangular_area(buf),
-                        '{' => return self.selective_erase_rectangular_area(buf),
-
-                        _ => {}
-                    },
-
-                    ' ' => {
+                '$' => match ch {
+                    'w' => {
                         self.state = EngineState::Default;
-
-                        match ch {
-                            'D' => return self.font_selection(buf, caret),
-                            'A' => self.scroll_right(buf, current_layer),
-                            '@' => self.scroll_left(buf, current_layer),
-                            'd' => return self.tabulation_stop_remove(buf),
-                            _ => {
-                                self.current_escape_sequence.push(ch);
-                                return self.unsupported_escape_error();
-                            }
+                        if let Some(2) = self.parsed_numbers.first() {
+                            let mut str = "\x1BP2$u".to_string();
+                            (0..buf.terminal_state.tab_count()).for_each(|i| {
+                                let tab = buf.terminal_state.get_tabs()[i];
+                                str.push_str(&(tab + 1).to_string());
+                                if i < buf.terminal_state.tab_count().saturating_sub(1) {
+                                    str.push('/');
+                                }
+                            });
+                            str.push_str("\x1B\\");
+                            return Ok(CallbackAction::SendString(str));
                         }
                     }
-                    _ => {
-                        self.state = EngineState::Default;
-                        return self.unsupported_escape_error();
+                    'x' => return self.fill_rectangular_area(buf, caret),
+                    'z' => return self.erase_rectangular_area(buf),
+                    '{' => return self.selective_erase_rectangular_area(buf),
+
+                    _ => {}
+                },
+
+                ' ' => {
+                    self.state = EngineState::Default;
+
+                    match ch {
+                        'D' => return self.font_selection(buf, caret),
+                        'A' => self.scroll_right(buf, current_layer),
+                        '@' => self.scroll_left(buf, current_layer),
+                        'd' => return self.tabulation_stop_remove(buf),
+                        _ => {
+                            return self.unsupported_escape_error();
+                        }
                     }
                 }
-            }
+                _ => {
+                    self.state = EngineState::Default;
+                    return self.unsupported_escape_error();
+                }
+            },
             EngineState::ReadCSISequence(is_start) => {
-                self.current_escape_sequence.push(ch);
                 match ch {
                     'm' => return self.select_graphic_rendition(caret, buf),
                     'H' |    // Cursor Position
@@ -1272,9 +1257,7 @@ impl BufferParser for Parser {
                         // TBC - Tabulation clear
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() > 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                format!("Invalid parameter number in clear tab stops: {}", self.parsed_numbers.len()),
-                            ).into());
+                            return Err(ParserError::UnsupportedEscapeSequence.into());
                         }
 
                         let num: i32 = if let Some(number) = self.parsed_numbers.first() {
@@ -1289,9 +1272,7 @@ impl BufferParser for Parser {
                                 buf.terminal_state.clear_tab_stops();
                             }
                             _ => {
-                                return Err(ParserError::UnsupportedEscapeSequence(
-                                    format!("Unsupported option in clear tab stops sequence: {num}"),
-                                ).into());
+                                return Err(ParserError::UnsupportedEscapeSequence.into());
                             }
                         }
                         return Ok(CallbackAction::NoUpdate);
@@ -1300,9 +1281,7 @@ impl BufferParser for Parser {
                         // CVT - Cursor line tabulation
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() > 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                format!("Invalid parameter number in goto next tab stop: {}", self.parsed_numbers.len()),
-                            ).into());
+                            return Err(ParserError::UnsupportedEscapeSequence.into());
                         }
 
                         let num: i32 = if let Some(number) = self.parsed_numbers.first() {
@@ -1317,9 +1296,7 @@ impl BufferParser for Parser {
                         // CBT - Cursor backward tabulation
                         self.state = EngineState::Default;
                         if self.parsed_numbers.len() > 1 {
-                            return Err(ParserError::UnsupportedEscapeSequence(
-                                format!("Invalid parameter number in goto next tab stop: {}", self.parsed_numbers.len()),
-                            ).into());
+                            return Err(ParserError::UnsupportedEscapeSequence.into());
                         }
 
                         let num: i32 = if let Some(number) = self.parsed_numbers.first() {
@@ -1358,7 +1335,6 @@ impl BufferParser for Parser {
 
             EngineState::Default => match ch {
                 '\x1B' => {
-                    self.reset_escape_sequence();
                     self.state = EngineState::Default;
                     self.state = EngineState::ReadEscapeSequence;
                     return Ok(CallbackAction::NoUpdate);
@@ -1418,13 +1394,8 @@ impl Parser {
         log::warn!("TODO execute APS command: {}", fmt_error_string(&self.parse_string));
     }
 
-    fn reset_escape_sequence(&mut self) {
-        self.current_escape_sequence.clear();
-        self.current_escape_sequence.push_str("<ESC>");
-    }
-
     fn unsupported_escape_error(&self) -> EngineResult<CallbackAction> {
-        Err(ParserError::UnsupportedEscapeSequence(self.current_escape_sequence.clone()).into())
+        Err(ParserError::UnsupportedEscapeSequence.into())
     }
 }
 
@@ -1443,6 +1414,7 @@ fn set_font_selection_success(buf: &mut Buffer, caret: &mut Caret, slot: usize) 
     }
 }
 
+#[inline(always)]
 pub fn parse_next_number(x: i32, ch: u8) -> i32 {
     x.saturating_mul(10).saturating_add(ch as i32).saturating_sub(b'0' as i32)
 }
