@@ -24,7 +24,7 @@ impl egui_tiles::Behavior<ToolTab> for ToolBehavior {
     fn tab_title_for_pane(&mut self, pane: &ToolTab) -> egui::WidgetText {
         let title = pane.doc.get_title();
 
-        WidgetText::RichText(egui::RichText::new(title).small())
+        WidgetText::RichText(Arc::new(egui::RichText::new(title).small()))
     }
     fn pane_ui(&mut self, ui: &mut egui::Ui, _tile_id: egui_tiles::TileId, pane: &mut ToolTab) -> egui_tiles::UiResponse {
         let message = pane.doc.show_ui(ui, self.active_document.clone());

@@ -222,34 +222,34 @@ impl LayerToolWindow {
                                 ui.set_width(250.);
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_layer_properties")).clicked() {
                                     result = Some(Message::EditLayer(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_resize_layer")).clicked() {
                                     result = Some(Message::ResizeLayer(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 ui.separator();
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_new_layer")).clicked() {
                                     result = Some(Message::AddNewLayer(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_duplicate_layer")).clicked() {
                                     result = Some(Message::DuplicateLayer(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_merge_layer")).clicked() {
                                     result = Some(Message::MergeLayerDown(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_delete_layer")).clicked() {
                                     result = Some(Message::RemoveLayer(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 ui.separator();
 
                                 if ui.button(fl!(crate::LANGUAGE_LOADER, "layer_tool_menu_clear_layer")).clicked() {
                                     result = Some(Message::ClearLayer(i));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                             });
                             if let Some(response_opt) = response_opt {

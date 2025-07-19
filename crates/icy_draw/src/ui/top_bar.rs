@@ -1,10 +1,10 @@
 use std::{collections::HashMap, time::Instant};
 
 use eframe::{
-    egui::{self, ImageButton, TopBottomPanel, Ui, menu},
+    egui::{self, ImageButton, TopBottomPanel, Ui},
     epaint::Vec2,
 };
-use egui::{FontId, Image, TextFormat, text::LayoutJob};
+use egui::{FontId, Image, TextFormat, containers::menu, text::LayoutJob};
 use i18n_embed_fl::fl;
 use icy_engine::{
     FontMode, IceMode, PaletteMode,
@@ -39,7 +39,7 @@ impl<'a> MainWindow<'a> {
     fn main_menu(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) -> Option<Message> {
         let mut result = None;
 
-        menu::bar(ui, |ui| {
+        menu::MenuBar::new().ui(ui, |ui| {
             let mut has_buffer = false;
             let mut has_reference_image = false;
             let mut cur_raster = Some(Vec2::new(f32::NAN, f32::NAN));
@@ -81,7 +81,7 @@ impl<'a> MainWindow<'a> {
                             let button = ui.button(file.file_name().unwrap().to_string_lossy());
                             if button.clicked() {
                                 result = Some(Message::TryLoadFile(file.clone()));
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
                         }
                         ui.separator();
@@ -117,7 +117,7 @@ impl<'a> MainWindow<'a> {
                         );
                         if button.clicked() {
                             result = Some(Message::Undo);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     } else {
                         self.commands[0].undo.ui(ui, &mut result);
@@ -136,7 +136,7 @@ impl<'a> MainWindow<'a> {
                         );
                         if button.clicked() {
                             result = Some(Message::Redo);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     } else {
                         self.commands[0].redo.ui(ui, &mut result);
@@ -159,13 +159,13 @@ impl<'a> MainWindow<'a> {
                     let button = button_with_shortcut(ui, pop_data(BUFFER_DATA).is_some(), fl!(crate::LANGUAGE_LOADER, "menu-paste-as-new-image"), "");
                     if button.clicked() {
                         result = Some(Message::PasteAsNewImage);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let button = button_with_shortcut(ui, pop_data(BUFFER_DATA).is_some(), fl!(crate::LANGUAGE_LOADER, "menu-paste-as-brush"), "");
                     if button.clicked() {
                         result = Some(Message::PasteAsBrush);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                 });
                 ui.separator();
@@ -207,7 +207,7 @@ impl<'a> MainWindow<'a> {
                     .clicked()
                 {
                     result = Some(Message::EditSauce);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 self.commands[0].lga_font.ui(ui, &mut result);
                 self.commands[0].aspect_ratio.ui(ui, &mut result);
@@ -221,7 +221,7 @@ impl<'a> MainWindow<'a> {
                     .clicked()
                 {
                     result = Some(Message::SetCanvasSize);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
             });
 
@@ -260,7 +260,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchIceMode(IceMode::Unlimited));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
 
                                 if ui
@@ -268,7 +268,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchIceMode(IceMode::Blink));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
 
                                 if ui
@@ -276,7 +276,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchIceMode(IceMode::Ice));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                             });
 
@@ -292,7 +292,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchPaletteMode(PaletteMode::RGB));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
 
                                 if ui
@@ -303,7 +303,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchPaletteMode(PaletteMode::Fixed16));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
 
                                 if ui
@@ -314,7 +314,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchPaletteMode(PaletteMode::Free16));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
 
                                 if ui
@@ -325,7 +325,7 @@ impl<'a> MainWindow<'a> {
                                     .clicked()
                                 {
                                     result = Some(Message::SwitchPaletteMode(PaletteMode::Free8));
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                             });
                         }
@@ -370,7 +370,7 @@ impl<'a> MainWindow<'a> {
                                 .clicked()
                             {
                                 lock.get_buffer_mut().font_mode = FontMode::Unlimited;
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
 
                             if ui
@@ -381,7 +381,7 @@ impl<'a> MainWindow<'a> {
                                 .clicked()
                             {
                                 lock.get_buffer_mut().font_mode = FontMode::Single;
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
 
                             if ui
@@ -392,7 +392,7 @@ impl<'a> MainWindow<'a> {
                                 .clicked()
                             {
                                 lock.get_buffer_mut().font_mode = FontMode::Sauce;
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
 
                             if ui
@@ -403,7 +403,7 @@ impl<'a> MainWindow<'a> {
                                 .clicked()
                             {
                                 lock.get_buffer_mut().font_mode = FontMode::FixedSize;
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
                         });
                     }
@@ -438,23 +438,23 @@ impl<'a> MainWindow<'a> {
 
                         if ui.button("4:1 400%").clicked() {
                             unsafe { SETTINGS.set_scale(Vec2::new(4.0, 4.0)) };
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui.button("2:1 200%").clicked() {
                             unsafe { SETTINGS.set_scale(Vec2::new(2.0, 2.0)) };
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui.button("1:1 100%").clicked() {
                             unsafe { SETTINGS.set_scale(Vec2::new(1.0, 1.0)) };
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui.button("1:2 50%").clicked() {
                             unsafe { SETTINGS.set_scale(Vec2::new(0.5, 0.5)) };
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui.button("1:4 25%").clicked() {
                             unsafe { SETTINGS.set_scale(Vec2::new(0.25, 0.25)) };
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
 
                         ui.separator();
@@ -466,7 +466,7 @@ impl<'a> MainWindow<'a> {
                             )
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     },
                 );
@@ -476,19 +476,19 @@ impl<'a> MainWindow<'a> {
                     ui.set_min_width(200.0);
                     if ui.selectable_label(cur_guide == Some(Vec2::new(80.0, 25.0)), "Smallscale 80x25").clicked() {
                         result = Some(Message::SetGuide(80, 25));
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                     if ui.selectable_label(cur_guide == Some(Vec2::new(80.0, 40.0)), "Square 80x40").clicked() {
                         result = Some(Message::SetGuide(80, 40));
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                     if ui.selectable_label(cur_guide == Some(Vec2::new(80.0, 50.0)), "Instagram 80x50").clicked() {
                         result = Some(Message::SetGuide(80, 50));
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                     if ui.selectable_label(cur_guide == Some(Vec2::new(44.0, 22.0)), "File_ID.DIZ 44x22").clicked() {
                         result = Some(Message::SetGuide(44, 22));
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                     ui.separator();
                     if ui
@@ -496,7 +496,7 @@ impl<'a> MainWindow<'a> {
                         .clicked()
                     {
                         result = Some(Message::SetGuide(0, 0));
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                 });
 
@@ -511,7 +511,7 @@ impl<'a> MainWindow<'a> {
                             .clicked()
                         {
                             result = Some(Message::SetRaster(x, y));
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     }
                     ui.separator();
@@ -520,7 +520,7 @@ impl<'a> MainWindow<'a> {
                         .clicked()
                     {
                         result = Some(Message::SetRaster(0, 0));
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                 });
                 self.commands[0].toggle_grid_guides.ui(ui, &mut result);
@@ -589,21 +589,21 @@ impl<'a> MainWindow<'a> {
                 ui.set_min_width(170.0);
                 let r = ui.hyperlink_to(fl!(crate::LANGUAGE_LOADER, "menu-discuss"), "https://github.com/mkrueger/icy_tools/discussions");
                 if r.clicked() {
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 let r = ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-report-bug"),
                     "https://github.com/mkrueger/icy_tools/issues/new",
                 );
                 if r.clicked() {
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 let r = ui.button(fl!(crate::LANGUAGE_LOADER, "menu-open_log_file"));
                 if r.clicked() {
                     if let Ok(log_file) = Settings::get_log_file() {
                         let _ = open::that(log_file);
                     }
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 ui.separator();
                 self.commands[0].about.ui(ui, &mut result);
@@ -655,7 +655,7 @@ fn show_plugin_menu(result: &mut Option<Message>, has_buffer: bool, ui: &mut Ui,
             .clicked()
         {
             *result = Some(Message::RunPlugin(*i));
-            ui.close_menu();
+            ui.close_kind(egui::UiKind::Menu);
         }
     }
 }

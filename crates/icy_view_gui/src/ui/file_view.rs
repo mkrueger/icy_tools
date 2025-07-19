@@ -144,27 +144,27 @@ impl FileView {
                     "https://github.com/mkrueger/icy_tools/discussions",
                 );
                 if r.clicked() {
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 let r = ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-item-report-bug"),
                     "https://github.com/mkrueger/icy_tools/issues/new",
                 );
                 if r.clicked() {
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 let r = ui.hyperlink_to(
                     fl!(crate::LANGUAGE_LOADER, "menu-item-check-releases"),
                     "https://github.com/mkrueger/icy_tools/releases",
                 );
                 if r.clicked() {
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 ui.separator();
                 let mut b = self.options.auto_scroll_enabled;
                 if ui.checkbox(&mut b, fl!(crate::LANGUAGE_LOADER, "menu-item-auto-scroll")).clicked() {
                     command = Some(Message::ToggleAutoScroll);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 let title = match self.options.scroll_speed {
                     ScrollSpeed::Slow => fl!(crate::LANGUAGE_LOADER, "menu-item-scroll-speed-slow"),
@@ -177,19 +177,19 @@ impl FileView {
                 let r = ui.selectable_label(false, title);
                 if r.clicked() {
                     command = Some(Message::ChangeScrollSpeed);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
 
                 let r = ui.selectable_label(false, fl!(crate::LANGUAGE_LOADER, "menu-item-set_terminal_width"));
                 if r.clicked() {
                     command = Some(Message::SetTerminalWidth);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 if self.options.show_settings {
                     let r = ui.selectable_label(false, fl!(crate::LANGUAGE_LOADER, "menu-item-settings"));
                     if r.clicked() {
                         command = Some(Message::ShowSettings);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                 }
             });
@@ -227,7 +227,7 @@ impl FileView {
                         self.terminal_width = width.clamp(1, 1000);
                     }
                     command = Some(Message::Reopen);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
 
                 let response = ui.button("🗙");

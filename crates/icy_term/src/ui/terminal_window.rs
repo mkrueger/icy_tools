@@ -155,32 +155,32 @@ impl MainWindow {
                             "https://github.com/mkrueger/icy_tools/discussions",
                         );
                         if r.clicked() {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         let r = ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-item-report-bug"),
                             "https://github.com/mkrueger/icy_tools/issues/new",
                         );
                         if r.clicked() {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         let r = ui.hyperlink_to(
                             fl!(crate::LANGUAGE_LOADER, "menu-item-check-releases"),
                             "https://github.com/mkrueger/icy_tools/releases",
                         );
                         if r.clicked() {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         ui.separator();
                         #[cfg(not(target_arch = "wasm32"))]
                         if ui.button(fl!(crate::LANGUAGE_LOADER, "menu-item-capture-dialog")).clicked() {
                             self.set_mode(ctx, MainWindowMode::ShowCaptureDialog);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
 
                         if ui.button(fl!(crate::LANGUAGE_LOADER, "menu-item-settings")).clicked() {
                             self.set_mode(ctx, MainWindowMode::ShowSettings);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     });
                 });
@@ -637,7 +637,7 @@ fn terminal_context_menu(ui: &mut egui::Ui, window: &mut MainWindow) {
 
     if ui.button(fl!(crate::LANGUAGE_LOADER, "terminal-menu-copy")).clicked() {
         window.copy_to_clipboard();
-        ui.close_menu();
+        ui.close_kind(egui::UiKind::Menu);
     }
 
     if ui.button(fl!(crate::LANGUAGE_LOADER, "terminal-menu-paste")).clicked() {
@@ -663,7 +663,7 @@ fn terminal_context_menu(ui: &mut egui::Ui, window: &mut MainWindow) {
             });
             window.output_string(&txt);
         }
-        ui.close_menu();
+        ui.close_kind(egui::UiKind::Menu);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -674,7 +674,7 @@ fn terminal_context_menu(ui: &mut egui::Ui, window: &mut MainWindow) {
             .clicked()
         {
             window.init_export_dialog(ui.ctx());
-            ui.close_menu();
+            ui.close_kind(egui::UiKind::Menu);
         }
     }
 }

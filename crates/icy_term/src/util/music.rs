@@ -10,9 +10,8 @@ use wasm_thread as thread;
 
 use icy_engine::ansi::sound::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
-    OutputStream, Source,
-    cpal::SampleRate,
-    source::{Function, SignalGenerator},
+    Source,
+    source::{Function, SignalGenerator, SineWave},
 };
 use web_time::{Duration, Instant};
 
@@ -171,7 +170,7 @@ impl SoundThread {
     }
 
     pub(crate) fn beep(&self) -> TerminalResult<()> {
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let (_stream, stream_handle) = rodio::default_output_stream().unwrap();
         let sink = rodio::Sink::try_new(&stream_handle).unwrap();
         sink.set_volume(0.1);
 
@@ -186,7 +185,7 @@ impl SoundThread {
         let mut i = 0;
         let mut cur_style = MusicStyle::Normal;
 
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let (_stream, stream_handle) = rodio::default_output_stream().unwrap();
         let sink = rodio::Sink::try_new(&stream_handle).unwrap();
         sink.set_volume(0.1);
 
@@ -275,12 +274,10 @@ impl SoundBackgroundThreadData {
 
     fn beep(&mut self) {
         if self.last_beep.elapsed().as_millis() > 500 {
-            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-            let sink = rodio::Sink::try_new(&stream_handle).unwrap();
-            sink.set_volume(0.1);
+            let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
+            let wave = SineWave::new(740.0).amplify(0.2).take_duration(Duration::from_secs(3));
 
-            let source = rodio::source::SineWave::new(880.);
-            sink.append(source);
+            stream_handle.mixer().add(wave);
 
             thread::sleep(std::time::Duration::from_millis(200));
         }
@@ -291,8 +288,8 @@ impl SoundBackgroundThreadData {
         let _ = self.tx.send(SoundData::StartPlay);
         let mut i = 0;
         let mut cur_style = MusicStyle::Normal;
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sample_rate = SampleRate(48000);
+        let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
+        let sample_rate = stream_handle.config().sample_rate();
         while i < music.music_actions.len() {
             let act = &music.music_actions[i];
             i += 1;
@@ -307,14 +304,11 @@ impl SoundBackgroundThreadData {
                 MusicAction::PlayNote(freq, _length, _dotted) => {
                     let f = *freq;
                     let pause_length = cur_style.get_pause_length(duration);
-                    if let Err(err) = stream_handle.play_raw(
+                    stream_handle.mixer().add(
                         SignalGenerator::new(sample_rate, f, Function::Square)
                             .amplify(0.1)
                             .take_duration(std::time::Duration::from_millis(duration as u64 - pause_length as u64)),
-                    ) {
-                        log::error!("Error in playing note: {}", err);
-                        break;
-                    }
+                    );
                 }
                 MusicAction::Pause(_) => {}
             }

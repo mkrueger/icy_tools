@@ -211,15 +211,15 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
         let response_opt = button_response.context_menu(|ui| {
             if ui.button(fl!(crate::LANGUAGE_LOADER, "tab-context-menu-close")).clicked() {
                 self.request_close = Some(tile_id);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button(fl!(crate::LANGUAGE_LOADER, "tab-context-menu-close_others")).clicked() {
                 self.request_close_others = Some(tile_id);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button(fl!(crate::LANGUAGE_LOADER, "tab-context-menu-close_all")).clicked() {
                 self.request_close_all = Some(tile_id);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             if ui.button(fl!(crate::LANGUAGE_LOADER, "tab-context-menu-copy_path")).clicked() {
@@ -229,7 +229,7 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
                         ui.ctx().copy_text(text);
                     }
                 }
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         });
         if let Some(response_opt) = response_opt {

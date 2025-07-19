@@ -439,7 +439,7 @@ impl CommandWrapper {
         if let Some(mut checked) = self.is_checked {
             if ui.add(egui::Checkbox::new(&mut checked, &self.label)).clicked() {
                 *message = Some(self.message.clone());
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             return;
         }
@@ -471,7 +471,7 @@ impl CommandWrapper {
 
         if response.inner.clicked() {
             *message = Some(self.message.clone());
-            ui.close_menu();
+            ui.close_kind(egui::UiKind::Menu);
         }
     }
 }

@@ -1,4 +1,4 @@
-use egui::{FontFamily, FontId, Rect, RichText, SelectableLabel, TextEdit, Ui, UiBuilder, Vec2};
+use egui::{Button, FontFamily, FontId, Rect, RichText, TextEdit, Ui, UiBuilder, Vec2};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Buffer, Position, Selection, TextPane, UnicodeConverter};
 use icy_engine_gui::BufferView;
@@ -147,8 +147,7 @@ impl DialogState {
             Vec2::new(find_dialog_width - 8.0, find_dialog_height),
         );
         let img_size = 18.0;
-
-        ui.allocate_new_ui(UiBuilder::new().max_rect(max_rect), |ui| {
+        ui.scope_builder(UiBuilder::new().max_rect(max_rect), |ui| {
             ui.painter().rect(
                 max_rect,
                 4.0,
@@ -167,7 +166,7 @@ impl DialogState {
                     message = Some(Message::ChangePattern(pattern));
                 }
 
-                let r = ui.add(SelectableLabel::new(
+                let r = ui.add(Button::selectable(
                     false,
                     RichText::new("⬆").font(FontId::new(img_size, FontFamily::Proportional)),
                 ));
@@ -175,14 +174,14 @@ impl DialogState {
                     message = Some(Message::FindPrev);
                 }
 
-                let r = ui.add(SelectableLabel::new(
+                let r = ui.add(Button::selectable(
                     false,
                     RichText::new("⬇").font(FontId::new(img_size, FontFamily::Proportional)),
                 ));
                 if r.clicked() {
                     message = Some(Message::FindNext);
                 }
-                let r = ui.add(SelectableLabel::new(
+                let r = ui.add(Button::selectable(
                     false,
                     RichText::new("🗙").font(FontId::new(img_size, FontFamily::Proportional)),
                 ));
@@ -204,7 +203,7 @@ impl DialogState {
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
 
-                let r = ui.add(SelectableLabel::new(
+                let r = ui.add(Button::selectable(
                     self.case_sensitive,
                     RichText::new("🗛").font(FontId::new(img_size, FontFamily::Proportional)),
                 ));

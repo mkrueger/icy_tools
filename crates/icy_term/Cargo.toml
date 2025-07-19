@@ -21,9 +21,9 @@ egui_file = { workspace = true }
 tokio = { workspace = true }
 
 glow = { workspace = true }
-dark-light = "1.0.0"
+dark-light = "2.0.0"
 serde = { workspace = true }
-versions = "6.3.2"
+versions = "7.0.0"
 regex = { workspace = true }
 github_release_check = "0.2.1"
 semver = { workspace = true }
@@ -37,7 +37,7 @@ walkdir = { workspace = true }
 toml = { workspace = true }
 
 lazy_static = { workspace = true }
-notify = "7.0.0"
+notify = "8.1.0"
 gabi = "0.2.6"
 arboard = { workspace = true }
 chrono = { workspace = true }  # Utc hanldung

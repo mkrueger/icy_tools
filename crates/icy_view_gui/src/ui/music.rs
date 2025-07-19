@@ -11,8 +11,7 @@ use wasm_thread as thread;
 use crate::rng::Rng;
 use icy_engine::ansi::sound::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
-    OutputStream, Source,
-    cpal::SampleRate,
+    Source,
     source::{Function, SignalGenerator},
 };
 use web_time::{Duration, Instant};
@@ -207,9 +206,8 @@ impl SoundBackgroundThreadData {
         let mut i = 0;
         let mut cur_style = MusicStyle::Normal;
 
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-
-        let sample_rate = SampleRate(48000);
+        let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
+        let sample_rate = stream_handle.config().sample_rate();
 
         while i < music.music_actions.len() {
             let act = &music.music_actions[i];
@@ -227,14 +225,11 @@ impl SoundBackgroundThreadData {
                 MusicAction::PlayNote(freq, _length, _dotted) => {
                     let f = *freq;
                     let pause_length = cur_style.get_pause_length(duration);
-                    if let Err(err) = stream_handle.play_raw(
+                    stream_handle.mixer().add(
                         SignalGenerator::new(sample_rate, f, Function::Square)
                             .amplify(0.07)
                             .take_duration(std::time::Duration::from_millis(duration as u64 - pause_length as u64)),
-                    ) {
-                        log::error!("Error in playing note: {}", err);
-                        break;
-                    }
+                    );
                 }
                 MusicAction::Pause(_) => {}
             }

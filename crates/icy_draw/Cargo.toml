@@ -17,7 +17,7 @@ egui_glow = { workspace = true }
 egui-modal = { workspace = true }
 glow = { workspace = true }
 egui_file = { workspace = true }
-egui_tiles = "0.12.0"
+egui_tiles = "0.13.0"
 egui-bind = { workspace = true }
 egui-notify = { workspace = true }
 log = { workspace = true }

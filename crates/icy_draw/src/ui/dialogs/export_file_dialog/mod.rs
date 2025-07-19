@@ -160,7 +160,7 @@ impl ModalDialog for ExportFileDialog {
                                 let mut dialog = FileDialog::select_folder(Some(initial_path));
                                 dialog.open();
                                 self.folder_dialog = Some(dialog);
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
                         });
                         ui.end_row();
