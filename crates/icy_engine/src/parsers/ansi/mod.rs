@@ -11,7 +11,7 @@ use self::sound::{AnsiMusic, MusicState};
 use super::{BufferParser, TAB};
 use crate::{
     AttributedChar, AutoWrapMode, BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, FF, FontSelectionState, HyperLink, IceMode, LF, MouseMode,
-    OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
+    OriginMode, ParserError, Position, TerminalScrolling, TextPane, update_crc16,
 };
 
 mod ansi_commands;
@@ -826,14 +826,8 @@ impl BufferParser for Parser {
                             Some(n) => n - 1,
                             _ => 0,
                         };
-                        if let Some(layer) = &buf.layers.first() {
-                            if let Some(line) = layer.lines.get(caret.pos.y as usize) {
-                                caret.pos.x = num.clamp(0, line.get_line_length());
-                                buf.terminal_state.limit_caret_pos(buf, caret);
-                            }
-                        } else {
-                            return Err(ParserError::InvalidBuffer.into());
-                        }
+                        caret.pos.x = num;
+                        buf.terminal_state.limit_caret_pos(buf, caret);
                         return Ok(CallbackAction::Update);
                     }
                     'a' => {
@@ -844,15 +838,8 @@ impl BufferParser for Parser {
                             Some(n) => *n,
                             _ => 1,
                         };
-                        if let Some(layer) = &buf.layers.first() {
-                            if let Some(line) = layer.lines.get(caret.pos.y as usize) {
-                                caret.pos.x =
-                                    min(line.get_line_length(), caret.pos.x + num);
-                                buf.terminal_state.limit_caret_pos(buf, caret);
-                            }
-                        } else {
-                            return Err(ParserError::InvalidBuffer.into());
-                        }
+                        caret.pos.x += num;
+                        buf.terminal_state.limit_caret_pos(buf, caret);
                         return Ok(CallbackAction::Update);
                     }
 

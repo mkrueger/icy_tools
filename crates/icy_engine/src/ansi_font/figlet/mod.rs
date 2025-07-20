@@ -192,8 +192,9 @@ mod tests {
 
     #[test]
     fn test_zipped() {
-        let font1 = FIGFont::load(Path::new("src/ansi_font/figlet/doom.flf")).unwrap();
-        let font2 = FIGFont::load(Path::new("src/ansi_font/figlet/doom_zipped.flf")).unwrap();
+        let base_path = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let font1 = FIGFont::load(&base_path.join("src/ansi_font/figlet/doom.flf")).unwrap();
+        let font2 = FIGFont::load(&base_path.join("src/ansi_font/figlet/doom_zipped.flf")).unwrap();
         assert_eq!(font1.header, font2.header);
         assert_eq!(font1.chars, font2.chars);
     }

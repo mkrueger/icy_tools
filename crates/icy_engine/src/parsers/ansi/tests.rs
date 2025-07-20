@@ -246,9 +246,17 @@ fn test_horiz_line_position_absolute_default() {
 #[test]
 fn test_horiz_line_position_absolute_n() {
     let (_, caret) = create_buffer(&mut ansi::Parser::default(), b"testfooo\x1b['\x1b[3'");
-    assert_eq!(Position::new(2, 0), caret.get_position());
+    assert_eq!(
+        Position::new(2, 0),
+        caret.get_position(),
+        "HPA with value 3 should position cursor at column 2 (0-based index)"
+    );
     let (_, caret) = create_buffer(&mut ansi::Parser::default(), b"01234567\x1b['\x1b[100'");
-    assert_eq!(Position::new(8, 0), caret.get_position());
+    assert_eq!(
+        Position::new(79, 0),
+        caret.get_position(),
+        "HPA with value 100 should position cursor at column 79 (limited by terminal width)"
+    );
 }
 
 #[test]
@@ -262,7 +270,7 @@ fn test_horiz_line_position_relative_n() {
     let (_, caret) = create_buffer(&mut ansi::Parser::default(), b"testfooo\x1b['\x1b[3a");
     assert_eq!(Position::new(3, 0), caret.get_position());
     let (_, caret) = create_buffer(&mut ansi::Parser::default(), b"01234567\x1b['\x1b[100a");
-    assert_eq!(Position::new(8, 0), caret.get_position());
+    assert_eq!(Position::new(79, 0), caret.get_position());
 }
 
 #[test]

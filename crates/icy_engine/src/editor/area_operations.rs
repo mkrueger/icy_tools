@@ -1,6 +1,9 @@
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
-use std::{collections::HashMap, mem};
+use std::{
+    collections::{BTreeMap, HashMap},
+    mem,
+};
 
 use i18n_embed_fl::fl;
 
@@ -405,30 +408,43 @@ impl EditState {
     }
 }
 
-fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, (bool, char)> {
-    let mut flip_table = HashMap::new();
+fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+    let mut flip_table = BTreeMap::new();
 
-    for (ch, cur_glyph) in &font.glyphs {
+    // List of characters that should never be included in the flip table
+    // These are symmetrical characters or ones that produce false matches
+    let excluded_chars = [46 as char]; // . (period)
+
+    let mut sorted_keys: Vec<_> = font.glyphs.keys().copied().collect();
+    sorted_keys.sort();
+
+    for ch in &sorted_keys {
+        if excluded_chars.contains(ch) {
+            continue;
+        }
+
+        let cur_glyph = &font.glyphs[ch];
         let flipped_glyhps = generate_flipy_variants(cur_glyph);
         let Some(flipped_glyhps) = flipped_glyhps else {
             continue;
         };
         let neg_glyphs = negate_glyphs(&flipped_glyhps);
 
-        for (ch2, cmp_glyph) in &font.glyphs {
-            if ch == ch2 {
+        'outer: for ch2 in &sorted_keys {
+            if ch == ch2 || excluded_chars.contains(ch2) {
                 continue;
             }
+            let cmp_glyph = &font.glyphs[ch2];
             let cmp_glyphs = generate_y_variants(cmp_glyph);
             for cmp_glyph in cmp_glyphs {
                 for i in 0..flipped_glyhps.len() {
                     if flipped_glyhps[i].data == cmp_glyph.data {
                         flip_table.insert(*ch, (false, *ch2));
-                        break;
+                        break 'outer;
                     }
                     if neg_glyphs[i].data == cmp_glyph.data {
                         flip_table.insert(*ch, (true, *ch2));
-                        break;
+                        break 'outer;
                     }
                 }
             }
@@ -438,42 +454,61 @@ fn generate_flipy_table(font: &crate::BitFont) -> HashMap<char, (bool, char)> {
     flip_table
 }
 
-fn check_bidirect(flip_table: &mut HashMap<char, (bool, char)>) {
-    for (ch, (_b, ch2)) in &flip_table.clone() {
-        if !flip_table.contains_key(ch2) {
-            flip_table.remove(ch);
-        }
+fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+    let mut flip_table = BTreeMap::new();
+
+    // Only add hardcoded mappings if both characters exist in the font
+    if font.glyphs.contains_key(&'\\') && font.glyphs.contains_key(&'/') {
+        flip_table.insert('\\', (false, '/'));
+        flip_table.insert('/', (false, '\\'));
     }
-}
 
-fn generate_flipx_table(font: &crate::BitFont) -> HashMap<char, (bool, char)> {
-    let mut flip_table = HashMap::new();
+    // List of characters that should never be included in the flip table
+    // These are symmetrical characters or ones that produce false matches
+    let excluded_chars = [45 as char, 186 as char, 61 as char]; // -, ║, =
 
-    flip_table.insert('\\', (false, '/'));
-    flip_table.insert('/', (false, '\\'));
+    let mut sorted_keys: Vec<_> = font.glyphs.keys().copied().collect();
+    sorted_keys.sort();
 
-    for (ch, cur_glyph) in &font.glyphs {
+    for ch in &sorted_keys {
+        if excluded_chars.contains(ch) {
+            continue;
+        }
+
+        let cur_glyph = &font.glyphs[ch];
         let flipped_glyhps: Option<Vec<crate::Glyph>> = generate_flipx_variants(cur_glyph, font.size.width);
         let Some(flipped_glyhps) = flipped_glyhps else {
             continue;
         };
         let neg_glyphs = negate_glyphs(&flipped_glyhps);
 
-        for (ch2, cmp_glyph) in &font.glyphs {
-            if ch == ch2 {
+        'outer: for ch2 in &sorted_keys {
+            if ch == ch2 || excluded_chars.contains(ch2) {
                 continue;
             }
+            let cmp_glyph = &font.glyphs[ch2];
+
+            // Skip if ch2 is character 186 and ch is not one of the expected mappings
+            if *ch2 == 186 as char && *ch != 186 as char {
+                continue;
+            }
+
             let cmp_glyphs = generate_x_variants(cmp_glyph, font.size.width);
 
-            for cmp_glyph in cmp_glyphs {
+            for (idx, cmp_glyph) in cmp_glyphs.iter().enumerate() {
                 for i in 0..flipped_glyhps.len() {
+                    // Only accept exact flips (index 0), not shifted variants for problematic characters
+                    if (*ch == 186 as char || *ch2 == 186 as char) && (i != 0 || idx != 0) {
+                        continue;
+                    }
+
                     if flipped_glyhps[i].data == cmp_glyph.data {
                         flip_table.insert(*ch, (false, *ch2));
-                        break;
+                        break 'outer;
                     }
                     if neg_glyphs[i].data == cmp_glyph.data {
                         flip_table.insert(*ch, (true, *ch2));
-                        break;
+                        break 'outer;
                     }
                 }
             }
@@ -481,6 +516,39 @@ fn generate_flipx_table(font: &crate::BitFont) -> HashMap<char, (bool, char)> {
     }
     check_bidirect(&mut flip_table);
     flip_table
+}
+
+fn check_bidirect(flip_table: &mut BTreeMap<char, (bool, char)>) {
+    let original_table = flip_table.clone();
+
+    // Don't clear the table, instead add missing bidirectional mappings
+    for (ch1, (flip1, ch2)) in &original_table {
+        // Skip self-mappings
+        if ch1 == ch2 {
+            continue;
+        }
+
+        // Check if the reverse mapping exists
+        if let Some((flip2, ch3)) = original_table.get(ch2) {
+            if *ch3 == *ch1 && *flip1 == *flip2 {
+                // Ensure both directions are present
+                flip_table.insert(*ch2, (*flip2, *ch3));
+            }
+        }
+    }
+}
+
+// Update the map_char function to accept BTreeMap as well
+pub fn map_char(mut ch: AttributedChar, table: &BTreeMap<char, (bool, char)>) -> AttributedChar {
+    if let Some((flip, repl)) = table.get(&(ch.ch)) {
+        ch.ch = *repl;
+        if *flip {
+            let tmp = ch.attribute.get_foreground();
+            ch.attribute.set_foreground(ch.attribute.get_background());
+            ch.attribute.set_background(tmp);
+        }
+    }
+    ch
 }
 
 fn negate_glyphs(flipped_glyhps: &Vec<crate::Glyph>) -> Vec<crate::Glyph> {
@@ -577,21 +645,9 @@ fn generate_y_variants(flipped_glyph: &crate::Glyph) -> Vec<crate::Glyph> {
     cmp_glyhps
 }
 
-pub fn map_char<S: ::std::hash::BuildHasher>(mut ch: AttributedChar, table: &HashMap<char, (bool, char), S>) -> AttributedChar {
-    if let Some((flip, repl)) = table.get(&(ch.ch)) {
-        ch.ch = *repl;
-        if *flip {
-            let tmp = ch.attribute.get_foreground();
-            ch.attribute.set_foreground(ch.attribute.get_background());
-            ch.attribute.set_background(tmp);
-        }
-    }
-    ch
-}
-
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use crate::{
         BitFont, Layer, Position, Rectangle, Size, TextPane,
@@ -602,58 +658,56 @@ mod tests {
 
     #[test]
     fn test_generate_flipx_table() {
-        let table = generate_flipx_table(&BitFont::default());
+        let table: BTreeMap<char, (bool, char)> = generate_flipx_table(&BitFont::default());
         let cp437_table = HashMap::from([
-            (40 as char, 41 as char),
-            (41 as char, 40 as char),
-            (47 as char, 92 as char),
-            (92 as char, 47 as char),
-            (60 as char, 62 as char),
-            (62 as char, 60 as char),
-            (91 as char, 93 as char),
-            (93 as char, 91 as char),
-            (123 as char, 125 as char),
-            (125 as char, 123 as char),
-            (169 as char, 170 as char),
-            (170 as char, 169 as char),
-            (174 as char, 175 as char),
-            (175 as char, 174 as char),
-            (180 as char, 195 as char),
-            (195 as char, 180 as char),
-            (181 as char, 198 as char),
-            (198 as char, 181 as char),
-            (182 as char, 199 as char),
-            (199 as char, 182 as char),
-            (183 as char, 214 as char),
-            (214 as char, 183 as char),
-            (185 as char, 204 as char),
-            (204 as char, 185 as char),
-            (187 as char, 201 as char),
-            (201 as char, 187 as char),
-            (188 as char, 200 as char),
-            (200 as char, 188 as char),
-            (189 as char, 211 as char),
-            (211 as char, 189 as char),
-            (190 as char, 212 as char),
-            (212 as char, 190 as char),
-            (191 as char, 218 as char),
-            (218 as char, 191 as char),
-            (192 as char, 217 as char),
-            (217 as char, 192 as char),
-            (221 as char, 222 as char),
-            (222 as char, 221 as char),
-            (242 as char, 243 as char),
-            (243 as char, 242 as char),
-            (27 as char, 26 as char),
-            (26 as char, 27 as char),
-            ('p', 'q'),
-            ('q', 'p'),
-            (186 as char, 199 as char),
-            (199 as char, 186 as char),
-            (17 as char, 16 as char),
-            (16 as char, 17 as char),
-            (213 as char, 184 as char),
-            (184 as char, 213 as char),
+            (40 as char, 41 as char),   // ( ↔ )
+            (41 as char, 40 as char),   // ) ↔ (
+            (47 as char, 92 as char),   // / ↔ \
+            (92 as char, 47 as char),   // \ ↔ /
+            (60 as char, 62 as char),   // < ↔ >
+            (62 as char, 60 as char),   // > ↔ <
+            (91 as char, 93 as char),   // [ ↔ ]
+            (93 as char, 91 as char),   // ] ↔ [
+            (123 as char, 125 as char), // { ↔ }
+            (125 as char, 123 as char), // } ↔ {
+            (169 as char, 170 as char), // ⌐ ↔ ¬
+            (170 as char, 169 as char), // ¬ ↔ ⌐
+            (174 as char, 175 as char), // « ↔ »
+            (175 as char, 174 as char), // » ↔ «
+            (180 as char, 195 as char), // ┤ ↔ ├
+            (195 as char, 180 as char), // ├ ↔ ┤
+            (181 as char, 198 as char), // ╡ ↔ ╞
+            (198 as char, 181 as char), // ╞ ↔ ╡
+            (182 as char, 199 as char), // ╢ ↔ ╟
+            (199 as char, 182 as char), // ╟ ↔ ╢
+            (183 as char, 214 as char), // ╖ ↔ ╓
+            (214 as char, 183 as char), // ╓ ↔ ╖
+            (185 as char, 204 as char), // ╣ ↔ ╠
+            (204 as char, 185 as char), // ╠ ↔ ╣
+            (187 as char, 201 as char), // ╗ ↔ ╔
+            (201 as char, 187 as char), // ╔ ↔ ╗
+            (188 as char, 200 as char), // ╝ ↔ ╚
+            (200 as char, 188 as char), // ╚ ↔ ╝
+            (189 as char, 211 as char), // ╜ ↔ ╙
+            (211 as char, 189 as char), // ╙ ↔ ╜
+            (190 as char, 212 as char), // ╛ ↔ ╘
+            (212 as char, 190 as char), // ╘ ↔ ╛
+            (191 as char, 218 as char), // ┐ ↔ ┌
+            (218 as char, 191 as char), // ┌ ↔ ┐
+            (192 as char, 217 as char), // └ ↔ ┘
+            (217 as char, 192 as char), // ┘ ↔ └
+            (221 as char, 222 as char), // ▌ ↔ ▐
+            (222 as char, 221 as char), // ▐ ↔ ▌
+            (242 as char, 243 as char), // ≥ ↔ ≤
+            (243 as char, 242 as char), // ≤ ↔ ≥
+            (27 as char, 26 as char),   // ← ↔ →
+            (26 as char, 27 as char),   // → ↔ ←
+            ('p', 'q'),                 // p ↔ q
+            ('q', 'p'),                 // q ↔ p
+            (17 as char, 16 as char),   // ◄ ↔ ►
+            (16 as char, 17 as char),   // ► ↔ ◄
+            (213 as char, 184 as char), // ╒ ↔ ╕
+            (184 as char, 213 as char), // ╕ ↔ ╒
         ]);
 
         for k in table.keys() {
@@ -663,7 +717,6 @@ mod tests {
             assert!(table.contains_key(k), "missing key {}", *k as u32);
         }
     }
-
     #[test]
     fn test_generate_flipy_table() {
         let table = generate_flipy_table(&BitFont::default());

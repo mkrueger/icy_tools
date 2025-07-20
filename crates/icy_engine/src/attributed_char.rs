@@ -37,7 +37,7 @@ impl AttributedChar {
     }
 
     pub fn is_transparent(self) -> bool {
-        (self.ch == '\0' || self.ch == ' ') && self.attribute.get_background() == 0
+        (self.ch == '\0' || self.ch == ' ') || self.attribute.get_background() == self.attribute.get_foreground()
     }
 
     pub fn get_font_page(&self) -> usize {
