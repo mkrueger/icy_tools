@@ -19,11 +19,13 @@ fn isin(angle: u16) -> u16 {
     let angle = angle % MAX_TABLE_ANGLE;
     let index = (angle >> 3) as u16;
     let remainder = (angle & 7) as u16;
-    let tmpsin = SINUS_TABLE[index as usize] as u16;
+    let tmpsin = SINUS_TABLE[index as usize];
     if remainder != 0 && index < SINUS_TABLE.len() as u16 - 1 {
-        return tmpsin + (((SINUS_TABLE[index as usize + 1] - tmpsin) * remainder) >> 3);
+        let next_sin = SINUS_TABLE[index as usize + 1] as i32;
+        let curr_sin = tmpsin as i32;
+        return (curr_sin + (((next_sin - curr_sin) * remainder as i32) >> 3)) as u16;
     }
-    tmpsin as u16
+    tmpsin
 }
 
 fn icos(angle: u16) -> u16 {
@@ -67,7 +69,8 @@ pub fn calculate_point(xc: i32, yc: i32, x_rad: i32, y_rad: i32, angle: u16) -> 
 }
 
 fn umul_shift(a: u16, b: i32) -> u16 {
-    let a = a as i32;
+    let a = a as i64;
+    let b = b as i64;
     ((a * b + 32768) >> 16) as u16
 }
 
@@ -116,9 +119,8 @@ pub fn color_idx_to_pixel_val(colors: usize, c: u8) -> u8 {
     if colors == 16 {
         return COLOR_TO_PIX_TABLE[c as usize];
     }
-    // THIS IS A GUESS. THE REFERENCE BOOKS ONLY GIVE TABLES FOR 8-bit and 16-bit PALETTES.
-    // NEED TO DOUBLE-CHECK ON REAL ATARI.
-    if colors == 16 {
+    
+    if colors == 4 {
         return match c {
             0 => 0,
             1 => 3,

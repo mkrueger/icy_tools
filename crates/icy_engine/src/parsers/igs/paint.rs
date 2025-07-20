@@ -227,7 +227,7 @@ impl DrawExecutor {
     pub fn clear(&mut self, _cmd: ClearCommand, caret: &mut Caret) {
         // TODO: Clear command
         caret.set_position(Position::default());
-        self.screen.fill(1);
+        self.screen.fill(0);
     }
 
     pub fn scroll(&mut self, amount: i32) {
@@ -1009,7 +1009,7 @@ impl DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        //println!("cmd:{:?} arguments: {:?}", command, parameters);
+        println!("cmd:{:?} arguments: {:?}", command, parameters);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() < 1 {

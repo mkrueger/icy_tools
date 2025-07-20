@@ -90,7 +90,7 @@ impl Parser {
 
         let p = Position::new(caret_pos.x * 8, caret_pos.y * 8);
         self.command_executor.fill_color = caret.attribute.background_color as u8;
-        self.command_executor.fill_rect(p.x, p.x, p.x + 8, p.y + 8);
+        self.command_executor.fill_rect(p.x, p.y, p.x + 8, p.y + 8);
 
         self.command_executor.text_color = caret.attribute.foreground_color as u8;
         self.command_executor.write_text(p, &ch.to_string());
@@ -105,7 +105,7 @@ impl Parser {
         let x0 = x0 * 8;
         let x1 = x1 * 8;
         self.command_executor.fill_color = 1;
-        self.command_executor.fill_rect(x0, y, x1, y);
+        self.command_executor.fill_rect(x0, y, x1, y + 8);
     }
 }
 
