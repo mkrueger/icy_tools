@@ -1,4 +1,4 @@
-use crate::{AttributedChar, Position, Size, TextAttribute, editor::EditState};
+use crate::{AttributedChar, Position, Size, TextAttribute, UnicodeConverter, editor::EditState};
 use i18n_embed_fl::fl;
 
 pub mod font;
@@ -27,6 +27,7 @@ impl FontGlyph {
         let mut cur = caret_pos;
         let mut char_offset = 0;
         let mut leading_space = true;
+        let converter = crate::ascii::CP437Converter::default();
         while char_offset < self.data.len() {
             let ch = self.data[char_offset];
             char_offset += 1;
@@ -36,7 +37,7 @@ impl FontGlyph {
                 cur.y += 1;
                 leading_space = true;
             } else {
-                let attributed_char = match font_type {
+                let mut attributed_char = match font_type {
                     FontType::Outline => {
                         if ch == b'@' || ch == b' ' && leading_space {
                             cur.x += 1;
@@ -75,6 +76,9 @@ impl FontGlyph {
                         panic!("Unsupported font type");
                     }
                 };
+                if editor.get_buffer().buffer_type == crate::BufferType::Unicode {
+                    attributed_char.ch = converter.convert_to_unicode(attributed_char);
+                }
                 editor.set_char(cur, attributed_char).unwrap();
                 cur.x += 1;
             }

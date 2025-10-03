@@ -119,7 +119,7 @@ pub fn color_idx_to_pixel_val(colors: usize, c: u8) -> u8 {
     if colors == 16 {
         return COLOR_TO_PIX_TABLE[c as usize];
     }
-    
+
     if colors == 4 {
         return match c {
             0 => 0,
