@@ -71,46 +71,70 @@ impl BrushTool {
                 let mut attribute = ch.attribute;
                 attribute.attr &= !icy_engine::attribute::INVISIBLE;
 
-                if self.color_mode.use_fore() {
-                    attribute.set_foreground(if swap_colors {
-                        caret_attr.get_background()
-                    } else {
-                        caret_attr.get_foreground()
-                    });
-                }
-                if self.color_mode.use_back() {
-                    attribute.set_background(if swap_colors {
-                        caret_attr.get_foreground()
-                    } else {
-                        caret_attr.get_background()
-                    });
-                }
-
                 match &self.brush_mode {
                     BrushMode::Shade => {
-                        let mut char_code = gradient[0];
-                        if ch.ch == gradient[gradient.len() - 1] {
-                            char_code = gradient[gradient.len() - 1];
+                        self.swap_colors(false, caret_attr, &mut attribute);
+
+                        let mut char_code;
+                        if swap_colors {
+                            char_code = ' ';
+                            // Reverse gradient - tone down
+                            if ch.ch == gradient[0] {
+                                char_code = ' ';
+                            } else {
+                                for i in (1..gradient.len()).rev() {
+                                    if ch.ch == gradient[i] {
+                                        char_code = gradient[i - 1];
+                                        break;
+                                    }
+                                }
+                            }
                         } else {
-                            for i in 0..gradient.len() - 1 {
-                                if ch.ch == gradient[i] {
-                                    char_code = gradient[i + 1];
-                                    break;
+                            char_code = gradient[0];
+                            // Normal gradient - tone up
+                            if ch.ch == gradient[gradient.len() - 1] {
+                                char_code = gradient[gradient.len() - 1];
+                            } else {
+                                for i in 0..gradient.len() - 1 {
+                                    if ch.ch == gradient[i] {
+                                        char_code = gradient[i + 1];
+                                        break;
+                                    }
                                 }
                             }
                         }
+
                         editor.set_char(pos, AttributedChar::new(char_code, attribute));
                     }
                     BrushMode::Char(ch) => {
+                        self.swap_colors(swap_colors, caret_attr, &mut attribute);
                         attribute.set_font_page(caret_attr.get_font_page());
                         editor.set_char(center + Position::new(x, y), AttributedChar::new(*ch.borrow(), attribute));
                     }
                     BrushMode::Colorize => {
+                        self.swap_colors(swap_colors, caret_attr, &mut attribute);
                         editor.set_char(pos, AttributedChar::new(ch.ch, attribute));
                     }
                     _ => {}
                 }
             }
+        }
+    }
+
+    fn swap_colors(&self, swap_colors: bool, caret_attr: icy_engine::TextAttribute, attribute: &mut icy_engine::TextAttribute) {
+        if self.color_mode.use_fore() {
+            attribute.set_foreground(if swap_colors {
+                caret_attr.get_background()
+            } else {
+                caret_attr.get_foreground()
+            });
+        }
+        if self.color_mode.use_back() {
+            attribute.set_background(if swap_colors {
+                caret_attr.get_foreground()
+            } else {
+                caret_attr.get_background()
+            });
         }
     }
 }

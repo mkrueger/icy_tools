@@ -11,7 +11,7 @@ use self::sound::{AnsiMusic, MusicState};
 use super::{BufferParser, TAB};
 use crate::{
     AttributedChar, AutoWrapMode, BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, FF, FontSelectionState, HyperLink, IceMode, LF, MouseMode,
-    OriginMode, ParserError, Position, TerminalScrolling, TextPane, update_crc16,
+    OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
 };
 
 mod ansi_commands;
