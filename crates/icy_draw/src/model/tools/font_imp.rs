@@ -95,30 +95,24 @@ fn load_fonts(tdf_dir: &Path) -> Vec<Box<dyn AnsiFont>> {
         };
 
         let extension = extension.to_lowercase();
-
-        if extension == "tdf" {
-            match TheDrawFont::load(path) {
+        match extension.as_str() {
+            "tdf" => match TheDrawFont::load(path) {
                 Ok(loaded_fonts) => {
                     fonts.extend(loaded_fonts.iter().map(|f| Box::new(f.clone()) as Box<dyn AnsiFont>));
                 }
                 Err(err) => {
                     log::error!("Failed to load tdf '{}' font: {err}", path.display());
                 }
-            }
-        }
-        if extension == "flf" {
-            match FIGFont::load(path) {
+            },
+            "flf" => match FIGFont::load(path) {
                 Ok(loaded_fonts) => {
                     fonts.push(Box::new(loaded_fonts) as Box<dyn AnsiFont>);
                 }
                 Err(err) => {
                     log::error!("Failed to load figlet '{}' font: {err}", path.display());
                 }
-            }
-        }
-
-        if extension == "zip" {
-            match fs::File::open(path) {
+            },
+            "zip" => match fs::File::open(path) {
                 Ok(mut file) => {
                     let mut data = Vec::new();
                     file.read_to_end(&mut data).unwrap_or_default();
@@ -128,6 +122,9 @@ fn load_fonts(tdf_dir: &Path) -> Vec<Box<dyn AnsiFont>> {
                 Err(err) => {
                     log::error!("Failed to open zip file: {}", err);
                 }
+            },
+            _ => {
+                // Ignore other file types
             }
         }
     }
@@ -313,6 +310,11 @@ impl Tool for FontTool {
                 ui.vertical_centered(|ui| {
                     if ui.button(fl!(crate::LANGUAGE_LOADER, "font_tool_select_outline_button")).clicked() {
                         msg = Some(Message::ShowOutlineDialog);
+                    }
+                    ui.spacing();
+
+                    if ui.button(fl!(crate::LANGUAGE_LOADER, "font_tool_open_directory_button")).clicked() {
+                        msg = Some(Message::OpenFontDirectory);
                     }
                 });
                 if msg.is_some() {

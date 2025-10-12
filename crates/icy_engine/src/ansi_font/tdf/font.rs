@@ -17,6 +17,7 @@ const THE_DRAW_FONT_HEADER_SIZE: usize = 233;
 pub const MAX_WIDTH: usize = 30;
 pub const MAX_HEIGHT: usize = 12;
 pub const FONT_NAME_LEN: usize = 12;
+pub const FONT_NAME_LEN_MAX: usize = 12 + 4; // There are 4 null bytes after the name so maximum would be 16 
 pub const MAX_LETTER_SPACE: usize = 40;
 
 pub const CHAR_TABLE_SIZE: usize = 94;
@@ -92,13 +93,11 @@ impl TheDrawFont {
             }
             o += 4; // FONT_INDICATOR bytes!
 
-            let mut font_name_len = bytes[o] as usize;
+            let orig_font_name_len = bytes[o] as usize;
+            let mut font_name_len = orig_font_name_len.min(FONT_NAME_LEN_MAX);
             o += 1;
-            if font_name_len > FONT_NAME_LEN {
-                return Err(TdfError::NameTooLong(font_name_len).into());
-            }
 
-            // May be 0 terminated and the font name len is wrong.
+            // May be 0 terminated and the font name len is wrong. - it usually is.
             for i in 0..font_name_len {
                 if bytes[o + i] == 0 {
                     font_name_len = i;
@@ -107,6 +106,10 @@ impl TheDrawFont {
             }
 
             let name = String::from_utf8_lossy(&bytes[o..(o + font_name_len)]).to_string();
+            if name.len() > FONT_NAME_LEN {
+                log::error!("Font name too long, was {} for font: {}", name.len(), name);
+            }
+
             o += FONT_NAME_LEN;
 
             o += 4; // 4 magic bytes!
@@ -160,7 +163,9 @@ impl TheDrawFont {
 
                 loop {
                     if char_offset >= bytes.len() {
-                        return Err(TdfError::DataOverflow(char_offset).into());
+                        log::error!("Data overflow reading char at offset {char_offset}, skipping char.");
+                        char_data.clear();
+                        break;
                     }
 
                     let mut ch = bytes[char_offset];
@@ -179,10 +184,12 @@ impl TheDrawFont {
                         char_data.push(ch);
                     }
                 }
-                char_table.push(Some(FontGlyph {
-                    size: (width, height).into(),
-                    data: char_data,
-                }));
+                if !char_data.is_empty() {
+                    char_table.push(Some(FontGlyph {
+                        size: (width, height).into(),
+                        data: char_data,
+                    }));
+                }
             }
             o += block_size;
 
@@ -292,10 +299,11 @@ impl TheDrawFont {
 
     pub fn has_char(&self, char_code: u8) -> bool {
         let char_offset = (char_code as i32) - b' ' as i32 - 1;
-        if char_offset < 0 || char_offset > self.char_table.len() as i32 {
-            return false;
+        if let Some(glyph) = self.char_table.get(char_offset as usize) {
+            glyph.is_some()
+        } else {
+            false
         }
-        self.char_table[char_offset as usize].is_some()
     }
 
     pub fn set_glyph(&mut self, ch: char, glyph: FontGlyph) {
@@ -394,7 +402,6 @@ pub enum TdfError {
     IdMismatch,
     NameTooLong(usize),
     UnsupportedTtfType(u8),
-    DataOverflow(usize),
     GlyphOutsideFontDataSize(usize),
     LetterSpaceTooMuch(i32),
     IdLengthMismatch(u8),
@@ -412,7 +419,6 @@ impl std::fmt::Display for TdfError {
             TdfError::UnsupportedTtfType(t) => {
                 write!(f, "unsupported ttf type {t}, only 0, 1, 2 are valid.")
             }
-            TdfError::DataOverflow(offset) => write!(f, "data overflow at offset {offset}"),
             TdfError::GlyphOutsideFontDataSize(i) => write!(f, "glyph {i} outside font data size"),
             TdfError::LetterSpaceTooMuch(spaces) => {
                 write!(f, "letter space is max {MAX_LETTER_SPACE} was {spaces}")
