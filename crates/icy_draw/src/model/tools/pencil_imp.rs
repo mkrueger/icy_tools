@@ -66,7 +66,7 @@ impl Tool for PencilTool {
         editor.clear_overlay_layer();
         let flip_colors = button == 2;
         let attr = editor.get_caret_attribute();
-        if flip_colors {
+        if flip_colors && self.draw_mode != BrushMode::Shade {
             let mut flipped = attr;
             let tmp = flipped.get_foreground();
             flipped.set_foreground(flipped.get_background());
@@ -76,7 +76,11 @@ impl Tool for PencilTool {
         plot_point(
             &mut editor.buffer_view.lock(),
             editor.half_block_click_pos,
-            self.draw_mode.clone(),
+            if flip_colors && self.draw_mode == BrushMode::Shade {
+                BrushMode::ShadeDown
+            } else {
+                self.draw_mode.clone()
+            },
             self.color_mode,
             PointRole::Line,
         );
@@ -97,7 +101,7 @@ impl Tool for PencilTool {
         }
         let flip_colors = matches!(editor.drag_started, crate::DragMode::Secondary);
         let attr = editor.get_caret_attribute();
-        if flip_colors {
+        if flip_colors && self.draw_mode != BrushMode::Shade {
             let mut flipped = attr;
             let tmp = flipped.get_foreground();
             flipped.set_foreground(flipped.get_background());
@@ -107,7 +111,11 @@ impl Tool for PencilTool {
         plot_point(
             &mut editor.buffer_view.lock(),
             editor.half_block_click_pos,
-            self.draw_mode.clone(),
+            if flip_colors && self.draw_mode == BrushMode::Shade {
+                BrushMode::ShadeDown
+            } else {
+                self.draw_mode.clone()
+            },
             self.color_mode,
             PointRole::Line,
         );
@@ -128,7 +136,7 @@ impl Tool for PencilTool {
         editor.clear_overlay_layer();
         let flip_colors = matches!(editor.drag_started, crate::DragMode::Secondary);
         let attr = editor.get_caret_attribute();
-        if flip_colors {
+        if flip_colors && self.draw_mode != BrushMode::Shade {
             let mut flipped = attr;
             let tmp = flipped.get_foreground();
             flipped.set_foreground(flipped.get_background());
@@ -138,7 +146,11 @@ impl Tool for PencilTool {
         plot_point(
             &mut editor.buffer_view.lock(),
             editor.half_block_click_pos,
-            self.draw_mode.clone(),
+            if flip_colors && self.draw_mode == BrushMode::Shade {
+                BrushMode::ShadeDown
+            } else {
+                self.draw_mode.clone()
+            },
             self.color_mode,
             PointRole::Line,
         );

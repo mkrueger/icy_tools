@@ -22,6 +22,7 @@ pub enum BrushMode {
     Shade,
     Colorize,
     Custom,
+    ShadeDown,
 }
 
 static mut HOVER_CHAR: Option<char> = None;
@@ -276,7 +277,7 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
         return;
     };
 
-    let editor_attr = buffer_view.get_caret().get_attribute();
+    let editor_attr: TextAttribute = buffer_view.get_caret().get_attribute();
     let mut attribute = ch.attribute;
     if !ch.is_visible() {
         attribute = TextAttribute::default();
@@ -317,6 +318,19 @@ pub fn plot_point(buffer_view: &mut BufferView, pos: impl Into<Position>, mut mo
                 for i in 0..SHADE_GRADIENT.len() - 1 {
                     if ch.ch == SHADE_GRADIENT[i] {
                         char_code = SHADE_GRADIENT[i + 1];
+                        break;
+                    }
+                }
+            }
+            AttributedChar::new(char_code, attribute)
+        }
+        BrushMode::ShadeDown => {
+            let mut char_code = ' ';
+            if ch.ch == SHADE_GRADIENT[0] {
+            } else {
+                for i in (1..SHADE_GRADIENT.len()).rev() {
+                    if ch.ch == SHADE_GRADIENT[i] {
+                        char_code = SHADE_GRADIENT[i - 1];
                         break;
                     }
                 }
