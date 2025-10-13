@@ -520,6 +520,7 @@ edit-tag-role-hyperlink=Hyperlink
 
 add_tag_tooltip=Add Tag
 delete_tag_tooltip=Delete Tag
+clone_tag_tooltip=Clone Tag 
 
 ask_unsaved_file_dialog-description=Do you want to save the changes to the following {
     $number ->

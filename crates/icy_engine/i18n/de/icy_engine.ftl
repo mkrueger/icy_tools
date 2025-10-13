@@ -48,6 +48,8 @@ undo-set_use_letter_spacing=9 Pixel Modus geändert
 undo-set_use_aspect_ratio=Seitenverhältnis geändert
 undo-edit-tag=Tag bearbeitet
 undo-remove-tag=Tag gelöscht
+undo-add-tag=Tag hinzufügen
+undo-clone-tag=Tag dupliziert
 undo-show-tags=Tags anzeigen
 
 

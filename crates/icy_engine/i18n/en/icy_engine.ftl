@@ -48,6 +48,8 @@ undo-set_use_letter_spacing=Set Use Letter Spacing
 undo-set_use_aspect_ratio=Set Use Aspect Ratio
 undo-edit-tag=Edit Tag
 undo-remove-tag=Remove Tag
+undo-add-tag=Add Tag
+undo-clone-tag=Clone Tag
 undo-show-tags=Show Tags
 
 layer-duplicate-name={ $name } copy

@@ -5,7 +5,7 @@ use super::{EditState, undo_operations};
 
 impl EditState {
     pub fn add_new_tag(&mut self, new_tag: Tag) -> EngineResult<()> {
-        let op = undo_operations::AddTag::new(new_tag);
+        let op = undo_operations::AddTag::new(false, new_tag);
         self.push_undo_action(Box::new(op))?;
         self.current_tag = self.buffer.tags.len() - 1;
         Ok(())
@@ -34,6 +34,13 @@ impl EditState {
     pub fn remove_tag(&mut self, tag: usize) -> EngineResult<()> {
         let op = undo_operations::RemoveTag::new(tag, self.buffer.tags[tag].clone());
         self.push_undo_action(Box::new(op))?;
+        Ok(())
+    }
+
+     pub fn clone_tag(&mut self, tag: usize) -> EngineResult<()> {
+        let op = undo_operations::AddTag::new(true, self.buffer.tags[tag].clone());
+        self.push_undo_action(Box::new(op))?;
+        self.current_tag = self.buffer.tags.len() - 1;
         Ok(())
     }
 }

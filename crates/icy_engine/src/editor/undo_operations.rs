@@ -1678,17 +1678,22 @@ impl UndoOperation for SetUseAspectRatio {
 
 pub struct AddTag {
     new_tag: Tag,
+    clone: bool,
 }
 
 impl AddTag {
-    pub fn new(new_ar: Tag) -> Self {
-        Self { new_tag: new_ar }
+    pub fn new(clone: bool, new_ar: Tag) -> Self {
+        Self { new_tag: new_ar, clone }
     }
 }
 
 impl UndoOperation for AddTag {
     fn get_description(&self) -> String {
-        fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio")
+        if self.clone {
+            fl!(crate::LANGUAGE_LOADER, "undo-clone-tag")
+        } else {
+            fl!(crate::LANGUAGE_LOADER, "undo-add-tag")
+        }
     }
 
     fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
@@ -1701,6 +1706,8 @@ impl UndoOperation for AddTag {
         Ok(())
     }
 }
+
+
 
 pub struct EditTag {
     tag_index: usize,

@@ -99,6 +99,15 @@ impl Tool for TagTool {
                     result = Some(Message::RemoveTag(cur_tag));
                 }
             }
+
+            let r = medium_hover_button(ui, &crate::REPEAT_SVG).on_hover_ui(|ui| {
+                ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "clone_tag_tooltip")).small());
+            });
+            if r.clicked() {
+                if cur_tag < editor.buffer_view.lock().get_buffer().tags.len() {
+                    result = Some(Message::CloneTag(cur_tag));
+                }
+            }
         });
 
         let table = TableBuilder::new(ui)

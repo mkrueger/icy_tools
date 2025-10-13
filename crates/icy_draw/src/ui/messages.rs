@@ -152,6 +152,7 @@ pub enum Message {
     UpdateTag(Box<Tag>, usize),
     ShowTags(bool),
     RemoveTag(usize),
+    CloneTag(usize),
     SelectCurrentTag(usize),
     ShowEditTagDialog(Box<Tag>, i32),
     ToggleLeftPane,
@@ -335,6 +336,13 @@ impl<'a> MainWindow<'a> {
                 self.run_editor_command(index, |_, editor, index| {
                     let mut lock = editor.buffer_view.lock();
                     to_message(lock.get_edit_state_mut().remove_tag(index))
+                });
+            }
+
+            Message::CloneTag(index) => {
+                self.run_editor_command(index, |_, editor, index| {
+                    let mut lock = editor.buffer_view.lock();
+                    to_message(lock.get_edit_state_mut().clone_tag(index))
                 });
             }
 

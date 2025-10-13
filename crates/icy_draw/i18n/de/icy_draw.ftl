@@ -524,6 +524,7 @@ edit-tag-role-hyperlink=Hyperlink
 
 add_tag_tooltip=Tag hinzufügen
 delete_tag_tooltip=Tag löschen
+clone_tag_tooltip=Tag duplizieren
 
 ask_unsaved_file_dialog-description=Sollen die Änderungen in {
     $number ->

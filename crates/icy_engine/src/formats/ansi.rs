@@ -598,8 +598,16 @@ impl StringGenerator {
                     if cell.ch == '\0' {
                         vec![b' ']
                     } else {
-                        let uni_ch = CP437_TO_UNICODE[cell.ch as usize].to_string();
-                        uni_ch.as_bytes().to_vec()
+                        if buf.buffer_type == crate::BufferType::CP437 {
+                            let uni_ch = if let Some(uni_ch) = CP437_TO_UNICODE.get(cell.ch as usize) {
+                                uni_ch.to_string()
+                            } else {
+                                cell.ch.to_string()
+                            };
+                            uni_ch.as_bytes().to_vec()
+                        } else {
+                            cell.ch.to_string().as_bytes().to_vec()
+                        }
                     }
                 } else {
                     let mut ch = cell.ch;
