@@ -6,7 +6,6 @@ members = [
 	"crates/icy_engine_gui",
 	"crates/icy_play", 
 	"crates/icy_sauce", 
-	"crates/icy_sixel", 
 	"crates/icy_term",
 	"crates/icy_view",
 	"crates/icy_view_gui",
@@ -21,7 +20,7 @@ license = "MIT or Apache-2.0"
 icy_engine = { path = "crates/icy_engine" }
 icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = { path = "crates/icy_sauce" }
-icy_sixel = { path = "crates/icy_sixel" }
+icy_sixel = "0.1.3"
 icy_view_gui = { path = "crates/icy_view_gui" }
 codepages = { git ="https://github.com/mkrueger/icy_board" }
 

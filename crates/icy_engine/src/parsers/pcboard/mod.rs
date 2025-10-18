@@ -9,6 +9,8 @@ pub struct Parser {
     pub pcb_color: bool,
     pub pcb_value: u8,
     pub pcb_pos: i32,
+
+    pub pcb_string : String,
 }
 
 impl Default for Parser {
@@ -22,6 +24,7 @@ impl Default for Parser {
             pcb_color: Default::default(),
             pcb_value: Default::default(),
             pcb_pos: Default::default(),
+            pcb_string: String::new(),
         }
     }
 }
@@ -52,18 +55,28 @@ impl BufferParser for Parser {
             match ch {
                 '@' => {
                     self.pcb_code = false;
+                    if !self.pcb_string.is_empty() {
+                        self.ansi_parser.print_char(buf, current_layer, caret, '@')?;
+                        for c in self.pcb_string.chars() {
+                            self.ansi_parser.print_char(buf, current_layer, caret, c)?;
+                        }
+                        self.ansi_parser.print_char(buf, current_layer, caret, '@')?;
+                    }
                 }
                 'X' => {
                     self.pcb_color = true;
                     self.pcb_pos = 0;
                 }
-                _ => {}
+                _ => {
+                    self.pcb_string.push(ch);
+                }
             }
             return Ok(CallbackAction::NoUpdate);
         }
         match ch {
             '@' => {
                 self.pcb_code = true;
+                self.pcb_string.clear();
                 Ok(CallbackAction::NoUpdate)
             }
             _ => self.ansi_parser.print_char(buf, current_layer, caret, ch),

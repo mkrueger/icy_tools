@@ -106,7 +106,7 @@ pub enum TagRole {
     Hyperlink,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Tag {
     pub is_enabled: bool,
     pub preview: String,
