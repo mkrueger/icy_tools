@@ -84,7 +84,7 @@ impl Item for ItemFile {
 }
 
 #[cfg(windows)]
-extern "C" {
+unsafe extern "C" {
     pub fn GetLogicalDrives() -> u32;
 }
 
