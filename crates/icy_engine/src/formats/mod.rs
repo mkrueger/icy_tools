@@ -379,7 +379,7 @@ mod tests {
 
     fn test_ansi(data: &[u8]) {
         let mut buf = Buffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
-        let converted = super::Ansi::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+        let converted: Vec<u8> = super::Ansi::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
         // more gentle output.
         let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
         let converted = String::from_utf8_lossy(b.as_slice());

@@ -1070,27 +1070,24 @@ impl TextPane for Buffer {
     fn get_line_length(&self, line: i32) -> i32 {
         let mut length = 0;
         let mut pos = Position::new(0, line);
+        let mut last_char = AttributedChar::invisible();
         for x in 0..self.get_width() {
             pos.x = x;
             let ch = self.get_char(pos);
-            /*if x > 0 && ch.is_transparent() {
-                if let Some(prev) = self.get_char(pos  + Position::from(-1, 0)) {
-                    if prev.attribute.get_background() > 0 {
-                        length = x + 1;
-                    }
-
+            if x > 0 && ch.is_transparent() {
+                if last_char.attribute.get_background() > 0 {
+                    length = x + 1;
                 }
-            } else */
-            if !ch.is_transparent() {
+            } else if !ch.is_transparent() {
                 length = x + 1;
             }
+            last_char = ch;
         }
 
         // Check if any tags extend the line length
         for tag in &self.tags {
             if tag.is_enabled && tag.position.y == line {
                 let tag_end = tag.position.x + tag.len() as i32;
-                println!("Tag end: {} length : {}", tag_end, length);
                 length = length.max(tag_end);
             }
         }
