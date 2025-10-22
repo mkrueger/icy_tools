@@ -4,7 +4,7 @@ use eframe::{
     emath::NumExt,
     epaint::{FontFamily, FontId, Vec2},
 };
-use egui::{Align, Id, ImageButton, Key, Rect};
+use egui::{Align, Id, Key, Rect};
 use i18n_embed_fl::fl;
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::telnet::TerminalEmulation;
@@ -383,7 +383,7 @@ impl DialogState {
 
             if ui
                 .add(
-                    ImageButton::new(if adr.is_favored {
+                    egui::Button::image(if adr.is_favored {
                         STAR.clone().tint(crate::ui::button_tint(ui))
                     } else {
                         UNSTAR.clone().tint(crate::ui::button_tint(ui))
@@ -553,7 +553,7 @@ impl DialogState {
 
                     if ui
                         .add(
-                            ImageButton::new(if self.show_passwords {
+                            egui::Button::image(if self.show_passwords {
                                 VISIBILITY.clone().tint(crate::ui::button_tint(ui))
                             } else {
                                 VISIBILITY_OFF.clone().tint(crate::ui::button_tint(ui))
@@ -605,7 +605,7 @@ impl DialogState {
 
                         if ui
                             .add(
-                                ImageButton::new(if self.show_passwords {
+                                egui::Button::image(if self.show_passwords {
                                     VISIBILITY.clone().tint(crate::ui::button_tint(ui))
                                 } else {
                                     VISIBILITY_OFF.clone().tint(crate::ui::button_tint(ui))
@@ -813,7 +813,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                         let selected = matches!(window.dialing_directory_dialog.dialing_directory_filter, DialingDirectoryFilter::Favourites);
                         let r: egui::Response = ui
                             .add(
-                                ImageButton::new(if selected {
+                                egui::Button::image(if selected {
                                     STAR.clone().tint(crate::ui::button_tint(ui))
                                 } else {
                                     UNSTAR.clone().tint(crate::ui::button_tint(ui))
@@ -839,7 +839,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                         );
 
                         let r: egui::Response = ui
-                            .add(ImageButton::new(
+                            .add(egui::Button::image(
                                 CLOSE.clone().tint(crate::ui::button_tint(ui)).fit_to_exact_size(Vec2::new(18.0, 18.0)),
                             ))
                             .on_hover_ui(|ui| {
@@ -857,7 +857,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                 ui.add_space(8.);
                 if !window.dialing_directory_dialog.addresses.write_lock {
                     ui.with_layout(Layout::left_to_right(egui::Align::BOTTOM), |ui| {
-                        let r: egui::Response = ui.add(ImageButton::new(ADD.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
+                        let r: egui::Response = ui.add(egui::Button::image(ADD.clone().tint(crate::ui::button_tint(ui)))).on_hover_ui(|ui| {
                             ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add")).small());
                         });
 
@@ -881,7 +881,7 @@ pub fn view_dialing_directory(window: &mut MainWindow, ctx: &egui::Context) {
                     let r: egui::Response = ui
                         .add_enabled(
                             window.dialing_directory_dialog.selected_bbs.is_some(),
-                            ImageButton::new(DELETE.clone().tint(crate::ui::button_tint(ui))),
+                            egui::Button::image(DELETE.clone().tint(crate::ui::button_tint(ui))),
                         )
                         .on_hover_ui(|ui| {
                             ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "dialing_directory-delete")).small());

@@ -37,12 +37,12 @@ walkdir = { workspace = true }
 toml = { workspace = true }
 
 lazy_static = { workspace = true }
-notify = "8.1.0"
+notify = "8.2.0"
 gabi = "0.2.6"
 arboard = { workspace = true }
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
-anyhow = "1.0.95"
+anyhow = { workspace = true }
 
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
@@ -50,7 +50,7 @@ rust-embed = { workspace = true }
 once_cell = { workspace = true }
 
 log = { workspace = true }
-log4rs = "1.2.0"
+log4rs = "1.4.0"
 web-time = "1.1.0"
 
 # WebSocket support

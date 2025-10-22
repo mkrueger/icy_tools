@@ -3,7 +3,7 @@ use eframe::{
     egui::{self, CursorIcon, PointerButton},
     epaint::Vec2,
 };
-use egui::{ImageButton, Margin, Modifiers, RichText, Sense};
+use egui::{Margin, Modifiers, RichText, Sense};
 use i18n_embed_fl::fl;
 use icy_engine::{Position, Selection, TextPane};
 use web_time::Duration;
@@ -37,7 +37,7 @@ impl MainWindow {
                 ui.horizontal(|ui| {
                     let sense = Sense::HOVER | Sense::CLICK;
                     let r = ui
-                        .add(ImageButton::new(UPLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .add(egui::Button::image(UPLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
                         .on_hover_ui(|ui| {
                             ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).small());
                         });
@@ -47,7 +47,7 @@ impl MainWindow {
                     }
 
                     let r = ui
-                        .add(ImageButton::new(DOWNLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .add(egui::Button::image(DOWNLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
                         .on_hover_ui(|ui| {
                             ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-download")).small());
                         });
@@ -57,7 +57,7 @@ impl MainWindow {
                     }
 
                     let r: egui::Response = ui
-                        .add(ImageButton::new(CALL.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .add(egui::Button::image(CALL.clone().tint(crate::ui::button_tint(ui))).sense(sense))
                         .on_hover_ui(|ui| {
                             ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).small());
                         });
@@ -93,7 +93,7 @@ impl MainWindow {
                     if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
                         if !auto_login.logged_in {
                             let r = ui
-                                .add(ImageButton::new(KEY.clone().tint(crate::ui::button_tint(ui)).sense(sense)))
+                                .add(egui::Button::image(KEY.clone().tint(crate::ui::button_tint(ui)).sense(sense)))
                                 .on_hover_ui(|ui| {
                                     ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
                                 });
@@ -142,7 +142,7 @@ impl MainWindow {
                     ui.add_space(size.x - 70.0);
 
                     let r = ui
-                        .add(ImageButton::new(LOGOUT.clone().tint(crate::ui::button_tint(ui))).sense(sense))
+                        .add(egui::Button::image(LOGOUT.clone().tint(crate::ui::button_tint(ui))).sense(sense))
                         .on_hover_ui(|ui| {
                             ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).small());
                         });

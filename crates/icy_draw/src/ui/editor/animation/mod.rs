@@ -6,7 +6,7 @@ use std::{
 
 use crate::{AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, TerminalResult, UndoHandler, model::Tool};
 use eframe::{
-    egui::{self, ImageButton, RichText, Slider, TextEdit, TopBottomPanel},
+    egui::{self, RichText, Slider, TextEdit, TopBottomPanel},
     epaint::Vec2,
 };
 use egui::{Image, ProgressBar};
@@ -204,7 +204,7 @@ impl Document for AnimationEditor {
                         let animator = &mut self.animator.lock().unwrap();
                         let frame_count = animator.frames.len();
                         if animator.is_playing() {
-                            if ui.add(ImageButton::new(crate::PAUSE_SVG.clone())).clicked() {
+                            if ui.add(egui::Button::image(crate::PAUSE_SVG.clone())).clicked() {
                                 animator.set_is_playing(false);
                             }
                         } else {
@@ -213,7 +213,7 @@ impl Document for AnimationEditor {
                             } else {
                                 &crate::REPLAY_SVG
                             };
-                            if ui.add(ImageButton::new(image.clone())).clicked() {
+                            if ui.add(egui::Button::image(image.clone())).clicked() {
                                 if animator.get_cur_frame() + 1 >= frame_count {
                                     animator.set_cur_frame(0);
                                 }
@@ -221,14 +221,14 @@ impl Document for AnimationEditor {
                             }
                         }
                         if ui
-                            .add_enabled(animator.get_cur_frame() + 1 < frame_count, ImageButton::new(crate::SKIP_NEXT_SVG.clone()))
+                            .add_enabled(animator.get_cur_frame() + 1 < frame_count, egui::Button::image(crate::SKIP_NEXT_SVG.clone()))
                             .clicked()
                         {
                             animator.set_cur_frame(frame_count - 1);
                             animator.display_frame(self.buffer_view.clone());
                         }
                         let is_loop = animator.get_is_loop();
-                        if ui.add(ImageButton::new(crate::REPEAT_SVG.clone()).selected(is_loop)).clicked() {
+                        if ui.add(egui::Button::image(crate::REPEAT_SVG.clone()).selected(is_loop)).clicked() {
                             animator.set_is_loop(!is_loop);
                         }
 
@@ -244,7 +244,7 @@ impl Document for AnimationEditor {
                         }
 
                         if ui
-                            .add_enabled(animator.get_cur_frame() > 0, ImageButton::new(crate::NAVIGATE_PREV.clone()))
+                            .add_enabled(animator.get_cur_frame() > 0, egui::Button::image(crate::NAVIGATE_PREV.clone()))
                             .clicked()
                         {
                             let cf = animator.get_cur_frame() - 1;
@@ -255,7 +255,7 @@ impl Document for AnimationEditor {
                         if ui
                             .add_enabled(
                                 animator.get_cur_frame() + 1 < animator.frames.len(),
-                                ImageButton::new(crate::NAVIGATE_NEXT.clone()),
+                                egui::Button::image(crate::NAVIGATE_NEXT.clone()),
                             )
                             .clicked()
                         {

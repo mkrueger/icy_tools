@@ -110,33 +110,6 @@ impl UndoOperation for UndoSwapChar {
     }
 }
 
-pub struct ClearLayerOperation {
-    layer_num: usize,
-    lines: Vec<crate::Line>,
-}
-
-impl ClearLayerOperation {
-    pub fn _new(layer_num: usize) -> Self {
-        Self { layer_num, lines: Vec::new() }
-    }
-}
-
-impl UndoOperation for ClearLayerOperation {
-    fn get_description(&self) -> String {
-        fl!(crate::LANGUAGE_LOADER, "undo-clear-layer")
-    }
-
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        mem::swap(&mut self.lines, &mut edit_state.buffer.layers[self.layer_num].lines);
-        Ok(())
-    }
-
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        mem::swap(&mut self.lines, &mut edit_state.buffer.layers[self.layer_num].lines);
-        Ok(())
-    }
-}
-
 #[derive(Default)]
 pub struct AddLayer {
     index: usize,
@@ -1706,8 +1679,6 @@ impl UndoOperation for AddTag {
         Ok(())
     }
 }
-
-
 
 pub struct EditTag {
     tag_index: usize,

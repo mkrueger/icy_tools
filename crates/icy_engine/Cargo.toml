@@ -20,7 +20,7 @@ chrono = { workspace = true }
 png = "0.17.10"
 regex = { workspace = true }
 thiserror = { workspace = true }
-anyhow = "1.0.80"
+anyhow = { workspace = true }
 serde = { workspace = true }
 byteorder = "1"
 bstr = { workspace = true }

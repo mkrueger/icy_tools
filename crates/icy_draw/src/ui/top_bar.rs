@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Instant};
 
 use eframe::{
-    egui::{self, ImageButton, TopBottomPanel, Ui},
+    egui::{self, TopBottomPanel, Ui},
     epaint::Vec2,
 };
 use egui::{FontId, Image, TextFormat, containers::menu, text::LayoutJob};
@@ -669,5 +669,5 @@ pub fn medium_toggle_button(ui: &mut egui::Ui, icon: &Image<'_>, selected: bool)
         ui.visuals().widgets.inactive.fg_stroke.color
     };
 
-    ui.add(ImageButton::new(icon.clone().fit_to_exact_size(size_points).tint(tint)))
+    ui.add(egui::Button::image(icon.clone().fit_to_exact_size(size_points).tint(tint)))
 }

@@ -10,7 +10,7 @@ pub struct Parser {
     pub pcb_value: u8,
     pub pcb_pos: i32,
 
-    pub pcb_string : String,
+    pub pcb_string: String,
 }
 
 impl Default for Parser {

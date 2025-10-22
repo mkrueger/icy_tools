@@ -37,7 +37,7 @@ impl EditState {
         Ok(())
     }
 
-     pub fn clone_tag(&mut self, tag: usize) -> EngineResult<()> {
+    pub fn clone_tag(&mut self, tag: usize) -> EngineResult<()> {
         let op = undo_operations::AddTag::new(true, self.buffer.tags[tag].clone());
         self.push_undo_action(Box::new(op))?;
         self.current_tag = self.buffer.tags.len() - 1;
