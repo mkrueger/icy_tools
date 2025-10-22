@@ -52,7 +52,9 @@ impl OutputFormat for CtrlA {
 
                 let mut found_tag = None;
                 for tag in &buf.tags {
-                    if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                    if tag.is_enabled && tag.tag_placement == TagPlacement::InText && 
+                    tag.position.y == pos.y as i32 && 
+                    tag.position.x == pos.x as i32 {
                         found_tag = Some(tag);
                         cur_attribute = tag.attribute;
                         break;
@@ -102,6 +104,7 @@ impl OutputFormat for CtrlA {
 
                 if let Some(tag) = found_tag {
                     result.extend(tag.replacement_value.as_bytes());
+                    pos.x += (tag.len() as i32).max(1);
                 } else {
                     let byte = if ch.ch == '\0' { b' ' } else { ch.ch as u8 };
                     if byte == b'@' {
@@ -109,8 +112,8 @@ impl OutputFormat for CtrlA {
                     } else {
                         result.push(byte);
                     }
+                    pos.x += 1;
                 }
-                pos.x += 1;
             }
 
             // do not end with eol

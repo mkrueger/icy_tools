@@ -1085,6 +1085,16 @@ impl TextPane for Buffer {
                 length = x + 1;
             }
         }
+
+        // Check if any tags extend the line length
+        for tag in &self.tags {
+            if tag.is_enabled && tag.position.y == line {
+                let tag_end = tag.position.x + tag.len() as i32;
+                println!("Tag end: {} length : {}", tag_end, length);
+                length = length.max(tag_end);
+            }
+        }
+
         length
     }
 
