@@ -95,7 +95,7 @@ impl BrushMode {
         });
 
         if let Some(editor) = editor_opt {
-            let scale = 1.0;
+            let scale = 2.0;
             let lock = &editor.buffer_view.lock();
             let font_page = lock.get_caret().get_font_page();
             let font_count = lock.get_buffer().font_count();

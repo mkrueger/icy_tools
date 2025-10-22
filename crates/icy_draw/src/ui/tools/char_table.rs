@@ -49,7 +49,7 @@ impl CharTableToolWindow {
         egui::ScrollArea::vertical().id_salt("char_table_scroll_area").show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let scale = 1.0;
+                let scale = 2.0;
                 let sized_texture: SizedTexture = (&self.char_table).into();
                 let width = sized_texture.size.x * scale;
                 let height = sized_texture.size.y * scale;
