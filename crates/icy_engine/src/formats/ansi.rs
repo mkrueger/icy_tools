@@ -6,7 +6,7 @@ use icy_sauce::char_caps::ContentType;
 
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
-    ANSI_FONTS, BitFont, Buffer, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, XTERM_256_PALETTE,
+    ANSI_FONTS, AttributedChar, BitFont, Buffer, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, XTERM_256_PALETTE,
     analyze_font_usage, parse_with_parser, parsers,
 };
 use crate::{Color, TextAttribute};
@@ -139,7 +139,8 @@ impl StringGenerator {
         }
     }
 
-    fn get_color(&self, buf: &Buffer, attr: TextAttribute, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
+    fn get_color(&self, buf: &Buffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
+        let attr = ch.attribute;
         let mut sgr = Vec::new();
         let mut sgr_tc = Vec::new();
 
@@ -152,7 +153,7 @@ impl StringGenerator {
         let cur_back_rgb = cur_back_color.get_rgb();
 
         let mut fore_idx = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_fore_rgb);
-        let mut back_idx = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_back_rgb);
+        let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_back_rgb);
 
         let mut is_bold = attr.is_bold();
         let mut is_blink = attr.is_blinking();
@@ -274,7 +275,7 @@ impl StringGenerator {
             state.is_double_underlined = true;
         }
 
-        if cur_fore_rgb != state.fg.get_rgb() {
+        if cur_fore_rgb != state.fg.get_rgb() && !ch.is_transparent() {
             if let Some(fg_idx) = fore_idx {
                 sgr.push(COLOR_OFFSETS[fg_idx] + 30);
             } else if let Some(ext_color) = self.extended_color_hash.get(&cur_fore_rgb) {
@@ -406,7 +407,7 @@ impl StringGenerator {
 
                 let ch = layer.get_char((x, y));
                 if ch.is_visible() {
-                    let (new_state, sgr, sgr_tc) = self.get_color(buf, ch.attribute, state);
+                    let (new_state, sgr, sgr_tc) = self.get_color(buf, ch, state);
                     state = new_state;
                     line.push(CharCell {
                         ch: ch.ch,
@@ -477,7 +478,7 @@ impl StringGenerator {
         let mut end_tags = 0;
         for tag in buf.tags.iter() {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
-                let (new_state, sgr, _) = self.get_color(buf, tag.attribute, state);
+                let (new_state, sgr, _) = self.get_color(buf, AttributedChar::new('#', tag.attribute), state);
                 state = new_state;
                 if !sgr.is_empty() {
                     self.output.extend_from_slice(b"\x1b[");

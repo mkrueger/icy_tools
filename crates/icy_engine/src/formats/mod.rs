@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_fg_color_change() {
-        let data = b"a\x1B[32ma\x1B[33ma\x1B[1ma\x1B[35ma\x1B[0;35ma\x1B[1;32ma\x1B[0;36ma\x1B[32m ";
+        let data = b"a\x1B[32ma\x1B[33ma\x1B[1ma\x1B[35ma\x1B[0;35ma\x1B[1;32ma\x1B[0;36ma\x1B[32mA";
         test_ansi(data);
     }
 
@@ -457,14 +457,14 @@ mod tests {
     #[test]
     fn test_palette_color_bug() {
         let mut buf = Buffer::new((3, 1));
-        buf.palette.set_color(7, Color::new(0xD3, 0xD3, 0xD3));
+        buf.palette.set_color(25, Color::new(0xD3, 0xD3, 0xD3));
         buf.layers[0].set_char(
             (1, 0),
             crate::AttributedChar {
-                ch: ' ',
+                ch: 'A',
                 attribute: crate::TextAttribute {
                     font_page: 0,
-                    foreground_color: 15,
+                    foreground_color: 25,
                     background_color: 0,
                     attr: 0,
                 },
@@ -474,7 +474,7 @@ mod tests {
         let bytes = buf.to_bytes("ans", &SaveOptions::default()).unwrap();
         let str = String::from_utf8_lossy(&bytes).to_string();
 
-        assert_eq!("\u{1b}[1;211;211;211t ", str);
+        assert_eq!(" \u{1b}[1;211;211;211tA ", str);
     }
 }
 /*

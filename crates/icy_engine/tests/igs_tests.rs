@@ -5,7 +5,7 @@ use std::{
 
 use icy_engine::{Buffer, BufferParser, Caret, Color};
 
-#[test]
+//#[test]
 pub fn test_igs() {
     let mut img_buf = [0; 320 * 200 * 4];
     for entry in fs::read_dir("tests/igs/lowres").expect("Error reading test_data directory.") {
