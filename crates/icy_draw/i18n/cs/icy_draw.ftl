@@ -92,11 +92,11 @@ menu-zoom_in=Zvětšit
 menu-zoom_out=Zmenšit
 menu-guides=Vodítka
 menu-raster=Mřížka
-menu-guides-off=Vypnuto
 menu-zoom-fit_size=Přizpůsobit velikost
 menu-show_layer_borders=Zobrazit okraje vrstev
 menu-show_line_numbers=Zobrazit čísla řádků
-menu-toggle_grid=Přepnout mřížku/vodítka
+menu-toggle_guide=Přepnout vodítka
+menu-toggle_raster=Přepnout mřížku
 menu-toggle_left_pane=Přepnout levý panel
 menu-toggle_right_pane=Přepnout pravý panel
 

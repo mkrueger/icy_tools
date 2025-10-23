@@ -491,13 +491,7 @@ impl<'a> MainWindow<'a> {
                         ui.close_kind(egui::UiKind::Menu);
                     }
                     ui.separator();
-                    if ui
-                        .selectable_label(cur_guide.is_none(), fl!(crate::LANGUAGE_LOADER, "menu-guides-off"))
-                        .clicked()
-                    {
-                        result = Some(Message::SetGuide(0, 0));
-                        ui.close_kind(egui::UiKind::Menu);
-                    }
+                    self.commands[0].toggle_guides.ui(ui, &mut result);
                 });
 
                 ui.menu_button(fl!(crate::LANGUAGE_LOADER, "menu-raster"), |ui| {
@@ -515,15 +509,8 @@ impl<'a> MainWindow<'a> {
                         }
                     }
                     ui.separator();
-                    if ui
-                        .selectable_label(cur_raster.is_none(), fl!(crate::LANGUAGE_LOADER, "menu-guides-off"))
-                        .clicked()
-                    {
-                        result = Some(Message::SetRaster(0, 0));
-                        ui.close_kind(egui::UiKind::Menu);
-                    }
+                    self.commands[0].toggle_raster.ui(ui, &mut result);
                 });
-                self.commands[0].toggle_grid_guides.ui(ui, &mut result);
 
                 self.commands[0].show_layer_borders.ui(ui, &mut result);
                 self.commands[0].show_line_numbers.ui(ui, &mut result);

@@ -92,11 +92,11 @@ menu-zoom_in=Agrandir
 menu-zoom_out=Rétrécir
 menu-guides=Guides
 menu-raster=Grille
-menu-guides-off=Désactivé
 menu-zoom-fit_size=Ajuster la taille
 menu-show_layer_borders=Afficher les bordures des calques
 menu-show_line_numbers=Afficher les numéros de ligne
-menu-toggle_grid=Basculer grille/guides
+menu-toggle_guide=Basculer les guides
+menu-toggle_raster=Basculer la grille
 menu-toggle_left_pane=Basculer le panneau gauche
 menu-toggle_right_pane=Basculer le panneau droit
 

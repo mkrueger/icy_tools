@@ -100,7 +100,7 @@ impl Default for MarkerSettings {
         Self {
             reference_image_alpha: 0.2,
             raster_alpha: 0.2,
-            raster_color: Color::new(0xAB, 0xAB, 0xAB),
+            raster_color: Color::new(0xBB, 0xBB, 0xBB),
             guide_alpha: 0.2,
             guide_color: Color::new(0xAB, 0xAB, 0xAB),
         }

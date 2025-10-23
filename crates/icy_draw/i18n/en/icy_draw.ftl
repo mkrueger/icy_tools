@@ -92,11 +92,11 @@ menu-zoom_in=Zoom In
 menu-zoom_out=Zoom Out
 menu-guides=Guides
 menu-raster=Grid
-menu-guides-off=Off
 menu-zoom-fit_size=Fit Size
 menu-show_layer_borders=Show Layer Borders
 menu-show_line_numbers=Show Line Numbers
-menu-toggle_grid=Toggle Grid/Guides
+menu-toggle_guide=Toggle Guides
+menu-toggle_raster=Toggle Grid
 menu-toggle_left_pane=Toggle Left Pane
 menu-toggle_right_pane=Toggle Right Pane
 

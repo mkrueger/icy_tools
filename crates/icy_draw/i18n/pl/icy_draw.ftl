@@ -92,11 +92,11 @@ menu-zoom_in=Przybliż
 menu-zoom_out=Oddal
 menu-guides=Przewodniki
 menu-raster=Siatka
-menu-guides-off=Wyłączone
 menu-zoom-fit_size=Dopasuj rozmiar
 menu-show_layer_borders=Pokaż granice warstw
 menu-show_line_numbers=Pokaż numery linii
-menu-toggle_grid=Przełącz siatkę/przewodniki
+menu-toggle_guide=Przełącz przewodniki
+menu-toggle_raster=Przełącz siatkę
 menu-toggle_left_pane=Przełącz lewy panel
 menu-toggle_right_pane=Przełącz prawy panel
 

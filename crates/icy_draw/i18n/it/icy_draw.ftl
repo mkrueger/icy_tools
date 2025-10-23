@@ -92,11 +92,11 @@ menu-zoom_in=Aumenta zoom
 menu-zoom_out=Diminuisci zoom
 menu-guides=Guide
 menu-raster=Griglia
-menu-guides-off=Disattivato
 menu-zoom-fit_size=Adatta dimensione
 menu-show_layer_borders=Mostra bordi livello
 menu-show_line_numbers=Mostra numeri di linea
-menu-toggle_grid=Attiva/disattiva griglia/guide
+menu-toggle_guide=Attiva/disattiva guide
+menu-toggle_raster=Attiva/disattiva griglia
 menu-toggle_left_pane=Attiva/disattiva pannello sinistro
 menu-toggle_right_pane=Attiva/disattiva pannello destro
 

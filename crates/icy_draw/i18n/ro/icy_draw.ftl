@@ -92,11 +92,11 @@ menu-zoom_in=Mărește zoom
 menu-zoom_out=Micșorează zoom
 menu-guides=Ghiduri
 menu-raster=Grilă
-menu-guides-off=Oprit
 menu-zoom-fit_size=Potrivește dimensiunea
 menu-show_layer_borders=Arată granițele stratului
 menu-show_line_numbers=Arată numerele liniilor
-menu-toggle_grid=Comută grilă/ghiduri
+menu-toggle_guide=Comută ghiduri
+menu-toggle_raster=Comută grilă
 menu-toggle_left_pane=Comută panoul stâng
 menu-toggle_right_pane=Comută panoul drept
 

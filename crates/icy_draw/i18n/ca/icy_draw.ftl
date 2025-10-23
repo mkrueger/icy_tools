@@ -92,11 +92,11 @@ menu-zoom_in=Augmentar zoom
 menu-zoom_out=Reduir zoom
 menu-guides=Guies
 menu-raster=Quadrícula
-menu-guides-off=Desactivat
 menu-zoom-fit_size=Ajustar mida
 menu-show_layer_borders=Mostrar fronteres de capa
 menu-show_line_numbers=Mostrar números de línia
-menu-toggle_grid=Alternar quadrícula/guies
+menu-toggle_guide=Alternar guies
+menu-toggle_raster=Alternar quadrícula
 menu-toggle_left_pane=Alternar panell esquerre
 menu-toggle_right_pane=Alternar panell dret
 

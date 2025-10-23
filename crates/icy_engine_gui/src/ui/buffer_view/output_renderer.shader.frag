@@ -481,16 +481,18 @@ void main() {
 				return;
 			}
 
-			if (u_raster.x != 0.0 && mod(buffer_px.x, u_raster.x) == 0.0 ||
-			    u_raster.y != 0.0 && mod(buffer_px.y, u_raster.y) == 0.0)  {
+			vec2 buffer_pos_no_scroll_x = floor(vec2(from.x, to.y) - uv + vec2(-u_scroll_position.x, u_scroll_position.y));
+			if (u_raster.x != 0.0 && u_raster.y != 0.0 && 
+				(mod(buffer_pos_no_scroll_x.x, u_raster.x) < 2.0 || 
+				 mod(buffer_pos_no_scroll_x.y, u_raster.y) < 2.0))  {
 				c = draw_grid_raster(c);
 			}
 
 			if (u_guide.x > 0.0 && u_guide.y != 0.0) {
-				if (-buffer_px.x == u_guide.x && buffer_px.y < u_guide.y ||
-					 buffer_px.y == u_guide.y && -buffer_px.x < u_guide.x)  {
-					c = draw_guide_raster(c);
-				}
+                if (abs(-buffer_pos_no_scroll_x.x - u_guide.x) < 2.0 && buffer_px.y < u_guide.y ||
+                    abs(buffer_px.y - u_guide.y) < 2.0 && -buffer_pos_no_scroll_x.x < u_guide.x)  {
+                    c = draw_guide_raster(c);
+                }
 			}
 			if (is_inside_selection()) {
 				color = vec4(0.9 * c.xyz + 0.05 * u_selection_fill_color, 1.0);

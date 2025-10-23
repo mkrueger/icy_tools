@@ -97,11 +97,11 @@ menu-zoom_in=Vergrößern
 menu-zoom_out=Verkleinern
 menu-guides=Hilfslinien
 menu-raster=Gitter
-menu-guides-off=Aus
 menu-zoom-fit_size=Größe anpassen
 menu-show_layer_borders=Ebenenrahmen anzeigen
 menu-show_line_numbers=Zeilennummern anzeigen
-menu-toggle_grid=Gitter/Linien umschalten
+menu-toggle_guide=Linien umschalten
+menu-toggle_raster=Gitter umschalten
 menu-toggle_left_pane=Linke Seitenleiste umschalten
 menu-toggle_right_pane=Rechte Seitenleiste umschalten
 

@@ -213,8 +213,8 @@ impl OutputRenderer {
                 if let Some(raster) = &options.raster {
                     gl.uniform_2_f32(
                         gl.get_uniform_location(self.output_shader, "u_raster").as_ref(), // HACK! some raster positions need correction no idea why
-                        (raster.x * buffer_view.calc.char_size.x * info.pixels_per_point).floor(),
-                        (raster.y * buffer_view.calc.char_size.y * info.pixels_per_point).floor(),
+                        raster.x * buffer_view.calc.char_size.x * info.pixels_per_point,
+                        raster.y * buffer_view.calc.char_size.y * info.pixels_per_point,
                     );
                 } else {
                     gl.uniform_2_f32(gl.get_uniform_location(self.output_shader, "u_raster").as_ref(), 0.0, 0.0);
@@ -226,8 +226,8 @@ impl OutputRenderer {
                 if let Some(guide) = &options.guide {
                     gl.uniform_2_f32(
                         gl.get_uniform_location(self.output_shader, "u_guide").as_ref(),
-                        (guide.x * buffer_view.calc.char_size.x * info.pixels_per_point).floor(),
-                        (guide.y * buffer_view.calc.char_size.y * info.pixels_per_point).floor(),
+                        guide.x * buffer_view.calc.char_size.x * info.pixels_per_point,
+                        guide.y * buffer_view.calc.char_size.y * info.pixels_per_point,
                     );
                 } else {
                     gl.uniform_2_f32(gl.get_uniform_location(self.output_shader, "u_guide").as_ref(), 0.0, 0.0);

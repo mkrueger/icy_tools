@@ -92,11 +92,11 @@ menu-zoom_in=Aumentar zoom
 menu-zoom_out=Diminuir zoom
 menu-guides=Guias
 menu-raster=Grade
-menu-guides-off=Desativado
 menu-zoom-fit_size=Ajustar tamanho
 menu-show_layer_borders=Mostrar bordas da camada
 menu-show_line_numbers=Mostrar números de linha
-menu-toggle_grid=Alternar grade/guias
+menu-toggle_guide=Alternar guias
+menu-toggle_raster=Alternar grade
 menu-toggle_left_pane=Alternar painel esquerdo
 menu-toggle_right_pane=Alternar painel direito
 

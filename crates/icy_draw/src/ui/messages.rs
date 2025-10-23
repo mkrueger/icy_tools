@@ -145,7 +145,8 @@ pub enum Message {
     AddFont(Box<BitFont>),
     AddAnsiFont(usize),
     SetSauceFont(String),
-    ToggleGrid,
+    ToggleGuide,
+    ToggleRaster,
     KeySwitchForeground(usize),
     KeySwitchBackground(usize),
     AddNewTag(Box<Tag>),
@@ -1132,29 +1133,24 @@ impl<'a> MainWindow<'a> {
                 });
             }
 
-            Message::ToggleGrid => {
+            Message::ToggleRaster => {
                 self.run_editor_command(0, |_, editor, _| {
                     let lock = &mut editor.buffer_view.lock();
                     let show_raster = lock.get_show_raster();
-                    let show_guide = lock.get_show_guide();
-
-                    if editor.raster.is_some() && editor.guide.is_some() {
-                        if show_raster && show_guide {
-                            lock.set_show_raster(false);
-                            lock.set_show_guide(false);
-                        } else if show_raster {
-                            lock.set_show_guide(true);
-                        } else {
-                            lock.set_show_raster(true);
-                        }
-                    } else if editor.raster.is_some() {
-                        lock.set_show_raster(!show_raster);
-                    } else if editor.guide.is_some() {
-                        lock.set_show_guide(!show_guide);
-                    }
+                    lock.set_show_raster(!show_raster);
                     None
                 });
             }
+
+            Message::ToggleGuide => {
+                self.run_editor_command(0, |_, editor, _| {
+                    let lock = &mut editor.buffer_view.lock();
+                    let show_guide = lock.get_show_guide();
+                    lock.set_show_guide(!show_guide);
+                    None
+                });
+            }
+
             Message::ToggleLeftPane => {
                 self.left_panel = !self.left_panel;
             }

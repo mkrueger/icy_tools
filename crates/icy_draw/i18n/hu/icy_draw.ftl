@@ -92,11 +92,11 @@ menu-zoom_in=Nagyítás
 menu-zoom_out=Kicsinyítés
 menu-guides=Vezetők
 menu-raster=Rács
-menu-guides-off=Kikapcsolva
 menu-zoom-fit_size=Illesztés méretre
 menu-show_layer_borders=Réteg határainak megjelenítése
 menu-show_line_numbers=Sorszámok megjelenítése
-menu-toggle_grid=Rács/Vezetők váltása
+menu-toggle_guide=Vezetők váltása
+menu-toggle_raster=Rács váltása
 menu-toggle_left_pane=Bal panel váltása
 menu-toggle_right_pane=Jobb panel váltása
 
