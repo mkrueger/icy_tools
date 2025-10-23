@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eframe::{
-    egui::{self, CentralPanel, RichText, Sense, TextStyle, TopBottomPanel},
+    egui::{self, RichText, Sense, TextStyle, TopBottomPanel},
     emath::Align2,
     epaint::{Color32, Rect, Vec2},
 };
