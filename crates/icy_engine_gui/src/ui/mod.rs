@@ -233,6 +233,13 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
         .with_hide_scrollbars(options.hide_scrollbars);
 
     let caret_pos = buffer_view.lock().get_edit_state().get_caret().get_position();
+
+    let global_caret_pos = if let Some(layer) = buffer_view.lock().get_edit_state().get_cur_layer() {
+        caret_pos + layer.get_offset()
+    } else {
+        caret_pos
+    };
+
     let selected_rect = buffer_view.lock().get_edit_state().get_selection();
     let show_line_numbers = options.show_line_numbers;
     let (response, calc) = scroll.show(
@@ -357,7 +364,7 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
                         let is_selected = if let Some(sel) = selected_rect {
                             sel.min().y <= y + calc.first_line as i32 && y + (calc.first_line as i32) < sel.max().y
                         } else {
-                            caret_pos.y == y + calc.first_line as i32
+                            global_caret_pos.y == y + calc.first_line as i32
                         };
                         let color = if is_selected {
                             ui.visuals().strong_text_color()
@@ -393,7 +400,7 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
                         let is_selected = if let Some(sel) = selected_rect {
                             sel.min().x <= x && x < sel.max().x
                         } else {
-                            caret_pos.x == x
+                            global_caret_pos.x == x
                         };
                         let color = if is_selected {
                             ui.visuals().strong_text_color()
