@@ -60,6 +60,7 @@ fn main() {
                 o.zoom_with_keyboard = false;
                 o.zoom_factor = 1.0;
             });
+            icy_engine_gui::set_icy_style(&cc.egui_ctx);
             let mut fd = MainWindow::new(gl, args.path, options);
             fd.store_options = true;
             if *VERSION < *LATEST_VERSION {

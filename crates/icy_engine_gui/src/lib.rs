@@ -1,4 +1,5 @@
 pub mod animations;
+use egui::FontId;
 use icy_engine::Color;
 use serde::{Deserialize, Serialize};
 
@@ -164,4 +165,32 @@ impl MonitorSettings {
             _ => self.monitor_type.get_color(),
         }
     }
+}
+
+pub fn set_icy_style(ctx: &egui::Context) {
+    let mut style: egui::Style = (*ctx.style_of(egui::Theme::Dark)).clone();
+    style.spacing.window_margin = egui::Margin::same(8);
+    use egui::FontFamily::Proportional;
+    use egui::TextStyle::{Body, Button, Heading, Monospace, Small};
+    style.text_styles = [
+        (Heading, FontId::new(24.0, Proportional)),
+        (Body, FontId::new(18.0, Proportional)),
+        (Monospace, FontId::new(18.0, egui::FontFamily::Monospace)),
+        (Button, FontId::new(18.0, Proportional)),
+        (Small, FontId::new(14.0, Proportional)),
+    ]
+    .into();
+    ctx.set_style_of(egui::Theme::Dark, style.clone());
+
+    let mut style: egui::Style = (*ctx.style_of(egui::Theme::Light)).clone();
+    style.spacing.window_margin = egui::Margin::same(8);
+    style.text_styles = [
+        (Heading, FontId::new(24.0, Proportional)),
+        (Body, FontId::new(18.0, Proportional)),
+        (Monospace, FontId::new(18.0, egui::FontFamily::Monospace)),
+        (Button, FontId::new(18.0, Proportional)),
+        (Small, FontId::new(14.0, Proportional)),
+    ]
+    .into();
+    ctx.set_style_of(egui::Theme::Light, style);
 }

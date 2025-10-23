@@ -4,12 +4,12 @@ use std::path::Path;
 use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
 use icy_sauce::char_caps::ContentType;
 
+use crate::Color;
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
     ANSI_FONTS, AttributedChar, BitFont, Buffer, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, XTERM_256_PALETTE,
     analyze_font_usage, parse_with_parser, parsers,
 };
-use crate::{Color, TextAttribute};
 
 use super::{LoadData, SaveOptions};
 

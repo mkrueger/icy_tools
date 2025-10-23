@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use directories::UserDirs;
 use eframe::egui::{self};
-use egui::{FontId, Rect, mutex::Mutex};
+use egui::{Rect, mutex::Mutex};
 use icy_engine::Position;
 use icy_net::{
     ConnectionType,
@@ -25,8 +25,6 @@ use super::{MainWindow, MainWindowMode};
 
 impl MainWindow {
     pub fn new(cc: &eframe::CreationContext<'_>, options: Options) -> Self {
-        use egui::FontFamily::Proportional;
-        use egui::TextStyle::{Body, Button, Heading, Monospace, Small};
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
         let gl = cc.gl.as_ref().expect("You need to run eframe with the glow backend");
@@ -123,19 +121,8 @@ impl MainWindow {
         #[cfg(not(target_arch = "wasm32"))]
         parse_command_line(&ctx, &mut view);
 
-        let mut style: egui::Style = (*ctx.style()).clone();
-        style.spacing.window_margin = egui::Margin::same(8);
+        icy_engine_gui::set_icy_style(ctx);
 
-        //        style.spacing.button_padding = Vec2::new(4., 2.);
-        style.text_styles = [
-            (Heading, FontId::new(24.0, Proportional)),
-            (Body, FontId::new(18.0, Proportional)),
-            (Monospace, FontId::new(18.0, egui::FontFamily::Monospace)),
-            (Button, FontId::new(18.0, Proportional)),
-            (Small, FontId::new(14.0, Proportional)),
-        ]
-        .into();
-        ctx.set_style(style);
         ctx.options_mut(|o| {
             o.zoom_with_keyboard = false;
             o.zoom_factor = 1.0;

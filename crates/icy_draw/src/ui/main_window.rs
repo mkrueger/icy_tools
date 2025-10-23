@@ -11,11 +11,8 @@ use crate::{
     Message, MinimapToolWindow, ModalDialog, MostRecentlyUsedFiles, SETTINGS, SettingsDialog, ToolBehavior, ToolTab, TopBar, add_child, model::Tool,
     plugins::Plugin, util::autosave,
 };
+use eframe::egui::{self, Key, Response, SidePanel, Ui};
 use eframe::egui::{Button, PointerButton};
-use eframe::{
-    egui::{self, Key, Response, SidePanel, Ui},
-    epaint::FontId,
-};
 use egui::{Layout, Modifiers, Pos2, Rect, TextStyle, Vec2, WidgetText, mutex::Mutex};
 use egui_tiles::{Container, TileId};
 use glow::Context;
@@ -110,20 +107,7 @@ impl<'a> MainWindow<'a> {
         ];
 
         let ctx: &egui::Context = &cc.egui_ctx;
-
-        let mut style: egui::Style = (*ctx.style()).clone();
-        style.spacing.window_margin = egui::Margin::same(8);
-        use egui::FontFamily::Proportional;
-        use egui::TextStyle::{Body, Button, Heading, Monospace, Small};
-        style.text_styles = [
-            (Heading, FontId::new(24.0, Proportional)),
-            (Body, FontId::new(18.0, Proportional)),
-            (Monospace, FontId::new(18.0, egui::FontFamily::Monospace)),
-            (Button, FontId::new(18.0, Proportional)),
-            (Small, FontId::new(14.0, Proportional)),
-        ]
-        .into();
-        ctx.set_style(style);
+        icy_engine_gui::set_icy_style(ctx);
 
         let gl = cc.gl.clone().unwrap();
 
