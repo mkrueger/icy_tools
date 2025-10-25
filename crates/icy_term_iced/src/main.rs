@@ -33,9 +33,9 @@ use semver::Version;
 pub mod data;
 pub use data::*;
 
-pub mod ui;
 mod features;
 mod icons;
+pub mod ui;
 mod util;
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -78,7 +78,6 @@ fn get_log_file() -> anyhow::Result<PathBuf> {
     Err(anyhow::anyhow!("Error getting log directory"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     use std::fs;
 
@@ -98,7 +97,7 @@ fn main() {
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
-    
+
     let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
     if let Some(rect) = options.window_rect {
         native_options.viewport = native_options
@@ -151,13 +150,16 @@ fn main() {
 
     log::info!("Starting iCY TERM {}", *VERSION);
     icy_net::websocket::init_websocket_providers();
-    
-     iced::application(MainWindow::default, MainWindow::update, MainWindow::view)
-        .theme(MainWindow::theme)
-        .subscription(MainWindow::subscription) // Add this line
-        .run()
-        .expect("Failed to run application");
 
+    let mut book = AddressBook::load_phone_book().unwrap();
+
+    /*
+        iced::application(MainWindow::default, MainWindow::update, MainWindow::view)
+            .theme(MainWindow::theme)
+            .subscription(MainWindow::subscription) // Add this line
+            .run()
+            .expect("Failed to run application");
+    */
     log::info!("shutting down.");
 }
 

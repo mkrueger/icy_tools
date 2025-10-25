@@ -6,6 +6,8 @@ use std::{
     fmt::Display,
 };
 
+use serde::{Deserialize, Serialize};
+
 use self::sound::{AnsiMusic, MusicState};
 
 use super::{BufferParser, TAB};
@@ -51,7 +53,7 @@ pub enum EngineState {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MusicOption {
     #[default]
     Off,
@@ -77,7 +79,7 @@ impl From<String> for MusicOption {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BaudEmulation {
     #[default]
     Off,

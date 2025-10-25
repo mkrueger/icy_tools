@@ -23,16 +23,11 @@ pub enum MainWindowMode {
     ShowDisconnectedMessage(String, String),
 }
 
-
-pub enum Message {
-
-}
-
+pub enum Message {}
 
 #[derive(Default)]
 pub struct MainWindow {
-//    buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
-
+    //    buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     pub state: MainWindowState,
 
     screen_mode: ScreenMode,
@@ -42,31 +37,28 @@ pub struct MainWindow {
     shift_pressed_during_selection: bool,
     use_rip: bool,
 
-//    terminal_thread: Arc<egui::mutex::Mutex<TerminalThread>>,
-//     terminal_thread_handle: Option<JoinHandle<()>>,
-//    pub tx: mpsc::Sender<SendData>,
-//    pub rx: mpsc::Receiver<SendData>,
-
+    //    terminal_thread: Arc<egui::mutex::Mutex<TerminalThread>>,
+    //     terminal_thread_handle: Option<JoinHandle<()>>,
+    //    pub tx: mpsc::Sender<SendData>,
+    //    pub rx: mpsc::Receiver<SendData>,
     pub initial_upload_directory: Option<PathBuf>,
     // protocols
     // pub current_file_transfer: Option<FileTransferThread>,
-//    pub dialing_directory_dialog: dialogs::dialing_directory_dialog::DialogState,
-//    pub export_dialog: dialogs::export_dialog::DialogState,
-//    pub upload_dialog: dialogs::upload_dialog::DialogState,
-//    pub find_dialog: dialogs::find_dialog::DialogState,
-
+    //    pub dialing_directory_dialog: dialogs::dialing_directory_dialog::DialogState,
+    //    pub export_dialog: dialogs::export_dialog::DialogState,
+    //    pub upload_dialog: dialogs::upload_dialog::DialogState,
+    //    pub find_dialog: dialogs::find_dialog::DialogState,
     pub show_find_dialog: bool,
     show_disconnect: bool,
     title: String,
-//    buffer_parser: Box<dyn BufferParser>,
+    //    buffer_parser: Box<dyn BufferParser>,
 }
-
 
 impl MainWindow {
     pub fn title(&self) -> String {
-//        if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
-            crate::DEFAULT_TITLE.to_string()
-/*        } else {
+        //        if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
+        crate::DEFAULT_TITLE.to_string()
+        /*        } else {
             let d = Instant::now().duration_since(self.terminal_thread.lock().connection_time);
             let sec = d.as_secs();
             let minutes = sec / 60;
@@ -95,7 +87,6 @@ impl MainWindow {
             title
         }*/
     }
-
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         Task::none()
@@ -129,5 +120,4 @@ impl MainWindow {
     pub fn get_mode(&self) -> MainWindowMode {
         self.state.mode.clone()
     }
-
 }

@@ -1,12 +1,11 @@
 use crate::{Options, ui::MainWindowMode};
 
-
 #[derive(Default)]
 pub struct MainWindowState {
     pub mode: MainWindowMode,
     pub options: Options,
 
-//    pub settings_dialog: dialogs::settings_dialog::DialogState,
+    //    pub settings_dialog: dialogs::settings_dialog::DialogState,
 
     // don't store files in unit test mode
     #[cfg(test)]

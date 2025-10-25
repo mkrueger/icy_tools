@@ -5,10 +5,11 @@ use icy_engine::{
     VIEWDATA_PALETTE,
 };
 use icy_engine_gui::BufferInputMode;
+use serde::{Deserialize, Serialize};
 
 //use super::{BufferInputMode, BufferView};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScreenMode {
     Default,
     // Cga(i32, i32),
