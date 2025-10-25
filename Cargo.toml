@@ -7,6 +7,7 @@ members = [
 	"crates/icy_play", 
 	"crates/icy_sauce", 
 	"crates/icy_term",
+	"crates/icy_term_iced",
 	"crates/icy_view",
 	"crates/icy_view_gui",
 ]
@@ -46,6 +47,7 @@ tokio = { version = "1.47.1", features = ["full"] }
 rodio = { version = "0.21.1" }
 arboard = { version = "3.6.1" }
 anyhow = "1.0.100"
+iced = { git = "https://github.com/iced-rs/iced" }
 
 egui = "0.33.0"
 eframe = "0.33.0"
