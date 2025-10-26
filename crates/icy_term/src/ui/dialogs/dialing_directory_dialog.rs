@@ -1,4 +1,4 @@
-use crate::ui::Message;
+use crate::ui::{Message, modal};
 use crate::util::Rng;
 use crate::{ATARI_MODES, Address, AddressBook, ScreenMode, VGA_MODES};
 use i18n_embed_fl::fl;
@@ -108,7 +108,9 @@ impl DialingDirectoryState {
     fn filtered(&self) -> Vec<(usize, &Address)> {
         let fav = matches!(self.filter_mode, DialingDirectoryFilter::Favourites);
         let needle = self.filter_text.trim().to_lowercase();
-        self.addresses
+
+        let mut filtered: Vec<(usize, &Address)> = self
+            .addresses
             .addresses
             .iter()
             .enumerate()
@@ -121,7 +123,20 @@ impl DialingDirectoryState {
                 }
                 a.system_name.to_lowercase().contains(&needle) || a.address.to_lowercase().contains(&needle)
             })
-            .collect()
+            .collect();
+
+        // Sort by: 1) Favorites first, 2) Number of calls (descending)
+        filtered.sort_by(|(_, a), (_, b)| {
+            // First compare by favorite status (favorites come first)
+            match (a.is_favored, b.is_favored) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                // If both are favorites or both are not, sort by number of calls (descending)
+                _ => b.number_of_calls.cmp(&a.number_of_calls),
+            }
+        });
+
+        filtered
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -148,13 +163,22 @@ impl DialingDirectoryState {
 
                 if show_quick_connect && !self.addresses.addresses.is_empty() {
                     let selected = self.selected_bbs.is_none();
-                    let entry = address_row_entry(selected, None, &CONNECT_TOADDRESS_PLACEHOLDER, "", false, u32::MAX);
+                    let entry = address_row_entry(selected, None, &CONNECT_TOADDRESS_PLACEHOLDER, "", false, u32::MAX, "");
                     col = col.push(entry);
                 }
 
                 for (idx, a) in &addresses {
                     let selected = self.selected_bbs == Some(*idx);
-                    let entry = address_row_entry(selected, Some(*idx), &a.system_name, &a.address, a.is_favored, a.number_of_calls as u32);
+                    // Pass the filter text for highlighting
+                    let entry = address_row_entry(
+                        selected,
+                        Some(*idx),
+                        &a.system_name,
+                        &a.address,
+                        a.is_favored,
+                        a.number_of_calls as u32,
+                        &self.filter_text, // Pass filter text for highlighting
+                    );
                     col = col.push(entry);
                 }
 
@@ -708,14 +732,114 @@ impl DialingDirectoryState {
         };
 
         // Main layout with left panel, right panel, and bottom bar
-        column![
+        let main_content = column![
             row![container(left_panel).padding(8), container(right_panel).padding(8).width(Length::Fill)].height(Length::Fill),
             container(bottom_bar).width(Length::Fill).style(container::bordered_box)
-        ]
-        .into()
+        ];
+
+        // If there's a pending delete, show the confirmation modal
+        if let Some(idx) = self.pending_delete {
+            let overlay = self.delete_confirmation_modal(idx);
+            modal(main_content, overlay, Message::from(DialingDirectoryMsg::Cancel)).into()
+        } else {
+            main_content.into()
+        }
+    }
+
+    fn delete_confirmation_modal(&self, idx: usize) -> Element<'_, Message> {
+        let system_name = if idx < self.addresses.addresses.len() {
+            &self.addresses.addresses[idx].system_name
+        } else {
+            "Unknown"
+        };
+
+        let title = text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-title")).size(22);
+
+        let question = text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-question", system = system_name))
+            .wrapping(text::Wrapping::WordOrGlyph)
+            .size(16);
+
+        let delete_btn = button(
+            text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-delete-button")).style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().danger.base.color),
+                ..Default::default()
+            }),
+        )
+        .on_press(Message::from(DialingDirectoryMsg::ConfirmDelete(idx)))
+        .style(|theme: &iced::Theme, status| {
+            let palette = theme.extended_palette();
+            let base = button::Style {
+                background: Some(iced::Background::Color(palette.background.base.color)),
+                border: iced::Border {
+                    color: palette.danger.base.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                text_color: palette.danger.base.color,
+                shadow: Default::default(),
+                snap: false,
+            };
+
+            match status {
+                button::Status::Hovered => button::Style {
+                    background: Some(iced::Background::Color(palette.danger.weak.color)),
+                    text_color: palette.background.base.color,
+                    ..base
+                },
+                button::Status::Pressed => button::Style {
+                    background: Some(iced::Background::Color(palette.danger.strong.color)),
+                    text_color: palette.background.base.color,
+                    ..base
+                },
+                _ => base,
+            }
+        });
+
+        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
+            .on_press(Message::from(DialingDirectoryMsg::Cancel))
+            .style(button::secondary);
+
+        let modal_content = container(
+            column![
+                title.width(Length::Fill).align_x(Alignment::Center),
+                rule::horizontal(1),
+                question.width(Length::Fixed(440.0)),
+                Space::new().height(Length::Fixed(24.0)),
+                row![Space::new().width(Length::Fill), cancel_btn, delete_btn].spacing(12)
+            ]
+            .padding(20)
+            .spacing(8),
+        )
+        .width(Length::Fixed(480.0))
+        .style(|theme: &iced::Theme| {
+            let palette = theme.palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background)),
+                border: iced::Border {
+                    color: palette.text,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                text_color: Some(palette.text),
+                shadow: iced::Shadow {
+                    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5),
+                    offset: iced::Vector::new(0.0, 4.0),
+                    blur_radius: 16.0,
+                },
+                snap: false,
+            }
+        });
+
+        container(modal_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
     }
 
     pub(crate) fn update(&mut self, msg: DialingDirectoryMsg) -> Task<Message> {
+        println!("DialingDirectoryMsg: {:?}", msg);
         match msg {
             DialingDirectoryMsg::SelectAddress(idx) => {
                 self.selected_bbs = idx;
@@ -748,6 +872,13 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::DeleteAddress(idx) => {
+                // Instead of deleting immediately, set pending_delete
+                self.pending_delete = Some(idx);
+                Task::none()
+            }
+
+            DialingDirectoryMsg::ConfirmDelete(idx) => {
+                // Actually delete the address
                 if idx < self.addresses.addresses.len() {
                     self.addresses.addresses.remove(idx);
                     // Adjust selected index if needed
@@ -758,7 +889,13 @@ impl DialingDirectoryState {
                             self.selected_bbs = Some(selected - 1);
                         }
                     }
+
+                    // Save the address book
+                    if let Err(e) = self.addresses.store_phone_book() {
+                        eprintln!("Failed to save address book: {}", e);
+                    }
                 }
+                self.pending_delete = None;
                 Task::none()
             }
 
@@ -862,6 +999,12 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::Cancel => {
+                // Cancel the delete operation
+                if self.pending_delete.is_some() {
+                    self.pending_delete = None;
+                    return Task::none();
+                }
+
                 // Save any changes before closing
                 if let Err(e) = self.addresses.store_phone_book() {
                     eprintln!("Failed to save address book: {}", e);
@@ -882,6 +1025,56 @@ impl DialingDirectoryState {
                 addr.password = pw;
                 Task::none()
             }
+
+            DialingDirectoryMsg::NavigateUp => {
+                let addresses = self.filtered();
+
+                if let Some(selected_idx) = self.selected_bbs {
+                    // Find current selection in filtered list
+                    if let Some((pos, _)) = addresses.iter().enumerate().find(|(_, (idx, _))| *idx == selected_idx) {
+                        if pos > 0 {
+                            // Select previous item
+                            let (new_idx, _) = addresses[pos - 1];
+                            self.selected_bbs = Some(new_idx);
+                        } else {
+                            // At top, move to quick connect if available
+                            let show_quick_connect = self.filter_text.is_empty() && matches!(self.filter_mode, DialingDirectoryFilter::All);
+                            if show_quick_connect {
+                                self.selected_bbs = None;
+                            }
+                        }
+                    }
+                } else if !addresses.is_empty() {
+                    // No selection (on quick connect), select last item
+                    let (idx, _) = addresses[addresses.len() - 1];
+                    self.selected_bbs = Some(idx);
+                }
+                Task::none()
+            }
+
+            DialingDirectoryMsg::NavigateDown => {
+                let addresses = self.filtered();
+                let show_quick_connect = self.filter_text.is_empty() && matches!(self.filter_mode, DialingDirectoryFilter::All);
+
+                if let Some(selected_idx) = self.selected_bbs {
+                    // Find current selection in filtered list
+                    if let Some((pos, _)) = addresses.iter().enumerate().find(|(_, (idx, _))| *idx == selected_idx) {
+                        if pos + 1 < addresses.len() {
+                            // Select next item
+                            let (new_idx, _) = addresses[pos + 1];
+                            self.selected_bbs = Some(new_idx);
+                        } else if show_quick_connect {
+                            // At bottom, wrap to quick connect
+                            self.selected_bbs = None;
+                        }
+                    }
+                } else if !addresses.is_empty() {
+                    // Currently on quick connect, select first item
+                    let (idx, _) = addresses[0];
+                    self.selected_bbs = Some(idx);
+                }
+                Task::none()
+            }
         }
     }
 }
@@ -899,6 +1092,9 @@ pub enum DialingDirectoryMsg {
     GeneratePassword,
     ConnectSelected,
     Cancel,
+    NavigateUp,
+    NavigateDown,
+    ConfirmDelete(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -926,7 +1122,16 @@ impl From<DialingDirectoryMsg> for Message {
     }
 }
 
-fn address_row_entry<'a>(selected: bool, idx: Option<usize>, name: &'a str, addr: &'a str, favored: bool, calls: u32) -> Element<'a, Message> {
+// Update the address_row_entry function to support highlighting
+fn address_row_entry<'a>(
+    selected: bool,
+    idx: Option<usize>,
+    name: &'a str,
+    addr: &'a str,
+    favored: bool,
+    calls: u32,
+    search_text: &'a str, // Add search text parameter
+) -> Element<'a, Message> {
     fn truncate_text(text: &str, max_chars: usize) -> String {
         if text.chars().count() <= max_chars {
             text.to_string()
@@ -937,36 +1142,52 @@ fn address_row_entry<'a>(selected: bool, idx: Option<usize>, name: &'a str, addr
         }
     }
 
-    let star = if favored { text("★").size(16) } else { text("").size(16) };
-
-    let truncated_name = truncate_text(name, 28);
-    let name_text = text(truncated_name).size(14).font(iced::Font::MONOSPACE);
-
-    let truncated_addr = truncate_text(addr, 29);
-    let addr_text = text(truncated_addr)
-        .size(12)
-        .style(|theme: &iced::Theme| iced::widget::text::Style {
-            color: Some(theme.extended_palette().secondary.base.color),
+    let star = if favored {
+        text("★").size(16).style(|theme: &iced::Theme| iced::widget::text::Style {
+            color: Some(theme.extended_palette().warning.base.color),
             ..Default::default()
         })
-        .font(iced::Font::MONOSPACE);
+    } else {
+        text("").size(16)
+    };
+
+    let truncated_name = truncate_text(name, 28);
+    let truncated_addr = truncate_text(addr, 29);
+
+    // Create highlighted text elements - pass owned Strings
+    let name_element = if !search_text.is_empty() && truncated_name.to_lowercase().contains(&search_text.to_lowercase()) {
+        highlight_name_text(truncated_name, search_text)
+    } else {
+        text(truncated_name).size(14).font(iced::Font::MONOSPACE).into()
+    };
+
+    let addr_element = if !search_text.is_empty() && truncated_addr.to_lowercase().contains(&search_text.to_lowercase()) {
+        highlight_addr_text(truncated_addr, search_text)
+    } else {
+        text(truncated_addr)
+            .size(12)
+            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().secondary.weak.color),
+                ..Default::default()
+            })
+            .font(iced::Font::MONOSPACE)
+            .into()
+    };
 
     let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {}", calls) }).size(12);
 
     let content = column![
-        row![name_text, Space::new().width(Length::Fill), star].align_y(Alignment::Center),
+        row![name_element, Space::new().width(Length::Fill), star].align_y(Alignment::Center),
         row![
-            addr_text,
+            addr_element,
             Space::new().width(Length::Fill),
             container(calls_text).center_y(Length::Shrink).padding([0, 8])
         ]
     ]
     .spacing(2);
 
-    // Use a container with padding instead of a button
     let entry_container: container::Container<'_, Message> = container(content).width(Length::Fill).padding([6, 10]);
 
-    // Create a transparent button overlay for click handling
     let clickable = button(Space::new())
         .width(Length::Fill)
         .height(Length::Fill)
@@ -984,10 +1205,8 @@ fn address_row_entry<'a>(selected: bool, idx: Option<usize>, name: &'a str, addr
         })
         .on_press(Message::from(DialingDirectoryMsg::SelectAddress(idx)));
 
-    // Stack the clickable overlay on top of the content
     let stacked = iced::widget::stack![entry_container, clickable];
 
-    // Apply selection highlight if selected
     if selected {
         container(stacked)
             .width(Length::Fill)
@@ -998,7 +1217,6 @@ fn address_row_entry<'a>(selected: bool, idx: Option<usize>, name: &'a str, addr
                 border_color.a = 0.6;
                 swap(&mut border_color.r, &mut border_color.g);
 
-                // Use primary weak for background tint & primary strong for border
                 container::Style {
                     background: Some(iced::Background::Color({
                         let mut c = extended.primary.weak.color;
@@ -1020,4 +1238,103 @@ fn address_row_entry<'a>(selected: bool, idx: Option<usize>, name: &'a str, addr
     } else {
         container(stacked).width(Length::Fill).into()
     }
+}
+
+// Helper function to highlight text in name (larger font) - now takes owned String
+fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Message> {
+    if search.is_empty() || !text_str.to_lowercase().contains(&search.to_lowercase()) {
+        return text(text_str).size(14).font(iced::Font::MONOSPACE).into();
+    }
+
+    let lower_text = text_str.to_lowercase();
+    let lower_search = search.to_lowercase();
+
+    let mut row_elements: Vec<Element<'a, Message>> = Vec::new();
+    let mut last = 0;
+
+    for (idx, _) in lower_text.match_indices(&lower_search) {
+        if idx > last {
+            // Add non-highlighted part
+            row_elements.push(text(text_str[last..idx].to_string()).size(14).font(iced::Font::MONOSPACE).into());
+        }
+        // Add highlighted part with different style
+        row_elements.push(
+            text(text_str[idx..idx + search.len()].to_string())
+                .size(14)
+                .font(iced::Font::MONOSPACE)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().primary.strong.color),
+                    ..Default::default()
+                })
+                .into(),
+        );
+        last = idx + search.len();
+    }
+    if last < text_str.len() {
+        row_elements.push(text(text_str[last..].to_string()).size(14).font(iced::Font::MONOSPACE).into());
+    }
+
+    row(row_elements).into()
+}
+
+// Helper function to highlight text in address (smaller font) - now takes owned String
+fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Message> {
+    if search.is_empty() || !text_str.to_lowercase().contains(&search.to_lowercase()) {
+        return text(text_str)
+            .size(12)
+            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().secondary.weak.color),
+                ..Default::default()
+            })
+            .font(iced::Font::MONOSPACE)
+            .into();
+    }
+
+    let lower_text = text_str.to_lowercase();
+    let lower_search = search.to_lowercase();
+
+    let mut row_elements: Vec<Element<'a, Message>> = Vec::new();
+    let mut last = 0;
+
+    for (idx, _) in lower_text.match_indices(&lower_search) {
+        if idx > last {
+            // Add non-highlighted part
+            row_elements.push(
+                text(text_str[last..idx].to_string())
+                    .size(12)
+                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().secondary.weak.color),
+                        ..Default::default()
+                    })
+                    .font(iced::Font::MONOSPACE)
+                    .into(),
+            );
+        }
+        // Add highlighted part with warning color
+        row_elements.push(
+            text(text_str[idx..idx + search.len()].to_string())
+                .size(12)
+                .font(iced::Font::MONOSPACE)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().primary.strong.color),
+                    ..Default::default()
+                })
+                .into(),
+        );
+        last = idx + search.len();
+    }
+    if last < text_str.len() {
+        row_elements.push(
+            text(text_str[last..].to_string())
+                .size(12)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().secondary.weak.color),
+                    ..Default::default()
+                })
+                .font(iced::Font::MONOSPACE)
+                .into(),
+        );
+    }
+
+    row(row_elements).into()
 }

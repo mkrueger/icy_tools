@@ -1,7 +1,7 @@
 use std::{path::PathBuf, time::Instant};
 
 use i18n_embed_fl::fl;
-use iced::{Element, Task, Theme};
+use iced::{Element, Task, Theme, keyboard};
 use icy_engine::{BufferParser, Position};
 
 use crate::{
@@ -136,7 +136,7 @@ impl MainWindow {
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Dracula.clone()
+        Theme::Dark.clone()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -156,8 +156,29 @@ impl MainWindow {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        // Only subscribe to keyboard events when in memory editor mode
-        iced::Subscription::none()
+        // Subscribe to keyboard events when dialing directory is shown
+        if matches!(self.state.mode, MainWindowMode::ShowDialingDirectory) {
+            iced::event::listen_with(|event, _status, _| match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::NavigateUp))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::NavigateDown))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::ConnectSelected))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Cancel))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            })
+        } else {
+            iced::Subscription::none()
+        }
     }
 
     pub fn get_mode(&self) -> MainWindowMode {

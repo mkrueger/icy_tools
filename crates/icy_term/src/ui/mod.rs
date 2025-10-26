@@ -6,3 +6,6 @@ pub use main_window_state::*;
 
 pub mod dialogs;
 pub use dialogs::*;
+
+pub mod modal;
+pub use modal::*;
