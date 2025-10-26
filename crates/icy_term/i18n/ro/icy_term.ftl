@@ -90,6 +90,10 @@ dialing_directory-add-bbs-button = Adaugă BBS
 dialing_directory-version-warning = Acest director de apelare a fost creat cu o versiune mai nouă de IcyTerm. Te rugăm să folosești o versiune mai nouă. Nu se vor salva modificările.
 dialing_directory-custom-iemsi-login-data = Date de autentificare IEMSI personalizate
 dialing_directory-open_cache_button=Deschide directorul cache…
+dialing_directory-generate-tooltip = Generează o parolă aleatorie
+dialing_directory-generate-disabled-tooltip= 
+    Parola este deja setată,
+    ștergeți-o mai întâi pentru a genera una nouă
 
 terminal-upload = Încărcare
 terminal-download = Descărcare

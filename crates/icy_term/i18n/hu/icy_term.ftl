@@ -90,6 +90,10 @@ dialing_directory-add-bbs-button = BBS hozzáadása
 dialing_directory-version-warning = Ez a tárcsázási könyvtár egy újabb IcyTerm verzióval készült. Kérjük, használjon újabb verziót. A változtatások nem lesznek elmentve.
 dialing_directory-custom-iemsi-login-data = Egyéni IEMSI bejelentkezési adatok
 dialing_directory-open_cache_button=Gyorsítótár könyvtár megnyitása…
+dialing_directory-generate-tooltip = Véletlenszerű jelszó generálása
+dialing_directory-generate-disabled-tooltip= 
+    Jelszó már be van állítva,
+    először töröld, hogy új jelszót generálhass
 
 terminal-upload = Feltöltés
 terminal-download = Letöltés

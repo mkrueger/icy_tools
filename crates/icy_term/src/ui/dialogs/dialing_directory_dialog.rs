@@ -1,6 +1,8 @@
 use crate::ui::Message;
+use crate::util::Rng;
 use crate::{ATARI_MODES, Address, AddressBook, ScreenMode, VGA_MODES};
 use i18n_embed_fl::fl;
+use iced::widget::tooltip;
 use iced::{
     Alignment, Element, Length, Task,
     widget::{Column, Space, button, checkbox, column, container, pick_list, row, rule, scrollable, svg, text, text_input},
@@ -509,6 +511,31 @@ impl DialingDirectoryState {
                     .padding(4)
                     .style(button::text);
 
+                let (generate_btn, tooltip_label) = if addr.password.is_empty() {
+                    (
+                        button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")))
+                            .on_press(Message::from(DialingDirectoryMsg::GeneratePassword))
+                            .padding(4),
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-tooltip"),
+                    )
+                } else {
+                    (
+                        button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")))
+                            .padding(4)
+                            .style(button::secondary),
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-disabled-tooltip"),
+                    )
+                };
+
+                let generate_btn: tooltip::Tooltip<'_, Message> = tooltip(
+                    generate_btn,
+                    container(text(tooltip_label)).style(container::rounded_box),
+                    tooltip::Position::Bottom,
+                )
+                .gap(10)
+                .style(container::rounded_box)
+                .padding(8);
+
                 let mut col: Column<'_, Message> = column![
                     row![text("Login").size(14), rule::horizontal(1)].spacing(8).align_y(Alignment::Center),
                     row![
@@ -524,7 +551,8 @@ impl DialingDirectoryState {
                             .width(label_width)
                             .align_x(Alignment::End),
                         pw_field,
-                        toggler_pw
+                        toggler_pw,
+                        generate_btn
                     ]
                     .spacing(8)
                     .align_y(Alignment::Center),
@@ -842,6 +870,18 @@ impl DialingDirectoryState {
                 // Return a task that closes the dialog
                 Task::done(Message::CloseDialingDirectory)
             }
+
+            DialingDirectoryMsg::GeneratePassword => {
+                // Generate a random password
+                let mut rng = Rng::default();
+                let mut pw = String::new();
+                for _ in 0..16 {
+                    pw.push(unsafe { char::from_u32_unchecked(rng.gen_range(b'0'..=b'z')) });
+                }
+                let addr = self.get_address_mut(self.selected_bbs);
+                addr.password = pw;
+                Task::none()
+            }
         }
     }
 }
@@ -856,6 +896,7 @@ pub enum DialingDirectoryMsg {
     DeleteAddress(usize),
     AddressFieldChanged { id: Option<usize>, field: AddressFieldChange },
     ToggleShowPasswords,
+    GeneratePassword,
     ConnectSelected,
     Cancel,
 }

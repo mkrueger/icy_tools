@@ -90,6 +90,10 @@ dialing_directory-add-bbs-button = Dodaj BBS
 dialing_directory-version-warning = Ten katalog wybierania został utworzony w nowszej wersji IcyTerm. Proszę użyć nowszej wersji. Żadne zmiany nie zostaną zapisane.
 dialing_directory-custom-iemsi-login-data = Niestandardowe dane logowania IEMSI
 dialing_directory-open_cache_button=Otwórz katalog pamięci podręcznej…
+dialing_directory-generate-tooltip = Generuj losowe hasło
+dialing_directory-generate-disabled-tooltip= 
+    Hasło jest już ustawione,
+    najpierw je usuń, aby wygenerować nowe
 
 terminal-upload = Prześlij
 terminal-download = Pobierz

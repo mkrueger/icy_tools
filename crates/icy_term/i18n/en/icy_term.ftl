@@ -91,6 +91,10 @@ dialing_directory-version-warning = This dialing directory was created with a ne
 dialing_directory-custom-iemsi-login-data = Custom IEMSI login data
 dialing_directory-open_cache_button=Open cache directory…
 dialing_directory-comment-placeholder= Add a comment…
+dialing_directory-generate-tooltip= Generate a random password
+dialing_directory-generate-disabled-tooltip= 
+    Password already set,
+    delete it first to generate a new one
 
 terminal-upload = Upload
 terminal-download = Download

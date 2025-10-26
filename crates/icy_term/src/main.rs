@@ -63,6 +63,8 @@ lazy_static::lazy_static! {
 struct Localizations;
 
 use once_cell::sync::Lazy;
+
+use crate::util::Rng;
 static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
     let loader = i18n_embed::fluent::fluent_language_loader!();
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
@@ -139,6 +141,9 @@ fn main() {
     } else {
         eprintln!("Failed to create log file");
     }
+
+    let mut rng = Rng::default();
+    rng.next();
 
     log::info!("Starting iCY TERM {}", *VERSION);
     icy_net::websocket::init_websocket_providers();

@@ -91,6 +91,10 @@ dialing_directory-custom-iemsi-login-data = Benutzerdefinierte IEMSI Login-Daten
 dialing_directory-open_cache_button=Cache öffnen…
 dialing_directory-date-format=%d.%m.%Y um %H:%M
 dialing_directory-baud-emulation = Baud-Emulation:
+dialing_directory-generate-tooltip = Generiere ein zufälliges Passwort
+dialing_directory-generate-disabled-tooltip= 
+    Passwort bereits gesetzt,
+    lösche es zuerst, um ein neues zu generieren
 
 terminal-upload = Upload
 terminal-download = Download

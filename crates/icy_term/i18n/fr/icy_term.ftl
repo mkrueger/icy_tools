@@ -90,6 +90,11 @@ dialing_directory-add-bbs-button = Ajouter un BBS
 dialing_directory-version-warning = Ce répertoire de numérotation a été créé avec une version plus récente d'IcyTerm. Veuillez utiliser une version plus récente. Aucun changement ne sera enregistré.
 dialing_directory-custom-iemsi-login-data = Données de connexion IEMSI personnalisées
 dialing_directory-open_cache_button=Ouvrir le répertoire du cache…
+dialing_directory-generate-tooltip = Générer un mot de passe aléatoire
+dialing_directory-generate-disabled-tooltip= 
+    Mot de passe déjà défini,
+    supprimez-le d'abord pour en générer un nouveau
+
 
 terminal-upload = Télécharger
 terminal-download = Télécharger

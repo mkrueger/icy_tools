@@ -90,6 +90,10 @@ dialing_directory-add-bbs-button = Přidat BBS
 dialing_directory-version-warning = Tento telefonní seznam byl vytvořen v novější verzi IcyTerm. Použijte prosím novější verzi. Žádné změny nebudou uloženy.
 dialing_directory-custom-iemsi-login-data = Vlastní přihlašovací údaje IEMSI
 dialing_directory-open_cache_button=Otevřít adresář mezipaměti…
+dialing_directory-generate-tooltip = Generovat náhodné heslo
+dialing_directory-generate-disabled-tooltip= 
+    Heslo je již nastaveno,
+    nejprve jej smažte, abyste mohli vygenerovat nové
 
 terminal-upload = Nahrát
 terminal-download = Stáhnout
