@@ -46,7 +46,9 @@ tokio = { version = "1.47.1", features = ["full"] }
 rodio = { version = "0.21.1" }
 arboard = { version = "3.6.1" }
 anyhow = "1.0.100"
-iced = { git = "https://github.com/iced-rs/iced" }
+
+iced = "0.14.0-dev"
+iced_aw = { git = "https://github.com/iced-rs/iced_aw", default-features = 	false, features = ["menu"] }
 
 egui = "0.33.0"
 eframe = "0.33.0"
@@ -72,3 +74,6 @@ lto = true          # Enable link-time optimization
 codegen-units = 1   # Reduce number of codegen units to increase optimizations
 panic = 'abort'     # Abort on panic
 strip = true        # Strip symbols from binary*
+
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"

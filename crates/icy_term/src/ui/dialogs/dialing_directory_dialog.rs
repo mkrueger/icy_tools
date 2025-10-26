@@ -281,6 +281,9 @@ impl DialingDirectoryState {
                 cols
             };
 
+            // Create a table-like layout with consistent column widths
+            let label_width = Length::Fixed(120.0);
+
             // Server settings
             let server_section = {
                 let address_field = text_input("", &addr.address)
@@ -345,9 +348,6 @@ impl DialingDirectoryState {
                 .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type"))
                 .width(Length::Fixed(150.0));
 
-                // Create a table-like layout with consistent column widths
-                let label_width = Length::Fixed(100.0);
-
                 let mut rows = vec![
                     // Address row
                     row![
@@ -372,98 +372,54 @@ impl DialingDirectoryState {
                     .align_y(Alignment::Center),
                 ];
 
-                // Emulation row - add Screen and Music only for ANSI
-                if addr.terminal_type == TerminalEmulation::Ansi {
-                    let modes = VGA_MODES.to_vec();
-                    let screen_mode_pick = pick_list(modes, Some(addr.screen_mode), move |sm| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::ScreenMode(sm),
-                        })
+                let modes = VGA_MODES.to_vec();
+                let screen_mode_pick = pick_list(modes, Some(addr.screen_mode), move |sm| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::ScreenMode(sm),
                     })
-                    .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode"))
-                    .width(Length::Fixed(150.0));
+                })
+                .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode"))
+                .width(Length::Fixed(150.0));
 
-                    let music_options = vec![MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both];
+                let music_options = vec![MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both];
 
-                    let music_pick = pick_list(music_options, Some(addr.ansi_music), move |m| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::Music(m),
-                        })
+                let music_pick = pick_list(music_options, Some(addr.ansi_music), move |m| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::Music(m),
                     })
-                    .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option"))
-                    .width(Length::Fixed(150.0));
+                })
+                .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option"))
+                .width(Length::Fixed(150.0));
+                
+                let mut column_row = row![
+                    container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")))
+                        .align_x(Alignment::End)
+                        .width(label_width),
+                    term_pick,
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center);
 
-                    rows.push(
-                        row![
-                            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")))
-                                .align_x(Alignment::End)
-                                .width(label_width),
-                            term_pick,
-                            text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")),
-                            screen_mode_pick,
-                            text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")),
-                            music_pick,
-                            Space::new().width(Length::Fill)
-                        ]
-                        .spacing(8)
-                        .align_y(Alignment::Center),
-                    );
-                } else {
-                    // For non-ANSI terminals, check if they need screen mode
-                    let needs_screen = match addr.terminal_type {
-                        TerminalEmulation::Ascii | TerminalEmulation::Avatar | TerminalEmulation::Rip => {
-                            let modes = VGA_MODES.to_vec();
-                            Some(modes)
-                        }
-                        TerminalEmulation::AtariST => Some(ATARI_MODES.to_vec()),
-                        TerminalEmulation::PETscii => Some(vec![ScreenMode::Vic]),
-                        TerminalEmulation::ATAscii => Some(vec![ScreenMode::Antic]),
-                        TerminalEmulation::ViewData | TerminalEmulation::Mode7 => Some(vec![ScreenMode::Videotex]),
-                        TerminalEmulation::Skypix => Some(vec![ScreenMode::SkyPix]),
-                        _ => None,
-                    };
 
-                    if let Some(modes) = needs_screen {
-                        let screen_mode_pick = pick_list(modes, Some(addr.screen_mode), move |sm| {
-                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                                id,
-                                field: AddressFieldChange::ScreenMode(sm),
-                            })
-                        })
-                        .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode"))
-                        .width(Length::Fixed(150.0));
 
-                        rows.push(
-                            row![
-                                container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")))
-                                    .align_x(Alignment::End)
-                                    .width(label_width),
-                                term_pick,
-                                text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")),
-                                screen_mode_pick,
-                                Space::new().width(Length::Fill)
-                            ]
-                            .spacing(8)
-                            .align_y(Alignment::Center),
-                        );
-                    } else {
-                        // Just emulation, no screen mode needed
-                        rows.push(
-                            row![
-                                container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")))
-                                    .align_x(Alignment::End)
-                                    .width(label_width),
-                                term_pick,
-                                Space::new().width(Length::Fill)
-                            ]
-                            .spacing(8)
-                            .align_y(Alignment::Center),
-                        );
-                    }
+                if addr.terminal_type == TerminalEmulation::Ansi || 
+                    addr.terminal_type == TerminalEmulation::Avatar ||
+                    addr.terminal_type == TerminalEmulation::Ascii {
+                    column_row = column_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
+                    column_row = column_row.push(screen_mode_pick);
                 }
 
+                if addr.terminal_type == TerminalEmulation::Ansi {
+                    column_row = column_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")));
+                    column_row = column_row.push(music_pick);
+                }
+
+                column_row = column_row.push(Space::new().width(Length::Fill));
+                rows.push(column_row);
+
+             
                 let mut col = column![].spacing(8);
 
                 for row in rows {
@@ -475,8 +431,6 @@ impl DialingDirectoryState {
 
             // Login settings
             let login_section = {
-                let label_width = Length::Fixed(100.0);
-
                 let user_field = text_input("", &addr.user_name)
                     .on_input(move |s| {
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -720,7 +674,7 @@ impl DialingDirectoryState {
             .style(container::rounded_box)
             .padding(8);
 
-            let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"))).on_press(Message::from(DialingDirectoryMsg::Cancel));
+            let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"))).on_press(Message::CloseDialog);
 
             let connect_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")))
                 .on_press(Message::from(DialingDirectoryMsg::ConnectSelected))
@@ -1014,7 +968,7 @@ impl DialingDirectoryState {
                 }
 
                 // Return a task that closes the dialog
-                Task::done(Message::CloseDialingDirectory)
+                Task::done(Message::CloseDialog)
             }
 
             DialingDirectoryMsg::GeneratePassword => {

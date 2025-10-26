@@ -6,7 +6,7 @@ use icy_engine::{BufferParser, Position};
 
 use crate::{
     Address, AddressBook, Options, ScreenMode,
-    ui::{MainWindowState, dialing_directory_dialog},
+    ui::{MainWindowState, dialing_directory_dialog, terminal_window},
 };
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
@@ -30,13 +30,22 @@ pub enum MainWindowMode {
 pub enum Message {
     DialingDirectory(crate::ui::dialogs::dialing_directory_dialog::DialingDirectoryMsg),
     Connect(Address),
-    CloseDialingDirectory,
+    CloseDialog,
+    Disconnect,
+    ShowDialingDirectory,
+    Upload,
+    Download,
+    InitiateFileTransfer {
+        protocol: icy_net::protocol::TransferProtocolType,
+        is_download: bool,
+    }
 }
 
 pub struct MainWindow {
     //    buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     pub state: MainWindowState,
     pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
+    pub terminal_window: terminal_window::TerminalWindow,
 
     screen_mode: ScreenMode,
     is_fullscreen_mode: bool,
@@ -82,7 +91,7 @@ impl MainWindow {
                 options_written: false,
             },
             dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
-
+            terminal_window: terminal_window::TerminalWindow::new(),
             screen_mode: ScreenMode::Default,
             is_fullscreen_mode: false,
             last_pos: Position::default(),
@@ -131,7 +140,24 @@ impl MainWindow {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
-            _ => Task::none(),
+            Message::CloseDialog => {
+                self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            Message::ShowDialingDirectory => {
+                self.state.mode = MainWindowMode::ShowDialingDirectory;
+                Task::none()
+            }
+            Message::Upload => {
+                self.state.mode = MainWindowMode::SelectProtocol(false);
+                Task::none()
+            }
+            Message::Download => {
+                self.state.mode = MainWindowMode::SelectProtocol(true);
+                Task::none()
+            }
+
+            _ => Task::none(),  
         }
     }
 
@@ -140,11 +166,14 @@ impl MainWindow {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        println!("MainWindow::view mode={:?}", self.state.mode);
         match self.state.mode {
-            MainWindowMode::ShowTerminal => todo!(),
+            MainWindowMode::ShowTerminal => self.terminal_window.view(),
             MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(),
             MainWindowMode::ShowSettings => todo!(),
-            MainWindowMode::SelectProtocol(_) => todo!(),
+            MainWindowMode::SelectProtocol(download) => {
+                crate::ui::dialogs::protocol_selector::view_selector(download, self.terminal_window.view())
+            },
             MainWindowMode::FileTransfer(_) => todo!(),
             MainWindowMode::DeleteSelectedAddress(_) => todo!(),
             MainWindowMode::ShowCaptureDialog => todo!(),
@@ -171,6 +200,17 @@ impl MainWindow {
                     }
                     keyboard::Key::Named(keyboard::key::Named::Escape) => {
                         Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Cancel))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            })
+        
+        } else if matches!(self.state.mode, MainWindowMode::SelectProtocol(_)) {
+             iced::event::listen_with(|event, _status, _| match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
+                        Some(Message::CloseDialog)
                     }
                     _ => None,
                 },

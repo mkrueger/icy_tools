@@ -12,6 +12,7 @@ icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../../../icy_board/crates/icy_net" }
 
 iced = { workspace = true, features = [ "tokio", "svg", "image" ]  }
+#iced_aw = { workspace = true  }
 
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -94,3 +95,6 @@ assets = [
     ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_term.png", "644"],
 ]
 
+
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"

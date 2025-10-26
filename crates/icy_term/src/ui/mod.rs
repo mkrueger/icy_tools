@@ -9,3 +9,7 @@ pub use dialogs::*;
 
 pub mod modal;
 pub use modal::*;
+
+pub mod terminal_window;
+pub use terminal_window::*;
+
