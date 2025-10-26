@@ -79,6 +79,7 @@ pub struct DialingDirectoryState {
     pub filter_text: String,
     pub show_passwords: bool,
     pub pending_delete: Option<usize>,
+    pub quick_connect_address: Address,
 }
 
 impl DialingDirectoryState {
@@ -90,6 +91,7 @@ impl DialingDirectoryState {
             filter_text: String::new(),
             show_passwords: false,
             pending_delete: None,
+            quick_connect_address: Address::default(),
         }
     }
 
@@ -99,10 +101,7 @@ impl DialingDirectoryState {
                 return &mut self.addresses.addresses[idx];
             }
         }
-        if self.addresses.addresses.is_empty() {
-            self.addresses.addresses.push(Address::default());
-        }
-        &mut self.addresses.addresses[0]
+        &mut self.quick_connect_address
     }
 
     fn filtered(&self) -> Vec<(usize, &Address)> {
@@ -159,7 +158,7 @@ impl DialingDirectoryState {
 
             let list_scroll: Element<Message> = {
                 let mut col = Column::new();
-                let show_quick_connect = self.filter_text.is_empty() && matches!(self.filter_mode, DialingDirectoryFilter::All);
+                let show_quick_connect = self.filter_text.is_empty();
 
                 if show_quick_connect && !self.addresses.addresses.is_empty() {
                     let selected = self.selected_bbs.is_none();
@@ -180,10 +179,6 @@ impl DialingDirectoryState {
                         &self.filter_text, // Pass filter text for highlighting
                     );
                     col = col.push(entry);
-                }
-
-                if addresses.is_empty() && !show_quick_connect {
-                    col = col.push(container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-no-entries"))).padding(10));
                 }
 
                 scrollable(col.spacing(2))
@@ -216,13 +211,10 @@ impl DialingDirectoryState {
         };
 
         let right_panel: Element<Message> = {
-            let addr_idx = self.selected_bbs.unwrap_or(0);
-            let addr = if addr_idx < self.addresses.addresses.len() {
+            let addr = if let Some(addr_idx) = self.selected_bbs {
                 self.addresses.addresses[addr_idx].clone()
-            } else if !self.addresses.addresses.is_empty() {
-                self.addresses.addresses[0].clone()
             } else {
-                Address::default()
+                self.quick_connect_address.clone()
             };
 
             let is_quick = self.selected_bbs.is_none();
@@ -241,8 +233,14 @@ impl DialingDirectoryState {
                     .size(18)
                     .width(Length::Fill);
 
-                let star_btn: button::Button<'_, Message> =
-                    button(text(if addr.is_favored { "★" } else { "☆" })).on_press(Message::from(DialingDirectoryMsg::ToggleFavorite(addr_idx)));
+                let star_btn: button::Button<'_, Message> = button(text(if addr.is_favored { "★" } else { "☆" }))
+                    .on_press(Message::from(DialingDirectoryMsg::ToggleFavorite(if let Some(addr_idx) = self.selected_bbs {
+                        addr_idx
+                    } else {
+                        0
+                    })))
+                    .padding(4)
+                    .style(button::text);
 
                 // Info section
                 let info_section = {
@@ -677,10 +675,14 @@ impl DialingDirectoryState {
             if !is_quick {
                 content = content.push(login_section).push(comment_section)
             } else {
-                let add_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button")).size(16))
+                let mut add_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button")).size(16))
                     .on_press(Message::from(DialingDirectoryMsg::AddAddress))
                     .padding(8)
                     .width(Length::Shrink);
+
+                if self.quick_connect_address.address.is_empty() {
+                    add_btn = add_btn.style(button::secondary);
+                }
 
                 content = content.push(add_btn);
             }
@@ -864,8 +866,9 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::AddAddress => {
-                let mut new_address = Address::default();
-                new_address.system_name = format!("New BBS {}", self.addresses.addresses.len() + 1);
+                let mut new_address = self.quick_connect_address.clone();
+                self.quick_connect_address = Address::default();
+                new_address.system_name = new_address.address.clone();
                 self.addresses.addresses.push(new_address);
                 self.selected_bbs = Some(self.addresses.addresses.len() - 1);
                 Task::none()
