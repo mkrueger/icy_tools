@@ -1,3 +1,4 @@
+/*
 use egui::{Image, Vec2};
 const SIZE: Vec2 = Vec2::splat(22.0);
 
@@ -18,3 +19,4 @@ lazy_static::lazy_static! {
     pub static ref KEY: Image<'static> = Image::new(egui::include_image!("../data/icons/key.svg")).fit_to_exact_size(SIZE);
 
 }
+*/

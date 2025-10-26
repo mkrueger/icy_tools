@@ -4,9 +4,6 @@ use std::{
     time::Duration,
 };
 
-use egui::{Modifiers, Rect};
-use egui_bind::KeyOrPointer;
-use i18n_embed_fl::fl;
 use icy_engine::Color;
 use icy_engine_gui::{MonitorSettings, MonitorType};
 use toml::Value;
@@ -22,16 +19,17 @@ pub enum Scaling {
 
 impl Scaling {
     pub const ALL: [Scaling; 2] = [Scaling::Nearest, Scaling::Linear];
-
+    /*
     #[must_use]
     pub fn get_filter(&self) -> i32 {
         match self {
             Scaling::Nearest => glow::NEAREST as i32,
             Scaling::Linear => glow::LINEAR as i32,
         }
-    }
+    }*/
 }
 
+/*
 pub struct Key {
     pub description: String,
     pub key: egui::Key,
@@ -39,6 +37,8 @@ pub struct Key {
 }
 
 type KeyType = Option<(KeyOrPointer, Modifiers)>;
+*/
+/*
 
 macro_rules! keys {
     ($( ($l:ident, $key:ident, $mod: ident, $translation: expr) ),* ) => {
@@ -117,6 +117,8 @@ macro_rules! keys {
     }
 }
 
+*/
+/*
 fn parse_key_binding(str: impl Into<String>) -> KeyType {
     let str: String = str.into();
     let parts = str.split('|').map(str::trim).collect::<Vec<_>>();
@@ -134,10 +136,7 @@ fn parse_key_binding(str: impl Into<String>) -> KeyType {
     Some((KeyOrPointer::Key(key), m))
 }
 
-// Generated from "egui::Key::name()"
-// \s*(.*)\s*=>\s*(.*)\s*,
-// replace:
-// $2 => egui::$1,
+
 fn parse_key(s: &str) -> egui::Key {
     match s {
         "Down" => egui::Key::ArrowDown,
@@ -249,6 +248,7 @@ keys![
     (show_find, F, ALT, "settings-keybinds-show-find"),
     (show_capture, P, ALT, "settings-keybinds-capture-control")
 ];
+*/
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IEMSISettings {
@@ -281,11 +281,10 @@ pub struct Options {
     pub is_dark_mode: Option<bool>,
 
     pub monitor_settings: MonitorSettings,
-    pub bind: KeyBindings,
+    //    pub bind: KeyBindings,
     pub iemsi: IEMSISettings,
 
-    pub window_rect: Option<Rect>,
-
+    //    pub window_rect: Option<Rect>,
     pub modem: Modem,
 }
 
@@ -297,9 +296,9 @@ impl Default for Options {
             monitor_settings: MonitorSettings::default(),
             iemsi: IEMSISettings::default(),
             console_beep: true,
-            bind: KeyBindings::default(),
+            //            bind: KeyBindings::default(),
             is_dark_mode: None,
-            window_rect: None,
+            //            window_rect: None,
             modem: Modem::default(),
         }
     }
@@ -328,7 +327,7 @@ impl Options {
         }
         Ok(Options::default())
     }
-
+    /*
     pub(crate) fn get_theme(&self) -> egui::ThemePreference {
         if let Some(dark_mode) = self.is_dark_mode {
             if dark_mode {
@@ -339,7 +338,7 @@ impl Options {
         } else {
             egui::ThemePreference::System
         }
-    }
+    }*/
 
     /// Returns the store options of this [`Options`].
     ///
@@ -356,9 +355,9 @@ impl Options {
             let mut file = File::create(&write_name)?;
             file.write_all(b"version = \"1.1\"\n")?;
 
-            if let Some(rect) = self.window_rect {
-                file.write_all(format!("window_coord = \"{}/{}#{}/{}\"\n", rect.min.x, rect.min.y, rect.max.x, rect.max.y).as_bytes())?;
-            }
+            //            if let Some(rect) = self.window_rect {
+            //                file.write_all(format!("window_coord = \"{}/{}#{}/{}\"\n", rect.min.x, rect.min.y, rect.max.x, rect.max.y).as_bytes())?;
+            //            }
 
             file.write_all(format!("scaling = \"{:?}\"\n", self.scaling).as_bytes())?;
             if let Some(dark_mode) = self.is_dark_mode {
@@ -404,7 +403,7 @@ impl Options {
                 file.write_all(format!("birth_date = \"{}\"\n", self.iemsi.birth_date).as_bytes())?;
             }
 
-            write_keybindings(&mut file, &self.bind)?;
+            //            write_keybindings(&mut file, &self.bind)?;
 
             file.write_all("[[modem]]\n".to_string().as_bytes())?;
             self.modem.write_modem_settings(&mut file)?;
@@ -435,10 +434,10 @@ impl Options {
         self.scaling = Scaling::Nearest;
         self.monitor_settings = MonitorSettings::default();
     }
-
+    /*
     pub(crate) fn reset_keybindings(&mut self) {
         self.bind = KeyBindings::default();
-    }
+    }*/
 }
 
 fn parse_value(options: &mut Options, value: &Value) {
@@ -461,7 +460,7 @@ fn parse_value(options: &mut Options, value: &Value) {
                                         let max = max.split('/').collect::<Vec<&str>>();
                                         if let (Ok(x1), Ok(y1)) = (min[0].parse::<f32>(), min[1].parse::<f32>()) {
                                             if let (Ok(x2), Ok(y2)) = (max[0].parse::<f32>(), max[1].parse::<f32>()) {
-                                                options.window_rect = Some(Rect::from_min_max(egui::Pos2::new(x1, y1), egui::Pos2::new(x2, y2)));
+                                                //                                                options.window_rect = Some(Rect::from_min_max(egui::Pos2::new(x1, y1), egui::Pos2::new(x2, y2)));
                                             }
                                         }
                                     }
@@ -545,7 +544,7 @@ fn parse_value(options: &mut Options, value: &Value) {
                     }
                     "KEYBINDINGS" => {
                         if let Value::Table(keybind_settings) = v {
-                            parse_keybinding_settings(options, keybind_settings);
+                            //                            parse_keybinding_settings(options, keybind_settings);
                         }
                     }
 
@@ -637,11 +636,11 @@ mod tests {
     #[test]
     fn test_reset_keybindings() {
         let mut opt = Options::default();
-        opt.bind.download = None;
-        opt.bind.full_screen = None;
+        //        opt.bind.download = None;
+        //        opt.bind.full_screen = None;
 
-        assert_ne!(Options::default().bind, opt.bind);
-        opt.reset_keybindings();
-        assert_eq!(Options::default().bind, opt.bind);
+        //        assert_ne!(Options::default().bind, opt.bind);
+        //        opt.reset_keybindings();
+        //        assert_eq!(Options::default().bind, opt.bind);
     }
 }

@@ -4,7 +4,10 @@ use i18n_embed_fl::fl;
 use iced::{Element, Task, Theme};
 use icy_engine::{BufferParser, Position};
 
-use crate::{ScreenMode, ui::MainWindowState};
+use crate::{
+    Address, AddressBook, Options, ScreenMode,
+    ui::{MainWindowState, dialing_directory_dialog},
+};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
@@ -23,12 +26,17 @@ pub enum MainWindowMode {
     ShowDisconnectedMessage(String, String),
 }
 
-pub enum Message {}
+#[derive(Debug, Clone)]
+pub enum Message {
+    DialingDirectory(crate::ui::dialogs::dialing_directory_dialog::DialingDirectoryMsg),
+    Connect(Address),
+    CloseDialingDirectory,
+}
 
-#[derive(Default)]
 pub struct MainWindow {
     //    buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     pub state: MainWindowState,
+    pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
 
     screen_mode: ScreenMode,
     is_fullscreen_mode: bool,
@@ -55,6 +63,38 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
+    pub fn new() -> Self {
+        let options = match Options::load_options() {
+            Ok(options) => options,
+            Err(e) => {
+                log::error!("Error reading dialing_directory: {e}");
+                Options::default()
+            }
+        };
+
+        let addresses = AddressBook::load_phone_book().unwrap();
+
+        Self {
+            state: MainWindowState {
+                mode: MainWindowMode::ShowDialingDirectory,
+                options,
+                #[cfg(test)]
+                options_written: false,
+            },
+            dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
+
+            screen_mode: ScreenMode::Default,
+            is_fullscreen_mode: false,
+            last_pos: Position::default(),
+            shift_pressed_during_selection: false,
+            use_rip: false,
+            initial_upload_directory: None,
+            show_find_dialog: false,
+            show_disconnect: false,
+            title: crate::DEFAULT_TITLE.to_string(),
+        }
+    }
+
     pub fn title(&self) -> String {
         //        if let MainWindowMode::ShowDialingDirectory = self.get_mode() {
         crate::DEFAULT_TITLE.to_string()
@@ -89,7 +129,10 @@ impl MainWindow {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        Task::none()
+        match message {
+            Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
+            _ => Task::none(),
+        }
     }
 
     pub fn theme(&self) -> Theme {
@@ -99,7 +142,7 @@ impl MainWindow {
     pub fn view(&self) -> Element<'_, Message> {
         match self.state.mode {
             MainWindowMode::ShowTerminal => todo!(),
-            MainWindowMode::ShowDialingDirectory => todo!(),
+            MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(),
             MainWindowMode::ShowSettings => todo!(),
             MainWindowMode::SelectProtocol(_) => todo!(),
             MainWindowMode::FileTransfer(_) => todo!(),

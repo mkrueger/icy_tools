@@ -1,9 +1,6 @@
 use std::fmt::Display;
 
-use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, CP437, Color, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, VIEWDATA,
-    VIEWDATA_PALETTE,
-};
+use icy_engine::{Color, Size};
 use icy_engine_gui::BufferInputMode;
 use serde::{Deserialize, Serialize};
 

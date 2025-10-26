@@ -1,6 +1,6 @@
 [package]
 name = "icy_term"
-version = "0.7.13"
+version = "0.8.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,17 +11,9 @@ repository = "https://github.com/mkrueger/icy_tools"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../../../icy_board/crates/icy_net" }
 
-egui = { workspace = true }
-eframe = { workspace = true }
-egui_extras = { workspace = true }
-egui_glow = { workspace = true }
-egui-modal = { workspace = true }
-egui-bind = { workspace = true }
-egui_file = { workspace = true }
-tokio = { workspace = true }
+iced = { workspace = true, features = [ "tokio", "svg", "image" ]  }
 
-glow = { workspace = true }
-dark-light = "2.0.0"
+tokio = { workspace = true }
 serde = { workspace = true }
 versions = "7.0.0"
 regex = { workspace = true }

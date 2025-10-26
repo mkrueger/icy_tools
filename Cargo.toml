@@ -7,7 +7,6 @@ members = [
 	"crates/icy_play", 
 	"crates/icy_sauce", 
 	"crates/icy_term",
-	"crates/icy_term_iced",
 	"crates/icy_view",
 	"crates/icy_view_gui",
 ]
