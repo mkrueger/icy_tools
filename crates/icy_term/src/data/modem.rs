@@ -6,6 +6,7 @@ use crate::TerminalResult;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Modem {
+    pub name: String,
     pub device: String,
     pub baud_rate: u32,
 
@@ -129,6 +130,7 @@ impl Modem {
 impl Default for Modem {
     fn default() -> Self {
         Self {
+            name: "Modem 1".to_string(),
             #[cfg(target_os = "windows")]
             device: "COM1".to_string(),
             #[cfg(not(target_os = "windows"))]

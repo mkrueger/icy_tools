@@ -12,4 +12,3 @@ pub use modal::*;
 
 pub mod terminal_window;
 pub use terminal_window::*;
-

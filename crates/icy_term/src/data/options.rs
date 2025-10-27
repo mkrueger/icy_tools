@@ -285,7 +285,7 @@ pub struct Options {
     pub iemsi: IEMSISettings,
 
     //    pub window_rect: Option<Rect>,
-    pub modem: Modem,
+    pub modems: Vec<Modem>,
 }
 
 impl Default for Options {
@@ -299,7 +299,7 @@ impl Default for Options {
             //            bind: KeyBindings::default(),
             is_dark_mode: None,
             //            window_rect: None,
-            modem: Modem::default(),
+            modems: Vec::new(),
         }
     }
 }
@@ -406,7 +406,7 @@ impl Options {
             //            write_keybindings(&mut file, &self.bind)?;
 
             file.write_all("[[modem]]\n".to_string().as_bytes())?;
-            self.modem.write_modem_settings(&mut file)?;
+            //self.modem.write_modem_settings(&mut file)?;
 
             file.flush()?;
 
@@ -562,7 +562,7 @@ fn parse_value(options: &mut Options, value: &Value) {
                         if let Value::Array(array) = v {
                             for v in array {
                                 if let Value::Table(b) = v {
-                                    options.modem = Modem::from_table(b);
+                                    //options.modem = Modem::from_table(b);
                                     break;
                                 }
                             }

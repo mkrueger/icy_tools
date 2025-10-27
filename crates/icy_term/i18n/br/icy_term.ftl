@@ -51,17 +51,21 @@ settings-keybinds-quit = Sair:
 settings-keybinds-show-find = Encontrar:
 
 settings-modem-category = Modem
+settings-modem-name = Nome:
 settings-modem-device = Dispositivo:
 settings-modem-baud_rate = Taxa de baud:
 settings-modem-data_bits = Bits de dados / Bits de parada / Paridade:
 settings-modem-init_string = String de inicialização:
 settings-modem_dial_string = String de discagem:
+settings-modem-flow_control = Controle de fluxo:
+settings-modem_nothing_selected = Nenhum modem selecionado
 
 dialing_directory-connect-to = Conexão rápida para…
 dialing_directory-new_bbs = Novo BBS
 dialing_directory-name-placeholder = Nome do BBS
 dialing_directory-filter-placeholder = Filtrar nomes
 dialing_directory-address = Endereço:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protocolo:
 dialing_directory-user = Usuário:
 dialing_directory-password = Senha:
@@ -94,6 +98,8 @@ dialing_directory-generate-tooltip = Gerar uma senha aleatória
 dialing_directory-generate-disabled-tooltip= 
     Senha já definida,
     exclua-a primeiro para gerar uma nova
+dialing_directory-invalid_modem = Modem inválido
+dialing_directory-no_modem_configured = Nenhum modem configurado
 
 terminal-upload = Upload
 terminal-download = Download

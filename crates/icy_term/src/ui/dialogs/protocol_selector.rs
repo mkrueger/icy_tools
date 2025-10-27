@@ -1,7 +1,8 @@
-use iced::{
-    Alignment, Border, Color, Element, Length, widget::{Space, button, column, container, row, rule, scrollable, text}
-};
 use i18n_embed_fl::fl;
+use iced::{
+    Alignment, Border, Color, Element, Length,
+    widget::{Space, button, column, container, row, rule, scrollable, text},
+};
 use icy_net::protocol::TransferProtocolType;
 
 use crate::ui::Message;
@@ -13,48 +14,50 @@ const TITLE_SIZE: u32 = 20;
 const PROTOCOL_NAME_SIZE: u32 = 16;
 const PROTOCOL_DESCRIPTION_SIZE: u32 = 14;
 
-static PROTOCOL_TABLE: Lazy<[(TransferProtocolType, String, String); 8]> = Lazy::new(|| [
-    (
-        TransferProtocolType::ZModem,
-        "Zmodem".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-zmodem-description")
-    ),
-    (
-        TransferProtocolType::ZModem8k,
-        "ZedZap".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-zmodem8k-description"),
-    ),
-    (
-        TransferProtocolType::XModem,
-        "Xmodem".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-xmodem-description")
-    ),
-    (
-        TransferProtocolType::XModem1k,
-        "Xmodem 1k".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1k-description")
-    ),
-    (
-        TransferProtocolType::XModem1kG,
-        "Xmodem 1k-G".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description")
-    ),
-    (
-        TransferProtocolType::YModem,
-        "Ymodem".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description")
-    ),
-    (
-        TransferProtocolType::YModemG,
-        "Ymodem-G".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description")
-    ),
-    (
-        TransferProtocolType::ASCII,
-        "Text".to_string(),
-        fl!(crate::LANGUAGE_LOADER, "protocol-text-description")
-    )
-]);
+static PROTOCOL_TABLE: Lazy<[(TransferProtocolType, String, String); 8]> = Lazy::new(|| {
+    [
+        (
+            TransferProtocolType::ZModem,
+            "Zmodem".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-zmodem-description"),
+        ),
+        (
+            TransferProtocolType::ZModem8k,
+            "ZedZap".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-zmodem8k-description"),
+        ),
+        (
+            TransferProtocolType::XModem,
+            "Xmodem".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-xmodem-description"),
+        ),
+        (
+            TransferProtocolType::XModem1k,
+            "Xmodem 1k".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1k-description"),
+        ),
+        (
+            TransferProtocolType::XModem1kG,
+            "Xmodem 1k-G".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description"),
+        ),
+        (
+            TransferProtocolType::YModem,
+            "Ymodem".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
+        ),
+        (
+            TransferProtocolType::YModemG,
+            "Ymodem-G".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
+        ),
+        (
+            TransferProtocolType::ASCII,
+            "Text".to_string(),
+            fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
+        ),
+    ]
+});
 
 pub struct ProtocolSelector {
     pub is_download: bool,
@@ -62,9 +65,7 @@ pub struct ProtocolSelector {
 
 impl ProtocolSelector {
     pub fn new(is_download: bool) -> Self {
-        Self {
-            is_download,
-        }
+        Self { is_download }
     }
 
     pub fn view<'a>(&self, terminal_content: Element<'a, Message>) -> Element<'a, Message> {
@@ -83,7 +84,7 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
 
     // Create protocol list
     let mut protocol_rows = column![].spacing(0);
-    
+
     for (protocol, title, descr) in PROTOCOL_TABLE.iter() {
         // Skip ASCII protocol for downloads
         if is_download && matches!(protocol, TransferProtocolType::ASCII) {
@@ -110,9 +111,9 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
                         })
                 ]
                 .spacing(12)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
             )
-            .width(Length::Fill)
+            .width(Length::Fill),
         )
         .on_press(Message::InitiateFileTransfer {
             protocol: protocol.clone(),
@@ -124,33 +125,21 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
         protocol_rows = protocol_rows.push(protocol_button);
     }
 
-    let cancel_button = button(
-        text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14.0)
-    )
-    .on_press(Message::CloseDialog)
-    .style(button::secondary);
+    let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14.0))
+        .on_press(Message::CloseDialog)
+        .style(button::secondary);
 
     let modal_content = container(
         column![
             container(title).width(Length::Fill).align_x(Alignment::Center),
-            container(
-                scrollable(protocol_rows)
-                    .direction(scrollable::Direction::Vertical(
-                        scrollable::Scrollbar::default()
-                    ))
-            )
-            .height(Length::Fixed(250.0))
-            .width(Length::Fill),
+            container(scrollable(protocol_rows).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
+                .height(Length::Fixed(250.0))
+                .width(Length::Fill),
             rule::horizontal(1),
-            container(
-                row![
-                    Space::new().width(Length::Fill),
-                    cancel_button
-                ]
-            )
+            container(row![Space::new().width(Length::Fill), cancel_button])
         ]
         .padding(10)
-        .spacing(8)
+        .spacing(8),
     )
     .width(Length::Fixed(400.0))
     .style(|theme: &iced::Theme| {
@@ -197,14 +186,12 @@ fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button:
     match status {
         button::Status::Active => base,
         button::Status::Hovered => button::Style {
-            background: Some(iced::Background::Color(
-                Color::from_rgba(
-                    palette.primary.weak.color.r,
-                    palette.primary.weak.color.g,
-                    palette.primary.weak.color.b,
-                    0.2,
-                )
-            )),
+            background: Some(iced::Background::Color(Color::from_rgba(
+                palette.primary.weak.color.r,
+                palette.primary.weak.color.g,
+                palette.primary.weak.color.b,
+                0.2,
+            ))),
             ..base
         },
         button::Status::Pressed => button::Style {

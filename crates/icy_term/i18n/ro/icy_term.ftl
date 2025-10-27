@@ -51,17 +51,21 @@ settings-keybinds-quit = Ieșire:
 settings-keybinds-show-find = Găsește:
 
 settings-modem-category = Modem
+settings-modem-name = Nume:
 settings-modem-device = Dispozitiv:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Biți date / Biți stop / Paritate:
 settings-modem-init_string = Șir de inițializare:
 settings-modem_dial_string = Șir de apelare:
+settings-modem-flow_control = Control flux:
+settings-modem_nothing_selected = Niciun modem selectat
 
 dialing_directory-connect-to = Conectare rapidă la…
 dialing_directory-new_bbs = Nou BBS
 dialing_directory-name-placeholder = Nume BBS
 dialing_directory-filter-placeholder = Filtrează nume
 dialing_directory-address = Adresă:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protocol:
 dialing_directory-user = Utilizator:
 dialing_directory-password = Parolă:
@@ -94,6 +98,8 @@ dialing_directory-generate-tooltip = Generează o parolă aleatorie
 dialing_directory-generate-disabled-tooltip= 
     Parola este deja setată,
     ștergeți-o mai întâi pentru a genera una nouă
+dialing_directory-invalid_modem = Modem nevalid
+dialing_directory-no_modem_configured = Niciun modem configurat
 
 terminal-upload = Încărcare
 terminal-download = Descărcare

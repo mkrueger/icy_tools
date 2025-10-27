@@ -138,7 +138,7 @@ impl DialingDirectoryState {
         filtered
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self, options: &crate::Options) -> Element<'_, Message> {
         let addresses = self.filtered();
 
         let left_panel: Element<Message> = {
@@ -286,16 +286,77 @@ impl DialingDirectoryState {
 
             // Server settings
             let server_section = {
-                let address_field = text_input("", &addr.address)
-                    .on_input(move |s| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::Address(s),
-                        })
-                    })
-                    .padding(6)
-                    .width(Length::Fill);
+                let mut rows = vec![];
 
+                // Address/Modem row - changes based on protocol
+                if addr.protocol == ConnectionType::Modem {
+                    // For modem protocol, show modem picker
+                    let modem_names: Vec<String> = options.modems.iter().map(|m| m.name.clone()).collect();
+
+                    // Check if current address matches any modem name
+                    let selected_modem = modem_names.iter().position(|name| name == &addr.address);
+
+                    let modem_picker: pick_list::PickList<'_, String, Vec<String>, String, Message> =
+                        pick_list(modem_names.clone(), selected_modem.map(|idx| modem_names[idx].clone()), move |modem_name| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::Address(modem_name),
+                            })
+                        })
+                        .placeholder("Select Modem")
+                        .width(Length::Fill);
+
+                    let mut modem_row = row![
+                        container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")))
+                            .align_x(Alignment::End)
+                            .width(label_width),
+                        modem_picker,
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+
+                    // Show warning if modem name doesn't match any configured modem
+                    if selected_modem.is_none() && !addr.address.is_empty() {
+                        let err_msg = if modem_names.is_empty() {
+                            fl!(crate::LANGUAGE_LOADER, "dialing_directory-no_modem_configured")
+                        } else {
+                            fl!(crate::LANGUAGE_LOADER, "dialing_directory-invalid_modem")
+                        };
+                        modem_row = modem_row.push(
+                            container(text(format!("⚠ {}", err_msg)).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
+                                color: Some(theme.extended_palette().danger.base.color),
+                                ..Default::default()
+                            }))
+                            .padding([0, 8]),
+                        );
+                    }
+
+                    rows.push(modem_row);
+                } else {
+                    // For other protocols, show address input
+                    let address_field = text_input("", &addr.address)
+                        .on_input(move |s| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::Address(s),
+                            })
+                        })
+                        .padding(6)
+                        .width(Length::Fill);
+
+                    rows.push(
+                        row![
+                            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-address")))
+                                .align_x(Alignment::End)
+                                .width(label_width),
+                            address_field
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    );
+                }
+
+                // Protocol picker
                 let protocols = vec![
                     ConnectionTypeWrapper(ConnectionType::Telnet),
                     ConnectionTypeWrapper(ConnectionType::Raw),
@@ -325,6 +386,25 @@ impl DialingDirectoryState {
                 .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation"))
                 .width(Length::Fixed(150.0));
 
+                // Protocol & Baud row - conditionally show baud picker
+                let mut protocol_row = row![
+                    container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")))
+                        .align_x(Alignment::End)
+                        .width(label_width),
+                    protocol_pick,
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center);
+
+                // Only show baud picker if protocol is NOT Modem
+                if addr.protocol != ConnectionType::Modem {
+                    protocol_row = protocol_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")));
+                    protocol_row = protocol_row.push(baud_pick);
+                }
+
+                protocol_row = protocol_row.push(Space::new().width(Length::Fill));
+                rows.push(protocol_row);
+
                 let terms = vec![
                     TerminalEmulationWrapper(TerminalEmulation::Ansi),
                     TerminalEmulationWrapper(TerminalEmulation::Ascii),
@@ -348,30 +428,6 @@ impl DialingDirectoryState {
                 .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type"))
                 .width(Length::Fixed(150.0));
 
-                let mut rows = vec![
-                    // Address row
-                    row![
-                        container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-address")))
-                            .align_x(Alignment::End)
-                            .width(label_width),
-                        address_field
-                    ]
-                    .spacing(8)
-                    .align_y(Alignment::Center),
-                    // Protocol & Baud row
-                    row![
-                        container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")))
-                            .align_x(Alignment::End)
-                            .width(label_width),
-                        protocol_pick,
-                        text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")),
-                        baud_pick,
-                        Space::new().width(Length::Fill)
-                    ]
-                    .spacing(8)
-                    .align_y(Alignment::Center),
-                ];
-
                 let modes = VGA_MODES.to_vec();
                 let screen_mode_pick = pick_list(modes, Some(addr.screen_mode), move |sm| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -392,7 +448,7 @@ impl DialingDirectoryState {
                 })
                 .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option"))
                 .width(Length::Fixed(150.0));
-                
+
                 let mut column_row = row![
                     container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")))
                         .align_x(Alignment::End)
@@ -402,11 +458,10 @@ impl DialingDirectoryState {
                 .spacing(8)
                 .align_y(Alignment::Center);
 
-
-
-                if addr.terminal_type == TerminalEmulation::Ansi || 
-                    addr.terminal_type == TerminalEmulation::Avatar ||
-                    addr.terminal_type == TerminalEmulation::Ascii {
+                if addr.terminal_type == TerminalEmulation::Ansi
+                    || addr.terminal_type == TerminalEmulation::Avatar
+                    || addr.terminal_type == TerminalEmulation::Ascii
+                {
                     column_row = column_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
                     column_row = column_row.push(screen_mode_pick);
                 }
@@ -419,7 +474,6 @@ impl DialingDirectoryState {
                 column_row = column_row.push(Space::new().width(Length::Fill));
                 rows.push(column_row);
 
-             
                 let mut col = column![].spacing(8);
 
                 for row in rows {

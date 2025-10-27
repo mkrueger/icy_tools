@@ -51,17 +51,21 @@ settings-keybinds-quit = Salir:
 settings-keybinds-show-find = Buscar:
 
 settings-modem-category = Módem
+settings-modem-name = Nombre:
 settings-modem-device = Dispositivo:
 settings-modem-baud_rate = Velocidad en baudios:
 settings-modem-data_bits = Bits de datos / Bits de parada / Paridad:
 settings-modem-init_string = Cadena de inicialización:
 settings-modem_dial_string = Cadena de marcación:
+settings-modem-flow_control = Control de flujo:
+settings-modem_nothing_selected = Ningún módem seleccionado
 
 dialing_directory-connect-to = Conectar rápidamente a…
 dialing_directory-new_bbs = Nuevo BBS
 dialing_directory-name-placeholder = Nombre del BBS
 dialing_directory-filter-placeholder = Filtrar nombres
 dialing_directory-address = Dirección:
+dialing_directory-modem = Módem:
 dialing_directory-protocol = Protocolo:
 dialing_directory-user = Usuario:
 dialing_directory-password = Contraseña:
@@ -94,6 +98,8 @@ dialing_directory-generate-tooltip = Generar una contraseña aleatoria
 dialing_directory-generate-disabled-tooltip= 
     La contraseña ya está establecida,
     elimínala primero para generar una nueva
+dialing_directory-invalid_modem = Módem inválido
+dialing_directory-no_modem_configured = No hay módem configurado
 
 terminal-upload = Subir
 terminal-download = Descargar

@@ -11,7 +11,7 @@ repository = "https://github.com/mkrueger/icy_tools"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../../../icy_board/crates/icy_net" }
 
-iced = { workspace = true, features = [ "tokio", "svg", "image" ]  }
+iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 #iced_aw = { workspace = true  }
 
 tokio = { workspace = true }
@@ -20,6 +20,8 @@ versions = "7.0.0"
 regex = { workspace = true }
 github_release_check = "0.2.1"
 semver = { workspace = true }
+webbrowser = { workspace = true }
+iced_engine_gui = { workspace = true }
 
 #sound
 rodio = { workspace = true }

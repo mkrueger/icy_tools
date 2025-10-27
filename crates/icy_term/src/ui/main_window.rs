@@ -6,7 +6,7 @@ use icy_engine::{BufferParser, Position};
 
 use crate::{
     Address, AddressBook, Options, ScreenMode,
-    ui::{MainWindowState, dialing_directory_dialog, terminal_window},
+    ui::{MainWindowState, dialing_directory_dialog, settings_dialog, terminal_window},
 };
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
@@ -14,7 +14,6 @@ pub enum MainWindowMode {
     ShowTerminal,
     #[default]
     ShowDialingDirectory,
-    ///Shows settings - parameter: show dialing_directory
     ShowSettings,
     SelectProtocol(bool),
     FileTransfer(bool),
@@ -29,22 +28,26 @@ pub enum MainWindowMode {
 #[derive(Debug, Clone)]
 pub enum Message {
     DialingDirectory(crate::ui::dialogs::dialing_directory_dialog::DialingDirectoryMsg),
+    SettingsDialog(crate::ui::dialogs::settings_dialog::SettingsMsg),
     Connect(Address),
     CloseDialog,
     Disconnect,
     ShowDialingDirectory,
+    ShowSettings,
     Upload,
     Download,
     InitiateFileTransfer {
         protocol: icy_net::protocol::TransferProtocolType,
         is_download: bool,
-    }
+    },
+    OpenReleaseLink,
 }
 
 pub struct MainWindow {
     //    buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>,
     pub state: MainWindowState,
     pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
+    pub settings_dialog: settings_dialog::SettingsDialogState,
     pub terminal_window: terminal_window::TerminalWindow,
 
     screen_mode: ScreenMode,
@@ -85,12 +88,12 @@ impl MainWindow {
 
         Self {
             state: MainWindowState {
-                mode: MainWindowMode::ShowDialingDirectory,
-                options,
+                mode: MainWindowMode::ShowTerminal,
                 #[cfg(test)]
                 options_written: false,
             },
             dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
+            settings_dialog: settings_dialog::SettingsDialogState::new(options),
             terminal_window: terminal_window::TerminalWindow::new(),
             screen_mode: ScreenMode::Default,
             is_fullscreen_mode: false,
@@ -140,6 +143,13 @@ impl MainWindow {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
+            Message::SettingsDialog(msg) => {
+                if let Some(close_msg) = self.settings_dialog.update(msg) {
+                    // Handle the close message
+                    return self.update(close_msg);
+                }
+                Task::none()
+            }
             Message::CloseDialog => {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
@@ -157,7 +167,20 @@ impl MainWindow {
                 Task::none()
             }
 
-            _ => Task::none(),  
+            Message::OpenReleaseLink => {
+                // Open the GitHub releases page in the default browser
+                if let Err(e) = webbrowser::open("https://github.com/mkrueger/icy_tools/releases") {
+                    eprintln!("Failed to open release link: {}", e);
+                }
+                Task::none()
+            }
+
+            Message::ShowSettings => {
+                self.state.mode = MainWindowMode::ShowSettings;
+                Task::none()
+            }
+
+            _ => Task::none(),
         }
     }
 
@@ -169,11 +192,9 @@ impl MainWindow {
         println!("MainWindow::view mode={:?}", self.state.mode);
         match self.state.mode {
             MainWindowMode::ShowTerminal => self.terminal_window.view(),
-            MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(),
-            MainWindowMode::ShowSettings => todo!(),
-            MainWindowMode::SelectProtocol(download) => {
-                crate::ui::dialogs::protocol_selector::view_selector(download, self.terminal_window.view())
-            },
+            MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options),
+            MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view()),
+            MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(download, self.terminal_window.view()),
             MainWindowMode::FileTransfer(_) => todo!(),
             MainWindowMode::DeleteSelectedAddress(_) => todo!(),
             MainWindowMode::ShowCaptureDialog => todo!(),
@@ -205,13 +226,18 @@ impl MainWindow {
                 },
                 _ => None,
             })
-        
         } else if matches!(self.state.mode, MainWindowMode::SelectProtocol(_)) {
-             iced::event::listen_with(|event, _status, _| match event {
+            iced::event::listen_with(|event, _status, _| match event {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
-                        Some(Message::CloseDialog)
-                    }
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog),
+                    _ => None,
+                },
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowSettings) {
+            iced::event::listen_with(|event, _status, _| match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::SettingsDialog(settings_dialog::SettingsMsg::Cancel)),
                     _ => None,
                 },
                 _ => None,

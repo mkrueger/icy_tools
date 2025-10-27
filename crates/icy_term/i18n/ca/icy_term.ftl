@@ -51,17 +51,21 @@ settings-keybinds-quit = Sortir:
 settings-keybinds-show-find = Cercar:
 
 settings-modem-category = Mòdem
+settings-modem-name = Nom:
 settings-modem-device = Dispositiu:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Bits de dades / Bits de parada / Paritat:
 settings-modem-init_string = Cadena d'inicialització:
 settings-modem_dial_string = Cadena de marcatge:
+settings-modem-flow_control = Control de flux:
+settings-modem_nothing_selected = No hi ha cap mòdem seleccionat
 
 dialing_directory-connect-to = Connexió ràpida a…
 dialing_directory-new_bbs = Nou BBS
 dialing_directory-name-placeholder = Nom del BBS
 dialing_directory-filter-placeholder = Filtrar noms
 dialing_directory-address = Adreça:
+dialing_directory-modem = Mòdem:
 dialing_directory-protocol = Protocol:
 dialing_directory-user = Usuari:
 dialing_directory-password = Contrasenya:
@@ -94,6 +98,8 @@ dialing_directory-generate-tooltip = Generar un contrasenya aleatòria
 dialing_directory-generate-disabled-tooltip= 
     Contrasenya ja establerta,
     esborra-la primer per generar-ne una de nova
+dialing_directory-invalid_modem = Mòdem invàlid
+dialing_directory-no_modem_configured = No hi ha cap mòdem configurat
 
 terminal-upload = Pujar
 terminal-download = Descarregar

@@ -3,7 +3,6 @@ use crate::{Options, ui::MainWindowMode};
 #[derive(Default)]
 pub struct MainWindowState {
     pub mode: MainWindowMode,
-    pub options: Options,
 
     //    pub settings_dialog: dialogs::settings_dialog::DialogState,
 
@@ -20,8 +19,8 @@ impl MainWindowState {
 
     #[cfg(not(test))]
     pub fn store_options(&mut self) {
-        if let Err(err) = self.options.store_options() {
+        /*        if let Err(err) = self.options.store_options() {
             log::error!("{err}");
-        }
+        }*/
     }
 }
