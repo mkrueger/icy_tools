@@ -32,6 +32,8 @@ use semver::Version;
 
 pub mod data;
 pub use data::*;
+pub mod terminal;
+pub use terminal::*;
 
 mod features;
 mod icons;

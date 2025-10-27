@@ -1,9 +1,14 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, shader, svg, text},
+    widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::Scene;
+use icy_engine::{Buffer, editor::EditState};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 // use iced_aw::{menu, menu_bar, menu_items};
 
 use crate::{LATEST_VERSION, VERSION, ui::Message};
@@ -14,18 +19,26 @@ const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
 const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
+const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen_utf8.ans");
 
 pub struct TerminalWindow {
-    scene: Scene,
-
-    is_connected: bool,
+    pub scene: Scene,
+    pub is_connected: bool,
     pub is_capturing: bool,
 }
 
 impl TerminalWindow {
     pub fn new() -> Self {
+        // Create a default EditState wrapped in Arc<Mutex>
+        let mut edit_state = Arc::new(Mutex::new(EditState::default()));
+        // If parsing fails, try using the ANSI parser directly
+        let mut buffer = Buffer::from_bytes(&Path::new("a.ans"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
+        buffer.is_terminal_buffer = true;
+        buffer.terminal_state.fixed_size = true;
+
+        edit_state.lock().unwrap().set_buffer(buffer);
         Self {
-            scene: Scene::new(),
+            scene: Scene::new(edit_state),
             is_connected: false,
             is_capturing: false,
         }
@@ -35,8 +48,8 @@ impl TerminalWindow {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
 
-        // Create the main terminal area
-        let terminal_area = shader(&self.scene).width(Length::Fill).height(Length::Fill);
+        // Create the main terminal area - use &self.scene since Scene now implements From for &Scene
+        let terminal_area = container(&self.scene).width(Length::Fill).height(Length::Fill);
 
         // Status bar at the bottom
         let status_bar = self.create_status_bar();
@@ -58,7 +71,7 @@ impl TerminalWindow {
             )
             .on_press(Message::OpenReleaseLink)
             .padding([4, 8])
-            .style(|theme: &iced::Theme, status| {
+            .style(|_theme: &iced::Theme, status| {
                 use iced::widget::button::{Status, Style};
 
                 let info_color = Color::from_rgb(0.2, 0.6, 1.0);
@@ -207,16 +220,6 @@ impl TerminalWindow {
             .style(button::danger);
 
             bar_content = bar_content.push(stop_capture_btn);
-
-            /*
-                bar_content = row![
-                    stop_capture_btn,
-                    container(text(" | ").size(10)).padding([0, 4]),
-                ]
-                .spacing(3)
-                .align_y(Alignment::Center)
-                .push(bar_content);
-            */
         }
 
         bar_content = bar_content.push(settings_menu).push(capture_menu);
@@ -242,124 +245,6 @@ impl TerminalWindow {
             .into()
     }
 
-    /*
-        fn create_settings_menu(&self) -> Element<'_, Message> {
-            // Create text-based menu items
-            let capture_item = if self.is_capturing {
-                menu_button(
-                    text(fl!(crate::LANGUAGE_LOADER, "terminal-stop-capture"))
-                        .width(Length::Fill),
-                    Message::StopCapture
-                )
-            } else {
-                menu_button(
-                    text(fl!(crate::LANGUAGE_LOADER, "terminal-start-capture"))
-                        .width(Length::Fill),
-                    Message::StartCapture
-                )
-            };
-
-            let settings_item = menu_button(
-                text(fl!(crate::LANGUAGE_LOADER, "terminal-settings"))
-                    .width(Length::Fill),
-                Message::ShowSettings
-            );
-
-            // Separator
-            let separator = menu::Quad {
-                quad_color: Color::from([0.5; 3]).into(),
-                quad_border: Border {
-                    radius: 4.0.into(),
-                    ..Default::default()
-                },
-                inner_bounds: menu::InnerBounds::Ratio(0.98, 0.2),
-                height: Length::Fixed(20.0),
-                ..Default::default()
-            };
-
-            let quit_item = menu_button(
-                text(fl!(crate::LANGUAGE_LOADER, "terminal-quit"))
-                    .width(Length::Fill)
-                    .style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().danger.base.color),
-                        ..Default::default()
-                    }),
-                Message::Quit
-            );
-
-            // Create the dropdown menu
-            let menu = menu::Menu::new(menu_items!(
-                (capture_item),
-                (settings_item),
-                (separator),
-                (quit_item)
-            ))
-            .width(180.0)
-            .offset(5.0)
-            .spacing(5.0);
-
-            // Create the settings button that triggers the menu
-            let settings_button = button(row![
-                svg(svg::Handle::from_memory(SETTINGS_SVG))
-                    .width(Length::Fixed(20.0))
-                    .height(Length::Fixed(20.0)),
-                text(fl!(crate::LANGUAGE_LOADER, "terminal-menu"))
-                    .size(14),
-                text(" ▼").size(10)  // Dropdown indicator
-            ].spacing(4).align_y(Alignment::Center))
-            .padding(8)
-            .style(|theme: &iced::Theme, status| {
-                use iced::widget::button::{Status, Style};
-
-                let palette = theme.extended_palette();
-                let base = Style {
-                    text_color: palette.background.base.text,
-                    border: Border::default().rounded(4.0),
-                    ..Style::default()
-                };
-
-                match status {
-                    Status::Active => base.with_background(Color::TRANSPARENT),
-                    Status::Hovered => base.with_background(Color::from_rgba(
-                        palette.primary.weak.color.r,
-                        palette.primary.weak.color.g,
-                        palette.primary.weak.color.b,
-                        0.2,
-                    )),
-                    Status::Pressed => base.with_background(palette.primary.weak.color),
-                    _ => base,
-                }
-            })
-            .on_press(Message::None);
-
-            // Wrap in menu_bar
-            menu_bar!(
-                (settings_button, menu)
-            )
-            .draw_path(menu::DrawPath::Backdrop)
-            .close_on_item_click(true)
-            .style(|theme: &iced::Theme, _status| menu::Style {
-                bar_background: Color::TRANSPARENT.into(),
-                menu_background: theme.extended_palette().background.weak.color.into(),
-                menu_border: Border {
-                    color: theme.extended_palette().background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                menu_shadow: iced::Shadow {
-                    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                    offset: iced::Vector::new(0.0, 2.0),
-                    blur_radius: 8.0,
-                },
-                path: theme.extended_palette().background.base.color.into(),
-                path_border: Border {
-                    radius: 4.0.into(),
-                    ..Default::default()
-                },
-            })
-            .into()
-        }
-    */
     fn create_status_bar(&self) -> Element<'_, Message> {
         let connection_status = if self.is_connected {
             text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
@@ -455,6 +340,11 @@ impl TerminalWindow {
 
     pub fn toggle_capture(&mut self) {
         self.is_capturing = !self.is_capturing;
+    }
+
+    pub fn get_iemsi_info(&self) -> Option<icy_net::iemsi::IEmsi> {
+        // TODO: Implement this to get IEMSI info from the actual connection
+        None
     }
 }
 
