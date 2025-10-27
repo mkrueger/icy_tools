@@ -153,10 +153,10 @@ toolbar-stop-playing4 = I'm begging you
 toolbar-stop-playing5 = MERCY
 toolbar-stop-playing6 = Enough already
 
-capture-dialog-capture-label=Capture file:
+capture-dialog-capture-folder=Folder:
+capture-dialog-capture-file=File:
 capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Open folder…
 
 show-iemsi-dialog-heading=IEMSI Server information
 show-iemsi-dialog-name=Name:

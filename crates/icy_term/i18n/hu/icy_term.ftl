@@ -152,10 +152,10 @@ toolbar-stop-playing4 = Könyörgöm
 toolbar-stop-playing5 = Kegyelem
 toolbar-stop-playing6 = Elég már
 
-capture-dialog-capture-label=Rögzítési fájl:
+capture-dialog-capture-folder = Könyvtár:
+capture-dialog-capture-file = Fájl:
 capture-dialog-capture-title=Rögzítés
 capture-dialog-capture-button=Indítás
-capture-dialog-open-folder-button=Mappa megnyitása…
 
 show-iemsi-dialog-heading=IEMSI szerver információk
 show-iemsi-dialog-name=Név:

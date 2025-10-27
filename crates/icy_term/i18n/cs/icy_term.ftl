@@ -152,10 +152,10 @@ toolbar-stop-playing4 = Prosím tě
 toolbar-stop-playing5 = Milost
 toolbar-stop-playing6 = Dost už
 
-capture-dialog-capture-label=Soubor záznamu:
+capture-dialog-capture-folder = Složka:
+capture-dialog-capture-file = Soubor:
 capture-dialog-capture-title=Záznam
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Otevřít složku…
 
 show-iemsi-dialog-heading=Informace o serveru IEMSI
 show-iemsi-dialog-name=Jméno:

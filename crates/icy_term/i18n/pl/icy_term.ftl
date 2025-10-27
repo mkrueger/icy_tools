@@ -152,10 +152,10 @@ toolbar-stop-playing4 = Błagam cię
 toolbar-stop-playing5 = Litość
 toolbar-stop-playing6 = Wystarczy
 
-capture-dialog-capture-label=Plik przechwytywania:
+capture-dialog-capture-folder = Katalog:
+capture-dialog-capture-file = Plik:
 capture-dialog-capture-title=Przechwytywanie
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Otwórz folder…
 
 show-iemsi-dialog-heading=Informacje o serwerze IEMSI
 show-iemsi-dialog-name=Nazwa:

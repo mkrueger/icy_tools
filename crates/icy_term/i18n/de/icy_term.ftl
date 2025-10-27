@@ -153,11 +153,10 @@ toolbar-stop-playing4 = RUHE!!!
 toolbar-stop-playing5 = GNADE
 toolbar-stop-playing6 = Genug
 
-capture-dialog-capture-checkbox=Sitzung aufnehmen
-capture-dialog-capture-label=Dateiname:
+capture-dialog-capture-folder = Verzeichnis: 
+capture-dialog-capture-file = Datei:
 capture-dialog-capture-title=Aufnahme
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Verzeichnis öffnen…
 
 show-iemsi-dialog-heading=IEMSI Server-Information
 show-iemsi-dialog-name=Name:

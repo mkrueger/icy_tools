@@ -152,10 +152,10 @@ toolbar-stop-playing4 = T'ho prego
 toolbar-stop-playing5 = Pietat
 toolbar-stop-playing6 = Ja n'hi ha prou
 
-capture-dialog-capture-label=Fitxer de captura:
+capture-dialog-capture-folder = Carpeta: 
+capture-dialog-capture-file = Fitxer:
 capture-dialog-capture-title=Captura
 capture-dialog-capture-button=Iniciar
-capture-dialog-open-folder-button=Obre la carpeta…
 
 show-iemsi-dialog-heading=Informació del servidor IEMSI
 show-iemsi-dialog-name=Nom:

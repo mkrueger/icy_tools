@@ -3,10 +3,11 @@ use std::{path::PathBuf, time::Instant};
 use i18n_embed_fl::fl;
 use iced::{Element, Task, Theme, keyboard};
 use icy_engine::{BufferParser, Position};
+use versions::Mess;
 
 use crate::{
     Address, AddressBook, Options, ScreenMode,
-    ui::{MainWindowState, dialing_directory_dialog, settings_dialog, terminal_window},
+    ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, terminal_window},
 };
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
@@ -29,11 +30,13 @@ pub enum MainWindowMode {
 pub enum Message {
     DialingDirectory(crate::ui::dialogs::dialing_directory_dialog::DialingDirectoryMsg),
     SettingsDialog(crate::ui::dialogs::settings_dialog::SettingsMsg),
+    CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
     Connect(Address),
     CloseDialog,
     Disconnect,
     ShowDialingDirectory,
     ShowSettings,
+    ShowCaptureDialog,
     Upload,
     Download,
     InitiateFileTransfer {
@@ -41,6 +44,8 @@ pub enum Message {
         is_download: bool,
     },
     OpenReleaseLink,
+    StartCapture(String),
+    StopCapture,
 }
 
 pub struct MainWindow {
@@ -48,6 +53,7 @@ pub struct MainWindow {
     pub state: MainWindowState,
     pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
     pub settings_dialog: settings_dialog::SettingsDialogState,
+    pub capture_dialog: capture_dialog::CaptureDialogState,
     pub terminal_window: terminal_window::TerminalWindow,
 
     screen_mode: ScreenMode,
@@ -86,6 +92,11 @@ impl MainWindow {
 
         let addresses = AddressBook::load_phone_book().unwrap();
 
+        let default_capture_path = directories::UserDirs::new()
+            .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+            .join("capture.ans");
+
         Self {
             state: MainWindowState {
                 mode: MainWindowMode::ShowTerminal,
@@ -94,6 +105,7 @@ impl MainWindow {
             },
             dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
             settings_dialog: settings_dialog::SettingsDialogState::new(options),
+            capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
             terminal_window: terminal_window::TerminalWindow::new(),
             screen_mode: ScreenMode::Default,
             is_fullscreen_mode: false,
@@ -143,6 +155,14 @@ impl MainWindow {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
+
+            Message::CaptureDialog(msg) => {
+                if let Some(close_msg) = self.capture_dialog.update(msg) {
+                    return self.update(close_msg);
+                }
+                Task::none()
+            }
+
             Message::SettingsDialog(msg) => {
                 if let Some(close_msg) = self.settings_dialog.update(msg) {
                     // Handle the close message
@@ -180,6 +200,24 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::ShowCaptureDialog => {
+                self.state.mode = MainWindowMode::ShowCaptureDialog;
+                Task::none()
+            }
+
+            Message::StartCapture(file_name) => {
+                self.state.mode = MainWindowMode::ShowTerminal;
+                self.capture_dialog.capture_session = true;
+                self.terminal_window.is_capturing = true;
+                Task::none()
+            }
+
+            Message::StopCapture => {
+                self.capture_dialog.capture_session = false;
+                self.terminal_window.is_capturing = false;
+                Task::none()
+            }
+
             _ => Task::none(),
         }
     }
@@ -197,7 +235,7 @@ impl MainWindow {
             MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(download, self.terminal_window.view()),
             MainWindowMode::FileTransfer(_) => todo!(),
             MainWindowMode::DeleteSelectedAddress(_) => todo!(),
-            MainWindowMode::ShowCaptureDialog => todo!(),
+            MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowExportDialog => todo!(),
             MainWindowMode::ShowUploadDialog => todo!(),
             MainWindowMode::ShowIEMSI => todo!(),

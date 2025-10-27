@@ -152,10 +152,10 @@ toolbar-stop-playing4 = Te implor
 toolbar-stop-playing5 = Milă
 toolbar-stop-playing6 = Destul
 
-capture-dialog-capture-label=Fișier captură:
+capture-dialog-capture-folder = Director:
+capture-dialog-capture-file = Fișier:
 capture-dialog-capture-title=Captură
 capture-dialog-capture-button=Începe
-capture-dialog-open-folder-button=Deschide folderul…
 
 show-iemsi-dialog-heading=Informații server IEMSI
 show-iemsi-dialog-name=Nume:

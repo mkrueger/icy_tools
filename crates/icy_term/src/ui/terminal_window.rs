@@ -19,7 +19,7 @@ pub struct TerminalWindow {
     scene: Scene,
 
     is_connected: bool,
-    is_capturing: bool,
+    pub is_capturing: bool,
 }
 
 impl TerminalWindow {
@@ -173,16 +173,53 @@ impl TerminalWindow {
         .on_press(Message::ShowSettings)
         .padding([4, 6]);
 
+        // Settings dropdown menu
+        let capture_menu = button(
+            row![
+                svg(svg::Handle::from_memory(SETTINGS_SVG))
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fixed(16.0))
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::ShowCaptureDialog)
+        .padding([4, 6]);
+
         let mut bar_content = row![
             phonebook_btn,
             container(text(" | ").size(10)).padding([0, 2]),
             upload_btn,
             download_btn,
             container(text(" | ").size(10)).padding([0, 2]),
-            settings_menu,
         ]
         .spacing(3)
         .align_y(Alignment::Center);
+
+        if self.is_capturing {
+            let stop_capture_btn = button(
+                row![text("⏹").size(14), text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(12)]
+                    .spacing(3)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::StopCapture)
+            .padding([4, 6])
+            .style(button::danger);
+
+            bar_content = bar_content.push(stop_capture_btn);
+
+            /*
+                bar_content = row![
+                    stop_capture_btn,
+                    container(text(" | ").size(10)).padding([0, 4]),
+                ]
+                .spacing(3)
+                .align_y(Alignment::Center)
+                .push(bar_content);
+            */
+        }
+
+        bar_content = bar_content.push(settings_menu).push(capture_menu);
 
         if *VERSION < *LATEST_VERSION {
             bar_content = bar_content.push(self.create_update_notification());

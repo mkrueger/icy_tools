@@ -152,10 +152,10 @@ toolbar-stop-playing4 = Ti prego
 toolbar-stop-playing5 = Pietà
 toolbar-stop-playing6 = Basta così
 
-capture-dialog-capture-label=File di cattura:
+capture-dialog-capture-folder = Cartella:
+capture-dialog-capture-file = File:
 capture-dialog-capture-title=Cattura
 capture-dialog-capture-button=Inizia
-capture-dialog-open-folder-button=Apri cartella…
 
 show-iemsi-dialog-heading=Informazioni server IEMSI
 show-iemsi-dialog-name=Nome:
