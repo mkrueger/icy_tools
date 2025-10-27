@@ -45,31 +45,30 @@ Put icy_play in path and use this script:
 #fzf: https://github.com/junegunn/fzf
 #icy_tools: https://github.com/mkrueger/icy_tools
 function xansi() {
-    # set paths to your ansi editors    
-    XANSI_EDITOR1="${XANSI_EDITOR1:-icy_draw}"
-    XANSI_EDITOR2="${XANSI_EDITOR2:-/opt/MoebiusXBIN/moebius --no-sandbox}"
-    XANSI_EDITOR3="${XANSI_EDITOR3:-/home/grymmjack/git/pablodraw/artifacts/bin/PabloDraw/Debug/net7.0/linux-x64/PabloDraw}"
+  # set paths to your ansi editors
+  XANSI_EDITOR1="${XANSI_EDITOR1:-icy_draw}"
+  XANSI_EDITOR2="${XANSI_EDITOR2:-moebius --no-sandbox}"
+  XANSI_EDITOR3="${XANSI_EDITOR3:-PabloDraw}"
 
-    find . -iregex ".*\(ans\|asc\|nfo\|txt\|me\|md\|diz\|lst\|bbs\|icy\|tnd\)$" -regextype "grep" \
-    | \
+  gfind . -iregex ".*\(ans\|asc\|nfo\|txt\|me\|md\|diz\|lst\|bbs\|icy\|tnd\)$" -regextype "grep" |
     fzf \
-        --ansi \
-        --border-label=":: XANSI (fzf + icy_play) - by grymmjack ::" \
-        --border-label-pos top \
-        --no-multi \
-        --separator - \
-        --header "EDIT: [ENTER]=iCY DRAW, [ALT-ENTER]=Moebius, [SPACE]=PabloDraw" \
-        --prompt "PREVIEW: [SHIFT-RIGHT]=PAGE DOWN, [SHIFT-LEFT]=PAGE UP / SEARCH: " \
-        --border double \
-        --color=dark \
-        --preview="cat {} | tr '\a\026' '!!' > xansi.tmp && icy_play --use-lf --utf8 xansi.tmp && rm xansi.tmp" \
-        --preview-window="border-sharp" \
-        --bind "enter:execute-silent(${XANSI_EDITOR1} {} &)" \
-        --bind "alt-enter:execute-silent(${XANSI_EDITOR2} {} &)" \
-        --bind "space:execute-silent(${XANSI_EDITOR3} {} &)" \
-        --bind="alt-up:preview-up" \
-        --bind="alt-down:preview-down" \
-        --bind="shift-left:preview-page-up" \
-        --bind="shift-right:preview-page-down"
+      --ansi \
+      --border-label=":: XANSI (fzf + icy_play) - by grymmjack ::" \
+      --border-label-pos top \
+      --no-multi \
+      --separator - \
+      --header "EDIT: [ENTER]=iCY DRAW, [ALT-ENTER]=Moebius, [SPACE]=PabloDraw" \
+      --prompt "PREVIEW: [SHIFT-RIGHT]=PAGE DOWN, [SHIFT-LEFT]=PAGE UP / SEARCH: " \
+      --border double \
+      --color=dark \
+      --preview="cat {} | LC_CTYPE=C tr '\a\026' '!!' > xansi.tmp && icy_play --use-lf --utf8 xansi.tmp && rm xansi.tmp" \
+      --preview-window="border-sharp" \
+      --bind "enter:execute-silent(${XANSI_EDITOR1} {} &)" \
+      --bind "alt-enter:execute-silent(${XANSI_EDITOR2} {} &)" \
+      --bind "space:execute-silent(${XANSI_EDITOR3} {} &)" \
+      --bind="alt-up:preview-up" \
+      --bind="alt-down:preview-down" \
+      --bind="shift-left:preview-page-up" \
+      --bind="shift-right:preview-page-down"
 }
 ``````
