@@ -1,0 +1,22 @@
+settings-heading = Nastavení
+settings-scaling = Měřítko
+settings-monitor-type = Monitor
+settings-reset-button = Resetovat
+settings-monitor-category = Monitor
+settings-monitor-use-crt-filter-checkbox = Použít filtr CRT
+settings-monitor-brightness = Jas
+settings-monitor-contrast = Kontrast
+settings-monitor-saturation = Sytost
+settings-monitor-gamma = Gamma
+settings-monitor-blur = Rozmazání
+settings-monitor-curve = Křivka
+settings-monitor-scanlines = Skenovací řádky
+settings-background_color-label=Barva okraje:
+
+settings-monitor-color = Barva
+settings-monitor-grayscale = Stupně šedi
+settings-monitor-amber = Jantar
+settings-monitor-green = Zelená
+settings-monitor-apple2 = Apple ][
+settings-monitor-futuristic = Futuristický
+settings-monitor-custom=Vlastní
