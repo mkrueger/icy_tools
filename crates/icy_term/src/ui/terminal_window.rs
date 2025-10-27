@@ -382,11 +382,47 @@ impl TerminalWindow {
             text("")
         };
 
+        let iemsi_button = button(text("IEMSI").size(12))
+            .on_press(Message::ShowIemsiDialog)
+            .padding([2, 8])
+            .style(|theme: &iced::Theme, status| {
+                use iced::widget::button::{Status, Style};
+
+                let palette = theme.extended_palette();
+                let base = Style {
+                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    text_color: palette.primary.base.color,
+                    border: Border {
+                        color: palette.primary.weak.color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    shadow: Default::default(),
+                    snap: false,
+                };
+
+                match status {
+                    Status::Active => base,
+                    Status::Hovered => Style {
+                        background: Some(iced::Background::Color(palette.primary.weak.color)),
+                        text_color: palette.primary.weak.text,
+                        ..base
+                    },
+                    Status::Pressed => Style {
+                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                        text_color: palette.primary.strong.text,
+                        ..base
+                    },
+                    Status::Disabled => base,
+                }
+            });
+
         container(
             row![
                 connection_status,
                 Space::new().width(Length::Fill),
                 capture_status,
+                iemsi_button,
                 text(" | "),
                 text("ANSI • 80x25 • 9600 baud").size(12),
             ]

@@ -7,7 +7,7 @@ use versions::Mess;
 
 use crate::{
     Address, AddressBook, Options, ScreenMode,
-    ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, terminal_window},
+    ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, show_iemsi, terminal_window},
 };
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
@@ -31,6 +31,7 @@ pub enum Message {
     DialingDirectory(crate::ui::dialogs::dialing_directory_dialog::DialingDirectoryMsg),
     SettingsDialog(crate::ui::dialogs::settings_dialog::SettingsMsg),
     CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
+    ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
     Connect(Address),
     CloseDialog,
     Disconnect,
@@ -46,6 +47,7 @@ pub enum Message {
     OpenReleaseLink,
     StartCapture(String),
     StopCapture,
+    ShowIemsiDialog,
 }
 
 pub struct MainWindow {
@@ -55,6 +57,7 @@ pub struct MainWindow {
     pub settings_dialog: settings_dialog::SettingsDialogState,
     pub capture_dialog: capture_dialog::CaptureDialogState,
     pub terminal_window: terminal_window::TerminalWindow,
+    pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
 
     screen_mode: ScreenMode,
     is_fullscreen_mode: bool,
@@ -107,6 +110,7 @@ impl MainWindow {
             settings_dialog: settings_dialog::SettingsDialogState::new(options),
             capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
             terminal_window: terminal_window::TerminalWindow::new(),
+            iemsi_dialog: show_iemsi::ShowIemsiDialog::new(None),
             screen_mode: ScreenMode::Default,
             is_fullscreen_mode: false,
             last_pos: Position::default(),
@@ -160,6 +164,33 @@ impl MainWindow {
                 if let Some(close_msg) = self.capture_dialog.update(msg) {
                     return self.update(close_msg);
                 }
+                Task::none()
+            }
+
+            Message::ShowIemsi(msg) => {
+                if let Some(response) = self.iemsi_dialog.update(msg) {
+                    return self.update(response);
+                }
+                Task::none()
+            }
+
+            Message::ShowIemsiDialog => {
+                // Get IEMSI info from terminal if available
+                // This assumes you have a way to get IEMSI info from your terminal
+                // You'll need to adapt this to your actual terminal implementation
+                //let iemsi_info = self.terminal_window.get_iemsi_info();
+                let iemsi_info = Some(icy_net::iemsi::EmsiISI {
+                    name: "Example BBS".to_string(),
+                    location: "Nowhere".to_string(),
+                    operator: "Operator".to_string(),
+                    notice: "Welcome to Example BBS".to_string(),
+                    capabilities: "Capabilities".to_string(),
+                    id: "123456".to_string(),
+                    localtime: "time".to_string(),
+                    wait: "wait".to_string(),
+                });
+                self.iemsi_dialog = show_iemsi::ShowIemsiDialog::new(iemsi_info);
+                self.state.mode = MainWindowMode::ShowIEMSI;
                 Task::none()
             }
 
@@ -238,7 +269,7 @@ impl MainWindow {
             MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowExportDialog => todo!(),
             MainWindowMode::ShowUploadDialog => todo!(),
-            MainWindowMode::ShowIEMSI => todo!(),
+            MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowDisconnectedMessage(_, _) => todo!(),
         }
     }
@@ -276,6 +307,22 @@ impl MainWindow {
             iced::event::listen_with(|event, _status, _| match event {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::SettingsDialog(settings_dialog::SettingsMsg::Cancel)),
+                    _ => None,
+                },
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowCaptureDialog) {
+            iced::event::listen_with(|event, _status, _| match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::Cancel)),
+                    _ => None,
+                },
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowIEMSI) {
+            iced::event::listen_with(|event, _status, _| match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ShowIemsi(show_iemsi::IemsiMsg::Close)),
                     _ => None,
                 },
                 _ => None,
