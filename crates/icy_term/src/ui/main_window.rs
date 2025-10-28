@@ -232,6 +232,7 @@ impl MainWindow {
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
+                self.terminal_window.connect(Some(address.clone()));
                 self.current_address = Some(address);
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
@@ -239,6 +240,7 @@ impl MainWindow {
 
             Message::Disconnect => {
                 let _ = self.terminal_tx.send(TerminalCommand::Disconnect);
+                self.terminal_window.disconnect();
                 Task::none()
             }
 

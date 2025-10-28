@@ -14,7 +14,7 @@ use std::{
 };
 // use iced_aw::{menu, menu_bar, menu_items};
 
-use crate::{LATEST_VERSION, VERSION, ui::Message};
+use crate::{Address, LATEST_VERSION, VERSION, ui::Message};
 
 // Icon SVG constants
 const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");
@@ -29,6 +29,7 @@ pub struct TerminalWindow {
     pub scene: Terminal,
     pub is_connected: bool,
     pub is_capturing: bool,
+    pub current_address: Option<Address>,
 }
 
 impl TerminalWindow {
@@ -45,6 +46,7 @@ impl TerminalWindow {
             scene: Terminal::new(edit_state),
             is_connected: false,
             is_capturing: false,
+            current_address: None,
         }
     }
 
@@ -186,19 +188,6 @@ impl TerminalWindow {
         .on_press(Message::Download)
         .padding([4, 6]);
 
-        // Send Login button - NEW BUTTON
-        let send_login_btn = button(
-            row![
-                // Using a text icon for now, replace with SVG if you have one
-                text("🔑").size(14), // or use svg(svg::Handle::from_memory(LOGIN_SVG))
-                text(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).size(12)
-            ]
-            .spacing(3)
-            .align_y(Alignment::Center),
-        )
-        .on_press(Message::SendLogin)
-        .padding([4, 6]);
-
         // Settings dropdown menu
         let settings_menu = button(
             row![
@@ -225,16 +214,31 @@ impl TerminalWindow {
         .on_press(Message::ShowCaptureDialog)
         .padding([4, 6]);
 
-        let mut bar_content = row![
-            phonebook_btn,
-            container(text(" | ").size(10)).padding([0, 2]),
-            upload_btn,
-            download_btn,
-            send_login_btn,
-            container(text(" | ").size(10)).padding([0, 2]),
-        ]
-        .spacing(3)
-        .align_y(Alignment::Center);
+        let mut bar_content = row![phonebook_btn, container(text(" | ").size(10)).padding([0, 2]), upload_btn, download_btn,]
+            .spacing(3)
+            .align_y(Alignment::Center);
+
+        // Only show Send Login button when connected and credentials are available
+        if self.is_connected {
+            if let Some(address) = &self.current_address {
+                if !address.user_name.is_empty() && !address.password.is_empty() {
+                    let send_login_btn = button(
+                        row![
+                            text("🔑").size(14), // or use svg(svg::Handle::from_memory(LOGIN_SVG))
+                            text(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).size(12)
+                        ]
+                        .spacing(3)
+                        .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::SendLogin)
+                    .padding([4, 6]);
+
+                    bar_content = bar_content.push(send_login_btn);
+                }
+            }
+        }
+
+        bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
 
         if self.is_capturing {
             let stop_capture_btn = button(
@@ -271,6 +275,7 @@ impl TerminalWindow {
             })
             .into()
     }
+
     fn create_status_bar(&self) -> Element<'_, Message> {
         let connection_status = if self.is_connected {
             text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
@@ -356,12 +361,14 @@ impl TerminalWindow {
     }
 
     // Helper methods for terminal operations
-    pub fn connect(&mut self) {
+    pub fn connect(&mut self, address: Option<Address>) {
         self.is_connected = true;
+        self.current_address = address;
     }
 
     pub fn disconnect(&mut self) {
         self.is_connected = false;
+        self.current_address = None;
     }
 
     pub fn toggle_capture(&mut self) {
