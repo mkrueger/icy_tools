@@ -4,6 +4,7 @@ use std::{
     time::Instant,
 };
 
+use crate::ui::dialogs::find_dialog;
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
 use icy_engine::{Position, editor::EditState};
@@ -30,7 +31,7 @@ pub enum MainWindowMode {
     ShowExportDialog,
     ShowUploadDialog,
     ShowIEMSI,
-    ShowDisconnectedMessage(String, String),
+    ShowFindDialog,
 }
 
 #[derive(Debug, Clone)]
@@ -39,12 +40,14 @@ pub enum Message {
     SettingsDialog(crate::ui::dialogs::settings_dialog::SettingsMsg),
     CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
     ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
+    FindDialog(find_dialog::FindDialogMsg),
     Connect(Address),
     CloseDialog,
     Disconnect,
     ShowDialingDirectory,
     ShowSettings,
     ShowCaptureDialog,
+    ShowFindDialog,
     Upload,
     Download,
     SendLogin,
@@ -69,6 +72,7 @@ pub struct MainWindow {
     pub capture_dialog: capture_dialog::CaptureDialogState,
     pub terminal_window: terminal_window::TerminalWindow,
     pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
+    pub find_dialog: find_dialog::DialogState,
 
     // Terminal thread communication
     terminal_tx: mpsc::UnboundedSender<TerminalCommand>,
@@ -130,6 +134,7 @@ impl MainWindow {
             capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
             terminal_window,
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(None),
+            find_dialog: find_dialog::DialogState::new(),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -358,6 +363,7 @@ impl MainWindow {
                 }
                 Task::none()
             }
+
             Message::InitiateFileTransfer { protocol, is_download } => {
                 if is_download {
                     let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
@@ -414,6 +420,20 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::ShowFindDialog => {
+                self.state.mode = MainWindowMode::ShowFindDialog;
+                return self.find_dialog.focus_search_input();
+            }
+
+            Message::FindDialog(msg) => {
+                self.terminal_window.scene.cache.clear();
+                if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
+                    return self.update(close_msg);
+                }
+
+                Task::none()
+            }
+
             Message::None => Task::none(),
         }
     }
@@ -428,16 +448,10 @@ impl MainWindow {
                 Task::none()
             }
 
-            TerminalEvent::Disconnected(error) => {
+            TerminalEvent::Disconnected(_error) => {
                 self.is_connected = false;
                 self.terminal_window.is_connected = false;
                 self.connection_time = None;
-
-                if let Some(error) = error {
-                    self.state.mode = MainWindowMode::ShowDisconnectedMessage("Connection Error".to_string(), error);
-                } else if self.show_disconnect {
-                    self.state.mode = MainWindowMode::ShowDisconnectedMessage("Disconnected".to_string(), "Connection closed".to_string());
-                }
                 Task::none()
             }
 
@@ -494,10 +508,7 @@ impl MainWindow {
             MainWindowMode::ShowExportDialog => todo!(),
             MainWindowMode::ShowUploadDialog => todo!(),
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view()),
-            MainWindowMode::ShowDisconnectedMessage(_title, _message) => {
-                // TODO: Create disconnected message dialog
-                self.terminal_window.view()
-            }
+            MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view()),
         }
     }
 
@@ -556,6 +567,14 @@ impl MainWindow {
         } else if matches!(self.state.mode, MainWindowMode::ShowTerminal) {
             iced::event::listen_with(|event, _status, _| match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                    if modifiers.alt() {
+                        if let keyboard::Key::Character(s) = &key {
+                            if s.to_lowercase() == "f" {
+                                return Some(Message::ShowFindDialog);
+                            }
+                        }
+                    }
+
                     // Try to map the key with modifiers using the key map
                     if let Some(bytes) = Self::map_key_event_to_bytes(&key, modifiers) {
                         Some(Message::SendData(bytes))
@@ -566,6 +585,18 @@ impl MainWindow {
                         None
                     }
                 }
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowFindDialog) {
+            // Handle find dialog keyboard shortcuts
+            iced::event::listen_with(|event, _status, _| match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::FindDialog(find_dialog::FindDialogMsg::CloseDialog)),
+                    keyboard::Key::Named(keyboard::key::Named::PageUp) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindPrev)),
+                    keyboard::Key::Named(keyboard::key::Named::PageDown) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
+                    _ => None,
+                },
                 _ => None,
             })
         } else {

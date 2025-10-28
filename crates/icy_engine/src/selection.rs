@@ -46,8 +46,34 @@ impl Selection {
     }
 
     pub fn is_inside(&self, pos: impl Into<Position>) -> bool {
-        let pos = pos.into();
-        self.as_rectangle().is_inside(pos)
+        match self.shape {
+            Shape::Rectangle => {
+                let pos = pos.into();
+                self.as_rectangle().is_inside(pos)
+            }
+            Shape::Lines => {
+                let pos = pos.into();
+                let min = self.min();
+                let max = self.max();
+
+                // If selection is on a single line
+                if min.y == max.y {
+                    return pos.y == min.y && pos.x >= min.x && pos.x <= max.x;
+                }
+
+                // Multi-line selection
+                if pos.y == min.y {
+                    // On the first line: from min.x to end of line
+                    pos.x >= min.x
+                } else if pos.y == max.y {
+                    // On the last line: from start of line to max.x
+                    pos.x <= max.x
+                } else {
+                    // On intermediate lines: entire line is selected
+                    pos.y > min.y && pos.y < max.y
+                }
+            }
+        }
     }
 
     pub fn min(&self) -> Position {

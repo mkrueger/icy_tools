@@ -62,18 +62,38 @@ impl<'a> TerminalView<'a> {
         let buffer = state.get_buffer();
         let char_w = self.term.char_width;
         let char_h = self.term.char_height;
+        let selection_opt = state.get_selection();
 
-        // Background batching
+        // Background batching - now considering selection
         for y in 0..buffer.get_height() {
             let mut x = 0;
             while x < buffer.get_width() {
                 let pos = Position::new(x, y);
                 let ch_attr = buffer.get_char(pos);
-                let bg_idx = ch_attr.attribute.get_background();
+
+                // Check if position is selected
+                let is_selected = selection_opt.as_ref().map_or(false, |sel| sel.is_inside(pos));
+                // Get colors (swap if selected)
+                let bg_idx = if is_selected {
+                    ch_attr.attribute.get_foreground()
+                } else {
+                    ch_attr.attribute.get_background()
+                };
+
                 let mut run_len = 1;
+                // Find consecutive cells with same background and selection state
                 while x + run_len < buffer.get_width() {
-                    let next_attr = buffer.get_char(Position::new(x + run_len, y));
-                    if next_attr.attribute.get_background() != bg_idx {
+                    let next_pos = Position::new(x + run_len, y);
+                    let next_attr = buffer.get_char(next_pos);
+                    let next_selected = selection_opt.as_ref().map_or(false, |sel| sel.is_inside(next_pos));
+
+                    let next_bg_idx = if next_selected {
+                        next_attr.attribute.get_foreground()
+                    } else {
+                        next_attr.attribute.get_background()
+                    };
+
+                    if next_bg_idx != bg_idx || next_selected != is_selected {
                         break;
                     }
                     run_len += 1;
@@ -90,14 +110,22 @@ impl<'a> TerminalView<'a> {
             }
         }
 
-        // Text cells
+        // Text cells - now considering selection
         for y in 0..buffer.get_height() {
             for x in 0..buffer.get_width() {
                 let pos = Position::new(x, y);
                 let ch_attr = buffer.get_char(pos);
                 let ch = ch_attr.ch;
 
-                let fg_idx = ch_attr.attribute.get_foreground();
+                // Check if position is selected
+                let is_selected = selection_opt.as_ref().map_or(false, |sel| sel.is_inside(pos));
+
+                // Get foreground color (swap if selected)
+                let fg_idx = if is_selected {
+                    ch_attr.attribute.get_background()
+                } else {
+                    ch_attr.attribute.get_foreground()
+                };
                 let color = Terminal::buffer_color_to_iced(buffer.palette.get_color(fg_idx));
 
                 frame.fill_text(iced::widget::canvas::Text {
