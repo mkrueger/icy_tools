@@ -47,6 +47,7 @@ pub enum Message {
     ShowCaptureDialog,
     Upload,
     Download,
+    SendLogin,
     InitiateFileTransfer {
         protocol: icy_net::protocol::TransferProtocolType,
         is_download: bool,
@@ -58,6 +59,7 @@ pub enum Message {
     // Terminal thread events
     TerminalEvent(TerminalEvent),
     SendData(Vec<u8>),
+    None,
 }
 
 pub struct MainWindow {
@@ -207,13 +209,12 @@ impl MainWindow {
                 let config = ConnectionConfig {
                     connection_type: icy_net::ConnectionType::from(address.protocol.clone()),
                     address: address.address.clone(),
-                    terminal_type: icy_net::telnet::TerminalEmulation::Ansi,
+                    terminal_type: address.terminal_type,
                     window_size: (80, 25),
                     timeout: web_time::Duration::from_secs(30),
                     user_name: opt_non_empty(&address.user_name),
                     password: opt_non_empty(&address.password),
                     proxy_command: None, // fill from settings if needed
-                    use_utf8: true,
                     modem: if matches!(address.protocol, ConnectionType::Modem) {
                         Some(ModemConfig {
                             device: "/dev/ttyUSB0".into(),
@@ -311,6 +312,50 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::SendLogin => {
+                if self.is_connected {
+                    if let Some(address) = &self.current_address {
+                        // Check if we have username and password
+                        if !address.user_name.is_empty() || !address.password.is_empty() {
+                            let mut data_to_send = Vec::new();
+
+                            // Send username if available
+                            if !address.user_name.is_empty() {
+                                data_to_send.extend_from_slice(address.user_name.as_bytes());
+                                data_to_send.push(b'\r'); // Send carriage return after username
+                            }
+
+                            // Small delay between username and password (some BBSs need this)
+                            // We'll handle this by sending them as separate commands
+                            if !address.user_name.is_empty() && !address.password.is_empty() {
+                                let username_data = address.user_name.as_bytes().to_vec();
+                                let mut username_with_cr = username_data;
+                                username_with_cr.push(b'\r');
+                                let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
+
+                                // Send password after a small delay
+                                // Note: In a real implementation, you might want to add a proper delay mechanism
+                                // For now, we'll send it immediately and rely on the terminal's buffering
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                                let password_data = address.password.as_bytes().to_vec();
+                                let mut password_with_cr = password_data;
+                                password_with_cr.push(b'\r');
+                                let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
+                            } else if !address.user_name.is_empty() {
+                                // Only username
+                                let _ = self.terminal_tx.send(TerminalCommand::SendData(data_to_send));
+                            } else if !address.password.is_empty() {
+                                // Only password (unusual but possible)
+                                data_to_send.extend_from_slice(address.password.as_bytes());
+                                data_to_send.push(b'\r');
+                                let _ = self.terminal_tx.send(TerminalCommand::SendData(data_to_send));
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
             Message::InitiateFileTransfer { protocol, is_download } => {
                 if is_download {
                     let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
@@ -366,6 +411,8 @@ impl MainWindow {
                 self.captured_data.clear();
                 Task::none()
             }
+
+            Message::None => Task::none(),
         }
     }
 
@@ -401,8 +448,7 @@ impl MainWindow {
             }
 
             TerminalEvent::BufferUpdated => {
-                // The buffer is automatically updated through the shared Arc<Mutex<EditState>>
-                // Just trigger a redraw by returning a Task
+                self.terminal_window.scene.cache.clear();
                 Task::none()
             }
 
@@ -506,17 +552,16 @@ impl MainWindow {
                 _ => None,
             })
         } else if matches!(self.state.mode, MainWindowMode::ShowTerminal) {
-            // NEW: forward terminal keystrokes
             iced::event::listen_with(|event, _status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, text, .. }) => {
-                    if let Some(bytes) = Self::map_key_event_to_bytes(&key) {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                    // Try to map the key with modifiers using the key map
+                    if let Some(bytes) = Self::map_key_event_to_bytes(&key, modifiers) {
                         Some(Message::SendData(bytes))
+                    } else if let Some(text) = text {
+                        // If no special mapping, send the text as-is
+                        Some(Message::SendData(text.as_bytes().to_vec()))
                     } else {
-                        if let Some(text) = text {
-                            Some(Message::SendData(text.as_bytes().to_vec()))
-                        } else {
-                            None
-                        }
+                        None
                     }
                 }
                 _ => None,
@@ -535,25 +580,13 @@ impl MainWindow {
         self.state.mode.clone()
     }
 
-    fn map_key_event_to_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
-        use keyboard::key::Named;
-        match key {
-            keyboard::Key::Named(Named::Enter) => Some(vec![b'\r']), // CR (often translated to CRLF server-side)
-            keyboard::Key::Named(Named::Tab) => Some(vec![b'\t']),
-            keyboard::Key::Named(Named::Backspace) => Some(vec![0x08]), // BS
-            keyboard::Key::Named(Named::Escape) => Some(vec![0x1B]),
-            keyboard::Key::Named(Named::ArrowUp) => Some(b"\x1B[A".to_vec()),
-            keyboard::Key::Named(Named::ArrowDown) => Some(b"\x1B[B".to_vec()),
-            keyboard::Key::Named(Named::ArrowRight) => Some(b"\x1B[C".to_vec()),
-            keyboard::Key::Named(Named::ArrowLeft) => Some(b"\x1B[D".to_vec()),
-            keyboard::Key::Named(Named::Home) => Some(b"\x1B[H".to_vec()),
-            keyboard::Key::Named(Named::End) => Some(b"\x1B[F".to_vec()),
-            keyboard::Key::Named(Named::PageUp) => Some(b"\x1B[5~".to_vec()),
-            keyboard::Key::Named(Named::PageDown) => Some(b"\x1B[6~".to_vec()),
-            keyboard::Key::Named(Named::Delete) => Some(b"\x1B[3~".to_vec()),
-            keyboard::Key::Named(Named::Insert) => Some(b"\x1B[2~".to_vec()),
-            _ => None,
-        }
+    fn map_key_event_to_bytes(key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Option<Vec<u8>> {
+        // Get the appropriate key map based on terminal type
+        // For now, we'll use ANSI as default, but this should be configurable
+        let key_map = iced_engine_gui::key_map::ANSI_KEY_MAP;
+
+        // Use the lookup_key function from the key_map module
+        iced_engine_gui::key_map::lookup_key(key, modifiers, key_map)
     }
 }
 

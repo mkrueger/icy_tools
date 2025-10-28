@@ -1,6 +1,14 @@
-pub mod scene;
-use iced::Color;
-pub use scene::*;
+pub mod terminal;
+use std::{cell::Cell, ops::RangeInclusive};
+
+pub use terminal::*;
+
+pub mod terminal_view;
+pub use terminal_view::*;
+
+pub mod key_map;
+
+use iced::{Color, Point, widget::Grid};
 use serde::{Deserialize, Serialize};
 
 #[repr(i32)]

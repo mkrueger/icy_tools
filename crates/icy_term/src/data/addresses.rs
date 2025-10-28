@@ -15,8 +15,9 @@ use std::{
     path::PathBuf,
 };
 
-pub const ALL_TERMINALS: [TerminalEmulation; 10] = [
+pub const ALL_TERMINALS: [TerminalEmulation; 11] = [
     TerminalEmulation::Ansi,
+    TerminalEmulation::Utf8Ansi,
     TerminalEmulation::Avatar,
     TerminalEmulation::Ascii,
     TerminalEmulation::Rip,
@@ -31,6 +32,7 @@ pub const ALL_TERMINALS: [TerminalEmulation; 10] = [
 pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
     match emulator {
         TerminalEmulation::Ansi => "ANSI",
+        TerminalEmulation::Utf8Ansi => "UTF8ANSI",
         TerminalEmulation::Avatar => "AVATAR",
         TerminalEmulation::Ascii => "Raw (ASCII)",
         TerminalEmulation::PETscii => "C64/C128 (PETSCII)",
@@ -46,7 +48,7 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
 #[must_use]
 pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, screen_mode: ScreenMode, cache_directory: PathBuf) -> Box<dyn BufferParser> {
     match emulator {
-        TerminalEmulation::Ansi => {
+        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
             let mut parser = ansi::Parser::default();
             parser.ansi_music = use_ansi_music;
             parser.bs_is_ctrl_char = true;
@@ -91,9 +93,12 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, scr
 #[must_use]
 pub fn get_unicode_converter(emulator: &TerminalEmulation) -> Box<dyn UnicodeConverter> {
     match emulator {
-        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii | TerminalEmulation::Rip | TerminalEmulation::Skypix => {
-            Box::<ascii::CP437Converter>::default()
-        }
+        TerminalEmulation::Ansi
+        | TerminalEmulation::Utf8Ansi
+        | TerminalEmulation::Avatar
+        | TerminalEmulation::Ascii
+        | TerminalEmulation::Rip
+        | TerminalEmulation::Skypix => Box::<ascii::CP437Converter>::default(),
         TerminalEmulation::PETscii => Box::<petscii::CharConverter>::default(),
         TerminalEmulation::ATAscii | TerminalEmulation::AtariST => Box::<atascii::CharConverter>::default(),
         TerminalEmulation::ViewData => Box::<viewdata::CharConverter>::default(),

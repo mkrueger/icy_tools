@@ -3,7 +3,10 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, button, column, container, row, svg, text},
 };
-use iced_engine_gui::Scene;
+use iced_engine_gui::{
+    Terminal,
+    terminal_view::{Message as TerminalMessage, TerminalView},
+};
 use icy_engine::{Buffer, editor::EditState};
 use std::{
     path::Path,
@@ -20,9 +23,10 @@ const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
 const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen_utf8.ans");
+const LOGIN_SVG: &[u8] = include_bytes!("../../data/icons/key.svg"); // You may need to add an appropriate icon file
 
 pub struct TerminalWindow {
-    pub scene: Scene,
+    pub scene: Terminal,
     pub is_connected: bool,
     pub is_capturing: bool,
 }
@@ -38,7 +42,7 @@ impl TerminalWindow {
 
         edit_state.lock().unwrap().set_buffer(buffer);
         Self {
-            scene: Scene::new(edit_state),
+            scene: Terminal::new(edit_state),
             is_connected: false,
             is_capturing: false,
         }
@@ -48,8 +52,17 @@ impl TerminalWindow {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
 
-        // Create the main terminal area - use &self.scene since Scene now implements From for &Scene
-        let terminal_area = container(&self.scene).width(Length::Fill).height(Length::Fill);
+        // Create the main terminal area - use TerminalView to create the view
+        let terminal_view = TerminalView::show(&self.scene).map(|terminal_msg| {
+            // Map TerminalMessage to your app's Message enum
+            match terminal_msg {
+                TerminalMessage::SetCaret(_pos) => Message::None, // Or handle caret changes if needed
+                TerminalMessage::BufferChanged => Message::None,
+                TerminalMessage::Resize(_, _) => Message::None,
+            }
+        });
+
+        let terminal_area = container(terminal_view).width(Length::Fill).height(Length::Fill);
 
         // Status bar at the bottom
         let status_bar = self.create_status_bar();
@@ -173,6 +186,19 @@ impl TerminalWindow {
         .on_press(Message::Download)
         .padding([4, 6]);
 
+        // Send Login button - NEW BUTTON
+        let send_login_btn = button(
+            row![
+                // Using a text icon for now, replace with SVG if you have one
+                text("🔑").size(14), // or use svg(svg::Handle::from_memory(LOGIN_SVG))
+                text(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).size(12)
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SendLogin)
+        .padding([4, 6]);
+
         // Settings dropdown menu
         let settings_menu = button(
             row![
@@ -204,6 +230,7 @@ impl TerminalWindow {
             container(text(" | ").size(10)).padding([0, 2]),
             upload_btn,
             download_btn,
+            send_login_btn,
             container(text(" | ").size(10)).padding([0, 2]),
         ]
         .spacing(3)
@@ -244,16 +271,15 @@ impl TerminalWindow {
             })
             .into()
     }
-
     fn create_status_bar(&self) -> Element<'_, Message> {
         let connection_status = if self.is_connected {
             text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().success.base.color),
+                color: Some(theme.extended_palette().success.strong.color),
                 ..Default::default()
             })
         } else {
             text("○ Disconnected").style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.weak.color),
+                color: Some(theme.extended_palette().danger.weak.color),
                 ..Default::default()
             })
         };
@@ -276,7 +302,7 @@ impl TerminalWindow {
                 let palette = theme.extended_palette();
                 let base = Style {
                     background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                    text_color: palette.primary.base.color,
+                    text_color: palette.primary.strong.color,
                     border: Border {
                         color: palette.primary.weak.color,
                         width: 1.0,
@@ -376,18 +402,4 @@ fn menu_button<'a>(content: impl Into<Element<'a, Message>>, msg: Message) -> bu
             }
         })
         .on_press(msg)
-}
-
-// Update Message enum to include new variants
-#[derive(Debug, Clone)]
-pub enum TerminalMessage {
-    Disconnect,
-    ShowDialingDirectory,
-    StartCapture,
-    StopCapture,
-    Upload,
-    Download,
-    ShowSettings,
-    Quit,
-    None,
 }

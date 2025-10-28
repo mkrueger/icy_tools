@@ -1,8 +1,8 @@
 use crate::ScreenMode;
 use icy_engine::editor::EditState;
-use icy_engine::{BufferParser, CallbackAction};
+use icy_engine::{BufferParser, CallbackAction, TextAttribute};
 use icy_net::{
-    Connection, ConnectionType,
+    Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection},
     protocol::{TransferProtocolType, TransferState},
     raw::RawConnection,
@@ -53,7 +53,6 @@ pub struct ConnectionConfig {
     pub password: Option<String>,
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
-    pub use_utf8: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -127,7 +126,7 @@ impl TerminalThread {
     async fn run(&mut self) {
         let mut read_buffer = vec![0u8; 64 * 1024];
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(16)); // ~60fps
-
+        let mut poll_interval = 0;
         loop {
             tokio::select! {
                 // Handle commands from UI
@@ -139,6 +138,20 @@ impl TerminalThread {
                 _ = interval.tick() => {
                     // Read from connection if connected
                     if self.connection.is_some() {
+                        if poll_interval >= 10 {
+                            poll_interval = 0;
+                            if let Some(conn) = &mut self.connection {
+                                println!("Polling connection status...");
+                                let is_alive = conn.poll().await;
+                                if is_alive.is_err() || is_alive.unwrap() == ConnectionState::Disconnected {
+                                    self.disconnect().await;
+                                    continue;
+                                }
+                            }
+                        } else {
+                            poll_interval += 1;
+                        }
+
                         self.read_connection(&mut read_buffer).await;
                     }
                 }
@@ -166,7 +179,7 @@ impl TerminalThread {
             }
             TerminalCommand::SendData(data) => {
                 if let Some(conn) = &mut self.connection {
-                    if let Err(e) = conn.send(&data).await {
+                    if let Err(_e) = conn.send(&data).await {
                         self.disconnect().await;
                     }
                 } else {
@@ -198,7 +211,7 @@ impl TerminalThread {
             "Connecting: type={:?} addr={} window={:?}",
             config.connection_type, config.address, config.window_size
         );
-        self.use_utf8 = config.use_utf8;
+        self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
 
         let connection: Box<dyn Connection> = match config.connection_type {
             ConnectionType::Telnet => {
@@ -258,11 +271,13 @@ impl TerminalThread {
     }
 
     async fn disconnect(&mut self) {
-        println!("Disconnecting... {}", backtrace::Backtrace::force_capture());
-
         if let Some(mut conn) = self.connection.take() {
             let _ = conn.shutdown().await;
         }
+        if let Ok(mut state) = self.edit_state.lock() {
+            state.get_caret_mut().set_attr(TextAttribute::default());
+        }
+        self.process_data(b"\r\nNO CARRIER\r\n").await;
 
         self.connection_time = None;
         self.utf8_buffer.clear();

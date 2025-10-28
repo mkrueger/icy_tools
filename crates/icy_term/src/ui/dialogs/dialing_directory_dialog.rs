@@ -46,6 +46,7 @@ impl fmt::Display for TerminalEmulationWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             TerminalEmulation::Ansi => write!(f, "ANSI"),
+            TerminalEmulation::Utf8Ansi => write!(f, "UTF8ANSI"),
             TerminalEmulation::Ascii => write!(f, "ASCII"),
             TerminalEmulation::Avatar => write!(f, "Avatar"),
             TerminalEmulation::PETscii => write!(f, "PETSCII"),
@@ -407,6 +408,7 @@ impl DialingDirectoryState {
 
                 let terms = vec![
                     TerminalEmulationWrapper(TerminalEmulation::Ansi),
+                    TerminalEmulationWrapper(TerminalEmulation::Utf8Ansi),
                     TerminalEmulationWrapper(TerminalEmulation::Ascii),
                     TerminalEmulationWrapper(TerminalEmulation::Avatar),
                     TerminalEmulationWrapper(TerminalEmulation::PETscii),
@@ -459,6 +461,7 @@ impl DialingDirectoryState {
                 .align_y(Alignment::Center);
 
                 if addr.terminal_type == TerminalEmulation::Ansi
+                    || addr.terminal_type == TerminalEmulation::Utf8Ansi
                     || addr.terminal_type == TerminalEmulation::Avatar
                     || addr.terminal_type == TerminalEmulation::Ascii
                 {
@@ -466,7 +469,7 @@ impl DialingDirectoryState {
                     column_row = column_row.push(screen_mode_pick);
                 }
 
-                if addr.terminal_type == TerminalEmulation::Ansi {
+                if addr.terminal_type == TerminalEmulation::Ansi || addr.terminal_type == TerminalEmulation::Utf8Ansi {
                     column_row = column_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")));
                     column_row = column_row.push(music_pick);
                 }
@@ -942,7 +945,11 @@ impl DialingDirectoryState {
                         addr.terminal_type = terminal;
                         // Reset screen mode when terminal changes
                         addr.screen_mode = match terminal {
-                            TerminalEmulation::Ansi | TerminalEmulation::Ascii | TerminalEmulation::Avatar | TerminalEmulation::Rip => ScreenMode::Vga(80, 25),
+                            TerminalEmulation::Ansi
+                            | TerminalEmulation::Ascii
+                            | TerminalEmulation::Avatar
+                            | TerminalEmulation::Rip
+                            | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
                             TerminalEmulation::AtariST => ScreenMode::AtariST(40),
                             TerminalEmulation::PETscii => ScreenMode::Vic,
                             TerminalEmulation::ATAscii => ScreenMode::Antic,
