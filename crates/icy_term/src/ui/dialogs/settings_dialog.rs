@@ -292,17 +292,29 @@ impl SettingsDialogState {
     }
 
     fn monitor_settings_content(&self) -> Element<'_, crate::ui::Message> {
-        let settings = &self.temp_options.monitor_settings;
-
         column![
+            // Theme selection
+            row![
+                container(text(fl!(crate::LANGUAGE_LOADER, "settings-monitor-type")).size(14))
+                    .width(Length::Fixed(LABEL_WIDTH))
+                    .align_x(iced::alignment::Horizontal::Right),
+                pick_list(&ThemeOption::ALL[..], Some(ThemeOption::from(self.temp_options.get_theme())), |theme| {
+                    let mut new_options = self.temp_options.clone();
+                    new_options.set_theme(theme.into());
+                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                })
+                .width(Length::Fixed(200.0)),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+            Space::new().height(SECTION_SPACING),
             // Monitor settings would go here
-            // For now, placeholder
             text("Monitor settings - TODO: Implement monitor controls").size(14),
             Space::new().height(SECTION_SPACING),
-            text(format!("Blur: {:.2}", settings.blur)).size(14),
-            text(format!("Brightness: {:.2}", settings.brightness)).size(14),
-            text(format!("Contrast: {:.2}", settings.contrast)).size(14),
-            text(format!("Saturation: {:.2}", settings.saturation)).size(14),
+            //            text(format!("Blur: {:.2}", settings.blur)).size(14),
+            //            text(format!("Brightness: {:.2}", settings.brightness)).size(14),
+            //            text(format!("Contrast: {:.2}", settings.contrast)).size(14),
+            //            text(format!("Saturation: {:.2}", settings.saturation)).size(14),
         ]
         .spacing(INPUT_SPACING)
         .into()
@@ -791,6 +803,78 @@ impl std::fmt::Display for FlowControlOption {
             icy_net::serial::FlowControl::None => write!(f, "None"),
             icy_net::serial::FlowControl::XonXoff => write!(f, "Software"),
             icy_net::serial::FlowControl::RtsCts => write!(f, "Hardware"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ThemeOption(iced::Theme);
+
+impl ThemeOption {
+    const ALL: [ThemeOption; 22] = [
+        ThemeOption(iced::Theme::Light),
+        ThemeOption(iced::Theme::Dark),
+        ThemeOption(iced::Theme::Dracula),
+        ThemeOption(iced::Theme::Nord),
+        ThemeOption(iced::Theme::SolarizedLight),
+        ThemeOption(iced::Theme::SolarizedDark),
+        ThemeOption(iced::Theme::GruvboxLight),
+        ThemeOption(iced::Theme::GruvboxDark),
+        ThemeOption(iced::Theme::CatppuccinLatte),
+        ThemeOption(iced::Theme::CatppuccinFrappe),
+        ThemeOption(iced::Theme::CatppuccinMacchiato),
+        ThemeOption(iced::Theme::CatppuccinMocha),
+        ThemeOption(iced::Theme::TokyoNight),
+        ThemeOption(iced::Theme::TokyoNightStorm),
+        ThemeOption(iced::Theme::TokyoNightLight),
+        ThemeOption(iced::Theme::KanagawaWave),
+        ThemeOption(iced::Theme::KanagawaDragon),
+        ThemeOption(iced::Theme::KanagawaLotus),
+        ThemeOption(iced::Theme::Moonfly),
+        ThemeOption(iced::Theme::Nightfly),
+        ThemeOption(iced::Theme::Oxocarbon),
+        ThemeOption(iced::Theme::Ferra),
+    ];
+}
+
+impl From<iced::Theme> for ThemeOption {
+    fn from(value: iced::Theme) -> Self {
+        ThemeOption(value)
+    }
+}
+
+impl From<ThemeOption> for iced::Theme {
+    fn from(value: ThemeOption) -> Self {
+        value.0
+    }
+}
+
+impl std::fmt::Display for ThemeOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            iced::Theme::Light => write!(f, "Light"),
+            iced::Theme::Dark => write!(f, "Dark"),
+            iced::Theme::Dracula => write!(f, "Dracula"),
+            iced::Theme::Nord => write!(f, "Nord"),
+            iced::Theme::SolarizedLight => write!(f, "Solarized Light"),
+            iced::Theme::SolarizedDark => write!(f, "Solarized Dark"),
+            iced::Theme::GruvboxLight => write!(f, "Gruvbox Light"),
+            iced::Theme::GruvboxDark => write!(f, "Gruvbox Dark"),
+            iced::Theme::CatppuccinLatte => write!(f, "Catppuccin Latte"),
+            iced::Theme::CatppuccinFrappe => write!(f, "Catppuccin Frappe"),
+            iced::Theme::CatppuccinMacchiato => write!(f, "Catppuccin Macchiato"),
+            iced::Theme::CatppuccinMocha => write!(f, "Catppuccin Mocha"),
+            iced::Theme::TokyoNight => write!(f, "Tokyo Night"),
+            iced::Theme::TokyoNightStorm => write!(f, "Tokyo Night Storm"),
+            iced::Theme::TokyoNightLight => write!(f, "Tokyo Night Light"),
+            iced::Theme::KanagawaWave => write!(f, "Kanagawa Wave"),
+            iced::Theme::KanagawaDragon => write!(f, "Kanagawa Dragon"),
+            iced::Theme::KanagawaLotus => write!(f, "Kanagawa Lotus"),
+            iced::Theme::Moonfly => write!(f, "Moonfly"),
+            iced::Theme::Nightfly => write!(f, "Nightfly"),
+            iced::Theme::Oxocarbon => write!(f, "Oxocarbon"),
+            iced::Theme::Ferra => write!(f, "Ferra"),
+            iced::Theme::Custom(_) => write!(f, "Custom"),
         }
     }
 }

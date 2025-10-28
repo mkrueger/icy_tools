@@ -560,7 +560,11 @@ impl MainWindow {
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Dark.clone()
+        if self.get_mode() == MainWindowMode::ShowSettings {
+            self.settings_dialog.temp_options.get_theme()
+        } else {
+            self.settings_dialog.original_options.get_theme()
+        }
     }
 
     pub fn view(&self) -> Element<'_, Message> {

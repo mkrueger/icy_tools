@@ -141,7 +141,6 @@ impl TerminalThread {
                         if poll_interval >= 10 {
                             poll_interval = 0;
                             if let Some(conn) = &mut self.connection {
-                                println!("Polling connection status...");
                                 let is_alive = conn.poll().await;
                                 if is_alive.is_err() || is_alive.unwrap() == ConnectionState::Disconnected {
                                     self.disconnect().await;

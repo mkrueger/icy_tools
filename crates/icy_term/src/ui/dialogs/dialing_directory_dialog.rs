@@ -852,7 +852,6 @@ impl DialingDirectoryState {
     }
 
     pub(crate) fn update(&mut self, msg: DialingDirectoryMsg) -> Task<Message> {
-        println!("DialingDirectoryMsg: {:?}", msg);
         match msg {
             DialingDirectoryMsg::SelectAddress(idx) => {
                 self.selected_bbs = idx;
@@ -1301,7 +1300,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         return text(text_str)
             .size(12)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.weak.color),
+                color: Some(theme.extended_palette().secondary.base.color),
                 ..Default::default()
             })
             .font(iced::Font::MONOSPACE)
@@ -1321,7 +1320,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 text(text_str[last..idx].to_string())
                     .size(12)
                     .style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().secondary.weak.color),
+                        color: Some(theme.extended_palette().secondary.base.color),
                         ..Default::default()
                     })
                     .font(iced::Font::MONOSPACE)
@@ -1346,7 +1345,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
             text(text_str[last..].to_string())
                 .size(12)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().secondary.weak.color),
+                    color: Some(theme.extended_palette().secondary.base.color),
                     ..Default::default()
                 })
                 .font(iced::Font::MONOSPACE)
