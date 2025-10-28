@@ -157,6 +157,9 @@ capture-dialog-capture-file = Fájl:
 capture-dialog-capture-title=Rögzítés
 capture-dialog-capture-button=Indítás
 
+export-dialog-title = Puffer exportálása fájlba
+export-dialog-export-button = Exportálás
+
 show-iemsi-dialog-heading=IEMSI szerver információk
 show-iemsi-dialog-name=Név:
 show-iemsi-dialog-location=Helyszín:

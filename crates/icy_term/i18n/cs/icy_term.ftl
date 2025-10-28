@@ -157,6 +157,9 @@ capture-dialog-capture-file = Soubor:
 capture-dialog-capture-title=Záznam
 capture-dialog-capture-button=Start
 
+export-dialog-title = Exportovat buffer do souboru
+export-dialog-export-button = Exportovat
+
 show-iemsi-dialog-heading=Informace o serveru IEMSI
 show-iemsi-dialog-name=Jméno:
 show-iemsi-dialog-location=Umístění:

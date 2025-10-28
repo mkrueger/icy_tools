@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use crate::ui::dialogs::find_dialog;
+use crate::ui::{dialogs::find_dialog, export_dialog};
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
 use icy_engine::{Position, editor::EditState};
@@ -26,7 +26,6 @@ pub enum MainWindowMode {
     ShowSettings,
     SelectProtocol(bool),
     FileTransfer(bool),
-    DeleteSelectedAddress(usize),
     ShowCaptureDialog,
     ShowExportDialog,
     ShowUploadDialog,
@@ -41,6 +40,8 @@ pub enum Message {
     CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
     ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
     FindDialog(find_dialog::FindDialogMsg),
+    ExportDialog(export_dialog::ExportMsg),
+    ShowExportDialog,
     Connect(Address),
     CloseDialog,
     Disconnect,
@@ -73,6 +74,7 @@ pub struct MainWindow {
     pub terminal_window: terminal_window::TerminalWindow,
     pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
     pub find_dialog: find_dialog::DialogState,
+    pub export_dialog: export_dialog::ExportDialogState,
 
     // Terminal thread communication
     terminal_tx: mpsc::UnboundedSender<TerminalCommand>,
@@ -116,6 +118,11 @@ impl MainWindow {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
             .join("capture.ans");
 
+        let default_export_path = directories::UserDirs::new()
+            .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+            .join("export.icy");
+
         // Create shared edit state for terminal
         let terminal_window = terminal_window::TerminalWindow::new();
         let edit_state = terminal_window.scene.edit_state.clone();
@@ -135,6 +142,7 @@ impl MainWindow {
             terminal_window,
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(None),
             find_dialog: find_dialog::DialogState::new(),
+            export_dialog: export_dialog::ExportDialogState::new(default_export_path.to_string_lossy().to_string()),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -434,6 +442,23 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::ShowExportDialog => {
+                self.state.mode = MainWindowMode::ShowExportDialog;
+                Task::none()
+            }
+            Message::ExportDialog(msg) => {
+                if let Some(response) = self.export_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
+                    match response {
+                        Message::CloseDialog => {
+                            self.state.mode = MainWindowMode::ShowTerminal;
+                        }
+                        _ => {}
+                    }
+                    return Task::none();
+                }
+                Task::none()
+            }
+
             Message::None => Task::none(),
         }
     }
@@ -503,9 +528,8 @@ impl MainWindow {
             MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view()),
             MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, self.terminal_window.view()),
             MainWindowMode::FileTransfer(_) => todo!(),
-            MainWindowMode::DeleteSelectedAddress(_) => todo!(),
             MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view()),
-            MainWindowMode::ShowExportDialog => todo!(),
+            MainWindowMode::ShowExportDialog => self.export_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowUploadDialog => todo!(),
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view()),
@@ -572,6 +596,9 @@ impl MainWindow {
                             if s.to_lowercase() == "f" {
                                 return Some(Message::ShowFindDialog);
                             }
+                            if s.to_lowercase() == "e" {
+                                return Some(Message::ShowExportDialog);
+                            }
                         }
                     }
 
@@ -595,6 +622,15 @@ impl MainWindow {
                     keyboard::Key::Named(keyboard::key::Named::PageUp) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindPrev)),
                     keyboard::Key::Named(keyboard::key::Named::PageDown) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
                     keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
+                    _ => None,
+                },
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowExportDialog) {
+            // Handle find dialog keyboard shortcuts
+            iced::event::listen_with(|event, _status, _| match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_dialog::ExportMsg::Cancel)),
                     _ => None,
                 },
                 _ => None,

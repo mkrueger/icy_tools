@@ -158,6 +158,9 @@ capture-dialog-capture-file = Fichier :
 capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Commencer
 
+export-dialog-title = Exporter le tampon vers un fichier
+export-dialog-export-button = Exporter
+
 show-iemsi-dialog-heading=Informations sur le serveur IEMSI
 show-iemsi-dialog-name=Nom :
 show-iemsi-dialog-location=Emplacement :

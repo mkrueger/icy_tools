@@ -158,6 +158,9 @@ capture-dialog-capture-file=File:
 capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Start
 
+export-dialog-title = Export Buffer to File
+export-dialog-export-button = Export
+
 show-iemsi-dialog-heading=IEMSI Server information
 show-iemsi-dialog-name=Name:
 show-iemsi-dialog-location=Location:

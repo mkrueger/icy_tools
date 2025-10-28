@@ -157,6 +157,9 @@ capture-dialog-capture-file = Fitxer:
 capture-dialog-capture-title=Captura
 capture-dialog-capture-button=Iniciar
 
+export-dialog-title = Exportar memòria intermèdia a fitxer
+export-dialog-export-button = Exportar
+
 show-iemsi-dialog-heading=Informació del servidor IEMSI
 show-iemsi-dialog-name=Nom:
 show-iemsi-dialog-location=Ubicació:
