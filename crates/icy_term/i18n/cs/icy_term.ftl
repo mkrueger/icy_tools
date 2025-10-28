@@ -127,12 +127,12 @@ protocol-text-description = Nahrát textový soubor
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protokol:
+transfer-protocol = Protokol
 transfer-checksize = Kontrola/velikost:
-transfer-elapsedtime = Uplynulý čas:
+transfer-elapsedtime = Uplynulý čas
 transfer-state = Stav:
 transfer-file = Soubor:
-transfer-rate = rychlost přenosu:
+transfer-rate = Rychlost přenosu
 transfer-bps = { $bps } za sekundu
 
 menu-item-discuss=Fórum

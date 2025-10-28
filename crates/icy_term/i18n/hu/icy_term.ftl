@@ -127,12 +127,12 @@ protocol-text-description = Szövegfájl feltöltése
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protokoll:
+transfer-protocol = Protokoll
 transfer-checksize = Ellenőrzés/méret:
-transfer-elapsedtime = Eltelt idő:
+transfer-elapsedtime = Eltelt idő
 transfer-state = Állapot:
 transfer-file = Fájl:
-transfer-rate = átviteli sebesség:
+transfer-rate = Átviteli sebesség
 transfer-bps = { $bps } másodpercenként
 
 menu-item-discuss=Fórum

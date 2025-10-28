@@ -117,12 +117,12 @@ protocol-text-description = Pujar un fitxer de text
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocol:
+transfer-protocol = Protocol
 transfer-checksize = Comprovar/mida:
-transfer-elapsedtime = Temps transcorregut:
+transfer-elapsedtime = Temps transcorregut
 transfer-state = Estat:
 transfer-file = Fitxer:
-transfer-rate = taxa de transferència:
+transfer-rate = Taxa de transferència
 transfer-bps = { $bps } per segon
 
 menu-item-discuss=Fòrum

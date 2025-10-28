@@ -458,8 +458,8 @@ fn parse_value(options: &mut Options, value: &Value) {
                                 if min.len() == 2 {
                                     if let Some(max) = minmax.next() {
                                         let max = max.split('/').collect::<Vec<&str>>();
-                                        if let (Ok(x1), Ok(y1)) = (min[0].parse::<f32>(), min[1].parse::<f32>()) {
-                                            if let (Ok(x2), Ok(y2)) = (max[0].parse::<f32>(), max[1].parse::<f32>()) {
+                                        if let (Ok(_x1), Ok(_y1)) = (min[0].parse::<f32>(), min[1].parse::<f32>()) {
+                                            if let (Ok(_x2), Ok(_y2)) = (max[0].parse::<f32>(), max[1].parse::<f32>()) {
                                                 //                                                options.window_rect = Some(Rect::from_min_max(egui::Pos2::new(x1, y1), egui::Pos2::new(x2, y2)));
                                             }
                                         }

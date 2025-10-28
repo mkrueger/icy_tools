@@ -117,12 +117,12 @@ protocol-text-description = Enviar um arquivo de texto
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocolo:
+transfer-protocol = Protocolo
 transfer-checksize = Verificar/tamanho:
-transfer-elapsedtime = Tempo decorrido:
+transfer-elapsedtime = Tempo decorrido
 transfer-state = Estado:
 transfer-file = Arquivo:
-transfer-rate = taxa de transferência:
+transfer-rate = Taxa de transferência
 transfer-bps = { $bps } por segundo
 
 menu-item-discuss=Fórum

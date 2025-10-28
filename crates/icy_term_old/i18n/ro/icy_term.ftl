@@ -117,12 +117,12 @@ protocol-text-description = Încarcă un fișier text
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocol:
+transfer-protocol = Protocol
 transfer-checksize = Verificare/mărime:
-transfer-elapsedtime = Timp scurs:
+transfer-elapsedtime = Timp scurs
 transfer-state = Stare:
 transfer-file = Fișier:
-transfer-rate = rata de transfer:
+transfer-rate = Rata de transfer
 transfer-bps = { $bps } pe secundă
 
 menu-item-discuss=Forum

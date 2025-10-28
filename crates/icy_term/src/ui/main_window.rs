@@ -4,11 +4,15 @@ use std::{
     time::Instant,
 };
 
-use crate::ui::{dialogs::find_dialog, export_dialog};
+use crate::ui::{
+    dialogs::find_dialog,
+    export_dialog,
+    up_download_dialog::{self, FileTransferDialogState},
+};
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
 use icy_engine::{Position, editor::EditState};
-use icy_net::ConnectionType;
+use icy_net::{ConnectionType, protocol::TransferState};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -28,7 +32,6 @@ pub enum MainWindowMode {
     FileTransfer(bool),
     ShowCaptureDialog,
     ShowExportDialog,
-    ShowUploadDialog,
     ShowIEMSI,
     ShowFindDialog,
 }
@@ -41,6 +44,9 @@ pub enum Message {
     ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
     FindDialog(find_dialog::FindDialogMsg),
     ExportDialog(export_dialog::ExportMsg),
+    TransferDialog(up_download_dialog::TransferMsg),
+    CancelFileTransfer,
+    UpdateTransferState(TransferState),
     ShowExportDialog,
     Connect(Address),
     CloseDialog,
@@ -75,6 +81,7 @@ pub struct MainWindow {
     pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
     pub find_dialog: find_dialog::DialogState,
     pub export_dialog: export_dialog::ExportDialogState,
+    pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
 
     // Terminal thread communication
     terminal_tx: mpsc::UnboundedSender<TerminalCommand>,
@@ -143,6 +150,7 @@ impl MainWindow {
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(None),
             find_dialog: find_dialog::DialogState::new(),
             export_dialog: export_dialog::ExportDialogState::new(default_export_path.to_string_lossy().to_string()),
+            file_transfer_dialog: FileTransferDialogState::new(),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -372,15 +380,49 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::TransferDialog(msg) => {
+                if let Some(response) = self.file_transfer_dialog.update(msg) {
+                    match response {
+                        Message::CloseDialog => {
+                            self.state.mode = MainWindowMode::ShowTerminal;
+                        }
+                        Message::CancelFileTransfer => {
+                            // Send cancel command to terminal
+                            let _ = self.terminal_tx.send(TerminalCommand::CancelTransfer);
+                            self.state.mode = MainWindowMode::ShowTerminal;
+                        }
+                        _ => {}
+                    }
+                }
+                Task::none()
+            }
+
+            Message::UpdateTransferState(state) => {
+                self.file_transfer_dialog.update_transfer_state(state);
+                Task::none()
+            }
+
             Message::InitiateFileTransfer { protocol, is_download } => {
                 if is_download {
                     let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
                 } else {
-                    // TODO: Get files to upload from file dialog
-                    let files = Vec::new();
-                    let _ = self.terminal_tx.send(TerminalCommand::StartUpload(protocol, files));
+                    let files = rfd::FileDialog::new()
+                        .set_title("Select Files to Upload")
+                        .set_directory(self.initial_upload_directory.as_ref().and_then(|p| p.to_str()).unwrap_or("."))
+                        .pick_files();
+
+                    if let Some(files) = files {
+                        let _ = self.terminal_tx.send(TerminalCommand::StartUpload(protocol, files));
+                    }
                 }
+
                 self.state.mode = MainWindowMode::FileTransfer(is_download);
+                Task::none()
+            }
+
+            Message::CancelFileTransfer => {
+                let _ = self.terminal_tx.send(TerminalCommand::CancelTransfer);
+                self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
 
@@ -527,10 +569,9 @@ impl MainWindow {
             MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options),
             MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view()),
             MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, self.terminal_window.view()),
-            MainWindowMode::FileTransfer(_) => todo!(),
+            MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, self.terminal_window.view()),
             MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowExportDialog => self.export_dialog.view(self.terminal_window.view()),
-            MainWindowMode::ShowUploadDialog => todo!(),
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view()),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view()),
         }

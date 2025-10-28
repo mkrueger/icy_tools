@@ -5,3 +5,4 @@ pub mod find_dialog;
 pub mod protocol_selector;
 pub mod settings_dialog;
 pub mod show_iemsi;
+pub mod up_download_dialog;
