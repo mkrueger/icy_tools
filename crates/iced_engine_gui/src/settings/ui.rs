@@ -113,10 +113,10 @@ pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorS
     content = content.push(section_header("Color & Tone"));
     content = content.push(effect_box(
         column![
-            slider_row_owned("Brightness".to_string(), s.brightness, 0.0..=100.0, MonitorSettingsMessage::BrightnessChanged),
-            slider_row_owned("Contrast".to_string(), s.contrast, 0.0..=100.0, MonitorSettingsMessage::ContrastChanged),
-            slider_row_owned("Gamma".to_string(), s.gamma, 50.0..=200.0, MonitorSettingsMessage::GammaChanged),
-            slider_row_owned("Saturation".to_string(), s.saturation, 0.0..=150.0, MonitorSettingsMessage::SaturationChanged),
+            slider_row_owned("Brightness".to_string(), s.brightness, 0.0..=200.0, MonitorSettingsMessage::BrightnessChanged),
+            slider_row_owned("Contrast".to_string(), s.contrast, 0.0..=200.0, MonitorSettingsMessage::ContrastChanged),
+            slider_row_owned("Gamma".to_string(), s.gamma, 0.0..=4.0, MonitorSettingsMessage::GammaChanged),
+            slider_row_owned("Saturation".to_string(), s.saturation, 0.0..=200.0, MonitorSettingsMessage::SaturationChanged),
         ]
         .spacing(8)
         .into(),

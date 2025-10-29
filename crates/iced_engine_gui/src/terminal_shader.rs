@@ -3,6 +3,19 @@ use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::TextPane;
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CRTUniforms {
+    time: f32,
+    brightness: f32,
+    contrast: f32,
+    gamma: f32,
+    saturation: f32,
+    monitor_type: f32,
+    resolution: [f32; 2],
+    _pad: [f32; 4], // padding -> total floats: 12 (48 bytes)
+}
+
 // Define your shader primitive - store rendered data, not references
 #[derive(Debug, Clone)]
 pub struct TerminalShader {
@@ -150,7 +163,7 @@ impl shader::Primitive for TerminalShader {
 
         let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
             label: Some("Terminal Shader Uniforms"),
-            size: std::mem::size_of::<[f32; 20]>() as u64,
+            size: std::mem::size_of::<CRTUniforms>() as u64,
             usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -281,25 +294,6 @@ impl shader::Primitive for TerminalShader {
         let scaled_w = term_w * display_scale;
         let scaled_h = term_h * display_scale;
 
-        #[repr(C)]
-        #[derive(Clone, Copy)]
-        struct CRTUniforms {
-            time: f32,
-            scan_line_intensity: f32,
-            curvature: f32,
-            bloom: f32,
-            gamma: f32,
-            contrast: f32,
-            saturation: f32,
-            brightness: f32,
-            light: f32,
-            blur: f32,
-            resolution: [f32; 2],
-            use_filter: f32,
-            monitor_type: f32,
-            _pad: [f32; 2], // pad to 16‑byte multiple (total 16 floats = 64 bytes)
-        }
-
         let monitor_color = match self.monitor_settings.monitor_type {
             crate::MonitorType::Color => [1.0, 1.0, 1.0, 1.0],
             crate::MonitorType::Grayscale => [1.0, 1.0, 1.0, 1.0],
@@ -313,21 +307,20 @@ impl shader::Primitive for TerminalShader {
             }
         };
 
+        let brightness_mul = self.monitor_settings.brightness / 100.0; // 100 -> 1.0
+        let contrast_mul = self.monitor_settings.contrast / 100.0; // 100 -> 1.0
+        let gamma_val = self.monitor_settings.gamma;
+        let saturation_mul = self.monitor_settings.saturation / 100.0; // 100 -> 1.0
+
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
-            scan_line_intensity: 0.0,
-            curvature: 0.0,
-            bloom: 0.0,
-            gamma: 0.0,
-            contrast: 0.0,
-            saturation: 0.0,
-            brightness: 0.0,
-            light: 0.3,
-            blur: 0.0,
-            resolution: [scaled_w, scaled_h],
-            use_filter: 0.0,
+            brightness: brightness_mul,
+            contrast: contrast_mul,
+            gamma: gamma_val,
+            saturation: saturation_mul,
             monitor_type: self.monitor_settings.monitor_type.to_index() as f32,
-            _pad: [0.0, 0.0],
+            resolution: [scaled_w, scaled_h],
+            _pad: [0.0; 4],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

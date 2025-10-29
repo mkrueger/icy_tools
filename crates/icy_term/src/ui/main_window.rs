@@ -284,7 +284,6 @@ impl MainWindow {
             }
 
             Message::SendData(data) => {
-                println!("Sending data to terminal thread: {:?}", data);
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }

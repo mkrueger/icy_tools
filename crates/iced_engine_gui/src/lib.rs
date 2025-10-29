@@ -167,9 +167,9 @@ impl MonitorSettings {
             border_color: Color::new(64, 69, 74),
 
             // Color adjustments - neutral values
-            brightness: 50.0,  // 50% = 1.0 multiplier (neutral)
-            contrast: 50.0,    // 50% = 1.0 multiplier (neutral)
-            gamma: 110.0,      // 110 / 50 = 2.2 (standard sRGB gamma)
+            brightness: 100.0, // 100% = 1.0 multiplier (neutral)
+            contrast: 100.0,   // 100% = 1.0 multiplier (neutral)
+            gamma: 1.0,
             saturation: 100.0, // 100% = 1.0 multiplier (full saturation)
 
             // Effects

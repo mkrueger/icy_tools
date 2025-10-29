@@ -184,8 +184,7 @@ impl Options {
     }
 
     pub(crate) fn reset_monitor_settings(&mut self) {
-        //        self.scaling = Scaling::Nearest;
-        //        self.monitor_settings = MonitorSettings::default();
+        self.monitor_settings = MonitorSettings::default();
     }
     /*
     pub(crate) fn reset_keybindings(&mut self) {
