@@ -1,16 +1,12 @@
-use i18n_embed_fl::fl;
-use iced::widget::{Space, checkbox, column, container, pick_list, row, text};
-use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
-
-// Import LANGUAGE_LOADER from the ui module
+use super::*;
 use crate::LANGUAGE_LOADER;
 use crate::{MonitorSettings, MonitorType};
+use i18n_embed_fl::fl;
+use iced::widget::{Space, checkbox, column, container, pick_list, row, text};
+use iced::{Alignment, Background, Border, Element, Length, Theme};
 
-use super::*;
-
-pub fn show_monitor_settings<'a>(monitor_settings: &'a MonitorSettings) -> Element<'a, MonitorSettingsMessage> {
-    // Create monitor type options
-    let monitor_type_options: Vec<MonitorType> = vec![
+pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorSettingsMessage> {
+    let monitor_type_options = vec![
         MonitorType::Color,
         MonitorType::Grayscale,
         MonitorType::Amber,
@@ -46,15 +42,11 @@ pub fn show_monitor_settings<'a>(monitor_settings: &'a MonitorSettings) -> Eleme
     ];
 
     let mut content = column![
-        // Appearance Section
         section_header("Appearance"),
         Space::new().height(8),
-        // Theme selection
         row![
-            container(text("Theme").size(14))
-                .width(Length::Fixed(LABEL_WIDTH))
-                .align_x(iced::alignment::Horizontal::Right),
-            pick_list(theme_options, Some(ThemeOption(monitor_settings.get_theme())), |opt| {
+            right_label("Theme"),
+            pick_list(theme_options, Some(ThemeOption(s.get_theme())), |opt| {
                 MonitorSettingsMessage::ThemeChanged(opt.into())
             })
             .width(Length::Fixed(INPUT_WIDTH))
@@ -62,168 +54,232 @@ pub fn show_monitor_settings<'a>(monitor_settings: &'a MonitorSettings) -> Eleme
         ]
         .spacing(12)
         .align_y(Alignment::Center),
-        Space::new().height(24),
-        // Monitor Settings Section
-        section_header("Monitor Settings"),
-        Space::new().height(8),
-        // Monitor type selection
         row![
-            container(text(fl!(LANGUAGE_LOADER, "settings-monitor-type")).size(14))
-                .width(Length::Fixed(LABEL_WIDTH))
-                .align_x(iced::alignment::Horizontal::Right),
-            pick_list(
-                monitor_type_options,
-                Some(monitor_settings.monitor_type),
-                MonitorSettingsMessage::MonitorTypeChanged
-            )
-            .width(Length::Fixed(INPUT_WIDTH))
-            .text_size(14)
+            right_label_owned(fl!(LANGUAGE_LOADER, "settings-monitor-type")),
+            pick_list(monitor_type_options, Some(s.monitor_type), MonitorSettingsMessage::MonitorTypeChanged)
+                .width(Length::Fixed(INPUT_WIDTH))
+                .text_size(14)
         ]
         .spacing(12)
         .align_y(Alignment::Center),
-        // NEW: Pixel Perfect Scaling toggle
         row![
-            container(text("Pixel Perfect Scaling").size(14))
-                .width(Length::Fixed(LABEL_WIDTH))
-                .align_x(iced::alignment::Horizontal::Right),
-            checkbox("Use integer nearest-neighbor scaling", monitor_settings.use_pixel_perfect_scaling)
+            right_label("Pixel Perfect Scaling"),
+            checkbox("Use integer scaling", s.use_pixel_perfect_scaling)
                 .on_toggle(MonitorSettingsMessage::PixelPerfectScalingChanged)
                 .size(16)
                 .text_size(14)
-                .width(Length::Fixed(INPUT_WIDTH))
         ]
         .spacing(12)
         .align_y(Alignment::Center),
     ]
     .spacing(ROW_SPACING);
 
-    // Custom color picker (if custom monochrome is selected)
-    if monitor_settings.monitor_type == MonitorType::CustomMonochrome {
-        let custom_color = icy_to_iced_color(monitor_settings.custom_monitor_color.clone());
+    // Custom monochrome color
+    if s.monitor_type == MonitorType::CustomMonochrome {
+        let c = icy_to_iced_color(s.custom_monitor_color.clone());
         content = content.push(
             row![
-                container(text(fl!(LANGUAGE_LOADER, "settings-monitor-custom")).size(14))
-                    .width(Length::Fixed(LABEL_WIDTH))
-                    .align_x(iced::alignment::Horizontal::Right),
-                color_button(custom_color, MonitorSettingsMessage::CustomColorChanged(custom_color)),
-                text(format!(
-                    "RGB({}, {}, {})",
-                    (custom_color.r * 255.0) as u8,
-                    (custom_color.g * 255.0) as u8,
-                    (custom_color.b * 255.0) as u8
-                ))
-                .size(12)
-                .style(|theme: &Theme| {
-                    text::Style {
-                        color: Some(theme.extended_palette().background.strong.text),
-                    }
-                }),
+                right_label_owned(fl!(LANGUAGE_LOADER, "settings-monitor-custom")),
+                color_button(c, MonitorSettingsMessage::CustomColorChanged(c)),
+                text(format!("RGB({}, {}, {})", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8))
+                    .size(12)
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().background.strong.text)
+                    })
             ]
             .spacing(12)
             .align_y(Alignment::Center),
         );
     }
 
-    // Border color picker
-    let border_color = icy_to_iced_color(monitor_settings.border_color.clone());
+    // Border color
+    let bc = icy_to_iced_color(s.border_color.clone());
     content = content.push(
         row![
-            container(text(fl!(LANGUAGE_LOADER, "settings-background_color-label")).size(14))
-                .width(Length::Fixed(LABEL_WIDTH))
-                .align_x(iced::alignment::Horizontal::Right),
-            color_button(border_color, MonitorSettingsMessage::BorderColorChanged(border_color)),
-            text(format!(
-                "RGB({}, {}, {})",
-                (border_color.r * 255.0) as u8,
-                (border_color.g * 255.0) as u8,
-                (border_color.b * 255.0) as u8
-            ))
-            .size(12)
-            .style(|theme: &Theme| {
-                text::Style {
-                    color: Some(theme.extended_palette().background.strong.text),
-                }
-            }),
+            right_label_owned(fl!(LANGUAGE_LOADER, "settings-background_color-label")),
+            color_button(bc, MonitorSettingsMessage::BorderColorChanged(bc)),
+            text(format!("RGB({}, {}, {})", (bc.r * 255.0) as u8, (bc.g * 255.0) as u8, (bc.b * 255.0) as u8))
+                .size(12)
+                .style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().background.strong.text)
+                }),
         ]
         .spacing(12)
         .align_y(Alignment::Center),
     );
 
-    // CRT Filter Section
+    // Tone (always applied)
     content = content.push(Space::new().height(24));
-    content = content.push(section_header("CRT Filter Effects"));
-    content = content.push(Space::new().height(8));
+    content = content.push(section_header("Color & Tone"));
+    content = content.push(effect_box(
+        column![
+            slider_row_owned("Brightness".to_string(), s.brightness, 0.0..=100.0, MonitorSettingsMessage::BrightnessChanged),
+            slider_row_owned("Contrast".to_string(), s.contrast, 0.0..=100.0, MonitorSettingsMessage::ContrastChanged),
+            slider_row_owned("Gamma".to_string(), s.gamma, 50.0..=200.0, MonitorSettingsMessage::GammaChanged),
+            slider_row_owned("Saturation".to_string(), s.saturation, 0.0..=150.0, MonitorSettingsMessage::SaturationChanged),
+        ]
+        .spacing(8)
+        .into(),
+    ));
 
-    // CRT filter checkbox with styled appearance
-    let use_filter = monitor_settings.use_filter;
-    content = content.push(
-        container(
-            checkbox(fl!(LANGUAGE_LOADER, "settings-monitor-use-crt-filter-checkbox"), monitor_settings.use_filter)
-                .on_toggle(MonitorSettingsMessage::UseFilterChanged)
-                .size(16)
-                .text_size(14),
-        )
-        .style(move |theme: &Theme| container::Style {
-            background: Some(Background::Color(if use_filter {
-                theme.extended_palette().success.weak.color
+    // Bloom / glow group
+    content = content.push(Space::new().height(24));
+    content = content.push(section_header("Bloom & Glow"));
+    content = content.push(effect_box(
+        column![
+            toggle_row("Bloom", s.use_bloom, MonitorSettingsMessage::BloomToggleChanged(true)),
+            if s.use_bloom {
+                column![
+                    slider_row_owned(
+                        "Threshold".to_string(),
+                        s.bloom_threshold,
+                        0.0..=1.0,
+                        MonitorSettingsMessage::BloomThresholdChanged
+                    ),
+                    slider_row_owned("Radius".to_string(), s.bloom_radius, 0.0..=50.0, MonitorSettingsMessage::BloomRadiusChanged),
+                ]
+                .spacing(6)
+                .into()
             } else {
-                theme.extended_palette().background.weak.color
-            })),
-            border: Border {
-                color: if use_filter {
-                    theme.extended_palette().success.base.color
-                } else {
-                    Color::TRANSPARENT
-                },
-                width: 1.0,
-                radius: 4.0.into(),
+                Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
             },
-            ..Default::default()
-        })
-        .padding(8)
-        .width(Length::Fill),
-    );
+            slider_row_owned(
+                "Glow Strength".to_string(),
+                s.glow_strength,
+                0.0..=100.0,
+                MonitorSettingsMessage::GlowStrengthChanged
+            ),
+            slider_row_owned(
+                "Phosphor Persistence".to_string(),
+                s.phosphor_persistence,
+                0.0..=100.0,
+                MonitorSettingsMessage::PhosphorPersistenceChanged
+            ),
+        ]
+        .spacing(10)
+        .into(),
+    ));
 
-    // CRT filter sliders (only if enabled)
-    if monitor_settings.use_filter {
-        content = content.push(Space::new().height(16));
+    // Scanlines
+    content = content.push(Space::new().height(24));
+    content = content.push(section_header("Scanlines"));
+    content = content.push(effect_box(
+        column![
+            toggle_row("Scanlines", s.use_scanlines, MonitorSettingsMessage::ScanlinesToggleChanged(true)),
+            if s.use_scanlines {
+                column![
+                    slider_row_owned("Thickness".to_string(), s.scanline_thickness * 100.0, 0.0..=100.0, |v| {
+                        MonitorSettingsMessage::ScanlineThicknessChanged(v / 100.0)
+                    }),
+                    slider_row_owned("Sharpness".to_string(), s.scanline_sharpness * 100.0, 0.0..=100.0, |v| {
+                        MonitorSettingsMessage::ScanlineSharpnessChanged(v / 100.0)
+                    }),
+                    slider_row_owned("Phase".to_string(), s.scanline_phase, 0.0..=1.0, MonitorSettingsMessage::ScanlinePhaseChanged),
+                ]
+                .spacing(6)
+                .into()
+            } else {
+                Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
+            },
+        ]
+        .spacing(10)
+        .into(),
+    ));
 
-        // Create owned strings for the labels to avoid lifetime issues
-        let brightness_label = fl!(LANGUAGE_LOADER, "settings-monitor-brightness");
-        let contrast_label = fl!(LANGUAGE_LOADER, "settings-monitor-contrast");
-        let saturation_label = fl!(LANGUAGE_LOADER, "settings-monitor-saturation");
-        let gamma_label = fl!(LANGUAGE_LOADER, "settings-monitor-gamma");
-        let blur_label = fl!(LANGUAGE_LOADER, "settings-monitor-blur");
-        let curve_label = fl!(LANGUAGE_LOADER, "settings-monitor-curve");
-        let scanlines_label = fl!(LANGUAGE_LOADER, "settings-monitor-scanlines");
+    // Geometry
+    content = content.push(Space::new().height(24));
+    content = content.push(section_header("Geometry"));
+    content = content.push(effect_box(
+        column![
+            toggle_row("Curvature / Distortion", s.use_curvature, MonitorSettingsMessage::CurvatureToggleChanged(true)),
+            if s.use_curvature {
+                column![
+                    slider_row_owned("Curvature X".to_string(), s.curvature_x, 0.0..=100.0, MonitorSettingsMessage::CurvatureXChanged),
+                    slider_row_owned("Curvature Y".to_string(), s.curvature_y, 0.0..=100.0, MonitorSettingsMessage::CurvatureYChanged),
+                    slider_row_owned(
+                        "Barrel Distortion".to_string(),
+                        s.barrel_distortion,
+                        -50.0..=50.0,
+                        MonitorSettingsMessage::BarrelDistortionChanged
+                    ),
+                ]
+                .spacing(6)
+                .into()
+            } else {
+                Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
+            },
+            slider_row_owned(
+                "Rotation (deg)".to_string(),
+                s.rotation_deg,
+                -5.0..=5.0,
+                MonitorSettingsMessage::RotationDegChanged
+            ),
+            slider_row_owned("Overscan (%)".to_string(), s.overscan, 0.0..=10.0, MonitorSettingsMessage::OverscanChanged),
+        ]
+        .spacing(10)
+        .into(),
+    ));
 
-        let sliders_container = container(
-            column![
-                slider_row_owned(
-                    brightness_label,
-                    monitor_settings.brightness,
-                    0.0..=100.0,
-                    MonitorSettingsMessage::BrightnessChanged
-                ),
-                slider_row_owned(contrast_label, monitor_settings.contrast, 0.0..=100.0, MonitorSettingsMessage::ContrastChanged),
-                slider_row_owned(
-                    saturation_label,
-                    monitor_settings.saturation,
-                    0.0..=100.0,
-                    MonitorSettingsMessage::SaturationChanged
-                ),
-                slider_row_owned(gamma_label, monitor_settings.gamma, 0.0..=100.0, MonitorSettingsMessage::GammaChanged),
-                slider_row_owned(blur_label, monitor_settings.blur, 0.0..=100.0, MonitorSettingsMessage::BlurChanged),
-                slider_row_owned(curve_label, monitor_settings.curvature, 0.0..=100.0, MonitorSettingsMessage::CurvatureChanged),
-                slider_row_owned(
-                    scanlines_label,
-                    monitor_settings.scanlines,
-                    0.0..=100.0,
-                    MonitorSettingsMessage::ScanlinesChanged
-                ),
-            ]
-            .spacing(8),
-        )
+    // Noise / Artifacts
+    content = content.push(Space::new().height(24));
+    content = content.push(section_header("Noise & Artifacts"));
+    content = content.push(effect_box(
+        column![
+            toggle_row("Noise", s.use_noise, MonitorSettingsMessage::NoiseToggleChanged(true)),
+            if s.use_noise {
+                slider_row_owned("Noise Level".to_string(), s.noise_level, 0.0..=100.0, MonitorSettingsMessage::NoiseLevelChanged)
+            } else {
+                Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
+            },
+            slider_row_owned("Sync Wobble".to_string(), s.sync_wobble, 0.0..=100.0, MonitorSettingsMessage::SyncWobbleChanged),
+        ]
+        .spacing(10)
+        .into(),
+    ));
+
+    container(content).padding(SECTION_PADDING).width(Length::Fill).into()
+}
+
+// Helpers
+
+fn right_label(txt: &str) -> Element<'_, MonitorSettingsMessage> {
+    container(text(txt).size(14))
+        .width(Length::Fixed(LABEL_WIDTH))
+        .align_x(iced::alignment::Horizontal::Right)
+        .into()
+}
+
+fn right_label_owned(txt: String) -> Element<'static, MonitorSettingsMessage> {
+    container(text(txt).size(14))
+        .width(Length::Fixed(LABEL_WIDTH))
+        .align_x(iced::alignment::Horizontal::Right)
+        .into()
+}
+
+fn toggle_row(label: &'static str, value: bool, msg: MonitorSettingsMessage) -> Element<'static, MonitorSettingsMessage> {
+    row![
+        right_label(label),
+        checkbox("", value)
+            .on_toggle(move |new_val| if new_val {
+                msg.clone()
+            } else {
+                match msg {
+                    MonitorSettingsMessage::BloomToggleChanged(_) => MonitorSettingsMessage::BloomToggleChanged(false),
+                    MonitorSettingsMessage::ScanlinesToggleChanged(_) => MonitorSettingsMessage::ScanlinesToggleChanged(false),
+                    MonitorSettingsMessage::CurvatureToggleChanged(_) => MonitorSettingsMessage::CurvatureToggleChanged(false),
+                    MonitorSettingsMessage::NoiseToggleChanged(_) => MonitorSettingsMessage::NoiseToggleChanged(false),
+                    _ => msg.clone(),
+                }
+            })
+            .size(18),
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+fn effect_box<'a>(inner: Element<'a, MonitorSettingsMessage>) -> Element<'a, MonitorSettingsMessage> {
+    container(inner)
         .style(|theme: &Theme| container::Style {
             background: Some(Background::Color(theme.extended_palette().background.weak.color)),
             border: Border {
@@ -233,10 +289,7 @@ pub fn show_monitor_settings<'a>(monitor_settings: &'a MonitorSettings) -> Eleme
             },
             ..Default::default()
         })
-        .padding(16);
-
-        content = content.push(sliders_container);
-    }
-
-    container(content).padding(SECTION_PADDING).width(Length::Fill).into()
+        .padding(16)
+        .width(Length::Fill)
+        .into()
 }

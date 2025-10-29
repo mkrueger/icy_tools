@@ -232,8 +232,6 @@ impl MainWindow {
             }
         }
 
-        self.terminal_window.scene.check_blink_timers();
-
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
 

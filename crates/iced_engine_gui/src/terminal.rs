@@ -14,10 +14,6 @@ pub struct Terminal {
     pub char_width: f32,
     pub char_height: f32,
     pub cache: Cache,
-
-    pub caret_blink: Blink,
-    pub character_blink: Blink,
-    pub start_time: Instant,
 }
 
 impl Terminal {
@@ -28,22 +24,10 @@ impl Terminal {
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,
             cache: Cache::default(),
-            caret_blink: Blink::new((1000.0 / 1.875) as u128 / 2),
-            character_blink: Blink::new((1000.0 / 1.8) as u128),
-            start_time: Instant::now(),
         }
     }
 
-    pub fn reset_caret_blink(&mut self) {
-        let cur_ms = self.start_time.elapsed().as_millis();
-        self.caret_blink.reset(cur_ms);
-    }
-
-    pub fn check_blink_timers(&mut self) {
-        let cur_ms = self.start_time.elapsed().as_millis();
-        self.caret_blink.update(cur_ms);
-        self.character_blink.update(cur_ms);
-    }
+    pub fn reset_caret_blink(&mut self) {}
 
     pub fn update(&mut self, message: Message) {
         match message {

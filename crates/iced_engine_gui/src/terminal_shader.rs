@@ -1,4 +1,4 @@
-use crate::{Message, MonitorSettings, MonitorType, Terminal};
+use crate::{Blink, Message, MonitorSettings, MonitorType, Terminal, now_ms};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::TextPane;
@@ -9,7 +9,6 @@ pub struct TerminalShader {
     // Store the rendered terminal as RGBA data
     terminal_rgba: Vec<u8>,
     terminal_size: (u32, u32),
-    time: f32,
     // Store the monitor settings for CRT effects
     monitor_settings: MonitorSettings,
 }
@@ -19,7 +18,6 @@ impl TerminalShader {
         Self {
             terminal_rgba: Vec::new(),
             terminal_size: (800, 600),
-            time: 0.0,
             monitor_settings,
         }
     }
@@ -316,46 +314,18 @@ impl shader::Primitive for TerminalShader {
         };
 
         let uniform_data = CRTUniforms {
-            time: self.time,
-            scan_line_intensity: if self.monitor_settings.use_filter {
-                self.monitor_settings.scanlines / 100.0
-            } else {
-                0.0
-            },
-            curvature: if self.monitor_settings.use_filter {
-                self.monitor_settings.curvature / 100.0
-            } else {
-                0.0
-            },
+            time: now_ms() as f32 / 1000.0,
+            scan_line_intensity: 0.0,
+            curvature: 0.0,
             bloom: 0.0,
-            gamma: if self.monitor_settings.use_filter {
-                self.monitor_settings.gamma / 50.0
-            } else {
-                2.2
-            },
-            contrast: if self.monitor_settings.use_filter {
-                self.monitor_settings.contrast / 50.0
-            } else {
-                1.0
-            },
-            saturation: if self.monitor_settings.use_filter {
-                self.monitor_settings.saturation / 100.0
-            } else {
-                1.0
-            },
-            brightness: if self.monitor_settings.use_filter {
-                self.monitor_settings.brightness / 100.0
-            } else {
-                1.0
-            },
+            gamma: 0.0,
+            contrast: 0.0,
+            saturation: 0.0,
+            brightness: 0.0,
             light: 0.3,
-            blur: if self.monitor_settings.use_filter {
-                self.monitor_settings.blur / 100.0
-            } else {
-                0.0
-            },
+            blur: 0.0,
             resolution: [scaled_w, scaled_h],
-            use_filter: if self.monitor_settings.use_filter { 1.0 } else { 0.0 },
+            use_filter: 0.0,
             monitor_type: self.monitor_settings.monitor_type.to_index() as f32,
             _pad: [0.0, 0.0],
         };
@@ -440,23 +410,36 @@ impl shader::Primitive for TerminalShader {
 pub struct CRTShaderProgram<'a> {
     term: &'a Terminal,
     monitor_settings: MonitorSettings,
-    caret_blink_on: bool,
-    character_blink_on: bool,
 }
 
 impl<'a> CRTShaderProgram<'a> {
     pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
+        Self { term, monitor_settings }
+    }
+}
+
+pub struct CRTShaderState {
+    caret_blink: crate::Blink,
+    character_blink: crate::Blink,
+}
+
+impl CRTShaderState {
+    pub fn reset_caret(&mut self) {
+        self.caret_blink.reset();
+    }
+}
+
+impl Default for CRTShaderState {
+    fn default() -> Self {
         Self {
-            term,
-            monitor_settings,
-            caret_blink_on: term.caret_blink.is_on(),
-            character_blink_on: term.character_blink.is_on(),
+            caret_blink: Blink::new((1000.0 / 1.875) as u128 / 2),
+            character_blink: Blink::new((1000.0 / 1.8) as u128),
         }
     }
 }
 
 impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
-    type State = ();
+    type State = CRTShaderState;
     type Primitive = TerminalShader;
 
     fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, bounds: Rectangle) -> Self::Primitive {
@@ -484,7 +467,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             };
 
             // Pass blink_on to actually animate ANSI blinking attributes
-            let (img_size, data) = buffer.render_to_rgba(rect, self.character_blink_on);
+            let (img_size, data) = buffer.render_to_rgba(rect, _state.character_blink.is_on());
             size = (img_size.width as u32, img_size.height as u32);
             rgba_data = data;
         } else {
@@ -492,7 +475,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         // Caret overlay only if we have the metrics & want it visible this phase
-        if self.caret_blink_on {
+        if _state.caret_blink.is_on() {
             if let Some(caret_pos) = caret_pos_opt {
                 if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                     let line_bytes = (size.0 as usize) * 4;
@@ -532,14 +515,25 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         TerminalShader {
             terminal_rgba: rgba_data,
             terminal_size: size,
-            time: self.term.start_time.elapsed().as_secs_f32(),
             monitor_settings: self.monitor_settings.clone(),
         }
     }
 
-    fn update(&self, _state: &mut Self::State, _event: &iced::Event, _bounds: Rectangle, _cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
-        // Always request redraw so blink continues, or gate via a setting if desired
-        Some(iced::widget::Action::request_redraw())
+    fn update(&self, state: &mut Self::State, _event: &iced::Event, _bounds: Rectangle, _cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+        let mut needs_redraw = false;
+        let now = crate::Blink::now_ms();
+
+        // Update caret blink
+        if state.caret_blink.update(now) {
+            needs_redraw = true;
+        }
+
+        // Update character blink
+        if state.character_blink.update(now) {
+            needs_redraw = true;
+        }
+
+        if needs_redraw { Some(iced::widget::Action::request_redraw()) } else { None }
     }
 
     fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {

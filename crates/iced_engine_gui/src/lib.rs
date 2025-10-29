@@ -78,27 +78,44 @@ impl From<i32> for MonitorType {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitorSettings {
-    pub use_filter: bool,
-
     pub theme: String,
 
     pub monitor_type: MonitorType,
     pub custom_monitor_color: Color,
     pub border_color: Color,
 
-    pub gamma: f32,
-    pub contrast: f32,
-    pub saturation: f32,
     pub brightness: f32,
-    pub light: f32,
-    pub blur: f32,
-    pub curvature: f32,
-    pub scanlines: f32,
+    pub contrast: f32,
+    pub gamma: f32,
+    pub saturation: f32,
+
     pub background_effect: BackgroundEffect,
     pub selection_fg: Color,
     pub selection_bg: Color,
 
     pub use_pixel_perfect_scaling: bool,
+
+    pub use_bloom: bool,
+    pub bloom_threshold: f32,
+    pub bloom_radius: f32,
+    pub glow_strength: f32,
+    pub phosphor_persistence: f32, // decay speed (higher = longer afterglow)
+
+    pub use_scanlines: bool,
+    pub scanline_thickness: f32, // 0..1 relative thickness
+    pub scanline_sharpness: f32, // exponent/style
+    pub scanline_phase: f32,     // offset for anim/flicker
+
+    pub use_curvature: bool,
+    pub curvature_x: f32,
+    pub curvature_y: f32,
+    pub barrel_distortion: f32,
+    pub rotation_deg: f32,
+    pub overscan: f32, // crop percentage (0..0.1 typical)
+
+    pub use_noise: bool,
+    pub noise_level: f32,
+    pub sync_wobble: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,48 +152,56 @@ unsafe impl Sync for MonitorSettings {}
 
 impl Default for MonitorSettings {
     fn default() -> Self {
-        Self {
-            use_filter: false,
-            monitor_type: MonitorType::Color,
-            theme: "Dark".to_string(),
-            gamma: 50.,
-            contrast: 50.,
-            saturation: 50.,
-            brightness: 30.,
-            light: 40.,
-            blur: 30.,
-            curvature: 10.,
-            scanlines: 10.,
-            background_effect: BackgroundEffect::None,
-            custom_monitor_color: Color::new(0xFF, 0xFF, 0xFF),
-            selection_fg: Color::new(0xAB, 0x00, 0xAB),
-            selection_bg: Color::new(0xAB, 0xAB, 0xAB),
-            border_color: Color::new(64, 69, 74),
-            use_pixel_perfect_scaling: true,
-        }
+        MonitorSettings::neutral()
     }
 }
 
 impl MonitorSettings {
     pub fn neutral() -> Self {
         Self {
-            use_filter: true,
+            theme: "Dark".to_string(),
+
+            // Display settings
             monitor_type: MonitorType::Color,
-            theme: "".to_string(),
-            gamma: 50.,
-            contrast: 50.,
-            saturation: 50.,
-            brightness: 29.,
-            light: 50.,
-            blur: 0.,
-            curvature: 0.,
-            scanlines: 0.,
-            background_effect: BackgroundEffect::None,
             custom_monitor_color: Color::new(0xFF, 0xFF, 0xFF),
+            border_color: Color::new(64, 69, 74),
+
+            // Color adjustments - neutral values
+            brightness: 50.0,  // 50% = 1.0 multiplier (neutral)
+            contrast: 50.0,    // 50% = 1.0 multiplier (neutral)
+            gamma: 110.0,      // 110 / 50 = 2.2 (standard sRGB gamma)
+            saturation: 100.0, // 100% = 1.0 multiplier (full saturation)
+
+            // Effects
+            background_effect: BackgroundEffect::None,
             selection_fg: Color::new(0xAB, 0x00, 0xAB),
             selection_bg: Color::new(0xAB, 0xAB, 0xAB),
-            border_color: Color::new(64, 69, 74),
+
+            // Scaling
             use_pixel_perfect_scaling: true,
+
+            // CRT effects - all disabled for neutral
+            use_bloom: false,
+            bloom_threshold: 0.7,
+            bloom_radius: 0.0,
+            glow_strength: 0.0,
+            phosphor_persistence: 0.0,
+
+            use_scanlines: false,
+            scanline_thickness: 0.5,
+            scanline_sharpness: 0.5,
+            scanline_phase: 0.0,
+
+            use_curvature: false,
+            curvature_x: 0.0,
+            curvature_y: 0.0,
+            barrel_distortion: 0.0,
+            rotation_deg: 0.0,
+            overscan: 0.0,
+
+            use_noise: false,
+            noise_level: 0.0,
+            sync_wobble: 0.0,
         }
     }
 
