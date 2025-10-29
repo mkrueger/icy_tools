@@ -26,7 +26,6 @@ iced_engine_gui = { workspace = true }
 #sound
 rodio = { workspace = true }
 icy_engine = { workspace = true }
-icy_engine_gui = { workspace = true }
 
 walkdir = { workspace = true }
 toml = { workspace = true }

@@ -3,6 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, button, checkbox, column, container, pick_list, row, scrollable, text, text_input},
 };
+use iced_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
 use icy_net::serial::{CharSize, Parity, StopBits};
 
 use crate::Options;
@@ -44,6 +45,7 @@ pub enum SettingsMsg {
     SwitchCategory(SettingsCategory),
     UpdateOptions(Options),
     ResetCategory(SettingsCategory),
+    MonitorSettings(MonitorSettingsMessage),
     OpenSettingsFolder,
     SelectModem(usize),
     AddModem,
@@ -140,6 +142,10 @@ impl SettingsDialogState {
                 }
                 None
             }
+            SettingsMsg::MonitorSettings(settings) => {
+                update_monitor_settings(&mut self.temp_options.monitor_settings, settings);
+                None
+            }
             SettingsMsg::Noop => None,
         }
     }
@@ -205,7 +211,9 @@ impl SettingsDialogState {
 
         // Settings content for current category
         let settings_content = match self.current_category {
-            SettingsCategory::Monitor => self.monitor_settings_content(),
+            SettingsCategory::Monitor => {
+                show_monitor_settings(&self.temp_options.monitor_settings).map(|msg| crate::ui::Message::SettingsDialog(SettingsMsg::MonitorSettings(msg)))
+            }
             SettingsCategory::IEMSI => self.iemsi_settings_content(),
             SettingsCategory::Terminal => self.terminal_settings_content(),
             SettingsCategory::Keybinds => self.keybinds_settings_content(),
@@ -289,35 +297,6 @@ impl SettingsDialogState {
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .into()
-    }
-
-    fn monitor_settings_content(&self) -> Element<'_, crate::ui::Message> {
-        column![
-            // Theme selection
-            row![
-                container(text(fl!(crate::LANGUAGE_LOADER, "settings-monitor-type")).size(14))
-                    .width(Length::Fixed(LABEL_WIDTH))
-                    .align_x(iced::alignment::Horizontal::Right),
-                pick_list(&ThemeOption::ALL[..], Some(ThemeOption::from(self.temp_options.get_theme())), |theme| {
-                    let mut new_options = self.temp_options.clone();
-                    new_options.set_theme(theme.into());
-                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
-                })
-                .width(Length::Fixed(200.0)),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center),
-            Space::new().height(SECTION_SPACING),
-            // Monitor settings would go here
-            text("Monitor settings - TODO: Implement monitor controls").size(14),
-            Space::new().height(SECTION_SPACING),
-            //            text(format!("Blur: {:.2}", settings.blur)).size(14),
-            //            text(format!("Brightness: {:.2}", settings.brightness)).size(14),
-            //            text(format!("Contrast: {:.2}", settings.contrast)).size(14),
-            //            text(format!("Saturation: {:.2}", settings.saturation)).size(14),
-        ]
-        .spacing(INPUT_SPACING)
-        .into()
     }
 
     fn iemsi_settings_content(&self) -> Element<'_, crate::ui::Message> {

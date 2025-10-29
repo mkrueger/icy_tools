@@ -19,10 +19,6 @@ const fn named_key_ctrl(key: keyboard::key::Named) -> KeyWithModifiers {
     KeyWithModifiers::Named(key, false, true)
 }
 
-const fn char_key(ch: char) -> KeyWithModifiers {
-    KeyWithModifiers::Character(ch, false, false)
-}
-
 const fn char_key_shift(ch: char) -> KeyWithModifiers {
     KeyWithModifiers::Character(ch, true, false)
 }

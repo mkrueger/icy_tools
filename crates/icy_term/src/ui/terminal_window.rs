@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::{
-    Terminal,
+    MonitorSettings, Terminal,
     terminal_view::{Message as TerminalMessage, TerminalView},
 };
 use icy_engine::{Buffer, editor::EditState};
@@ -22,7 +22,7 @@ const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
 const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
-const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen_utf8.ans");
+const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.ans");
 const LOGIN_SVG: &[u8] = include_bytes!("../../data/icons/key.svg"); // You may need to add an appropriate icon file
 
 pub struct TerminalWindow {
@@ -30,14 +30,16 @@ pub struct TerminalWindow {
     pub is_connected: bool,
     pub is_capturing: bool,
     pub current_address: Option<Address>,
+    pub settings: MonitorSettings,
 }
 
 impl TerminalWindow {
-    pub fn new() -> Self {
+    pub fn new(settings: MonitorSettings) -> Self {
         // Create a default EditState wrapped in Arc<Mutex>
         let mut edit_state = Arc::new(Mutex::new(EditState::default()));
         // If parsing fails, try using the ANSI parser directly
         let mut buffer = Buffer::from_bytes(&Path::new("a.ans"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
+        buffer.buffer_type = icy_engine::BufferType::CP437;
         buffer.is_terminal_buffer = true;
         buffer.terminal_state.fixed_size = true;
 
@@ -47,6 +49,7 @@ impl TerminalWindow {
             is_connected: false,
             is_capturing: false,
             current_address: None,
+            settings,
         }
     }
 
@@ -55,7 +58,7 @@ impl TerminalWindow {
         let button_bar = self.create_button_bar();
 
         // Create the main terminal area - use TerminalView to create the view
-        let terminal_view = TerminalView::show(&self.scene).map(|terminal_msg| {
+        let terminal_view = TerminalView::show_with_effects(&self.scene, &self.settings).map(|terminal_msg| {
             // Map TerminalMessage to your app's Message enum
             match terminal_msg {
                 TerminalMessage::SetCaret(_pos) => Message::None, // Or handle caret changes if needed

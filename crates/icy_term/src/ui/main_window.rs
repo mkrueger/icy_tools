@@ -1,5 +1,6 @@
 use std::{
     path::PathBuf,
+    ptr::addr_eq,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -131,7 +132,7 @@ impl MainWindow {
             .join("export.icy");
 
         // Create shared edit state for terminal
-        let terminal_window = terminal_window::TerminalWindow::new();
+        let terminal_window = terminal_window::TerminalWindow::new(options.monitor_settings.clone());
         let edit_state = terminal_window.scene.edit_state.clone();
 
         // Create terminal thread
@@ -252,6 +253,10 @@ impl MainWindow {
                     },
                 };
 
+                let screen_mode = address.get_screen_mode();
+                println!("Applying screen mode: {:?}", screen_mode);
+                screen_mode.apply_to_edit_state(&mut self.terminal_window.scene.edit_state.lock().unwrap());
+
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
                 self.current_address = Some(address);
@@ -306,8 +311,11 @@ impl MainWindow {
 
             Message::SettingsDialog(msg) => {
                 if let Some(close_msg) = self.settings_dialog.update(msg) {
-                    return self.update(close_msg);
+                    let c = self.update(close_msg);
+                    self.terminal_window.settings = self.settings_dialog.original_options.monitor_settings.clone();
+                    return c;
                 }
+                self.terminal_window.settings = self.settings_dialog.temp_options.monitor_settings.clone();
                 Task::none()
             }
 
@@ -561,9 +569,9 @@ impl MainWindow {
 
     pub fn theme(&self) -> Theme {
         if self.get_mode() == MainWindowMode::ShowSettings {
-            self.settings_dialog.temp_options.get_theme()
+            self.settings_dialog.temp_options.monitor_settings.get_theme()
         } else {
-            self.settings_dialog.original_options.get_theme()
+            self.settings_dialog.original_options.monitor_settings.get_theme()
         }
     }
 

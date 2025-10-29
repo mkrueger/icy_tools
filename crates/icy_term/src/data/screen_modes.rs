@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
-use icy_engine::{Color, Size};
-use icy_engine_gui::BufferInputMode;
+use icy_engine::{
+    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_LOWER, CP437, Color, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, VIEWDATA,
+    VIEWDATA_PALETTE, editor::EditState,
+};
 use serde::{Deserialize, Serialize};
 
 //use super::{BufferInputMode, BufferView};
@@ -12,6 +14,7 @@ pub enum ScreenMode {
     // Cga(i32, i32),
     // Ega(i32, i32),
     Vga(i32, i32),
+    Unicode(i32, i32),
     Vic,
     Antic,
     Videotex,
@@ -52,7 +55,7 @@ lazy_static::lazy_static! {
 impl Display for ScreenMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScreenMode::Vga(w, h) => {
+            ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => {
                 if self.is_custom_vga() {
                     write!(f, "Custom VGA")
                 } else {
@@ -80,21 +83,10 @@ impl Display for ScreenMode {
 }
 
 impl ScreenMode {
-    pub fn get_input_mode(&self) -> BufferInputMode {
-        match self {
-            //ScreenMode::Cga(_, _) | ScreenMode::Ega(_, _) |
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => BufferInputMode::CP437,
-            ScreenMode::Vic => BufferInputMode::PETscii,
-            ScreenMode::AtariST(_) | ScreenMode::Antic => BufferInputMode::ATAscii,
-            ScreenMode::Videotex => BufferInputMode::ViewData,
-            ScreenMode::Mode7 => BufferInputMode::CP437,
-        }
-    }
-
     pub fn get_window_size(&self) -> Size {
         match self {
             // ScreenMode::Cga(w, h) | ScreenMode::Ega(w, h) |
-            ScreenMode::Vga(w, h) => Size::new(*w, *h),
+            ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => Size::new(*w, *h),
             ScreenMode::Vic | ScreenMode::Mode7 => Size::new(40, 25),
             ScreenMode::AtariST(cols) => Size::new(*cols, 25),
             ScreenMode::Antic | ScreenMode::Videotex => Size::new(40, 24),
@@ -104,110 +96,94 @@ impl ScreenMode {
         }
     }
 
-    /*
-    pub fn set_mode(&self, main_window: &MainWindow) {
-        main_window.buffer_view.lock().get_buffer_mut().set_default_size(self.get_window_size());
-        main_window.buffer_view.lock().get_buffer_mut().set_size(self.get_window_size());
-        main_window.buffer_view.lock().get_buffer_mut().terminal_state.set_size(self.get_window_size());
-        main_window.buffer_view.lock().get_buffer_mut().terminal_state.fixed_size = false;
-        main_window.buffer_view.lock().get_buffer_mut().layers[0].set_size(self.get_window_size());
+    pub fn apply_to_edit_state(&self, edit_state: &mut EditState) {
+        let _ = edit_state.clear_layer(0);
+        let buffer = edit_state.get_buffer_mut();
+        let window_size = self.get_window_size();
+
+        // Set buffer sizes
+        buffer.set_default_size(window_size);
+        buffer.set_size(window_size);
+        buffer.terminal_state.set_size(window_size);
+        buffer.terminal_state.fixed_size = true;
+        buffer.is_terminal_buffer = true;
+
+        // Ensure we have at least one layer and set its size
+        if buffer.layers.is_empty() {
+            buffer.layers.push(Default::default());
+        }
+        buffer.layers[0].set_size(window_size);
+
         match self {
-            // ScreenMode::Cga(_, h) | ScreenMode::Ega(_, h) |
             ScreenMode::Vga(_x, y) => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::dos_default();
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
+                buffer.palette = Palette::dos_default();
+                buffer.buffer_type = icy_engine::BufferType::CP437;
+            }
+            ScreenMode::Unicode(_x, y) => {
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
+                buffer.palette = Palette::dos_default();
+                buffer.buffer_type = icy_engine::BufferType::Unicode;
             }
             ScreenMode::Default => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_bytes("", CP437).unwrap());
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::dos_default();
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", CP437).unwrap());
+                buffer.palette = Palette::dos_default();
+                buffer.buffer_type = icy_engine::BufferType::CP437;
             }
-
             ScreenMode::Vic => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_bytes("", C64_LOWER).unwrap());
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(1, BitFont::from_bytes("", C64_UPPER).unwrap());
-
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", C64_LOWER).unwrap());
+                buffer.set_font(1, BitFont::from_bytes("", C64_LOWER).unwrap());
+                buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
+                buffer.buffer_type = icy_engine::BufferType::Petscii;
             }
             ScreenMode::Antic => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_bytes("", ATARI).unwrap());
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
+                buffer.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
+                buffer.buffer_type = icy_engine::BufferType::Atascii;
             }
             ScreenMode::Videotex | ScreenMode::Mode7 => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&VIEWDATA_PALETTE);
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());
+                buffer.palette = Palette::from_slice(&VIEWDATA_PALETTE);
+                buffer.buffer_type = icy_engine::BufferType::Viewdata;
             }
-
             ScreenMode::Rip => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::dos_default();
-                main_window.buffer_view.lock().get_buffer_mut().is_terminal_buffer = true;
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
+                buffer.palette = Palette::dos_default();
+                buffer.is_terminal_buffer = true;
+                buffer.buffer_type = icy_engine::BufferType::CP437;
             }
-
             ScreenMode::SkyPix => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&SKYPIX_PALETTE);
-                main_window.buffer_view.lock().get_buffer_mut().is_terminal_buffer = true;
-                main_window.buffer_view.lock().get_buffer_mut().terminal_state.fixed_size = true;
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
+                buffer.palette = Palette::from_slice(&SKYPIX_PALETTE);
+                buffer.is_terminal_buffer = true;
+                buffer.terminal_state.fixed_size = true;
+                buffer.buffer_type = icy_engine::BufferType::CP437;
             }
-
             ScreenMode::AtariST(_x) => {
-                main_window.buffer_view.lock().get_buffer_mut().clear_font_table();
-                main_window
-                    .buffer_view
-                    .lock()
-                    .get_buffer_mut()
-                    .set_font(0, BitFont::from_bytes("", ATARI).unwrap());
-
-                main_window.buffer_view.lock().get_buffer_mut().palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
+                buffer.clear_font_table();
+                buffer.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
+                buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
+                buffer.buffer_type = icy_engine::BufferType::Atascii;
             }
         }
-        main_window.buffer_view.lock().get_buffer_mut().layers[0].clear();
-        main_window.buffer_view.lock().get_buffer_mut().stop_sixel_threads();
-    }*/
+
+        // Clear the first layer and stop any sixel threads
+        buffer.layers[0].clear();
+        buffer.stop_sixel_threads();
+    }
 
     #[allow(clippy::match_same_arms)]
     pub(crate) fn get_selection_fg(&self) -> Color {
         match self {
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0x00, 0xAA),
+            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Unicode(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0x00, 0xAA),
             ScreenMode::Vic => Color::new(0x37, 0x39, 0xC4),
             ScreenMode::Antic => Color::new(0x09, 0x51, 0x83),
             ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0, 0, 0),
@@ -218,7 +194,7 @@ impl ScreenMode {
     #[allow(clippy::match_same_arms)]
     pub(crate) fn get_selection_bg(&self) -> Color {
         match self {
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0xAA, 0xAA),
+            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Unicode(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0xAA, 0xAA),
             ScreenMode::Vic => Color::new(0xB0, 0x3F, 0xB6),
             ScreenMode::Antic => Color::new(0xFF, 0xFF, 0xFF),
             ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0xFF, 0xFF, 0xFF),

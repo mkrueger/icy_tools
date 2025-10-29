@@ -446,6 +446,23 @@ impl Address {
             None
         }
     }
+
+    pub(crate) fn get_screen_mode(&self) -> ScreenMode {
+        match self.terminal_type {
+            TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii => self.screen_mode.clone(),
+            TerminalEmulation::Utf8Ansi => match self.screen_mode {
+                ScreenMode::Vga(w, h) => ScreenMode::Unicode(w, h),
+                _ => ScreenMode::Unicode(80, 25),
+            },
+            TerminalEmulation::PETscii => ScreenMode::Vic,
+            TerminalEmulation::ATAscii => ScreenMode::Antic,
+            TerminalEmulation::ViewData => ScreenMode::Videotex,
+            TerminalEmulation::Mode7 => ScreenMode::Mode7,
+            TerminalEmulation::Rip => ScreenMode::Rip,
+            TerminalEmulation::Skypix => ScreenMode::SkyPix,
+            TerminalEmulation::AtariST => ScreenMode::AtariST(40),
+        }
+    }
 }
 
 pub static mut READ_ADDRESSES: bool = false;

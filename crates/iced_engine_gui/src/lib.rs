@@ -1,21 +1,24 @@
 pub mod terminal;
-use std::{cell::Cell, ops::RangeInclusive};
-
+use icy_engine::Color;
 pub use terminal::*;
+
+pub mod terminal_shader;
+pub use terminal_shader::*;
 
 pub mod terminal_view;
 pub use terminal_view::*;
 
 pub mod key_map;
+pub mod settings;
+//pub mod terminal_shader_widget;
 
-use iced::{Color, Point, widget::Grid};
 use serde::{Deserialize, Serialize};
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum MonitorType {
     Color = 0,
-    BlackAndWhite = 1,
+    Grayscale = 1,
     Amber = 2,
     Green = 3,
     Apple2 = 4,
@@ -26,17 +29,17 @@ pub enum MonitorType {
 impl MonitorType {
     pub fn get_color(&self) -> Color {
         match self {
-            MonitorType::Color => Color::from_rgb8(0, 0, 0),
-            MonitorType::BlackAndWhite => Color::from_rgb8(0xFF, 0xFF, 0xFF),
-            MonitorType::Amber => Color::from_rgb8(0xFF, 0x81, 0x00),
-            MonitorType::Green => Color::from_rgb8(0x0C, 0xCC, 0x68),
-            MonitorType::Apple2 => Color::from_rgb8(0x00, 0xD5, 0x6D),
-            MonitorType::Futuristic => Color::from_rgb8(0x72, 0x9F, 0xCF),
-            MonitorType::CustomMonochrome => Color::from_rgb8(0, 0, 0),
+            MonitorType::Color => Color::new(0, 0, 0),
+            MonitorType::Grayscale => Color::new(0xFF, 0xFF, 0xFF),
+            MonitorType::Amber => Color::new(0xFF, 0x81, 0x00),
+            MonitorType::Green => Color::new(0x0C, 0xCC, 0x68),
+            MonitorType::Apple2 => Color::new(0x00, 0xD5, 0x6D),
+            MonitorType::Futuristic => Color::new(0x72, 0x9F, 0xCF),
+            MonitorType::CustomMonochrome => Color::new(0, 0, 0),
         }
     }
 
-    fn is_monochrome(&self) -> bool {
+    fn _is_monochrome(&self) -> bool {
         *self != MonitorType::Color
     }
 }
@@ -45,7 +48,7 @@ impl Into<i32> for MonitorType {
     fn into(self) -> i32 {
         match self {
             MonitorType::Color => 0,
-            MonitorType::BlackAndWhite => 1,
+            MonitorType::Grayscale => 1,
             MonitorType::Amber => 2,
             MonitorType::Green => 3,
             MonitorType::Apple2 => 4,
@@ -59,7 +62,7 @@ impl From<i32> for MonitorType {
     fn from(value: i32) -> Self {
         match value {
             0 => MonitorType::Color,
-            1 => MonitorType::BlackAndWhite,
+            1 => MonitorType::Grayscale,
             2 => MonitorType::Amber,
             3 => MonitorType::Green,
             4 => MonitorType::Apple2,
@@ -72,6 +75,8 @@ impl From<i32> for MonitorType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitorSettings {
     pub use_filter: bool,
+
+    pub theme: String,
 
     pub monitor_type: MonitorType,
     pub custom_monitor_color: Color,
@@ -88,6 +93,8 @@ pub struct MonitorSettings {
     pub background_effect: BackgroundEffect,
     pub selection_fg: Color,
     pub selection_bg: Color,
+
+    pub use_pixel_perfect_scaling: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,9 +113,9 @@ impl Default for MarkerSettings {
         Self {
             reference_image_alpha: 0.2,
             raster_alpha: 0.2,
-            raster_color: Color::from_rgb8(0xBB, 0xBB, 0xBB),
+            raster_color: Color::new(0xBB, 0xBB, 0xBB),
             guide_alpha: 0.2,
-            guide_color: Color::from_rgb8(0xAB, 0xAB, 0xAB),
+            guide_color: Color::new(0xAB, 0xAB, 0xAB),
         }
     }
 }
@@ -127,6 +134,7 @@ impl Default for MonitorSettings {
         Self {
             use_filter: false,
             monitor_type: MonitorType::Color,
+            theme: "Dark".to_string(),
             gamma: 50.,
             contrast: 50.,
             saturation: 50.,
@@ -136,10 +144,11 @@ impl Default for MonitorSettings {
             curvature: 10.,
             scanlines: 10.,
             background_effect: BackgroundEffect::None,
-            custom_monitor_color: Color::from_rgb8(0xFF, 0xFF, 0xFF),
-            selection_fg: Color::from_rgb8(0xAB, 0x00, 0xAB),
-            selection_bg: Color::from_rgb8(0xAB, 0xAB, 0xAB),
-            border_color: Color::from_rgb8(64, 69, 74),
+            custom_monitor_color: Color::new(0xFF, 0xFF, 0xFF),
+            selection_fg: Color::new(0xAB, 0x00, 0xAB),
+            selection_bg: Color::new(0xAB, 0xAB, 0xAB),
+            border_color: Color::new(64, 69, 74),
+            use_pixel_perfect_scaling: true,
         }
     }
 }
@@ -149,6 +158,7 @@ impl MonitorSettings {
         Self {
             use_filter: true,
             monitor_type: MonitorType::Color,
+            theme: "".to_string(),
             gamma: 50.,
             contrast: 50.,
             saturation: 50.,
@@ -158,17 +168,94 @@ impl MonitorSettings {
             curvature: 0.,
             scanlines: 0.,
             background_effect: BackgroundEffect::None,
-            custom_monitor_color: Color::from_rgb8(0xFF, 0xFF, 0xFF),
-            selection_fg: Color::from_rgb8(0xAB, 0x00, 0xAB),
-            selection_bg: Color::from_rgb8(0xAB, 0xAB, 0xAB),
-            border_color: Color::from_rgb8(64, 69, 74),
+            custom_monitor_color: Color::new(0xFF, 0xFF, 0xFF),
+            selection_fg: Color::new(0xAB, 0x00, 0xAB),
+            selection_bg: Color::new(0xAB, 0xAB, 0xAB),
+            border_color: Color::new(64, 69, 74),
+            use_pixel_perfect_scaling: true,
         }
     }
 
-    fn get_monochrome_color(&self) -> Color {
+    fn _get_monochrome_color(&self) -> Color {
         match self.monitor_type {
             MonitorType::CustomMonochrome => self.custom_monitor_color.clone(),
             _ => self.monitor_type.get_color(),
         }
     }
+
+    pub fn get_theme(&self) -> iced::Theme {
+        match self.theme.as_str() {
+            "Light" => iced::Theme::Light,
+            "Dark" => iced::Theme::Dark,
+            "Dracula" => iced::Theme::Dracula,
+            "Nord" => iced::Theme::Nord,
+            "SolarizedLight" => iced::Theme::SolarizedLight,
+            "SolarizedDark" => iced::Theme::SolarizedDark,
+            "GruvboxLight" => iced::Theme::GruvboxLight,
+            "GruvboxDark" => iced::Theme::GruvboxDark,
+            "Ferra" => iced::Theme::Ferra,
+            "CatppuccinLatte" => iced::Theme::CatppuccinLatte,
+            "CatppuccinFrappe" => iced::Theme::CatppuccinFrappe,
+            "CatppuccinMacchiato" => iced::Theme::CatppuccinMacchiato,
+            "CatppuccinMocha" => iced::Theme::CatppuccinMocha,
+            "TokyoNight" => iced::Theme::TokyoNight,
+            "TokyoNightStorm" => iced::Theme::TokyoNightStorm,
+            "TokyoNightLight" => iced::Theme::TokyoNightLight,
+            "KanagawaWave" => iced::Theme::KanagawaWave,
+            "KanagawaDragon" => iced::Theme::KanagawaDragon,
+            "KanagawaLotus" => iced::Theme::KanagawaLotus,
+            "Moonfly" => iced::Theme::Moonfly,
+            "Nightfly" => iced::Theme::Nightfly,
+            "Oxocarbon" => iced::Theme::Oxocarbon,
+            // Default to Dark theme if theme string is empty or unrecognized
+            _ => iced::Theme::Dark,
+        }
+    }
+
+    pub fn set_theme(&mut self, theme: iced::Theme) {
+        self.theme = match theme {
+            iced::Theme::Light => "Light",
+            iced::Theme::Dark => "Dark",
+            iced::Theme::Dracula => "Dracula",
+            iced::Theme::Nord => "Nord",
+            iced::Theme::SolarizedLight => "SolarizedLight",
+            iced::Theme::SolarizedDark => "SolarizedDark",
+            iced::Theme::GruvboxLight => "GruvboxLight",
+            iced::Theme::GruvboxDark => "GruvboxDark",
+            iced::Theme::CatppuccinLatte => "CatppuccinLatte",
+            iced::Theme::CatppuccinFrappe => "CatppuccinFrappe",
+            iced::Theme::CatppuccinMacchiato => "CatppuccinMacchiato",
+            iced::Theme::CatppuccinMocha => "CatppuccinMocha",
+            iced::Theme::TokyoNight => "TokyoNight",
+            iced::Theme::TokyoNightStorm => "TokyoNightStorm",
+            iced::Theme::TokyoNightLight => "TokyoNightLight",
+            iced::Theme::KanagawaWave => "KanagawaWave",
+            iced::Theme::KanagawaDragon => "KanagawaDragon",
+            iced::Theme::KanagawaLotus => "KanagawaLotus",
+            iced::Theme::Moonfly => "Moonfly",
+            iced::Theme::Nightfly => "Nightfly",
+            iced::Theme::Oxocarbon => "Oxocarbon",
+            iced::Theme::Custom(_) => "Dark",
+            iced::Theme::Ferra => "Ferra",
+        }
+        .to_string();
+    }
 }
+
+use i18n_embed::{
+    DesktopLanguageRequester,
+    fluent::{FluentLanguageLoader, fluent_language_loader},
+};
+use rust_embed::RustEmbed;
+
+#[derive(RustEmbed)]
+#[folder = "i18n"] // path to the compiled localization resources
+struct Localizations;
+
+use once_cell::sync::Lazy;
+static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
+    let loader = fluent_language_loader!();
+    let requested_languages = DesktopLanguageRequester::requested_languages();
+    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
+    loader
+});

@@ -1,8 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use iced::{Color, Point, Rectangle, Size, widget::canvas::Cache};
+use iced::{Color, widget::canvas::Cache};
 use icy_engine::editor::EditState;
-use icy_engine::{Position, TextPane};
 
 use crate::Message;
 

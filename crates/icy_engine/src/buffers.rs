@@ -885,18 +885,34 @@ impl Buffer {
         y as f64 * font_dimensions.height as f64
     }
 
-    /// .
+    /// Renders the buffer to RGBA format into a pre-existing buffer.
+    /// The buffer will be resized if necessary to accommodate the rendered size.
+    /// Returns the size of the rendered image.
     ///
     /// # Panics
     ///
-    /// Panics if .
-    pub fn render_to_rgba(&self, rect: Rectangle, blink_on: bool) -> (Size, Vec<u8>) {
+    /// Panics if no font is set at index 0.
+    pub fn render_to_rgba_buffer(&self, rect: Rectangle, blink_on: bool, pixels: &mut Vec<u8>) -> Size {
         let font_size = self.get_font(0).unwrap().size;
 
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;
         let line_bytes = px_width * 4;
-        let mut pixels = vec![0; (line_bytes * px_height) as usize];
+        let required_size = (line_bytes * px_height) as usize;
+
+        // Resize the buffer if necessary, but try to avoid reallocation
+        if pixels.len() != required_size {
+            pixels.resize(required_size, 0);
+        } else {
+            // Clear existing content
+            pixels.fill(0);
+        }
+
+        // Pre-cache palette RGB values for faster lookup
+        let mut palette_cache = [(0u8, 0u8, 0u8); 256];
+        for i in 0..self.palette.len() {
+            palette_cache[i] = self.palette.get_rgb(i as u32);
+        }
 
         for y in 0..rect.get_height() {
             for x in 0..rect.get_width() {
@@ -913,30 +929,67 @@ impl Buffer {
                     fg = ch.attribute.get_background();
                 }
 
-                let (f_r, f_g, f_b) = self.palette.get_rgb(fg);
-                let (b_r, b_g, b_b) = self.palette.get_rgb(ch.attribute.get_background());
+                let (f_r, f_g, f_b) = palette_cache[fg as usize];
+                let (b_r, b_g, b_b) = palette_cache[ch.attribute.get_background() as usize];
 
                 if let Some(glyph) = font.get_glyph(ch.ch) {
                     let cur_font_size = font.size;
-                    for cy in 0..cur_font_size.height.min(font_size.height) {
-                        for cx in 0..cur_font_size.width.min(font_size.width) {
-                            let offset = ((x * font_size.width + cx) * 4 + (y * font_size.height + cy) * line_bytes) as usize;
-                            if glyph.data[cy as usize] & (128 >> cx) == 0 {
-                                pixels[offset] = b_r;
-                                pixels[offset + 1] = b_g;
-                                pixels[offset + 2] = b_b;
+                    let max_cy = cur_font_size.height.min(font_size.height);
+                    let max_cx = cur_font_size.width.min(font_size.width);
+
+                    // Calculate base offset for this character cell
+                    let base_x = (x * font_size.width) * 4;
+                    let base_y = y * font_size.height;
+
+                    for cy in 0..max_cy {
+                        let glyph_row = glyph.data[cy as usize];
+                        let y_offset = (base_y + cy) * line_bytes;
+
+                        for cx in 0..max_cx {
+                            let offset = (base_x + cx * 4 + y_offset) as usize;
+
+                            if glyph_row & (128 >> cx) == 0 {
+                                // Background pixel
+                                unsafe {
+                                    // Use unsafe for performance - we know the bounds are correct
+                                    *pixels.get_unchecked_mut(offset) = b_r;
+                                    *pixels.get_unchecked_mut(offset + 1) = b_g;
+                                    *pixels.get_unchecked_mut(offset + 2) = b_b;
+                                    *pixels.get_unchecked_mut(offset + 3) = 0xFF;
+                                }
                             } else {
-                                pixels[offset] = f_r;
-                                pixels[offset + 1] = f_g;
-                                pixels[offset + 2] = f_b;
+                                // Foreground pixel
+                                unsafe {
+                                    *pixels.get_unchecked_mut(offset) = f_r;
+                                    *pixels.get_unchecked_mut(offset + 1) = f_g;
+                                    *pixels.get_unchecked_mut(offset + 2) = f_b;
+                                    *pixels.get_unchecked_mut(offset + 3) = 0xFF;
+                                }
                             }
-                            pixels[offset + 3] = 0xFF;
+                        }
+                    }
+                } else {
+                    // No glyph - fill with background color
+                    let base_x = (x * font_size.width) * 4;
+                    let base_y = y * font_size.height;
+
+                    for cy in 0..font_size.height {
+                        let y_offset = (base_y + cy) * line_bytes;
+                        for cx in 0..font_size.width {
+                            let offset = (base_x + cx * 4 + y_offset) as usize;
+                            unsafe {
+                                *pixels.get_unchecked_mut(offset) = b_r;
+                                *pixels.get_unchecked_mut(offset + 1) = b_g;
+                                *pixels.get_unchecked_mut(offset + 2) = b_b;
+                                *pixels.get_unchecked_mut(offset + 3) = 0xFF;
+                            }
                         }
                     }
                 }
             }
         }
 
+        // Render sixels on top
         for layer in &self.layers {
             for sixel in &layer.sixels {
                 let sx = layer.get_offset().x + sixel.position.x - rect.start.x;
@@ -956,12 +1009,23 @@ impl Buffer {
                     if offset + sixel_line_bytes > pixels.len() {
                         break;
                     }
+
+                    // Use copy_from_slice for bulk copying
                     pixels[offset..(offset + sixel_line_bytes)].copy_from_slice(&sixel.picture_data[o..(o + sixel_line_bytes)]);
                     sixel_line += 1;
                 }
             }
         }
-        (Size::new(px_width, px_height), pixels)
+
+        Size::new(px_width, px_height)
+    }
+
+    /// Original render_to_rgba that allocates a new buffer
+    /// Consider using render_to_rgba_buffer with a reusable buffer for better performance
+    pub fn render_to_rgba(&self, rect: Rectangle, blink_on: bool) -> (Size, Vec<u8>) {
+        let mut pixels = Vec::new();
+        let size = self.render_to_rgba_buffer(rect, blink_on, &mut pixels);
+        (size, pixels)
     }
 
     pub fn use_letter_spacing(&self) -> bool {

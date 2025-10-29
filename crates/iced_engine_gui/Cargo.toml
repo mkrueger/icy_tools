@@ -13,7 +13,7 @@ codepages = { workspace = true }
 serde = { workspace = true }
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
 image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
-iced = { workspace = true, features = [ "tokio", "svg", "image", "advanced", "debug", "canvas", "lazy"  ]  }
+iced = { workspace = true, features = [ "tokio", "svg", "image", "advanced", "debug", "canvas", "lazy", "wgpu"  ]  }
 iced_graphics = { workspace = true }
 iced_core = { workspace = true }
 

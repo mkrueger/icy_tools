@@ -4,8 +4,7 @@ use std::{
     time::Duration,
 };
 
-use icy_engine::Color;
-use icy_engine_gui::{MonitorSettings, MonitorType};
+use iced_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::{Modem, TerminalResult};
@@ -76,18 +75,14 @@ pub struct Options {
     #[serde(default)]
     pub is_dark_mode: Option<bool>,
 
-    #[serde(default)]
-    pub theme: String,
-
     // pub scaling: Scaling,
+    pub monitor_settings: MonitorSettings,
 
-    // pub monitor_settings: MonitorSettings,
-
-    //    pub bind: KeyBindings,
+    // pub bind: KeyBindings,
     #[serde(default)]
     pub iemsi: IEMSISettings,
 
-    //    pub window_rect: Option<Rect>,
+    // pub window_rect: Option<Rect>,
     #[serde(default)]
     pub modems: Vec<Modem>,
 }
@@ -122,13 +117,12 @@ impl Default for Options {
         Self {
             connect_timeout: Duration::from_secs(1000),
             //scaling: Scaling::default(),
-            //monitor_settings: MonitorSettings::default(),
+            monitor_settings: MonitorSettings::default(),
             iemsi: IEMSISettings::default(),
             console_beep: true,
             //            bind: KeyBindings::default(),
             is_dark_mode: None,
             //            window_rect: None,
-            theme: "".to_string(),
             modems: Vec::new(),
         }
     }
@@ -188,64 +182,6 @@ impl Options {
             fs::rename(&write_name, &file_name)?;
         }
         Ok(())
-    }
-
-    pub fn get_theme(&self) -> iced::Theme {
-        match self.theme.as_str() {
-            "Light" => iced::Theme::Light,
-            "Dark" => iced::Theme::Dark,
-            "Dracula" => iced::Theme::Dracula,
-            "Nord" => iced::Theme::Nord,
-            "SolarizedLight" => iced::Theme::SolarizedLight,
-            "SolarizedDark" => iced::Theme::SolarizedDark,
-            "GruvboxLight" => iced::Theme::GruvboxLight,
-            "GruvboxDark" => iced::Theme::GruvboxDark,
-            "Ferra" => iced::Theme::Ferra,
-            "CatppuccinLatte" => iced::Theme::CatppuccinLatte,
-            "CatppuccinFrappe" => iced::Theme::CatppuccinFrappe,
-            "CatppuccinMacchiato" => iced::Theme::CatppuccinMacchiato,
-            "CatppuccinMocha" => iced::Theme::CatppuccinMocha,
-            "TokyoNight" => iced::Theme::TokyoNight,
-            "TokyoNightStorm" => iced::Theme::TokyoNightStorm,
-            "TokyoNightLight" => iced::Theme::TokyoNightLight,
-            "KanagawaWave" => iced::Theme::KanagawaWave,
-            "KanagawaDragon" => iced::Theme::KanagawaDragon,
-            "KanagawaLotus" => iced::Theme::KanagawaLotus,
-            "Moonfly" => iced::Theme::Moonfly,
-            "Nightfly" => iced::Theme::Nightfly,
-            "Oxocarbon" => iced::Theme::Oxocarbon,
-            // Default to Dark theme if theme string is empty or unrecognized
-            _ => iced::Theme::Dark,
-        }
-    }
-
-    pub fn set_theme(&mut self, theme: iced::Theme) {
-        self.theme = match theme {
-            iced::Theme::Light => "Light",
-            iced::Theme::Dark => "Dark",
-            iced::Theme::Dracula => "Dracula",
-            iced::Theme::Nord => "Nord",
-            iced::Theme::SolarizedLight => "SolarizedLight",
-            iced::Theme::SolarizedDark => "SolarizedDark",
-            iced::Theme::GruvboxLight => "GruvboxLight",
-            iced::Theme::GruvboxDark => "GruvboxDark",
-            iced::Theme::CatppuccinLatte => "CatppuccinLatte",
-            iced::Theme::CatppuccinFrappe => "CatppuccinFrappe",
-            iced::Theme::CatppuccinMacchiato => "CatppuccinMacchiato",
-            iced::Theme::CatppuccinMocha => "CatppuccinMocha",
-            iced::Theme::TokyoNight => "TokyoNight",
-            iced::Theme::TokyoNightStorm => "TokyoNightStorm",
-            iced::Theme::TokyoNightLight => "TokyoNightLight",
-            iced::Theme::KanagawaWave => "KanagawaWave",
-            iced::Theme::KanagawaDragon => "KanagawaDragon",
-            iced::Theme::KanagawaLotus => "KanagawaLotus",
-            iced::Theme::Moonfly => "Moonfly",
-            iced::Theme::Nightfly => "Nightfly",
-            iced::Theme::Oxocarbon => "Oxocarbon",
-            iced::Theme::Custom(_) => "Dark",
-            iced::Theme::Ferra => "Ferra",
-        }
-        .to_string();
     }
 
     pub(crate) fn reset_monitor_settings(&mut self) {
