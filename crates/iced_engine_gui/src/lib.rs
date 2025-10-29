@@ -10,6 +10,10 @@ pub use terminal_view::*;
 
 pub mod key_map;
 pub mod settings;
+
+pub mod blink;
+pub use blink::*;
+
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};

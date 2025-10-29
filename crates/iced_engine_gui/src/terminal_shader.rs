@@ -440,7 +440,8 @@ impl shader::Primitive for TerminalShader {
 pub struct CRTShaderProgram<'a> {
     term: &'a Terminal,
     monitor_settings: MonitorSettings,
-    time: std::time::Instant,
+    caret_blink_on: bool,
+    character_blink_on: bool,
 }
 
 impl<'a> CRTShaderProgram<'a> {
@@ -448,7 +449,8 @@ impl<'a> CRTShaderProgram<'a> {
         Self {
             term,
             monitor_settings,
-            time: std::time::Instant::now(),
+            caret_blink_on: term.caret_blink.is_on(),
+            character_blink_on: term.character_blink.is_on(),
         }
     }
 }
@@ -458,48 +460,86 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     type Primitive = TerminalShader;
 
     fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, bounds: Rectangle) -> Self::Primitive {
-        // Render the terminal to RGBA data
         let mut rgba_data = Vec::new();
         let size;
 
-        // Get the terminal buffer and render it
+        // Local variables to allow caret overlay after lock is released
+        let mut caret_pos_opt = None;
+        let mut font_w = 0usize;
+        let mut font_h = 0usize;
+
         if let Ok(edit_state) = self.term.edit_state.try_lock() {
             let buffer = edit_state.get_buffer();
+
+            // Capture caret & font metrics
+            caret_pos_opt = Some(edit_state.get_caret().get_position());
+            if let Some(font) = buffer.get_font(0) {
+                font_w = font.size.width as usize;
+                font_h = font.size.height as usize;
+            }
 
             let rect = icy_engine::Rectangle {
                 start: icy_engine::Position::new(0, 0),
                 size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
             };
 
-            let (img_size, data) = buffer.render_to_rgba(rect, true);
-
-            // Don't apply color conversion here - let the shader do it
-            // This avoids double conversion
-
+            // Pass blink_on to actually animate ANSI blinking attributes
+            let (img_size, data) = buffer.render_to_rgba(rect, self.character_blink_on);
             size = (img_size.width as u32, img_size.height as u32);
             rgba_data = data;
         } else {
-            // Fallback if lock fails
             size = (bounds.width as u32, bounds.height as u32);
         }
 
-        let elapsed = self.time.elapsed().as_secs_f32();
+        // Caret overlay only if we have the metrics & want it visible this phase
+        if self.caret_blink_on {
+            if let Some(caret_pos) = caret_pos_opt {
+                if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
+                    let line_bytes = (size.0 as usize) * 4;
+
+                    let cell_x = caret_pos.x;
+                    let cell_y = caret_pos.y;
+                    if cell_x >= 0 && cell_y >= 0 {
+                        let px_x = (cell_x as usize) * font_w;
+                        let px_y = (cell_y as usize) * font_h;
+
+                        if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
+                            // ===== DOS-like inverted caret =====
+                            let style = CaretStyle::FullBlock; // Change this to control caret size
+                            let caret_rows = style.rows(font_h);
+                            let start_row = font_h - caret_rows;
+
+                            // Invert the colors in the caret area
+                            for row in start_row..font_h {
+                                let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+
+                                // XOR-style color inversion for each pixel
+                                for p in slice.chunks_exact_mut(4) {
+                                    // Invert RGB components, preserve alpha
+                                    p[0] = 255 - p[0]; // Invert Red
+                                    p[1] = 255 - p[1]; // Invert Green
+                                    p[2] = 255 - p[2]; // Invert Blue
+                                    // p[3] unchanged (keep original alpha)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         TerminalShader {
             terminal_rgba: rgba_data,
             terminal_size: size,
-            time: elapsed,
+            time: self.term.start_time.elapsed().as_secs_f32(),
             monitor_settings: self.monitor_settings.clone(),
         }
     }
 
     fn update(&self, _state: &mut Self::State, _event: &iced::Event, _bounds: Rectangle, _cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
-        // Request redraw for animation if CRT effects are enabled
-        if self.monitor_settings.use_filter {
-            Some(iced::widget::Action::request_redraw())
-        } else {
-            None
-        }
+        // Always request redraw so blink continues, or gate via a setting if desired
+        Some(iced::widget::Action::request_redraw())
     }
 
     fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
@@ -514,4 +554,23 @@ pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: MonitorSettin
         .width(iced::Length::Fill)
         .height(iced::Length::Fill)
         .into()
+}
+
+#[derive(Clone, Copy)]
+pub enum CaretStyle {
+    FullBlock,
+    HalfBlock,
+    QuarterBlock,
+    Underline,
+}
+
+impl CaretStyle {
+    fn rows(self, font_h: usize) -> usize {
+        match self {
+            CaretStyle::FullBlock => font_h,
+            CaretStyle::HalfBlock => (font_h / 2).max(1),
+            CaretStyle::QuarterBlock => (font_h / 4).max(1),
+            CaretStyle::Underline => 2.min(font_h),
+        }
+    }
 }
