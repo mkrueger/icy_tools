@@ -24,9 +24,13 @@ struct CRTUniforms {
     enable_scanlines: f32,
 
     noise_level: f32,
+    sync_wobble: f32,
     enable_noise: f32,
 
-    _pad: [f32; 3], // total floats: 20 (80 bytes, multiple of 16)
+    bloom_threshold: f32,
+    bloom_radius: f32,
+    bloom_intensity: f32,
+    enable_bloom: f32,
 }
 
 // Define your shader primitive - store rendered data, not references
@@ -348,6 +352,34 @@ impl shader::Primitive for TerminalShader {
         };
         let enable_noise = if use_noise { 1.0 } else { 0.0 };
 
+        // Bloom - scale UI values (0-100) to shader-appropriate ranges
+        let use_bloom = self.monitor_settings.use_bloom;
+        let bloom_threshold = if use_bloom {
+            // UI: 0-100, where lower = more bloom
+            // Shader expects: 0-1, where lower = more bloom
+            (self.monitor_settings.bloom_threshold / 100.0).clamp(0.0, 1.0)
+        } else {
+            1.0 // Threshold of 1.0 = no pixels pass
+        };
+
+        let bloom_radius = if use_bloom {
+            // UI: 0-100, but shader expects pixels (typically 1-10)
+            // Scale down to reasonable pixel radius
+            (self.monitor_settings.bloom_radius / 10.0).max(0.5)
+        } else {
+            0.0
+        };
+
+        let bloom_intensity = if use_bloom {
+            // UI: 0-100, shader expects multiplier (typically 0.1-2.0)
+            // Scale to reasonable intensity range
+            (self.monitor_settings.glow_strength / 50.0).max(0.0)
+        } else {
+            0.0
+        };
+
+        let enable_bloom = if use_bloom { 1.0 } else { 0.0 };
+
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
             brightness: brightness_mul,
@@ -367,9 +399,17 @@ impl shader::Primitive for TerminalShader {
             enable_scanlines,
 
             noise_level: nl,
+            sync_wobble: if self.monitor_settings.use_noise {
+                (self.monitor_settings.sync_wobble / 100.0).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
             enable_noise,
 
-            _pad: [0.0; 3],
+            bloom_threshold,
+            bloom_radius,
+            bloom_intensity,
+            enable_bloom,
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

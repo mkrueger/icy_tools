@@ -133,7 +133,7 @@ pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorS
                     slider_row_owned(
                         "Threshold".to_string(),
                         s.bloom_threshold,
-                        0.0..=1.0,
+                        0.0..=100.0,
                         MonitorSettingsMessage::BloomThresholdChanged
                     ),
                     slider_row_owned("Radius".to_string(), s.bloom_radius, 0.0..=50.0, MonitorSettingsMessage::BloomRadiusChanged),

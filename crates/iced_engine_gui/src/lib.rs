@@ -194,8 +194,8 @@ impl MonitorSettings {
             curvature_y: 60.0,
 
             use_noise: false,
-            noise_level: 0.0,
-            sync_wobble: 0.0,
+            noise_level: 20.0,
+            sync_wobble: 20.0,
         }
     }
 

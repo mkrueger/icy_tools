@@ -19,11 +19,16 @@ struct Uniforms {
     scanline_sharpness: f32,
     scanline_phase: f32,
     enable_scanlines: f32,
+    
     noise_level: f32,
+    sync_wobble: f32,
     enable_noise: f32,
-    pad0: f32,
-    pad1: f32,
-    pad2: f32,
+    
+    bloom_threshold: f32,
+    bloom_radius: f32,
+    bloom_intensity: f32,
+    enable_bloom: f32,
+
 }
 
 struct MonitorColor {
@@ -131,14 +136,97 @@ fn apply_noise(color_in: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     // Scale noise level; reduce influence on very dark pixels (simulate phosphor response)
     let luma = dot(color_in, vec3<f32>(0.299, 0.587, 0.114));
     let attenuation = mix(0.6, 1.0, luma); // darker areas less noisy
-    let strength = uniforms.noise_level * attenuation;
+    let strength = uniforms.noise_level * 2.0 * attenuation;
     let noisy = color_in + grain * strength * 0.15; // 0.15 base amplitude
     return clamp(noisy, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn apply_sync_wobble(uv: vec2<f32>) -> vec2<f32> {
+    if (uniforms.enable_noise < 0.5 || uniforms.noise_level <= 0.00001) {
+        return uv;
+    }
+    
+    // Create time-based sync distortion
+    let wobble_speed = 3.5;
+    let wobble_lines = 5.0;
+    
+    // Vertical position affects distortion amount
+    let distort_amount = sin(uv.y * wobble_lines + uniforms.time * wobble_speed) * 0.5 + 0.5;
+    
+    // Add some noise to make it more irregular
+    let noise = rand(vec2<f32>(uv.y * 10.0, uniforms.time)) - 0.5;
+    
+    // Horizontal offset based on sync wobble strength
+    let offset_x = (distort_amount * noise) * uniforms.sync_wobble * 0.02;
+    
+    return vec2<f32>(uv.x + offset_x, uv.y);
+}
+
+fn apply_bloom(uv: vec2<f32>) -> vec3<f32> {
+    if (uniforms.enable_bloom < 0.5 || uniforms.bloom_intensity <= 0.001) {
+        return vec3<f32>(0.0);
+    }
+
+    // Sample the original texture (before effects)
+    let center_color = textureSample(terminal_texture, terminal_sampler, uv).rgb;
+    
+    // Apply color adjustments to match what we're displaying
+    let adjusted = adjust_color(center_color);
+    let luma = dot(adjusted, vec3<f32>(0.299, 0.587, 0.114));
+
+    // Threshold check
+    let t = uniforms.bloom_threshold;
+    if (luma < t) {
+        return vec3<f32>(0.0);
+    }
+
+    // Radius in pixels
+    let radius = max(uniforms.bloom_radius, 1.0);
+    let px = radius / uniforms.resolution;
+
+    // Accumulate bright samples
+    var glow = vec3<f32>(0.0);
+    var total_weight = 0.0;
+
+    // 9-tap kernel (center + 8 surrounding)
+    for (var dy: f32 = -1.0; dy <= 1.0; dy = dy + 1.0) {
+        for (var dx: f32 = -1.0; dx <= 1.0; dx = dx + 1.0) {
+            let offset = vec2<f32>(dx, dy) * px;
+            let sample_uv = clamp(uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
+            
+            // Sample and adjust
+            let sample_color = textureSample(terminal_texture, terminal_sampler, sample_uv).rgb;
+            let sample_adjusted = adjust_color(sample_color);
+            let sample_luma = dot(sample_adjusted, vec3<f32>(0.299, 0.587, 0.114));
+            
+            // Only accumulate bright pixels
+            if (sample_luma > t) {
+                // Distance-based weight
+                let dist = length(vec2<f32>(dx, dy));
+                let weight = exp(-dist * dist * 0.5); // Gaussian falloff
+                
+                // Extract excess brightness
+                let excess = (sample_luma - t) / (1.0 - t);
+                glow = glow + sample_adjusted * excess * weight;
+                total_weight = total_weight + weight;
+            }
+        }
+    }
+
+    if (total_weight > 0.001) {
+        glow = glow / total_weight;
+        // Scale by intensity and add slight color boost
+        return glow * uniforms.bloom_intensity * 0.5;
+    }
+
+    return vec3<f32>(0.0);
+}
+
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let distorted_uv = apply_curvature(in.tex_coord);
+    let wobbled_uv = apply_sync_wobble(in.tex_coord);
+    let distorted_uv = apply_curvature(wobbled_uv);
 
     if (distorted_uv.x < 0.0 || distorted_uv.y < 0.0 || distorted_uv.x > 1.0 || distorted_uv.y > 1.0) {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
@@ -147,12 +235,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(terminal_texture, terminal_sampler, distorted_uv);
     var color = adjust_color(tex_color.rgb);
 
+    // Calculate bloom from original bright areas
+    let bloom_glow = apply_bloom(distorted_uv);
+    
+    // Apply post-processing effects
     color = apply_scanlines(color, distorted_uv);
-
     color = apply_noise(color, distorted_uv);
+    
+    // Add bloom on top
+    color = color + bloom_glow;
+    
+    // Final clamp before monitor type conversion
+    color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
 
     if (uniforms.monitor_type < 0.5) {
-        return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), tex_color.a);
+        return vec4<f32>(color, tex_color.a);
     } else if (uniforms.monitor_type < 1.5) {
         let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
         return vec4<f32>(vec3<f32>(gray), tex_color.a);
