@@ -1,5 +1,5 @@
 use crate::ScreenMode;
-use crate::util::SoundThread;
+use crate::features::{AutoFileTransfer, AutoLogin};
 use directories::UserDirs;
 use icy_engine::editor::EditState;
 use icy_engine::{BufferParser, CallbackAction, TextAttribute};
@@ -28,6 +28,7 @@ pub enum TerminalCommand {
     StartDownload(TransferProtocolType, Option<String>),
     CancelTransfer,
     Resize(u16, u16),
+    SendLogin, // Trigger auto-login
 }
 
 /// Messages sent from the terminal thread to the UI
@@ -43,6 +44,7 @@ pub enum TerminalEvent {
     Error(String),
     PlayMusic(icy_engine::ansi::sound::AnsiMusic),
     Beep,
+    AutoTransferTriggered(TransferProtocolType, bool, Option<String>), // protocol, is_download, filename
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +61,11 @@ pub struct ConnectionConfig {
 
     pub music_option: icy_engine::ansi::MusicOption,
     pub screen_mode: ScreenMode,
+
+    // Auto-login configuration
+    pub auto_login: bool,
+
+    pub login_exp: String,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +98,11 @@ pub struct TerminalThread {
     use_utf8: bool,
     utf8_buffer: Vec<u8>,
     local_command_buffer: Vec<u8>,
+
+    // Auto-features
+    auto_file_transfer: AutoFileTransfer,
+    auto_login: Option<AutoLogin>,
+    auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>, // For pending auto-transfers
 }
 
 impl TerminalThread {
@@ -112,6 +124,9 @@ impl TerminalThread {
             use_utf8: false,
             utf8_buffer: Vec::new(),
             local_command_buffer: Vec::new(),
+            auto_file_transfer: AutoFileTransfer::default(),
+            auto_login: None,
+            auto_transfer: None,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -142,6 +157,16 @@ impl TerminalThread {
 
                 // Periodic tick for updates and reading
                 _ = interval.tick() => {
+                    // Check for pending auto-transfers
+                    if let Some((protocol, is_download, filename)) = self.auto_transfer.take() {
+                        if is_download {
+                            self.start_download(protocol, filename).await;
+                        } else {
+                            // For uploads, we'd need file selection - just notify UI
+                            let _ = self.event_tx.send(TerminalEvent::AutoTransferTriggered(protocol, is_download, filename));
+                        }
+                    }
+
                     // Read from connection if connected
                     if self.connection.is_some() {
                         // Handle ongoing file transfers
@@ -211,6 +236,9 @@ impl TerminalThread {
             TerminalCommand::Resize(width, height) => {
                 self.perform_resize(width, height);
             }
+            TerminalCommand::SendLogin => {
+                self.send_login().await;
+            }
         }
     }
 
@@ -224,6 +252,17 @@ impl TerminalThread {
             config.connection_type, config.address, config.window_size
         );
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
+
+        // Set up auto-login if configured
+        if config.auto_login && config.user_name.is_some() && config.password.is_some() {
+            self.auto_login = Some(AutoLogin::new(
+                config.login_exp.clone(),
+                config.user_name.clone().unwrap(),
+                config.password.clone().unwrap(),
+            ));
+        } else {
+            self.auto_login = None;
+        }
 
         let connection: Box<dyn Connection> = match config.connection_type {
             ConnectionType::Telnet => {
@@ -278,6 +317,9 @@ impl TerminalThread {
         self.connection_time = Some(Instant::now());
         self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
 
+        // Reset auto-transfer state
+        self.auto_file_transfer = AutoFileTransfer::default();
+
         let _ = self.event_tx.send(TerminalEvent::Connected);
         debug!("Connected successfully");
         Ok(())
@@ -294,7 +336,19 @@ impl TerminalThread {
 
         self.connection_time = None;
         self.utf8_buffer.clear();
+        self.auto_login = None;
+        self.auto_file_transfer = AutoFileTransfer::default();
         let _ = self.event_tx.send(TerminalEvent::Disconnected(None));
+    }
+
+    async fn send_login(&mut self) {
+        if let Some(auto_login) = &self.auto_login {
+            if let Some(conn) = &mut self.connection {
+                // Send username and password
+                let login_data = format!("{}\r{}\r", auto_login.user_name, auto_login.password);
+                let _ = conn.send(login_data.as_bytes()).await;
+            }
+        }
     }
 
     async fn read_connection(&mut self, buffer: &mut [u8]) {
@@ -378,8 +432,23 @@ impl TerminalThread {
                         self.utf8_buffer.clear();
                     }
 
-                    // Process all complete characters
+                    // Process all complete characters with auto-features
                     for ch in to_process {
+                        // Check for auto-file transfer triggers
+                        if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch as u8) {
+                            self.auto_transfer = Some((protocol_type, download, None));
+                        }
+
+                        // Check for auto-login triggers
+                        if let Some(autologin) = &mut self.auto_login {
+                            if let Ok(Some(login_data)) = autologin.try_login(ch as u8) {
+                                if let Some(conn) = &mut self.connection {
+                                    let _ = conn.send(&login_data).await;
+                                    autologin.logged_in = true;
+                                }
+                            }
+                        }
+
                         match self.buffer_parser.print_char(buffer, 0, &mut caret, ch) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
@@ -388,6 +457,21 @@ impl TerminalThread {
                 } else {
                     // Legacy mode: treat each byte as a character (CP437 or similar)
                     for &byte in data {
+                        // Check for auto-file transfer triggers
+                        if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(byte) {
+                            self.auto_transfer = Some((protocol_type, download, None));
+                        }
+
+                        // Check for auto-login triggers
+                        if let Some(autologin) = &mut self.auto_login {
+                            if let Ok(Some(login_data)) = autologin.try_login(byte) {
+                                if let Some(conn) = &mut self.connection {
+                                    let _ = conn.send(&login_data).await;
+                                    autologin.logged_in = true;
+                                }
+                            }
+                        }
+
                         match self.buffer_parser.print_char(buffer, 0, &mut caret, byte as char) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
@@ -470,15 +554,19 @@ impl TerminalThread {
                     self.process_data(s.as_bytes()).await;
                 }
             }
-            icy_engine::CallbackAction::PlayMusic(music) => {
+            CallbackAction::PlayMusic(music) => {
                 let _ = self.event_tx.send(TerminalEvent::PlayMusic(music));
             }
-            icy_engine::CallbackAction::Beep => {
+            CallbackAction::Beep => {
                 let _ = self.event_tx.send(TerminalEvent::Beep);
             }
             CallbackAction::ResizeTerminal(width, height) => {
                 // Avoid async recursion by calling sync helper
                 self.perform_resize(width as u16, height as u16);
+            }
+            CallbackAction::XModemTransfer(file_name) => {
+                // Set up auto-transfer for X-Modem
+                self.auto_transfer = Some((TransferProtocolType::XModem, true, Some(file_name)));
             }
             _ => {}
         }

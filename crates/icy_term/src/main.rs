@@ -35,7 +35,7 @@ pub use data::*;
 pub mod terminal;
 pub use terminal::*;
 
-mod features;
+pub mod features;
 mod icons;
 pub mod ui;
 mod util;

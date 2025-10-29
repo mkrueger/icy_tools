@@ -17,12 +17,12 @@ pub struct AutoLogin {
     _name_recognizer: PatternRecognizer,
     _login_recognizer: PatternRecognizer,
 
-    user_name: String,
-    password: String,
+    pub user_name: String,
+    pub password: String,
 }
 
 impl AutoLogin {
-    pub fn new(login_expr: &str, user_name: String, password: String) -> Self {
+    pub fn new(login_expr: String, user_name: String, password: String) -> Self {
         Self {
             logged_in: false,
             _disabled: false,

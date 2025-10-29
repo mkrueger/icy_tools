@@ -262,6 +262,8 @@ impl MainWindow {
                     },
                     music_option: address.ansi_music,
                     screen_mode: address.get_screen_mode(),
+                    auto_login: self.settings_dialog.original_options.iemsi.autologin,
+                    login_exp: address.auto_login.clone(),
                 };
 
                 let screen_mode = address.get_screen_mode();
@@ -539,14 +541,12 @@ impl MainWindow {
                 self.show_disconnect = false;
                 Task::none()
             }
-
             TerminalEvent::Disconnected(_error) => {
                 self.is_connected = false;
                 self.terminal_window.is_connected = false;
                 self.connection_time = None;
                 Task::none()
             }
-
             TerminalEvent::DataReceived(data) => {
                 // Handle capture
                 if self.terminal_window.is_capturing {
@@ -554,34 +554,29 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
             TerminalEvent::BufferUpdated => {
                 self.terminal_window.scene.cache.clear();
                 Task::none()
             }
-
             TerminalEvent::TransferStarted(_state) => {
-                // TODO: Show transfer progress UI
+                self.state.mode = MainWindowMode::FileTransfer(true);
+                self.file_transfer_dialog.transfer_state = Some(_state);
                 Task::none()
             }
-
             TerminalEvent::TransferProgress(_state) => {
-                // TODO: Update transfer progress UI
+                self.file_transfer_dialog.transfer_state = Some(_state);
                 Task::none()
             }
-
             TerminalEvent::TransferCompleted(_state) => {
-                // TODO: Hide transfer progress UI
+                self.file_transfer_dialog.transfer_state = Some(_state);
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
-
             TerminalEvent::Error(error) => {
                 log::error!("Terminal error: {}", error);
                 // TODO: Show error dialog
                 Task::none()
             }
-
             TerminalEvent::PlayMusic(music) => {
                 let r = self.sound_thread.lock().unwrap().play_music(music);
                 if let Err(r) = r {
@@ -589,12 +584,15 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
             TerminalEvent::Beep => {
                 let r = self.sound_thread.lock().unwrap().beep();
                 if let Err(r) = r {
                     log::error!("TerminalEvent::Beep: {r}");
                 }
+                Task::none()
+            }
+            TerminalEvent::AutoTransferTriggered(_, _, _) => {
+                self.state.mode = MainWindowMode::FileTransfer(true);
                 Task::none()
             }
         }
