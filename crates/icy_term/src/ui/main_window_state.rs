@@ -1,4 +1,4 @@
-use crate::{Options, ui::MainWindowMode};
+use crate::ui::MainWindowMode;
 
 #[derive(Default)]
 pub struct MainWindowState {

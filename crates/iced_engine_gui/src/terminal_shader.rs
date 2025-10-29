@@ -441,12 +441,12 @@ impl shader::Primitive for TerminalShader {
 // Program wrapper that renders the terminal and creates the shader
 pub struct CRTShaderProgram<'a> {
     term: &'a Terminal,
-    monitor_settings: &'a MonitorSettings,
+    monitor_settings: MonitorSettings,
     time: std::time::Instant,
 }
 
 impl<'a> CRTShaderProgram<'a> {
-    pub fn new(term: &'a Terminal, monitor_settings: &'a MonitorSettings) -> Self {
+    pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
         Self {
             term,
             monitor_settings,
@@ -509,7 +509,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 }
 
 // Helper function to create shader with terminal and monitor settings
-pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: &'a MonitorSettings) -> Element<'a, Message> {
+pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: MonitorSettings) -> Element<'a, Message> {
     // Let the parent wrapper decide sizing; shader can just be Fill.
     shader(CRTShaderProgram::new(term, monitor_settings))
         .width(iced::Length::Fill)

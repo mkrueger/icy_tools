@@ -3,6 +3,7 @@ use crate::features::{AutoFileTransfer, AutoLogin};
 use directories::UserDirs;
 use icy_engine::editor::EditState;
 use icy_engine::{BufferParser, CallbackAction, TextAttribute};
+use icy_net::iemsi::EmsiISI;
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection},
@@ -44,7 +45,8 @@ pub enum TerminalEvent {
     Error(String),
     PlayMusic(icy_engine::ansi::sound::AnsiMusic),
     Beep,
-    AutoTransferTriggered(TransferProtocolType, bool, Option<String>), // protocol, is_download, filename
+    AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
+    EmsiLogin(Box<EmsiISI>),
 }
 
 #[derive(Debug, Clone)]
@@ -447,6 +449,10 @@ impl TerminalThread {
                                     autologin.logged_in = true;
                                 }
                             }
+
+                            if let Some(isi) = &autologin.iemsi.isi {
+                                let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
+                            }
                         }
 
                         match self.buffer_parser.print_char(buffer, 0, &mut caret, ch) {
@@ -616,7 +622,6 @@ impl TerminalThread {
     }
 
     async fn run_file_transfer(&mut self, prot: &mut dyn Protocol, mut transfer_state: TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let instant = Instant::now();
         let mut last_progress_update = Instant::now();
 
         while !transfer_state.is_finished {

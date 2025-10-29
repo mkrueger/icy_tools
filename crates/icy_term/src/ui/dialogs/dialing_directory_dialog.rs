@@ -1,6 +1,6 @@
 use crate::ui::{Message, modal};
 use crate::util::Rng;
-use crate::{ATARI_MODES, Address, AddressBook, ScreenMode, VGA_MODES};
+use crate::{Address, AddressBook, ScreenMode, VGA_MODES};
 use i18n_embed_fl::fl;
 use iced::widget::tooltip;
 use iced::{

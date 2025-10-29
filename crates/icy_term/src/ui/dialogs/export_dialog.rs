@@ -262,7 +262,7 @@ impl ExportDialogState {
         let full_path_preview = text(format!("→ {}", self.get_temp_full_path().display()))
             .size(12)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(Color::from_rgb(0.6, 0.6, 0.6)),
+                color: Some(theme.extended_palette().secondary.base.color),
             });
 
         let preview_row = row![Space::new().width(88.0), full_path_preview,];

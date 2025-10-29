@@ -1,6 +1,5 @@
 use std::{
-    fs::{self, File},
-    io::Write,
+    fs::{self},
     time::Duration,
 };
 

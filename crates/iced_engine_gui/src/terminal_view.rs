@@ -3,14 +3,11 @@ use iced::advanced::widget::{Tree, Widget};
 use iced::advanced::{Clipboard, Layout, Shell, layout, mouse, renderer};
 use iced::mouse::Cursor;
 use iced::widget::canvas::{Frame, Geometry, Path};
-use iced::widget::shader;
 use iced::{Color, Element, Length, Point, Rectangle, Size};
-use iced_core::Renderer as CoreRenderer;
 use iced_core::text::LineHeight;
-use iced_core::text::Renderer as TextRenderer;
 use icy_engine::{Position, TextPane};
 
-use crate::{MonitorSettings, Terminal, TerminalShader};
+use crate::{MonitorSettings, Terminal};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -21,39 +18,26 @@ pub enum Message {
 
 pub struct TerminalView<'a> {
     term: &'a Terminal,
-    settings: &'a MonitorSettings,
-    shader_time: f32,
+    settings: MonitorSettings,
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn new(term: &'a Terminal, settings: &'a MonitorSettings) -> Self {
-        Self {
-            term,
-            settings,
-            shader_time: 0.0,
-        }
+    pub fn new(term: &'a Terminal, settings: MonitorSettings) -> Self {
+        Self { term, settings }
     }
 
-    pub fn show(term: &'a Terminal, settings: &'a MonitorSettings) -> Element<'a, Message> {
-        Element::new(Self {
-            term,
-            settings,
-            shader_time: 0.0,
-        })
+    pub fn show(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
+        Element::new(Self { term, settings })
     }
 
-    pub fn show_with_effects(term: &'a Terminal, settings: &'a MonitorSettings) -> Element<'a, Message> {
+    pub fn show_with_effects(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
         // Always use shader if we need color conversion OR CRT effects
         if settings.use_filter || settings.monitor_type != crate::MonitorType::Color {
             // Wrap the shader in a container that fills available space
             iced::widget::container(crate::terminal_shader::create_crt_shader(term, settings)).into()
         } else {
             // Only use direct rendering for Color mode with no filter
-            Element::new(Self {
-                term,
-                settings,
-                shader_time: 0.0,
-            })
+            Element::new(Self { term, settings })
         }
     }
 

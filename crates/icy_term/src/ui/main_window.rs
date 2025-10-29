@@ -140,7 +140,7 @@ impl MainWindow {
 
         // Create shared edit state for terminal
         let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
-        let terminal_window = terminal_window::TerminalWindow::new(options.monitor_settings.clone(), sound_thread.clone());
+        let terminal_window = terminal_window::TerminalWindow::new(sound_thread.clone());
         let edit_state = terminal_window.scene.edit_state.clone();
 
         // Create terminal thread
@@ -267,7 +267,6 @@ impl MainWindow {
                 };
 
                 let screen_mode = address.get_screen_mode();
-                println!("Applying screen mode: {:?}", screen_mode);
                 screen_mode.apply_to_edit_state(&mut self.terminal_window.scene.edit_state.lock().unwrap());
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
@@ -326,10 +325,8 @@ impl MainWindow {
             Message::SettingsDialog(msg) => {
                 if let Some(close_msg) = self.settings_dialog.update(msg) {
                     let c = self.update(close_msg);
-                    self.terminal_window.settings = self.settings_dialog.original_options.monitor_settings.clone();
                     return c;
                 }
-                self.terminal_window.settings = self.settings_dialog.temp_options.monitor_settings.clone();
                 Task::none()
             }
 
@@ -595,6 +592,10 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::FileTransfer(true);
                 Task::none()
             }
+            TerminalEvent::EmsiLogin(isi) => {
+                self.terminal_window.iemsi_info = Some(*isi);
+                Task::none()
+            }
         }
     }
 
@@ -607,16 +608,22 @@ impl MainWindow {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        let settings = if self.get_mode() == MainWindowMode::ShowSettings {
+            &self.settings_dialog.temp_options
+        } else {
+            &self.settings_dialog.original_options
+        };
+
         match &self.state.mode {
-            MainWindowMode::ShowTerminal => self.terminal_window.view(),
+            MainWindowMode::ShowTerminal => self.terminal_window.view(settings),
             MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options),
-            MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view()),
-            MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, self.terminal_window.view()),
-            MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, self.terminal_window.view()),
-            MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view()),
-            MainWindowMode::ShowExportDialog => self.export_dialog.view(self.terminal_window.view()),
-            MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view()),
-            MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view()),
+            MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view(settings)),
+            MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, self.terminal_window.view(settings)),
+            MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, self.terminal_window.view(settings)),
+            MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view(settings)),
+            MainWindowMode::ShowExportDialog => self.export_dialog.view(self.terminal_window.view(settings)),
+            MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view(settings)),
+            MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view(settings)),
         }
     }
 

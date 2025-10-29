@@ -48,13 +48,12 @@ impl DialogState {
     pub fn update(&mut self, msg: FindDialogMsg, edit_state: Arc<Mutex<EditState>>) -> Option<Message> {
         match msg {
             FindDialogMsg::ChangePattern(pattern) => {
-                let old_pattern = self.pattern.clone();
                 self.pattern = pattern.clone();
 
                 // Clear selection if pattern is empty
                 if self.pattern.is_empty() {
                     let mut edit_state = edit_state.lock().unwrap();
-                    edit_state.clear_selection();
+                    let _ = edit_state.clear_selection();
                     self.results.clear();
                     self.cur_sel = 0;
                     self.cur_pos = Position::default();
@@ -101,7 +100,7 @@ impl DialogState {
                 } else {
                     // No results found
                     let mut edit_state = edit_state.lock().unwrap();
-                    edit_state.clear_selection();
+                    let _ = edit_state.clear_selection();
                     self.last_selected_pos = None;
                 }
                 None
@@ -121,7 +120,7 @@ impl DialogState {
             FindDialogMsg::CloseDialog => {
                 // Clear selection when closing
                 let mut edit_state = edit_state.lock().unwrap();
-                edit_state.clear_selection();
+                let _ = edit_state.clear_selection();
                 self.last_selected_pos = None;
                 Some(Message::CloseDialog)
             }
@@ -245,8 +244,8 @@ impl DialogState {
         sel.lead = Position::new(pos.x + self.pattern.len() as i32 - 1, pos.y);
 
         let mut edit_state = edit_state.lock().unwrap();
-        edit_state.clear_selection();
-        edit_state.set_selection(sel);
+        let _ = edit_state.clear_selection();
+        let _ = edit_state.set_selection(sel);
 
         // Remember this position for next pattern change
         self.last_selected_pos = Some(pos);

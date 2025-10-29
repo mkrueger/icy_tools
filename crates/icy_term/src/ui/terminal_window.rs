@@ -7,14 +7,15 @@ use iced_engine_gui::{
     MonitorSettings, Terminal,
     terminal_view::{Message as TerminalMessage, TerminalView},
 };
-use icy_engine::{Buffer, editor::EditState};
+use icy_engine::{Buffer, TextPane, editor::EditState};
+use icy_net::telnet::TerminalEmulation;
 use std::{
     path::Path,
     sync::{Arc, Mutex},
 };
 // use iced_aw::{menu, menu_bar, menu_items};
 
-use crate::{Address, LATEST_VERSION, VERSION, ui::Message, util::SoundThread};
+use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message, util::SoundThread};
 
 // Icon SVG constants
 const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");
@@ -30,12 +31,13 @@ pub struct TerminalWindow {
     pub is_connected: bool,
     pub is_capturing: bool,
     pub current_address: Option<Address>,
-    pub settings: MonitorSettings,
-    pub sound_thread: Arc<Mutex<SoundThread>>, // Add sound thread reference
+    pub terminal_emulation: TerminalEmulation,
+    pub sound_thread: Arc<Mutex<SoundThread>>,
+    pub iemsi_info: Option<icy_net::iemsi::EmsiISI>,
 }
 
 impl TerminalWindow {
-    pub fn new(settings: MonitorSettings, sound_thread: Arc<Mutex<SoundThread>>) -> Self {
+    pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
         // Create a default EditState wrapped in Arc<Mutex>
         let mut edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
         // If parsing fails, try using the ANSI parser directly
@@ -50,17 +52,18 @@ impl TerminalWindow {
             is_connected: false,
             is_capturing: false,
             current_address: None,
-            settings,
+            terminal_emulation: TerminalEmulation::Ansi,
             sound_thread,
+            iemsi_info: None,
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self, options: &Options) -> Element<'_, Message> {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
 
         // Create the main terminal area - use TerminalView to create the view
-        let terminal_view = TerminalView::show_with_effects(&self.scene, &self.settings).map(|terminal_msg| {
+        let terminal_view = TerminalView::show_with_effects(&self.scene, options.monitor_settings.clone()).map(|terminal_msg| {
             // Map TerminalMessage to your app's Message enum
             match terminal_msg {
                 TerminalMessage::SetCaret(_pos) => Message::None, // Or handle caret changes if needed
@@ -72,7 +75,7 @@ impl TerminalWindow {
         let terminal_area = container(terminal_view).width(Length::Fill).height(Length::Fill);
 
         // Status bar at the bottom
-        let status_bar = self.create_status_bar();
+        let status_bar = self.create_status_bar(options);
 
         // Combine all elements
         column![button_bar, terminal_area, status_bar].spacing(0).into()
@@ -247,7 +250,7 @@ impl TerminalWindow {
 
         // Add Stop Playing Sound button if music is playing
         if let Ok(mut sound_guard) = self.sound_thread.lock() {
-            sound_guard.update_state();
+            let _ = sound_guard.update_state();
             if sound_guard.is_playing() {
                 let button_text = match sound_guard.stop_button {
                     0 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing1"),
@@ -271,7 +274,6 @@ impl TerminalWindow {
                 .style(|theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
-                    let palette = theme.extended_palette();
                     let base = Style {
                         background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.2))), // Orange tint
                         text_color: Color::from_rgb(1.0, 0.6, 0.0),                                      // Orange text
@@ -339,7 +341,7 @@ impl TerminalWindow {
             .into()
     }
 
-    fn create_status_bar(&self) -> Element<'_, Message> {
+    fn create_status_bar(&self, options: &Options) -> Element<'_, Message> {
         let connection_status = if self.is_connected {
             text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().success.strong.color),
@@ -361,86 +363,130 @@ impl TerminalWindow {
             text("")
         };
 
-        let iemsi_button = button(text("IEMSI").size(12))
-            .on_press(Message::ShowIemsiDialog)
-            .padding([2, 8])
-            .style(|theme: &iced::Theme, status| {
-                use iced::widget::button::{Status, Style};
+        let emulation_str = match self.terminal_emulation {
+            TerminalEmulation::Ansi => "ANSI",
+            TerminalEmulation::Utf8Ansi => "UTF-8 ANSI",
+            TerminalEmulation::Ascii => "ASCII",
+            TerminalEmulation::PETscii => "PETSCII",
+            TerminalEmulation::ViewData => "ViewData",
+            TerminalEmulation::Mode7 => "Mode7",
+            TerminalEmulation::Avatar => "AVATAR",
+            TerminalEmulation::Rip => "RIP",
+            TerminalEmulation::ATAscii => "Atari",
+            TerminalEmulation::Skypix => "Amiga Skypix",
+            TerminalEmulation::AtariST => "Atari ST",
+        };
 
-                let palette = theme.extended_palette();
-                let base = Style {
-                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                    text_color: palette.primary.strong.color,
-                    border: Border {
-                        color: palette.primary.weak.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    shadow: Default::default(),
-                    snap: false,
-                };
+        let (buffer_width, buffer_height) = if let Ok(edit_state) = self.scene.edit_state.lock() {
+            let size = edit_state.get_buffer().get_size();
+            (size.width, size.height)
+        } else {
+            (80, 25)
+        };
 
-                match status {
-                    Status::Active => base,
-                    Status::Hovered => Style {
-                        background: Some(iced::Background::Color(palette.primary.weak.color)),
-                        text_color: palette.primary.weak.text,
-                        ..base
-                    },
-                    Status::Pressed => Style {
-                        background: Some(iced::Background::Color(palette.primary.strong.color)),
-                        text_color: palette.primary.strong.text,
-                        ..base
-                    },
-                    Status::Disabled => base,
+        let connection_string = if let Some(address) = &self.current_address {
+            match address.protocol {
+                icy_net::ConnectionType::Telnet => "Telnet".to_string(),
+                icy_net::ConnectionType::SSH => "SSH".to_string(),
+                icy_net::ConnectionType::Raw => "Raw".to_string(),
+                icy_net::ConnectionType::Modem => {
+                    if let Some(modem) = options.modems.iter().find(|p| p.name == address.address) {
+                        format!("{} baud", modem.baud_rate)
+                    } else {
+                        "Modem".to_string()
+                    }
                 }
-            });
+                icy_net::ConnectionType::Websocket => "WebSocket".to_string(),
+                icy_net::ConnectionType::SecureWebsocket => "WSS".to_string(),
+                _ => "Unknown".to_string(),
+            }
+        } else {
+            "LOCAL".to_string()
+        };
 
-        container(
-            row![
-                connection_status,
-                Space::new().width(Length::Fill),
-                capture_status,
-                iemsi_button,
-                text(" | "),
-                text("ANSI • 80x25 • 9600 baud").size(12),
-            ]
+        // Build the status bar row
+        let mut status_row = row![connection_status, Space::new().width(Length::Fill), capture_status,]
             .spacing(8)
-            .align_y(Alignment::Center)
-            .padding([4, 12]),
-        )
-        .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
-            border: iced::Border {
-                color: theme.extended_palette().background.strong.color,
-                width: 1.0,
-                radius: 0.0.into(),
-            },
-            text_color: Some(theme.extended_palette().secondary.base.color),
-            shadow: Default::default(),
-            snap: false,
-        })
-        .into()
+            .align_y(Alignment::Center);
+
+        // Only add IEMSI button if we have IEMSI info
+        if self.iemsi_info.is_some() {
+            let iemsi_button = button(text("IEMSI").size(12))
+                .on_press(Message::ShowIemsiDialog)
+                .padding([2, 8])
+                .style(|theme: &iced::Theme, status| {
+                    use iced::widget::button::{Status, Style};
+
+                    let palette = theme.extended_palette();
+                    let base = Style {
+                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                        text_color: palette.primary.strong.color,
+                        border: Border {
+                            color: palette.primary.weak.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        shadow: Default::default(),
+                        snap: false,
+                    };
+
+                    match status {
+                        Status::Active => base,
+                        Status::Hovered => Style {
+                            background: Some(iced::Background::Color(palette.primary.weak.color)),
+                            text_color: palette.primary.weak.text,
+                            ..base
+                        },
+                        Status::Pressed => Style {
+                            background: Some(iced::Background::Color(palette.primary.strong.color)),
+                            text_color: palette.primary.strong.text,
+                            ..base
+                        },
+                        Status::Disabled => base,
+                    }
+                });
+
+            status_row = status_row.push(iemsi_button);
+        }
+
+        // Add separator and terminal info
+        status_row = status_row
+            .push(text(" | "))
+            .push(text(format!("{emulation_str} • {buffer_width}x{buffer_height} • {connection_string}")).size(12));
+
+        container(status_row.padding([4, 12]))
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                border: iced::Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                text_color: Some(theme.extended_palette().secondary.base.color),
+                shadow: Default::default(),
+                snap: false,
+            })
+            .into()
     }
 
     // Helper methods for terminal operations
     pub fn connect(&mut self, address: Option<Address>) {
         self.is_connected = true;
         self.current_address = address;
+        self.terminal_emulation = match &self.current_address {
+            Some(addr) => addr.terminal_type.clone(),
+            None => TerminalEmulation::Ansi,
+        };
     }
 
     pub fn disconnect(&mut self) {
         self.is_connected = false;
         self.current_address = None;
+        self.iemsi_info = None;
     }
 
     pub fn toggle_capture(&mut self) {
         self.is_capturing = !self.is_capturing;
-    }
-
-    pub fn get_iemsi_info(&self) -> Option<icy_net::iemsi::IEmsi> {
-        // TODO: Implement this to get IEMSI info from the actual connection
-        None
     }
 }
 
