@@ -196,25 +196,12 @@ pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorS
                 column![
                     slider_row_owned("Curvature X".to_string(), s.curvature_x, 0.0..=100.0, MonitorSettingsMessage::CurvatureXChanged),
                     slider_row_owned("Curvature Y".to_string(), s.curvature_y, 0.0..=100.0, MonitorSettingsMessage::CurvatureYChanged),
-                    slider_row_owned(
-                        "Barrel Distortion".to_string(),
-                        s.barrel_distortion,
-                        -50.0..=50.0,
-                        MonitorSettingsMessage::BarrelDistortionChanged
-                    ),
                 ]
                 .spacing(6)
                 .into()
             } else {
                 Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
             },
-            slider_row_owned(
-                "Rotation (deg)".to_string(),
-                s.rotation_deg,
-                -5.0..=5.0,
-                MonitorSettingsMessage::RotationDegChanged
-            ),
-            slider_row_owned("Overscan (%)".to_string(), s.overscan, 0.0..=10.0, MonitorSettingsMessage::OverscanChanged),
         ]
         .spacing(10)
         .into(),

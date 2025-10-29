@@ -13,7 +13,12 @@ struct CRTUniforms {
     saturation: f32,
     monitor_type: f32,
     resolution: [f32; 2],
-    _pad: [f32; 4], // padding -> total floats: 12 (48 bytes)
+
+    curvature_x: f32,
+    curvature_y: f32,
+    enable_curvature: f32,
+
+    _pad: [f32; 3],
 }
 
 // Define your shader primitive - store rendered data, not references
@@ -312,6 +317,12 @@ impl shader::Primitive for TerminalShader {
         let gamma_val = self.monitor_settings.gamma;
         let saturation_mul = self.monitor_settings.saturation / 100.0; // 100 -> 1.0
 
+        // Curvature values (only active if enabled)
+        let use_curv = self.monitor_settings.use_curvature;
+        let curv_x = if use_curv { (100.0 - self.monitor_settings.curvature_x) / 10.0 } else { 0.0 };
+        let curv_y = if use_curv { (100.0 - self.monitor_settings.curvature_y) / 10.0 } else { 0.0 };
+        let enable_curvature = if use_curv { 1.0 } else { 0.0 };
+
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
             brightness: brightness_mul,
@@ -320,7 +331,12 @@ impl shader::Primitive for TerminalShader {
             saturation: saturation_mul,
             monitor_type: self.monitor_settings.monitor_type.to_index() as f32,
             resolution: [scaled_w, scaled_h],
-            _pad: [0.0; 4],
+
+            curvature_x: curv_x,
+            curvature_y: curv_y,
+            enable_curvature,
+
+            _pad: [0.0; 3],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

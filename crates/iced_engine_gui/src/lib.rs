@@ -109,9 +109,6 @@ pub struct MonitorSettings {
     pub use_curvature: bool,
     pub curvature_x: f32,
     pub curvature_y: f32,
-    pub barrel_distortion: f32,
-    pub rotation_deg: f32,
-    pub overscan: f32, // crop percentage (0..0.1 typical)
 
     pub use_noise: bool,
     pub noise_level: f32,
@@ -193,11 +190,8 @@ impl MonitorSettings {
             scanline_phase: 0.0,
 
             use_curvature: false,
-            curvature_x: 0.0,
-            curvature_y: 0.0,
-            barrel_distortion: 0.0,
-            rotation_deg: 0.0,
-            overscan: 0.0,
+            curvature_x: 60.0,
+            curvature_y: 60.0,
 
             use_noise: false,
             noise_level: 0.0,

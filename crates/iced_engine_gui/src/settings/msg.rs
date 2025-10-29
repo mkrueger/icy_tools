@@ -33,9 +33,6 @@ pub enum MonitorSettingsMessage {
     CurvatureToggleChanged(bool),
     CurvatureXChanged(f32),
     CurvatureYChanged(f32),
-    BarrelDistortionChanged(f32),
-    RotationDegChanged(f32),
-    OverscanChanged(f32),
 
     // Noise / artifacts
     NoiseToggleChanged(bool),
@@ -79,9 +76,6 @@ pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorS
         MonitorSettingsMessage::CurvatureToggleChanged(v) => settings.use_curvature = v,
         MonitorSettingsMessage::CurvatureXChanged(v) => settings.curvature_x = v,
         MonitorSettingsMessage::CurvatureYChanged(v) => settings.curvature_y = v,
-        MonitorSettingsMessage::BarrelDistortionChanged(v) => settings.barrel_distortion = v,
-        MonitorSettingsMessage::RotationDegChanged(v) => settings.rotation_deg = v,
-        MonitorSettingsMessage::OverscanChanged(v) => settings.overscan = v,
 
         // Noise / artifacts
         MonitorSettingsMessage::NoiseToggleChanged(v) => settings.use_noise = v,
