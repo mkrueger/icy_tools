@@ -5,10 +5,13 @@ use std::{
     time::Instant,
 };
 
-use crate::ui::{
-    dialogs::find_dialog,
-    export_dialog,
-    up_download_dialog::{self, FileTransferDialogState},
+use crate::{
+    ui::{
+        dialogs::find_dialog,
+        export_dialog,
+        up_download_dialog::{self, FileTransferDialogState},
+    },
+    util::SoundThread,
 };
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
@@ -71,6 +74,7 @@ pub enum Message {
     TerminalEvent(TerminalEvent),
     SendData(Vec<u8>),
     None,
+    StopSound,
 }
 
 pub struct MainWindow {
@@ -83,6 +87,9 @@ pub struct MainWindow {
     pub find_dialog: find_dialog::DialogState,
     pub export_dialog: export_dialog::ExportDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
+
+    // sound thread
+    pub sound_thread: Arc<Mutex<SoundThread>>,
 
     // Terminal thread communication
     terminal_tx: mpsc::UnboundedSender<TerminalCommand>,
@@ -132,7 +139,8 @@ impl MainWindow {
             .join("export.icy");
 
         // Create shared edit state for terminal
-        let terminal_window = terminal_window::TerminalWindow::new(options.monitor_settings.clone());
+        let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
+        let terminal_window = terminal_window::TerminalWindow::new(options.monitor_settings.clone(), sound_thread.clone());
         let edit_state = terminal_window.scene.edit_state.clone();
 
         // Create terminal thread
@@ -172,6 +180,7 @@ impl MainWindow {
             show_find_dialog: false,
             show_disconnect: false,
             title: crate::DEFAULT_TITLE.to_string(),
+            sound_thread,
         }
     }
 
@@ -251,6 +260,8 @@ impl MainWindow {
                     } else {
                         None
                     },
+                    music_option: address.ansi_music,
+                    screen_mode: address.get_screen_mode(),
                 };
 
                 let screen_mode = address.get_screen_mode();
@@ -259,6 +270,7 @@ impl MainWindow {
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
+
                 self.current_address = Some(address);
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
@@ -509,6 +521,11 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::StopSound => {
+                self.sound_thread.lock().unwrap().clear();
+                Task::none()
+            }
+
             Message::None => Task::none(),
         }
     }
@@ -562,6 +579,22 @@ impl MainWindow {
             TerminalEvent::Error(error) => {
                 log::error!("Terminal error: {}", error);
                 // TODO: Show error dialog
+                Task::none()
+            }
+
+            TerminalEvent::PlayMusic(music) => {
+                let r = self.sound_thread.lock().unwrap().play_music(music);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::PlayMusic: {r}");
+                }
+                Task::none()
+            }
+
+            TerminalEvent::Beep => {
+                let r = self.sound_thread.lock().unwrap().beep();
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::Beep: {r}");
+                }
                 Task::none()
             }
         }

@@ -68,9 +68,8 @@ impl SoundThread {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl SoundThread {
-    pub(crate) fn update_state(&mut self) -> TerminalResult<()> {
+    pub fn update_state(&mut self) -> TerminalResult<()> {
         if self.no_thread_running() {
             return Ok(());
         }

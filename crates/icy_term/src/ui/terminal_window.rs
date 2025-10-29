@@ -14,7 +14,7 @@ use std::{
 };
 // use iced_aw::{menu, menu_bar, menu_items};
 
-use crate::{Address, LATEST_VERSION, VERSION, ui::Message};
+use crate::{Address, LATEST_VERSION, VERSION, ui::Message, util::SoundThread};
 
 // Icon SVG constants
 const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");
@@ -31,12 +31,13 @@ pub struct TerminalWindow {
     pub is_capturing: bool,
     pub current_address: Option<Address>,
     pub settings: MonitorSettings,
+    pub sound_thread: Arc<Mutex<SoundThread>>, // Add sound thread reference
 }
 
 impl TerminalWindow {
-    pub fn new(settings: MonitorSettings) -> Self {
+    pub fn new(settings: MonitorSettings, sound_thread: Arc<Mutex<SoundThread>>) -> Self {
         // Create a default EditState wrapped in Arc<Mutex>
-        let mut edit_state = Arc::new(Mutex::new(EditState::default()));
+        let mut edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
         // If parsing fails, try using the ANSI parser directly
         let mut buffer = Buffer::from_bytes(&Path::new("a.ans"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
         buffer.buffer_type = icy_engine::BufferType::CP437;
@@ -50,6 +51,7 @@ impl TerminalWindow {
             is_capturing: false,
             current_address: None,
             settings,
+            sound_thread,
         }
     }
 
@@ -242,6 +244,64 @@ impl TerminalWindow {
         }
 
         bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
+
+        // Add Stop Playing Sound button if music is playing
+        if let Ok(mut sound_guard) = self.sound_thread.lock() {
+            sound_guard.update_state();
+            if sound_guard.is_playing() {
+                let button_text = match sound_guard.stop_button {
+                    0 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing1"),
+                    1 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing2"),
+                    2 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing3"),
+                    3 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing4"),
+                    4 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing5"),
+                    _ => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing6"),
+                };
+
+                let stop_sound_btn = button(
+                    row![
+                        text("🔇").size(14), // Music stop icon
+                        text(button_text).size(12)
+                    ]
+                    .spacing(3)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::StopSound)
+                .padding([4, 6])
+                .style(|theme: &iced::Theme, status| {
+                    use iced::widget::button::{Status, Style};
+
+                    let palette = theme.extended_palette();
+                    let base = Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.2))), // Orange tint
+                        text_color: Color::from_rgb(1.0, 0.6, 0.0),                                      // Orange text
+                        border: Border {
+                            color: Color::from_rgb(1.0, 0.5, 0.0),
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        shadow: Default::default(),
+                        snap: false,
+                    };
+
+                    match status {
+                        Status::Active => base,
+                        Status::Hovered => Style {
+                            background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.3))),
+                            ..base
+                        },
+                        Status::Pressed => Style {
+                            background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.4))),
+                            ..base
+                        },
+                        Status::Disabled => base,
+                    }
+                });
+
+                bar_content = bar_content.push(stop_sound_btn);
+                bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
+            }
+        }
 
         if self.is_capturing {
             let stop_capture_btn = button(

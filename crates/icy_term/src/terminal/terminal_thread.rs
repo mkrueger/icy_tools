@@ -1,17 +1,18 @@
 use crate::ScreenMode;
+use crate::util::SoundThread;
+use directories::UserDirs;
 use icy_engine::editor::EditState;
 use icy_engine::{BufferParser, CallbackAction, TextAttribute};
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection},
-    protocol::{TransferProtocolType, TransferState},
+    protocol::{Protocol, TransferProtocolType, TransferState},
     raw::RawConnection,
     serial::Serial,
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
 };
-use log::{debug, error, trace, warn};
-use std::backtrace;
+use log::{debug, error, trace};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -40,6 +41,8 @@ pub enum TerminalEvent {
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
     Error(String),
+    PlayMusic(icy_engine::ansi::sound::AnsiMusic),
+    Beep,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +56,9 @@ pub struct ConnectionConfig {
     pub password: Option<String>,
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
+
+    pub music_option: icy_engine::ansi::MusicOption,
+    pub screen_mode: ScreenMode,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +144,13 @@ impl TerminalThread {
                 _ = interval.tick() => {
                     // Read from connection if connected
                     if self.connection.is_some() {
+                        // Handle ongoing file transfers
+                        if let Some(transfer) = &mut self.current_transfer {
+                            if !transfer.is_finished {
+                                continue; // Skip normal reading during transfers
+                            }
+                        }
+
                         if poll_interval >= 10 {
                             poll_interval = 0;
                             if let Some(conn) = &mut self.connection {
@@ -263,6 +276,7 @@ impl TerminalThread {
 
         self.connection = Some(connection);
         self.connection_time = Some(Instant::now());
+        self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
 
         let _ = self.event_tx.send(TerminalEvent::Connected);
         debug!("Connected successfully");
@@ -456,8 +470,11 @@ impl TerminalThread {
                     self.process_data(s.as_bytes()).await;
                 }
             }
-            CallbackAction::Beep => {
-                // Optional: send an event for UI beep
+            icy_engine::CallbackAction::PlayMusic(music) => {
+                let _ = self.event_tx.send(TerminalEvent::PlayMusic(music));
+            }
+            icy_engine::CallbackAction::Beep => {
+                let _ = self.event_tx.send(TerminalEvent::Beep);
             }
             CallbackAction::ResizeTerminal(width, height) => {
                 // Avoid async recursion by calling sync helper
@@ -473,8 +490,12 @@ impl TerminalThread {
             match prot.initiate_send(&mut **conn, &files).await {
                 Ok(state) => {
                     self.current_transfer = Some(state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state));
-                    // TODO: Handle actual transfer
+                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone()));
+
+                    // Run the file transfer
+                    if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
+                        let _ = self.event_tx.send(TerminalEvent::Error(format!("Transfer failed: {}", e)));
+                    }
                 }
                 Err(e) => {
                     let _ = self.event_tx.send(TerminalEvent::Error(format!("Failed to start upload: {}", e)));
@@ -492,14 +513,57 @@ impl TerminalThread {
                         state.recieve_state.file_name = name;
                     }
                     self.current_transfer = Some(state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state));
-                    // TODO: Handle actual transfer
+                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone()));
+
+                    // Run the file transfer
+                    if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
+                        let _ = self.event_tx.send(TerminalEvent::Error(format!("Transfer failed: {}", e)));
+                    }
                 }
                 Err(e) => {
                     let _ = self.event_tx.send(TerminalEvent::Error(format!("Failed to start download: {}", e)));
                 }
             }
         }
+    }
+
+    async fn run_file_transfer(&mut self, prot: &mut dyn Protocol, mut transfer_state: TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let instant = Instant::now();
+        let mut last_progress_update = Instant::now();
+
+        while !transfer_state.is_finished {
+            // Check for cancel command
+            if let Ok(command) = self.command_rx.try_recv() {
+                if matches!(command, TerminalCommand::CancelTransfer) {
+                    transfer_state.is_finished = true;
+                    if let Some(conn) = &mut self.connection {
+                        prot.cancel_transfer(&mut **conn).await?;
+                    }
+                    break;
+                }
+            }
+
+            // Update transfer
+            if let Some(conn) = &mut self.connection {
+                prot.update_transfer(&mut **conn, &mut transfer_state).await?;
+
+                // Send progress updates every 500ms
+                if last_progress_update.elapsed() > Duration::from_millis(500) {
+                    self.current_transfer = Some(transfer_state.clone());
+                    let _ = self.event_tx.send(TerminalEvent::TransferProgress(transfer_state.clone()));
+                    last_progress_update = Instant::now();
+                }
+            }
+        }
+
+        // Copy downloaded files to the download directory
+        copy_downloaded_files(&mut transfer_state)?;
+
+        self.current_transfer = Some(transfer_state.clone());
+        let _ = self.event_tx.send(TerminalEvent::TransferCompleted(transfer_state));
+        self.current_transfer = None;
+
+        Ok(())
     }
 }
 
@@ -517,4 +581,40 @@ pub fn create_terminal_thread(
     );
 
     TerminalThread::spawn(edit_state, parser)
+}
+
+fn copy_downloaded_files(transfer_state: &mut TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(dirs) = UserDirs::new() {
+        if let Some(upload_location) = dirs.download_dir() {
+            let mut lines = Vec::new();
+            for (name, path) in &transfer_state.recieve_state.finished_files {
+                let mut dest = upload_location.join(name);
+
+                let mut i = 1;
+                let new_name = PathBuf::from(name);
+                while dest.exists() {
+                    if let Some(stem) = new_name.file_stem() {
+                        if let Some(ext) = new_name.extension() {
+                            dest = dest.with_file_name(format!("{}.{}.{}", stem.to_string_lossy(), i, ext.to_string_lossy()));
+                        } else {
+                            dest = dest.with_file_name(format!("{}.{}", stem.to_string_lossy(), i));
+                        }
+                    }
+                    i += 1;
+                }
+                std::fs::copy(&path, &dest)?;
+                std::fs::remove_file(&path)?;
+                lines.push(format!("File copied to: {}", dest.display()));
+            }
+            for line in lines {
+                transfer_state.recieve_state.log_info(line);
+            }
+        } else {
+            error!("Failed to get user download directory");
+        }
+    } else {
+        error!("Failed to get user directories");
+    }
+
+    Ok(())
 }
