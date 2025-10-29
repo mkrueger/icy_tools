@@ -18,7 +18,12 @@ struct CRTUniforms {
     curvature_y: f32,
     enable_curvature: f32,
 
-    _pad: [f32; 3],
+    scanline_thickness: f32,
+    scanline_sharpness: f32,
+    scanline_phase: f32,
+    enable_scanlines: f32,
+
+    _pad: [f32; 1], // 15 floats + 1 pad = 16 floats (64 bytes)
 }
 
 // Define your shader primitive - store rendered data, not references
@@ -323,6 +328,13 @@ impl shader::Primitive for TerminalShader {
         let curv_y = if use_curv { (100.0 - self.monitor_settings.curvature_y) / 10.0 } else { 0.0 };
         let enable_curvature = if use_curv { 1.0 } else { 0.0 };
 
+        // Scanline values (only active if enabled)
+        let use_scan = self.monitor_settings.use_scanlines;
+        let scanline_thickness = if use_scan { self.monitor_settings.scanline_thickness } else { 0.5 };
+        let scanline_sharpness = if use_scan { self.monitor_settings.scanline_sharpness } else { 0.5 };
+        let scanline_phase = if use_scan { self.monitor_settings.scanline_phase } else { 0.0 };
+        let enable_scanlines = if use_scan { 1.0 } else { 0.0 };
+
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
             brightness: brightness_mul,
@@ -336,7 +348,12 @@ impl shader::Primitive for TerminalShader {
             curvature_y: curv_y,
             enable_curvature,
 
-            _pad: [0.0; 3],
+            scanline_thickness,
+            scanline_sharpness,
+            scanline_phase,
+            enable_scanlines,
+
+            _pad: [0.0; 1],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

@@ -174,7 +174,9 @@ pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorS
                     slider_row_owned("Sharpness".to_string(), s.scanline_sharpness * 100.0, 0.0..=100.0, |v| {
                         MonitorSettingsMessage::ScanlineSharpnessChanged(v / 100.0)
                     }),
-                    slider_row_owned("Phase".to_string(), s.scanline_phase, 0.0..=1.0, MonitorSettingsMessage::ScanlinePhaseChanged),
+                    slider_row_owned("Phase".to_string(), s.scanline_phase * 100.0, 0.0..=100.0, |v| {
+                        MonitorSettingsMessage::ScanlinePhaseChanged(v / 100.0)
+                    }),
                 ]
                 .spacing(6)
                 .into()
