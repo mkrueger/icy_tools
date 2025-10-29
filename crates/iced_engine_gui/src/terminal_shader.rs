@@ -23,7 +23,10 @@ struct CRTUniforms {
     scanline_phase: f32,
     enable_scanlines: f32,
 
-    _pad: [f32; 1], // 15 floats + 1 pad = 16 floats (64 bytes)
+    noise_level: f32,
+    enable_noise: f32,
+
+    _pad: [f32; 3], // total floats: 20 (80 bytes, multiple of 16)
 }
 
 // Define your shader primitive - store rendered data, not references
@@ -335,6 +338,16 @@ impl shader::Primitive for TerminalShader {
         let scanline_phase = if use_scan { self.monitor_settings.scanline_phase } else { 0.0 };
         let enable_scanlines = if use_scan { 1.0 } else { 0.0 };
 
+        // Noise values (only active if enabled)
+        let use_noise = self.monitor_settings.use_noise;
+        // Assuming UI noise_level 0..100
+        let nl = if use_noise {
+            (self.monitor_settings.noise_level / 100.0).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let enable_noise = if use_noise { 1.0 } else { 0.0 };
+
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
             brightness: brightness_mul,
@@ -353,7 +366,10 @@ impl shader::Primitive for TerminalShader {
             scanline_phase,
             enable_scanlines,
 
-            _pad: [0.0; 1],
+            noise_level: nl,
+            enable_noise,
+
+            _pad: [0.0; 3],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

@@ -19,7 +19,11 @@ struct Uniforms {
     scanline_sharpness: f32,
     scanline_phase: f32,
     enable_scanlines: f32,
+    noise_level: f32,
+    enable_noise: f32,
     pad0: f32,
+    pad1: f32,
+    pad2: f32,
 }
 
 struct MonitorColor {
@@ -109,6 +113,29 @@ fn apply_scanlines(color_in: vec3<f32>, tex_coord: vec2<f32>) -> vec3<f32> {
     return color_in * mul;
 }
 
+fn rand(p: vec2<f32>) -> f32 {
+    // Simple hash-based pseudo-random; deterministic per frame, animated via time
+    let h = dot(p + uniforms.time * 0.37, vec2<f32>(12.9898, 78.233));
+    return fract(sin(h) * 43758.5453);
+}
+
+fn apply_noise(color_in: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+    if (uniforms.enable_noise < 0.5 || uniforms.noise_level <= 0.00001) {
+        return color_in;
+    }
+    // Two samples for a bit more variation
+    let n1 = rand(uv * 1.0);
+    let n2 = rand(uv * 7.13 + vec2<f32>(uniforms.time * 0.11, uniforms.time * 0.07));
+    let n = (n1 + n2) * 0.5;       // 0..1
+    let grain = (n - 0.5) * 2.0;   // -1..1
+    // Scale noise level; reduce influence on very dark pixels (simulate phosphor response)
+    let luma = dot(color_in, vec3<f32>(0.299, 0.587, 0.114));
+    let attenuation = mix(0.6, 1.0, luma); // darker areas less noisy
+    let strength = uniforms.noise_level * attenuation;
+    let noisy = color_in + grain * strength * 0.15; // 0.15 base amplitude
+    return clamp(noisy, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let distorted_uv = apply_curvature(in.tex_coord);
@@ -121,6 +148,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color = adjust_color(tex_color.rgb);
 
     color = apply_scanlines(color, distorted_uv);
+
+    color = apply_noise(color, distorted_uv);
 
     if (uniforms.monitor_type < 0.5) {
         return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), tex_color.a);
