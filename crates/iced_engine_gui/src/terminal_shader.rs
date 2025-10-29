@@ -1,4 +1,4 @@
-use crate::{Message, MonitorSettings, Terminal};
+use crate::{Message, MonitorSettings, MonitorType, Terminal};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::TextPane;
@@ -195,7 +195,7 @@ impl shader::Primitive for TerminalShader {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: iced::wgpu::TextureFormat::Rgba8Unorm,
                 usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
@@ -214,7 +214,7 @@ impl shader::Primitive for TerminalShader {
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
                         usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_SRC,
                         view_formats: &[],
                     },
@@ -297,10 +297,9 @@ impl shader::Primitive for TerminalShader {
             light: f32,
             blur: f32,
             resolution: [f32; 2],
-            texture_size: [f32; 2],
-            scale: f32,
             use_filter: f32,
             monitor_type: f32,
+            _pad: [f32; 2], // pad to 16‑byte multiple (total 16 floats = 64 bytes)
         }
 
         let monitor_color = match self.monitor_settings.monitor_type {
@@ -356,10 +355,9 @@ impl shader::Primitive for TerminalShader {
                 0.0
             },
             resolution: [scaled_w, scaled_h],
-            texture_size: [term_w, term_h],
-            scale: display_scale,
             use_filter: if self.monitor_settings.use_filter { 1.0 } else { 0.0 },
             monitor_type: self.monitor_settings.monitor_type.to_index() as f32,
+            _pad: [0.0, 0.0],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
@@ -486,6 +484,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         let elapsed = self.time.elapsed().as_secs_f32();
+
         TerminalShader {
             terminal_rgba: rgba_data,
             terminal_size: size,

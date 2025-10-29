@@ -31,9 +31,7 @@ impl<'a> TerminalView<'a> {
     }
 
     pub fn show_with_effects(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
-        // Always use shader if we need color conversion OR CRT effects
-        if settings.use_filter || settings.monitor_type != crate::MonitorType::Color {
-            // Wrap the shader in a container that fills available space
+        if !matches!(term.edit_state.lock().unwrap().get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
             iced::widget::container(crate::terminal_shader::create_crt_shader(term, settings)).into()
         } else {
             // Only use direct rendering for Color mode with no filter
@@ -158,90 +156,36 @@ impl<'a> TerminalView<'a> {
             size: icy_engine::Size::new(buffer_width, buffer_height),
         };
 
-        let blink_on = true;
-        let (img_size, rgba_data) = buffer.render_to_rgba(rect, blink_on);
+        // Render buffer to RGBA using bitmap fonts
+        let blink_on = true; // TODO: Add blink animation support
+        let (term_size, rgba_data) = buffer.render_to_rgba(rect, blink_on);
 
-        // Compute uniform (float) scale fitting the available bounds.
-        let scale_x = bounds.width / img_size.width as f32;
-        let scale_y = bounds.height / img_size.height as f32;
-        let uniform_scale = scale_x.min(scale_y);
+        let term_w = term_size.width.max(1) as f32;
+        let term_h = term_size.height.max(1) as f32;
+        let avail_w = bounds.width.max(1.0) as f32;
+        let avail_h = bounds.height.max(1.0) as f32;
 
-        // Integer scale for crisp pixelated enlargement (>=1).
-        let int_scale = uniform_scale.floor().max(1.0);
+        let uniform_scale = (avail_w / term_w).min(avail_h / term_h);
+        let display_scale = uniform_scale.floor().max(1.0);
 
-        // If we are not actually scaling up (scale < 2 and floor == 1) or the scale is already integer,
-        // just use existing path (single texture draw) to avoid extra allocation.
-        let use_integer_upscale = int_scale > 1.0 && (uniform_scale - int_scale).abs() > f32::EPSILON;
+        let scaled_w = term_w * display_scale;
+        let scaled_h = term_h * display_scale;
 
-        let (final_handle, scaled_width_f, scaled_height_f, effective_scale) = if use_integer_upscale {
-            // Perform nearest-neighbor replication.
-            let src_w = img_size.width as usize;
-            let src_h = img_size.height as usize;
-            let s = int_scale as usize;
-            let dst_w = src_w * s;
-            let dst_h = src_h * s;
+        let offset_x = bounds.x as f32 + (avail_w - scaled_w) / 2.0;
+        let offset_y = bounds.y as f32 + (avail_h - scaled_h) / 2.0;
 
-            // Guard against excessive memory use (optional threshold).
-            if dst_w * dst_h > 16_000_000 {
-                // Fallback to original (too large).
-                let handle = iced::widget::image::Handle::from_rgba(img_size.width as u32, img_size.height as u32, rgba_data.clone());
-                (
-                    handle,
-                    (img_size.width as f32) * uniform_scale,
-                    (img_size.height as f32) * uniform_scale,
-                    uniform_scale,
-                )
-            } else {
-                let mut enlarged = vec![0u8; dst_w * dst_h * 4];
-                for sy in 0..src_h {
-                    for sx in 0..src_w {
-                        let src_idx = (sy * src_w + sx) * 4;
-                        let pixel = &rgba_data[src_idx..src_idx + 4];
-                        // Replicate into s x s block.
-                        let base_y = sy * s;
-                        let base_x = sx * s;
-                        for oy in 0..s {
-                            let row_start = (base_y + oy) * dst_w;
-                            for ox in 0..s {
-                                let dst_idx = (row_start + base_x + ox) * 4;
-                                enlarged[dst_idx..dst_idx + 4].copy_from_slice(pixel);
-                            }
-                        }
-                    }
-                }
+        let handle = iced::widget::image::Handle::from_rgba(term_size.width as u32, term_size.height as u32, rgba_data.clone());
 
-                let handle = iced::widget::image::Handle::from_rgba(dst_w as u32, dst_h as u32, enlarged);
-
-                (
-                    handle,
-                    dst_w as f32, // draw 1:1
-                    dst_h as f32,
-                    int_scale, // caret & font scale
-                )
-            }
-        } else {
-            // Original path (still may look slightly smoothed when scale not integer).
-            let scaled_w = img_size.width as f32 * uniform_scale;
-            let scaled_h = img_size.height as f32 * uniform_scale;
-            let handle = iced::widget::image::Handle::from_rgba(img_size.width as u32, img_size.height as u32, rgba_data.clone());
-            (handle, scaled_w, scaled_h, uniform_scale)
+        let rect = Rectangle {
+            x: (offset_x).floor(),
+            y: (offset_y).floor(),
+            width: scaled_w,
+            height: scaled_h,
         };
-
-        // Center inside bounds
-        let offset_x = (bounds.width - scaled_width_f) / 2.0;
-        let offset_y = (bounds.height - scaled_height_f) / 2.0;
-
-        frame.draw_image(
-            Rectangle {
-                x: bounds.x + offset_x,
-                y: bounds.y + offset_y,
-                width: scaled_width_f,
-                height: scaled_height_f,
-            },
-            &final_handle,
-        );
+        frame.draw_image(rect, &handle);
 
         // Caret overlay
+        /*
         let caret_pos = state.get_caret().get_position();
         if let Some(font) = buffer.get_font(0) {
             let font_width = font.size.width as f32;
@@ -258,7 +202,7 @@ impl<'a> TerminalView<'a> {
                 );
                 frame.fill(&caret_rect, Color::from_rgba(1.0, 1.0, 1.0, 0.8));
             }
-        }
+        }*/
     }
 
     fn draw_unicode_buffer(&self, frame: &mut Frame, bounds: Rectangle, state: &icy_engine::editor::EditState) {

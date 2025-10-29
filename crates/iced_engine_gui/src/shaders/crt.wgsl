@@ -15,8 +15,8 @@ struct Uniforms {
     light: f32,
     blur: f32,
     resolution: vec2<f32>,
-    use_filter: f32,  // 1.0 if filter enabled, 0.0 otherwise
-    monitor_type: f32, // Enum as float (0=Color, 1=Grayscale, 2=Amber, etc.)
+    use_filter: f32,
+    monitor_type: f32,
 }
 
 struct MonitorColor {
@@ -42,47 +42,41 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-// Apply monitor type color conversion
-fn applyMonitorColor(rgb: vec3<f32>) -> vec3<f32> {
-    // Color mode: unchanged
-    if (uniforms.monitor_type < 0.5) {
-        return rgb;
-    }
-
-    // Calculate luminance using perceptual weights
-    let gray = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
-    
-    // Grayscale mode: just return luminance
-    if (uniforms.monitor_type < 1.5) {
-        return vec3<f32>(gray);
-    }
-
-    // Monochrome tint modes (amber/green/etc.)
-    let tint = monitor_color.color.rgb;
-    
-    // Find the maximum component to normalize against
-    let max_comp = max(tint.r, max(tint.g, tint.b));
-    let norm_tint = select(vec3<f32>(1.0), tint / max_comp, max_comp > 0.0001);
-    
-    // Apply tint to grayscale value
-    var colored = gray * norm_tint;
-    
-    // Boost brightness significantly for monochrome monitors
-    // Old CRT phosphors were actually quite bright
-    colored = colored * 1.5;
-    
-    // Add a slight base glow to simulate phosphor minimum brightness
-    colored = colored + norm_tint * 0.05;
-    
-    // Soft clamp to avoid harsh cutoff while preserving bright areas
-    colored = colored / (colored + vec3<f32>(1.0)) * 2.0;
-    
-    return colored;
-}
-
 fn postEffects(rgb: vec3<f32>) -> vec4<f32> {
-    var color = applyMonitorColor(rgb);
-
+    var color = rgb;
+    
+    // ONLY apply monitor color conversion for non-color modes
+    // Color mode = 0.0, so skip conversion
+    if (uniforms.monitor_type >= 1.0) {
+        // Calculate luminance using perceptual weights
+        let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
+        
+        // Grayscale mode (1.0): just return luminance
+        if (uniforms.monitor_type < 1.5) {
+            color = vec3<f32>(gray);
+        } else {
+            // Monochrome tint modes (2.0+)
+            let tint = monitor_color.color.rgb;
+            
+            // Find the maximum component to normalize against
+            let max_comp = max(tint.r, max(tint.g, tint.b));
+            let norm_tint = select(vec3<f32>(1.0), tint / max_comp, max_comp > 0.0001);
+            
+            // Apply tint to grayscale value
+            color = gray * norm_tint;
+            
+            // Boost brightness for monochrome monitors
+            color = color * 1.5;
+            
+            // Add a slight base glow to simulate phosphor minimum brightness
+            color = color + norm_tint * 0.05;
+            
+            // Soft clamp to avoid harsh cutoff while preserving bright areas
+            color = color / (color + vec3<f32>(1.0)) * 2.0;
+        }
+    }
+    
+    
     if (uniforms.use_filter > 0.5) {
         // Apply gamma correction
         color = pow(color, vec3<f32>(uniforms.gamma));
@@ -98,12 +92,12 @@ fn postEffects(rgb: vec3<f32>) -> vec4<f32> {
             mix(vec3<f32>(luminance), color * uniforms.brightness, uniforms.saturation),
             uniforms.contrast
         );
-    }
-    
-    // Final brightness compensation for monochrome modes
-    if (uniforms.monitor_type > 1.5) {
-        // Increase overall brightness and add a subtle glow
-        color = color * 1.1 + monitor_color.color.rgb * 0.02;
+        
+        // Final brightness compensation for monochrome modes
+        if (uniforms.monitor_type > 1.5) {
+            // Increase overall brightness and add a subtle glow
+            color = color * 1.1 + monitor_color.color.rgb * 0.02;
+        }
     }
     
     // Ensure we don't exceed valid range
@@ -137,103 +131,67 @@ fn gaussian(uv: vec2<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Handle filter disabled case - direct rendering
+    if (uniforms.use_filter < 0.5) {
+        let tex_color = textureSample(terminal_texture, terminal_sampler, in.tex_coord);
+        // For non-filter mode, still apply monitor type conversion if needed
+        if (uniforms.monitor_type < 0.5) {
+            // Color mode: pass through unchanged
+            return tex_color;
+        } else if (uniforms.monitor_type < 1.5) {
+            // Grayscale mode
+            let gray = dot(tex_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+            return vec4<f32>(vec3<f32>(gray), tex_color.a);
+        } else {
+            // Monochrome tint modes
+            let gray = dot(tex_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+            let tint = monitor_color.color.rgb;
+            let max_comp = max(tint.r, max(tint.g, tint.b));
+            let norm_tint = select(vec3<f32>(1.0), tint / max_comp, max_comp > 0.0001);
+            return vec4<f32>(gray * norm_tint * 1.5, tex_color.a);
+        }
+    }
+
+    // Apply CRT distortion for curved monitors
     var uv = in.tex_coord;
-    
-    // Clamp UV coordinates to [0, 1] range
-    uv = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
-    
-    // Only apply CRT effects if filter is enabled
-    if (uniforms.use_filter > 0.5) {
-        // Apply CRT screen curvature
-        let st = uv - vec2<f32>(0.5);
-        let d = length(st * 0.5 * st * 0.5 * uniforms.curvature);
-        uv = st * d + st + vec2<f32>(0.5);
+    if (uniforms.curvature > 0.0) {
+        // Apply barrel distortion
+        let centered = (uv - 0.5) * 2.0;
+        let r2 = dot(centered, centered);
+        let distortion = 1.0 + uniforms.curvature * r2;
+        uv = (centered / distortion) * 0.5 + 0.5;
         
-        // Ensure UV coordinates stay within bounds after curvature
+        // Check if we're outside the distorted area
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             return vec4<f32>(0.0, 0.0, 0.0, 1.0);
         }
     }
-    
-    // Calculate distance for effects
-    let st = uv - vec2<f32>(0.5);
-    let d = length(st * 0.5 * st * 0.5 * uniforms.curvature);
-    
-    // Border mask - fade edges to black for curved screen effect
-    var border_mask = 1.0;
-    if (uniforms.use_filter > 0.5 && uniforms.curvature > 0.0) {
-        let edge_dist = max(abs(st.x), abs(st.y));
-        border_mask = max(0.0, 1.0 - 2.0 * edge_dist);
-        border_mask = min(border_mask * 200.0, 1.0);
-    }
-    
-    // Sample the terminal texture with blur/glow
-    var col = vec3<f32>(0.0);
-    if (uniforms.use_filter > 0.5 && uniforms.blur > 0.0) {
-        col = gaussian(uv);
+
+    // Apply Gaussian blur if needed
+    var tex_color: vec3<f32>;
+    if (uniforms.blur > 0.0) {
+        tex_color = gaussian(uv);
     } else {
-        col = textureSample(terminal_texture, terminal_sampler, uv).rgb;
+        tex_color = textureSample(terminal_texture, terminal_sampler, uv).rgb;
     }
-    
-    // Apply vignette/light falloff - less aggressive for monochrome
-    if (uniforms.use_filter > 0.5 && uniforms.light > 0.0) {
-        var light_strength = uniforms.light;
-        // Reduce vignette effect for monochrome modes
-        if (uniforms.monitor_type > 1.5) {
-            light_strength *= 0.5;
-        }
-        let light_falloff = 1.0 - min(1.0, d * light_strength);
-        col *= light_falloff;
+
+    // Apply post-processing effects (scanlines, color adjustments, etc.)
+    var color = postEffects(tex_color);
+
+    // Apply scanlines
+    if (uniforms.scan_line_intensity > 0.0) {
+        let pixel_y = in.tex_coord.y * uniforms.resolution.y;
+        let line = sin(pixel_y * 3.14159265) * 0.5 + 0.5;
+        let scanline = mix(1.0, line, uniforms.scan_line_intensity);
+        color = vec4<f32>(color.rgb * scanline, color.a);
     }
-    
-    // Scanlines effect - adjusted for monochrome
-    if (uniforms.use_filter > 0.5 && uniforms.scan_line_intensity > 0.0) {
-        let y = uv.y;
-        
-        var show_scanlines = 1.0;
-        if (uniforms.resolution.y < 360.0) {
-            show_scanlines = 0.0;
-        }
-        
-        // Reduce scanline darkness for monochrome modes
-        var scanline_strength = uniforms.scan_line_intensity;
-        if (uniforms.monitor_type > 1.5) {
-            scanline_strength *= 0.6; // Make scanlines less aggressive
-        }
-        
-        let s = 1.0 - smoothstep(320.0, 1440.0, uniforms.resolution.y) + 1.0;
-        let scanline = cos(y * uniforms.resolution.y * s) * scanline_strength;
-        col = abs(show_scanlines - 1.0) * col + show_scanlines * (col - col * scanline);
-        
-        // RGB separation effect - gentler for monochrome
-        var rgb_sep_strength = 1.0;
-        if (uniforms.monitor_type > 1.5) {
-            rgb_sep_strength = 0.5; // Reduce RGB separation darkening
-        }
-        let rgb_sep = (0.01 + ceil((uv.x * uniforms.resolution.x) % 3.0) * (0.995 - 1.01)) * show_scanlines * rgb_sep_strength;
-        col *= 1.0 - rgb_sep;
-    }
-    
-    // Apply border mask
-    col *= border_mask;
-    
-    // Add phosphor glow effect - stronger for monochrome
-    if (uniforms.use_filter > 0.5 && uniforms.bloom > 0.0) {
-        let glow_offset = vec2<f32>(1.0 / uniforms.resolution.x, 0.0);
-        let glow = textureSample(terminal_texture, terminal_sampler, uv + glow_offset).rgb;
-        var bloom_strength = uniforms.bloom * 0.3;
-        if (uniforms.monitor_type > 1.5) {
-            bloom_strength *= 1.5; // More glow for phosphor monitors
-        }
-        col = mix(col, glow, bloom_strength);
-    }
-    
-    // Add screen flicker - subtler for readability
+
+    // Simulate screen edge darkening (vignette)
     if (uniforms.use_filter > 0.5) {
-        let flicker = 1.0 + sin(uniforms.time * 60.0) * 0.005; // Reduced from 0.01
-        col *= flicker;
+        let centered = abs(in.tex_coord - 0.5) * 2.0;
+        let vignette = 1.0 - dot(centered, centered) * uniforms.light;
+        color = vec4<f32>(color.rgb * vignette, color.a);
     }
-    
-    // Apply final post-processing
-    return postEffects(col);
+
+    return color;
 }
