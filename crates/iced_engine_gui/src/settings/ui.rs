@@ -220,7 +220,11 @@ pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorS
             } else {
                 Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
             },
-            slider_row_owned("Sync Wobble".to_string(), s.sync_wobble, 0.0..=100.0, MonitorSettingsMessage::SyncWobbleChanged),
+            if s.use_noise {
+                slider_row_owned("Sync Wobble".to_string(), s.sync_wobble, 0.0..=100.0, MonitorSettingsMessage::SyncWobbleChanged)
+            } else {
+                Into::<Element<'_, MonitorSettingsMessage>>::into(Space::new())
+            }
         ]
         .spacing(10)
         .into(),

@@ -136,7 +136,7 @@ fn apply_noise(color_in: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     // Scale noise level; reduce influence on very dark pixels (simulate phosphor response)
     let luma = dot(color_in, vec3<f32>(0.299, 0.587, 0.114));
     let attenuation = mix(0.6, 1.0, luma); // darker areas less noisy
-    let strength = uniforms.noise_level * 2.0 * attenuation;
+    let strength = uniforms.noise_level * 1.2 * attenuation;
     let noisy = color_in + grain * strength * 0.15; // 0.15 base amplitude
     return clamp(noisy, vec3<f32>(0.0), vec3<f32>(1.0));
 }
@@ -169,62 +169,51 @@ fn apply_bloom(uv: vec2<f32>) -> vec3<f32> {
 
     // Sample the original texture (before effects)
     let center_color = textureSample(terminal_texture, terminal_sampler, uv).rgb;
-    
-    // Apply color adjustments to match what we're displaying
     let adjusted = adjust_color(center_color);
-    let luma = dot(adjusted, vec3<f32>(0.299, 0.587, 0.114));
-
-    // Threshold check
-    let t = uniforms.bloom_threshold;
-    if (luma < t) {
-        return vec3<f32>(0.0);
-    }
+    let center_luma = dot(adjusted, vec3<f32>(0.299, 0.587, 0.114));
 
     // Radius in pixels
-    let radius = max(uniforms.bloom_radius, 1.0);
+    let radius = max(uniforms.bloom_radius, 0.5);
     let px = radius / uniforms.resolution;
 
-    // Accumulate bright samples
+    // Accumulate bright samples in larger area
     var glow = vec3<f32>(0.0);
     var total_weight = 0.0;
 
-    // 9-tap kernel (center + 8 surrounding)
-    for (var dy: f32 = -1.0; dy <= 1.0; dy = dy + 1.0) {
-        for (var dx: f32 = -1.0; dx <= 1.0; dx = dx + 1.0) {
+    // Larger kernel: 25-tap (5x5 grid)
+    for (var dy: f32 = -2.0; dy <= 2.0; dy = dy + 1.0) {
+        for (var dx: f32 = -2.0; dx <= 2.0; dx = dx + 1.0) {
             let offset = vec2<f32>(dx, dy) * px;
             let sample_uv = clamp(uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
             
-            // Sample and adjust
             let sample_color = textureSample(terminal_texture, terminal_sampler, sample_uv).rgb;
             let sample_adjusted = adjust_color(sample_color);
             let sample_luma = dot(sample_adjusted, vec3<f32>(0.299, 0.587, 0.114));
             
-            // Only accumulate bright pixels
-            if (sample_luma > t) {
-                // Distance-based weight
-                let dist = length(vec2<f32>(dx, dy));
-                let weight = exp(-dist * dist * 0.5); // Gaussian falloff
-                
-                // Extract excess brightness
-                let excess = (sample_luma - t) / (1.0 - t);
-                glow = glow + sample_adjusted * excess * weight;
-                total_weight = total_weight + weight;
-            }
+            // Distance-based weight (Gaussian)
+            let dist = length(vec2<f32>(dx, dy));
+            let weight = exp(-dist * dist * 0.3); // Wider falloff
+            
+            // Soft threshold: accumulate all pixels, weight by how bright they are
+            let threshold_blend = smoothstep(uniforms.bloom_threshold - 0.1, uniforms.bloom_threshold, sample_luma);
+            
+            glow = glow + sample_adjusted * threshold_blend * weight;
+            total_weight = total_weight + weight * threshold_blend;
         }
     }
 
     if (total_weight > 0.001) {
         glow = glow / total_weight;
-        // Scale by intensity and add slight color boost
-        return glow * uniforms.bloom_intensity * 0.5;
+        // Much stronger multiplier
+        return glow * uniforms.bloom_intensity * 1.5;
     }
 
     return vec3<f32>(0.0);
 }
 
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Apply wobble & curvature to display UV
     let wobbled_uv = apply_sync_wobble(in.tex_coord);
     let distorted_uv = apply_curvature(wobbled_uv);
 
@@ -232,17 +221,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
 
+    // Sample from undistorted UV for bloom (before curvature warping)
     let tex_color = textureSample(terminal_texture, terminal_sampler, distorted_uv);
     var color = adjust_color(tex_color.rgb);
 
-    // Calculate bloom from original bright areas
+    // Calculate bloom from original undistorted coordinates
     let bloom_glow = apply_bloom(distorted_uv);
     
     // Apply post-processing effects
     color = apply_scanlines(color, distorted_uv);
     color = apply_noise(color, distorted_uv);
     
-    // Add bloom on top
+    // Add bloom on top (much more visible now)
     color = color + bloom_glow;
     
     // Final clamp before monitor type conversion
