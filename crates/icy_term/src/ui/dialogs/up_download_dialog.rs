@@ -164,12 +164,7 @@ impl FileTransferDialogState {
                 self.create_stat_card("🔍", fl!(crate::LANGUAGE_LOADER, "transfer-protocol"), state.protocol_name.clone()),
             ];
 
-            // Log section (if there are entries)
-            let log_section = if transfer_info.has_log_entries() {
-                Some(self.create_log_section(transfer_info))
-            } else {
-                None
-            };
+            let log_section = Some(self.create_log_section(transfer_info));
 
             // Action buttons
             let button_label = if state.is_finished {

@@ -40,7 +40,7 @@ pub enum TerminalEvent {
     Disconnected(Option<String>), // Optional error message
     DataReceived(Vec<u8>),
     BufferUpdated,
-    TransferStarted(TransferState),
+    TransferStarted(TransferState, bool),
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
     Error(String),
@@ -603,7 +603,7 @@ impl TerminalThread {
             match prot.initiate_send(&mut **conn, &files).await {
                 Ok(state) => {
                     self.current_transfer = Some(state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone()));
+                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone(), false));
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
@@ -626,7 +626,7 @@ impl TerminalThread {
                         state.recieve_state.file_name = name;
                     }
                     self.current_transfer = Some(state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone()));
+                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone(), true));
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {

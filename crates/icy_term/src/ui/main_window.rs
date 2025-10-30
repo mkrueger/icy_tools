@@ -701,8 +701,8 @@ impl MainWindow {
                 self.terminal_window.scene.cache.clear();
                 Task::none()
             }
-            TerminalEvent::TransferStarted(_state) => {
-                self.state.mode = MainWindowMode::FileTransfer(true);
+            TerminalEvent::TransferStarted(_state, is_download) => {
+                self.state.mode = MainWindowMode::FileTransfer(is_download);
                 self.file_transfer_dialog.transfer_state = Some(_state);
                 Task::none()
             }
