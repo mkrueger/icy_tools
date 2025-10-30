@@ -51,8 +51,8 @@ arboard = { version = "3.6.1" }
 anyhow = "1.0.100"
 webbrowser = "1.0.6"
 
-iced = { git = "https://github.com/iced-rs/iced.git" }
-iced_aw = { git = "https://github.com/iced-rs/iced_aw", default-features = 	false, features = ["menu"] }
+iced = "0.14.0-dev"
+#iced_aw = { version = "0.13", default-features = 	false, features = ["menu"] }
 iced_graphics = { git = "https://github.com/iced-rs/iced.git" }
 iced_core = { git = "https://github.com/iced-rs/iced.git" }
 
@@ -83,3 +83,4 @@ strip = true        # Strip symbols from binary*
 
 [patch.crates-io]
 iced.git = "https://github.com/iced-rs/iced.git"
+iced_aw.git = "https://github.com/iced-rs/iced_aw.git"

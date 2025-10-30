@@ -82,6 +82,7 @@ pub enum Message {
     ToggleFullscreen,
     OpenLink(String),
     Copy,
+    Paste,
     ShiftPressed(bool),
     CloseSplashScreen,
 }
@@ -620,6 +621,29 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::Paste => {
+                match self.clipboard.get_text() {
+                    Ok(text) => {
+                        // Convert text to bytes using the current unicode converter
+                        let mut data: Vec<u8> = Vec::new();
+                        for ch in text.chars() {
+                            let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                            data.push(converted_byte as u8);
+                        }
+
+                        // Send the data to the terminal
+                        if !data.is_empty() {
+                            let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+                            log::debug!("Pasted {} characters from clipboard", text.len());
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("Failed to get clipboard text: {}", err);
+                    }
+                }
+                Task::none()
+            }
+
             Message::ShiftPressed(pressed) => {
                 self.shift_pressed_during_selection = pressed;
                 Task::none()
@@ -807,6 +831,17 @@ impl MainWindow {
                                 }
                                 if s.to_lowercase() == "e" {
                                     return Some(Message::ShowExportDialog);
+                                }
+                            }
+                        }
+
+                        if modifiers.control() {
+                            if let keyboard::Key::Character(s) = &key {
+                                if s.to_lowercase() == "c" {
+                                    return Some(Message::Copy);
+                                }
+                                if s.to_lowercase() == "p" {
+                                    return Some(Message::Paste);
                                 }
                             }
                         }
