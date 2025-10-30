@@ -538,13 +538,10 @@ impl TerminalThread {
                     // Clear command buffer
                     self.local_command_buffer.clear();
                 }
-                32..=126 => {
+                _ => {
                     // Printable ASCII character - add to buffer and echo
                     self.local_command_buffer.push(byte);
                     self.process_data(&[byte]).await;
-                }
-                _ => {
-                    // Ignore all other characters
                 }
             }
         }

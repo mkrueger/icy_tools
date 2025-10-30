@@ -532,8 +532,9 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         let mut caret_pos_opt = None;
         let mut font_w = 0usize;
         let mut font_h = 0usize;
-
+        let no_scrollback;
         if let Ok(edit_state) = self.term.edit_state.try_lock() {
+            no_scrollback = edit_state.scrollback_offset == 0;
             let buffer = edit_state.get_display_buffer();
 
             // Capture caret & font metrics
@@ -560,10 +561,11 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             rgba_data = data;
         } else {
             size = (bounds.width as u32, bounds.height as u32);
+            no_scrollback = true;
         }
 
         // Caret overlay only if we have the metrics & want it visible this phase
-        if _state.caret_blink.is_on() {
+        if _state.caret_blink.is_on() && no_scrollback {
             if let Some(caret_pos) = caret_pos_opt {
                 if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                     let line_bytes = (size.0 as usize) * 4;

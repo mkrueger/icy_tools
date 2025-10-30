@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    get_unicode_converter,
     ui::{
         dialogs::find_dialog,
         export_dialog,
@@ -14,7 +15,7 @@ use crate::{
 };
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
-use icy_engine::Position;
+use icy_engine::{Position, UnicodeConverter};
 use icy_net::{ConnectionType, protocol::TransferState};
 use tokio::sync::mpsc;
 
@@ -72,6 +73,7 @@ pub enum Message {
     // Terminal thread events
     TerminalEvent(TerminalEvent),
     SendData(Vec<u8>),
+    SendString(String),
     None,
     StopSound,
     ScrollTerminal(usize),
@@ -100,6 +102,8 @@ pub struct MainWindow {
     is_connected: bool,
     connection_time: Option<Instant>,
     current_address: Option<Address>,
+
+    unicode_converter: Box<dyn UnicodeConverter>,
 
     // Capture state
     capture_file: Option<PathBuf>,
@@ -172,6 +176,8 @@ impl MainWindow {
 
             capture_file: None,
             captured_data: Vec::new(),
+
+            unicode_converter: get_unicode_converter(&icy_net::telnet::TerminalEmulation::Ansi),
 
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
@@ -267,11 +273,11 @@ impl MainWindow {
 
                 let screen_mode = address.get_screen_mode();
                 screen_mode.apply_to_edit_state(&mut self.terminal_window.scene.edit_state.lock().unwrap());
+                self.unicode_converter = get_unicode_converter(&address.terminal_type);
                 self.settings_dialog.original_options.monitor_settings.selection_fg = screen_mode.get_selection_fg();
                 self.settings_dialog.original_options.monitor_settings.selection_bg = screen_mode.get_selection_bg();
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
-
                 self.current_address = Some(address);
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
@@ -286,6 +292,18 @@ impl MainWindow {
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
+
+            Message::SendString(s) => {
+                self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(0);
+                let mut data: Vec<u8> = Vec::new();
+                for ch in s.chars() {
+                    let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                    data.push(converted_byte as u8);
+                }
+                let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+                Task::none()
+            }
+
             Message::TerminalEvent(event) => self.handle_terminal_event(event),
             Message::CaptureDialog(msg) => {
                 if let Some(close_msg) = self.capture_dialog.update(msg) {
@@ -667,30 +685,31 @@ impl MainWindow {
                 _ => None,
             })
         } else if matches!(self.state.mode, MainWindowMode::ShowTerminal) {
-            iced::event::listen_with(|event, _status: iced::event::Status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
-                    if modifiers.alt() {
-                        if let keyboard::Key::Character(s) = &key {
-                            if s.to_lowercase() == "f" {
-                                return Some(Message::ShowFindDialog);
-                            }
-                            if s.to_lowercase() == "e" {
-                                return Some(Message::ShowExportDialog);
+            iced::event::listen_with(move |event, _status: iced::event::Status, _| {
+                match event {
+                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                        if modifiers.alt() {
+                            if let keyboard::Key::Character(s) = &key {
+                                if s.to_lowercase() == "f" {
+                                    return Some(Message::ShowFindDialog);
+                                }
+                                if s.to_lowercase() == "e" {
+                                    return Some(Message::ShowExportDialog);
+                                }
                             }
                         }
-                    }
 
-                    // Try to map the key with modifiers using the key map
-                    if let Some(bytes) = Self::map_key_event_to_bytes(&key, modifiers) {
-                        Some(Message::SendData(bytes))
-                    } else if let Some(text) = text {
-                        // If no special mapping, send the text as-is
-                        Some(Message::SendData(text.as_bytes().to_vec()))
-                    } else {
-                        None
+                        // Try to map the key with modifiers using the key map
+                        if let Some(bytes) = Self::map_key_event_to_bytes(&key, modifiers) {
+                            Some(Message::SendData(bytes))
+                        } else if let Some(text) = text {
+                            Some(Message::SendString(text.to_string()))
+                        } else {
+                            None
+                        }
                     }
+                    _ => None,
                 }
-                _ => None,
             })
         } else if matches!(self.state.mode, MainWindowMode::ShowFindDialog) {
             // Handle find dialog keyboard shortcuts
