@@ -10,6 +10,15 @@ screen_mode = "Vga(80, 25)"
 comment = "Last german Amiga BBS. Icy Term WHQ."
 
 [[addresses]]
+system_name = "20forbeers.com:1337"
+is_favored = true
+address = "20forbeers.com:1337"
+protocol = "Telnet"
+terminal_type = "Ansi"
+screen_mode = "Vga(80, 25)"
+comment = "One of the most popular BBS systems."
+
+[[addresses]]
 system_name = "BBS Retrocampus"
 is_favored = false
 address = "BBS.RETROCAMPUS.COM:6510"
