@@ -81,6 +81,10 @@ pub struct DialingDirectoryState {
     pub show_passwords: bool,
     pub pending_delete: Option<usize>,
     pub quick_connect_address: Address,
+
+    // Double-click detection
+    last_click_time: Option<std::time::Instant>,
+    last_clicked_index: Option<Option<usize>>,
 }
 
 impl DialingDirectoryState {
@@ -93,6 +97,8 @@ impl DialingDirectoryState {
             show_passwords: false,
             pending_delete: None,
             quick_connect_address: Address::default(),
+            last_click_time: None,
+            last_clicked_index: None,
         }
     }
 
@@ -854,7 +860,27 @@ impl DialingDirectoryState {
     pub(crate) fn update(&mut self, msg: DialingDirectoryMsg) -> Task<Message> {
         match msg {
             DialingDirectoryMsg::SelectAddress(idx) => {
+                // Double-click detection
+                let now = std::time::Instant::now();
+                let is_double_click = if let Some(last_time) = self.last_click_time {
+                    if let Some(last_idx) = self.last_clicked_index {
+                        last_idx == idx && now.duration_since(last_time).as_millis() < 250
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                self.last_click_time = Some(now);
+                self.last_clicked_index = Some(idx);
                 self.selected_bbs = idx;
+
+                if is_double_click {
+                    // Trigger connect on double-click
+                    return self.update(DialingDirectoryMsg::ConnectSelected);
+                }
+
                 Task::none()
             }
 

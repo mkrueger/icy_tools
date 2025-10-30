@@ -15,7 +15,7 @@ use crate::{
 };
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
-use icy_engine::{Position, UnicodeConverter};
+use icy_engine::{AttributedChar, Position, UnicodeConverter};
 use icy_net::{ConnectionType, protocol::TransferState, telnet::TerminalEmulation};
 use tokio::sync::mpsc;
 
@@ -28,6 +28,7 @@ use crate::{
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
+    SplashScreen,
     ShowTerminal,
     #[default]
     ShowDialingDirectory,
@@ -82,6 +83,7 @@ pub enum Message {
     OpenLink(String),
     Copy,
     ShiftPressed(bool),
+    CloseSplashScreen,
 }
 
 pub struct MainWindow {
@@ -161,7 +163,7 @@ impl MainWindow {
 
         Self {
             state: MainWindowState {
-                mode: MainWindowMode::ShowTerminal,
+                mode: MainWindowMode::SplashScreen,
                 #[cfg(test)]
                 options_written: false,
             },
@@ -199,7 +201,6 @@ impl MainWindow {
     }
 
     pub fn title(&self) -> String {
-        println!("title called");
         if self.is_connected {
             if let Some(connection_time) = self.connection_time {
                 let d = Instant::now().duration_since(connection_time);
@@ -285,7 +286,16 @@ impl MainWindow {
                 }
 
                 let screen_mode = address.get_screen_mode();
-                screen_mode.apply_to_edit_state(&mut self.terminal_window.scene.edit_state.lock().unwrap());
+                if let Ok(mut state) = self.terminal_window.scene.edit_state.lock() {
+                    let (buffer, caret, _) = state.get_buffer_and_caret_mut();
+                    buffer.clear_screen(0, caret);
+                    unsafe {
+                        // Clear all sixel layers on connect
+                        buffer.layers.set_len(1);
+                    }
+                    caret.set_is_visible(true);
+                    screen_mode.apply_to_edit_state(&mut state);
+                }
                 self.unicode_converter = get_unicode_converter(&address.terminal_type);
                 self.settings_dialog.original_options.monitor_settings.selection_fg = screen_mode.get_selection_fg();
                 self.settings_dialog.original_options.monitor_settings.selection_bg = screen_mode.get_selection_bg();
@@ -614,6 +624,25 @@ impl MainWindow {
                 self.shift_pressed_during_selection = pressed;
                 Task::none()
             }
+            Message::CloseSplashScreen => {
+                self.state.mode = MainWindowMode::ShowTerminal;
+                if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                    let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
+                    buffer.clear_screen(0, caret);
+                    caret.set_is_visible(true);
+
+                    // Write "IcyTerm ready." message
+                    let ready_msg = format!("IcyTerm {} ready.", crate::VERSION.to_string());
+                    for ch in ready_msg.chars() {
+                        buffer.print_char(0, caret, AttributedChar::new(ch, icy_engine::TextAttribute::default()));
+                    }
+                    caret.set_position(Position::new(0, 1));
+
+                    // Clear the cache to force redraw
+                    self.terminal_window.scene.cache.clear();
+                }
+                Task::none()
+            }
         }
     }
 
@@ -703,7 +732,7 @@ impl MainWindow {
         };
 
         match &self.state.mode {
-            MainWindowMode::ShowTerminal => self.terminal_window.view(settings),
+            MainWindowMode::ShowTerminal | MainWindowMode::SplashScreen => self.terminal_window.view(settings),
             MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options),
             MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view(settings)),
             MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, self.terminal_window.view(settings)),
@@ -813,6 +842,11 @@ impl MainWindow {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_dialog::ExportMsg::Cancel)),
                     _ => None,
                 },
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::SplashScreen) {
+            iced::event::listen_with(|event, _status, _| match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseSplashScreen),
                 _ => None,
             })
         } else {

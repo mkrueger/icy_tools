@@ -20,7 +20,7 @@ const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
 const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
-const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.ans");
+const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.icy");
 
 pub struct TerminalWindow {
     pub scene: Terminal,
@@ -37,12 +37,14 @@ impl TerminalWindow {
         // Create a default EditState wrapped in Arc<Mutex>
         let edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
         // If parsing fails, try using the ANSI parser directly
-        let mut buffer = Buffer::from_bytes(&Path::new("a.ans"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
+        let mut buffer = Buffer::from_bytes(&Path::new("a.icy"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
         buffer.buffer_type = icy_engine::BufferType::CP437;
         buffer.is_terminal_buffer = true;
         buffer.terminal_state.fixed_size = true;
 
         edit_state.lock().unwrap().set_buffer(buffer);
+        edit_state.lock().unwrap().get_caret_mut().set_is_visible(false);
+
         Self {
             scene: Terminal::new(edit_state),
             is_connected: false,
@@ -67,8 +69,7 @@ impl TerminalWindow {
                 iced_engine_gui::Message::RipCommand(_cmd) => {
                     // TODO: Handle RIP command
                     Message::None
-                }
-                // _ => Message::None,
+                } // _ => Message::None,
             }
         });
 

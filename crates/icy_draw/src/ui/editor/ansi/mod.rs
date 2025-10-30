@@ -15,7 +15,7 @@ use i18n_embed_fl::fl;
 use icy_engine::{
     AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane, UnicodeConverter, attribute,
     editor::{AtomicUndoGuard, UndoState},
-    util::{BUFFER_DATA, pop_cliboard_text, pop_data, pop_sixel_image, push_data},
+    util::{BUFFER_DATA, pop_cliboard_text, pop_data, pop_sixel_image},
 };
 
 use icy_engine_gui::{BufferView, CaretShape, TerminalCalc, show_terminal_area};
@@ -113,7 +113,7 @@ impl ClipboardHandler for AnsiEditor {
             ctx.copy_text(text);
         }*/
 
-        if let Some(data) = self.buffer_view.lock().get_edit_state_mut().get_clipboard_data() {
+        if let Some(_data) = self.buffer_view.lock().get_edit_state_mut().get_clipboard_data() {
             // TODO: CLIPBOARD HANDLING
             // push_data(&Clipboard::new().unwrap(), BUFFER_DATA, &data, None)?;
             /*

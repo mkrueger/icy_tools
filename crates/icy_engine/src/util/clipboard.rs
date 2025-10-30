@@ -84,7 +84,7 @@ pub fn pop_sixel_image() -> Option<Sixel> {
 #[derive(Debug, Clone)]
 enum ClipboardError {
     ErrorInSetImage(String),
-    Error(String),
+    _Error(String),
 }
 
 impl std::fmt::Display for ClipboardError {
@@ -93,7 +93,7 @@ impl std::fmt::Display for ClipboardError {
             ClipboardError::ErrorInSetImage(err) => {
                 write!(f, "Error in setting image to clipboard: {err}")
             }
-            ClipboardError::Error(err) => write!(f, "Error creating clipboard: {err}"),
+            ClipboardError::_Error(err) => write!(f, "Error creating clipboard: {err}"),
         }
     }
 }

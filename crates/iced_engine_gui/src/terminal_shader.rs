@@ -554,12 +554,13 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     type State = CRTShaderState;
     type Primitive = TerminalShader;
 
-    fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, bounds: Rectangle) -> Self::Primitive {
+    fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, bounds: Rectangle) -> Self::Primitive {
         let mut rgba_data = Vec::new();
         let size;
 
         // Local variables to allow caret overlay after lock is released
         let mut caret_pos_opt = None;
+        let mut caret_visible = false;
         let mut font_w = 0usize;
         let mut font_h = 0usize;
         let no_scrollback;
@@ -569,6 +570,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
             // Capture caret & font metrics
             caret_pos_opt = Some(edit_state.get_caret().get_position());
+            caret_visible = edit_state.get_caret().is_visible();
             if let Some(font) = buffer.get_font(0) {
                 font_w = font.size.width as usize;
                 font_h = font.size.height as usize;
@@ -582,7 +584,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             // Pass blink_on to actually animate ANSI blinking attributes
             let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
                 rect,
-                blink_on: _state.character_blink.is_on(),
+                blink_on: state.character_blink.is_on(),
                 selection: edit_state.get_selection(),
                 selection_fg: Some(self.monitor_settings.selection_fg.clone()),
                 selection_bg: Some(self.monitor_settings.selection_bg.clone()),
@@ -595,7 +597,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         // Caret overlay only if we have the metrics & want it visible this phase
-        if _state.caret_blink.is_on() && no_scrollback {
+        if state.caret_blink.is_on() && no_scrollback && caret_visible {
             if let Some(caret_pos) = caret_pos_opt {
                 if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                     let line_bytes = (size.0 as usize) * 4;

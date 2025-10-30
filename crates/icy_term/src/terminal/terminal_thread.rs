@@ -16,6 +16,7 @@ use icy_net::{
 use log::{debug, error, trace};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
 
@@ -486,6 +487,30 @@ impl TerminalThread {
                 }
             }
             *state.get_caret_mut() = caret;
+
+            let result = state.get_buffer_mut();
+            // transform sixels to layers
+            while !result.sixel_threads.is_empty() {
+                thread::sleep(Duration::from_millis(50));
+                let _ = result.update_sixel_threads();
+            }
+
+            while !result.layers[0].sixels.is_empty() {
+                if let Some(mut sixel) = result.layers[0].sixels.pop() {
+                    let size = sixel.get_size();
+                    let font_size = result.get_font_dimensions();
+                    let size = icy_engine::Size::new(
+                        (size.width + font_size.width - 1) / font_size.width,
+                        (size.height + font_size.height - 1) / font_size.height,
+                    );
+                    let mut layer = icy_engine::Layer::new("Sixel", size);
+                    layer.role = icy_engine::Role::Image;
+                    layer.set_offset(sixel.position);
+                    sixel.position = icy_engine::Position::default();
+                    layer.sixels.push(sixel);
+                    result.layers.push(layer);
+                }
+            }
         }
 
         for action in actions {
@@ -517,14 +542,11 @@ impl TerminalThread {
                     self.process_data(b"\r\n").await;
 
                     // Enter pressed - process command
-                    let command = String::from_utf8_lossy(&self.local_command_buffer);
+                    let command = String::from_utf8_lossy(&self.local_command_buffer).trim().to_ascii_uppercase();
                     // Process AT command
-                    let response = if command.trim().to_uppercase().starts_with("AT") {
+                    let response = if command.is_empty() || command.starts_with("AT") {
                         // Valid AT command - for now just return OK
                         "OK\r\n"
-                    } else if command.trim().is_empty() {
-                        // Empty command - no response
-                        ""
                     } else {
                         // Invalid command
                         "ERROR\r\n"

@@ -351,9 +351,9 @@ impl Buffer {
 
     pub fn clear_screen(&mut self, layer: usize, caret: &mut Caret) {
         caret.pos = Position::default();
+        self.stop_sixel_threads();
         let layer = &mut self.layers[layer];
         layer.clear();
-        self.stop_sixel_threads();
         self.terminal_state.cleared_screen = true;
         if self.is_terminal_buffer {
             self.set_size(self.terminal_state.get_size());
