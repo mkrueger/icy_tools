@@ -14,9 +14,9 @@ use crate::{
     util::SoundThread,
 };
 use i18n_embed_fl::fl;
-use iced::{Element, Event, Task, Theme, keyboard};
+use iced::{Element, Event, Task, Theme, keyboard, task};
 use icy_engine::{Position, UnicodeConverter};
-use icy_net::{ConnectionType, protocol::TransferState};
+use icy_net::{ConnectionType, protocol::TransferState, telnet::TerminalEmulation};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -78,6 +78,7 @@ pub enum Message {
     StopSound,
     ScrollTerminal(usize),
     ScrollRelative(i32),
+    ToggleFullscreen,
 }
 
 pub struct MainWindow {
@@ -118,6 +119,8 @@ pub struct MainWindow {
     pub show_find_dialog: bool,
     show_disconnect: bool,
 }
+
+static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
 
 impl MainWindow {
     pub fn new() -> Self {
@@ -191,6 +194,7 @@ impl MainWindow {
     }
 
     pub fn title(&self) -> String {
+        println!("title called");
         if self.is_connected {
             if let Some(connection_time) = self.connection_time {
                 let d = Instant::now().duration_since(connection_time);
@@ -270,6 +274,10 @@ impl MainWindow {
                     auto_login: self.settings_dialog.original_options.iemsi.autologin,
                     login_exp: address.auto_login.clone(),
                 };
+
+                unsafe {
+                    TERM_EMULATION = address.terminal_type;
+                }
 
                 let screen_mode = address.get_screen_mode();
                 screen_mode.apply_to_edit_state(&mut self.terminal_window.scene.edit_state.lock().unwrap());
@@ -531,6 +539,17 @@ impl MainWindow {
                 state.set_scroll_position(new_offset as usize);
                 Task::none()
             }
+
+            Message::ToggleFullscreen => {
+                self._is_fullscreen_mode = !self._is_fullscreen_mode;
+                let mode = if self._is_fullscreen_mode {
+                    iced::window::Mode::Fullscreen
+                } else {
+                    iced::window::Mode::Windowed
+                };
+
+                iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
+            }
         }
     }
 
@@ -700,7 +719,7 @@ impl MainWindow {
                         }
 
                         // Try to map the key with modifiers using the key map
-                        if let Some(bytes) = Self::map_key_event_to_bytes(&key, modifiers) {
+                        if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, modifiers) {
                             Some(Message::SendData(bytes))
                         } else if let Some(text) = text {
                             Some(Message::SendString(text.to_string()))
@@ -713,7 +732,7 @@ impl MainWindow {
             })
         } else if matches!(self.state.mode, MainWindowMode::ShowFindDialog) {
             // Handle find dialog keyboard shortcuts
-            iced::event::listen_with(|event, _status, _| match event {
+            iced::event::listen_with(|event, _status: iced::event::Status, _| match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::FindDialog(find_dialog::FindDialogMsg::CloseDialog)),
                     keyboard::Key::Named(keyboard::key::Named::PageUp) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindPrev)),
@@ -739,17 +758,29 @@ impl MainWindow {
         // Add a subscription for terminal events (polling)
         let terminal_sub = iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::TerminalEvent(TerminalEvent::BufferUpdated));
 
-        iced::Subscription::batch([keyboard_sub, terminal_sub])
+        // Global F11 listener (independent of current mode)
+        let fullscreen_sub = iced::event::listen_with(|event, _status, _| match event {
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::F11),
+                ..
+            }) => Some(Message::ToggleFullscreen),
+            _ => None,
+        });
+
+        iced::Subscription::batch([keyboard_sub, terminal_sub, fullscreen_sub])
     }
 
     pub fn get_mode(&self) -> MainWindowMode {
         self.state.mode.clone()
     }
 
-    fn map_key_event_to_bytes(key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Option<Vec<u8>> {
-        // Get the appropriate key map based on terminal type
-        // For now, we'll use ANSI as default, but this should be configurable
-        let key_map = iced_engine_gui::key_map::ANSI_KEY_MAP;
+    fn map_key_event_to_bytes(terminal_type: TerminalEmulation, key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Option<Vec<u8>> {
+        let key_map = match terminal_type {
+            icy_net::telnet::TerminalEmulation::PETscii => iced_engine_gui::key_map::C64_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::ViewData | icy_net::telnet::TerminalEmulation::Mode7 => iced_engine_gui::key_map::VIDEOTERM_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::AtariST | icy_net::telnet::TerminalEmulation::ATAscii => iced_engine_gui::key_map::ATASCII_KEY_MAP,
+            _ => iced_engine_gui::key_map::ANSI_KEY_MAP,
+        };
 
         // Use the lookup_key function from the key_map module
         iced_engine_gui::key_map::lookup_key(key, modifiers, key_map)
