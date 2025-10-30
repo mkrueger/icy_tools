@@ -90,8 +90,6 @@ pub struct MonitorSettings {
     pub saturation: f32,
 
     pub background_effect: BackgroundEffect,
-    pub selection_fg: Color,
-    pub selection_bg: Color,
 
     pub use_pixel_perfect_scaling: bool,
 
@@ -113,6 +111,12 @@ pub struct MonitorSettings {
     pub use_noise: bool,
     pub noise_level: f32,
     pub sync_wobble: f32,
+
+    #[serde(skip)]
+    pub selection_fg: Color,
+
+    #[serde(skip)]
+    pub selection_bg: Color,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

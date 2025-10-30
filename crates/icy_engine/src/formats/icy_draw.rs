@@ -375,13 +375,14 @@ impl OutputFormat for IcyDraw {
         if image_empty {
             writer.write_image_data(&[0, 0, 0, 0]).unwrap();
         } else {
-            let (_, data) = buf.render_to_rgba(
-                crate::Rectangle {
+            let (_, data) = buf.render_to_rgba(&crate::RenderOptions {
+                rect: crate::Rectangle {
                     start: Position::new(0, first_line),
                     size: Size::new(buf.get_width(), last_line - first_line),
                 },
-                true,
-            );
+                blink_on: true,
+                ..Default::default()
+            });
             writer.write_image_data(&data).unwrap();
         }
         writer.finish().unwrap();

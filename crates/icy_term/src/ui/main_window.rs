@@ -118,7 +118,7 @@ pub struct MainWindow {
 
 impl MainWindow {
     pub fn new() -> Self {
-        let options = match Options::load_options() {
+        let mut options = match Options::load_options() {
             Ok(options) => options,
             Err(e) => {
                 log::error!("Error reading dialing_directory: {e}");
@@ -142,6 +142,9 @@ impl MainWindow {
         let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
         let terminal_window = terminal_window::TerminalWindow::new(sound_thread.clone());
         let edit_state = terminal_window.scene.edit_state.clone();
+
+        options.monitor_settings.selection_fg = ScreenMode::Vga(80, 25).get_selection_fg();
+        options.monitor_settings.selection_bg = ScreenMode::Vga(80, 25).get_selection_bg();
 
         // Create terminal thread
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_state.clone(), icy_net::telnet::TerminalEmulation::Ansi);
@@ -268,7 +271,8 @@ impl MainWindow {
 
                 let screen_mode = address.get_screen_mode();
                 screen_mode.apply_to_edit_state(&mut self.terminal_window.scene.edit_state.lock().unwrap());
-
+                self.settings_dialog.original_options.monitor_settings.selection_fg = screen_mode.get_selection_fg();
+                self.settings_dialog.original_options.monitor_settings.selection_bg = screen_mode.get_selection_bg();
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
 

@@ -15,7 +15,7 @@ use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
 use crate::paint::HalfBlock;
 use crate::{
-    EngineResult, FORMATS, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    Color, EngineResult, FORMATS, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
     UnicodeConverter, attribute, parsers,
 };
 
@@ -474,6 +474,18 @@ pub struct BufferFeatures {
     pub use_extended_attributes: bool,
 }
 
+#[derive(Default)]
+pub struct RenderOptions {
+    pub rect: Rectangle,
+
+    pub blink_on: bool,
+
+    pub selection: Option<crate::Selection>,
+
+    pub selection_fg: Option<Color>,
+    pub selection_bg: Option<Color>,
+}
+
 impl Buffer {
     pub fn new(size: impl Into<Size>) -> Self {
         let mut font_table = HashMap::new();
@@ -892,11 +904,11 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if no font is set at index 0.
-    pub fn render_to_rgba_buffer(&self, rect: Rectangle, blink_on: bool, pixels: &mut Vec<u8>) -> Size {
+    pub fn render_to_rgba_buffer(&self, options: &RenderOptions, pixels: &mut Vec<u8>) -> Size {
         let font_size = self.get_font(0).unwrap().size;
 
-        let px_width = rect.get_width() * font_size.width;
-        let px_height = rect.get_height() * font_size.height;
+        let px_width = options.rect.get_width() * font_size.width;
+        let px_height = options.rect.get_height() * font_size.height;
         let line_bytes = px_width * 4;
         let required_size = (line_bytes * px_height) as usize;
 
@@ -913,10 +925,12 @@ impl Buffer {
         for i in 0..self.palette.len() {
             palette_cache[i] = self.palette.get_rgb(i as u32);
         }
+        let draw_selection = options.selection.is_some();
 
-        for y in 0..rect.get_height() {
-            for x in 0..rect.get_width() {
-                let ch = self.get_char((x + rect.start.x, y + rect.start.y));
+        for y in 0..options.rect.get_height() {
+            for x in 0..options.rect.get_width() {
+                let pos = Position::new(x + options.rect.start.x, y + options.rect.start.y);
+                let ch = self.get_char(pos);
                 let font = self.get_font(ch.get_font_page()).unwrap();
 
                 let mut fg = if ch.attribute.is_bold() && ch.attribute.get_foreground() < 8 {
@@ -925,12 +939,37 @@ impl Buffer {
                     ch.attribute.get_foreground()
                 };
 
-                if ch.attribute.is_blinking() && !blink_on {
+                let bg = ch.attribute.get_background();
+
+                if ch.attribute.is_blinking() && !options.blink_on {
                     fg = ch.attribute.get_background();
                 }
 
-                let (f_r, f_g, f_b) = palette_cache[fg as usize];
-                let (b_r, b_g, b_b) = palette_cache[ch.attribute.get_background() as usize];
+                // Check if this position is selected
+                let is_selected = draw_selection && options.selection.as_ref().map(|sel| sel.is_inside(pos)).unwrap_or(false);
+
+                let (f_r, f_g, f_b, b_r, b_g, b_b) = if is_selected {
+                    // Apply selection colors
+                    match (&options.selection_fg, &options.selection_bg) {
+                        (Some(sel_fg), Some(sel_bg)) => {
+                            // Use explicit selection colors
+                            let (f_r, f_g, f_b) = sel_fg.get_rgb();
+                            let (b_r, b_g, b_b) = sel_bg.get_rgb();
+                            (f_r, f_g, f_b, b_r, b_g, b_b)
+                        }
+                        _ => {
+                            // Swap foreground and background
+                            let (f_r, f_g, f_b) = palette_cache[bg as usize];
+                            let (b_r, b_g, b_b) = palette_cache[fg as usize];
+                            (f_r, f_g, f_b, b_r, b_g, b_b)
+                        }
+                    }
+                } else {
+                    // Normal colors
+                    let (f_r, f_g, f_b) = palette_cache[fg as usize];
+                    let (b_r, b_g, b_b) = palette_cache[bg as usize];
+                    (f_r, f_g, f_b, b_r, b_g, b_b)
+                };
 
                 if let Some(glyph) = font.get_glyph(ch.ch) {
                     let cur_font_size = font.size;
@@ -992,9 +1031,9 @@ impl Buffer {
         // Render sixels on top
         for layer in &self.layers {
             for sixel in &layer.sixels {
-                let sx = layer.get_offset().x + sixel.position.x - rect.start.x;
+                let sx = layer.get_offset().x + sixel.position.x - options.rect.start.x;
                 let sx_px = sx * font_size.width;
-                let sy = layer.get_offset().y + sixel.position.y - rect.start.y;
+                let sy = layer.get_offset().y + sixel.position.y - options.rect.start.y;
                 let sy_pix = sy * font_size.height;
                 let sixel_line_bytes = (sixel.get_width() * 4) as usize;
 
@@ -1022,9 +1061,9 @@ impl Buffer {
 
     /// Original render_to_rgba that allocates a new buffer
     /// Consider using render_to_rgba_buffer with a reusable buffer for better performance
-    pub fn render_to_rgba(&self, rect: Rectangle, blink_on: bool) -> (Size, Vec<u8>) {
+    pub fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
         let mut pixels = Vec::new();
-        let size = self.render_to_rgba_buffer(rect, blink_on, &mut pixels);
+        let size = self.render_to_rgba_buffer(options, &mut pixels);
         (size, pixels)
     }
 

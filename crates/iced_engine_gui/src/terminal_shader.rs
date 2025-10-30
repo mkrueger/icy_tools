@@ -549,7 +549,13 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             };
 
             // Pass blink_on to actually animate ANSI blinking attributes
-            let (img_size, data) = buffer.render_to_rgba(rect, _state.character_blink.is_on());
+            let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
+                rect,
+                blink_on: _state.character_blink.is_on(),
+                selection: edit_state.get_selection(),
+                selection_fg: Some(self.monitor_settings.selection_fg.clone()),
+                selection_bg: Some(self.monitor_settings.selection_bg.clone()),
+            });
             size = (img_size.width as u32, img_size.height as u32);
             rgba_data = data;
         } else {
