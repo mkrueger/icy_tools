@@ -449,20 +449,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::InitiateFileTransfer { protocol, is_download } => {
-                if is_download {
-                    let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
-                } else {
-                    let files = rfd::FileDialog::new()
-                        .set_title("Select Files to Upload")
-                        .set_directory(self.initial_upload_directory.as_ref().and_then(|p| p.to_str()).unwrap_or("."))
-                        .pick_files();
-
-                    if let Some(files) = files {
-                        let _ = self.terminal_tx.send(TerminalCommand::StartUpload(protocol, files));
-                    }
-                }
-
-                self.state.mode = MainWindowMode::FileTransfer(is_download);
+                self.initiate_file_transfer(protocol, is_download);
                 Task::none()
             }
             Message::CancelFileTransfer => {
@@ -670,6 +657,24 @@ impl MainWindow {
         }
     }
 
+    fn initiate_file_transfer(&mut self, protocol: icy_net::protocol::TransferProtocolType, is_download: bool) {
+        if is_download {
+            let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
+        } else {
+            let files = rfd::FileDialog::new()
+                .set_title("Select Files to Upload")
+                .set_directory(self.initial_upload_directory.as_ref().and_then(|p| p.to_str()).unwrap_or("."))
+                .pick_files();
+
+            if let Some(files) = files {
+                let _ = self.terminal_tx.send(TerminalCommand::StartUpload(protocol, files));
+                self.state.mode = MainWindowMode::FileTransfer(is_download);
+            } else {
+                self.state.mode = MainWindowMode::ShowTerminal;
+            }
+        }
+    }
+
     fn handle_terminal_event(&mut self, event: TerminalEvent) -> Task<Message> {
         match event {
             TerminalEvent::Connected => {
@@ -729,8 +734,8 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            TerminalEvent::AutoTransferTriggered(_, _, _) => {
-                self.state.mode = MainWindowMode::FileTransfer(true);
+            TerminalEvent::AutoTransferTriggered(protocol, is_download, _) => {
+                self.initiate_file_transfer(protocol, is_download);
                 Task::none()
             }
             TerminalEvent::EmsiLogin(isi) => {
