@@ -790,7 +790,7 @@ impl std::fmt::Display for FlowControlOption {
 struct ThemeOption(iced::Theme);
 
 impl ThemeOption {
-    const ALL: [ThemeOption; 22] = [
+    const _ALL: [ThemeOption; 22] = [
         ThemeOption(iced::Theme::Light),
         ThemeOption(iced::Theme::Dark),
         ThemeOption(iced::Theme::Dracula),

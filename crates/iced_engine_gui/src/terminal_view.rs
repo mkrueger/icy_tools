@@ -11,23 +11,20 @@ use crate::{MonitorSettings, Terminal};
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    SetCaret(Position),
-    BufferChanged,
-    Resize(i32, i32),
+    Scroll(i32),
 }
 
 pub struct TerminalView<'a> {
     term: &'a Terminal,
-    settings: MonitorSettings,
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn new(term: &'a Terminal, settings: MonitorSettings) -> Self {
-        Self { term, settings }
+    pub fn new(term: &'a Terminal) -> Self {
+        Self { term }
     }
 
-    pub fn show(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
-        Element::new(Self { term, settings })
+    pub fn show(term: &'a Terminal) -> Element<'a, Message> {
+        Element::new(Self { term })
     }
 
     pub fn show_with_effects(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
@@ -35,7 +32,7 @@ impl<'a> TerminalView<'a> {
             iced::widget::container(crate::terminal_shader::create_crt_shader(term, settings)).into()
         } else {
             // Only use direct rendering for Color mode with no filter
-            Element::new(Self { term, settings })
+            Element::new(Self { term })
         }
     }
 
@@ -246,15 +243,36 @@ where
     ) {
         if let iced::Event::Mouse(mouse_event) = event {
             if self.is_cursor_in_layout(cursor, layout) {
-                if let mouse::Event::ButtonPressed(mouse::Button::Left) = mouse_event {
-                    if let Some(position) = cursor.position() {
-                        let bounds = layout.bounds();
-                        let x = ((position.x - bounds.x) / self.term.char_width) as i32;
-                        let y = ((position.y - bounds.y) / self.term.char_height) as i32;
-                        shell.publish(Message::SetCaret(Position::new(x, y)));
+                match mouse_event {
+                    mouse::Event::WheelScrolled { delta } => {
+                        println!("Mouse wheel scrolled: {:?}", delta);
+                        if let mouse::ScrollDelta::Lines { y, .. } = delta {
+                            let lines = *y as i32;
+                            shell.publish(Message::Scroll(lines));
+                        }
                     }
+                    _ => {}
                 }
             }
+        }
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+        _renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        if let Some(cursor_position) = cursor.position() {
+            if layout.bounds().contains(cursor_position) {
+                mouse::Interaction::Text
+            } else {
+                mouse::Interaction::default()
+            }
+        } else {
+            mouse::Interaction::default()
         }
     }
 }
@@ -267,14 +285,3 @@ where
         Element::new(view)
     }
 }
-
-/*
-#[derive(Debug, Clone, Default)]
-struct TerminalViewState {
-    is_focused: bool,
-    is_dragged: bool,
-    scroll_pixels: f32,
-    keyboard_modifiers: Modifiers,
-    size: Size<f32>,
-    mouse_position_on_grid: Position,
-}*/

@@ -42,6 +42,9 @@ pub struct EditState {
 
     pub is_palette_dirty: bool,
     is_buffer_dirty: bool,
+
+    pub scrollback_buffer: Option<Buffer>,
+    pub scrollback_offset: usize,
 }
 
 pub struct AtomicUndoGuard {
@@ -111,11 +114,97 @@ impl Default for EditState {
             tool_overlay_mask,
             is_palette_dirty: false,
             is_buffer_dirty: false,
+
+            scrollback_buffer: None,
+            scrollback_offset: 0,
         }
     }
 }
 
 impl EditState {
+    pub fn get_max_scrollback_offset(&self) -> usize {
+        self.buffer.scrollback_lines.len()
+    }
+    pub fn set_scroll_position(&mut self, line: usize) {
+        self.scrollback_offset = line;
+        if line == 0 {
+            self.scrollback_buffer = None;
+            return;
+        }
+
+        // Create a new buffer with same settings as current buffer
+        let mut scroll_buffer = Buffer::new(self.buffer.get_size());
+
+        // Copy buffer settings
+        scroll_buffer.is_terminal_buffer = self.buffer.is_terminal_buffer;
+        scroll_buffer.terminal_state = self.buffer.terminal_state.clone();
+        scroll_buffer.buffer_type = self.buffer.buffer_type;
+        scroll_buffer.palette = self.buffer.palette.clone();
+
+        let viewport_height = self.buffer.terminal_state.get_height();
+        let total_scrollback_lines = self.buffer.scrollback_lines.len();
+
+        // Calculate which lines to show
+        // line = 0 means bottom (no scroll)
+        // line = total_scrollback_lines means top of scrollback
+        let start_line = total_scrollback_lines.saturating_sub(line);
+        let end_line = (start_line + viewport_height as usize).min(total_scrollback_lines + self.buffer.layers[0].lines.len());
+
+        // Clear the default layer and resize if needed
+        scroll_buffer.layers.clear();
+        scroll_buffer.layers.push(Layer::new("scrollback_view".to_string(), self.buffer.get_size()));
+
+        let mut y = 0;
+
+        // Copy lines from scrollback buffer
+        for i in start_line..total_scrollback_lines.min(end_line) {
+            if let Some(scrollback_line) = self.buffer.scrollback_lines.get(i) {
+                if y < viewport_height {
+                    // Copy the line to the scroll buffer
+                    if y >= scroll_buffer.layers[0].lines.len() as i32 {
+                        scroll_buffer.layers[0].lines.push(scrollback_line.clone());
+                    } else {
+                        scroll_buffer.layers[0].lines[y as usize] = scrollback_line.clone();
+                    }
+                    y += 1;
+                }
+            }
+        }
+
+        // If we haven't filled the viewport, add lines from the current buffer
+        let remaining_lines = viewport_height - y;
+        if remaining_lines > 0 && start_line < total_scrollback_lines {
+            // We're showing a mix of scrollback and current buffer
+            for i in 0..remaining_lines.min(self.buffer.layers[0].lines.len() as i32) {
+                if y < viewport_height {
+                    if let Some(current_line) = self.buffer.layers[0].lines.get(i as usize) {
+                        if y >= scroll_buffer.layers[0].lines.len() as i32 {
+                            scroll_buffer.layers[0].lines.push(current_line.clone());
+                        } else {
+                            scroll_buffer.layers[0].lines[y as usize] = current_line.clone();
+                        }
+                        y += 1;
+                    }
+                }
+            }
+        } else if start_line >= total_scrollback_lines {
+            // We're only showing current buffer (scrolled to bottom area)
+            let current_start = line.saturating_sub(total_scrollback_lines);
+            for i in current_start..(current_start + viewport_height as usize).min(self.buffer.layers[0].lines.len()) {
+                if let Some(current_line) = self.buffer.layers[0].lines.get(i) {
+                    if y >= scroll_buffer.layers[0].lines.len() as i32 {
+                        scroll_buffer.layers[0].lines.push(current_line.clone());
+                    } else {
+                        scroll_buffer.layers[0].lines[y as usize] = current_line.clone();
+                    }
+                    y += 1;
+                }
+            }
+        }
+
+        self.scrollback_buffer = Some(scroll_buffer);
+    }
+
     pub fn from_buffer(buffer: Buffer) -> Self {
         let mut selection_mask = SelectionMask::default();
         selection_mask.set_size(buffer.get_size());
@@ -154,6 +243,14 @@ impl EditState {
 
     pub fn get_tool_overlay_mask_mut(&mut self) -> &mut OverlayMask {
         &mut self.tool_overlay_mask
+    }
+
+    pub fn get_display_buffer(&self) -> &Buffer {
+        if let Some(ref scrollback) = self.scrollback_buffer {
+            scrollback
+        } else {
+            &self.buffer
+        }
     }
 
     pub fn get_buffer(&self) -> &Buffer {

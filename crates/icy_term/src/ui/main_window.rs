@@ -1,6 +1,5 @@
 use std::{
     path::PathBuf,
-    ptr::addr_eq,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -15,7 +14,7 @@ use crate::{
 };
 use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
-use icy_engine::{Position, editor::EditState};
+use icy_engine::Position;
 use icy_net::{ConnectionType, protocol::TransferState};
 use tokio::sync::mpsc;
 
@@ -75,6 +74,8 @@ pub enum Message {
     SendData(Vec<u8>),
     None,
     StopSound,
+    ScrollTerminal(usize),
+    ScrollRelative(i32),
 }
 
 pub struct MainWindow {
@@ -104,16 +105,14 @@ pub struct MainWindow {
     capture_file: Option<PathBuf>,
     captured_data: Vec<u8>,
 
-    screen_mode: ScreenMode,
-    is_fullscreen_mode: bool,
-    last_pos: Position,
-    shift_pressed_during_selection: bool,
-    use_rip: bool,
+    _is_fullscreen_mode: bool,
+    _last_pos: Position,
+    _shift_pressed_during_selection: bool,
+    _use_rip: bool,
 
     pub initial_upload_directory: Option<PathBuf>,
     pub show_find_dialog: bool,
     show_disconnect: bool,
-    title: String,
 }
 
 impl MainWindow {
@@ -174,15 +173,13 @@ impl MainWindow {
             capture_file: None,
             captured_data: Vec::new(),
 
-            screen_mode: ScreenMode::Default,
-            is_fullscreen_mode: false,
-            last_pos: Position::default(),
-            shift_pressed_during_selection: false,
-            use_rip: false,
+            _is_fullscreen_mode: false,
+            _last_pos: Position::default(),
+            _shift_pressed_during_selection: false,
+            _use_rip: false,
             initial_upload_directory: None,
             show_find_dialog: false,
             show_disconnect: false,
-            title: crate::DEFAULT_TITLE.to_string(),
             sound_thread,
         }
     }
@@ -237,7 +234,6 @@ impl MainWindow {
 
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
-
             Message::Connect(address) => {
                 // Send connect command to terminal thread
                 let config = ConnectionConfig {
@@ -280,34 +276,29 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
-
             Message::Disconnect => {
                 let _ = self.terminal_tx.send(TerminalCommand::Disconnect);
                 self.terminal_window.disconnect();
                 Task::none()
             }
-
             Message::SendData(data) => {
+                self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(0);
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
-
             Message::TerminalEvent(event) => self.handle_terminal_event(event),
-
             Message::CaptureDialog(msg) => {
                 if let Some(close_msg) = self.capture_dialog.update(msg) {
                     return self.update(close_msg);
                 }
                 Task::none()
             }
-
             Message::ShowIemsi(msg) => {
                 if let Some(response) = self.iemsi_dialog.update(msg) {
                     return self.update(response);
                 }
                 Task::none()
             }
-
             Message::ShowIemsiDialog => {
                 // Get IEMSI info from terminal if available
                 let iemsi_info = Some(icy_net::iemsi::EmsiISI {
@@ -324,7 +315,6 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowIEMSI;
                 Task::none()
             }
-
             Message::SettingsDialog(msg) => {
                 if let Some(close_msg) = self.settings_dialog.update(msg) {
                     let c = self.update(close_msg);
@@ -332,31 +322,26 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
             Message::CloseDialog => {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
-
             Message::ShowDialingDirectory => {
                 self.state.mode = MainWindowMode::ShowDialingDirectory;
                 Task::none()
             }
-
             Message::Upload => {
                 if self.is_connected {
                     self.state.mode = MainWindowMode::SelectProtocol(false);
                 }
                 Task::none()
             }
-
             Message::Download => {
                 if self.is_connected {
                     self.state.mode = MainWindowMode::SelectProtocol(true);
                 }
                 Task::none()
             }
-
             Message::SendLogin => {
                 if self.is_connected {
                     if let Some(address) = &self.current_address {
@@ -401,7 +386,6 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
             Message::TransferDialog(msg) => {
                 if let Some(response) = self.file_transfer_dialog.update(msg) {
                     match response {
@@ -418,12 +402,10 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
             Message::UpdateTransferState(state) => {
                 self.file_transfer_dialog.update_transfer_state(state);
                 Task::none()
             }
-
             Message::InitiateFileTransfer { protocol, is_download } => {
                 if is_download {
                     let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
@@ -441,30 +423,25 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::FileTransfer(is_download);
                 Task::none()
             }
-
             Message::CancelFileTransfer => {
                 let _ = self.terminal_tx.send(TerminalCommand::CancelTransfer);
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
-
             Message::OpenReleaseLink => {
                 if let Err(e) = webbrowser::open("https://github.com/mkrueger/icy_tools/releases") {
                     eprintln!("Failed to open release link: {}", e);
                 }
                 Task::none()
             }
-
             Message::ShowSettings => {
                 self.state.mode = MainWindowMode::ShowSettings;
                 Task::none()
             }
-
             Message::ShowCaptureDialog => {
                 self.state.mode = MainWindowMode::ShowCaptureDialog;
                 Task::none()
             }
-
             Message::StartCapture(file_name) => {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 self.capture_dialog.capture_session = true;
@@ -473,7 +450,6 @@ impl MainWindow {
                 self.captured_data.clear();
                 Task::none()
             }
-
             Message::StopCapture => {
                 self.capture_dialog.capture_session = false;
                 self.terminal_window.is_capturing = false;
@@ -491,12 +467,10 @@ impl MainWindow {
                 self.captured_data.clear();
                 Task::none()
             }
-
             Message::ShowFindDialog => {
                 self.state.mode = MainWindowMode::ShowFindDialog;
                 return self.find_dialog.focus_search_input();
             }
-
             Message::FindDialog(msg) => {
                 self.terminal_window.scene.cache.clear();
                 if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
@@ -505,7 +479,6 @@ impl MainWindow {
 
                 Task::none()
             }
-
             Message::ShowExportDialog => {
                 self.state.mode = MainWindowMode::ShowExportDialog;
                 Task::none()
@@ -522,13 +495,24 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
             Message::StopSound => {
                 self.sound_thread.lock().unwrap().clear();
                 Task::none()
             }
-
             Message::None => Task::none(),
+
+            Message::ScrollTerminal(line) => {
+                self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(line);
+                Task::none()
+            }
+            Message::ScrollRelative(lines) => {
+                let mut state = self.terminal_window.scene.edit_state.lock().unwrap();
+                let current_offset = state.scrollback_offset as i32;
+                let max_offset = state.get_max_scrollback_offset() as i32;
+                let new_offset = (current_offset + lines).clamp(0, max_offset);
+                state.set_scroll_position(new_offset as usize);
+                Task::none()
+            }
         }
     }
 
@@ -683,7 +667,7 @@ impl MainWindow {
                 _ => None,
             })
         } else if matches!(self.state.mode, MainWindowMode::ShowTerminal) {
-            iced::event::listen_with(|event, _status, _| match event {
+            iced::event::listen_with(|event, _status: iced::event::Status, _| match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
                     if modifiers.alt() {
                         if let keyboard::Key::Character(s) = &key {

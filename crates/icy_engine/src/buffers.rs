@@ -15,7 +15,7 @@ use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
 use crate::paint::HalfBlock;
 use crate::{
-    Color, EngineResult, FORMATS, Glyph, Layer, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    Color, EngineResult, FORMATS, Glyph, Layer, Line, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
     UnicodeConverter, attribute, parsers,
 };
 
@@ -248,6 +248,12 @@ pub struct Buffer {
     pub show_tags: bool,
     pub tags: Vec<Tag>,
     pub ansi_music: Vec<AnsiMusic>,
+
+    /// Scrollback buffer storing lines that scrolled off the top
+    pub scrollback_lines: VecDeque<Line>,
+
+    /// Maximum number of lines to keep in scrollback (0 = unlimited)
+    pub max_scrollback_lines: usize,
 }
 
 impl std::fmt::Debug for Buffer {
@@ -448,6 +454,17 @@ impl Buffer {
             }
         }
     }
+
+    pub fn push_to_scrollback(&mut self, line: Line) {
+        self.scrollback_lines.push_back(line);
+
+        // Trim oldest lines if we exceed the limit
+        if self.max_scrollback_lines > 0 {
+            while self.scrollback_lines.len() > self.max_scrollback_lines {
+                self.scrollback_lines.pop_front();
+            }
+        }
+    }
 }
 
 pub fn analyze_font_usage(buf: &Buffer) -> Vec<usize> {
@@ -517,6 +534,9 @@ impl Buffer {
             show_tags: true,
             tags: Vec::new(),
             ansi_music: Vec::new(),
+
+            scrollback_lines: VecDeque::new(),
+            max_scrollback_lines: 10000, // Reasonable default
         }
     }
 
@@ -847,6 +867,7 @@ impl Buffer {
         }
         Err(anyhow::anyhow!("Unknown format"))
     }
+
     /// .
     ///
     /// # Panics

@@ -5,7 +5,7 @@ use human_bytes::human_bytes;
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length, Padding, gradient,
-    widget::{Space, button, column, container, progress_bar, row, rule, scrollable, text},
+    widget::{Space, button, column, container, progress_bar, row, scrollable, text},
 };
 use icy_net::protocol::{OutputLogMessage, TransferState};
 
@@ -364,7 +364,7 @@ impl FileTransferDialogState {
         label: &'a str,
         count: usize,
         tab: LogTab,
-        text_style: Option<fn(&iced::Theme) -> text::Style>,
+        _text_style: Option<fn(&iced::Theme) -> text::Style>,
     ) -> Element<'a, crate::ui::Message> {
         let is_selected = self.selected_log == tab;
 

@@ -86,7 +86,8 @@ impl Caret {
             if buf.terminal_state.fixed_size && self.pos.y >= buf.terminal_state.get_height() {
                 line_inserted += 1;
                 if !buf.layers[current_layer].lines.is_empty() {
-                    buf.layers[current_layer].lines.remove(0);
+                    let line = buf.layers[current_layer].lines.remove(0);
+                    buf.push_to_scrollback(line);
                 }
                 self.pos.y -= 1;
                 continue;

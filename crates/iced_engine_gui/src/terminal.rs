@@ -1,12 +1,7 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::sync::{Arc, Mutex};
 
 use iced::{Color, widget::canvas::Cache};
 use icy_engine::editor::EditState;
-
-use crate::{Blink, Message};
 
 pub struct Terminal {
     pub edit_state: Arc<Mutex<EditState>>,
@@ -28,26 +23,6 @@ impl Terminal {
     }
 
     pub fn reset_caret_blink(&mut self) {}
-
-    pub fn update(&mut self, message: Message) {
-        match message {
-            Message::SetCaret(pos) => {
-                if let Ok(mut state) = self.edit_state.lock() {
-                    state.get_caret_mut().set_position(pos);
-                }
-                self.redraw();
-            }
-            Message::BufferChanged => {
-                self.redraw();
-            }
-            Message::Resize(width, height) => {
-                if let Ok(mut state) = self.edit_state.lock() {
-                    state.get_buffer_mut().set_size((width, height));
-                }
-                self.redraw();
-            }
-        }
-    }
 
     pub fn redraw(&mut self) {
         self.cache.clear();

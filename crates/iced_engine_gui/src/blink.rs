@@ -46,12 +46,4 @@ impl Blink {
         self.is_on = true;
         self.last_blink = Blink::now_ms();
     }
-
-    /// Returns true if a toggle is due (enough time has passed) without mutating state.
-    /// Uses the internal monotonic clock. If callers feed `update` with a different time
-    /// base, align them by using `Blink::now_ms()` there as well.
-    pub(crate) fn is_due(&self) -> bool {
-        let now_ms = Blink::now_ms();
-        now_ms - self.last_blink > self.blink_rate
-    }
 }

@@ -1,12 +1,9 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, svg, text},
+    widget::{Space, button, column, container, row, svg, text, vertical_slider},
 };
-use iced_engine_gui::{
-    MonitorSettings, Terminal,
-    terminal_view::{Message as TerminalMessage, TerminalView},
-};
+use iced_engine_gui::{Terminal, terminal_view::TerminalView};
 use icy_engine::{Buffer, TextPane, editor::EditState};
 use icy_net::telnet::TerminalEmulation;
 use std::{
@@ -24,7 +21,6 @@ const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
 const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.ans");
-const LOGIN_SVG: &[u8] = include_bytes!("../../data/icons/key.svg"); // You may need to add an appropriate icon file
 
 pub struct TerminalWindow {
     pub scene: Terminal,
@@ -39,7 +35,7 @@ pub struct TerminalWindow {
 impl TerminalWindow {
     pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
         // Create a default EditState wrapped in Arc<Mutex>
-        let mut edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
+        let edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
         // If parsing fails, try using the ANSI parser directly
         let mut buffer = Buffer::from_bytes(&Path::new("a.ans"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
         buffer.buffer_type = icy_engine::BufferType::CP437;
@@ -62,20 +58,99 @@ impl TerminalWindow {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
 
-        // Create the main terminal area - use TerminalView to create the view
+        // Create the main terminal area
         let terminal_view = TerminalView::show_with_effects(&self.scene, options.monitor_settings.clone()).map(|terminal_msg| {
-            // Map TerminalMessage to your app's Message enum
             match terminal_msg {
-                TerminalMessage::SetCaret(_pos) => Message::None, // Or handle caret changes if needed
-                TerminalMessage::BufferChanged => Message::None,
-                TerminalMessage::Resize(_, _) => Message::None,
+                iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
+                // _ => Message::None,
             }
         });
 
-        let terminal_area = container(terminal_view).width(Length::Fill).height(Length::Fill);
+        // Get scrollback info from EditState
+        let (has_scrollback, scroll_position, max_scroll) = if let Ok(edit_state) = self.scene.edit_state.lock() {
+            let buffer = edit_state.get_buffer();
+            let has_scrollback = !buffer.scrollback_lines.is_empty();
+            let scroll_offset = edit_state.scrollback_offset as i32;
+            let max_scroll = buffer.scrollback_lines.len() as i32;
+            (has_scrollback, scroll_offset, max_scroll)
+        } else {
+            (false, 0, 0)
+        };
 
-        // Status bar at the bottom
-        let status_bar = self.create_status_bar(options);
+        // Create terminal area with optional scrollbar
+        let terminal_area = if has_scrollback && max_scroll > 0 {
+            // Create a custom scrollbar using a vertical slider
+            let scrollbar = vertical_slider(
+                0..=max_scroll,
+                (scroll_position) as i32, // Invert: 0 at bottom, max at top
+                move |value| Message::ScrollTerminal((value) as usize),
+            )
+            .width(12)
+            .height(Length::Fill)
+            .step(1);
+
+            // Combine terminal view and scrollbar side by side
+            let terminal_with_scrollbar = row![
+                container(terminal_view).width(Length::Fill).height(Length::Fill),
+                container(scrollbar)
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fill)
+                    .style(|theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                        border: Border {
+                            color: theme.extended_palette().background.strong.color,
+                            width: 0.0,
+                            radius: 0.0.into(),
+                        },
+                        ..Default::default()
+                    })
+            ]
+            .spacing(0);
+
+            // Add scroll position indicator if not at bottom
+            if scroll_position < 0 {
+                let lines_scrolled = -scroll_position;
+                let scroll_indicator = container(
+                    text(format!("↑ {} lines", lines_scrolled))
+                        .size(10)
+                        .style(|theme: &iced::Theme| iced::widget::text::Style {
+                            color: Some(theme.extended_palette().primary.weak.color),
+                            ..Default::default()
+                        }),
+                )
+                .padding([2, 8])
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                    border: Border {
+                        color: theme.extended_palette().background.strong.color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                });
+
+                // Overlay the indicator on top-right of terminal
+                container(iced::widget::stack![
+                    terminal_with_scrollbar,
+                    container(scroll_indicator)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(iced::alignment::Horizontal::Right)
+                        .align_y(iced::alignment::Vertical::Top)
+                        .padding(8)
+                ])
+                .width(Length::Fill)
+                .height(Length::Fill)
+            } else {
+                container(terminal_with_scrollbar).width(Length::Fill).height(Length::Fill)
+            }
+        } else {
+            // No scrollback - just show terminal without scrollbar
+            container(terminal_view).width(Length::Fill).height(Length::Fill)
+        };
+
+        // Status bar at the bottom - add scrollback info
+        let status_bar = self.create_status_bar(options, scroll_position);
 
         // Combine all elements
         column![button_bar, terminal_area, status_bar].spacing(0).into()
@@ -271,7 +346,7 @@ impl TerminalWindow {
                 )
                 .on_press(Message::StopSound)
                 .padding([4, 6])
-                .style(|theme: &iced::Theme, status| {
+                .style(|_theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
                     let base = Style {
@@ -341,7 +416,7 @@ impl TerminalWindow {
             .into()
     }
 
-    fn create_status_bar(&self, options: &Options) -> Element<'_, Message> {
+    fn create_status_bar(&self, options: &Options, scrollback_lines: i32) -> Element<'_, Message> {
         let connection_status = if self.is_connected {
             text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().success.strong.color),
@@ -401,13 +476,24 @@ impl TerminalWindow {
                 _ => "Unknown".to_string(),
             }
         } else {
-            "LOCAL".to_string()
+            "OFFLINE".to_string()
         };
 
         // Build the status bar row
-        let mut status_row = row![connection_status, Space::new().width(Length::Fill), capture_status,]
-            .spacing(8)
-            .align_y(Alignment::Center);
+        let mut status_row = row![connection_status].spacing(8).align_y(Alignment::Center);
+
+        if scrollback_lines > 0 {
+            let scrollback_text = text(format!("↑{:04}", scrollback_lines))
+                .size(14)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                    ..Default::default()
+                });
+
+            status_row = status_row.push(text("|")).push(scrollback_text);
+        }
+
+        status_row = status_row.push(Space::new().width(Length::Fill)).push(capture_status);
 
         // Only add IEMSI button if we have IEMSI info
         if self.iemsi_info.is_some() {
@@ -491,7 +577,7 @@ impl TerminalWindow {
 }
 
 // Helper function to create menu buttons
-fn menu_button<'a>(content: impl Into<Element<'a, Message>>, msg: Message) -> button::Button<'a, Message> {
+fn _menu_button<'a>(content: impl Into<Element<'a, Message>>, msg: Message) -> button::Button<'a, Message> {
     button(content)
         .padding([6, 12])
         .width(Length::Fill)

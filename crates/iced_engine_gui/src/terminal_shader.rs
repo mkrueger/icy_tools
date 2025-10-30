@@ -1,4 +1,4 @@
-use crate::{Blink, Message, MonitorSettings, MonitorType, Terminal, now_ms};
+use crate::{Blink, Message, MonitorSettings, Terminal, now_ms};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::TextPane;
@@ -534,7 +534,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         let mut font_h = 0usize;
 
         if let Ok(edit_state) = self.term.edit_state.try_lock() {
-            let buffer = edit_state.get_buffer();
+            let buffer = edit_state.get_display_buffer();
 
             // Capture caret & font metrics
             caret_pos_opt = Some(edit_state.get_caret().get_position());
@@ -607,7 +607,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
     }
 
-    fn update(&self, state: &mut Self::State, _event: &iced::Event, _bounds: Rectangle, _cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+    fn update(&self, state: &mut Self::State, event: &iced::Event, _bounds: Rectangle, _cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
         let mut needs_redraw = false;
         let now = crate::Blink::now_ms();
 
@@ -621,6 +621,17 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             needs_redraw = true;
         }
 
+        if let iced::Event::Mouse(mouse_event) = event {
+            match mouse_event {
+                mouse::Event::WheelScrolled { delta } => {
+                    if let mouse::ScrollDelta::Lines { y, .. } = delta {
+                        let lines = *y as i32;
+                        return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                    }
+                }
+                _ => {}
+            }
+        }
         if needs_redraw { Some(iced::widget::Action::request_redraw()) } else { None }
     }
 
