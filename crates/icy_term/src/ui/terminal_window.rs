@@ -1,680 +1,614 @@
-#![allow(clippy::float_cmp)]
-use eframe::{
-    egui::{self, CursorIcon, PointerButton},
-    epaint::Vec2,
-};
-use egui::{Margin, Modifiers, RichText, Sense};
 use i18n_embed_fl::fl;
-use icy_engine::{Position, Selection, TextPane};
-use web_time::Duration;
-
-use crate::{
-    LATEST_VERSION, VERSION,
-    icons::{CALL, DOWNLOAD, KEY, LOGOUT, MENU, UPLOAD},
+use iced::{
+    Alignment, Border, Color, Element, Length,
+    widget::{Space, button, column, container, row, svg, text, vertical_slider},
 };
+use iced_engine_gui::{Terminal, terminal_view::TerminalView};
+use icy_engine::{Buffer, TextPane, editor::EditState};
+use icy_net::telnet::TerminalEmulation;
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
+// use iced_aw::{menu, menu_bar, menu_items};
 
-use super::{MainWindow, MainWindowMode, dialogs};
+use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message, util::SoundThread};
 
-fn encode_mouse_button(button: i32) -> char {
-    unsafe { char::from_u32_unchecked(b' '.saturating_add(button as u8) as u32) }
+// Icon SVG constants
+const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");
+const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
+const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
+const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
+const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
+const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.icy");
+
+pub struct TerminalWindow {
+    pub scene: Terminal,
+    pub is_connected: bool,
+    pub is_capturing: bool,
+    pub current_address: Option<Address>,
+    pub terminal_emulation: TerminalEmulation,
+    pub sound_thread: Arc<Mutex<SoundThread>>,
+    pub iemsi_info: Option<icy_net::iemsi::EmsiISI>,
 }
-fn encode_mouse_position(pos: i32) -> char {
-    unsafe { char::from_u32_unchecked(b'!'.saturating_add(pos as u8) as u32) }
-}
 
-impl MainWindow {
-    pub fn update_terminal_window(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, show_dialing_directory: bool) {
-        let toolbar_bg_color = ctx.style().visuals.extreme_bg_color;
-        let button_frame = egui::containers::Frame::NONE.fill(toolbar_bg_color).inner_margin(Margin::same(6));
+impl TerminalWindow {
+    pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
+        // Create a default EditState wrapped in Arc<Mutex>
+        let edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
+        // If parsing fails, try using the ANSI parser directly
+        let mut buffer = Buffer::from_bytes(&Path::new("a.icy"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
+        buffer.buffer_type = icy_engine::BufferType::CP437;
+        buffer.is_terminal_buffer = true;
+        buffer.terminal_state.fixed_size = true;
 
-        let enable_ui = matches!(self.get_mode(), MainWindowMode::ShowTerminal);
+        edit_state.lock().unwrap().set_buffer(buffer);
+        edit_state.lock().unwrap().get_caret_mut().set_is_visible(false);
 
-        if !self.is_fullscreen_mode {
-            egui::TopBottomPanel::top("button_bar").frame(button_frame).show(ctx, |ui| {
-                if !enable_ui {
-                    ui.disable();
-                }
-                ui.horizontal(|ui| {
-                    let sense = Sense::HOVER | Sense::CLICK;
-                    let r = ui
-                        .add(egui::Button::image(UPLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
-                        .on_hover_ui(|ui| {
-                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).small());
-                        });
-
-                    if r.clicked() {
-                        self.set_mode(ctx, MainWindowMode::SelectProtocol(false));
-                    }
-
-                    let r = ui
-                        .add(egui::Button::image(DOWNLOAD.clone().tint(crate::ui::button_tint(ui))).sense(sense))
-                        .on_hover_ui(|ui| {
-                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-download")).small());
-                        });
-
-                    if r.clicked() {
-                        self.set_mode(ctx, MainWindowMode::SelectProtocol(true));
-                    }
-
-                    let r: egui::Response = ui
-                        .add(egui::Button::image(CALL.clone().tint(crate::ui::button_tint(ui))).sense(sense))
-                        .on_hover_ui(|ui| {
-                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).small());
-                        });
-
-                    if r.clicked() {
-                        self.set_mode(ctx, MainWindowMode::ShowDialingDirectory);
-                    }
-
-                    let mut mode = None;
-                    if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
-                        if auto_login.iemsi.isi.is_some() {
-                            if self.get_mode() == MainWindowMode::ShowIEMSI {
-                                let r: egui::Response = ui.add(egui::Button::new(RichText::new(fl!(crate::LANGUAGE_LOADER, "toolbar-hide-iemsi"))));
-
-                                if r.clicked() {
-                                    mode = Some(MainWindowMode::ShowTerminal);
-                                }
-                            } else {
-                                let r: egui::Response = ui.add(egui::Button::new(RichText::new(fl!(crate::LANGUAGE_LOADER, "toolbar-show-iemsi"))));
-
-                                if r.clicked() {
-                                    mode = Some(MainWindowMode::ShowIEMSI);
-                                }
-                            }
-                        }
-                    }
-
-                    if let Some(mode) = mode {
-                        self.set_mode(ctx, mode);
-                    }
-
-                    let mut send_login = false;
-                    if let Some(auto_login) = &mut self.terminal_thread.lock().auto_login {
-                        if !auto_login.logged_in {
-                            let r = ui
-                                .add(egui::Button::image(KEY.clone().tint(crate::ui::button_tint(ui)).sense(sense)))
-                                .on_hover_ui(|ui| {
-                                    ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).small());
-                                });
-
-                            if r.clicked() {
-                                send_login = true;
-                                auto_login.logged_in = true;
-                            }
-                        }
-                    }
-                    if send_login {
-                        self.send_login();
-                    }
-
-                    if self.terminal_thread.lock().sound_thread.lock().is_playing() {
-                        let button_text = match self.terminal_thread.lock().sound_thread.lock().stop_button {
-                            0 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing1"),
-                            1 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing2"),
-                            2 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing3"),
-                            3 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing4"),
-                            4 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing5"),
-                            _ => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing6"),
-                        };
-
-                        let r: egui::Response = ui.add(egui::Button::new(RichText::new(button_text)));
-                        if r.clicked() {
-                            self.terminal_thread.lock().sound_thread.lock().clear();
-                        }
-                    }
-
-                    if self.terminal_thread.lock().capture_dialog.capture_session {
-                        let r: egui::Response = ui.add(egui::Button::new(RichText::new(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture"))));
-
-                        if r.clicked() {
-                            self.terminal_thread.lock().capture_dialog.capture_session = false;
-                        }
-                    }
-                    if *VERSION < *LATEST_VERSION {
-                        ui.hyperlink_to(
-                            fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string()),
-                            "https://github.com/mkrueger/icy_tools/releases",
-                        );
-                    }
-
-                    let size = ui.available_size_before_wrap();
-                    ui.add_space(size.x - 70.0);
-
-                    let r = ui
-                        .add(egui::Button::image(LOGOUT.clone().tint(crate::ui::button_tint(ui))).sense(sense))
-                        .on_hover_ui(|ui| {
-                            ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).small());
-                        });
-                    if r.clicked() {
-                        self.hangup(ctx);
-                    }
-                    ui.menu_image_button(MENU.clone().tint(crate::ui::button_tint(ui)), |ui| {
-                        let r = ui.hyperlink_to(
-                            fl!(crate::LANGUAGE_LOADER, "menu-item-discuss"),
-                            "https://github.com/mkrueger/icy_tools/discussions",
-                        );
-                        if r.clicked() {
-                            ui.close_kind(egui::UiKind::Menu);
-                        }
-                        let r = ui.hyperlink_to(
-                            fl!(crate::LANGUAGE_LOADER, "menu-item-report-bug"),
-                            "https://github.com/mkrueger/icy_tools/issues/new",
-                        );
-                        if r.clicked() {
-                            ui.close_kind(egui::UiKind::Menu);
-                        }
-                        let r = ui.hyperlink_to(
-                            fl!(crate::LANGUAGE_LOADER, "menu-item-check-releases"),
-                            "https://github.com/mkrueger/icy_tools/releases",
-                        );
-                        if r.clicked() {
-                            ui.close_kind(egui::UiKind::Menu);
-                        }
-                        ui.separator();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if ui.button(fl!(crate::LANGUAGE_LOADER, "menu-item-capture-dialog")).clicked() {
-                            self.set_mode(ctx, MainWindowMode::ShowCaptureDialog);
-                            ui.close_kind(egui::UiKind::Menu);
-                        }
-
-                        if ui.button(fl!(crate::LANGUAGE_LOADER, "menu-item-settings")).clicked() {
-                            self.set_mode(ctx, MainWindowMode::ShowSettings);
-                            ui.close_kind(egui::UiKind::Menu);
-                        }
-                    });
-                });
-            });
+        Self {
+            scene: Terminal::new(edit_state),
+            is_connected: false,
+            is_capturing: false,
+            current_address: None,
+            terminal_emulation: TerminalEmulation::Ansi,
+            sound_thread,
+            iemsi_info: None,
         }
-        let frame_no_margins = egui::containers::Frame::NONE.outer_margin(Margin::same(0)).inner_margin(Margin::same(0));
+    }
 
-        egui::CentralPanel::default().frame(frame_no_margins).show(ctx, |ui| {
-            if !enable_ui {
-                ui.disable();
-            }
-            let rect = ui.available_rect_before_wrap();
+    pub fn view(&self, options: &Options) -> Element<'_, Message> {
+        // Create the button bar at the top
+        let button_bar = self.create_button_bar();
 
-            self.show_terminal_area(ui);
-            let msg = if self.show_find_dialog { self.find_dialog.show_ui(ui, rect) } else { None };
-
-            match msg {
-                Some(dialogs::find_dialog::Message::ChangePattern(pattern)) => {
-                    self.find_dialog.pattern = pattern.chars().collect();
-                    let lock = &mut self.buffer_view.lock();
-                    let (buffer, _, parser) = lock.get_edit_state_mut().get_buffer_and_caret_mut();
-                    self.find_dialog.search_pattern(buffer, (*parser).as_ref());
-                    self.find_dialog.update_pattern(lock);
-                }
-                Some(dialogs::find_dialog::Message::FindNext) => {
-                    self.find_dialog.find_next(&mut self.buffer_view.lock());
-                }
-                Some(dialogs::find_dialog::Message::FindPrev) => {
-                    self.find_dialog.find_prev(&mut self.buffer_view.lock());
-                }
-                Some(dialogs::find_dialog::Message::CloseDialog) => {
-                    self.show_find_dialog = false;
-                }
-                Some(dialogs::find_dialog::Message::SetCasing(case_sensitive)) => {
-                    self.find_dialog.case_sensitive = case_sensitive;
-                    let lock = &mut self.buffer_view.lock();
-                    let (buffer, _, parser) = lock.get_edit_state_mut().get_buffer_and_caret_mut();
-                    self.find_dialog.search_pattern(buffer, (*parser).as_ref());
-                    self.find_dialog.update_pattern(lock);
-                }
-
-                None => {}
+        // Create the main terminal area
+        let terminal_view = TerminalView::show_with_effects(&self.scene, options.monitor_settings.clone()).map(|terminal_msg| {
+            match terminal_msg {
+                iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
+                iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
+                iced_engine_gui::Message::Copy => Message::Copy,
+                iced_engine_gui::Message::RipCommand(_cmd) => {
+                    // TODO: Handle RIP command
+                    Message::None
+                } // _ => Message::None,
             }
         });
 
-        if show_dialing_directory {
-            dialogs::dialing_directory_dialog::view_dialing_directory(self, ctx);
-        }
-
-        let take = self.terminal_thread.lock().auto_transfer.take();
-        if let Some((protocol_type, download, file_name)) = take {
-            self.initiate_file_transfer(ctx, protocol_type, download, file_name);
-        }
-
-        if self.terminal_thread_handle.is_some() && self.terminal_thread_handle.as_ref().unwrap().is_finished() {
-            let handle = self.terminal_thread_handle.take().unwrap();
-            if let Err(err) = handle.join() {
-                let err = format!("Error update thread crashed: {:?}", err.downcast_ref::<&str>());
-                log::error!("{err}");
-                self.output_string(&err);
-            }
-        }
-        ctx.request_repaint_after(Duration::from_millis(250));
-    }
-
-    fn show_terminal_area(&mut self, ui: &mut egui::Ui) {
-        let mut monitor_settings = self.get_options().monitor_settings.clone();
-
-        monitor_settings.selection_fg = self.screen_mode.get_selection_fg();
-        monitor_settings.selection_bg = self.screen_mode.get_selection_bg();
-        /*  if ui.input(|i| i.key_down(egui::Key::W)) {
-            let enabled = self.buffer_update_thread.lock().enabled;
-            self.buffer_update_thread.lock().enabled = !enabled;
-        }*/
-
-        let opt = icy_engine_gui::TerminalOptions {
-            filter: self.get_options().scaling.get_filter(),
-            monitor_settings,
-            stick_to_bottom: true,
-            use_terminal_height: true,
-            ..Default::default()
+        // Get scrollback info from EditState
+        let (has_scrollback, scroll_position, max_scroll) = if let Ok(edit_state) = self.scene.edit_state.lock() {
+            let buffer = edit_state.get_buffer();
+            let has_scrollback = !buffer.scrollback_lines.is_empty();
+            let scroll_offset = edit_state.scrollback_offset as i32;
+            let max_scroll = buffer.scrollback_lines.len() as i32;
+            (has_scrollback, scroll_offset, max_scroll)
+        } else {
+            (false, 0, 0)
         };
-        let (mut response, calc) = icy_engine_gui::show_terminal_area(ui, self.buffer_view.clone(), opt);
 
-        let inner_response = response.context_menu(|ui| terminal_context_menu(ui, self));
-        if let Some(inner_response) = inner_response {
-            response = inner_response.response;
-        }
+        // Create terminal area with optional scrollbar
+        let terminal_area = if has_scrollback && max_scroll > 0 {
+            // Create a custom scrollbar using a vertical slider
+            let scrollbar = vertical_slider(
+                0..=max_scroll,
+                (scroll_position) as i32, // Invert: 0 at bottom, max at top
+                move |value| Message::ScrollTerminal((value) as usize),
+            )
+            .width(12)
+            .height(Length::Fill)
+            .step(1);
 
-        if matches!(self.get_mode(), MainWindowMode::ShowTerminal) && ui.is_enabled() && !self.show_find_dialog {
-            let events = ui.input(|i| i.events.clone());
-            for e in events {
-                match e {
-                    egui::Event::PointerButton {
-                        button: PointerButton::Middle,
-                        pressed: true,
-                        ..
-                    } => {
-                        self.copy_to_clipboard();
-                    }
-                    egui::Event::Paste(text) => {
-                        self.output_string(&text);
-                    }
-                    /*egui::Event::CompositionEnd(text) |*/
-                    egui::Event::Text(text) => {
-                        for c in text.chars() {
-                            self.output_char(c);
-                        }
-                    }
+            // Combine terminal view and scrollbar side by side
+            let terminal_with_scrollbar = row![
+                container(terminal_view).width(Length::Fill).height(Length::Fill),
+                container(scrollbar)
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fill)
+                    .style(|theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                        border: Border {
+                            color: theme.extended_palette().background.strong.color,
+                            width: 0.0,
+                            radius: 0.0.into(),
+                        },
+                        ..Default::default()
+                    })
+            ]
+            .spacing(0);
 
-                    egui::Event::PointerButton {
-                        pos,
-                        button,
-                        pressed: true,
-                        modifiers,
-                    } => {
-                        if calc.buffer_rect.contains(pos - calc.terminal_rect.left_top().to_vec2()) && !calc.vert_scrollbar_rect.contains(pos) {
-                            let buffer_view = self.buffer_view.clone();
-                            let click_pos = calc.calc_click_pos(pos);
-                            let mode: icy_engine::MouseMode = buffer_view.lock().get_buffer().terminal_state.mouse_mode;
-
-                            match mode {
-                                icy_engine::MouseMode::VT200 | icy_engine::MouseMode::VT200_Highlight => {
-                                    let mut modifier_mask = 0;
-                                    if matches!(button, PointerButton::Secondary) {
-                                        modifier_mask |= 1;
-                                    }
-                                    if modifiers.shift {
-                                        modifier_mask |= 4;
-                                    }
-                                    if modifiers.alt {
-                                        modifier_mask |= 8;
-                                    }
-                                    if modifiers.ctrl || modifiers.mac_cmd {
-                                        modifier_mask |= 16;
-                                    }
-                                    self.output_string(
-                                        format!(
-                                            "\x1b[M{}{}{}",
-                                            encode_mouse_button(modifier_mask),
-                                            encode_mouse_position(click_pos.x as i32),
-                                            encode_mouse_position(click_pos.y as i32 - calc.first_line as i32)
-                                        )
-                                        .as_str(),
-                                    );
-                                }
-                                icy_engine::MouseMode::X10 => {
-                                    self.output_string(
-                                        format!(
-                                            "\x1b[M{}{}{}",
-                                            encode_mouse_button(0),
-                                            encode_mouse_position(click_pos.x as i32),
-                                            encode_mouse_position(click_pos.y as i32)
-                                        )
-                                        .as_str(),
-                                    );
-                                }
-                                _ => {} /*
-                                        icy_engine::MouseMode::ButtonEvents => todo!(),
-                                        icy_engine::MouseMode::AnyEvents => todo!(),
-                                        icy_engine::MouseMode::FocusEvent => todo!(),
-                                        icy_engine::MouseMode::AlternateScroll => todo!(),
-                                        icy_engine::MouseMode::ExtendedMode => todo!(),
-                                        icy_engine::MouseMode::SGRExtendedMode => todo!(),
-                                        icy_engine::MouseMode::URXVTExtendedMode => todo!(),
-                                        icy_engine::MouseMode::PixelPosition => todo!(),*/
-                            }
-                        }
-                    }
-                    egui::Event::PointerButton {
-                        pos,
-                        button: PointerButton::Primary,
-                        pressed: false,
-                        modifiers,
-                        ..
-                    } => {
-                        if calc.buffer_rect.contains(pos - calc.terminal_rect.left_top().to_vec2()) && !calc.vert_scrollbar_rect.contains(pos) {
-                            let mode: icy_engine::MouseMode = self.buffer_view.lock().get_buffer().terminal_state.mouse_mode;
-                            match mode {
-                                icy_engine::MouseMode::VT200 | icy_engine::MouseMode::VT200_Highlight => {
-                                    if calc.buffer_rect.contains(pos) {
-                                        let click_pos = calc.calc_click_pos(pos);
-                                        let mut modifier_mask = 3; // 3 means realease
-                                        if modifiers.shift {
-                                            modifier_mask |= 4;
-                                        }
-                                        if modifiers.alt {
-                                            modifier_mask |= 8;
-                                        }
-                                        if modifiers.ctrl || modifiers.mac_cmd {
-                                            modifier_mask |= 16;
-                                        }
-                                        self.output_string(
-                                            format!(
-                                                "\x1b[M{}{}{}",
-                                                encode_mouse_button(modifier_mask),
-                                                encode_mouse_position(click_pos.x as i32),
-                                                encode_mouse_position(click_pos.y as i32)
-                                            )
-                                            .as_str(),
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-
-                    egui::Event::PointerMoved(pos) => {
-                        if calc.buffer_rect.contains(pos - calc.terminal_rect.left_top().to_vec2()) && !calc.vert_scrollbar_rect.contains(pos) {
-                            // Dev feature in debug mode - print char under cursor
-                            // when shift is pressed
-                            if cfg!(debug_assertions) && ui.input(|i| i.modifiers.shift_only()) {
-                                let click_pos: Vec2 = calc.calc_click_pos(pos);
-                                let buffer_view = self.buffer_view.clone();
-
-                                let ch = buffer_view.lock().get_buffer().get_char((click_pos.x as usize, click_pos.y as usize));
-                                println!("Char under cursor: {ch:?}");
-                            }
-                        }
-                    }
-
-                    egui::Event::Cut => {
-                        self.handle_key_press(ui, &response, egui::Key::X, Modifiers::CTRL);
-                    }
-                    egui::Event::Copy => {
-                        self.handle_key_press(ui, &response, egui::Key::C, Modifiers::CTRL);
-                    }
-                    egui::Event::Key {
-                        key, pressed: true, modifiers, ..
-                    } => {
-                        if self.handle_key_press(ui, &response, key, modifiers) {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            if self.use_rip {
-                if response.clicked_by(PointerButton::Primary) {
-                    if let Some(mouse_pos) = response.hover_pos() {
-                        let mouse_pos = mouse_pos.to_vec2() - calc.buffer_rect.left_top().to_vec2();
-
-                        let x = (mouse_pos.x / calc.buffer_rect.width() * 640.0) as i32;
-                        let y = (mouse_pos.y / calc.buffer_rect.height() * 350.0) as i32;
-                        let mut found_field = None;
-                        for mouse_field in &self.terminal_thread.lock().mouse_field {
-                            if !mouse_field.style.is_mouse_button() {
-                                continue;
-                            }
-                            if mouse_field.contains(x, y) {
-                                if let Some(found_field) = &found_field {
-                                    if mouse_field.contains_field(found_field) {
-                                        continue;
-                                    }
-                                }
-                                found_field = Some(mouse_field.clone());
-                            }
-                        }
-
-                        if let Some(mouse_field) = &found_field {
-                            if let Some(cmd) = &mouse_field.host_command {
-                                if mouse_field.style.reset_screen_after_click() {
-                                    let mut buffer = self.buffer_view.lock();
-                                    buffer.get_buffer_mut().terminal_state.clear_margins_left_right();
-                                    buffer.get_buffer_mut().terminal_state.clear_margins_top_bottom();
-                                    buffer.clear_buffer_screen();
-                                }
-                                self.output_string(cmd);
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                if response.hovered() {
-                    let hover_pos_opt = ui.input(|i| i.pointer.hover_pos());
-                    if let Some(hover_pos) = hover_pos_opt {
-                        let hover_pos = hover_pos.to_vec2() - calc.buffer_rect.left_top().to_vec2();
-
-                        let x = (hover_pos.x / calc.buffer_rect.width() * 640.0) as i32;
-                        let y = (hover_pos.y / calc.buffer_rect.height() * 350.0) as i32;
-                        let fields = &self.terminal_thread.lock().mouse_field;
-                        for mouse_field in fields {
-                            if !mouse_field.style.is_mouse_button() {
-                                continue;
-                            }
-                            if mouse_field.contains(x, y) {
-                                ui.output_mut(|o: &mut egui::PlatformOutput| o.cursor_icon = CursorIcon::PointingHand);
-                                break;
-                            }
-                        }
-                    }
-                }
-                return;
-            }
-
-            if response.clicked_by(PointerButton::Primary) {
-                if let Some(mouse_pos) = response.hover_pos() {
-                    if calc.buffer_rect.contains(mouse_pos) && !calc.vert_scrollbar_rect.contains(mouse_pos) {
-                        self.buffer_view.lock().clear_selection();
-                    }
-                }
-            }
-
-            if response.drag_started_by(PointerButton::Primary) {
-                self.drag_start = None;
-                if let Some(mouse_pos) = response.hover_pos() {
-                    if calc.buffer_rect.contains(mouse_pos) && !calc.vert_scrollbar_rect.contains(mouse_pos) {
-                        let click_pos = calc.calc_click_pos(mouse_pos);
-                        self.last_pos = Position::new(click_pos.x as i32, click_pos.y as i32);
-                        self.drag_start = Some(click_pos);
-                        self.buffer_view.lock().get_edit_state_mut().set_mask_size();
-                        self.buffer_view.lock().set_selection(Selection::new((click_pos.x, click_pos.y)));
-                        self.buffer_view.lock().get_selection().as_mut().unwrap().shape = if response.ctx.input(|i| i.modifiers.alt) {
-                            icy_engine::Shape::Rectangle
-                        } else {
-                            icy_engine::Shape::Lines
-                        };
-                    }
-                }
-                self.last_pos = Position::new(-1, -1);
-            }
-
-            if response.dragged_by(PointerButton::Primary) && self.drag_start.is_some() {
-                if let Some(mouse_pos) = response.hover_pos() {
-                    let click_pos = calc.calc_click_pos(mouse_pos);
-                    let cur = Position::new(click_pos.x as i32, click_pos.y as i32);
-
-                    if cur != self.last_pos {
-                        self.last_pos = cur;
-                        let mut l = self.buffer_view.lock();
-                        l.get_edit_state_mut().set_mask_size();
-
-                        if let Some(sel) = &mut l.get_selection() {
-                            if !sel.locked {
-                                sel.lead = Position::new(click_pos.x as i32, click_pos.y as i32);
-                                sel.shape = if ui.input(|i| i.modifiers.alt) {
-                                    icy_engine::Shape::Rectangle
-                                } else {
-                                    icy_engine::Shape::Lines
-                                };
-                                l.clear_selection();
-                                l.set_selection(*sel);
-                                let _ = l.get_edit_state_mut().add_selection_to_mask();
-                                l.redraw_view();
-                            }
-                        }
-                    }
-                }
-            }
-
-            if response.drag_stopped_by(PointerButton::Primary) && self.drag_start.is_some() {
-                self.shift_pressed_during_selection = ui.input(|i| i.modifiers.shift);
-                if response.hover_pos().is_some() {
-                    let l = self.buffer_view.lock();
-                    if let Some(sel) = &mut l.get_selection() {
-                        sel.locked = true;
-                    }
-                }
-                self.last_pos = Position::new(-1, -1);
-
-                self.drag_start = None;
-            }
-
-            if response.hovered() {
-                let hover_pos_opt = ui.input(|i| i.pointer.hover_pos());
-                if let Some(hover_pos) = hover_pos_opt {
-                    if calc.buffer_rect.contains(hover_pos) {
-                        let click_pos = calc.calc_click_pos(hover_pos);
-                        let mut hovered_link = false;
-                        let lock = self.buffer_view.lock();
-                        let buffer = lock.get_buffer();
-                        for hyper_link in buffer.layers[0].hyperlinks() {
-                            if buffer.is_position_in_range(Position::new(click_pos.x as i32, click_pos.y as i32), hyper_link.position, hyper_link.length) {
-                                ui.output_mut(|o: &mut egui::PlatformOutput| o.cursor_icon = CursorIcon::PointingHand);
-                                let url = hyper_link.get_url(buffer);
-                                response = response.on_hover_ui_at_pointer(|ui| {
-                                    ui.hyperlink(url.clone());
-                                });
-                                hovered_link = true;
-
-                                if response.clicked_by(PointerButton::Primary)
-                                /* && response.is_pointer_button_down_on() */
-                                {
-                                    ui.ctx().open_url(egui::output::OpenUrl { url, new_tab: false });
-                                }
-                                break;
-                            }
-                        }
-                        if !hovered_link && !calc.vert_scrollbar_rect.contains(hover_pos) {
-                            ui.output_mut(|o| o.cursor_icon = CursorIcon::Text);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn handle_key_press(&mut self, ui: &mut egui::Ui, response: &egui::Response, key: egui::Key, modifiers: egui::Modifiers) -> bool {
-        let im = self.screen_mode.get_input_mode();
-        let key_map = im.cur_map();
-        let mut key_code = key as u32;
-        if modifiers.ctrl || modifiers.command {
-            key_code |= icy_engine_gui::ui::CTRL_MOD;
-        }
-        if modifiers.shift {
-            key_code |= icy_engine_gui::ui::SHIFT_MOD;
-        }
-        for (k, m) in key_map {
-            if *k == key_code {
-                if self.terminal_thread.lock().is_connected {
-                    self.send_vec(m.to_vec());
-                } else {
-                    for c in *m {
-                        self.print_char(*c);
-                    }
-                }
-                if !response.has_focus() {
-                    response.request_focus();
-                }
-                ui.input_mut(|i| {
-                    i.consume_key(modifiers, key);
+            // Add scroll position indicator if not at bottom
+            if scroll_position < 0 {
+                let lines_scrolled = -scroll_position;
+                let scroll_indicator = container(
+                    text(format!("↑ {} lines", lines_scrolled))
+                        .size(10)
+                        .style(|theme: &iced::Theme| iced::widget::text::Style {
+                            color: Some(theme.extended_palette().primary.weak.color),
+                            ..Default::default()
+                        }),
+                )
+                .padding([2, 8])
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                    border: Border {
+                        color: theme.extended_palette().background.strong.color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
                 });
-                return true;
+
+                // Overlay the indicator on top-right of terminal
+                container(iced::widget::stack![
+                    terminal_with_scrollbar,
+                    container(scroll_indicator)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(iced::alignment::Horizontal::Right)
+                        .align_y(iced::alignment::Vertical::Top)
+                        .padding(8)
+                ])
+                .width(Length::Fill)
+                .height(Length::Fill)
+            } else {
+                container(terminal_with_scrollbar).width(Length::Fill).height(Length::Fill)
             }
-        }
-        false
+        } else {
+            // No scrollback - just show terminal without scrollbar
+            container(terminal_view).width(Length::Fill).height(Length::Fill)
+        };
+
+        // Status bar at the bottom - add scrollback info
+        let status_bar = self.create_status_bar(options, scroll_position);
+
+        // Combine all elements
+        column![button_bar, terminal_area, status_bar].spacing(0).into()
     }
 
-    fn copy_to_clipboard(&mut self) {
-        let buffer_view = self.buffer_view.clone();
-        let mut l = buffer_view.lock();
-        let text = l.get_copy_text();
-        if self.shift_pressed_during_selection {
-            if let Some(data) = l.get_edit_state().get_clipboard_data() {
-                if let Err(err) = icy_engine::util::push_data(icy_engine::util::BUFFER_DATA, &data, text) {
-                    log::error!("error while copy:{err}");
+    fn create_update_notification(&self) -> Element<'_, Message> {
+        container(
+            button(
+                row![
+                    text("🎉 "),
+                    text(fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string())).size(12),
+                    text(" →").size(12)
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::OpenReleaseLink)
+            .padding([4, 8])
+            .style(|_theme: &iced::Theme, status| {
+                use iced::widget::button::{Status, Style};
+
+                let info_color = Color::from_rgb(0.2, 0.6, 1.0);
+                let base = Style {
+                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    text_color: info_color,
+                    border: Border::default(),
+                    shadow: Default::default(),
+                    snap: false,
+                };
+
+                match status {
+                    Status::Active => base,
+                    Status::Hovered => Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1))),
+                        ..base
+                    },
+                    Status::Pressed => Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15))),
+                        ..base
+                    },
+                    Status::Disabled => base,
                 }
-                return;
+            }),
+        )
+        .width(Length::Shrink)
+        .padding([2, 6])
+        .style(|theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(Color::from_rgba(0.2, 0.6, 1.0, 0.05))),
+            border: iced::Border {
+                color: theme.extended_palette().background.strong.color,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            text_color: None,
+            shadow: Default::default(),
+            snap: false,
+        })
+        .into()
+    }
+
+    fn create_button_bar(&self) -> Element<'_, Message> {
+        // Phonebook/Connect button (serves dual purpose)
+        let phonebook_btn = if self.is_connected {
+            // When connected, show disconnect button
+            button(
+                row![
+                    svg(svg::Handle::from_memory(DISCONNECT_SVG))
+                        .width(Length::Fixed(16.0))
+                        .height(Length::Fixed(16.0)),
+                    text(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).size(12)
+                ]
+                .spacing(3)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::Disconnect)
+            .padding([4, 6])
+            .style(button::danger)
+        } else {
+            // When disconnected, show phonebook (connect) button
+            button(
+                row![
+                    svg(svg::Handle::from_memory(PHONEBOOK_SVG))
+                        .width(Length::Fixed(16.0))
+                        .height(Length::Fixed(16.0)),
+                    text(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).size(12)
+                ]
+                .spacing(3)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::ShowDialingDirectory)
+            .padding([4, 6])
+            .style(button::primary)
+        };
+
+        // Upload button
+        let upload_btn = button(
+            row![
+                svg(svg::Handle::from_memory(UPLOAD_SVG)).width(Length::Fixed(16.0)).height(Length::Fixed(16.0)),
+                text(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).size(12)
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::Upload)
+        .padding([4, 6]);
+
+        // Download button
+        let download_btn = button(
+            row![
+                svg(svg::Handle::from_memory(DOWNLOAD_SVG))
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fixed(16.0)),
+                text(fl!(crate::LANGUAGE_LOADER, "terminal-download")).size(12)
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::Download)
+        .padding([4, 6]);
+
+        // Settings dropdown menu
+        let settings_menu = button(
+            row![
+                svg(svg::Handle::from_memory(SETTINGS_SVG))
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fixed(16.0))
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::ShowSettings)
+        .padding([4, 6]);
+
+        // Settings dropdown menu
+        let capture_menu = button(
+            row![
+                svg(svg::Handle::from_memory(SETTINGS_SVG))
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fixed(16.0))
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::ShowCaptureDialog)
+        .padding([4, 6]);
+
+        let mut bar_content = row![phonebook_btn, container(text(" | ").size(10)).padding([0, 2]), upload_btn, download_btn,]
+            .spacing(3)
+            .align_y(Alignment::Center);
+
+        // Only show Send Login button when connected and credentials are available
+        if self.is_connected {
+            if let Some(address) = &self.current_address {
+                if !address.user_name.is_empty() && !address.password.is_empty() {
+                    let send_login_btn = button(
+                        row![
+                            text("🔑").size(14), // or use svg(svg::Handle::from_memory(LOGIN_SVG))
+                            text(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).size(12)
+                        ]
+                        .spacing(3)
+                        .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::SendLogin)
+                    .padding([4, 6]);
+
+                    bar_content = bar_content.push(send_login_btn);
+                }
             }
         }
 
-        if let Some(txt) = text {
-            let mut clipboard = arboard::Clipboard::new().unwrap();
-            clipboard.set_text(txt).unwrap();
+        bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
+
+        // Add Stop Playing Sound button if music is playing
+        if let Ok(mut sound_guard) = self.sound_thread.lock() {
+            let _ = sound_guard.update_state();
+            if sound_guard.is_playing() {
+                let button_text = match sound_guard.stop_button {
+                    0 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing1"),
+                    1 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing2"),
+                    2 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing3"),
+                    3 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing4"),
+                    4 => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing5"),
+                    _ => fl!(crate::LANGUAGE_LOADER, "toolbar-stop-playing6"),
+                };
+
+                let stop_sound_btn = button(
+                    row![
+                        text("🔇").size(14), // Music stop icon
+                        text(button_text).size(12)
+                    ]
+                    .spacing(3)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::StopSound)
+                .padding([4, 6])
+                .style(|_theme: &iced::Theme, status| {
+                    use iced::widget::button::{Status, Style};
+
+                    let base = Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.2))), // Orange tint
+                        text_color: Color::from_rgb(1.0, 0.6, 0.0),                                      // Orange text
+                        border: Border {
+                            color: Color::from_rgb(1.0, 0.5, 0.0),
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        shadow: Default::default(),
+                        snap: false,
+                    };
+
+                    match status {
+                        Status::Active => base,
+                        Status::Hovered => Style {
+                            background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.3))),
+                            ..base
+                        },
+                        Status::Pressed => Style {
+                            background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.4))),
+                            ..base
+                        },
+                        Status::Disabled => base,
+                    }
+                });
+
+                bar_content = bar_content.push(stop_sound_btn);
+                bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
+            }
         }
-        l.clear_selection();
+
+        if self.is_capturing {
+            let stop_capture_btn = button(
+                row![text("⏹").size(14), text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(12)]
+                    .spacing(3)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::StopCapture)
+            .padding([4, 6])
+            .style(button::danger);
+
+            bar_content = bar_content.push(stop_capture_btn);
+        }
+
+        bar_content = bar_content.push(settings_menu).push(capture_menu);
+
+        if *VERSION < *LATEST_VERSION {
+            bar_content = bar_content.push(self.create_update_notification());
+        }
+
+        bar_content = bar_content.push(Space::new().width(Length::Fill));
+
+        container(bar_content.padding([3, 6]))
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                border: iced::Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                text_color: None,
+                shadow: Default::default(),
+                snap: false,
+            })
+            .into()
+    }
+
+    fn create_status_bar(&self, options: &Options, scrollback_lines: i32) -> Element<'_, Message> {
+        let connection_status = if self.is_connected {
+            text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().success.strong.color),
+                ..Default::default()
+            })
+        } else {
+            text("○ Disconnected").style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().danger.weak.color),
+                ..Default::default()
+            })
+        };
+
+        let capture_status = if self.is_capturing {
+            text("● REC").style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().danger.base.color),
+                ..Default::default()
+            })
+        } else {
+            text("")
+        };
+
+        let emulation_str = match self.terminal_emulation {
+            TerminalEmulation::Ansi => "ANSI",
+            TerminalEmulation::Utf8Ansi => "UTF-8 ANSI",
+            TerminalEmulation::Ascii => "ASCII",
+            TerminalEmulation::PETscii => "PETSCII",
+            TerminalEmulation::ViewData => "ViewData",
+            TerminalEmulation::Mode7 => "Mode7",
+            TerminalEmulation::Avatar => "AVATAR",
+            TerminalEmulation::Rip => "RIP",
+            TerminalEmulation::ATAscii => "Atari",
+            TerminalEmulation::Skypix => "Amiga Skypix",
+            TerminalEmulation::AtariST => "Atari ST",
+        };
+
+        let (buffer_width, buffer_height) = if let Ok(edit_state) = self.scene.edit_state.lock() {
+            let size = edit_state.get_buffer().get_size();
+            (size.width, size.height)
+        } else {
+            (80, 25)
+        };
+
+        let connection_string = if let Some(address) = &self.current_address {
+            match address.protocol {
+                icy_net::ConnectionType::Telnet => "Telnet".to_string(),
+                icy_net::ConnectionType::SSH => "SSH".to_string(),
+                icy_net::ConnectionType::Raw => "Raw".to_string(),
+                icy_net::ConnectionType::Modem => {
+                    if let Some(modem) = options.modems.iter().find(|p| p.name == address.address) {
+                        format!("{} baud", modem.baud_rate)
+                    } else {
+                        "Modem".to_string()
+                    }
+                }
+                icy_net::ConnectionType::Websocket => "WebSocket".to_string(),
+                icy_net::ConnectionType::SecureWebsocket => "WSS".to_string(),
+                _ => "Unknown".to_string(),
+            }
+        } else {
+            "OFFLINE".to_string()
+        };
+
+        // Build the status bar row
+        let mut status_row = row![connection_status].spacing(8).align_y(Alignment::Center);
+
+        if scrollback_lines > 0 {
+            let scrollback_text = text(format!("↑{:04}", scrollback_lines))
+                .size(14)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                    ..Default::default()
+                });
+
+            status_row = status_row.push(text("|")).push(scrollback_text);
+        }
+
+        status_row = status_row.push(Space::new().width(Length::Fill)).push(capture_status);
+
+        // Only add IEMSI button if we have IEMSI info
+        if self.iemsi_info.is_some() {
+            let iemsi_button = button(text("IEMSI").size(12))
+                .on_press(Message::ShowIemsiDialog)
+                .padding([2, 8])
+                .style(|theme: &iced::Theme, status| {
+                    use iced::widget::button::{Status, Style};
+
+                    let palette = theme.extended_palette();
+                    let base = Style {
+                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                        text_color: palette.primary.strong.color,
+                        border: Border {
+                            color: palette.primary.weak.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        shadow: Default::default(),
+                        snap: false,
+                    };
+
+                    match status {
+                        Status::Active => base,
+                        Status::Hovered => Style {
+                            background: Some(iced::Background::Color(palette.primary.weak.color)),
+                            text_color: palette.primary.weak.text,
+                            ..base
+                        },
+                        Status::Pressed => Style {
+                            background: Some(iced::Background::Color(palette.primary.strong.color)),
+                            text_color: palette.primary.strong.text,
+                            ..base
+                        },
+                        Status::Disabled => base,
+                    }
+                });
+
+            status_row = status_row.push(iemsi_button);
+        }
+
+        // Add separator and terminal info
+        status_row = status_row
+            .push(text(" | "))
+            .push(text(format!("{emulation_str} • {buffer_width}x{buffer_height} • {connection_string}")).size(12));
+
+        container(status_row.padding([4, 12]))
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                border: iced::Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                text_color: Some(theme.extended_palette().secondary.base.color),
+                shadow: Default::default(),
+                snap: false,
+            })
+            .into()
+    }
+
+    // Helper methods for terminal operations
+    pub fn connect(&mut self, address: Option<Address>) {
+        self.is_connected = true;
+        self.current_address = address;
+        self.terminal_emulation = match &self.current_address {
+            Some(addr) => addr.terminal_type.clone(),
+            None => TerminalEmulation::Ansi,
+        };
+    }
+
+    pub fn disconnect(&mut self) {
+        self.is_connected = false;
+        self.current_address = None;
+        self.iemsi_info = None;
+    }
+
+    pub fn toggle_capture(&mut self) {
+        self.is_capturing = !self.is_capturing;
     }
 }
 
-fn terminal_context_menu(ui: &mut egui::Ui, window: &mut MainWindow) {
-    ui.input_mut(|i| i.events.clear());
+// Helper function to create menu buttons
+fn _menu_button<'a>(content: impl Into<Element<'a, Message>>, msg: Message) -> button::Button<'a, Message> {
+    button(content)
+        .padding([6, 12])
+        .width(Length::Fill)
+        .style(|theme: &iced::Theme, status| {
+            use iced::widget::button::{Status, Style};
 
-    if ui.button(fl!(crate::LANGUAGE_LOADER, "terminal-menu-copy")).clicked() {
-        window.copy_to_clipboard();
-        ui.close_kind(egui::UiKind::Menu);
-    }
+            let palette = theme.extended_palette();
+            let base = Style {
+                text_color: palette.background.base.text,
+                border: Border::default().rounded(4.0),
+                ..Style::default()
+            };
 
-    if ui.button(fl!(crate::LANGUAGE_LOADER, "terminal-menu-paste")).clicked() {
-        let mut clipboard = arboard::Clipboard::new().unwrap();
-        if let Ok(text) = clipboard.get_text() {
-            let im = window.screen_mode.get_input_mode();
-            let key_map = im.cur_map();
-            let mut first = true;
-            let mut txt = String::new();
-            text.lines().for_each(|line| {
-                if first {
-                    first = false;
-                } else {
-                    for (k, m) in key_map {
-                        if *k == eframe::egui::Key::Enter as u32 {
-                            for c in *m {
-                                txt.push(*c as char);
-                            }
-                        }
-                    }
-                }
-                txt.push_str(line);
-            });
-            window.output_string(&txt);
-        }
-        ui.close_kind(egui::UiKind::Menu);
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        ui.separator();
-        if ui
-            .add(egui::Button::new(fl!(crate::LANGUAGE_LOADER, "terminal-menu-export")).wrap_mode(egui::TextWrapMode::Truncate))
-            .clicked()
-        {
-            window.init_export_dialog(ui.ctx());
-            ui.close_kind(egui::UiKind::Menu);
-        }
-    }
+            match status {
+                Status::Active => base.with_background(Color::TRANSPARENT),
+                Status::Hovered => base.with_background(Color::from_rgba(
+                    palette.primary.weak.color.r,
+                    palette.primary.weak.color.g,
+                    palette.primary.weak.color.b,
+                    0.3,
+                )),
+                Status::Pressed => base.with_background(palette.primary.weak.color),
+                _ => base,
+            }
+        })
+        .on_press(msg)
 }

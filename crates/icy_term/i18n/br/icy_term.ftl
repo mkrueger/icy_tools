@@ -51,17 +51,21 @@ settings-keybinds-quit = Sair:
 settings-keybinds-show-find = Encontrar:
 
 settings-modem-category = Modem
+settings-modem-name = Nome:
 settings-modem-device = Dispositivo:
 settings-modem-baud_rate = Taxa de baud:
 settings-modem-data_bits = Bits de dados / Bits de parada / Paridade:
 settings-modem-init_string = String de inicialização:
 settings-modem_dial_string = String de discagem:
+settings-modem-flow_control = Controle de fluxo:
+settings-modem_nothing_selected = Nenhum modem selecionado
 
 dialing_directory-connect-to = Conexão rápida para…
 dialing_directory-new_bbs = Novo BBS
 dialing_directory-name-placeholder = Nome do BBS
 dialing_directory-filter-placeholder = Filtrar nomes
 dialing_directory-address = Endereço:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protocolo:
 dialing_directory-user = Usuário:
 dialing_directory-password = Senha:
@@ -90,6 +94,12 @@ dialing_directory-add-bbs-button = Adicionar BBS
 dialing_directory-version-warning = Este diretório de discagem foi criado com uma versão mais recente do IcyTerm. Por favor, use uma versão mais recente. Nenhuma alteração será salva.
 dialing_directory-custom-iemsi-login-data = Dados de login IEMSI personalizados
 dialing_directory-open_cache_button=Abrir diretório de cache…
+dialing_directory-generate-tooltip = Gerar uma senha aleatória
+dialing_directory-generate-disabled-tooltip= 
+    Senha já definida,
+    exclua-a primeiro para gerar uma nova
+dialing_directory-invalid_modem = Modem inválido
+dialing_directory-no_modem_configured = Nenhum modem configurado
 
 terminal-upload = Upload
 terminal-download = Download
@@ -117,12 +127,12 @@ protocol-text-description = Enviar um arquivo de texto
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocolo:
+transfer-protocol = Protocolo
 transfer-checksize = Verificar/tamanho:
-transfer-elapsedtime = Tempo decorrido:
+transfer-elapsedtime = Tempo decorrido
 transfer-state = Estado:
 transfer-file = Arquivo:
-transfer-rate = taxa de transferência:
+transfer-rate = Taxa de transferência
 transfer-bps = { $bps } por segundo
 
 menu-item-discuss=Fórum
@@ -142,10 +152,13 @@ toolbar-stop-playing4 = Estou implorando
 toolbar-stop-playing5 = Piedade
 toolbar-stop-playing6 = Já chega
 
-capture-dialog-capture-label=Arquivo de captura:
+capture-dialog-capture-folder = Pasta:
+capture-dialog-capture-file = Arquivo:
 capture-dialog-capture-title=Captura
 capture-dialog-capture-button=Iniciar
-capture-dialog-open-folder-button=Abrir pasta…
+
+export-dialog-title = Exportar buffer para arquivo
+export-dialog-export-button = Exportar
 
 show-iemsi-dialog-heading=Informações do servidor IEMSI
 show-iemsi-dialog-name=Nome:

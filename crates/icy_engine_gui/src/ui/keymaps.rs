@@ -294,7 +294,7 @@ pub static VIDEOTERM_KEY_MAP: &[(u32, &[u8])] = &[
 impl BufferInputMode {
     pub fn cur_map<'a>(&self) -> &'a [(u32, &[u8])] {
         match self {
-            BufferInputMode::CP437 => ANSI_KEY_MAP,
+            BufferInputMode::CP437 | BufferInputMode::Unicode => ANSI_KEY_MAP,
             BufferInputMode::PETscii => C64_KEY_MAP,
             BufferInputMode::ATAscii => ATASCII_KEY_MAP,
             //     super::BufferInputMode::VT500 => super::VT500_KEY_MAP,

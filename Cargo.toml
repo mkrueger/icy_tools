@@ -9,6 +9,7 @@ members = [
 	"crates/icy_term",
 	"crates/icy_view",
 	"crates/icy_view_gui",
+	"crates/iced_engine_gui",
 ]
 [workspace.package]
 version = "0.3.0"
@@ -22,6 +23,8 @@ icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = { path = "crates/icy_sauce" }
 icy_sixel = "0.1.3"
 icy_view_gui = { path = "crates/icy_view_gui" }
+iced_engine_gui = { path = "crates/iced_engine_gui" } 
+
 codepages = { git ="https://github.com/mkrueger/icy_board" }
 
 zip = { version = "5.1.1"}
@@ -46,6 +49,12 @@ tokio = { version = "1.47.1", features = ["full"] }
 rodio = { version = "0.21.1" }
 arboard = { version = "3.6.1" }
 anyhow = "1.0.100"
+webbrowser = "1.0.6"
+
+iced = "0.14.0-dev"
+#iced_aw = { version = "0.13", default-features = 	false, features = ["menu"] }
+iced_graphics = { git = "https://github.com/iced-rs/iced.git" }
+iced_core = { git = "https://github.com/iced-rs/iced.git" }
 
 egui = "0.33.0"
 eframe = "0.33.0"
@@ -71,3 +80,7 @@ lto = true          # Enable link-time optimization
 codegen-units = 1   # Reduce number of codegen units to increase optimizations
 panic = 'abort'     # Abort on panic
 strip = true        # Strip symbols from binary*
+
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"
+iced_aw.git = "https://github.com/iced-rs/iced_aw.git"

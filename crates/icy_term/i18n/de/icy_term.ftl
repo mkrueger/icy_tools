@@ -52,25 +52,29 @@ settings-keybinds-quit = Beenden:
 settings-keybinds-show-find = Suchen:
 
 settings-modem-category = Modem
+settings-modem-name = Name:
 settings-modem-device = Gerät:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Datenbits / Stopbits / Parität:
 settings-modem-init_string = Init-String:
 settings-modem_dial_string = Wählstring:
+settings-modem-flow_control = Flusskontrolle:
+settings-modem_nothing_selected = Kein Modem ausgewählt
 
 dialing_directory-connect-to = Verbinde zu…
 dialing_directory-new_bbs = Neue BBS
 dialing_directory-name-placeholder = BBS Name
 dialing_directory-filter-placeholder = Namensfilter
 dialing_directory-address = Addresse:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protokoll:
 dialing_directory-user = User:
 dialing_directory-password = Passwort:
 dialing_directory-generate = Generieren
-dialing_directory-screen_mode = Bildschirmmodus:
+dialing_directory-screen_mode = Modus:
 dialing_directory-terminal_type = Terminaltyp:
-dialing_directory-music-option = Ansimusik:
-dialing_directory-autologin = Autologin String:
+dialing_directory-music-option = Musik:
+dialing_directory-autologin = Autologin:
 dialing_directory-comment = Kommentar:
 dialing_directory-delete = Ausgewählte BBS löschen
 dialing_directory-add = Neue BBS
@@ -91,6 +95,12 @@ dialing_directory-custom-iemsi-login-data = Benutzerdefinierte IEMSI Login-Daten
 dialing_directory-open_cache_button=Cache öffnen…
 dialing_directory-date-format=%d.%m.%Y um %H:%M
 dialing_directory-baud-emulation = Baud-Emulation:
+dialing_directory-generate-tooltip = Generiere ein zufälliges Passwort
+dialing_directory-generate-disabled-tooltip= 
+    Passwort bereits gesetzt,
+    lösche es zuerst, um ein neues zu generieren
+dialing_directory-invalid_modem = Ungültiges Modem
+dialing_directory-no_modem_configured = Kein Modem konfiguriert
 
 terminal-upload = Upload
 terminal-download = Download
@@ -118,12 +128,12 @@ protocol-text-description = Text file hochladen
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protokoll:
+transfer-protocol = Protokoll
 transfer-checksize = Check/Größe:
-transfer-elapsedtime = Transferzeit:
+transfer-elapsedtime = Transferzeit
 transfer-state = Status:
 transfer-file = Datei:
-transfer-rate = Transferrate:
+transfer-rate = Transferrate
 transfer-bps = { $bps } pro Sekunde
 
 menu-item-discuss=Forum
@@ -143,11 +153,13 @@ toolbar-stop-playing4 = RUHE!!!
 toolbar-stop-playing5 = GNADE
 toolbar-stop-playing6 = Genug
 
-capture-dialog-capture-checkbox=Sitzung aufnehmen
-capture-dialog-capture-label=Dateiname:
+capture-dialog-capture-folder = Verzeichnis: 
+capture-dialog-capture-file = Datei:
 capture-dialog-capture-title=Aufnahme
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Verzeichnis öffnen…
+
+export-dialog-title = Buffer in Datei exportieren
+export-dialog-export-button = Exportieren
 
 show-iemsi-dialog-heading=IEMSI Server-Information
 show-iemsi-dialog-name=Name:

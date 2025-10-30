@@ -1,191 +1,276 @@
-use std::io::Write;
-
-use eframe::egui::{self, RichText};
-use egui::TextEdit;
-use egui::{Frame, Layout};
-use egui_file::FileDialog;
 use i18n_embed_fl::fl;
-use std::path::Path;
+use iced::{
+    Alignment, Border, Color, Element, Length,
+    widget::{Space, button, column, container, row, text, text_input},
+};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
-#[derive(Default)]
-pub struct DialogState {
-    open_file_dialog: Option<FileDialog>,
-    pub capture_session: bool,
-    pub capture_filename: String,
+const MODAL_WIDTH: f32 = 500.0;
+const MODAL_HEIGHT: f32 = 200.0;
 
-    /// debug spew prevention
-    pub show_capture_error: bool,
-}
-
-pub enum Message {
+#[derive(Debug, Clone)]
+pub enum CaptureMsg {
     StartCapture,
     StopCapture,
-    OpenFolder,
-    CloseDialog,
-    ChangeCaptureFileName(String),
+    ChangeDirectory(String),
+    ChangeFileName(String),
+    BrowseDirectory,
+    Cancel,
 }
 
-impl DialogState {
-    pub(crate) fn append_data(&mut self, data: &[u8]) {
+pub struct CaptureDialogState {
+    pub capture_session: bool,
+    pub capture_directory: String,
+    pub capture_filename: String,
+    temp_directory: String,
+    temp_filename: String,
+}
+
+impl CaptureDialogState {
+    pub fn new(initial_path: String) -> Self {
+        let path: &Path = Path::new(&initial_path);
+        let (dir, file) = if path.is_absolute() {
+            (
+                path.parent().and_then(|p| p.to_str()).unwrap_or("").to_string(),
+                path.file_name().and_then(|f| f.to_str()).unwrap_or("capture.txt").to_string(),
+            )
+        } else {
+            (
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|p| p.to_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| ".".to_string()),
+                initial_path.clone(),
+            )
+        };
+
+        Self {
+            capture_session: false,
+            capture_directory: dir.clone(),
+            capture_filename: file.clone(),
+            temp_directory: dir,
+            temp_filename: file,
+        }
+    }
+
+    pub fn reset(&mut self, full_path: &str, is_capturing: bool) {
+        let path = Path::new(full_path);
+        let (dir, file) = if path.is_absolute() {
+            (
+                path.parent().and_then(|p| p.to_str()).unwrap_or(&self.capture_directory).to_string(),
+                path.file_name().and_then(|f| f.to_str()).unwrap_or(&self.capture_filename).to_string(),
+            )
+        } else if !full_path.is_empty() {
+            (self.capture_directory.clone(), full_path.to_string())
+        } else {
+            (self.capture_directory.clone(), self.capture_filename.clone())
+        };
+
+        self.temp_directory = dir.clone();
+        self.temp_filename = file.clone();
+        self.capture_directory = dir;
+        self.capture_filename = file;
+        self.capture_session = is_capturing;
+    }
+
+    pub fn is_capturing(&self) -> bool {
+        self.capture_session
+    }
+
+    pub fn get_full_path(&self) -> PathBuf {
+        Path::new(&self.capture_directory).join(&self.capture_filename)
+    }
+
+    pub fn append_data(&mut self, data: &[u8]) {
         if self.capture_session {
-            if let Ok(mut data_file) = std::fs::OpenOptions::new().create(true).append(true).open(&self.capture_filename) {
+            let full_path = self.get_full_path();
+            if let Ok(mut data_file) = std::fs::OpenOptions::new().create(true).append(true).open(&full_path) {
                 if let Err(err) = data_file.write_all(data) {
-                    if !self.show_capture_error {
-                        self.show_capture_error = true;
-                        log::error!("{err}");
-                    }
+                    log::error!("Failed to write capture data to file {}: {}", full_path.display(), err);
                 }
             }
         }
     }
 
-    pub fn show_caputure_dialog(&mut self, ctx: &egui::Context) -> bool {
-        let mut result = None;
-        let mut open = true;
-        let mut close_dialog = false;
-        if ctx.input(|i: &egui::InputState| i.key_down(egui::Key::Escape)) {
-            open = false;
-        }
-        let window_frame = Frame::window(&ctx.style());
-        egui::Window::new(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-title"))
-            .open(&mut open)
-            .collapsible(true)
-            .frame(window_frame)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.label(RichText::new(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-label")));
-
-                ui.horizontal(|ui| {
-                    let mut file = self.capture_filename.clone();
-                    let r = ui.add(TextEdit::singleline(&mut file).desired_width(370.));
-                    if r.changed() {
-                        result = Some(Message::ChangeCaptureFileName(file));
-                    }
-                    if ui.button("…").clicked() {
-                        result = Some(Message::OpenFolder);
-                    }
-                });
-                ui.add_space(8.);
-                ui.separator();
-                ui.add_space(4.0);
-
-                ui.with_layout(Layout::right_to_left(egui::Align::TOP), |ui| {
-                    if self.capture_session {
-                        if ui.button(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).clicked() {
-                            result = Some(Message::StopCapture);
-                            close_dialog = true;
-                        }
-                    } else if ui.button(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-button")).clicked() {
-                        result = Some(Message::StartCapture);
-                        close_dialog = true;
-                    }
-
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if let Some(path) = Path::new(&self.capture_filename).parent() {
-                        if ui.button(fl!(crate::LANGUAGE_LOADER, "capture-dialog-open-folder-button")).clicked() {
-                            if let Some(s) = path.to_str() {
-                                if let Err(err) = open::that(s) {
-                                    log::error!("Failed to open folder: {}", err);
-                                }
-                            }
-                        }
-                    }
-
-                    if ui.button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).clicked() {
-                        close_dialog = true;
-                    }
-                });
-            });
-
-        if let Some(dialog) = &mut self.open_file_dialog {
-            if dialog.show(ctx).selected() {
-                if let Some(path) = dialog.path() {
-                    if let Some(s) = path.to_str() {
-                        result = Some(Message::ChangeCaptureFileName(s.to_string()));
-                    }
-                }
-            }
-        }
-
-        if result.is_none() && (!open || close_dialog) {
-            result = Some(Message::CloseDialog);
-        }
-
-        self.update_state(result) | open
-    }
-
-    fn update_state(&mut self, msg_opt: Option<Message>) -> bool {
-        match msg_opt {
-            Some(Message::OpenFolder) => {
-                let initial_path = if self.capture_filename.is_empty() {
-                    None
-                } else {
-                    Path::new(&self.capture_filename).parent().map(std::path::Path::to_path_buf)
-                };
-                let mut dialog: FileDialog = FileDialog::save_file(initial_path);
-                dialog.open();
-                self.open_file_dialog = Some(dialog);
-            }
-            Some(Message::StopCapture) => {
-                self.capture_session = false;
-                return false;
-            }
-            Some(Message::StartCapture) => {
+    pub fn update(&mut self, message: CaptureMsg) -> Option<crate::ui::Message> {
+        match message {
+            CaptureMsg::StartCapture => {
+                self.capture_directory = self.temp_directory.clone();
+                self.capture_filename = self.temp_filename.clone();
                 self.capture_session = true;
-                return false;
+
+                // Create directory if it doesn't exist
+                if let Err(e) = std::fs::create_dir_all(&self.capture_directory) {
+                    log::error!("Failed to create directory: {}", e);
+                    return None;
+                }
+
+                // Save the full path to options
+                let full_path = self.get_full_path();
+                if let Some(path_str) = full_path.to_str() {
+                    Some(crate::ui::Message::StartCapture(path_str.to_string()))
+                } else {
+                    None
+                }
             }
-            Some(Message::CloseDialog) => {
-                return false;
+            CaptureMsg::StopCapture => {
+                self.capture_session = false;
+                Some(crate::ui::Message::CloseDialog)
             }
-            Some(Message::ChangeCaptureFileName(file)) => {
-                self.capture_filename = file;
-                self.show_capture_error = false;
-                //  state.store_options();
+            CaptureMsg::ChangeDirectory(dir) => {
+                self.temp_directory = dir;
+                None
             }
-            _ => {}
+            CaptureMsg::ChangeFileName(name) => {
+                self.temp_filename = name;
+                None
+            }
+            CaptureMsg::BrowseDirectory => {
+                let initial_dir = if Path::new(&self.temp_directory).exists() {
+                    Some(PathBuf::from(&self.temp_directory))
+                } else {
+                    std::env::current_dir().ok()
+                };
+
+                let mut dialog = rfd::FileDialog::new();
+                if let Some(dir) = initial_dir {
+                    dialog = dialog.set_directory(dir);
+                }
+
+                if let Some(path) = dialog.pick_folder() {
+                    if let Some(path_str) = path.to_str() {
+                        self.temp_directory = path_str.to_string();
+                    }
+                }
+                None
+            }
+            CaptureMsg::Cancel => {
+                // Don't save changes, just close
+                Some(crate::ui::Message::CloseDialog)
+            }
         }
-        true
+    }
+
+    pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
+        let overlay = self.create_modal_content();
+        crate::ui::modal(terminal_content, overlay, crate::ui::Message::CaptureDialog(CaptureMsg::Cancel))
+    }
+
+    fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
+        let title = if self.capture_session {
+            text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture"))
+        } else {
+            text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-title"))
+        }
+        .size(20)
+        .width(Length::Fill)
+        .align_x(Alignment::Center);
+
+        // Directory input with browse button
+        let dir_input = text_input("", &self.temp_directory)
+            .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeDirectory(s)))
+            .padding(6)
+            .width(Length::Fill);
+
+        let browse_button = button(text("📁").size(14))
+            .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::BrowseDirectory))
+            .padding([6, 12]);
+
+        let mut dir_row = row![
+            container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-folder")).size(14))
+                .width(Length::Fixed(80.0))
+                .align_x(Alignment::End),
+            Space::new().width(8.0),
+            dir_input,
+            Space::new().width(4.0),
+            browse_button,
+        ]
+        .align_y(Alignment::Center);
+
+        if !self.temp_directory.is_empty() && !Path::new(&self.temp_directory).exists() {
+            dir_row = dir_row.push(
+                container(text("⚠").size(18).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                }))
+                .padding([0, 4]),
+            );
+        }
+
+        // Filename input
+        let file_input = text_input("", &self.temp_filename)
+            .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeFileName(s)))
+            .padding(6)
+            .width(Length::Fill);
+
+        let file_row = row![
+            container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")).size(14))
+                .width(Length::Fixed(80.0))
+                .align_x(Alignment::End),
+            Space::new().width(8.0),
+            file_input,
+        ]
+        .align_y(Alignment::Center);
+
+        // Action buttons
+        let action_button: button::Button<'_, crate::ui::Message> = if self.capture_session {
+            button(text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")))
+                .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::StopCapture))
+                .padding([8, 16])
+                .style(button::danger)
+        } else {
+            button(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-button")))
+                .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::StartCapture))
+                .padding([8, 16])
+                .style(button::primary)
+        };
+
+        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
+            .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::Cancel))
+            .padding([8, 16])
+            .style(button::secondary);
+
+        let button_row = row![Space::new().width(Length::Fill), cancel_button, Space::new().width(8.0), action_button,];
+
+        // Main content
+        let modal_content = container(
+            column![
+                title,
+                Space::new().height(12.0),
+                dir_row,
+                Space::new().height(8.0),
+                file_row,
+                Space::new().height(Length::Fill),
+                button_row,
+            ]
+            .padding(10),
+        )
+        .width(Length::Fixed(MODAL_WIDTH))
+        .height(Length::Fixed(MODAL_HEIGHT))
+        .style(|theme: &iced::Theme| {
+            let palette = theme.palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background)),
+                border: Border {
+                    color: palette.text,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                text_color: Some(palette.text),
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
+                    offset: iced::Vector::new(0.0, 4.0),
+                    blur_radius: 16.0,
+                },
+                snap: false,
+            }
+        });
+
+        container(modal_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
     }
 }
-/*
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::field_reassign_with_default)]
-    use crate::ui::{dialogs::capture_dialog::update_state, MainWindowState};
-
-    #[test]
-    fn test_start_capture() {
-        let mut state: MainWindowState = MainWindowState::default();
-        assert!(!state.capture_dialog.capture_session);
-        update_state(&mut state, Some(super::Message::StartCapture));
-        assert!(state.capture_dialog.capture_session);
-        assert!(!state.options_written);
-    }
-
-    #[test]
-    fn test_stop_capture() {
-        let mut state: MainWindowState = MainWindowState::default();
-        state.capture_dialog.capture_session = true;
-        update_state(&mut state, Some(super::Message::StopCapture));
-        assert!(!state.capture_dialog.capture_session);
-        assert!(!state.options_written);
-    }
-
-    #[test]
-    fn test_close_dialog() {
-        let mut state: MainWindowState = MainWindowState::default();
-        state.mode = super::MainWindowMode::ShowCaptureDialog;
-        update_state(&mut state, Some(super::Message::CloseDialog));
-        assert!(matches!(state.mode, super::MainWindowMode::ShowTerminal));
-        assert!(!state.options_written);
-    }
-
-    #[test]
-    fn test_change_filename() {
-        let mut state: MainWindowState = MainWindowState::default();
-        update_state(&mut state, Some(super::Message::ChangeCaptureFileName("foo.baz".to_string())));
-        assert_eq!("foo.baz".to_string(), state.options.capture_filename);
-        assert!(state.options_written);
-    }
-}
-*/

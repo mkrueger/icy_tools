@@ -1,0 +1,22 @@
+settings-heading = Configurações
+settings-scaling = Escala
+settings-monitor-type = Monitor
+settings-reset-button = Redefinir
+settings-monitor-category = Monitor
+settings-monitor-use-crt-filter-checkbox = Usar filtro CRT
+settings-monitor-brightness = Brilho
+settings-monitor-contrast = Contraste
+settings-monitor-saturation = Saturação
+settings-monitor-gamma = Gama
+settings-monitor-blur = Desfoque
+settings-monitor-curve = Curva
+settings-monitor-scanlines = Linhas de varredura
+settings-background_color-label=Cor da borda:
+
+settings-monitor-color = Cor
+settings-monitor-grayscale = Tons de cinza
+settings-monitor-amber = Âmbar
+settings-monitor-green = Verde
+settings-monitor-apple2 = Apple ][
+settings-monitor-futuristic = Futurista
+settings-monitor-custom=Personalizado

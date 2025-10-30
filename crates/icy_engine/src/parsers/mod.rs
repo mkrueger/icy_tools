@@ -86,7 +86,8 @@ impl Caret {
             if buf.terminal_state.fixed_size && self.pos.y >= buf.terminal_state.get_height() {
                 line_inserted += 1;
                 if !buf.layers[current_layer].lines.is_empty() {
-                    buf.layers[current_layer].lines.remove(0);
+                    let line = buf.layers[current_layer].lines.remove(0);
+                    buf.push_to_scrollback(line);
                 }
                 self.pos.y -= 1;
                 continue;
@@ -350,9 +351,9 @@ impl Buffer {
 
     pub fn clear_screen(&mut self, layer: usize, caret: &mut Caret) {
         caret.pos = Position::default();
+        self.stop_sixel_threads();
         let layer = &mut self.layers[layer];
         layer.clear();
-        self.stop_sixel_threads();
         self.terminal_state.cleared_screen = true;
         if self.is_terminal_buffer {
             self.set_size(self.terminal_state.get_size());

@@ -51,17 +51,21 @@ settings-keybinds-quit = Sortir:
 settings-keybinds-show-find = Cercar:
 
 settings-modem-category = Mòdem
+settings-modem-name = Nom:
 settings-modem-device = Dispositiu:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Bits de dades / Bits de parada / Paritat:
 settings-modem-init_string = Cadena d'inicialització:
 settings-modem_dial_string = Cadena de marcatge:
+settings-modem-flow_control = Control de flux:
+settings-modem_nothing_selected = No hi ha cap mòdem seleccionat
 
 dialing_directory-connect-to = Connexió ràpida a…
 dialing_directory-new_bbs = Nou BBS
 dialing_directory-name-placeholder = Nom del BBS
 dialing_directory-filter-placeholder = Filtrar noms
 dialing_directory-address = Adreça:
+dialing_directory-modem = Mòdem:
 dialing_directory-protocol = Protocol:
 dialing_directory-user = Usuari:
 dialing_directory-password = Contrasenya:
@@ -90,6 +94,12 @@ dialing_directory-add-bbs-button = Afegir BBS
 dialing_directory-version-warning = Aquest directori de marcatge es va crear amb una versió més nova d'IcyTerm. Si us plau, utilitza una versió més nova. No es guardaran els canvis.
 dialing_directory-custom-iemsi-login-data = Dades de login IEMSI personalitzades
 dialing_directory-open_cache_button=Obre el directori de la memòria cau…
+dialing_directory-generate-tooltip = Generar un contrasenya aleatòria
+dialing_directory-generate-disabled-tooltip= 
+    Contrasenya ja establerta,
+    esborra-la primer per generar-ne una de nova
+dialing_directory-invalid_modem = Mòdem invàlid
+dialing_directory-no_modem_configured = No hi ha cap mòdem configurat
 
 terminal-upload = Pujar
 terminal-download = Descarregar
@@ -117,12 +127,12 @@ protocol-text-description = Pujar un fitxer de text
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocol:
+transfer-protocol = Protocol
 transfer-checksize = Comprovar/mida:
-transfer-elapsedtime = Temps transcorregut:
+transfer-elapsedtime = Temps transcorregut
 transfer-state = Estat:
 transfer-file = Fitxer:
-transfer-rate = taxa de transferència:
+transfer-rate = Taxa de transferència
 transfer-bps = { $bps } per segon
 
 menu-item-discuss=Fòrum
@@ -142,10 +152,13 @@ toolbar-stop-playing4 = T'ho prego
 toolbar-stop-playing5 = Pietat
 toolbar-stop-playing6 = Ja n'hi ha prou
 
-capture-dialog-capture-label=Fitxer de captura:
+capture-dialog-capture-folder = Carpeta: 
+capture-dialog-capture-file = Fitxer:
 capture-dialog-capture-title=Captura
 capture-dialog-capture-button=Iniciar
-capture-dialog-open-folder-button=Obre la carpeta…
+
+export-dialog-title = Exportar memòria intermèdia a fitxer
+export-dialog-export-button = Exportar
 
 show-iemsi-dialog-heading=Informació del servidor IEMSI
 show-iemsi-dialog-name=Nom:

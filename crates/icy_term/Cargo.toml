@@ -1,6 +1,6 @@
 [package]
 name = "icy_term"
-version = "0.7.13"
+version = "0.7.99"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,34 +11,29 @@ repository = "https://github.com/mkrueger/icy_tools"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../../../icy_board/crates/icy_net" }
 
-egui = { workspace = true }
-eframe = { workspace = true }
-egui_extras = { workspace = true }
-egui_glow = { workspace = true }
-egui-modal = { workspace = true }
-egui-bind = { workspace = true }
-egui_file = { workspace = true }
-tokio = { workspace = true }
+iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
+#iced_aw = { workspace = true  }
 
-glow = { workspace = true }
-dark-light = "2.0.0"
+tokio = { workspace = true }
 serde = { workspace = true }
 versions = "7.0.0"
 regex = { workspace = true }
 github_release_check = "0.2.1"
 semver = { workspace = true }
+webbrowser = { workspace = true }
+iced_engine_gui = { workspace = true }
 
 #sound
 rodio = { workspace = true }
 icy_engine = { workspace = true }
-icy_engine_gui = { workspace = true }
 
 walkdir = { workspace = true }
 toml = { workspace = true }
 
 lazy_static = { workspace = true }
 notify = "8.2.0"
-gabi = "0.2.6"
+human_bytes = { version = "0.4", default-features = false }
+
 arboard = { workspace = true }
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
@@ -70,9 +65,11 @@ getrandom =  { version = "0.3.3" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = { workspace = true }
-open = "5.0.0"
-tracing-subscriber = "0.3"
+open = "5.3.2"
+rfd = "0.15.4"
 
+tracing-subscriber = "0.3"
+async-recursion = "1.1.1"
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
@@ -102,3 +99,6 @@ assets = [
     ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_term.png", "644"],
 ]
 
+
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"

@@ -19,6 +19,7 @@ pub enum BufferInputMode {
     PETscii,
     ATAscii,
     ViewData,
+    Unicode,
 }
 
 pub struct Blink {

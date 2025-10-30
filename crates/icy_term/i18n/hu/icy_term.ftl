@@ -51,17 +51,21 @@ settings-keybinds-quit = Kilépés:
 settings-keybinds-show-find = Keresés:
 
 settings-modem-category = Modem
+settings-modem-name = Név:
 settings-modem-device = Eszköz:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Adatbitek / Stopbitek / Paritás:
 settings-modem-init_string = Inicializáló karakterlánc:
 settings-modem_dial_string = Tárcsázó karakterlánc:
+settings-modem-flow_control = Adatfolyam vezérlés:
+settings-modem_nothing_selected = Nincs modem kiválasztva
 
 dialing_directory-connect-to = Gyors csatlakozás…
 dialing_directory-new_bbs = Új BBS
 dialing_directory-name-placeholder = BBS név
 dialing_directory-filter-placeholder = Nevek szűrése
 dialing_directory-address = Cím:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protokoll:
 dialing_directory-user = Felhasználó:
 dialing_directory-password = Jelszó:
@@ -90,6 +94,12 @@ dialing_directory-add-bbs-button = BBS hozzáadása
 dialing_directory-version-warning = Ez a tárcsázási könyvtár egy újabb IcyTerm verzióval készült. Kérjük, használjon újabb verziót. A változtatások nem lesznek elmentve.
 dialing_directory-custom-iemsi-login-data = Egyéni IEMSI bejelentkezési adatok
 dialing_directory-open_cache_button=Gyorsítótár könyvtár megnyitása…
+dialing_directory-generate-tooltip = Véletlenszerű jelszó generálása
+dialing_directory-generate-disabled-tooltip= 
+    Jelszó már be van állítva,
+    először töröld, hogy új jelszót generálhass
+dialing_directory-invalid_modem = Érvénytelen modem
+dialing_directory-no_modem_configured = Nincs konfigurálva modem
 
 terminal-upload = Feltöltés
 terminal-download = Letöltés
@@ -117,12 +127,12 @@ protocol-text-description = Szövegfájl feltöltése
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protokoll:
+transfer-protocol = Protokoll
 transfer-checksize = Ellenőrzés/méret:
-transfer-elapsedtime = Eltelt idő:
+transfer-elapsedtime = Eltelt idő
 transfer-state = Állapot:
 transfer-file = Fájl:
-transfer-rate = átviteli sebesség:
+transfer-rate = Átviteli sebesség
 transfer-bps = { $bps } másodpercenként
 
 menu-item-discuss=Fórum
@@ -142,10 +152,13 @@ toolbar-stop-playing4 = Könyörgöm
 toolbar-stop-playing5 = Kegyelem
 toolbar-stop-playing6 = Elég már
 
-capture-dialog-capture-label=Rögzítési fájl:
+capture-dialog-capture-folder = Könyvtár:
+capture-dialog-capture-file = Fájl:
 capture-dialog-capture-title=Rögzítés
 capture-dialog-capture-button=Indítás
-capture-dialog-open-folder-button=Mappa megnyitása…
+
+export-dialog-title = Puffer exportálása fájlba
+export-dialog-export-button = Exportálás
 
 show-iemsi-dialog-heading=IEMSI szerver információk
 show-iemsi-dialog-name=Név:

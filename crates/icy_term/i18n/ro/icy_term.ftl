@@ -51,17 +51,21 @@ settings-keybinds-quit = Ieșire:
 settings-keybinds-show-find = Găsește:
 
 settings-modem-category = Modem
+settings-modem-name = Nume:
 settings-modem-device = Dispozitiv:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Biți date / Biți stop / Paritate:
 settings-modem-init_string = Șir de inițializare:
 settings-modem_dial_string = Șir de apelare:
+settings-modem-flow_control = Control flux:
+settings-modem_nothing_selected = Niciun modem selectat
 
 dialing_directory-connect-to = Conectare rapidă la…
 dialing_directory-new_bbs = Nou BBS
 dialing_directory-name-placeholder = Nume BBS
 dialing_directory-filter-placeholder = Filtrează nume
 dialing_directory-address = Adresă:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protocol:
 dialing_directory-user = Utilizator:
 dialing_directory-password = Parolă:
@@ -90,6 +94,12 @@ dialing_directory-add-bbs-button = Adaugă BBS
 dialing_directory-version-warning = Acest director de apelare a fost creat cu o versiune mai nouă de IcyTerm. Te rugăm să folosești o versiune mai nouă. Nu se vor salva modificările.
 dialing_directory-custom-iemsi-login-data = Date de autentificare IEMSI personalizate
 dialing_directory-open_cache_button=Deschide directorul cache…
+dialing_directory-generate-tooltip = Generează o parolă aleatorie
+dialing_directory-generate-disabled-tooltip= 
+    Parola este deja setată,
+    ștergeți-o mai întâi pentru a genera una nouă
+dialing_directory-invalid_modem = Modem nevalid
+dialing_directory-no_modem_configured = Niciun modem configurat
 
 terminal-upload = Încărcare
 terminal-download = Descărcare
@@ -117,12 +127,12 @@ protocol-text-description = Încarcă un fișier text
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocol:
+transfer-protocol = Protocol
 transfer-checksize = Verificare/mărime:
-transfer-elapsedtime = Timp scurs:
+transfer-elapsedtime = Timp scurs
 transfer-state = Stare:
 transfer-file = Fișier:
-transfer-rate = rata de transfer:
+transfer-rate = Rata de transfer
 transfer-bps = { $bps } pe secundă
 
 menu-item-discuss=Forum
@@ -142,10 +152,13 @@ toolbar-stop-playing4 = Te implor
 toolbar-stop-playing5 = Milă
 toolbar-stop-playing6 = Destul
 
-capture-dialog-capture-label=Fișier captură:
+capture-dialog-capture-folder = Director:
+capture-dialog-capture-file = Fișier:
 capture-dialog-capture-title=Captură
 capture-dialog-capture-button=Începe
-capture-dialog-open-folder-button=Deschide folderul…
+
+export-dialog-title = Exportă buffer în fișier
+export-dialog-export-button = Exportă
 
 show-iemsi-dialog-heading=Informații server IEMSI
 show-iemsi-dialog-name=Nume:

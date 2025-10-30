@@ -11,7 +11,7 @@ use egui::CornerRadius;
 use i18n_embed_fl::fl;
 use icy_engine::{
     BitFont, Buffer, EngineResult, Glyph, Size, TextAttribute, TextPane,
-    util::{BITFONT_GLYPH, pop_data, push_data},
+    util::{BITFONT_GLYPH, pop_data},
 };
 use icy_engine_gui::{BufferView, show_terminal_area};
 
@@ -414,8 +414,9 @@ impl ClipboardHandler for BitFontEditor {
 
     fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         if let Some(ch) = self.selected_char_opt {
-            if let Some(data) = self.font.get_clipboard_data(ch) {
-                push_data(BITFONT_GLYPH, &data, None)?;
+            if let Some(_data) = self.font.get_clipboard_data(ch) {
+                // TODO: CLIPBOARD HANDLING
+                // push_data(BITFONT_GLYPH, &data, None)?;
             }
         }
         Ok(())

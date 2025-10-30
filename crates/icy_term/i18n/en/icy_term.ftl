@@ -51,26 +51,30 @@ settings-keybinds-quit = Quit:
 settings-keybinds-show-find = Find:
 
 settings-modem-category = Modem
+settings-modem-name = Name:
 settings-modem-device = Device:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Databits/ Stopbits / Parity:
 settings-modem-init_string = Init string:
 settings-modem_dial_string = Dial string:
+settings-modem-flow_control = Flow control:
+settings-modem_nothing_selected = No modem selected
 
 dialing_directory-connect-to = Quick connect to…
 dialing_directory-new_bbs = New BBS
 dialing_directory-name-placeholder = BBS name
 dialing_directory-filter-placeholder = Filter names
 dialing_directory-address = Address:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protocol:
 dialing_directory-user = User:
 dialing_directory-password = Password:
 dialing_directory-generate = Generate
-dialing_directory-screen_mode = Screen Mode:
-dialing_directory-terminal_type = Terminal type:
-dialing_directory-music-option = Ansi music:
+dialing_directory-screen_mode = Screen:
+dialing_directory-terminal_type = Terminal:
+dialing_directory-music-option = Music:
 dialing_directory-baud-emulation = Baud emulation:
-dialing_directory-autologin = Autologin String:
+dialing_directory-autologin = Autologin:
 dialing_directory-comment = Comment:
 dialing_directory-delete = Delete selected BBS
 dialing_directory-add = Add new BBS
@@ -90,6 +94,13 @@ dialing_directory-add-bbs-button = Add BBS
 dialing_directory-version-warning = This dialing directory was created with a newer version of IcyTerm. Please use newer version. No changes will be saved.
 dialing_directory-custom-iemsi-login-data = Custom IEMSI login data
 dialing_directory-open_cache_button=Open cache directory…
+dialing_directory-comment-placeholder= Add a comment…
+dialing_directory-generate-tooltip= Generate a random password
+dialing_directory-generate-disabled-tooltip= 
+    Password already set,
+    delete it first to generate a new one
+dialing_directory-invalid_modem = Invalid modem
+dialing_directory-no_modem_configured = No modems configured
 
 terminal-upload = Upload
 terminal-download = Download
@@ -117,12 +128,12 @@ protocol-text-description = Upload a text file
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocol:
+transfer-protocol = Protocol
 transfer-checksize = Check/size:
-transfer-elapsedtime = Elapsed time:
+transfer-elapsedtime = Elapsed time
 transfer-state = State:
 transfer-file = File:
-transfer-rate = transfer rate:
+transfer-rate = Transfer rate
 transfer-bps = { $bps } per second
 
 menu-item-discuss=Forum
@@ -142,10 +153,13 @@ toolbar-stop-playing4 = I'm begging you
 toolbar-stop-playing5 = MERCY
 toolbar-stop-playing6 = Enough already
 
-capture-dialog-capture-label=Capture file:
+capture-dialog-capture-folder=Folder:
+capture-dialog-capture-file=File:
 capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Open folder…
+
+export-dialog-title = Export Buffer to File
+export-dialog-export-button = Export
 
 show-iemsi-dialog-heading=IEMSI Server information
 show-iemsi-dialog-name=Name:

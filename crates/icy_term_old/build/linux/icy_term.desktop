@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Icy Term
+Comment=A terminal program supporting CP437, PetScii and ViewData
+Categories=Network;Utility;
+Icon=icy_term
+Exec=/usr/bin/icy_term
+StartupWMClass=icy_term
+Terminal=false

@@ -51,17 +51,21 @@ settings-keybinds-quit = Salir:
 settings-keybinds-show-find = Buscar:
 
 settings-modem-category = Módem
+settings-modem-name = Nombre:
 settings-modem-device = Dispositivo:
 settings-modem-baud_rate = Velocidad en baudios:
 settings-modem-data_bits = Bits de datos / Bits de parada / Paridad:
 settings-modem-init_string = Cadena de inicialización:
 settings-modem_dial_string = Cadena de marcación:
+settings-modem-flow_control = Control de flujo:
+settings-modem_nothing_selected = Ningún módem seleccionado
 
 dialing_directory-connect-to = Conectar rápidamente a…
 dialing_directory-new_bbs = Nuevo BBS
 dialing_directory-name-placeholder = Nombre del BBS
 dialing_directory-filter-placeholder = Filtrar nombres
 dialing_directory-address = Dirección:
+dialing_directory-modem = Módem:
 dialing_directory-protocol = Protocolo:
 dialing_directory-user = Usuario:
 dialing_directory-password = Contraseña:
@@ -90,6 +94,12 @@ dialing_directory-add-bbs-button = Añadir BBS
 dialing_directory-version-warning = Este directorio de marcación fue creado con una versión más reciente de IcyTerm. Por favor, usa una versión más reciente. No se guardarán cambios.
 dialing_directory-custom-iemsi-login-data = Datos de inicio de sesión IEMSI personalizados
 dialing_directory-open_cache_button=Abrir directorio de caché…
+dialing_directory-generate-tooltip = Generar una contraseña aleatoria
+dialing_directory-generate-disabled-tooltip= 
+    La contraseña ya está establecida,
+    elimínala primero para generar una nueva
+dialing_directory-invalid_modem = Módem inválido
+dialing_directory-no_modem_configured = No hay módem configurado
 
 terminal-upload = Subir
 terminal-download = Descargar
@@ -117,12 +127,12 @@ protocol-text-description = Subir un archivo de texto
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protocolo:
+transfer-protocol = Protocolo
 transfer-checksize = Verificar/tamaño:
-transfer-elapsedtime = Tiempo transcurrido:
+transfer-elapsedtime = Tiempo transcurrido
 transfer-state = Estado:
 transfer-file = Archivo:
-transfer-rate = Velocidad de transferencia:
+transfer-rate = Velocidad de transferencia
 transfer-bps = { $bps } por segundo
 
 menu-item-discuss=Foro
@@ -142,10 +152,13 @@ toolbar-stop-playing4 = Te lo suplico
 toolbar-stop-playing5 = PIEDAD
 toolbar-stop-playing6 = Ya es suficiente
 
-capture-dialog-capture-label=Archivo de captura:
+capture-dialog-capture-folder = Carpeta:
+capture-dialog-capture-file = Archivo:
 capture-dialog-capture-title=Captura
 capture-dialog-capture-button=Iniciar
-capture-dialog-open-folder-button=Abrir carpeta…
+
+export-dialog-title = Exportar búfer a archivo
+export-dialog-export-button = Exportar
 
 show-iemsi-dialog-heading=Información del servidor IEMSI
 show-iemsi-dialog-name=Nombre:

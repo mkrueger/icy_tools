@@ -46,8 +46,54 @@ impl Selection {
     }
 
     pub fn is_inside(&self, pos: impl Into<Position>) -> bool {
-        let pos = pos.into();
-        self.as_rectangle().is_inside(pos)
+        match self.shape {
+            Shape::Rectangle => {
+                let pos = pos.into();
+                self.as_rectangle().is_inside(pos)
+            }
+            Shape::Lines => {
+                let pos = pos.into();
+                // Same-line selection: straight min/max span
+                if self.anchor.y == self.lead.y {
+                    let left = self.anchor.x.min(self.lead.x);
+                    let right = self.anchor.x.max(self.lead.x);
+                    return pos.y == self.anchor.y && pos.x >= left && pos.x <= right;
+                }
+
+                // Directional multi-line selection
+                // Downward drag
+                if self.anchor.y < self.lead.y {
+                    if pos.y < self.anchor.y || pos.y > self.lead.y {
+                        return false;
+                    }
+                    if pos.y == self.anchor.y {
+                        // First line: from anchor.x to end-of-line (≥ anchor.x)
+                        return pos.x >= self.anchor.x;
+                    }
+                    if pos.y == self.lead.y {
+                        // Last line: from start-of-line to lead.x (≤ lead.x)
+                        return pos.x <= self.lead.x;
+                    }
+                    // Intermediate line: whole line selected
+                    return true;
+                } else {
+                    // Upward drag (anchor.y > lead.y)
+                    if pos.y < self.lead.y || pos.y > self.anchor.y {
+                        return false;
+                    }
+                    if pos.y == self.lead.y {
+                        // First line in visual order (where drag ended): from lead.x to end-of-line
+                        return pos.x >= self.lead.x;
+                    }
+                    if pos.y == self.anchor.y {
+                        // Last line in visual order (where drag began): from start-of-line to anchor.x
+                        return pos.x <= self.anchor.x;
+                    }
+                    // Intermediate line: whole line selected
+                    return true;
+                }
+            }
+        }
     }
 
     pub fn min(&self) -> Position {

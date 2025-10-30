@@ -51,17 +51,21 @@ settings-keybinds-quit = Ukončit:
 settings-keybinds-show-find = Najít:
 
 settings-modem-category = Modem
+settings-modem-name = Název:
 settings-modem-device = Zařízení:
 settings-modem-baud_rate = Baudrate:
 settings-modem-data_bits = Datové bity / Stop bity / Parita:
 settings-modem-init_string = Iniciační řetězec:
 settings-modem_dial_string = Volačkový řetězec:
+settings-modem-flow_control = Řízení toku:
+settings-modem_nothing_selected = Není vybrán žádný modem
 
 dialing_directory-connect-to = Rychlé připojení k…
 dialing_directory-new_bbs = Nový BBS
 dialing_directory-name-placeholder = Název BBS
 dialing_directory-filter-placeholder = Filtrovat názvy
 dialing_directory-address = Adresa:
+dialing_directory-modem = Modem:
 dialing_directory-protocol = Protokol:
 dialing_directory-user = Uživatel:
 dialing_directory-password = Heslo:
@@ -90,6 +94,12 @@ dialing_directory-add-bbs-button = Přidat BBS
 dialing_directory-version-warning = Tento telefonní seznam byl vytvořen v novější verzi IcyTerm. Použijte prosím novější verzi. Žádné změny nebudou uloženy.
 dialing_directory-custom-iemsi-login-data = Vlastní přihlašovací údaje IEMSI
 dialing_directory-open_cache_button=Otevřít adresář mezipaměti…
+dialing_directory-generate-tooltip = Generovat náhodné heslo
+dialing_directory-generate-disabled-tooltip= 
+    Heslo je již nastaveno,
+    nejprve jej smažte, abyste mohli vygenerovat nové
+dialing_directory-invalid_modem = Neplatný modem
+dialing_directory-no_modem_configured = Není nakonfigurován žádný modem
 
 terminal-upload = Nahrát
 terminal-download = Stáhnout
@@ -117,12 +127,12 @@ protocol-text-description = Nahrát textový soubor
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
-transfer-protocol = Protokol:
+transfer-protocol = Protokol
 transfer-checksize = Kontrola/velikost:
-transfer-elapsedtime = Uplynulý čas:
+transfer-elapsedtime = Uplynulý čas
 transfer-state = Stav:
 transfer-file = Soubor:
-transfer-rate = rychlost přenosu:
+transfer-rate = Rychlost přenosu
 transfer-bps = { $bps } za sekundu
 
 menu-item-discuss=Fórum
@@ -142,10 +152,13 @@ toolbar-stop-playing4 = Prosím tě
 toolbar-stop-playing5 = Milost
 toolbar-stop-playing6 = Dost už
 
-capture-dialog-capture-label=Soubor záznamu:
+capture-dialog-capture-folder = Složka:
+capture-dialog-capture-file = Soubor:
 capture-dialog-capture-title=Záznam
 capture-dialog-capture-button=Start
-capture-dialog-open-folder-button=Otevřít složku…
+
+export-dialog-title = Exportovat buffer do souboru
+export-dialog-export-button = Exportovat
 
 show-iemsi-dialog-heading=Informace o serveru IEMSI
 show-iemsi-dialog-name=Jméno:
