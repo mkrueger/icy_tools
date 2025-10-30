@@ -485,6 +485,8 @@ impl TerminalThread {
                         }
                     }
                 }
+
+                buffer.update_hyperlinks();
             }
             *state.get_caret_mut() = caret;
 

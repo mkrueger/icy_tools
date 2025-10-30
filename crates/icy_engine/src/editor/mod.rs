@@ -202,6 +202,7 @@ impl EditState {
             }
         }
 
+        scroll_buffer.update_hyperlinks();
         self.scrollback_buffer = Some(scroll_buffer);
     }
 

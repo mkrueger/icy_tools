@@ -41,6 +41,7 @@ impl TerminalWindow {
         buffer.buffer_type = icy_engine::BufferType::CP437;
         buffer.is_terminal_buffer = true;
         buffer.terminal_state.fixed_size = true;
+        buffer.update_hyperlinks();
 
         edit_state.lock().unwrap().set_buffer(buffer);
         edit_state.lock().unwrap().get_caret_mut().set_is_visible(false);

@@ -1046,6 +1046,79 @@ impl Buffer {
                         }
                     }
                 }
+
+                // Draw underline if needed
+                if ch.attribute.is_underlined() {
+                    let base_x = (x * font_size.width) * 4;
+                    let base_y = y * font_size.height;
+
+                    // Determine underline position - typically 1 or 2 pixels from bottom
+                    let underline_y = if ch.attribute.is_double_underlined() {
+                        // Double underline: draw at bottom-2 and bottom
+                        vec![font_size.height - 2, font_size.height - 1]
+                    } else {
+                        // Single underline: draw at bottom-1
+                        vec![font_size.height - 1]
+                    };
+
+                    for line_y in underline_y {
+                        if line_y < font_size.height {
+                            let y_offset = (base_y + line_y) * line_bytes;
+                            for cx in 0..font_size.width {
+                                let offset = (base_x + cx * 4 + y_offset) as usize;
+                                if offset + 3 < pixels.len() {
+                                    unsafe {
+                                        *pixels.get_unchecked_mut(offset) = f_r;
+                                        *pixels.get_unchecked_mut(offset + 1) = f_g;
+                                        *pixels.get_unchecked_mut(offset + 2) = f_b;
+                                        *pixels.get_unchecked_mut(offset + 3) = 0xFF;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Draw overline if needed
+                if ch.attribute.is_overlined() {
+                    let base_x = (x * font_size.width) * 4;
+                    let base_y = y * font_size.height;
+
+                    // Overline at top of character cell
+                    let y_offset = base_y * line_bytes;
+                    for cx in 0..font_size.width {
+                        let offset = (base_x + cx * 4 + y_offset) as usize;
+                        if offset + 3 < pixels.len() {
+                            unsafe {
+                                *pixels.get_unchecked_mut(offset) = f_r;
+                                *pixels.get_unchecked_mut(offset + 1) = f_g;
+                                *pixels.get_unchecked_mut(offset + 2) = f_b;
+                                *pixels.get_unchecked_mut(offset + 3) = 0xFF;
+                            }
+                        }
+                    }
+                }
+
+                // Draw strikethrough if needed
+                if ch.attribute.is_crossed_out() {
+                    let base_x = (x * font_size.width) * 4;
+                    let base_y = y * font_size.height;
+
+                    // Strikethrough in middle of character cell
+                    let middle_y = font_size.height / 2;
+                    let y_offset = (base_y + middle_y) * line_bytes;
+                    for cx in 0..font_size.width {
+                        let offset = (base_x + cx * 4 + y_offset) as usize;
+                        if offset + 3 < pixels.len() {
+                            unsafe {
+                                *pixels.get_unchecked_mut(offset) = f_r;
+                                *pixels.get_unchecked_mut(offset + 1) = f_g;
+                                *pixels.get_unchecked_mut(offset + 2) = f_b;
+                                *pixels.get_unchecked_mut(offset + 3) = 0xFF;
+                            }
+                        }
+                    }
+                }
             }
         }
 
