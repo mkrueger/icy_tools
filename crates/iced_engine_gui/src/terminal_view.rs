@@ -12,6 +12,9 @@ use crate::{MonitorSettings, Terminal};
 #[derive(Debug, Clone)]
 pub enum Message {
     Scroll(i32),
+    OpenLink(String),
+    Copy,
+    RipCommand(String),
 }
 
 pub struct TerminalView<'a> {

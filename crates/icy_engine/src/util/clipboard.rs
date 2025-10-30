@@ -11,30 +11,25 @@ pub const BITFONT_GLYPH: u16 = 0x0100;
 /// # Errors
 ///
 /// This function will return an error if .
-pub fn push_data(data_type: u16, data: &[u8], _text: Option<String>) -> EngineResult<()> {
-    match Clipboard::new() {
-        Ok(mut clipboard) => {
-            let mut clipboard_data: Vec<u8> = Vec::new();
-            clipboard_data.extend(b"iced");
-            clipboard_data.extend(u16::to_le_bytes(data_type));
-            clipboard_data.extend(data);
-            while clipboard_data.len() % 4 != 0 {
-                clipboard_data.push(0);
-            }
-
-            let image = ImageData {
-                width: clipboard_data.len() / 4,
-                height: 1,
-                bytes: clipboard_data.into(),
-            };
-            clipboard.clear()?;
-            if let Err(err) = clipboard.set_image(image) {
-                return Err(ClipboardError::ErrorInSetImage(format!("{err}")).into());
-            }
-            Ok(())
-        }
-        Err(err) => Err(ClipboardError::Error(format!("{err}")).into()),
+pub fn push_data(clipboard: &mut arboard::Clipboard, data_type: u16, data: &[u8], _text: Option<String>) -> EngineResult<()> {
+    let mut clipboard_data: Vec<u8> = Vec::new();
+    clipboard_data.extend(b"iced");
+    clipboard_data.extend(u16::to_le_bytes(data_type));
+    clipboard_data.extend(data);
+    while clipboard_data.len() % 4 != 0 {
+        clipboard_data.push(0);
     }
+
+    let image = ImageData {
+        width: clipboard_data.len() / 4,
+        height: 1,
+        bytes: clipboard_data.into(),
+    };
+    clipboard.clear()?;
+    if let Err(err) = clipboard.set_image(image) {
+        return Err(ClipboardError::ErrorInSetImage(format!("{err}")).into());
+    }
+    Ok(())
 }
 
 pub fn pop_cliboard_text() -> Option<String> {

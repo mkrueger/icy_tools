@@ -14,7 +14,7 @@ use crate::{
     util::SoundThread,
 };
 use i18n_embed_fl::fl;
-use iced::{Element, Event, Task, Theme, keyboard, task};
+use iced::{Element, Event, Task, Theme, keyboard};
 use icy_engine::{Position, UnicodeConverter};
 use icy_net::{ConnectionType, protocol::TransferState, telnet::TerminalEmulation};
 use tokio::sync::mpsc;
@@ -79,6 +79,9 @@ pub enum Message {
     ScrollTerminal(usize),
     ScrollRelative(i32),
     ToggleFullscreen,
+    OpenLink(String),
+    Copy,
+    ShiftPressed(bool),
 }
 
 pub struct MainWindow {
@@ -112,12 +115,13 @@ pub struct MainWindow {
 
     _is_fullscreen_mode: bool,
     _last_pos: Position,
-    _shift_pressed_during_selection: bool,
+    shift_pressed_during_selection: bool,
     _use_rip: bool,
 
     pub initial_upload_directory: Option<PathBuf>,
     pub show_find_dialog: bool,
     show_disconnect: bool,
+    clipboard: arboard::Clipboard,
 }
 
 static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
@@ -184,12 +188,13 @@ impl MainWindow {
 
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
-            _shift_pressed_during_selection: false,
+            shift_pressed_during_selection: false,
             _use_rip: false,
             initial_upload_directory: None,
             show_find_dialog: false,
             show_disconnect: false,
             sound_thread,
+            clipboard: arboard::Clipboard::new().unwrap(),
         }
     }
 
@@ -550,6 +555,65 @@ impl MainWindow {
 
                 iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
             }
+
+            Message::OpenLink(url) => {
+                if let Err(e) = webbrowser::open(&url) {
+                    log::error!("Failed to open URL {}: {}", url, e);
+                }
+                Task::none()
+            }
+
+            Message::Copy => {
+                // Implement clipboard copy from selection
+                if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                    // Get the selected text
+                    let copy_text: Option<String> = edit_state.get_copy_text();
+
+                    // Check if we should append to existing clipboard data (shift was held during selection)
+                    if self.shift_pressed_during_selection {
+                        if let Some(clipboard_data) = edit_state.get_clipboard_data() {
+                            // Append to existing clipboard data
+                            if let Err(err) =
+                                icy_engine::util::push_data(&mut self.clipboard, icy_engine::util::BUFFER_DATA, &clipboard_data, copy_text.clone())
+                            {
+                                log::error!("Error while copying with append: {}", err);
+                            } else {
+                                // Clear selection after successful append
+                                let _ = edit_state.clear_selection();
+                                self.shift_pressed_during_selection = false;
+                                return Task::none();
+                            }
+                        }
+                    }
+
+                    // Normal copy (not appending)
+                    if let Some(text) = copy_text {
+                        // Copy to system clipboard
+                        match arboard::Clipboard::new() {
+                            Ok(mut clipboard) => {
+                                if let Err(err) = clipboard.set_text(&text) {
+                                    log::error!("Failed to set clipboard text: {}", err);
+                                } else {
+                                    log::debug!("Copied {} characters to clipboard", text.len());
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to create clipboard: {}", err);
+                            }
+                        }
+                    }
+
+                    // Clear selection after copy
+                    let _ = edit_state.clear_selection();
+                    self.shift_pressed_during_selection = false;
+                }
+                Task::none()
+            }
+
+            Message::ShiftPressed(pressed) => {
+                self.shift_pressed_during_selection = pressed;
+                Task::none()
+            }
         }
     }
 
@@ -764,6 +828,17 @@ impl MainWindow {
                 key: keyboard::Key::Named(keyboard::key::Named::F11),
                 ..
             }) => Some(Message::ToggleFullscreen),
+
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Shift),
+                ..
+            }) => Some(Message::ShiftPressed(true)),
+
+            Event::Keyboard(keyboard::Event::KeyReleased {
+                key: keyboard::Key::Named(keyboard::key::Named::Shift),
+                ..
+            }) => Some(Message::ShiftPressed(true)),
+
             _ => None,
         });
 

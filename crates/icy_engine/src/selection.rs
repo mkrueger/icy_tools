@@ -53,24 +53,44 @@ impl Selection {
             }
             Shape::Lines => {
                 let pos = pos.into();
-                let min = self.min();
-                let max = self.max();
-
-                // If selection is on a single line
-                if min.y == max.y {
-                    return pos.y == min.y && pos.x >= min.x && pos.x <= max.x;
+                // Same-line selection: straight min/max span
+                if self.anchor.y == self.lead.y {
+                    let left = self.anchor.x.min(self.lead.x);
+                    let right = self.anchor.x.max(self.lead.x);
+                    return pos.y == self.anchor.y && pos.x >= left && pos.x <= right;
                 }
 
-                // Multi-line selection
-                if pos.y == min.y {
-                    // On the first line: from min.x to end of line
-                    pos.x >= min.x
-                } else if pos.y == max.y {
-                    // On the last line: from start of line to max.x
-                    pos.x <= max.x
+                // Directional multi-line selection
+                // Downward drag
+                if self.anchor.y < self.lead.y {
+                    if pos.y < self.anchor.y || pos.y > self.lead.y {
+                        return false;
+                    }
+                    if pos.y == self.anchor.y {
+                        // First line: from anchor.x to end-of-line (≥ anchor.x)
+                        return pos.x >= self.anchor.x;
+                    }
+                    if pos.y == self.lead.y {
+                        // Last line: from start-of-line to lead.x (≤ lead.x)
+                        return pos.x <= self.lead.x;
+                    }
+                    // Intermediate line: whole line selected
+                    return true;
                 } else {
-                    // On intermediate lines: entire line is selected
-                    pos.y > min.y && pos.y < max.y
+                    // Upward drag (anchor.y > lead.y)
+                    if pos.y < self.lead.y || pos.y > self.anchor.y {
+                        return false;
+                    }
+                    if pos.y == self.lead.y {
+                        // First line in visual order (where drag ended): from lead.x to end-of-line
+                        return pos.x >= self.lead.x;
+                    }
+                    if pos.y == self.anchor.y {
+                        // Last line in visual order (where drag began): from start-of-line to anchor.x
+                        return pos.x <= self.anchor.x;
+                    }
+                    // Intermediate line: whole line selected
+                    return true;
                 }
             }
         }

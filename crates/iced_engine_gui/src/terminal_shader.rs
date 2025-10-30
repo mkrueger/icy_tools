@@ -1,7 +1,9 @@
 use crate::{Blink, Message, MonitorSettings, Terminal, now_ms};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
-use icy_engine::TextPane;
+use icy_engine::{Position, Selection, TextPane};
+
+static mut SCALE_FACTOR: f32 = 1.0;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -212,6 +214,10 @@ impl shader::Primitive for TerminalShader {
         bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
+        unsafe {
+            SCALE_FACTOR = _viewport.scale_factor();
+        }
+
         if renderer.texture.is_none() || !self.terminal_rgba.is_empty() {
             let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
                 label: Some("Terminal Texture"),
@@ -503,6 +509,21 @@ impl<'a> CRTShaderProgram<'a> {
 pub struct CRTShaderState {
     caret_blink: crate::Blink,
     character_blink: crate::Blink,
+
+    // Mouse/selection tracking
+    dragging: bool,
+    drag_anchor: Option<Position>,
+    last_drag_position: Option<Position>,
+    shift_pressed_during_selection: bool,
+
+    // Modifier tracking
+    alt_pressed: bool,
+    shift_pressed: bool,
+
+    // Hover tracking
+    hovered_cell: Option<Position>,
+    hovered_link: Option<String>,
+    hovered_rip_field: bool,
 }
 
 impl CRTShaderState {
@@ -516,6 +537,15 @@ impl Default for CRTShaderState {
         Self {
             caret_blink: Blink::new((1000.0 / 1.875) as u128 / 2),
             character_blink: Blink::new((1000.0 / 1.8) as u128),
+            dragging: false,
+            drag_anchor: None,
+            last_drag_position: None,
+            shift_pressed_during_selection: false,
+            alt_pressed: false,
+            shift_pressed: false,
+            hovered_cell: None,
+            hovered_link: None,
+            hovered_rip_field: false,
         }
     }
 }
@@ -609,36 +639,195 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, _bounds: Rectangle, _cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
         let mut needs_redraw = false;
         let now = crate::Blink::now_ms();
 
-        // Update caret blink
+        // Update blink timers
         if state.caret_blink.update(now) {
             needs_redraw = true;
         }
-
-        // Update character blink
         if state.character_blink.update(now) {
             needs_redraw = true;
         }
 
-        if let iced::Event::Mouse(mouse_event) = event {
-            match mouse_event {
-                mouse::Event::WheelScrolled { delta } => {
-                    if let mouse::ScrollDelta::Lines { y, .. } = delta {
-                        let lines = *y as i32;
-                        return Some(iced::widget::Action::publish(Message::Scroll(lines)));
-                    }
+        // Track modifier keys
+        if let iced::Event::Keyboard(kbd_event) = event {
+            match kbd_event {
+                iced::keyboard::Event::ModifiersChanged(mods) => {
+                    state.alt_pressed = mods.alt();
+                    state.shift_pressed = mods.shift();
                 }
                 _ => {}
             }
         }
+
+        // Handle mouse events
+        if let iced::Event::Mouse(mouse_event) = event {
+            match mouse_event {
+                mouse::Event::CursorMoved { .. } => {
+                    if let Some(position) = cursor.position() {
+                        let cell_pos = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y);
+                        state.hovered_cell = cell_pos;
+
+                        // Check for hyperlinks
+                        if let Some(cell) = cell_pos {
+                            if let Ok(edit_state) = self.term.edit_state.try_lock() {
+                                let buffer = edit_state.get_display_buffer();
+
+                                // Check hyperlinks
+                                let mut found_link = None;
+                                for hyperlink in buffer.layers[0].hyperlinks() {
+                                    if buffer.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
+                                        found_link = Some(hyperlink.get_url(buffer));
+                                        break;
+                                    }
+                                }
+
+                                if state.hovered_link != found_link {
+                                    state.hovered_link = found_link;
+                                    needs_redraw = true;
+                                }
+
+                                // TODO: Check RIP fields when available
+                                // if self.term.use_rip {
+                                //     check RIP mouse fields
+                                // }
+                            }
+                        } else {
+                            if state.hovered_link.is_some() {
+                                state.hovered_link = None;
+                                needs_redraw = true;
+                            }
+                        }
+
+                        // Handle dragging for selection
+                        if state.dragging {
+                            if let Some(cell) = cell_pos {
+                                if state.last_drag_position != Some(cell) {
+                                    state.last_drag_position = Some(cell);
+                                    if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                        // Update selection
+                                        if let Some(mut sel) = edit_state.get_selection().clone() {
+                                            if !sel.locked {
+                                                sel.lead = cell;
+                                                sel.shape = if state.alt_pressed {
+                                                    icy_engine::Shape::Rectangle
+                                                } else {
+                                                    icy_engine::Shape::Lines
+                                                };
+                                                let _ = edit_state.set_selection(sel);
+                                            }
+                                        }
+                                    }
+                                    needs_redraw = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                    if let Some(position) = cursor.position() {
+                        if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
+                            // Check if clicking on a hyperlink
+                            if let Some(url) = &state.hovered_link {
+                                return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
+                            }
+
+                            // TODO: Handle RIP field clicks
+                            // if self.term.use_rip && state.hovered_rip_field {
+                            //     handle RIP command
+                            // }
+
+                            // Start selection
+                            if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                // Clear existing selection unless shift is held
+                                if !state.shift_pressed {
+                                    let _ = edit_state.clear_selection();
+                                }
+
+                                // Create new selection
+                                let mut sel = Selection::new(cell);
+                                sel.shape = if state.alt_pressed {
+                                    icy_engine::Shape::Rectangle
+                                } else {
+                                    icy_engine::Shape::Lines
+                                };
+                                sel.locked = false;
+                                let _ = edit_state.set_selection(sel);
+
+                                state.dragging = true;
+                                state.drag_anchor = Some(cell);
+                                state.last_drag_position = Some(cell);
+                                needs_redraw = true;
+                            }
+                        } else {
+                            // Clicked outside terminal area - clear selection
+                            if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                let _ = edit_state.clear_selection();
+                                needs_redraw = true;
+                            }
+                        }
+                    }
+                }
+
+                mouse::Event::ButtonReleased(mouse::Button::Left) => {
+                    if state.dragging {
+                        state.dragging = false;
+                        state.shift_pressed_during_selection = state.shift_pressed;
+
+                        // Lock the selection
+                        if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                            if let Some(mut sel) = edit_state.get_selection().clone() {
+                                sel.locked = true;
+                                let _ = edit_state.set_selection(sel);
+                            }
+                        }
+
+                        state.drag_anchor = None;
+                        state.last_drag_position = None;
+                        needs_redraw = true;
+                    }
+                }
+
+                mouse::Event::ButtonPressed(mouse::Button::Middle) => {
+                    // Middle click to copy (if you want this feature)Copy
+                    return Some(iced::widget::Action::publish(Message::Copy));
+                }
+
+                mouse::Event::WheelScrolled { delta } => {
+                    match delta {
+                        mouse::ScrollDelta::Lines { y, .. } => {
+                            let lines = -(*y as i32); // Negative for natural scrolling
+                            return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                        }
+                        mouse::ScrollDelta::Pixels { y, .. } => {
+                            let lines = -((*y / 20.0) as i32); // Convert pixels to lines
+                            if lines != 0 {
+                                return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                            }
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
         if needs_redraw { Some(iced::widget::Action::request_redraw()) } else { None }
     }
 
-    fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
-        mouse::Interaction::default()
+    fn mouse_interaction(&self, state: &Self::State, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
+        if state.hovered_link.is_some() || state.hovered_rip_field {
+            mouse::Interaction::Pointer
+        } else if state.dragging {
+            mouse::Interaction::Crosshair
+        } else if state.hovered_cell.is_some() {
+            mouse::Interaction::Text
+        } else {
+            mouse::Interaction::default()
+        }
     }
 }
 
@@ -668,4 +857,82 @@ impl CaretStyle {
             CaretStyle::Underline => 2.min(font_h),
         }
     }
+}
+
+fn map_mouse_to_cell(
+    term: &Terminal,
+    monitor: &MonitorSettings,
+    logical_bounds: Rectangle, // bounds passed to update()/draw() (logical coordinates)
+    logical_mx: f32,           // mouse x in logical space
+    logical_my: f32,           // mouse y in logical space
+) -> Option<Position> {
+    // 1. Obtain scale factor (logical -> physical)
+    // Prefer querying window; fallback to stored SCALE_FACTOR if needed.
+    let scale_factor = unsafe { SCALE_FACTOR };
+
+    // 2. Promote logical coordinates to physical pixels
+    let phys_bounds_x = logical_bounds.x * scale_factor;
+    let phys_bounds_y = logical_bounds.y * scale_factor;
+    let phys_bounds_w = logical_bounds.width * scale_factor;
+    let phys_bounds_h = logical_bounds.height * scale_factor;
+
+    let phys_mx = logical_mx * scale_factor;
+    let phys_my = logical_my * scale_factor;
+
+    // 3. Lock edit state & obtain font + buffer size (already in pixel units)
+    let edit = term.edit_state.try_lock().ok()?;
+    let buffer = edit.get_display_buffer();
+    let font = buffer.get_font(0)?;
+    let font_w = font.size.width as f32;
+    let font_h = font.size.height as f32;
+    if font_w <= 0.0 || font_h <= 0.0 {
+        return None;
+    }
+
+    let term_px_w = buffer.get_width() as f32 * font_w;
+    let term_px_h = buffer.get_height() as f32 * font_h;
+    if term_px_w <= 0.0 || term_px_h <= 0.0 {
+        return None;
+    }
+
+    // 4. Aspect-fit scale in PHYSICAL space (match render())
+    let avail_w = phys_bounds_w.max(1.0);
+    let avail_h = phys_bounds_h.max(1.0);
+    let uniform_scale = (avail_w / term_px_w).min(avail_h / term_px_h);
+
+    let use_pp = monitor.use_pixel_perfect_scaling;
+    let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
+
+    let scaled_w = term_px_w * display_scale;
+    let scaled_h = term_px_h * display_scale;
+
+    // 5. Center terminal inside physical bounds (same as render())
+    let offset_x = phys_bounds_x + (avail_w - scaled_w) / 2.0;
+    let offset_y = phys_bounds_y + (avail_h - scaled_h) / 2.0;
+
+    // 6. Pixel-perfect rounding (only position & size used for viewport clipping)
+    let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
+        (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
+    } else {
+        (offset_x, offset_y, scaled_w, scaled_h)
+    };
+
+    // 7. Hit test in physical viewport
+    if phys_mx < vp_x || phys_my < vp_y || phys_mx >= vp_x + vp_w || phys_my >= vp_y + vp_h {
+        return None;
+    }
+
+    // 8. Undo scaling using display_scale, not viewport width ratios
+    let local_px_x = (phys_mx - vp_x) / display_scale;
+    let local_px_y = (phys_my - vp_y) / display_scale;
+
+    // 9. Convert to cell indices
+    let cx = (local_px_x / font_w).floor() as i32;
+    let cy = (local_px_y / font_h).floor() as i32;
+
+    if cx < 0 || cy < 0 || cx >= buffer.get_width() as i32 || cy >= buffer.get_height() as i32 {
+        return None;
+    }
+
+    Some(Position::new(cx, cy))
 }

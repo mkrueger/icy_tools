@@ -114,7 +114,8 @@ impl ClipboardHandler for AnsiEditor {
         }*/
 
         if let Some(data) = self.buffer_view.lock().get_edit_state_mut().get_clipboard_data() {
-            push_data(BUFFER_DATA, &data, None)?;
+            // TODO: CLIPBOARD HANDLING
+            // push_data(&Clipboard::new().unwrap(), BUFFER_DATA, &data, None)?;
             /*
             let mut clipboard_data: Vec<u8> = Vec::new();
             clipboard_data.extend(b"iced");
