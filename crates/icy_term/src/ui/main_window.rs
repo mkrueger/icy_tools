@@ -499,6 +499,7 @@ impl MainWindow {
             }
             Message::ShowBaudEmulationDialog => {
                 self.state.mode = MainWindowMode::ShowBaudEmulationDialog;
+                self.baud_emulation_dialog.set_emulation(self.terminal_window.baud_emulation);
                 Task::none()
             }
             Message::SelectBpsMsg(msg) => {
