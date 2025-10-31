@@ -66,6 +66,7 @@ pub struct TerminalShaderRenderer {
     sampler: iced::wgpu::Sampler,
     uniform_buffer: iced::wgpu::Buffer,
     monitor_color_buffer: iced::wgpu::Buffer,
+    texture_size: (u32, u32), // NEW: track current texture dimensions
 }
 
 impl shader::Primitive for TerminalShader {
@@ -203,6 +204,7 @@ impl shader::Primitive for TerminalShader {
             sampler,
             uniform_buffer,
             monitor_color_buffer,
+            texture_size: (0, 0),
         }
     }
 
@@ -218,12 +220,16 @@ impl shader::Primitive for TerminalShader {
             SCALE_FACTOR = _viewport.scale_factor();
         }
 
-        if renderer.texture.is_none() || !self.terminal_rgba.is_empty() {
+        // Only (re)create texture if size changed or not yet allocated
+        let (w, h) = self.terminal_size;
+        let need_new_texture = renderer.texture.is_none() || renderer.texture_size.0 != w || renderer.texture_size.1 != h;
+
+        if need_new_texture {
             let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
                 label: Some("Terminal Texture"),
                 size: iced::wgpu::Extent3d {
-                    width: self.terminal_size.0.max(1),
-                    height: self.terminal_size.1.max(1),
+                    width: w.max(1),
+                    height: h.max(1),
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -233,45 +239,6 @@ impl shader::Primitive for TerminalShader {
                 usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-
-            if !self.terminal_rgba.is_empty() {
-                use iced::wgpu::util::DeviceExt;
-                let temp_texture = device.create_texture_with_data(
-                    queue,
-                    &iced::wgpu::TextureDescriptor {
-                        label: Some("Terminal Texture Data"),
-                        size: iced::wgpu::Extent3d {
-                            width: self.terminal_size.0.max(1),
-                            height: self.terminal_size.1.max(1),
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_SRC,
-                        view_formats: &[],
-                    },
-                    iced::wgpu::util::TextureDataOrder::LayerMajor,
-                    &self.terminal_rgba,
-                );
-
-                let mut encoder = device.create_command_encoder(&iced::wgpu::CommandEncoderDescriptor {
-                    label: Some("Terminal Texture Copy"),
-                });
-
-                encoder.copy_texture_to_texture(
-                    temp_texture.as_image_copy(),
-                    texture.as_image_copy(),
-                    iced::wgpu::Extent3d {
-                        width: self.terminal_size.0.max(1),
-                        height: self.terminal_size.1.max(1),
-                        depth_or_array_layers: 1,
-                    },
-                );
-
-                queue.submit(Some(encoder.finish()));
-            }
 
             let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
@@ -301,6 +268,32 @@ impl shader::Primitive for TerminalShader {
             renderer.texture = Some(texture);
             renderer.texture_view = Some(texture_view);
             renderer.bind_group = Some(bind_group);
+            renderer.texture_size = (w, h);
+        }
+
+        // Upload new pixel data only if we have something
+        if !self.terminal_rgba.is_empty() {
+            if let Some(texture) = &renderer.texture {
+                queue.write_texture(
+                    iced::wgpu::TexelCopyTextureInfo {
+                        texture,
+                        mip_level: 0,
+                        origin: iced::wgpu::Origin3d::ZERO,
+                        aspect: iced::wgpu::TextureAspect::All,
+                    },
+                    &self.terminal_rgba,
+                    iced::wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * w),
+                        rows_per_image: Some(h),
+                    },
+                    iced::wgpu::Extent3d {
+                        width: w.max(1),
+                        height: h.max(1),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
 
         // Aspect ratio fit
@@ -524,6 +517,8 @@ pub struct CRTShaderState {
     hovered_cell: Option<Position>,
     hovered_link: Option<String>,
     hovered_rip_field: bool,
+
+    last_rendered_size: Option<(u32, u32)>,
 }
 
 impl CRTShaderState {
@@ -546,6 +541,7 @@ impl Default for CRTShaderState {
             hovered_cell: None,
             hovered_link: None,
             hovered_rip_field: false,
+            last_rendered_size: None,
         }
     }
 }
@@ -592,7 +588,14 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             size = (img_size.width as u32, img_size.height as u32);
             rgba_data = data;
         } else {
-            size = (bounds.width as u32, bounds.height as u32);
+            // IMPORTANT: Use a consistent fallback size instead of bounds
+            // This prevents size oscillation when the lock fails
+            if let Some(last_size) = state.last_rendered_size {
+                size = last_size;
+            } else {
+                // Initial fallback - use standard terminal size
+                size = (640, 400); // 80x25 with 8x16 font
+            }
             no_scrollback = true;
         }
 
@@ -653,6 +656,29 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             needs_redraw = true;
         }
 
+        // Track the actual rendered size to detect real changes
+        // Only update if we successfully get the lock
+        if let Ok(edit_state) = self.term.edit_state.try_lock() {
+            let buffer = edit_state.get_display_buffer();
+            if let Some(font) = buffer.get_font(0) {
+                let font_w = font.size.width as u32;
+                let font_h = font.size.height as u32;
+                let current_size = (buffer.get_width() as u32 * font_w, buffer.get_height() as u32 * font_h);
+
+                // Only trigger redraw if size actually changed
+                if state.last_rendered_size != Some(current_size) {
+                    if state.last_rendered_size.is_some() {
+                        // Size changed - need redraw
+                        println!("Terminal size changed from {:?} to {:?}", state.last_rendered_size, current_size);
+                    }
+                    state.last_rendered_size = Some(current_size);
+                    needs_redraw = true;
+                }
+            }
+        }
+        // If we can't get the lock, keep the last known size to prevent oscillation
+
+        // ...rest of the update method stays the same...
         // Track modifier keys
         if let iced::Event::Keyboard(kbd_event) = event {
             match kbd_event {
@@ -794,7 +820,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::ButtonPressed(mouse::Button::Middle) => {
-                    // Middle click to copy (if you want this feature)Copy
+                    // Middle click to copy (if you want this feature)
                     return Some(iced::widget::Action::publish(Message::Copy));
                 }
 
@@ -873,7 +899,7 @@ fn map_mouse_to_cell(
     let scale_factor = unsafe { SCALE_FACTOR };
 
     // 2. Promote logical coordinates to physical pixels
-    let phys_bounds_x = logical_bounds.x * scale_factor;
+    let phys_bounds_x: f32 = logical_bounds.x * scale_factor;
     let phys_bounds_y = logical_bounds.y * scale_factor;
     let phys_bounds_w = logical_bounds.width * scale_factor;
     let phys_bounds_h = logical_bounds.height * scale_factor;
