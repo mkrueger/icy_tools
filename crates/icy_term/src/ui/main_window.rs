@@ -238,17 +238,6 @@ impl MainWindow {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        // Process any pending terminal events
-        if let Some(rx) = &mut self.terminal_rx {
-            while let Ok(event) = rx.try_recv() {
-                // Clone the event to avoid borrow issues
-                let task = self.handle_terminal_event(event);
-                //   if !task.is_none() {
-                return task;
-                //}
-            }
-        }
-
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
             Message::Connect(address) => {
@@ -699,6 +688,17 @@ impl MainWindow {
             }
             TerminalEvent::BufferUpdated => {
                 self.terminal_window.scene.cache.clear();
+                let mut events = Vec::new();
+                if let Some(rx) = &mut self.terminal_rx {
+                    while let Ok(event) = rx.try_recv() {
+                        events.push(event);
+                    }
+                }
+
+                for event in events {
+                    let _ = self.handle_terminal_event(event);
+                }
+
                 Task::none()
             }
             TerminalEvent::TransferStarted(_state, is_download) => {
@@ -853,8 +853,10 @@ impl MainWindow {
 
                         // Try to map the key with modifiers using the key map
                         if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, modifiers) {
-                            Some(Message::SendData(bytes))
-                        } else if let Some(text) = text {
+                            return Some(Message::SendData(bytes));
+                        }
+
+                        if let Some(text) = text {
                             Some(Message::SendString(text.to_string()))
                         } else {
                             None
@@ -916,7 +918,7 @@ impl MainWindow {
             _ => None,
         });
 
-        iced::Subscription::batch([keyboard_sub, terminal_sub, fullscreen_sub])
+        iced::Subscription::batch([terminal_sub, fullscreen_sub, keyboard_sub])
     }
 
     pub fn get_mode(&self) -> MainWindowMode {
