@@ -172,7 +172,7 @@ impl MainWindow {
             settings_dialog: settings_dialog::SettingsDialogState::new(options),
             capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
             terminal_window,
-            iemsi_dialog: show_iemsi::ShowIemsiDialog::new(None),
+            iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
             find_dialog: find_dialog::DialogState::new(),
             export_dialog: export_dialog::ExportDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
@@ -250,6 +250,16 @@ impl MainWindow {
                     timeout: web_time::Duration::from_secs(30),
                     user_name: opt_non_empty(&address.user_name),
                     password: opt_non_empty(&address.password),
+                    iemsi_user_name: if address.override_iemsi_settings {
+                        opt_non_empty(&address.iemsi_user)
+                    } else {
+                        None
+                    },
+                    iemsi_password: if address.override_iemsi_settings {
+                        opt_non_empty(&address.iemsi_password)
+                    } else {
+                        None
+                    },
                     proxy_command: None, // fill from settings if needed
                     modem: if matches!(address.protocol, ConnectionType::Modem) {
                         Some(ModemConfig {
@@ -332,18 +342,10 @@ impl MainWindow {
             }
             Message::ShowIemsiDialog => {
                 // Get IEMSI info from terminal if available
-                let iemsi_info = Some(icy_net::iemsi::EmsiISI {
-                    name: "Example BBS".to_string(),
-                    location: "Nowhere".to_string(),
-                    operator: "Operator".to_string(),
-                    notice: "Welcome to Example BBS".to_string(),
-                    capabilities: "Capabilities".to_string(),
-                    id: "123456".to_string(),
-                    localtime: "time".to_string(),
-                    wait: "wait".to_string(),
-                });
-                self.iemsi_dialog = show_iemsi::ShowIemsiDialog::new(iemsi_info);
-                self.state.mode = MainWindowMode::ShowIEMSI;
+                if let Some(iemsi_info) = &self.terminal_window.iemsi_info {
+                    self.iemsi_dialog = show_iemsi::ShowIemsiDialog::new(iemsi_info.clone());
+                    self.state.mode = MainWindowMode::ShowIEMSI;
+                }
                 Task::none()
             }
             Message::SettingsDialog(msg) => {
@@ -760,6 +762,7 @@ impl MainWindow {
             &self.settings_dialog.original_options
         };
 
+        //        let theme = IcyTheme::default();
         match &self.state.mode {
             MainWindowMode::ShowTerminal | MainWindowMode::SplashScreen => self.terminal_window.view(settings),
             MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options),

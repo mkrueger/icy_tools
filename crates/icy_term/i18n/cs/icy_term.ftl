@@ -161,12 +161,12 @@ export-dialog-title = Exportovat buffer do souboru
 export-dialog-export-button = Exportovat
 
 show-iemsi-dialog-heading=Informace o serveru IEMSI
-show-iemsi-dialog-name=Jméno:
-show-iemsi-dialog-location=Umístění:
-show-iemsi-dialog-operator=Sysop:
-show-iemsi-dialog-notice=Oznámení:
-show-iemsi-dialog-capabilities=Schopnosti:
-show-iemsi-dialog-id=Id:
+show-iemsi-dialog-name=Jméno
+show-iemsi-dialog-location=Umístění
+show-iemsi-dialog-operator=Sysop
+show-iemsi-dialog-notice=Oznámení
+show-iemsi-dialog-capabilities=Schopnosti
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=Smazat BBS
 delete-bbs-question=Opravdu chcete smazat '{ $system }'?

@@ -161,12 +161,12 @@ export-dialog-title = Exportar memòria intermèdia a fitxer
 export-dialog-export-button = Exportar
 
 show-iemsi-dialog-heading=Informació del servidor IEMSI
-show-iemsi-dialog-name=Nom:
-show-iemsi-dialog-location=Ubicació:
-show-iemsi-dialog-operator=Sysop:
-show-iemsi-dialog-notice=Avís:
-show-iemsi-dialog-capabilities=Capacitats:
-show-iemsi-dialog-id=Id:
+show-iemsi-dialog-name=Nom
+show-iemsi-dialog-location=Ubicació
+show-iemsi-dialog-operator=Sysop
+show-iemsi-dialog-notice=Avís
+show-iemsi-dialog-capabilities=Capacitats
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=Eliminar BBS
 delete-bbs-question=Estàs segur que vols eliminar '{ $system }'?

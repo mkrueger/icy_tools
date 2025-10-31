@@ -4,7 +4,6 @@ use web_time::Instant;
 use crate::{Res, util::PatternRecognizer};
 
 pub struct AutoLogin {
-    pub logged_in: bool,
     pub _disabled: bool,
     pub iemsi: IEmsi,
     _last_char_recv: Instant,
@@ -24,7 +23,6 @@ pub struct AutoLogin {
 impl AutoLogin {
     pub fn new(login_expr: String, user_name: String, password: String) -> Self {
         Self {
-            logged_in: false,
             _disabled: false,
             iemsi: IEmsi::default(),
             _first_char_recv: None,
@@ -38,6 +36,9 @@ impl AutoLogin {
             user_name,
             password,
         }
+    }
+    pub fn is_logged_in(&self) -> bool {
+        self.iemsi.logged_in
     }
     /*
             pub fn run_command(&mut self, con: &mut Connection) -> TerminalResult<bool> {

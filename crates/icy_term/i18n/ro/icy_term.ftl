@@ -161,12 +161,12 @@ export-dialog-title = Exportă buffer în fișier
 export-dialog-export-button = Exportă
 
 show-iemsi-dialog-heading=Informații server IEMSI
-show-iemsi-dialog-name=Nume:
-show-iemsi-dialog-location=Locație:
-show-iemsi-dialog-operator=Sysop:
-show-iemsi-dialog-notice=Notificare:
-show-iemsi-dialog-capabilities=Capabilități:
-show-iemsi-dialog-id=Id:
+show-iemsi-dialog-name=Nume
+show-iemsi-dialog-location=Locație
+show-iemsi-dialog-operator=Sysop
+show-iemsi-dialog-notice=Notificare
+show-iemsi-dialog-capabilities=Capabilități
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=Șterge BBS
 delete-bbs-question=Sigur vrei să ștergi '{ $system }'?

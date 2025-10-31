@@ -161,12 +161,12 @@ export-dialog-title = Puffer exportálása fájlba
 export-dialog-export-button = Exportálás
 
 show-iemsi-dialog-heading=IEMSI szerver információk
-show-iemsi-dialog-name=Név:
-show-iemsi-dialog-location=Helyszín:
-show-iemsi-dialog-operator=Sysop:
-show-iemsi-dialog-notice=Értesítés:
-show-iemsi-dialog-capabilities=Képességek:
-show-iemsi-dialog-id=Id:
+show-iemsi-dialog-name=Név
+show-iemsi-dialog-location=Helyszín
+show-iemsi-dialog-operator=Sysop
+show-iemsi-dialog-notice=Értesítés
+show-iemsi-dialog-capabilities=Képességek
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=BBS törlése
 delete-bbs-question=Biztosan törölni szeretnéd '{ $system }'?

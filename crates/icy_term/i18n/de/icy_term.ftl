@@ -162,12 +162,12 @@ export-dialog-title = Buffer in Datei exportieren
 export-dialog-export-button = Exportieren
 
 show-iemsi-dialog-heading=IEMSI Server-Information
-show-iemsi-dialog-name=Name:
-show-iemsi-dialog-location=Ort:
-show-iemsi-dialog-operator=SysOp:
-show-iemsi-dialog-notice=Notiz:
-show-iemsi-dialog-capabilities=Server-Fähigkeiten:
-show-iemsi-dialog-id=Id:
+show-iemsi-dialog-name=Name
+show-iemsi-dialog-location=Ort
+show-iemsi-dialog-operator=SysOp
+show-iemsi-dialog-notice=Notiz
+show-iemsi-dialog-capabilities=Server-Fähigkeiten
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=BBS Löschen
 delete-bbs-question=Sind Sie sicher, dass '{ $system }' gelöscht werden soll?

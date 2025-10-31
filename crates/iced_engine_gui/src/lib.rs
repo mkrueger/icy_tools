@@ -14,6 +14,9 @@ pub mod settings;
 pub mod blink;
 pub use blink::*;
 
+pub mod theme;
+pub use theme::*;
+
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};

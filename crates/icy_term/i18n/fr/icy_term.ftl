@@ -162,12 +162,12 @@ export-dialog-title = Exporter le tampon vers un fichier
 export-dialog-export-button = Exporter
 
 show-iemsi-dialog-heading=Informations sur le serveur IEMSI
-show-iemsi-dialog-name=Nom :
-show-iemsi-dialog-location=Emplacement :
-show-iemsi-dialog-operator=Sysop :
-show-iemsi-dialog-notice=Avis :
-show-iemsi-dialog-capabilities=Capacités :
-show-iemsi-dialog-id=Id :
+show-iemsi-dialog-name=Nom
+show-iemsi-dialog-location=Emplacement
+show-iemsi-dialog-operator=Sysop
+show-iemsi-dialog-notice=Avis
+show-iemsi-dialog-capabilities=Capacités
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=Supprimer BBS
 delete-bbs-question=Êtes-vous sûr de vouloir supprimer '{ $system }' ?

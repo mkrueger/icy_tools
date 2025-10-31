@@ -161,12 +161,12 @@ export-dialog-title = Exportar búfer a archivo
 export-dialog-export-button = Exportar
 
 show-iemsi-dialog-heading=Información del servidor IEMSI
-show-iemsi-dialog-name=Nombre:
-show-iemsi-dialog-location=Ubicación:
-show-iemsi-dialog-operator=Sysop:
-show-iemsi-dialog-notice=Aviso:
-show-iemsi-dialog-capabilities=Capacidades:
-show-iemsi-dialog-id=Id:
+show-iemsi-dialog-name=Nombre
+show-iemsi-dialog-location=Ubicación
+show-iemsi-dialog-operator=Sysop
+show-iemsi-dialog-notice=Aviso
+show-iemsi-dialog-capabilities=Capacidades
+show-iemsi-dialog-id=Id
 
 delete-bbs-title=Eliminar BBS
 delete-bbs-question=¿Estás seguro de que deseas eliminar '{ $system }'?

@@ -59,6 +59,10 @@ pub struct ConnectionConfig {
     pub timeout: Duration,
     pub user_name: Option<String>,
     pub password: Option<String>,
+
+    pub iemsi_user_name: Option<String>,
+    pub iemsi_password: Option<String>,
+
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
 
@@ -182,10 +186,19 @@ impl TerminalThread {
                         if poll_interval >= 10 {
                             poll_interval = 0;
                             if let Some(conn) = &mut self.connection {
-                                let is_alive = conn.poll().await;
-                                if is_alive.is_err() || is_alive.unwrap() == ConnectionState::Disconnected {
-                                    self.disconnect().await;
-                                    continue;
+                                match conn.poll().await {
+                                    Ok(state) => {
+                                        if state == ConnectionState::Disconnected {
+                                            self.disconnect().await;
+                                            continue;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Connection poll error: {}", e);
+                                        self.disconnect().await;
+                                        self.process_data(format!("\n\r{}", e).as_bytes()).await;
+                                        continue;
+                                    }
                                 }
                             }
                         } else {
@@ -211,7 +224,10 @@ impl TerminalThread {
         match command {
             TerminalCommand::Connect(config) => {
                 if let Err(e) = self.connect(config).await {
-                    let _ = self.event_tx.send(TerminalEvent::Disconnected(Some(e.to_string())));
+                    if let Err(err) = self.event_tx.send(TerminalEvent::Disconnected(Some(e.to_string()))) {
+                        log::error!("Failed to send disconnect event: {}", err);
+                        self.process_data(format!("{}", err).as_bytes()).await;
+                    }
                 }
             }
             TerminalCommand::Disconnect => {
@@ -219,8 +235,10 @@ impl TerminalThread {
             }
             TerminalCommand::SendData(data) => {
                 if let Some(conn) = &mut self.connection {
-                    if let Err(_e) = conn.send(&data).await {
+                    if let Err(err) = conn.send(&data).await {
+                        log::error!("Failed to send data: {}", err);
                         self.disconnect().await;
+                        self.process_data(format!("\n\r{}", err).as_bytes()).await;
                     }
                 } else {
                     // Echo locally
@@ -258,11 +276,14 @@ impl TerminalThread {
 
         // Set up auto-login if configured
         if config.auto_login && config.user_name.is_some() && config.password.is_some() {
-            self.auto_login = Some(AutoLogin::new(
-                config.login_exp.clone(),
-                config.user_name.clone().unwrap(),
-                config.password.clone().unwrap(),
-            ));
+            let (user_name, password) = if config.auto_login && config.iemsi_user_name.is_some() && config.iemsi_password.is_some() {
+                (config.iemsi_user_name.clone(), config.iemsi_password.clone())
+            } else {
+                (config.user_name.clone(), config.password.clone())
+            };
+            if user_name.is_some() || password.is_some() {
+                self.auto_login = Some(AutoLogin::new(config.login_exp.clone(), user_name.unwrap(), password.unwrap()));
+            }
         } else {
             self.auto_login = None;
         }
@@ -366,6 +387,7 @@ impl TerminalThread {
                 Err(e) => {
                     error!("Connection read error: {e}");
                     self.disconnect().await;
+                    self.process_data(format!("\n\r{}", e).as_bytes()).await;
                 }
             }
         }
@@ -442,18 +464,20 @@ impl TerminalThread {
                             self.auto_transfer = Some((protocol_type, download, None));
                         }
 
-                        // Check for auto-login triggers
+                        let mut logged_in = false;
                         if let Some(autologin) = &mut self.auto_login {
                             if let Ok(Some(login_data)) = autologin.try_login(ch as u8) {
                                 if let Some(conn) = &mut self.connection {
                                     let _ = conn.send(&login_data).await;
-                                    autologin.logged_in = true;
+                                }
+                                if let Some(isi) = &autologin.iemsi.isi {
+                                    let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
                                 }
                             }
-
-                            if let Some(isi) = &autologin.iemsi.isi {
-                                let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
-                            }
+                            logged_in = autologin.is_logged_in();
+                        }
+                        if logged_in {
+                            self.auto_login = None;
                         }
 
                         match self.buffer_parser.print_char(buffer, 0, &mut caret, ch) {
@@ -469,14 +493,21 @@ impl TerminalThread {
                             self.auto_transfer = Some((protocol_type, download, None));
                         }
 
-                        // Check for auto-login triggers
+                        let mut logged_in = false;
                         if let Some(autologin) = &mut self.auto_login {
                             if let Ok(Some(login_data)) = autologin.try_login(byte) {
                                 if let Some(conn) = &mut self.connection {
                                     let _ = conn.send(&login_data).await;
-                                    autologin.logged_in = true;
                                 }
                             }
+                            if let Some(isi) = &autologin.iemsi.isi {
+                                let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
+                            }
+                            logged_in = autologin.is_logged_in();
+                        }
+
+                        if logged_in {
+                            self.auto_login = None;
                         }
 
                         match self.buffer_parser.print_char(buffer, 0, &mut caret, byte as char) {
