@@ -4,7 +4,6 @@ use iced::advanced::{Clipboard, Layout, Shell, layout, mouse, renderer};
 use iced::mouse::Cursor;
 use iced::widget::canvas::{Frame, Geometry, Path};
 use iced::{Color, Element, Length, Point, Rectangle, Size};
-use iced_core::text::LineHeight;
 use icy_engine::{Position, TextPane};
 
 use crate::{MonitorSettings, Terminal};
@@ -172,10 +171,10 @@ impl<'a> TerminalView<'a> {
                     size: iced::Pixels(font_size),
                     font: iced::Font::MONOSPACE,
                     max_width: char_w,
-                    line_height: LineHeight::default(),
-                    align_x: iced_core::text::Alignment::Center,
+                    line_height: iced::widget::text::LineHeight::default(),
+                    align_x: iced::widget::text::Alignment::Center,
                     align_y: iced::alignment::Vertical::Center,
-                    shaping: iced_core::text::Shaping::Basic,
+                    shaping: iced::widget::text::Shaping::Basic,
                 });
             }
         }

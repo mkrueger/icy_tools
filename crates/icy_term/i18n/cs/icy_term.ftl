@@ -131,6 +131,12 @@ transfer-state = Stav:
 transfer-file = Soubor:
 transfer-rate = Rychlost přenosu
 transfer-bps = { $bps } za sekundu
+transfer-status-active = Aktivní
+transfer-status-complete = Dokončeno
+transfer-log-all = Vše
+transfer-log-warnings = Varování
+transfer-log-errors = Chyby
+transfer-waiting = Čekání na zahájení přenosu…
 
 menu-item-discuss=Fórum
 menu-item-report-bug=Nahlásit chybu

@@ -131,6 +131,12 @@ transfer-state = Stan:
 transfer-file = Plik:
 transfer-rate = Prędkość transferu
 transfer-bps = { $bps } na sekundę
+transfer-status-active = Aktywny
+transfer-status-complete = Zakończono
+transfer-log-all = Wszystkie
+transfer-log-warnings = Ostrzeżenia
+transfer-log-errors = Błędy
+transfer-waiting = Oczekiwanie na rozpoczęcie transferu...
 
 menu-item-discuss=Forum
 menu-item-report-bug=Zgłoś błąd

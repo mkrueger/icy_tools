@@ -131,6 +131,12 @@ transfer-state = Stare:
 transfer-file = Fișier:
 transfer-rate = Rata de transfer
 transfer-bps = { $bps } pe secundă
+transfer-status-active = Activ
+transfer-status-complete = Finalizat
+transfer-log-all = Toate
+transfer-log-warnings = Avertismente
+transfer-log-errors = Erori
+transfer-waiting = Se așteaptă pornirea transferului...
 
 menu-item-discuss=Forum
 menu-item-report-bug=Raportează o eroare

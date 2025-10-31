@@ -132,6 +132,12 @@ transfer-state = State:
 transfer-file = File:
 transfer-rate = Transfer rate
 transfer-bps = { $bps } per second
+transfer-status-active = Active
+transfer-status-complete = Complete
+transfer-log-all = All
+transfer-log-warnings = Warnings
+transfer-log-errors = Errors
+transfer-waiting = Waiting for transfer to start…
 
 menu-item-discuss=Forum
 menu-item-report-bug=Report a bug

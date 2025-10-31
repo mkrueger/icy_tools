@@ -131,6 +131,12 @@ transfer-state = Estat:
 transfer-file = Fitxer:
 transfer-rate = Taxa de transferència
 transfer-bps = { $bps } per segon
+transfer-status-active = Actiu
+transfer-status-complete = Completat
+transfer-log-all = Tots
+transfer-log-warnings = Avisos
+transfer-log-errors = Errors
+transfer-waiting = Esperant que comenci la transferència...
 
 menu-item-discuss=Fòrum
 menu-item-report-bug=Informar d'un error

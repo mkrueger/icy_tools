@@ -236,9 +236,17 @@ impl FileTransferDialogState {
 
     fn create_status_badge(&self, is_finished: bool) -> Element<'_, crate::ui::Message> {
         let (icon, text_str, style_fn) = if is_finished {
-            ("✓", "Complete", text::success as fn(&iced::Theme) -> text::Style)
+            (
+                "✓",
+                fl!(crate::LANGUAGE_LOADER, "transfer-status-complete"),
+                text::success as fn(&iced::Theme) -> text::Style,
+            )
         } else {
-            ("●", "Active", text::primary as fn(&iced::Theme) -> text::Style)
+            (
+                "●",
+                fl!(crate::LANGUAGE_LOADER, "transfer-status-active"),
+                text::primary as fn(&iced::Theme) -> text::Style,
+            )
         };
 
         container(
@@ -290,12 +298,13 @@ impl FileTransferDialogState {
         let warning_count = transfer_info.warnings();
         let error_count = transfer_info.errors();
 
-        // Enhanced tab buttons with icons
-        let all_button = self.create_log_tab_button("📋", "All", all_count, LogTab::All, None);
+        let label_all = fl!(crate::LANGUAGE_LOADER, "transfer-log-all");
+        let label_warnings = fl!(crate::LANGUAGE_LOADER, "transfer-log-warnings");
+        let label_errors = fl!(crate::LANGUAGE_LOADER, "transfer-log-errors");
 
-        let warnings_button = self.create_log_tab_button("⚠", "Warnings", warning_count, LogTab::Warnings, Some(text::warning));
-
-        let errors_button = self.create_log_tab_button("❌", "Errors", error_count, LogTab::Errors, Some(text::danger));
+        let all_button = self.create_log_tab_button("📋", label_all, all_count, LogTab::All, None);
+        let warnings_button = self.create_log_tab_button("⚠", label_warnings, warning_count, LogTab::Warnings, Some(text::warning));
+        let errors_button = self.create_log_tab_button("❌", label_errors, error_count, LogTab::Errors, Some(text::danger));
 
         let tab_row = container(
             row![
@@ -356,7 +365,7 @@ impl FileTransferDialogState {
     fn create_log_tab_button<'a>(
         &self,
         icon: &'a str,
-        label: &'a str,
+        label: String,
         count: usize,
         tab: LogTab,
         _text_style: Option<fn(&iced::Theme) -> text::Style>,
@@ -415,6 +424,7 @@ impl FileTransferDialogState {
         } else {
             fl!(crate::LANGUAGE_LOADER, "transfer-upload")
         };
+        let waiting_text = fl!(crate::LANGUAGE_LOADER, "transfer-waiting");
 
         let loading_content = container(
             column![
@@ -425,17 +435,24 @@ impl FileTransferDialogState {
                 ]
                 .align_y(Alignment::Center),
                 Space::new().height(24.0),
-                container(text("⏳ Waiting for transfer to start...").size(14).style(text::secondary))
-                    .padding(16)
-                    .style(|theme: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
-                        border: Border {
-                            color: theme.extended_palette().background.strong.color,
-                            width: 1.0,
-                            radius: 8.0.into(),
-                        },
-                        ..Default::default()
-                    }),
+                container(
+                    row![
+                        text("⏳").size(14).style(text::secondary),
+                        Space::new().width(6.0),
+                        text(waiting_text).size(14).style(text::secondary),
+                    ]
+                    .align_y(Alignment::Center)
+                )
+                .padding(16)
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                    border: Border {
+                        color: theme.extended_palette().background.strong.color,
+                        width: 1.0,
+                        radius: 8.0.into(),
+                    },
+                    ..Default::default()
+                }),
                 Space::new().height(24.0),
                 row![
                     Space::new().width(Length::Fill),

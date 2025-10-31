@@ -131,6 +131,12 @@ transfer-state = Állapot:
 transfer-file = Fájl:
 transfer-rate = Átviteli sebesség
 transfer-bps = { $bps } másodpercenként
+transfer-status-active = Aktív
+transfer-status-complete = Kész
+transfer-log-all = Összes
+transfer-log-warnings = Figyelmeztetések
+transfer-log-errors = Hibák
+transfer-waiting = Várakozás az átvitel indulására...
 
 menu-item-discuss=Fórum
 menu-item-report-bug=Hiba jelentése
