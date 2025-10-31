@@ -8,13 +8,13 @@ use crate::{
     get_unicode_converter,
     ui::{
         dialogs::find_dialog,
-        export_dialog,
+        export_dialog, select_bps_dialog,
         up_download_dialog::{self, FileTransferDialogState},
     },
     util::SoundThread,
 };
 use iced::{Element, Event, Task, Theme, keyboard};
-use icy_engine::{AttributedChar, Position, UnicodeConverter};
+use icy_engine::{AttributedChar, Position, UnicodeConverter, ansi::BaudEmulation};
 use icy_net::{ConnectionType, protocol::TransferState, telnet::TerminalEmulation};
 use tokio::sync::mpsc;
 
@@ -38,6 +38,7 @@ pub enum MainWindowMode {
     ShowExportDialog,
     ShowIEMSI,
     ShowFindDialog,
+    ShowBaudEmulationDialog,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,9 @@ pub enum Message {
     FindDialog(find_dialog::FindDialogMsg),
     ExportDialog(export_dialog::ExportMsg),
     TransferDialog(up_download_dialog::TransferMsg),
+    SelectBpsMsg(select_bps_dialog::SelectBpsMsg),
+    ApplyBaudEmulation,
+
     CancelFileTransfer,
     UpdateTransferState(TransferState),
     ShowExportDialog,
@@ -59,6 +63,7 @@ pub enum Message {
     ShowSettings,
     ShowCaptureDialog,
     ShowFindDialog,
+    ShowBaudEmulationDialog,
     Upload,
     Download,
     SendLogin,
@@ -84,6 +89,7 @@ pub enum Message {
     Paste,
     ShiftPressed(bool),
     CloseSplashScreen,
+    SelectBps(BaudEmulation),
 }
 
 pub struct MainWindow {
@@ -96,6 +102,7 @@ pub struct MainWindow {
     pub find_dialog: find_dialog::DialogState,
     pub export_dialog: export_dialog::ExportDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
+    pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -175,6 +182,7 @@ impl MainWindow {
             find_dialog: find_dialog::DialogState::new(),
             export_dialog: export_dialog::ExportDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
+            baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -256,6 +264,7 @@ impl MainWindow {
                     connection_type: icy_net::ConnectionType::from(address.protocol.clone()),
                     address: address.address.clone(),
                     terminal_type: address.terminal_type,
+                    baud_emulation: address.baud_emulation,
                     window_size: (80, 25),
                     timeout: web_time::Duration::from_secs(30),
                     user_name: opt_non_empty(&address.user_name),
@@ -488,6 +497,23 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowFindDialog;
                 return self.find_dialog.focus_search_input();
             }
+            Message::ShowBaudEmulationDialog => {
+                self.state.mode = MainWindowMode::ShowBaudEmulationDialog;
+                Task::none()
+            }
+            Message::SelectBpsMsg(msg) => {
+                if let Some(message) = self.baud_emulation_dialog.update(msg) {
+                    return self.update(message);
+                }
+                Task::none()
+            }
+            Message::ApplyBaudEmulation => {
+                let baud: BaudEmulation = self.baud_emulation_dialog.get_emulation();
+                self.terminal_window.baud_emulation = baud;
+                let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(baud));
+                self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
             Message::FindDialog(msg) => {
                 self.terminal_window.scene.cache.clear();
                 if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
@@ -642,6 +668,12 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::SelectBps(bps) => {
+                let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(bps));
+                self.state.mode = MainWindowMode::ShowTerminal;
+                self.terminal_window.baud_emulation = bps;
+                Task::none()
+            }
         }
     }
 
@@ -770,6 +802,7 @@ impl MainWindow {
             MainWindowMode::ShowExportDialog => self.export_dialog.view(self.terminal_window.view(settings)),
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view(settings)),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view(settings)),
+            MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(self.terminal_window.view(settings)),
         }
     }
 
@@ -889,6 +922,14 @@ impl MainWindow {
         } else if matches!(self.state.mode, MainWindowMode::SplashScreen) {
             iced::event::listen_with(|event, _status, _| match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseSplashScreen),
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowBaudEmulationDialog) {
+            iced::event::listen_with(|event, _status, _| match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog),
+                    _ => None,
+                },
                 _ => None,
             })
         } else {

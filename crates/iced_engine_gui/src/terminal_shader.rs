@@ -550,7 +550,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     type State = CRTShaderState;
     type Primitive = TerminalShader;
 
-    fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, bounds: Rectangle) -> Self::Primitive {
+    fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
         let mut rgba_data = Vec::new();
         let size;
 

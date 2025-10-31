@@ -169,5 +169,10 @@ delete-bbs-title=Elimina BBS
 delete-bbs-question=Sei sicuro di voler eliminare '{ $system }'?
 delete-bbs-delete-button=Elimina  
 
+select-bps-dialog-heading = Seleziona emulazione BPS
+select-bps-dialog-bps-max = BPS MAX
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Personalizzato
+
 show-disconnected-heading=NESSUN SEGNALE
 show-disconnected-message=Disconnesso da { $system } alle { $time }

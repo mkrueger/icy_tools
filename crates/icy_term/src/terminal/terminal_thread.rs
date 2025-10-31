@@ -1,6 +1,8 @@
 use crate::ScreenMode;
+use crate::baud_emulator::BaudEmulator;
 use crate::features::{AutoFileTransfer, AutoLogin};
 use directories::UserDirs;
+use icy_engine::ansi::BaudEmulation;
 use icy_engine::editor::EditState;
 use icy_engine::{BufferParser, CallbackAction, TextAttribute};
 use icy_net::iemsi::EmsiISI;
@@ -32,6 +34,7 @@ pub enum TerminalCommand {
     CancelTransfer,
     Resize(u16, u16),
     SendLogin, // Trigger auto-login
+    SetBaudEmulation(BaudEmulation),
 }
 
 /// Messages sent from the terminal thread to the UI
@@ -70,9 +73,10 @@ pub struct ConnectionConfig {
     pub music_option: icy_engine::ansi::MusicOption,
     pub screen_mode: ScreenMode,
 
+    pub baud_emulation: BaudEmulation,
+
     // Auto-login configuration
     pub auto_login: bool,
-
     pub login_exp: String,
 }
 
@@ -98,6 +102,7 @@ pub struct TerminalThread {
     buffer_parser: Box<dyn BufferParser>,
     current_transfer: Option<TransferState>,
     connection_time: Option<Instant>,
+    baud_emulator: BaudEmulator,
 
     // Communication channels
     command_rx: mpsc::UnboundedReceiver<TerminalCommand>,
@@ -133,6 +138,7 @@ impl TerminalThread {
             utf8_buffer: Vec::new(),
             local_command_buffer: Vec::new(),
             auto_file_transfer: AutoFileTransfer::default(),
+            baud_emulator: BaudEmulator::new(),
             auto_login: None,
             auto_transfer: None,
         };
@@ -156,6 +162,7 @@ impl TerminalThread {
         let mut read_buffer = vec![0u8; 64 * 1024];
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(16)); // ~60fps
         let mut poll_interval = 0;
+
         loop {
             tokio::select! {
                 // Handle commands from UI
@@ -165,6 +172,15 @@ impl TerminalThread {
 
                 // Periodic tick for updates and reading
                 _ = interval.tick() => {
+                    // Process any buffered data from baud emulation first
+                    if self.baud_emulator.has_buffered_data() {
+                        let data = self.baud_emulator.emulate(&[]);
+                        if !data.is_empty() {
+                            self.process_data(&data).await;
+                            let _ = self.event_tx.send(TerminalEvent::DataReceived(data));
+                        }
+                    }
+
                     // Check for pending auto-transfers
                     if let Some((protocol, is_download, filename)) = self.auto_transfer.take() {
                         if is_download {
@@ -261,6 +277,9 @@ impl TerminalThread {
             TerminalCommand::SendLogin => {
                 self.send_login().await;
             }
+            TerminalCommand::SetBaudEmulation(bps) => {
+                self.baud_emulator.set_baud_rate(bps);
+            }
         }
     }
 
@@ -274,6 +293,7 @@ impl TerminalThread {
             config.connection_type, config.address, config.window_size
         );
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
+        self.baud_emulator.set_baud_rate(config.baud_emulation);
 
         // Set up auto-login if configured
         if config.auto_login && config.user_name.is_some() && config.password.is_some() {
@@ -336,7 +356,6 @@ impl TerminalThread {
         self.connection = Some(connection);
         self.connection_time = Some(Instant::now());
         self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
-
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
 
@@ -354,6 +373,7 @@ impl TerminalThread {
         }
         self.process_data(b"\r\nNO CARRIER\r\n").await;
 
+        self.baud_emulator = BaudEmulator::new();
         self.connection_time = None;
         self.utf8_buffer.clear();
         self.auto_login = None;
@@ -376,9 +396,15 @@ impl TerminalThread {
             match conn.try_read(buffer).await {
                 Ok(0) => {}
                 Ok(size) => {
-                    let data = buffer[..size].to_vec();
-                    self.process_data(&data).await;
-                    let _ = self.event_tx.send(TerminalEvent::DataReceived(data));
+                    let mut data = buffer[..size].to_vec();
+
+                    // Apply baud emulation if enabled
+                    data = self.baud_emulator.emulate(&data);
+
+                    if !data.is_empty() {
+                        self.process_data(&data).await;
+                        let _ = self.event_tx.send(TerminalEvent::DataReceived(data));
+                    }
                 }
                 Err(e) => {
                     error!("Connection read error: {e}");
@@ -672,6 +698,14 @@ impl TerminalThread {
     async fn run_file_transfer(&mut self, prot: &mut dyn Protocol, mut transfer_state: TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut last_progress_update = Instant::now();
 
+        // Temporarily disable baud emulation for file transfers if desired
+        // Or keep it enabled for authentic experience
+        let transfer_baud_emulation = self.baud_emulator.baud_emulation; // Store current setting
+
+        // Optional: You might want to apply different rates for file transfers
+        // For example, file transfers often used hardware flow control and could achieve
+        // closer to the theoretical maximum rate
+
         while !transfer_state.is_finished {
             // Check for cancel command
             if let Ok(command) = self.command_rx.try_recv() {
@@ -686,6 +720,21 @@ impl TerminalThread {
 
             // Update transfer
             if let Some(conn) = &mut self.connection {
+                // If baud emulation is active, we might want to slow down the transfer
+                // This depends on whether the protocol handles its own timing
+                if transfer_baud_emulation != BaudEmulation::Off {
+                    // Add a small delay based on baud rate
+                    if let BaudEmulation::Rate(bps) = transfer_baud_emulation {
+                        // Calculate delay for typical block size (e.g., 1K for XModem)
+                        let block_size = 1024.0; // bytes
+                        let bytes_per_second = bps as f64 / 10.0;
+                        let delay_ms = (block_size / bytes_per_second * 1000.0) as u64;
+
+                        // Add a small delay to simulate transfer speed
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms.min(100))).await;
+                    }
+                }
+
                 prot.update_transfer(&mut **conn, &mut transfer_state).await?;
 
                 // Send progress updates every 500ms

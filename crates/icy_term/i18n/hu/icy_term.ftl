@@ -169,5 +169,11 @@ delete-bbs-title=BBS törlése
 delete-bbs-question=Biztosan törölni szeretnéd '{ $system }'?
 delete-bbs-delete-button=Törlés  
 
+select-bps-dialog-heading = BPS emuláció kiválasztása
+select-bps-dialog-bps-max = MAX BPS
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Egyéni
+select-bps-dialog-bps-custom-placeholder = pl. 2400
+
 show-disconnected-heading=NINCS HORDOZÓ
 show-disconnected-message=Kapcsolat megszakadt { $system }-val/vel { $time }-kor

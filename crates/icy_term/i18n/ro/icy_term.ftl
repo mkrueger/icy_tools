@@ -169,5 +169,11 @@ delete-bbs-title=Șterge BBS
 delete-bbs-question=Sigur vrei să ștergi '{ $system }'?
 delete-bbs-delete-button=Șterge  
 
+select-bps-dialog-heading = Selectează emulare BPS
+select-bps-dialog-bps-max = BPS MAX
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Personalizat
+select-bps-dialog-bps-custom-placeholder = ex. 2400
+
 show-disconnected-heading=FĂRĂ CARRIER
 show-disconnected-message=Deconectat de la { $system } la { $time }

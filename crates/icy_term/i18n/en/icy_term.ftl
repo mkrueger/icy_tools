@@ -170,6 +170,11 @@ delete-bbs-title=Delete BBS
 delete-bbs-question=Are you sure to you want to delete '{ $system }'?
 delete-bbs-delete-button=Delete  
 
+select-bps-dialog-heading = Select BPS Emulation
+select-bps-dialog-bps-max = MAX BPS
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Custom
+
 show-disconnected-heading=NO CARRIER
 show-disconnected-message=Disconnected from { $system } at { $time }
 connect-error-no-modem-configured=NO MODEM CONFIGURED

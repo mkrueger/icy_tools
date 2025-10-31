@@ -169,5 +169,10 @@ delete-bbs-title=Usuń BBS
 delete-bbs-question=Czy na pewno chcesz usunąć '{ $system }'?
 delete-bbs-delete-button=Usuń  
 
+select-bps-dialog-heading = Wybierz emulację BPS
+select-bps-dialog-bps-max = MAKS BPS
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Niestandardowy
+
 show-disconnected-heading=BRAK NOŚNIKA
 show-disconnected-message=Rozłączono z { $system } o { $time }

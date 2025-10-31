@@ -169,5 +169,11 @@ delete-bbs-title=Smazat BBS
 delete-bbs-question=Opravdu chcete smazat '{ $system }'?
 delete-bbs-delete-button=Smazat  
 
+select-bps-dialog-heading = Vybrat emulaci BPS
+select-bps-dialog-bps-max = MAX BPS
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Vlastní
+select-bps-dialog-bps-custom-placeholder = např. 2400
+
 show-disconnected-heading=ŽÁDNÝ NOSIČ
 show-disconnected-message=Odpojeno od { $system } v { $time }

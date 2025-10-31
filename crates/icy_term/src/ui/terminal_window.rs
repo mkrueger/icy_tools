@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text, vertical_slider},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
-use icy_engine::{Buffer, TextPane, editor::EditState};
+use icy_engine::{Buffer, TextPane, ansi::BaudEmulation, editor::EditState};
 use icy_net::telnet::TerminalEmulation;
 use std::{
     path::Path,
@@ -28,6 +28,7 @@ pub struct TerminalWindow {
     pub is_capturing: bool,
     pub current_address: Option<Address>,
     pub terminal_emulation: TerminalEmulation,
+    pub baud_emulation: BaudEmulation,
     pub sound_thread: Arc<Mutex<SoundThread>>,
     pub iemsi_info: Option<icy_net::iemsi::EmsiISI>,
 }
@@ -52,6 +53,7 @@ impl TerminalWindow {
             is_capturing: false,
             current_address: None,
             terminal_emulation: TerminalEmulation::Ansi,
+            baud_emulation: BaudEmulation::Off,
             sound_thread,
             iemsi_info: None,
         }
@@ -503,6 +505,70 @@ impl TerminalWindow {
 
         status_row = status_row.push(Space::new().width(Length::Fill)).push(capture_status);
 
+        // Add Baud Emulation button
+        let baud_text = if !self.is_connected {
+            "LOCAL".to_string()
+        } else {
+            match self.baud_emulation {
+                BaudEmulation::Off => fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-bps-max"),
+                BaudEmulation::Rate(rate) => fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-bps", bps = rate),
+            }
+        };
+
+        let mut baud_button = button(text(baud_text).size(12)).padding([2, 8]).style(move |theme: &iced::Theme, status| {
+            use iced::widget::button::{Status, Style};
+
+            let palette = theme.extended_palette();
+
+            // Different styling for disabled state (not connected)
+            if !self.is_connected {
+                return Style {
+                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    text_color: palette.secondary.base.color.scale_alpha(0.5),
+                    border: Border {
+                        color: palette.secondary.base.color.scale_alpha(0.3),
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    shadow: Default::default(),
+                    snap: false,
+                };
+            }
+
+            // Normal styling when connected
+            let base = Style {
+                background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                text_color: palette.primary.strong.color,
+                border: Border {
+                    color: palette.primary.weak.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                shadow: Default::default(),
+                snap: false,
+            };
+
+            match status {
+                Status::Active | Status::Disabled => base,
+                Status::Hovered => Style {
+                    background: Some(iced::Background::Color(palette.primary.weak.color)),
+                    text_color: palette.primary.weak.text,
+                    ..base
+                },
+                Status::Pressed => Style {
+                    background: Some(iced::Background::Color(palette.primary.strong.color)),
+                    text_color: palette.primary.strong.text,
+                    ..base
+                },
+            }
+        });
+
+        if self.is_connected {
+            baud_button = baud_button.on_press(Message::ShowBaudEmulationDialog);
+        }
+
+        status_row = status_row.push(baud_button);
+
         // Only add IEMSI button if we have IEMSI info
         if self.iemsi_info.is_some() {
             let iemsi_button = button(text("IEMSI").size(12))
@@ -567,8 +633,12 @@ impl TerminalWindow {
     pub fn connect(&mut self, address: Option<Address>) {
         self.is_connected = true;
         self.current_address = address;
+
         self.terminal_emulation = match &self.current_address {
-            Some(addr) => addr.terminal_type.clone(),
+            Some(addr) => {
+                self.baud_emulation = addr.baud_emulation;
+                addr.terminal_type.clone()
+            }
             None => TerminalEmulation::Ansi,
         };
     }

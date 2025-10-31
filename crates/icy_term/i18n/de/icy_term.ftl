@@ -170,5 +170,10 @@ delete-bbs-title=BBS Löschen
 delete-bbs-question=Sind Sie sicher, dass '{ $system }' gelöscht werden soll?
 delete-bbs-delete-button=Löschen
 
+select-bps-dialog-heading = BPS-Emulation auswählen
+select-bps-dialog-bps-max = MAX BPS
+select-bps-dialog-bps = { $bps } BPS
+select-bps-dialog-bps-custom = Benutzerdefiniert
+
 show-disconnected-heading=NO CARRIER
 show-disconnected-message=Verbindung beendet zu { $system } nach { $time }
