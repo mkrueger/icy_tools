@@ -1,8 +1,5 @@
 connect-to = Csatlakozás { $address }...
 
-title-connected = iCY TERM { $version } - Csatlakozva { $time } { $name }-hoz/hez
-title-offline   = iCY TERM { $version } - Offline
-
 settings-heading = Beállítások
 settings-scaling = Méretezés
 settings-monitor-type = Monitor

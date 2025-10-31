@@ -1,8 +1,5 @@
 connect-to = Conectează-te la { $address }...
 
-title-connected = iCY TERM { $version } - Conectat { $time } la { $name }
-title-offline   = iCY TERM { $version } - Deconectat
-
 settings-heading = Setări
 settings-scaling = Scalare
 settings-monitor-type = Monitor

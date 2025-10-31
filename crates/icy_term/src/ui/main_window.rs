@@ -13,7 +13,6 @@ use crate::{
     },
     util::SoundThread,
 };
-use i18n_embed_fl::fl;
 use iced::{Element, Event, Task, Theme, keyboard};
 use icy_engine::{AttributedChar, Position, UnicodeConverter};
 use icy_net::{ConnectionType, protocol::TransferState, telnet::TerminalEmulation};
@@ -198,42 +197,6 @@ impl MainWindow {
             show_disconnect: false,
             sound_thread,
             clipboard: arboard::Clipboard::new().unwrap(),
-        }
-    }
-
-    pub fn title(&self) -> String {
-        if self.is_connected {
-            if let Some(connection_time) = self.connection_time {
-                let d = Instant::now().duration_since(connection_time);
-                let sec = d.as_secs();
-                let minutes = sec / 60;
-                let hours = minutes / 60;
-                let connection_time_str = format!("{:02}:{:02}:{:02}", hours, minutes % 60, sec % 60);
-
-                let system_name = self
-                    .current_address
-                    .as_ref()
-                    .map(|addr| {
-                        if addr.system_name.is_empty() {
-                            addr.address.clone()
-                        } else {
-                            addr.system_name.clone()
-                        }
-                    })
-                    .unwrap_or_else(|| "Unknown".to_string());
-
-                fl!(
-                    crate::LANGUAGE_LOADER,
-                    "title-connected",
-                    version = crate::VERSION.to_string(),
-                    time = connection_time_str,
-                    name = system_name
-                )
-            } else {
-                crate::DEFAULT_TITLE.to_string()
-            }
-        } else {
-            fl!(crate::LANGUAGE_LOADER, "title-offline", version = crate::VERSION.to_string())
         }
     }
 

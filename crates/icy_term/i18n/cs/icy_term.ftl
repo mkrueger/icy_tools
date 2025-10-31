@@ -1,8 +1,5 @@
 connect-to = Připojit k { $address }...
 
-title-connected = iCY TERM { $version } - Připojeno { $time } k { $name }
-title-offline   = iCY TERM { $version } - Offline
-
 settings-heading = Nastavení
 settings-scaling = Měřítko
 settings-monitor-type = Monitor

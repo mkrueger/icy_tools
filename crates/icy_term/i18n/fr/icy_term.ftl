@@ -1,8 +1,5 @@
 connect-to = Connecter à { $address }...
 
-title-connected = iCY TERM { $version } - Connecté { $time } à { $name }
-title-offline   = iCY TERM { $version } - Déconnecté
-
 settings-heading = Paramètres
 settings-scaling = Mise à l'échelle
 settings-monitor-type = Moniteur

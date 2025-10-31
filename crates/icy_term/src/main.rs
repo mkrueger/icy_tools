@@ -43,7 +43,6 @@ pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync
 
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
-    static ref DEFAULT_TITLE: String = format!("iCY TERM {}", *crate::VERSION);
 }
 
 lazy_static::lazy_static! {
@@ -113,7 +112,7 @@ fn main() {
             }
         }
 
-        let level = log::LevelFilter::Info;
+        let level = log::LevelFilter::Warn;
 
         // Build a stderr logger.
         let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
@@ -149,13 +148,30 @@ fn main() {
 
     log::info!("Starting iCY TERM {}", *VERSION);
     icy_net::websocket::init_websocket_providers();
+    let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
+    let settings = iced::window::Settings {
+        icon: window_icon,
+        ..iced::window::Settings::default()
+    };
 
     iced::application(MainWindow::new, MainWindow::update, MainWindow::view)
         .theme(MainWindow::theme)
         .subscription(MainWindow::subscription) // Add this line
+        .title(|_window: &MainWindow| -> String { format!("iCY TERM {}", *crate::VERSION) })
+        .window(settings)
         .run()
         .expect("Failed to run application");
     log::info!("shutting down.");
+}
+
+fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+    // Add `image = "0.24"` (or latest) to Cargo.toml if not present.
+    let img = iced::advanced::graphics::image::image_rs::load_from_memory(png_bytes)?;
+    let rgba = img.to_rgba8();
+    let w = img.width();
+    let h = img.height();
+    println!("Loaded icon with size {}x{}", w, h);
+    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
 }
 
 lazy_static! {

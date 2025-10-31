@@ -1,8 +1,5 @@
 connect-to = Connecta a { $address }...
 
-title-connected = iCY TERM { $version } - Connectat { $time } a { $name }
-title-offline   = iCY TERM { $version } - Desconnectat
-
 settings-heading = Configuració
 settings-scaling = Escalat
 settings-monitor-type = Monitor
