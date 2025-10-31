@@ -4,6 +4,7 @@ use directories::UserDirs;
 use icy_engine::editor::EditState;
 use icy_engine::{BufferParser, CallbackAction, TextAttribute};
 use icy_net::iemsi::EmsiISI;
+use icy_net::serial::CharSize;
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection},
@@ -79,12 +80,12 @@ pub struct ConnectionConfig {
 pub struct ModemConfig {
     pub device: String,
     pub baud_rate: u32,
-    pub char_size: u8,
+    pub char_size: CharSize,
     pub parity: icy_net::serial::Parity,
     pub stop_bits: icy_net::serial::StopBits,
     pub flow_control: icy_net::serial::FlowControl,
     // Support multiple init lines (safer & closer to original patterns)
-    pub init_string: Vec<String>,
+    pub init_string: String,
     pub dial_string: String,
 }
 
@@ -316,12 +317,7 @@ impl TerminalThread {
                 let serial = Serial {
                     device: m.device.clone(),
                     baud_rate: m.baud_rate,
-                    char_size: match m.char_size {
-                        5 => icy_net::serial::CharSize::Bits5,
-                        6 => icy_net::serial::CharSize::Bits6,
-                        7 => icy_net::serial::CharSize::Bits7,
-                        _ => icy_net::serial::CharSize::Bits8,
-                    },
+                    char_size: m.char_size,
                     parity: m.parity,
                     stop_bits: m.stop_bits,
                     flow_control: m.flow_control,

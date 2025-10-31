@@ -667,10 +667,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
                 // Only trigger redraw if size actually changed
                 if state.last_rendered_size != Some(current_size) {
-                    if state.last_rendered_size.is_some() {
-                        // Size changed - need redraw
-                        println!("Terminal size changed from {:?} to {:?}", state.last_rendered_size, current_size);
-                    }
                     state.last_rendered_size = Some(current_size);
                     needs_redraw = true;
                 }

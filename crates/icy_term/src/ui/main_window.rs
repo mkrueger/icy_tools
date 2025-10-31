@@ -204,6 +204,53 @@ impl MainWindow {
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
             Message::Connect(address) => {
+                let modem = if matches!(address.protocol, ConnectionType::Modem) {
+                    // Find the modem in options that matches the address
+                    let modem_opt = self.settings_dialog.original_options.modems.iter().find(|m| m.name == address.address);
+
+                    if let Some(modem_config) = modem_opt {
+                        Some(ModemConfig {
+                            device: modem_config.device.clone(),
+                            baud_rate: modem_config.baud_rate,
+                            char_size: modem_config.char_size,
+                            parity: modem_config.parity,
+                            stop_bits: modem_config.stop_bits,
+                            flow_control: modem_config.flow_control,
+                            init_string: modem_config.init_string.clone(),
+                            dial_string: modem_config.dial_string.clone(),
+                        })
+                    } else {
+                        // No modem configured - show error and abort connection
+                        let error_msg = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "connect-error-no-modem-configured");
+                        log::error!("{}", error_msg);
+
+                        // Display error message in terminal
+                        if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                            let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
+                            buffer.clear_screen(0, caret);
+
+                            // Write error message
+                            for ch in error_msg.chars() {
+                                buffer.print_char(
+                                    0,
+                                    caret,
+                                    icy_engine::AttributedChar::new(
+                                        ch,
+                                        icy_engine::TextAttribute::from_color(4, 0), // Red on black
+                                    ),
+                                );
+                            }
+                            caret.cr(buffer);
+                            caret.lf(buffer, 0);
+                        }
+
+                        self.state.mode = MainWindowMode::ShowTerminal;
+                        return Task::none();
+                    }
+                } else {
+                    None
+                };
+
                 // Send connect command to terminal thread
                 let config = ConnectionConfig {
                     connection_type: icy_net::ConnectionType::from(address.protocol.clone()),
@@ -224,20 +271,7 @@ impl MainWindow {
                         None
                     },
                     proxy_command: None, // fill from settings if needed
-                    modem: if matches!(address.protocol, ConnectionType::Modem) {
-                        Some(ModemConfig {
-                            device: "/dev/ttyUSB0".into(),
-                            baud_rate: 57600,
-                            char_size: 8,
-                            parity: icy_net::serial::Parity::None,
-                            stop_bits: icy_net::serial::StopBits::One,
-                            flow_control: icy_net::serial::FlowControl::XonXoff,
-                            init_string: vec!["ATZ".into(), "ATE1".into()],
-                            dial_string: "ATDT".to_string(),
-                        })
-                    } else {
-                        None
-                    },
+                    modem,
                     music_option: address.ansi_music,
                     screen_mode: address.get_screen_mode(),
                     auto_login: self.settings_dialog.original_options.iemsi.autologin,

@@ -1018,11 +1018,8 @@ impl DialingDirectoryState {
                     } else {
                         return Task::none();
                     }
-                } else if !self.addresses.addresses.is_empty() {
-                    // Quick connect - use the first address but with potentially modified address field
-                    self.addresses.addresses[0].clone()
                 } else {
-                    return Task::none();
+                    self.quick_connect_address.clone()
                 };
 
                 // Increment call counter for the selected address

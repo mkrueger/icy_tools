@@ -172,3 +172,4 @@ delete-bbs-delete-button=Delete
 
 show-disconnected-heading=NO CARRIER
 show-disconnected-message=Disconnected from { $system } at { $time }
+connect-error-no-modem-configured=NO MODEM CONFIGURED
