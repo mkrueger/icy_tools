@@ -37,7 +37,7 @@ impl std::fmt::Display for ExportFormat {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExportMsg {
+pub enum ExportScreenMsg {
     Export,
     ChangeDirectory(String),
     ChangeFileName(String),
@@ -46,7 +46,7 @@ pub enum ExportMsg {
     Cancel,
 }
 
-pub struct ExportDialogState {
+pub struct ExportScreenDialogState {
     pub export_directory: String,
     pub export_filename: String,
     pub export_format: ExportFormat,
@@ -55,7 +55,7 @@ pub struct ExportDialogState {
     temp_format: ExportFormat,
 }
 
-impl ExportDialogState {
+impl ExportScreenDialogState {
     pub fn new(initial_path: String) -> Self {
         let path: &Path = Path::new(&initial_path);
 
@@ -136,9 +136,9 @@ impl ExportDialogState {
         Ok(())
     }
 
-    pub fn update(&mut self, message: ExportMsg, edit_state: Arc<Mutex<EditState>>) -> Option<crate::ui::Message> {
+    pub fn update(&mut self, message: ExportScreenMsg, edit_state: Arc<Mutex<EditState>>) -> Option<crate::ui::Message> {
         match message {
-            ExportMsg::Export => {
+            ExportScreenMsg::Export => {
                 // Update the actual values
                 self.export_directory = self.temp_directory.clone();
                 self.export_filename = self.temp_filename.clone();
@@ -158,19 +158,19 @@ impl ExportDialogState {
                     }
                 }
             }
-            ExportMsg::ChangeDirectory(dir) => {
+            ExportScreenMsg::ChangeDirectory(dir) => {
                 self.temp_directory = dir;
                 None
             }
-            ExportMsg::ChangeFileName(name) => {
+            ExportScreenMsg::ChangeFileName(name) => {
                 self.temp_filename = name;
                 None
             }
-            ExportMsg::ChangeFormat(format) => {
+            ExportScreenMsg::ChangeFormat(format) => {
                 self.temp_format = format;
                 None
             }
-            ExportMsg::BrowseDirectory => {
+            ExportScreenMsg::BrowseDirectory => {
                 let initial_dir = if Path::new(&self.temp_directory).exists() {
                     Some(PathBuf::from(&self.temp_directory))
                 } else {
@@ -189,13 +189,13 @@ impl ExportDialogState {
                 }
                 None
             }
-            ExportMsg::Cancel => Some(crate::ui::Message::CloseDialog),
+            ExportScreenMsg::Cancel => Some(crate::ui::Message::CloseDialog),
         }
     }
 
     pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
         let overlay = self.create_modal_content();
-        crate::ui::modal(terminal_content, overlay, crate::ui::Message::ExportDialog(ExportMsg::Cancel))
+        crate::ui::modal(terminal_content, overlay, crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel))
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
@@ -206,12 +206,12 @@ impl ExportDialogState {
 
         // Directory input with browse button
         let dir_input = text_input("", &self.temp_directory)
-            .on_input(|s| crate::ui::Message::ExportDialog(ExportMsg::ChangeDirectory(s)))
+            .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeDirectory(s)))
             .padding(6)
             .width(Length::Fill);
 
         let browse_button = button(text("📁").size(14))
-            .on_press(crate::ui::Message::ExportDialog(ExportMsg::BrowseDirectory))
+            .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::BrowseDirectory))
             .padding([6, 12]);
 
         let mut dir_row = row![
@@ -237,12 +237,12 @@ impl ExportDialogState {
 
         // Filename input with format picker
         let file_input = text_input("", &self.temp_filename)
-            .on_input(|s| crate::ui::Message::ExportDialog(ExportMsg::ChangeFileName(s)))
+            .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeFileName(s)))
             .padding(6)
             .width(Length::Fill);
 
         let format_picker = pick_list(&ExportFormat::ALL[..], Some(self.temp_format), |format| {
-            crate::ui::Message::ExportDialog(ExportMsg::ChangeFormat(format))
+            crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeFormat(format))
         })
         .padding(6)
         .width(Length::Fixed(120.0));
@@ -275,11 +275,11 @@ impl ExportDialogState {
             .style(button::primary);
 
         if export_enabled {
-            export_button = export_button.on_press(crate::ui::Message::ExportDialog(ExportMsg::Export));
+            export_button = export_button.on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Export));
         }
 
         let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
-            .on_press(crate::ui::Message::ExportDialog(ExportMsg::Cancel))
+            .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel))
             .padding([8, 16])
             .style(button::secondary);
 

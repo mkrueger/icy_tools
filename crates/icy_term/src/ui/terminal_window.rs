@@ -235,7 +235,7 @@ impl TerminalWindow {
                 .spacing(3)
                 .align_y(Alignment::Center),
             )
-            .on_press(Message::Disconnect)
+            .on_press(Message::Hangup)
             .padding([4, 6])
             .style(button::danger)
         } else {
@@ -256,7 +256,7 @@ impl TerminalWindow {
         };
 
         // Upload button
-        let upload_btn = button(
+        let mut upload_btn = button(
             row![
                 svg(svg::Handle::from_memory(UPLOAD_SVG)).width(Length::Fixed(16.0)).height(Length::Fixed(16.0)),
                 text(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).size(12)
@@ -264,11 +264,10 @@ impl TerminalWindow {
             .spacing(3)
             .align_y(Alignment::Center),
         )
-        .on_press(Message::Upload)
         .padding([4, 6]);
 
         // Download button
-        let download_btn = button(
+        let mut download_btn = button(
             row![
                 svg(svg::Handle::from_memory(DOWNLOAD_SVG))
                     .width(Length::Fixed(16.0))
@@ -278,8 +277,12 @@ impl TerminalWindow {
             .spacing(3)
             .align_y(Alignment::Center),
         )
-        .on_press(Message::Download)
         .padding([4, 6]);
+
+        if self.is_connected {
+            upload_btn = upload_btn.on_press(Message::Upload);
+            download_btn = download_btn.on_press(Message::Download);
+        }
 
         // Settings dropdown menu
         let settings_menu = button(
@@ -310,7 +313,7 @@ impl TerminalWindow {
         let mut bar_content = row![phonebook_btn, container(text(" | ").size(10)).padding([0, 2]), upload_btn, download_btn,]
             .spacing(3)
             .align_y(Alignment::Center);
-
+        /*
         // Only show Send Login button when connected and credentials are available
         if self.is_connected {
             if let Some(address) = &self.current_address {
@@ -323,13 +326,13 @@ impl TerminalWindow {
                         .spacing(3)
                         .align_y(Alignment::Center),
                     )
-                    .on_press(Message::SendLogin)
+                    .on_press(Message::SendLoginAndPassword(true, true))
                     .padding([4, 6]);
 
                     bar_content = bar_content.push(send_login_btn);
                 }
             }
-        }
+        }*/
 
         bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
 

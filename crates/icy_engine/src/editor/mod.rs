@@ -206,6 +206,11 @@ impl EditState {
         self.scrollback_buffer = Some(scroll_buffer);
     }
 
+    pub fn clear_scrollback_buffer(&mut self) {
+        self.buffer.scrollback_lines.clear();
+        self.set_scroll_position(0);
+    }
+
     pub fn from_buffer(buffer: Buffer) -> Self {
         let mut selection_mask = SelectionMask::default();
         selection_mask.set_size(buffer.get_size());

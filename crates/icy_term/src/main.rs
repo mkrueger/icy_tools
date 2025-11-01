@@ -43,6 +43,7 @@ pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync
 
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    static ref START_TIME: Instant = Instant::now();
 }
 
 lazy_static::lazy_static! {
@@ -85,24 +86,6 @@ fn main() {
     use std::fs;
 
     use crate::ui::MainWindow;
-
-    /*
-    let mut native_options = eframe::NativeOptions {
-        multisampling: 0,
-        renderer: eframe::Renderer::Glow,
-        ..Default::default()
-    };
-
-    let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
-    if let Some(rect) = options.window_rect {
-        native_options.viewport = native_options
-            .viewport
-            .with_inner_size(rect.max.to_vec2())
-            .with_icon(icon_data)
-            .with_position(rect.min);
-    } else {
-        native_options.viewport = native_options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
-    }*/
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big
@@ -170,10 +153,5 @@ fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std:
     let rgba = img.to_rgba8();
     let w = img.width();
     let h = img.height();
-    println!("Loaded icon with size {}x{}", w, h);
     Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
-}
-
-lazy_static! {
-    static ref START_TIME: Instant = Instant::now();
 }

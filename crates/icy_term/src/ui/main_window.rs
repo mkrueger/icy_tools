@@ -8,7 +8,7 @@ use crate::{
     get_unicode_converter,
     ui::{
         dialogs::find_dialog,
-        export_dialog, select_bps_dialog,
+        export_screen_dialog, select_bps_dialog,
         up_download_dialog::{self, FileTransferDialogState},
     },
     util::SoundThread,
@@ -48,17 +48,17 @@ pub enum Message {
     CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
     ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
     FindDialog(find_dialog::FindDialogMsg),
-    ExportDialog(export_dialog::ExportMsg),
+    ExportDialog(export_screen_dialog::ExportScreenMsg),
     TransferDialog(up_download_dialog::TransferMsg),
     SelectBpsMsg(select_bps_dialog::SelectBpsMsg),
     ApplyBaudEmulation,
 
     CancelFileTransfer,
     UpdateTransferState(TransferState),
-    ShowExportDialog,
+    ShowExportScreenDialog,
     Connect(Address),
     CloseDialog,
-    Disconnect,
+    Hangup,
     ShowDialingDirectory,
     ShowSettings,
     ShowCaptureDialog,
@@ -66,7 +66,7 @@ pub enum Message {
     ShowBaudEmulationDialog,
     Upload,
     Download,
-    SendLogin,
+    SendLoginAndPassword(bool, bool),
     InitiateFileTransfer {
         protocol: icy_net::protocol::TransferProtocolType,
         is_download: bool,
@@ -90,6 +90,8 @@ pub enum Message {
     ShiftPressed(bool),
     CloseSplashScreen,
     SelectBps(BaudEmulation),
+    QuitIcyTerm,
+    ClearScreen,
 }
 
 pub struct MainWindow {
@@ -100,7 +102,7 @@ pub struct MainWindow {
     pub terminal_window: terminal_window::TerminalWindow,
     pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
     pub find_dialog: find_dialog::DialogState,
-    pub export_dialog: export_dialog::ExportDialogState,
+    pub export_dialog: export_screen_dialog::ExportScreenDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
     pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
 
@@ -180,7 +182,7 @@ impl MainWindow {
             terminal_window,
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
             find_dialog: find_dialog::DialogState::new(),
-            export_dialog: export_dialog::ExportDialogState::new(default_export_path.to_string_lossy().to_string()),
+            export_dialog: export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
 
@@ -311,7 +313,7 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
-            Message::Disconnect => {
+            Message::Hangup => {
                 let _ = self.terminal_tx.send(TerminalCommand::Disconnect);
                 self.terminal_window.disconnect();
                 Task::none()
@@ -370,18 +372,14 @@ impl MainWindow {
                 Task::none()
             }
             Message::Upload => {
-                if self.is_connected {
-                    self.state.mode = MainWindowMode::SelectProtocol(false);
-                }
+                self.state.mode = MainWindowMode::SelectProtocol(false);
                 Task::none()
             }
             Message::Download => {
-                if self.is_connected {
-                    self.state.mode = MainWindowMode::SelectProtocol(true);
-                }
+                self.state.mode = MainWindowMode::SelectProtocol(true);
                 Task::none()
             }
-            Message::SendLogin => {
+            Message::SendLoginAndPassword(login, pw) => {
                 if self.is_connected {
                     if let Some(address) = &self.current_address {
                         // Check if we have username and password
@@ -397,21 +395,26 @@ impl MainWindow {
                             // Small delay between username and password (some BBSs need this)
                             // We'll handle this by sending them as separate commands
                             if !address.user_name.is_empty() && !address.password.is_empty() {
-                                let username_data = address.user_name.as_bytes().to_vec();
-                                let mut username_with_cr = username_data;
-                                username_with_cr.push(b'\r');
-                                let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
+                                if login {
+                                    let username_data = address.user_name.as_bytes().to_vec();
+                                    let mut username_with_cr = username_data;
+                                    username_with_cr.push(b'\r');
+                                    let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
+                                    if pw {
+                                        // Send password after a small delay
+                                        // Note: In a real implementation, you might want to add a proper delay mechanism
+                                        // For now, we'll send it immediately and rely on the terminal's buffering
+                                        std::thread::sleep(std::time::Duration::from_millis(500));
+                                    }
+                                }
 
-                                // Send password after a small delay
-                                // Note: In a real implementation, you might want to add a proper delay mechanism
-                                // For now, we'll send it immediately and rely on the terminal's buffering
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-
-                                let password_data = address.password.as_bytes().to_vec();
-                                let mut password_with_cr = password_data;
-                                password_with_cr.push(b'\r');
-                                let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
-                            } else if !address.user_name.is_empty() {
+                                if pw {
+                                    let password_data = address.password.as_bytes().to_vec();
+                                    let mut password_with_cr = password_data;
+                                    password_with_cr.push(b'\r');
+                                    let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
+                                }
+                            } else if !address.user_name.is_empty() && login {
                                 // Only username
                                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data_to_send));
                             } else if !address.password.is_empty() {
@@ -523,7 +526,7 @@ impl MainWindow {
 
                 Task::none()
             }
-            Message::ShowExportDialog => {
+            Message::ShowExportScreenDialog => {
                 self.state.mode = MainWindowMode::ShowExportDialog;
                 Task::none()
             }
@@ -673,6 +676,40 @@ impl MainWindow {
                 let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(bps));
                 self.state.mode = MainWindowMode::ShowTerminal;
                 self.terminal_window.baud_emulation = bps;
+                Task::none()
+            }
+            Message::QuitIcyTerm => {
+                if self.is_connected {
+                    let _ = self.terminal_tx.send(TerminalCommand::Disconnect);
+                }
+
+                // Stop any ongoing capture
+                if self.terminal_window.is_capturing {
+                    self.capture_dialog.capture_session = false;
+                    self.terminal_window.is_capturing = false;
+
+                    // Save captured data to file if we have any
+                    if let Some(capture_file) = &self.capture_file {
+                        if !self.captured_data.is_empty() {
+                            if let Err(e) = std::fs::write(capture_file, &self.captured_data) {
+                                log::error!("Failed to save capture file: {}", e);
+                            }
+                        }
+                    }
+                }
+                // Stop sound thread
+                self.sound_thread.lock().unwrap().clear();
+
+                iced::exit()
+            }
+            Message::ClearScreen => {
+                if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                    edit_state.clear_scrollback_buffer();
+                    let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
+                    buffer.clear_screen(0, caret);
+                    caret.set_position(Position::new(0, 0));
+                    self.terminal_window.scene.cache.clear();
+                }
                 Task::none()
             }
         }
@@ -864,13 +901,31 @@ impl MainWindow {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
                         if modifiers.alt() {
-                            if let keyboard::Key::Character(s) = &key {
-                                if s.to_lowercase() == "f" {
-                                    return Some(Message::ShowFindDialog);
+                            match &key {
+                                keyboard::Key::Named(named) => {
+                                    println!("Named key pressed with Alt: {:?}", named);
+                                    match named {
+                                        keyboard::key::Named::PageUp => return Some(Message::Upload),
+                                        keyboard::key::Named::PageDown => return Some(Message::Download),
+                                        _ => {}
+                                    }
                                 }
-                                if s.to_lowercase() == "e" {
-                                    return Some(Message::ShowExportDialog);
-                                }
+                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                    "f" => return Some(Message::ShowFindDialog),
+                                    "i" => return Some(Message::ShowExportScreenDialog),
+                                    "d" => return Some(Message::ShowDialingDirectory),
+                                    "h" => return Some(Message::Hangup),
+                                    "l" => return Some(Message::SendLoginAndPassword(true, true)),
+                                    "n" => return Some(Message::SendLoginAndPassword(true, false)),
+                                    "s" => return Some(Message::SendLoginAndPassword(false, true)),
+
+                                    "o" => return Some(Message::ShowSettings),
+                                    "p" => return Some(Message::ShowCaptureDialog),
+                                    "x" => return Some(Message::QuitIcyTerm),
+                                    "c" => return Some(Message::ClearScreen),
+                                    _ => {}
+                                },
+                                _ => {}
                             }
                         }
 
@@ -915,7 +970,7 @@ impl MainWindow {
             // Handle find dialog keyboard shortcuts
             iced::event::listen_with(|event, _status, _| match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_dialog::ExportMsg::Cancel)),
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_screen_dialog::ExportScreenMsg::Cancel)),
                     _ => None,
                 },
                 _ => None,
@@ -940,13 +995,18 @@ impl MainWindow {
         // Add a subscription for terminal events (polling)
         let terminal_sub = iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::TerminalEvent(TerminalEvent::BufferUpdated));
 
-        // Global F11 listener (independent of current mode)
         let fullscreen_sub = iced::event::listen_with(|event, _status, _| match event {
             Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::F11),
+                key: keyboard::Key::Named(keyboard::key::Named::Enter),
+                modifiers,
                 ..
-            }) => Some(Message::ToggleFullscreen),
-
+            }) => {
+                if modifiers.alt() {
+                    Some(Message::ToggleFullscreen)
+                } else {
+                    None
+                }
+            }
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(keyboard::key::Named::Shift),
                 ..
