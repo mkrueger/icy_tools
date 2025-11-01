@@ -952,7 +952,12 @@ impl Buffer {
             for x in 0..options.rect.get_width() {
                 let pos = Position::new(x + options.rect.start.x, y + options.rect.start.y);
                 let ch = self.get_char(pos);
-                let font = self.get_font(ch.get_font_page()).unwrap();
+                let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+                    font
+                } else {
+                    log::error!("Font page {} not found, using font 0", ch.get_font_page());
+                    self.get_font(0).unwrap()
+                };
 
                 let mut fg = if ch.attribute.is_bold() && ch.attribute.get_foreground() < 8 {
                     ch.attribute.get_foreground() + 8
