@@ -32,6 +32,8 @@ pub enum MainWindowMode {
     #[default]
     ShowDialingDirectory,
     ShowSettings,
+    ShowHelpDialog,
+    ShowAboutDialog,
     SelectProtocol(bool),
     FileTransfer(bool),
     ShowCaptureDialog,
@@ -63,6 +65,8 @@ pub enum Message {
     ShowSettings,
     ShowCaptureDialog,
     ShowFindDialog,
+    ShowHelpDialog,
+    ShowAboutDialog,
     ShowBaudEmulationDialog,
     Upload,
     Download,
@@ -105,6 +109,8 @@ pub struct MainWindow {
     pub export_dialog: export_screen_dialog::ExportScreenDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
     pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
+    pub help_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog,
+    pub about_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -185,6 +191,8 @@ impl MainWindow {
             export_dialog: export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
+            help_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog::new(super::ansi_dialog::HELP_ANSI),
+            about_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog::new(super::ansi_dialog::ABOUT_ANSI),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -361,6 +369,14 @@ impl MainWindow {
                     let c = self.update(close_msg);
                     return c;
                 }
+                Task::none()
+            }
+            Message::ShowHelpDialog => {
+                self.state.mode = MainWindowMode::ShowHelpDialog;
+                Task::none()
+            }
+            Message::ShowAboutDialog => {
+                self.state.mode = MainWindowMode::ShowAboutDialog;
                 Task::none()
             }
             Message::CloseDialog => {
@@ -841,6 +857,8 @@ impl MainWindow {
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view(settings)),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view(settings)),
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(self.terminal_window.view(settings)),
+            MainWindowMode::ShowHelpDialog => self.help_dialog.view(),
+            MainWindowMode::ShowAboutDialog => self.about_dialog.view(),
         }
     }
 
@@ -922,14 +940,13 @@ impl MainWindow {
                                     "o" => return Some(Message::ShowSettings),
                                     "p" => return Some(Message::ShowCaptureDialog),
                                     "x" => return Some(Message::QuitIcyTerm),
+                                    "a" => return Some(Message::ShowAboutDialog),
                                     "c" => return Some(Message::ClearScreen),
                                     _ => {}
                                 },
                                 _ => {}
                             }
-                        }
-
-                        if modifiers.control() {
+                        } else if modifiers.control() {
                             if let keyboard::Key::Character(s) = &key {
                                 if s.to_lowercase() == "c" {
                                     return Some(Message::Copy);
@@ -937,6 +954,15 @@ impl MainWindow {
                                 if s.to_lowercase() == "p" {
                                     return Some(Message::Paste);
                                 }
+                            }
+                        } else if modifiers.is_empty() {
+                            // Handle function keys without modifiers
+                            match &key {
+                                keyboard::Key::Named(named) => match named {
+                                    keyboard::key::Named::F1 => return Some(Message::ShowHelpDialog),
+                                    _ => {}
+                                },
+                                _ => {}
                             }
                         }
 
@@ -986,6 +1012,11 @@ impl MainWindow {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog),
                     _ => None,
                 },
+                _ => None,
+            })
+        } else if matches!(self.state.mode, MainWindowMode::ShowHelpDialog) || matches!(self.state.mode, MainWindowMode::ShowAboutDialog) {
+            iced::event::listen_with(|event, _status, _| match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog),
                 _ => None,
             })
         } else {
