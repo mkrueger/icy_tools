@@ -885,7 +885,7 @@ impl MainWindow {
             iced::event::listen_with(move |event, _status: iced::event::Status, _| {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
-                        if modifiers.alt() {
+                        if modifiers.alt() || modifiers.logo() {
                             match &key {
                                 keyboard::Key::Named(named) => {
                                     println!("Named key pressed with Alt: {:?}", named);
@@ -913,7 +913,7 @@ impl MainWindow {
                                 },
                                 _ => {}
                             }
-                        } else if modifiers.control() {
+                        } else if modifiers.command() {
                             if let keyboard::Key::Character(s) = &key {
                                 if s.to_lowercase() == "c" {
                                     return Some(Message::Copy);
