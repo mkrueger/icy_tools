@@ -1,0 +1,37 @@
+settings-heading = Configuración
+settings-scaling = Escalado
+settings-monitor-type = Monitor
+settings-reset-button = Reiniciar
+settings-monitor-category = Monitor
+settings-monitor-use-crt-filter-checkbox = Usar filtro CRT
+settings-monitor-brightness = Brillo
+settings-monitor-contrast = Contraste
+settings-monitor-saturation = Saturación
+settings-monitor-gamma = Gamma
+settings-monitor-blur = Desenfoque
+settings-monitor-curve = Curva
+settings-monitor-scanlines = Líneas de escaneo
+settings-background_color-label = Color del borde:
+
+settings-monitor-color = Color
+settings-monitor-grayscale = Escala de grises
+settings-monitor-amber = Ámbar
+settings-monitor-green = Verde
+settings-monitor-apple2 = Apple ][
+settings-monitor-futuristic = Futurista
+
+settings-integer-scaling-label = Usar escalado entero
+settings-color-tone-section = Color y tono
+settings-bloom-glow-section = Bloom y brillo
+settings-bloom-threshold-label = Umbral
+settings-bloom-radius-label = Radio
+settings-glow-strength-label = Intensidad del brillo
+settings-phosphor-persistence-label = Persistencia del fósforo
+settings-scanline-thickness-label = Grosor de las líneas
+settings-scanline-sharpness-label = Nitidez de las líneas
+settings-scanline-phase-label = Fase de las líneas
+settings-curvature-x-label = Curvatura X
+settings-curvature-y-label = Curvatura Y
+settings-noise-artifacts-section = Ruido y artefactos
+settings-noise-level-label = Nivel de ruido
+settings-sync-wobble-label = Oscilación de sincronización

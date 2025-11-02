@@ -1,0 +1,37 @@
+settings-heading = Paramètres
+settings-scaling = Mise à l'échelle
+settings-monitor-type = Moniteur
+settings-reset-button = Réinitialiser
+settings-monitor-category = Moniteur
+settings-monitor-use-crt-filter-checkbox = Utiliser le filtre CRT
+settings-monitor-brightness = Luminosité
+settings-monitor-contrast = Contraste
+settings-monitor-saturation = Saturation
+settings-monitor-gamma = Gamma
+settings-monitor-blur = Flou
+settings-monitor-curve = Courbe
+settings-monitor-scanlines = Lignes de balayage
+settings-background_color-label = Couleur de bordure :
+
+settings-monitor-color = Couleur
+settings-monitor-grayscale = Niveaux de gris
+settings-monitor-amber = Ambre
+settings-monitor-green = Vert
+settings-monitor-apple2 = Apple ][
+settings-monitor-futuristic = Futuriste
+
+settings-integer-scaling-label = Utiliser l’échelle entière
+settings-color-tone-section = Couleur et tonalité
+settings-bloom-glow-section = Bloom et lueur
+settings-bloom-threshold-label = Seuil
+settings-bloom-radius-label = Rayon
+settings-glow-strength-label = Intensité de la lueur
+settings-phosphor-persistence-label = Persistance du phosphore
+settings-scanline-thickness-label = Épaisseur des lignes de balayage
+settings-scanline-sharpness-label = Netteté des lignes de balayage
+settings-scanline-phase-label = Phase des lignes de balayage
+settings-curvature-x-label = Courbure X
+settings-curvature-y-label = Courbure Y
+settings-noise-artifacts-section = Bruit et artefacts
+settings-noise-level-label = Niveau de bruit
+settings-sync-wobble-label = Oscillation de synchronisation

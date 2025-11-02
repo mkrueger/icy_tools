@@ -44,6 +44,8 @@ pub enum MonitorSettingsMessage {
     SelectionBgChanged(Color),
 
     BackgroundEffectChanged(crate::BackgroundEffect),
+
+    Noop,
 }
 
 pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorSettingsMessage) {
@@ -87,5 +89,6 @@ pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorS
         MonitorSettingsMessage::SelectionBgChanged(c) => settings.selection_bg = iced_to_icy_color(c),
 
         MonitorSettingsMessage::BackgroundEffectChanged(be) => settings.background_effect = be,
+        MonitorSettingsMessage::Noop => { /* Do nothing */ }
     }
 }

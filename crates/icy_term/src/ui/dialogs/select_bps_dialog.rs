@@ -9,7 +9,7 @@ const MODAL_WIDTH: f32 = 340.0;
 const MODAL_HEIGHT: f32 = 440.0;
 
 // Standard baud rates - index 0 is Off, 1-12 are rates, 13 is custom
-const STANDARD_RATES: [Option<u32>; 13] = [
+pub const STANDARD_RATES: [Option<u32>; 13] = [
     None,         // 0: Off
     Some(300),    // 1
     Some(1200),   // 2

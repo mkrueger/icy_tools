@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::widget::{button, column, container, row, rule, slider, text};
+use iced::widget::{button, column, container, row, slider, space, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme};
 use icy_engine::Color as IcyColor;
 use lazy_static::lazy_static;
@@ -16,12 +16,20 @@ pub mod ui;
 pub use ui::*;
 
 // Design constants
-const LABEL_WIDTH: f32 = 140.0;
+pub const LABEL_WIDTH: f32 = 180.0;
 const INPUT_WIDTH: f32 = 220.0;
-const SECTION_PADDING: u16 = 20;
+pub const SECTION_PADDING: f32 = 20.0;
 const ROW_SPACING: f32 = 12.0;
-const SLIDER_LABEL_WIDTH: f32 = 140.0;
 const SLIDER_VALUE_WIDTH: f32 = 50.0;
+
+pub const SECTION_SPACING: f32 = 24.0;
+pub const EFFECT_BOX_PADDING: u16 = 16;
+pub const EFFECT_BOX_RADIUS: f32 = 6.0;
+pub const SLIDER_SPACING: f32 = 8.0;
+pub const TOGGLE_SPACING: f32 = 10.0;
+pub const TEXT_SIZE_NORMAL: f32 = 14.0;
+pub const TEXT_SIZE_SMALL: f32 = 12.0;
+pub const HEADER_TEXT_SIZE: f32 = 16.0;
 
 lazy_static! {
     static ref MONITOR_NAMES: [String; 7] = [
@@ -169,81 +177,105 @@ fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Ele
 }
 
 // Section header with styling
-fn section_header(title: &str) -> Element<'_, MonitorSettingsMessage> {
+pub fn section_header<T: 'static>(title: String) -> Element<'static, T> {
     column![
-        text(title).size(16).style(|theme: &Theme| {
-            text::Style {
-                color: Some(theme.extended_palette().primary.base.color),
-            }
-        }),
-        rule::horizontal(1).style(|theme: &Theme| {
-            iced::widget::rule::Style {
-                color: theme.extended_palette().background.weak.color,
-                radius: 0.0.into(),
-                fill_mode: iced::widget::rule::FillMode::Full,
-                snap: false,
-            }
-        }),
+        row![
+            space().width(8.0),
+            text(title)
+                .size(TEXT_SIZE_NORMAL)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::default()
+                })
+                .style(|theme: &Theme| {
+                    text::Style {
+                        color: Some(theme.palette().text),
+                    }
+                }),
+        ],
+        space().height(4),
     ]
     .spacing(4)
     .into()
 }
 
-// Styled slider row
+// Add a new method for themed container box (macOS style)
+pub fn themed_container<'a, Message: 'a>(content: impl Into<Element<'a, Message>>) -> container::Container<'a, Message> {
+    container(content)
+        .style(|theme: &Theme| container::Style {
+            background: Some(Background::Color(theme.extended_palette().background.weak.color)),
+            border: Border {
+                color: theme.extended_palette().background.strong.color,
+                width: 1.0,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        })
+        .padding(12)
+}
+
+// Update slider_row_owned to use consistent alignment
+// Update slider_row_owned to remove the container border
 pub fn slider_row_owned<'a>(
     label: String,
     value: f32,
     range: std::ops::RangeInclusive<f32>,
     on_change: impl Fn(f32) -> MonitorSettingsMessage + 'a,
 ) -> Element<'a, MonitorSettingsMessage> {
-    container(
-        row![
-            text(label).size(14).width(Length::Fixed(SLIDER_LABEL_WIDTH)),
-            slider(range, value, on_change).width(Length::Fill).style(|theme: &Theme, status| {
-                let palette = theme.extended_palette();
-                iced::widget::slider::Style {
-                    rail: iced::widget::slider::Rail {
-                        backgrounds: (Background::Color(palette.primary.base.color), Background::Color(palette.background.weak.color)),
-                        width: 4.0,
-                        border: Border::default(),
-                    },
-                    handle: iced::widget::slider::Handle {
-                        shape: iced::widget::slider::HandleShape::Circle { radius: 8.0 },
-                        background: Background::Color(if status == iced::widget::slider::Status::Dragged {
-                            palette.primary.strong.color
-                        } else {
-                            palette.primary.base.color
-                        }),
-                        border_color: Color::WHITE,
-                        border_width: 2.0,
-                    },
-                }
-            }),
-            container(text(format!("{:.0}", value)).size(13).style(|theme: &Theme| {
-                text::Style {
-                    color: Some(theme.extended_palette().background.strong.text),
-                }
-            }))
-            .width(Length::Fixed(SLIDER_VALUE_WIDTH))
-            .style(|theme: &Theme| {
-                container::Style {
-                    background: Some(Background::Color(theme.extended_palette().background.weak.color)),
-                    border: Border {
-                        color: theme.extended_palette().background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                }
-            })
-            .padding(4)
-            .center_x(Length::Fixed(SLIDER_VALUE_WIDTH))
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center),
-    )
-    .padding([4, 0])
+    row![
+        text(label).size(14).width(Length::Fixed(LABEL_WIDTH)),
+        slider(range, value, on_change).width(Length::Fill).style(|theme: &Theme, status| {
+            let palette = theme.extended_palette();
+            iced::widget::slider::Style {
+                rail: iced::widget::slider::Rail {
+                    backgrounds: (Background::Color(palette.primary.base.color), Background::Color(palette.background.weak.color)),
+                    width: 4.0,
+                    border: Border::default(),
+                },
+                handle: iced::widget::slider::Handle {
+                    shape: iced::widget::slider::HandleShape::Circle { radius: 8.0 },
+                    background: Background::Color(if status == iced::widget::slider::Status::Dragged {
+                        palette.primary.strong.color
+                    } else {
+                        palette.primary.base.color
+                    }),
+                    border_color: Color::WHITE,
+                    border_width: 2.0,
+                },
+            }
+        }),
+        container(text(format!("{:.0}", value)).size(13).style(|theme: &Theme| {
+            text::Style {
+                color: Some(theme.extended_palette().background.strong.text),
+            }
+        }))
+        .width(Length::Fixed(SLIDER_VALUE_WIDTH))
+        .style(|theme: &Theme| {
+            container::Style {
+                background: Some(Background::Color(theme.extended_palette().background.weak.color)),
+                border: Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .padding(4)
+        .center_x(Length::Fixed(SLIDER_VALUE_WIDTH))
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center)
+    .padding([4, 0]) // Small vertical padding for spacing
     .into()
+}
+
+// Helper function for creating a settings row with left-aligned label and right-aligned content
+pub fn settings_row<'a, Message: 'a>(label: impl Into<String>, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    row![text(label.into()).size(14).width(Length::Fixed(LABEL_WIDTH)), content.into(),]
+        .spacing(12)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 // Helper functions for color conversion
@@ -254,4 +286,56 @@ pub fn iced_to_icy_color(color: Color) -> IcyColor {
 pub fn icy_to_iced_color(color: IcyColor) -> Color {
     let (r, g, b) = color.get_rgb();
     Color::from_rgb8(r, g, b)
+}
+
+pub fn left_label<T: 'static>(txt: String) -> Element<'static, T> {
+    container(text(txt).size(TEXT_SIZE_NORMAL))
+        .width(Length::Fixed(LABEL_WIDTH))
+        .align_x(iced::alignment::Horizontal::Left)
+        .into()
+}
+
+pub fn effect_box<'a, T: 'a>(inner: Element<'a, T>) -> Element<'a, T> {
+    container(inner)
+        .style(|theme: &Theme| container::Style {
+            background: Some(Background::Color(theme.extended_palette().background.weakest.color)),
+            border: Border {
+                color: theme.extended_palette().background.strong.color,
+                width: 1.0,
+                radius: EFFECT_BOX_RADIUS.into(),
+            },
+            ..Default::default()
+        })
+        .padding(EFFECT_BOX_PADDING)
+        .width(Length::Fill)
+        .into()
+}
+
+pub fn effect_box_toggleable<'a, T: 'a>(inner: Element<'a, T>, disabled: bool) -> Element<'a, T> {
+    container(inner)
+        .style(move |theme: &Theme| {
+            let base_bg = theme.extended_palette().background.weakest.color;
+            let border_color = theme.extended_palette().background.strong.color;
+
+            container::Style {
+                background: Some(Background::Color(if disabled {
+                    Color::from_rgba(base_bg.r, base_bg.g, base_bg.b, 0.5)
+                } else {
+                    base_bg
+                })),
+                border: Border {
+                    color: if disabled {
+                        Color::from_rgba(border_color.r, border_color.g, border_color.b, 0.5)
+                    } else {
+                        border_color
+                    },
+                    width: 1.0,
+                    radius: EFFECT_BOX_RADIUS.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .padding(EFFECT_BOX_PADDING)
+        .width(Length::Fill)
+        .into()
 }
