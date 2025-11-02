@@ -182,7 +182,7 @@ impl MonitorSettings {
             selection_bg: Color::new(0xAB, 0xAB, 0xAB),
 
             // Scaling
-            use_pixel_perfect_scaling: true,
+            use_pixel_perfect_scaling: false,
 
             // CRT effects - all disabled for neutral
             use_bloom: false,
