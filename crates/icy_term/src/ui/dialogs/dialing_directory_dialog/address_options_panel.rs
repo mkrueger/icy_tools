@@ -2,11 +2,13 @@ use crate::VGA_MODES;
 use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
 use i18n_embed_fl::fl;
-use iced::widget::{space, tooltip};
+use iced::Padding;
+use iced::widget::tooltip;
 use iced::{
     Alignment, Element, Length,
-    widget::{Column, Space, button, checkbox, column, container, pick_list, row, rule, scrollable, svg, text, text_input},
+    widget::{Space, button, checkbox, column, container, pick_list, row, scrollable, svg, text, text_input},
 };
+use iced_engine_gui::settings::{SECTION_SPACING, effect_box, left_label, section_header};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use once_cell::sync::Lazy;
@@ -66,8 +68,9 @@ impl super::DialingDirectoryState {
         };
         let is_quick = self.selected_bbs.is_none();
         let id = self.selected_bbs;
-        // Header with system name and star button
-        let header = {
+
+        // Header section - explicitly type as Element
+        let header: Element<'_, Message> = if !is_quick {
             let name_input = text_input(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-name-placeholder"), &addr.system_name)
                 .on_input(move |s| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -75,7 +78,6 @@ impl super::DialingDirectoryState {
                         field: AddressFieldChange::SystemName(s),
                     })
                 })
-                .padding(6)
                 .size(18)
                 .width(Length::Fill);
 
@@ -85,99 +87,77 @@ impl super::DialingDirectoryState {
                 } else {
                     0
                 })))
-                .padding(4)
                 .style(button::text);
 
-            // Info section
-            let info_section = {
-                let calls = addr.number_of_calls;
-                let last_call_text = match addr.last_call {
-                    Some(dt) => {
-                        let local: chrono::DateTime<chrono::Local> = chrono::DateTime::from(dt);
-                        local
-                            .format(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-last-call-date-format"))
-                            .to_string()
-                    }
-                    None => fl!(crate::LANGUAGE_LOADER, "dialing_directory-not-called"),
-                };
-
-                column![
-                    row![
-                        container(text(format!("✆ {calls}")).style(|theme: &iced::Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().secondary.base.color),
-                            ..Default::default()
-                        })),
-                        Space::new().width(Length::Fill),
-                        container(text(last_call_text).style(|theme: &iced::Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().secondary.base.color),
-                            ..Default::default()
-                        })),
-                    ]
-                    .spacing(20)
-                ]
-                .spacing(4)
+            let calls = addr.number_of_calls;
+            let last_call_text = match addr.last_call {
+                Some(dt) => {
+                    let local: chrono::DateTime<chrono::Local> = chrono::DateTime::from(dt);
+                    local
+                        .format(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-last-call-date-format"))
+                        .to_string()
+                }
+                None => fl!(crate::LANGUAGE_LOADER, "dialing_directory-not-called"),
             };
 
-            let mut cols = column![row![name_input, star_btn].spacing(8).align_y(Alignment::Center)].spacing(4);
-
-            if !is_quick {
-                cols = cols.push(info_section);
-            }
-
-            cols
+            column![
+                row![name_input, star_btn].spacing(8).align_y(Alignment::Center),
+                row![
+                    container(text(format!("✆ {calls}")).style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().secondary.base.color),
+                        ..Default::default()
+                    })),
+                    Space::new().width(Length::Fill),
+                    container(text(last_call_text).style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().secondary.base.color),
+                        ..Default::default()
+                    })),
+                    Space::new().width(8.0),
+                ]
+                .spacing(20)
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to")).size(20.0)).into()
         };
-        // Create a table-like layout with consistent column widths
-        let label_width = Length::Fixed(120.0);
-        // Server settings
-        let server_section = {
-            let mut rows = vec![];
 
-            // Address/Modem row - changes based on protocol
+        // Server Settings Section
+        let server_section: Element<'_, Message> = {
+            let mut server_content = column![].spacing(12);
+
+            // Address/Modem row
             if addr.protocol == ConnectionType::Modem {
-                // For modem protocol, show modem picker
                 let modem_names: Vec<String> = options.modems.iter().map(|m| m.name.clone()).collect();
-
-                // Check if current address matches any modem name
                 let selected_modem = modem_names.iter().position(|name| name == &addr.address);
 
-                let modem_picker: pick_list::PickList<'_, String, Vec<String>, String, Message> =
-                    pick_list(modem_names.clone(), selected_modem.map(|idx| modem_names[idx].clone()), move |modem_name| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::Address(modem_name),
-                        })
+                let modem_picker = pick_list(modem_names.clone(), selected_modem.map(|idx| modem_names[idx].clone()), move |modem_name| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::Address(modem_name),
                     })
-                    .placeholder("Select Modem")
-                    .width(Length::Fill);
+                })
+                .placeholder("Select Modem")
+                .width(Length::Fill)
+                .text_size(14);
 
-                let mut modem_row = row![
-                    container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")))
-                        .align_x(Alignment::End)
-                        .width(label_width),
-                    modem_picker,
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center);
+                let mut modem_row = row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")), modem_picker,]
+                    .spacing(12)
+                    .align_y(Alignment::Center);
 
-                // Show warning if modem name doesn't match any configured modem
                 if selected_modem.is_none() && !addr.address.is_empty() {
                     let err_msg = if modem_names.is_empty() {
                         fl!(crate::LANGUAGE_LOADER, "dialing_directory-no_modem_configured")
                     } else {
                         fl!(crate::LANGUAGE_LOADER, "dialing_directory-invalid_modem")
                     };
-                    modem_row = modem_row.push(
-                        container(text(format!("⚠ {}", err_msg)).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().danger.base.color),
-                            ..Default::default()
-                        }))
-                        .padding([0, 8]),
-                    );
+                    modem_row = modem_row.push(text(format!("⚠ {}", err_msg)).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().danger.base.color),
+                        ..Default::default()
+                    }));
                 }
-
-                rows.push(modem_row);
+                server_content = server_content.push(modem_row);
             } else {
-                // For other protocols, show address input
                 let address_field = text_input("", &addr.address)
                     .on_input(move |s| {
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -186,21 +166,17 @@ impl super::DialingDirectoryState {
                         })
                     })
                     .padding(6)
+                    .size(14)
                     .width(Length::Fill);
 
-                rows.push(
-                    row![
-                        container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-address")))
-                            .align_x(Alignment::End)
-                            .width(label_width),
-                        address_field
-                    ]
-                    .spacing(8)
-                    .align_y(Alignment::Center),
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-address")), address_field]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
                 );
             }
 
-            // Protocol picker
+            // Protocol row
             let protocols = vec![
                 ConnectionTypeWrapper(ConnectionType::Telnet),
                 ConnectionTypeWrapper(ConnectionType::Raw),
@@ -210,45 +186,40 @@ impl super::DialingDirectoryState {
                 ConnectionTypeWrapper(ConnectionType::SecureWebsocket),
             ];
 
-            let current_protocol = ConnectionTypeWrapper(addr.protocol);
-
-            let protocol_pick = pick_list(protocols, Some(current_protocol), move |p: ConnectionTypeWrapper| {
+            let protocol_pick = pick_list(protocols, Some(ConnectionTypeWrapper(addr.protocol)), move |p: ConnectionTypeWrapper| {
                 Message::from(DialingDirectoryMsg::AddressFieldChanged {
                     id,
                     field: AddressFieldChange::Protocol(p.0),
                 })
             })
-            .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol"))
-            .width(Length::Fixed(150.0));
+            .width(Length::Fixed(180.0))
+            .text_size(14);
 
-            let baud_pick = pick_list(BaudEmulation::OPTIONS.to_vec(), Some(addr.baud_emulation), move |b| {
-                Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                    id,
-                    field: AddressFieldChange::Baud(b),
-                })
-            })
-            .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation"))
-            .width(Length::Fixed(150.0));
-
-            // Protocol & Baud row - conditionally show baud picker
-            let mut protocol_row = row![
-                container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")))
-                    .align_x(Alignment::End)
-                    .width(label_width),
-                protocol_pick,
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
-
-            // Only show baud picker if protocol is NOT Modem
+            server_content = server_content.push(
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")), protocol_pick,]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+            );
+            const COMBO_WIDTH: f32 = 110.0;
+            // Baud emulation row (only if not Modem protocol)
             if addr.protocol != ConnectionType::Modem {
-                protocol_row = protocol_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")));
-                protocol_row = protocol_row.push(baud_pick);
+                let baud_pick = pick_list(BaudEmulation::OPTIONS.to_vec(), Some(addr.baud_emulation), move |b| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::Baud(b),
+                    })
+                })
+                .width(Length::Fixed(COMBO_WIDTH))
+                .text_size(14);
+
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")), baud_pick]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
             }
 
-            protocol_row = protocol_row.push(Space::new().width(Length::Fill));
-            rows.push(protocol_row);
-
+            // Terminal type row
             let terms = vec![
                 TerminalEmulationWrapper(TerminalEmulation::Ansi),
                 TerminalEmulationWrapper(TerminalEmulation::Utf8Ansi),
@@ -262,74 +233,73 @@ impl super::DialingDirectoryState {
                 TerminalEmulationWrapper(TerminalEmulation::Rip),
             ];
 
-            let current_terminal = TerminalEmulationWrapper(addr.terminal_type);
-
-            let term_pick = pick_list(terms, Some(current_terminal), move |t: TerminalEmulationWrapper| {
+            let term_pick = pick_list(terms, Some(TerminalEmulationWrapper(addr.terminal_type)), move |t: TerminalEmulationWrapper| {
                 Message::from(DialingDirectoryMsg::AddressFieldChanged {
                     id,
                     field: AddressFieldChange::Terminal(t.0),
                 })
             })
-            .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type"))
-            .width(Length::Fixed(150.0));
+            .width(Length::Fixed(COMBO_WIDTH))
+            .text_size(14);
 
-            let modes = VGA_MODES.to_vec();
-            let screen_mode_pick = pick_list(modes, Some(addr.screen_mode), move |sm| {
-                Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                    id,
-                    field: AddressFieldChange::ScreenMode(sm),
-                })
-            })
-            .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode"))
-            .width(Length::Fixed(150.0));
+            server_content = server_content.push(
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")), term_pick,]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+            );
 
-            let music_options = vec![MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both];
-
-            let music_pick = pick_list(music_options, Some(addr.ansi_music), move |m| {
-                Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                    id,
-                    field: AddressFieldChange::Music(m),
-                })
-            })
-            .placeholder(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option"))
-            .width(Length::Fixed(150.0));
-
-            let mut column_row = row![
-                container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")))
-                    .align_x(Alignment::End)
-                    .width(label_width),
-                term_pick,
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
-
+            // Screen mode row (only for certain terminal types)
             if addr.terminal_type == TerminalEmulation::Ansi
                 || addr.terminal_type == TerminalEmulation::Utf8Ansi
                 || addr.terminal_type == TerminalEmulation::Avatar
                 || addr.terminal_type == TerminalEmulation::Ascii
             {
-                column_row = column_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")));
-                column_row = column_row.push(screen_mode_pick);
+                let screen_mode_pick = pick_list(VGA_MODES.to_vec(), Some(addr.screen_mode), move |sm| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::ScreenMode(sm),
+                    })
+                })
+                .width(Length::Fixed(120.0))
+                .text_size(14);
+
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")), screen_mode_pick]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
             }
 
+            // Music option row (only for ANSI/UTF8ANSI)
             if addr.terminal_type == TerminalEmulation::Ansi || addr.terminal_type == TerminalEmulation::Utf8Ansi {
-                column_row = column_row.push(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")));
-                column_row = column_row.push(music_pick);
+                let music_pick = pick_list(
+                    vec![MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both],
+                    Some(addr.ansi_music),
+                    move |m| {
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::Music(m),
+                        })
+                    },
+                )
+                .width(Length::Fixed(COMBO_WIDTH))
+                .text_size(14);
+
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")), music_pick]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
             }
 
-            column_row = column_row.push(Space::new().width(Length::Fill));
-            rows.push(column_row);
-
-            let mut col = column![].spacing(8);
-
-            for row in rows {
-                col = col.push(row);
-            }
-
-            col
+            effect_box(server_content.into()).into()
         };
-        // Login settings
-        let login_section = {
+
+        // Login Settings Section (only for non-quick connect)
+        let login_section: Option<Element<'_, Message>> = if !is_quick {
+            let mut login_content = column![].spacing(12);
+
+            // User field
             let user_field = text_input("", &addr.user_name)
                 .on_input(move |s| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -338,9 +308,17 @@ impl super::DialingDirectoryState {
                     })
                 })
                 .padding(6)
+                .size(14)
                 .width(Length::Fill);
 
-            let pw_field: text_input::TextInput<'_, Message> = text_input("", &addr.password)
+            login_content = login_content.push(
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-user")), user_field]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+            );
+
+            // Password field with visibility toggle
+            let pw_field = text_input("", &addr.password)
                 .on_input(move |s| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
                         id,
@@ -349,30 +327,9 @@ impl super::DialingDirectoryState {
                 })
                 .secure(!self.show_passwords)
                 .padding(6)
+                .size(14)
                 .width(Length::Fill);
 
-            let auto_login_field = text_input("", &addr.auto_login)
-                .on_input(move |s| {
-                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                        id,
-                        field: AddressFieldChange::AutoLogin(s),
-                    })
-                })
-                .padding(6)
-                .width(Length::Fill);
-
-            let override_toggle = checkbox(
-                fl!(crate::LANGUAGE_LOADER, "dialing_directory-custom-iemsi-login-data"),
-                addr.override_iemsi_settings,
-            )
-            .on_toggle(move |v| {
-                Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                    id,
-                    field: AddressFieldChange::OverrideIemsi(v),
-                })
-            });
-
-            // Use SVG icon for visibility toggle
             let visibility_icon = if self.show_passwords {
                 svg(svg::Handle::from_memory(VISIBILITY_OFF_SVG))
             } else {
@@ -388,61 +345,78 @@ impl super::DialingDirectoryState {
 
             let (generate_btn, tooltip_label) = if addr.password.is_empty() {
                 (
-                    button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")))
+                    button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")).size(14))
                         .on_press(Message::from(DialingDirectoryMsg::GeneratePassword))
-                        .padding(4),
+                        .padding([6, 12]),
                     fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-tooltip"),
                 )
             } else {
                 (
-                    button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")))
-                        .padding(4)
+                    button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")).size(14))
+                        .padding([6, 12])
                         .style(button::secondary),
                     fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-disabled-tooltip"),
                 )
             };
 
-            let generate_btn: tooltip::Tooltip<'_, Message> = tooltip(
+            let generate_btn = tooltip(
                 generate_btn,
-                container(text(tooltip_label)).style(container::rounded_box),
+                container(text(tooltip_label).size(12)).style(container::rounded_box),
                 tooltip::Position::Bottom,
             )
             .gap(10)
             .style(container::rounded_box)
             .padding(8);
 
-            let mut col: Column<'_, Message> = column![
-                row![text("Login").size(14), rule::horizontal(1)].spacing(8).align_y(Alignment::Center),
+            login_content = login_content.push(
                 row![
-                    container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-user")))
-                        .width(label_width)
-                        .align_x(Alignment::End),
-                    user_field
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-                row![
-                    container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-password")))
-                        .width(label_width)
-                        .align_x(Alignment::End),
+                    left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-password")),
                     pw_field,
                     toggler_pw,
                     generate_btn
                 ]
-                .spacing(8)
+                .spacing(12)
                 .align_y(Alignment::Center),
-                row![
-                    container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-autologin")))
-                        .width(label_width)
-                        .align_x(Alignment::End),
-                    auto_login_field
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-                row![Space::new().width(label_width), override_toggle].spacing(8)
-            ]
-            .spacing(8);
+            );
 
+            // Auto login field
+            let auto_login_field = text_input("", &addr.auto_login)
+                .on_input(move |s| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::AutoLogin(s),
+                    })
+                })
+                .padding(6)
+                .size(14)
+                .width(Length::Fill);
+
+            login_content = login_content.push(
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-autologin")), auto_login_field]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+            );
+
+            // IEMSI override checkbox
+            let override_toggle = checkbox("", addr.override_iemsi_settings)
+                .on_toggle(move |v| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::OverrideIemsi(v),
+                    })
+                })
+                .size(18);
+
+            login_content = login_content.push(
+                row![
+                    left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-custom-iemsi-login-data")),
+                    override_toggle
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+            );
+
+            // IEMSI fields (if override is enabled)
             if addr.override_iemsi_settings {
                 let iemsi_user = text_input("", &addr.iemsi_user)
                     .on_input(move |s| {
@@ -452,6 +426,7 @@ impl super::DialingDirectoryState {
                         })
                     })
                     .padding(6)
+                    .size(14)
                     .width(Length::Fill);
 
                 let iemsi_pw = text_input("", &addr.iemsi_password)
@@ -463,79 +438,88 @@ impl super::DialingDirectoryState {
                     })
                     .secure(!self.show_passwords)
                     .padding(6)
+                    .size(14)
                     .width(Length::Fill);
 
-                col = col
+                login_content = login_content
                     .push(
                         row![
-                            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-user")))
-                                .width(label_width)
-                                .align_x(Alignment::End),
+                            left_label(format!("  IEMSI {}", fl!(crate::LANGUAGE_LOADER, "dialing_directory-user"))),
                             iemsi_user
                         ]
-                        .spacing(8)
+                        .spacing(12)
                         .align_y(Alignment::Center),
                     )
                     .push(
                         row![
-                            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-password")))
-                                .width(label_width)
-                                .align_x(Alignment::End),
+                            left_label(format!("  IEMSI {}", fl!(crate::LANGUAGE_LOADER, "dialing_directory-password"))),
                             iemsi_pw
                         ]
-                        .spacing(8)
+                        .spacing(12)
                         .align_y(Alignment::Center),
                     );
             }
 
-            col
-        };
-        // Comment section
-        let comment_section = {
-            let comment = addr.comment.clone();
-            column![
-                row![text("Notes").size(14), rule::horizontal(1)].spacing(8).align_y(Alignment::Center),
-                text_input(&COMMENT_PLACEHOLDER, &comment)
-                    .on_input(move |s| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::Comment(s),
-                        })
-                    })
-                    .padding(6)
-                    .size(14)
-                    .width(Length::Fill),
-            ]
-            .spacing(8)
-        };
-        let show_quick_connect = self.selected_bbs == None;
-        let mut content = column![
-            space().height(Length::Fixed(4.0)),
-            if show_quick_connect {
-                column![container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to")).size(20.0))]
-            } else {
-                header.into()
-            },
-            Space::new().height(Length::Fixed(4.0)),
-        ]
-        .spacing(8)
-        .width(Length::Fill);
-        // Add all sections
-        content = content.push(server_section).push(Space::new().height(Length::Fixed(12.0)));
-        if !is_quick {
-            content = content.push(login_section).push(comment_section)
+            Some(effect_box(login_content.into()).into())
         } else {
-            let mut add_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button")).size(16))
+            None
+        };
+
+        // Comment/Notes section (only for non-quick connect)
+        let comment_section: Option<Element<'_, Message>> = if !is_quick {
+            let comment = text_input(&COMMENT_PLACEHOLDER, &addr.comment)
+                .on_input(move |s| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::Comment(s),
+                    })
+                })
+                .padding(6)
+                .size(14)
+                .width(Length::Fill);
+
+            Some(effect_box(comment.into()).into())
+        } else {
+            None
+        };
+
+        // Main content layout
+        let mut content: iced::widget::Column<'_, Message> = column![header, Space::new().height(SECTION_SPACING), server_section,];
+
+        if !is_quick {
+            if let Some(login) = login_section {
+                content = content
+                    .push(Space::new().height(SECTION_SPACING))
+                    .push(section_header("Login Settings".to_string()))
+                    .push(login);
+            }
+
+            if let Some(notes) = comment_section {
+                content = content
+                    .push(Space::new().height(SECTION_SPACING))
+                    .push(section_header("Notes".to_string()))
+                    .push(notes);
+            }
+        } else {
+            // Quick connect "Add BBS" button
+            let mut add_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button")).size(14))
                 .on_press(Message::from(DialingDirectoryMsg::AddAddress))
-                .padding(8)
+                .padding([6, 12])
                 .width(Length::Shrink);
 
             if self.quick_connect_address.address.is_empty() {
                 add_btn = add_btn.style(button::secondary);
             }
 
-            content = content.push(add_btn);
+            content = content.push(Space::new().height(24)).push(row![Space::new().width(Length::Fill), add_btn]);
         }
-        scrollable(content).into()
+
+        scrollable(content.padding(Padding {
+            top: 12.0,
+            bottom: 16.0,
+            left: 0.0,
+            right: 20.0,
+        }))
+        .into()
     }
 }
