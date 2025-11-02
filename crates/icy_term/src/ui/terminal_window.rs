@@ -223,22 +223,7 @@ impl TerminalWindow {
 
     fn create_button_bar(&self) -> Element<'_, Message> {
         // Phonebook/Connect button (serves dual purpose)
-        let phonebook_btn = if self.is_connected {
-            // When connected, show disconnect button
-            button(
-                row![
-                    svg(svg::Handle::from_memory(DISCONNECT_SVG))
-                        .width(Length::Fixed(16.0))
-                        .height(Length::Fixed(16.0)),
-                    text(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).size(12)
-                ]
-                .spacing(3)
-                .align_y(Alignment::Center),
-            )
-            .on_press(Message::Hangup)
-            .padding([4, 6])
-            .style(button::danger)
-        } else {
+        let phonebook_btn = {
             // When disconnected, show phonebook (connect) button
             button(
                 row![
@@ -396,6 +381,26 @@ impl TerminalWindow {
             .spacing(3)
             .align_y(Alignment::Center),
         )*/
+
+        if self.is_connected {
+            // When connected, show disconnect button
+            let hangup_button = button(
+                row![
+                    svg(svg::Handle::from_memory(DISCONNECT_SVG))
+                        .width(Length::Fixed(16.0))
+                        .height(Length::Fixed(16.0)),
+                    text(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).size(12)
+                ]
+                .spacing(3)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::Hangup)
+            .padding([4, 6])
+            .style(button::danger);
+            bar_content = bar_content.push(hangup_button);
+            bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
+        }
+
         let settings_menu = button(
             text("⚙").size(16), // Gear symbol - most common for settings
         )
