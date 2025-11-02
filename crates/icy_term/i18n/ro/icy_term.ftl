@@ -1,5 +1,7 @@
 connect-to = Conectează-te la { $address }...
 
+dialog-close_button = Închide
+
 settings-heading = Setări
 settings-enabled-checkbox = Activat
 settings-scaling = Scalare
@@ -200,3 +202,13 @@ select-bps-dialog-bps-custom-placeholder = ex. 2400
 
 show-disconnected-heading=FĂRĂ CARRIER
 show-disconnected-message=Deconectat de la { $system } la { $time }
+
+error-address-book-load-title=ÎNCĂRCAREA DIRECTORULUI DE APELARE A EȘUAT
+error-address-book-load-secondary=Fișierul agendei pare corupt. IcyTerm va porni cu o listă goală; fișierul deteriorat NU va fi suprascris.
+
+    Sugestii:
+     • Fă backup și elimină/renumește fișierul existent.
+     • Repornește IcyTerm pentru a genera unul nou.
+     • Dacă ai un backup, restaurează-l înainte de repornire.
+
+    Detalii tehnice:

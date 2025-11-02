@@ -1,5 +1,7 @@
 connect-to = Connetti a { $address }...
 
+dialog-close_button = Chiudi
+
 settings-heading = Impostazioni
 settings-enabled-checkbox = Abilitato
 settings-scaling = Scala
@@ -194,3 +196,13 @@ select-bps-dialog-bps-custom = Personalizzato
 
 show-disconnected-heading=NESSUN SEGNALE
 show-disconnected-message=Disconnesso da { $system } alle { $time }
+
+error-address-book-load-title=CARICAMENTO DIRECTORY DI CHIAMATA FALLITO
+error-address-book-load-secondary=Il file della rubrica sembra corrotto. IcyTerm si avvierà con una lista vuota; il file danneggiato NON verrà sovrascritto.
+
+    Suggerimenti:
+     • Esegui il backup e rimuovi/rinomina il file esistente.
+     • Riavvia IcyTerm per generarne uno nuovo.
+     • Se hai un backup, ripristinalo prima del riavvio.
+
+    Dettagli tecnici:

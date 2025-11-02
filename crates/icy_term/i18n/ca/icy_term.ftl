@@ -1,5 +1,7 @@
 connect-to = Connecta a { $address }...
 
+dialog-close_button = Tancar
+
 settings-heading = Configuració
 settings-enabled-checkbox = Habilitat
 settings-scaling = Escalat
@@ -195,3 +197,13 @@ select-bps-dialog-bps-custom-placeholder = p.ex. 2400
 
 show-disconnected-heading=NO HI HA PORTADORA
 show-disconnected-message=Desconnectat de { $system } a les { $time }
+
+error-address-book-load-title=ERROR EN CARREGAR EL DIRECTORI DE MARCATGE
+error-address-book-load-secondary=El fitxer de la llibreta d’adreces sembla malmès. IcyTerm s’iniciarà amb una llista buida; el fitxer trencat NO se sobreescriurà.
+
+    Suggeriments:
+     • Fes una còpia de seguretat i elimina/renaomena el fitxer existent.
+     • Reinicia IcyTerm per generar-ne un de nou.
+     • Si tens una còpia, restaura-la abans de reiniciar.
+
+    Detalls tècnics:

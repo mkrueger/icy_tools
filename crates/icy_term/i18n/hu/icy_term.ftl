@@ -1,5 +1,7 @@
 connect-to = Csatlakozás { $address }...
 
+dialog-close_button = Bezárás
+
 settings-heading = Beállítások
 settings-enabled-checkbox = Engedélyezve
 settings-scaling = Méretezés
@@ -195,3 +197,13 @@ select-bps-dialog-bps-custom-placeholder = pl. 2400
 
 show-disconnected-heading=NINCS HORDOZÓ
 show-disconnected-message=Kapcsolat megszakadt { $system }-val/vel { $time }-kor
+
+error-address-book-load-title=NEM SIKERÜLT BETÖLTENI A TÁRCSÁZÁSI KÖNYVTÁRAT
+error-address-book-load-secondary=Úgy tűnik a címlista fájl sérült. Az IcyTerm üres listával indul; a sérült fájl NEM kerül felülírásra.
+
+    Javaslatok:
+     • Készíts biztonsági mentést és töröld/nevezd át a fájlt.
+     • Indítsd újra az IcyTermet egy új fájl létrehozásához.
+     • Ha van mentésed, állítsd vissza újraindítás előtt.
+
+    Technikai részletek:

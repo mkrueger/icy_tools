@@ -1,5 +1,7 @@
 connect-to = Připojit k { $address }...
 
+dialog-close_button = Zavřít
+
 settings-heading = Nastavení
 settings-enabled-checkbox = Povoleno
 settings-scaling = Měřítko
@@ -195,3 +197,13 @@ select-bps-dialog-bps-custom-placeholder = např. 2400
 
 show-disconnected-heading=ŽÁDNÝ NOSIČ
 show-disconnected-message=Odpojeno od { $system } v { $time }
+
+error-address-book-load-title=NAČTENÍ ADRESÁŘE SELHALO
+error-address-book-load-secondary=Soubor adresáře se zdá být poškozen. IcyTerm se spustí s prázdným seznamem; poškozený soubor NEBUDE přepsán.
+
+    Doporučení:
+     • Zálohujte a odstraňte/přejmenujte původní soubor.
+     • Restartujte IcyTerm pro vytvoření nového.
+     • Pokud máte zálohu, obnovte ji před restartem.
+
+    Technické detaily:

@@ -1,5 +1,7 @@
 connect-to = Verbinde zu { $address }...
 
+dialog-close_button = Schließen
+
 settings-heading = Einstellungen
 settings-enabled-checkbox = Aktiviert
 settings-scaling = Skalierung
@@ -195,3 +197,13 @@ select-bps-dialog-bps-custom = Benutzerdefiniert
 
 show-disconnected-heading=NO CARRIER
 show-disconnected-message=Verbindung beendet zu { $system } nach { $time }
+
+error-address-book-load-title=LADEN DES WÄHERVERZEICHNIS FEHLGESCHLAGEN
+error-address-book-load-secondary=Die Adressbuch-Datei scheint beschädigt zu sein. IcyTerm startet mit einer leeren Liste; die defekte Datei wird NICHT überschrieben.
+
+    Lösungsvorschläge:
+     • Datei sichern und entfernen/umbenennen.
+     • IcyTerm neu starten, um eine neue Datei zu erzeugen.
+     • Falls ein Backup existiert, vor dem Neustart zurückspielen.
+
+    Technische Details:

@@ -5,6 +5,8 @@ use iced::{
 };
 use icy_net::iemsi::EmsiISI;
 
+use crate::ui::MainWindowMode;
+
 const MODAL_WIDTH: f32 = 500.0;
 const MODAL_HEIGHT: f32 = 520.0;
 const LABEL_WIDTH: f32 = 90.0;
@@ -26,7 +28,7 @@ impl ShowIemsiDialog {
 
     pub fn update(&mut self, message: IemsiMsg) -> Option<crate::ui::Message> {
         match message {
-            IemsiMsg::Close => Some(crate::ui::Message::CloseDialog),
+            IemsiMsg::Close => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         }
     }
 

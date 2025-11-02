@@ -5,7 +5,7 @@ use iced::{
 };
 use icy_net::protocol::TransferProtocolType;
 
-use crate::ui::Message;
+use crate::ui::{MainWindowMode, Message};
 
 use once_cell::sync::Lazy;
 
@@ -70,7 +70,11 @@ impl ProtocolSelector {
 
     pub fn view<'a>(&self, terminal_content: Element<'a, Message>) -> Element<'a, Message> {
         let overlay = create_modal_content(self.is_download);
-        crate::ui::modal(terminal_content, overlay, Message::CloseDialog)
+        crate::ui::modal(
+            terminal_content,
+            overlay,
+            crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)),
+        )
     }
 }
 
@@ -126,7 +130,7 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
     }
 
     let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14.0))
-        .on_press(Message::CloseDialog)
+        .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
         .style(button::secondary);
 
     let modal_content = container(

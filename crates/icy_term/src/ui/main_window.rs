@@ -9,7 +9,7 @@ use crate::{
     ui::{
         Message,
         dialogs::find_dialog,
-        export_screen_dialog,
+        error_dialog, export_screen_dialog,
         up_download_dialog::{self, FileTransferDialogState},
     },
     util::SoundThread,
@@ -43,6 +43,7 @@ pub enum MainWindowMode {
     ShowIEMSI,
     ShowFindDialog,
     ShowBaudEmulationDialog,
+    ShowErrorDialog(String, String, String, Box<MainWindowMode>),
 }
 
 pub struct MainWindow {
@@ -97,8 +98,21 @@ impl MainWindow {
                 Options::default()
             }
         };
+        let mut mode = MainWindowMode::SplashScreen;
 
-        let addresses = AddressBook::load_phone_book().unwrap();
+        let addresses = match AddressBook::load_phone_book() {
+            Ok(addresses) => addresses,
+            Err(err) => {
+                unsafe { crate::PHONE_LOCK = true };
+                mode = MainWindowMode::ShowErrorDialog(
+                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-title"),
+                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-secondary"),
+                    format!("{}", err),
+                    Box::new(MainWindowMode::SplashScreen),
+                );
+                AddressBook::default()
+            }
+        };
 
         let default_capture_path = directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
@@ -123,7 +137,7 @@ impl MainWindow {
 
         Self {
             state: MainWindowState {
-                mode: MainWindowMode::SplashScreen,
+                mode,
                 #[cfg(test)]
                 options_written: false,
             },
@@ -325,8 +339,8 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowAboutDialog;
                 Task::none()
             }
-            Message::CloseDialog => {
-                self.state.mode = MainWindowMode::ShowTerminal;
+            Message::CloseDialog(mode) => {
+                self.state.mode = *mode;
                 Task::none()
             }
             Message::ShowDialingDirectory => {
@@ -394,8 +408,8 @@ impl MainWindow {
             Message::TransferDialog(msg) => {
                 if let Some(response) = self.file_transfer_dialog.update(msg) {
                     match response {
-                        Message::CloseDialog => {
-                            self.state.mode = MainWindowMode::ShowTerminal;
+                        Message::CloseDialog(mode) => {
+                            self.state.mode = *mode;
                         }
                         Message::CancelFileTransfer => {
                             // Send cancel command to terminal
@@ -496,8 +510,8 @@ impl MainWindow {
             Message::ExportDialog(msg) => {
                 if let Some(response) = self.export_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
                     match response {
-                        Message::CloseDialog => {
-                            self.state.mode = MainWindowMode::ShowTerminal;
+                        Message::CloseDialog(mode) => {
+                            self.state.mode = *mode;
                         }
                         _ => {}
                     }
@@ -809,6 +823,9 @@ impl MainWindow {
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(self.terminal_window.view(settings)),
             MainWindowMode::ShowHelpDialog => self.help_dialog.view(),
             MainWindowMode::ShowAboutDialog => self.about_dialog.view(),
+            MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => {
+                error_dialog::view(self.terminal_window.view(settings), title, secondary_msg, error_message)
+            }
         }
     }
 
@@ -835,7 +852,7 @@ impl MainWindow {
         } else if matches!(self.state.mode, MainWindowMode::SelectProtocol(_)) {
             iced::event::listen_with(|event, _status, _| match event {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog),
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
                     _ => None,
                 },
                 _ => None,
@@ -959,14 +976,14 @@ impl MainWindow {
         } else if matches!(self.state.mode, MainWindowMode::ShowBaudEmulationDialog) {
             iced::event::listen_with(|event, _status, _| match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog),
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
                     _ => None,
                 },
                 _ => None,
             })
         } else if matches!(self.state.mode, MainWindowMode::ShowHelpDialog) || matches!(self.state.mode, MainWindowMode::ShowAboutDialog) {
             iced::event::listen_with(|event, _status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog),
+                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
                 _ => None,
             })
         } else {
@@ -1025,6 +1042,12 @@ impl MainWindow {
             let _ = edit_state.clear_selection();
             self.shift_pressed_during_selection = false;
         }
+    }
+}
+
+impl Default for MainWindow {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

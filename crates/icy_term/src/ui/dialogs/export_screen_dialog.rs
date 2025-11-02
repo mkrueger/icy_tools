@@ -7,6 +7,8 @@ use icy_engine::{SaveOptions, editor::EditState};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::ui::MainWindowMode;
+
 const MODAL_WIDTH: f32 = 500.0;
 const MODAL_HEIGHT: f32 = 200.0;
 
@@ -149,7 +151,7 @@ impl ExportScreenDialogState {
                     Ok(_) => {
                         log::info!("Successfully exported to: {}", self.get_full_path().display());
                         // Close the dialog after successful export
-                        Some(crate::ui::Message::CloseDialog)
+                        Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
                     }
                     Err(e) => {
                         log::error!("Export failed: {}", e);
@@ -189,7 +191,7 @@ impl ExportScreenDialogState {
                 }
                 None
             }
-            ExportScreenMsg::Cancel => Some(crate::ui::Message::CloseDialog),
+            ExportScreenMsg::Cancel => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         }
     }
 

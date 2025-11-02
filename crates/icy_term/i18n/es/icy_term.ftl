@@ -1,5 +1,7 @@
 connect-to = Conectar a { $address }...
 
+dialog-close_button = Cerrar
+
 settings-heading = Configuración
 settings-enabled-checkbox = Habilitado
 settings-scaling = Escalado
@@ -194,3 +196,13 @@ select-bps-dialog-bps-custom = Personalizado
 
 show-disconnected-heading=SIN SEÑAL
 show-disconnected-message=Desconectado de { $system } el { $time }
+
+error-address-book-load-title=FALLO AL CARGAR DIRECTORIO DE MARCADO
+error-address-book-load-secondary=El archivo del directorio parece dañado. IcyTerm iniciará con una lista vacía; el archivo roto NO se sobrescribirá.
+
+    Sugerencias:
+     • Haz copia de seguridad y elimina/renombra el archivo existente.
+     • Reinicia IcyTerm para generar uno nuevo.
+     • Si tienes una copia, restáurala antes de reiniciar.
+
+    Detalles técnicos:

@@ -7,7 +7,7 @@ use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use icy_engine::{Buffer, ansi::MusicOption, editor::EditState};
 use std::sync::{Arc, Mutex};
 
-use crate::ui::Message;
+use crate::ui::{MainWindowMode, Message};
 
 // Include the help ANSI file at compile time
 pub const HELP_ANSI: &[u8] = include_bytes!("../../../data/help.icy");
@@ -60,7 +60,7 @@ impl AnsiDialog {
             container(row![
                 Space::new().width(Length::Fill),
                 button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ok-button")).size(14))
-                    .on_press(Message::CloseDialog)
+                    .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
                     .style(button::primary)
                     .padding([6, 20]),
             ])

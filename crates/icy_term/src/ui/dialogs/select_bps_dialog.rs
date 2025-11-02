@@ -5,6 +5,8 @@ use iced::{
 };
 use icy_engine::ansi::BaudEmulation;
 
+use crate::ui::MainWindowMode;
+
 const MODAL_WIDTH: f32 = 340.0;
 const MODAL_HEIGHT: f32 = 440.0;
 
@@ -107,7 +109,11 @@ impl SelectBpsDialog {
     }
 
     pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
-        crate::ui::modal(terminal_content, self.create_modal_content(), crate::ui::Message::CloseDialog)
+        crate::ui::modal(
+            terminal_content,
+            self.create_modal_content(),
+            crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)),
+        )
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
@@ -249,7 +255,7 @@ impl SelectBpsDialog {
 
         // Buttons
         let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14))
-            .on_press(crate::ui::Message::CloseDialog)
+            .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             .padding([6, 14])
             .style(|theme: &iced::Theme, _| {
                 let p = theme.extended_palette();

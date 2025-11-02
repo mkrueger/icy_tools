@@ -1,5 +1,7 @@
 connect-to = Conectar a { $address }...
 
+dialog-close_button = Fechar
+
 settings-heading = Configurações
 settings-enabled-checkbox = Habilitado
 settings-scaling = Escala
@@ -195,3 +197,13 @@ select-bps-dialog-bps-custom-placeholder = ex. 2400
 
 show-disconnected-heading=SEM CONEXÃO
 show-disconnected-message=Desconectado de { $system } às { $time }
+
+error-address-book-load-title=FALHA AO CARREGAR DIRETÓRIO DE DISCAGEM
+error-address-book-load-secondary=O arquivo do diretório de discagem parece estar corrompido. O IcyTerm iniciará com uma lista vazia; o arquivo danificado NÃO será sobrescrito.
+
+    Sugestões de correção:
+     • Faça backup e remova/renomeie o arquivo existente.
+     • Reinicie o IcyTerm para gerar um novo.
+     • Se tiver um backup, restaure-o antes de reiniciar.
+
+    Detalhes técnicos:

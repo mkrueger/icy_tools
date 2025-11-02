@@ -158,6 +158,9 @@ impl Default for AddressBook {
     }
 }
 
+/// Global lock to prevent writing the phone book if there was an error loading it
+pub static mut PHONE_LOCK: bool = false;
+
 impl AddressBook {
     fn load_string(&mut self, input_text: &str) -> TerminalResult<()> {
         // Parse the TOML using serde
@@ -180,21 +183,29 @@ impl AddressBook {
         let mut res = AddressBook::new();
 
         if let Some(dialing_directory) = Address::get_dialing_directory_file() {
+            if !dialing_directory.exists() {
+                log::error!("Dialing directory file does not exist: {:?}, creating deafult", dialing_directory);
+                return Ok(AddressBook::default());
+            }
+
             match fs::read_to_string(dialing_directory) {
                 Ok(input_text) => {
                     if let Err(err) = res.load_string(&input_text) {
-                        log::error!("Error reading phonebook {err}");
-                        return Ok(AddressBook::default());
+                        log::error!("Error parsing phonebook {err}");
+                        return Err(err.into());
                     }
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => {
+                    log::error!("Error reading phonebook {err}");
+                    return Err(err.into());
+                }
             }
         }
         Ok(res)
     }
 
     pub fn store_phone_book(&mut self) -> TerminalResult<()> {
-        if self.write_lock {
+        if self.write_lock || unsafe { PHONE_LOCK } {
             return Ok(());
         }
 

@@ -9,6 +9,8 @@ use iced::{
 };
 use icy_net::protocol::{OutputLogMessage, TransferState};
 
+use crate::ui::MainWindowMode;
+
 const MODAL_WIDTH: f32 = 550.0;
 const MODAL_HEIGHT: f32 = 450.0;
 
@@ -52,15 +54,15 @@ impl FileTransferDialogState {
             TransferMsg::Cancel => {
                 if let Some(state) = &self.transfer_state {
                     if state.is_finished {
-                        Some(crate::ui::Message::CloseDialog)
+                        Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
                     } else {
                         Some(crate::ui::Message::CancelFileTransfer)
                     }
                 } else {
-                    Some(crate::ui::Message::CloseDialog)
+                    Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
                 }
             }
-            TransferMsg::Close => Some(crate::ui::Message::CloseDialog),
+            TransferMsg::Close => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         }
     }
 

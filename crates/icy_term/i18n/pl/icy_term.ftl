@@ -1,5 +1,7 @@
 connect-to = Połącz z { $address }...
 
+dialog-close_button = Zamknij
+
 settings-heading = Ustawienia
 settings-enabled-checkbox = Włączone
 settings-scaling = Skalowanie
@@ -194,3 +196,13 @@ select-bps-dialog-bps-custom = Niestandardowy
 
 show-disconnected-heading=BRAK NOŚNIKA
 show-disconnected-message=Rozłączono z { $system } o { $time }
+
+error-address-book-load-title=BŁĄD W ŁADOWANIU KSIĄŻKI ADRESOWEJ
+error-address-book-load-secondary=Plik książki adresowej wydaje się uszkodzony. IcyTerm uruchomi się z pustą listą; uszkodzony plik NIE zostanie nadpisany.
+
+    Sugestie:
+     • Wykonaj kopię zapasową i usuń/zmień nazwę istniejącego pliku.
+     • Uruchom ponownie IcyTerm aby utworzyć nowy.
+     • Jeśli masz kopię, przywróć ją przed restartem.
+
+    Szczegóły techniczne:

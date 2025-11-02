@@ -6,6 +6,8 @@ use iced::{
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::ui::MainWindowMode;
+
 const MODAL_WIDTH: f32 = 500.0;
 const MODAL_HEIGHT: f32 = 200.0;
 
@@ -116,7 +118,7 @@ impl CaptureDialogState {
             }
             CaptureMsg::StopCapture => {
                 self.capture_session = false;
-                Some(crate::ui::Message::CloseDialog)
+                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             CaptureMsg::ChangeDirectory(dir) => {
                 self.temp_directory = dir;
@@ -147,7 +149,7 @@ impl CaptureDialogState {
             }
             CaptureMsg::Cancel => {
                 // Don't save changes, just close
-                Some(crate::ui::Message::CloseDialog)
+                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
         }
     }

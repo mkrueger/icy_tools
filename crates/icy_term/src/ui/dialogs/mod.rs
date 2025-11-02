@@ -1,6 +1,7 @@
 pub mod ansi_dialog;
 pub mod capture_dialog;
 pub mod dialing_directory_dialog;
+pub mod error_dialog;
 pub mod export_screen_dialog;
 pub mod find_dialog;
 pub mod protocol_selector;

@@ -1,4 +1,4 @@
-use crate::ui::{Message, modal};
+use crate::ui::{MainWindowMode, Message, modal};
 use crate::util::Rng;
 use crate::{Address, AddressBook, ScreenMode};
 use i18n_embed_fl::fl;
@@ -109,7 +109,8 @@ impl DialingDirectoryState {
         .gap(10)
         .style(container::rounded_box)
         .padding(8);
-        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"))).on_press(Message::CloseDialog);
+        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
+            .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
         let connect_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")))
             .on_press(Message::from(DialingDirectoryMsg::ConnectSelected))
             .style(button::primary);
@@ -314,7 +315,7 @@ impl DialingDirectoryState {
                 }
 
                 // Return a task that closes the dialog
-                Task::done(Message::CloseDialog)
+                Task::done(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
 
             DialingDirectoryMsg::GeneratePassword => {

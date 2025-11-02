@@ -8,7 +8,7 @@ use iced::{
 };
 use icy_engine::{AttributedChar, Buffer, Position, Selection, TextPane, UnicodeConverter, editor::EditState};
 
-use crate::ui::Message;
+use crate::ui::{MainWindowMode, Message};
 
 #[derive(Debug, Clone)]
 pub enum FindDialogMsg {
@@ -122,7 +122,7 @@ impl DialogState {
                 let mut edit_state = edit_state.lock().unwrap();
                 let _ = edit_state.clear_selection();
                 self.last_selected_pos = None;
-                Some(Message::CloseDialog)
+                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             FindDialogMsg::SetCasing(case_sensitive) => {
                 self.case_sensitive = case_sensitive;

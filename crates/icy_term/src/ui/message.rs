@@ -4,7 +4,7 @@ use icy_net::protocol::TransferState;
 use crate::{
     Address,
     terminal_thread::TerminalEvent,
-    ui::{export_screen_dialog, find_dialog, select_bps_dialog, up_download_dialog},
+    ui::{MainWindowMode, export_screen_dialog, find_dialog, select_bps_dialog, up_download_dialog},
 };
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub enum Message {
     UpdateTransferState(TransferState),
     ShowExportScreenDialog,
     Connect(Address),
-    CloseDialog,
+    CloseDialog(Box<MainWindowMode>),
     Hangup,
     ShowDialingDirectory,
     ShowSettings,

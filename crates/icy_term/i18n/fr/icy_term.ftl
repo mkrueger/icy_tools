@@ -1,5 +1,7 @@
 connect-to = Connecter à { $address }...
 
+dialog-close_button = Fermer
+
 settings-heading = Paramètres
 settings-enabled-checkbox = Activé
 settings-scaling = Mise à l'échelle
@@ -195,3 +197,13 @@ select-bps-dialog-bps-custom = Personnalisé
 
 show-disconnected-heading=PAS DE SIGNAL
 show-disconnected-message=Déconnecté de { $system } le { $time }
+
+error-address-book-load-title=ÉCHEC DU CHARGEMENT DU RÉPERTOIRE DE NUMÉRATION
+error-address-book-load-secondary=Le fichier du répertoire semble corrompu. IcyTerm démarrera avec une liste vide ; le fichier endommagé ne sera PAS écrasé.
+
+    Suggestions :
+     • Sauvegardez puis supprimez/renommez le fichier existant.
+     • Redémarrez IcyTerm pour en créer un nouveau.
+     • Si vous avez une sauvegarde, restaurez-la avant de redémarrer.
+
+    Détails techniques :

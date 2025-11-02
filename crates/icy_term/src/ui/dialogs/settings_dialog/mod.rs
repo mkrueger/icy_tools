@@ -6,7 +6,7 @@ use iced::{
 use iced_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
 use icy_net::serial::{CharSize, Parity, StopBits};
 
-use crate::Options;
+use crate::{Options, ui::MainWindowMode};
 
 mod iemsi_settings;
 mod modem_settings;
@@ -113,12 +113,12 @@ impl SettingsDialogState {
                 if let Err(e) = self.temp_options.store_options() {
                     log::error!("Failed to save options: {}", e);
                 }
-                Some(crate::ui::Message::CloseDialog)
+                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             SettingsMsg::Cancel => {
                 // Reset to original options and close
                 self.temp_options = self.original_options.clone();
-                Some(crate::ui::Message::CloseDialog)
+                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             SettingsMsg::SelectModem(index) => {
                 self.selected_modem_index = index;

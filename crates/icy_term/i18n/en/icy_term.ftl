@@ -1,5 +1,7 @@
 connect-to = Connect to { $address }...
 
+dialog-close_button = Close
+
 settings-heading = Settings
 settings-enabled-checkbox = Enabled
 settings-scaling = Scaling
@@ -111,6 +113,7 @@ dialing_directory-generate-disabled-tooltip=
 dialing_directory-invalid_modem = Invalid modem
 dialing_directory-no_modem_configured = No modems configured
 
+
 terminal-upload = Upload
 terminal-download = Download
 terminal-hangup = Hangup
@@ -196,3 +199,13 @@ select-bps-dialog-bps-custom = Custom
 show-disconnected-heading=NO CARRIER
 show-disconnected-message=Disconnected from { $system } at { $time }
 connect-error-no-modem-configured=NO MODEM CONFIGURED
+
+error-address-book-load-title=FAILED TO LOAD DIALING DIRECTORY
+error-address-book-load-secondary=The address book file appears to be corrupted. IcyTerm will start with an empty list; the broken file will NOT be overwritten.
+
+    Fix suggestions:
+     • Back up and remove/rename the existing file.
+     • Restart IcyTerm to generate a fresh one.
+     • If you have a backup, restore it before restarting.
+
+    Technical details:
