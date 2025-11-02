@@ -1,5 +1,6 @@
 use crate::ScreenMode;
 use crate::baud_emulator::BaudEmulator;
+use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, AutoLogin};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
@@ -50,6 +51,10 @@ pub enum TerminalEvent {
     Error(String),
     PlayMusic(icy_engine::ansi::sound::AnsiMusic),
     Beep,
+    OpenLineSound,
+    OpenDialSound(String),
+    StopSound,
+
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
 }
@@ -104,13 +109,14 @@ pub struct TerminalThread {
     connection_time: Option<Instant>,
     baud_emulator: BaudEmulator,
 
+    emulated_modem: EmulatedModem,
+
     // Communication channels
     command_rx: mpsc::UnboundedReceiver<TerminalCommand>,
     event_tx: mpsc::UnboundedSender<TerminalEvent>,
 
     use_utf8: bool,
     utf8_buffer: Vec<u8>,
-    local_command_buffer: Vec<u8>,
 
     // Auto-features
     auto_file_transfer: AutoFileTransfer,
@@ -136,11 +142,11 @@ impl TerminalThread {
             event_tx: event_tx.clone(),
             use_utf8: false,
             utf8_buffer: Vec::new(),
-            local_command_buffer: Vec::new(),
             auto_file_transfer: AutoFileTransfer::default(),
             baud_emulator: BaudEmulator::new(),
             auto_login: None,
             auto_transfer: None,
+            emulated_modem: EmulatedModem::default(),
         };
 
         // Spawn the async runtime for the terminal thread
@@ -261,7 +267,21 @@ impl TerminalThread {
                     }
                 } else {
                     // Echo locally
-                    self.process_local_input(&data).await;
+                    match self.emulated_modem.process_local_input(&data) {
+                        ModemCommand::Nothing => {}
+                        ModemCommand::Output(output) => {
+                            self.process_data(&output).await;
+                        }
+                        ModemCommand::PlayLineSound => {
+                            let _ = self.event_tx.send(TerminalEvent::OpenLineSound);
+                        }
+                        ModemCommand::PlayDialSound(phone_number) => {
+                            let _ = self.event_tx.send(TerminalEvent::OpenDialSound(phone_number));
+                        }
+                        ModemCommand::StopSound => {
+                            let _ = self.event_tx.send(TerminalEvent::StopSound);
+                        }
+                    }
                 }
             }
             TerminalCommand::StartUpload(protocol, files) => {
@@ -577,55 +597,6 @@ impl TerminalThread {
         }
 
         let _ = self.event_tx.send(TerminalEvent::BufferUpdated);
-    }
-
-    async fn process_local_input(&mut self, data: &[u8]) {
-        for &byte in data {
-            // Check for ESC sequence - clear buffer if found
-            if byte == 27 {
-                return;
-            }
-
-            // Only allow printable ASCII, backspace, and carriage return
-            match byte {
-                8 => {
-                    // Backspace - remove last character from buffer
-                    if !self.local_command_buffer.is_empty() {
-                        self.local_command_buffer.pop();
-                        // Echo backspace to terminal (backspace, space, backspace to clear)
-                        self.process_data(&[8, b' ', 8]).await;
-                    }
-                }
-                13 => {
-                    // Echo the carriage return and line feed
-                    self.process_data(b"\r\n").await;
-
-                    // Enter pressed - process command
-                    let command = String::from_utf8_lossy(&self.local_command_buffer).trim().to_ascii_uppercase();
-                    // Process AT command
-                    let response = if command.is_empty() || command.starts_with("AT") {
-                        // Valid AT command - for now just return OK
-                        "OK\r\n"
-                    } else {
-                        // Invalid command
-                        "ERROR\r\n"
-                    };
-
-                    // Send response
-                    if !response.is_empty() {
-                        self.process_data(response.as_bytes()).await;
-                    }
-
-                    // Clear command buffer
-                    self.local_command_buffer.clear();
-                }
-                _ => {
-                    // Printable ASCII character - add to buffer and echo
-                    self.local_command_buffer.push(byte);
-                    self.process_data(&[byte]).await;
-                }
-            }
-        }
     }
 
     async fn handle_parser_action(&mut self, action: CallbackAction) {

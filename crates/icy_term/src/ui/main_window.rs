@@ -783,6 +783,29 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            TerminalEvent::OpenLineSound => {
+                let r = self.sound_thread.lock().unwrap().start_line_sound();
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::OpenLineSound: {r}");
+                }
+                Task::none()
+            }
+
+            TerminalEvent::OpenDialSound(phone_number) => {
+                let r = self.sound_thread.lock().unwrap().start_dial_sound(&phone_number);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::OpenDialSound: {r}");
+                }
+                Task::none()
+            }
+
+            TerminalEvent::StopSound => {
+                let r = self.sound_thread.lock().unwrap().stop_line_sound();
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::StopSound: {r}");
+                }
+                Task::none()
+            }
             TerminalEvent::AutoTransferTriggered(protocol, is_download, _) => {
                 self.initiate_file_transfer(protocol, is_download);
                 Task::none()
