@@ -49,7 +49,7 @@ impl Selection {
         match self.shape {
             Shape::Rectangle => {
                 let pos = pos.into();
-                self.as_rectangle().is_inside(pos)
+                self.as_rectangle().contains_pt(pos)
             }
             Shape::Lines => {
                 let pos = pos.into();

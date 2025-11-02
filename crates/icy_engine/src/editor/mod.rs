@@ -317,7 +317,7 @@ impl EditState {
             let start = selection.min();
             let end = selection.max();
             for y in start.y..=end.y {
-                for x in start.x..end.x {
+                for x in start.x..=end.x {
                     let ch = self.buffer.get_char((x, y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }
@@ -330,7 +330,7 @@ impl EditState {
                 (selection.lead, selection.anchor)
             };
             if start.y == end.y {
-                for x in start.x..end.x {
+                for x in start.x..=end.x {
                     let ch = self.buffer.get_char(Position::new(x, start.y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }
@@ -347,7 +347,7 @@ impl EditState {
                     }
                     res.push('\n');
                 }
-                for x in 0..end.x {
+                for x in 0..=end.x {
                     let ch = self.buffer.get_char(Position::new(x, end.y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }

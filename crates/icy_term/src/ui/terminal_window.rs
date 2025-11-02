@@ -432,14 +432,14 @@ impl TerminalWindow {
             })
         } else {
             text("○ Disconnected").style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.weak.color),
+                color: Some(theme.extended_palette().danger.base.color),
                 ..Default::default()
             })
         };
 
         let capture_status = if self.is_capturing {
             text("● REC").style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.extended_palette().danger.strong.color),
                 ..Default::default()
             })
         } else {
