@@ -9,6 +9,7 @@ edition.workspace = true
 [features]
 default = ["clipboard", "minimal"]
 clipboard = ["arboard"]
+
 minimal = []
 
 [dependencies]

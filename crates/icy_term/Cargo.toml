@@ -34,7 +34,8 @@ lazy_static = { workspace = true }
 notify = "8.2.0"
 human_bytes = { version = "0.4", default-features = false }
 
-arboard = { workspace = true }
+clipboard-rs = "0.3.0"
+
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
 anyhow = { workspace = true }

@@ -14,6 +14,7 @@ use crate::{
     },
     util::SoundThread,
 };
+use clipboard_rs::Clipboard;
 use iced::{Element, Event, Task, Theme, keyboard};
 use icy_engine::{AttributedChar, Position, UnicodeConverter, ansi::BaudEmulation};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
@@ -84,9 +85,7 @@ pub struct MainWindow {
     pub initial_upload_directory: Option<PathBuf>,
     pub show_find_dialog: bool,
     show_disconnect: bool,
-    clipboard: arboard::Clipboard,
 }
-
 static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
 
 impl MainWindow {
@@ -160,7 +159,6 @@ impl MainWindow {
             show_find_dialog: false,
             show_disconnect: false,
             sound_thread,
-            clipboard: arboard::Clipboard::new().unwrap(),
         }
     }
 
@@ -273,12 +271,14 @@ impl MainWindow {
                 Task::none()
             }
             Message::SendData(data) => {
+                self.clear_selection();
                 self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(0);
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
 
             Message::SendString(s) => {
+                self.clear_selection();
                 self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(0);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
@@ -342,6 +342,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::SendLoginAndPassword(login, pw) => {
+                self.clear_selection();
                 if self.is_connected {
                     if let Some(address) = &self.current_address {
                         // Check if we have username and password
@@ -548,6 +549,7 @@ impl MainWindow {
                     let copy_text: Option<String> = edit_state.get_copy_text();
 
                     // Check if we should append to existing clipboard data (shift was held during selection)
+                    /*
                     if self.shift_pressed_during_selection {
                         if let Some(clipboard_data) = edit_state.get_clipboard_data() {
                             // Append to existing clipboard data
@@ -562,22 +564,17 @@ impl MainWindow {
                                 return Task::none();
                             }
                         }
-                    }
+                    }*/
 
                     // Normal copy (not appending)
+
                     if let Some(text) = copy_text {
-                        // Copy to system clipboard
-                        match arboard::Clipboard::new() {
-                            Ok(mut clipboard) => {
-                                if let Err(err) = clipboard.set_text(&text) {
-                                    log::error!("Failed to set clipboard text: {}", err);
-                                } else {
-                                    log::debug!("Copied {} characters to clipboard", text.len());
-                                }
+                        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+                            if let Err(err) = clipboard.set_text(text) {
+                                log::error!("Failed to set clipboard text: {}", err);
                             }
-                            Err(err) => {
-                                log::error!("Failed to create clipboard: {}", err);
-                            }
+                        } else {
+                            log::error!("Failed to access clipboard");
                         }
                     }
 
@@ -589,24 +586,31 @@ impl MainWindow {
             }
 
             Message::Paste => {
-                match self.clipboard.get_text() {
-                    Ok(text) => {
-                        // Convert text to bytes using the current unicode converter
-                        let mut data: Vec<u8> = Vec::new();
-                        for ch in text.chars() {
-                            let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
-                            data.push(converted_byte as u8);
-                        }
+                self.clear_selection();
+                if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+                    match clipboard.get_text() {
+                        Ok(text) => {
+                            println!("Pasting text from clipboard: {}", text);
+                            // Convert text to bytes using the current unicode converter
+                            let mut data: Vec<u8> = Vec::new();
+                            for ch in text.chars() {
+                                let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                                data.push(converted_byte as u8);
+                            }
 
-                        // Send the data to the terminal
-                        if !data.is_empty() {
-                            let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
-                            log::debug!("Pasted {} characters from clipboard", text.len());
+                            // Send the data to the terminal
+                            if !data.is_empty() {
+                                let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+                                log::debug!("Pasted {} characters from clipboard", text.len());
+                            }
+                        }
+                        Err(err) => {
+                            println!("Failed to get clipboard text: {}", err);
+                            log::error!("Failed to get clipboard text: {}", err);
                         }
                     }
-                    Err(err) => {
-                        log::error!("Failed to get clipboard text: {}", err);
-                    }
+                } else {
+                    log::error!("Failed to access clipboard");
                 }
                 Task::none()
             }
@@ -897,7 +901,7 @@ impl MainWindow {
                                 if s.to_lowercase() == "c" {
                                     return Some(Message::Copy);
                                 }
-                                if s.to_lowercase() == "p" {
+                                if s.to_lowercase() == "v" {
                                     return Some(Message::Paste);
                                 }
                             }
@@ -1014,6 +1018,13 @@ impl MainWindow {
 
         // Use the lookup_key function from the key_map module
         iced_engine_gui::key_map::lookup_key(key, modifiers, key_map)
+    }
+
+    fn clear_selection(&mut self) {
+        if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+            let _ = edit_state.clear_selection();
+            self.shift_pressed_during_selection = false;
+        }
     }
 }
 
