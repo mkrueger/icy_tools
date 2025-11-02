@@ -12,6 +12,7 @@ settings-monitor-blur = Unschärfe
 settings-monitor-curve = Kurve
 settings-monitor-scanlines = Scanlines
 settings-background_color-label=Hintergrundfarbe:
+settings-theme = Thema
 
 settings-monitor-color = Farbe
 settings-monitor-grayscale = Schwarz/Weiß
@@ -19,8 +20,10 @@ settings-monitor-amber = Bernstein
 settings-monitor-green = Grün
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futuristisch
-settings-monitor-custom=Benutzerdefiniert
+settings-monitor-custom = Benutzerdefiniert
 
+settings-enabled-checkbox = Aktiviert
+settings-appearance-section = Erscheinungsbild
 settings-integer-scaling-label = Ganzzahlige Skalierung
 settings-color-tone-section = Farbe & Ton
 settings-bloom-glow-section = Bloom & Beleuchtung
@@ -28,11 +31,14 @@ settings-bloom-threshold-label = Schwellwert
 settings-bloom-radius-label = Radius
 settings-glow-strength-label = Leuchtstärke
 settings-phosphor-persistence-label = Phosphor-Nachleuchten
+settings-scanlines-section = Scanlines
 settings-scanline-thickness-label = Scanline-Dicke
 settings-scanline-sharpness-label = Scanline-Schärfe
 settings-scanline-phase-label = Scanline-Phase
+settings-geometry-section = Geometrie
 settings-curvature-x-label = Krümmung X
 settings-curvature-y-label = Krümmung Y
 settings-noise-artifacts-section = Rauschen & Artefakte
 settings-noise-level-label = Rauschpegel
 settings-sync-wobble-label = Sync-Wobble
+

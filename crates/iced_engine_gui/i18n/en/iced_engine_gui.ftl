@@ -20,13 +20,13 @@ settings-monitor-amber = Amber
 settings-monitor-green = Green
 settings-monitor-apple2 = Apple ][
 settings-monitor-futuristic = Futuristic
-settings-monitor-custom=Custom
+settings-monitor-custom = Custom
 
+settings-enabled-checkbox = Enabled
 settings-appearance-section = Appearance
 settings-integer-scaling-label = Use integer scaling
 settings-color-tone-section = Color & Tone
 settings-bloom-glow-section = Bloom & Glow
-settings-enabled-checkbox = Enabled
 settings-bloom-threshold-label = Threshold
 settings-bloom-radius-label = Radius
 settings-glow-strength-label = Glow Strength
