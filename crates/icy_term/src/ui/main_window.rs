@@ -94,7 +94,7 @@ impl MainWindow {
         let mut options = match Options::load_options() {
             Ok(options) => options,
             Err(e) => {
-                log::error!("Error reading dialing_directory: {e}");
+                log::error!("Error loading options file: {e}");
                 Options::default()
             }
         };
