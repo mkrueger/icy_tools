@@ -317,6 +317,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowIemsiDialog => {
+                self.switch_to_terminal_screen();
                 // Get IEMSI info from terminal if available
                 if let Some(iemsi_info) = &self.terminal_window.iemsi_info {
                     self.iemsi_dialog = show_iemsi::ShowIemsiDialog::new(iemsi_info.clone());
@@ -332,10 +333,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowHelpDialog => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowHelpDialog;
                 Task::none()
             }
             Message::ShowAboutDialog => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowAboutDialog;
                 Task::none()
             }
@@ -344,14 +347,17 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowDialingDirectory => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowDialingDirectory;
                 Task::none()
             }
             Message::Upload => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::SelectProtocol(false);
                 Task::none()
             }
             Message::Download => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::SelectProtocol(true);
                 Task::none()
             }
@@ -441,10 +447,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowSettings => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowSettings;
                 Task::none()
             }
             Message::ShowCaptureDialog => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowCaptureDialog;
                 Task::none()
             }
@@ -474,10 +482,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowFindDialog => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowFindDialog;
                 return self.find_dialog.focus_search_input();
             }
             Message::ShowBaudEmulationDialog => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowBaudEmulationDialog;
                 self.baud_emulation_dialog.set_emulation(self.terminal_window.baud_emulation);
                 Task::none()
@@ -504,6 +514,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowExportScreenDialog => {
+                self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowExportDialog;
                 Task::none()
             }
@@ -634,27 +645,13 @@ impl MainWindow {
                 Task::none()
             }
             Message::CloseSplashScreen => {
-                self.state.mode = MainWindowMode::ShowTerminal;
-                if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
-                    let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
-                    buffer.clear_screen(0, caret);
-                    caret.set_is_visible(true);
+                self.switch_to_terminal_screen();
 
-                    // Write "IcyTerm ready." message
-                    let ready_msg = format!("IcyTerm {} ready.", crate::VERSION.to_string());
-                    for ch in ready_msg.chars() {
-                        buffer.print_char(0, caret, AttributedChar::new(ch, icy_engine::TextAttribute::default()));
-                    }
-                    caret.set_position(Position::new(0, 1));
-
-                    // Clear the cache to force redraw
-                    self.terminal_window.scene.cache.clear();
-                }
                 Task::none()
             }
             Message::SelectBps(bps) => {
                 let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(bps));
-                self.state.mode = MainWindowMode::ShowTerminal;
+                self.switch_to_terminal_screen();
                 self.terminal_window.baud_emulation = bps;
                 Task::none()
             }
@@ -1065,6 +1062,31 @@ impl MainWindow {
             let _ = edit_state.clear_selection();
             self.shift_pressed_during_selection = false;
         }
+    }
+
+    fn switch_to_terminal_screen(&mut self) {
+        if self.get_mode() == MainWindowMode::SplashScreen {
+            if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
+                buffer.clear_screen(0, caret);
+                caret.set_is_visible(true);
+
+                let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
+                buffer.clear_screen(0, caret);
+                caret.set_is_visible(true);
+
+                // Write "IcyTerm ready." message
+                let ready_msg = format!("IcyTerm {} ready.", crate::VERSION.to_string());
+                for ch in ready_msg.chars() {
+                    buffer.print_char(0, caret, AttributedChar::new(ch, icy_engine::TextAttribute::default()));
+                }
+                caret.set_position(Position::new(0, 1));
+
+                // Clear the cache to force redraw
+                self.terminal_window.scene.cache.clear();
+            }
+        }
+        self.state.mode = MainWindowMode::ShowTerminal;
     }
 }
 

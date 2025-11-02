@@ -399,14 +399,6 @@ impl SoundBackgroundThreadData {
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
         let sample_rate = stream_handle.config().sample_rate();
 
-        // 1. Initial dial tone (brief)
-        let dial_tone = SignalGenerator::new(sample_rate, 350.0, Function::Sine)
-            .amplify(0.1)
-            .mix(SignalGenerator::new(sample_rate, 440.0, Function::Sine).amplify(0.1))
-            .take_duration(Duration::from_millis(500));
-        stream_handle.mixer().add(dial_tone);
-        thread::sleep(Duration::from_millis(500));
-
         // Phone line dial tone: 350 Hz + 440 Hz combined (North American standard)
         // For a more authentic sound, you could also use 425 Hz (European) or other standards
         let tone1 = SignalGenerator::new(sample_rate, 350.0, Function::Sine).amplify(0.15);
