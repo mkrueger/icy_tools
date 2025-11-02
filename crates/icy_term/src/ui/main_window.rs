@@ -724,7 +724,7 @@ impl MainWindow {
             }
             TerminalEvent::Disconnected(_error) => {
                 self.is_connected = false;
-                self.terminal_window.is_connected = false;
+                self.terminal_window.disconnect();
                 self.connection_time = None;
                 Task::none()
             }

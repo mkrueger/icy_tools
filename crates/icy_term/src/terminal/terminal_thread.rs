@@ -241,6 +241,8 @@ impl TerminalThread {
         match command {
             TerminalCommand::Connect(config) => {
                 if let Err(e) = self.connect(config).await {
+                    self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
+
                     if let Err(err) = self.event_tx.send(TerminalEvent::Disconnected(Some(e.to_string()))) {
                         log::error!("Failed to send disconnect event: {}", err);
                         self.process_data(format!("{}", err).as_bytes()).await;
@@ -294,7 +296,7 @@ impl TerminalThread {
         );
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
         self.baud_emulator.set_baud_rate(config.baud_emulation);
-
+        self.process_data(format!("ATDT{}\r\n", config.address).as_bytes()).await;
         // Set up auto-login if configured
         if config.auto_login && config.user_name.is_some() && config.password.is_some() {
             let (user_name, password) = if config.auto_login && config.iemsi_user_name.is_some() && config.iemsi_password.is_some() {
@@ -350,7 +352,9 @@ impl TerminalThread {
             }
             ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.address, false).await?),
             ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.address, true).await?),
-            other => return Err(format!("Unsupported connection type: {other:?}").into()),
+            other => {
+                return Err(format!("Unsupported connection type: {other:?}").into());
+            }
         };
 
         self.connection = Some(connection);

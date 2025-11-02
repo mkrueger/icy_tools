@@ -352,19 +352,6 @@ impl TerminalWindow {
             }
         }
 
-        if self.is_capturing {
-            let stop_capture_btn = button(
-                row![text("⏹").size(14), text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(12)]
-                    .spacing(3)
-                    .align_y(Alignment::Center),
-            )
-            .on_press(Message::StopCapture)
-            .padding([4, 6])
-            .style(button::danger);
-
-            bar_content = bar_content.push(stop_capture_btn);
-        }
-
         if *VERSION < *LATEST_VERSION {
             bar_content = bar_content.push(self.create_update_notification());
         }
@@ -425,25 +412,35 @@ impl TerminalWindow {
     }
 
     fn create_status_bar(&self, options: &Options, scrollback_lines: i32) -> Element<'_, Message> {
-        let connection_status = if self.is_connected {
-            text("● Connected").style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().success.strong.color),
-                ..Default::default()
-            })
+        let connection_status = if let Some(addr) = &self.current_address {
+            if !self.is_connected {
+                text("DIALING...").style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().background.base.text),
+                    ..Default::default()
+                })
+            } else {
+                let system = if addr.system_name.is_empty() {
+                    addr.address.clone()
+                } else {
+                    addr.system_name.clone()
+                };
+
+                text(system)
+                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().success.strong.color),
+                        ..Default::default()
+                    })
+                    .size(16.0)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..iced::Font::default()
+                    })
+            }
         } else {
-            text("○ Disconnected").style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("NO CARRIER").style(|theme: &iced::Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().danger.base.color),
                 ..Default::default()
             })
-        };
-
-        let capture_status = if self.is_capturing {
-            text("● REC").style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.strong.color),
-                ..Default::default()
-            })
-        } else {
-            text("")
         };
 
         let emulation_str = match self.terminal_emulation {
@@ -500,8 +497,61 @@ impl TerminalWindow {
 
             status_row = status_row.push(text("|")).push(scrollback_text);
         }
+        status_row = status_row.push(Space::new().width(Length::Fill));
 
-        status_row = status_row.push(Space::new().width(Length::Fill)).push(capture_status);
+        if self.is_capturing {
+            let stop_capture_btn = button(
+                row![text("⏹").size(14), text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(12)]
+                    .spacing(3)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::StopCapture)
+            .padding([2, 8])
+            .style(|theme: &iced::Theme, status| {
+                use iced::widget::button::{Status, Style};
+
+                let palette = theme.extended_palette();
+                let danger_color = palette.danger.base.color;
+
+                let base = Style {
+                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    text_color: danger_color,
+                    border: Border {
+                        color: danger_color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    shadow: Default::default(),
+                    snap: false,
+                };
+
+                match status {
+                    Status::Active | Status::Disabled => base,
+                    Status::Hovered => Style {
+                        background: Some(iced::Background::Color(danger_color.scale_alpha(0.15))),
+                        text_color: danger_color,
+                        border: Border {
+                            color: palette.danger.strong.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..base
+                    },
+                    Status::Pressed => Style {
+                        background: Some(iced::Background::Color(danger_color.scale_alpha(0.25))),
+                        text_color: palette.danger.strong.color,
+                        border: Border {
+                            color: palette.danger.strong.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..base
+                    },
+                }
+            });
+
+            status_row = status_row.push(stop_capture_btn);
+        }
 
         // Add Baud Emulation button
         let baud_text = if !self.is_connected {
@@ -629,9 +679,7 @@ impl TerminalWindow {
 
     // Helper methods for terminal operations
     pub fn connect(&mut self, address: Option<Address>) {
-        self.is_connected = true;
         self.current_address = address;
-
         self.terminal_emulation = match &self.current_address {
             Some(addr) => {
                 self.baud_emulation = addr.baud_emulation;
