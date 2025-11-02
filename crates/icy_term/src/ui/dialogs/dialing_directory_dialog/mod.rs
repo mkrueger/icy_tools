@@ -1,0 +1,426 @@
+use crate::ui::{Message, modal};
+use crate::util::Rng;
+use crate::{Address, AddressBook, ScreenMode};
+use i18n_embed_fl::fl;
+use iced::{
+    Alignment, Element, Length, Task,
+    widget::{Space, button, column, container, row, svg, text},
+};
+use icy_engine::ansi::{BaudEmulation, MusicOption};
+use icy_net::{ConnectionType, telnet::TerminalEmulation};
+
+mod address_list;
+mod address_options_panel;
+mod delete_confirmation;
+
+const DELETE_SVG: &[u8] = include_bytes!("../../../../data/icons/delete.svg");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DialingDirectoryFilter {
+    All,
+    Favourites,
+}
+
+impl Default for DialingDirectoryFilter {
+    fn default() -> Self {
+        Self::All
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DialingDirectoryState {
+    pub addresses: AddressBook,
+    pub selected_bbs: Option<usize>,
+    pub filter_mode: DialingDirectoryFilter,
+    pub filter_text: String,
+    pub show_passwords: bool,
+    pub pending_delete: Option<usize>,
+    pub quick_connect_address: Address,
+
+    // Double-click detection
+    last_click_time: Option<std::time::Instant>,
+    last_clicked_index: Option<Option<usize>>,
+}
+
+impl DialingDirectoryState {
+    pub fn new(addresses: AddressBook) -> Self {
+        Self {
+            addresses,
+            selected_bbs: None,
+            filter_mode: DialingDirectoryFilter::All,
+            filter_text: String::new(),
+            show_passwords: false,
+            pending_delete: None,
+            quick_connect_address: Address::default(),
+            last_click_time: None,
+            last_clicked_index: None,
+        }
+    }
+
+    pub fn get_address_mut(&mut self, id: Option<usize>) -> &mut Address {
+        if let Some(idx) = id {
+            if idx < self.addresses.addresses.len() {
+                return &mut self.addresses.addresses[idx];
+            }
+        }
+        &mut self.quick_connect_address
+    }
+
+    pub fn view(&self, options: &crate::Options) -> Element<'_, Message> {
+        // Main layout with left panel, right panel, and bottom bar
+        let main_content = column![
+            row![
+                container(self.create_address_list()).padding(8),
+                container(self.create_option_panel(options)).padding(8).width(Length::Fill)
+            ]
+            .height(Length::Fill),
+            container(self.create_bottom_bar()).width(Length::Fill).style(container::bordered_box)
+        ];
+
+        // If there's a pending delete, show the confirmation modal
+        if let Some(idx) = self.pending_delete {
+            let overlay = self.delete_confirmation_modal(idx);
+            modal(main_content, overlay, Message::from(DialingDirectoryMsg::Cancel)).into()
+        } else {
+            main_content.into()
+        }
+    }
+
+    fn create_bottom_bar(&self) -> Element<'_, Message> {
+        use iced::widget::tooltip;
+        let delete_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-delete");
+        let delete_icon = svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
+        let can_delete = self.selected_bbs.is_some();
+        // Base delete button (icon only)
+        let delete_button = if can_delete {
+            button(delete_icon)
+                .on_press(Message::from(DialingDirectoryMsg::DeleteAddress(self.selected_bbs.unwrap())))
+                .padding(6)
+        } else {
+            // Disabled style (secondary) but still show icon + tooltip
+            button(delete_icon).style(button::secondary).padding(6)
+        };
+        // Wrap in tooltip with localized text
+        let del_btn: tooltip::Tooltip<'_, Message> = tooltip(
+            delete_button,
+            container(text(delete_label)).style(container::rounded_box),
+            tooltip::Position::Right,
+        )
+        .gap(10)
+        .style(container::rounded_box)
+        .padding(8);
+        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"))).on_press(Message::CloseDialog);
+        let connect_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")))
+            .on_press(Message::from(DialingDirectoryMsg::ConnectSelected))
+            .style(button::primary);
+        row![del_btn, Space::new().width(Length::Fill), cancel_btn, connect_btn]
+            .spacing(12)
+            .align_y(Alignment::Center)
+            .padding(12)
+            .into()
+    }
+
+    pub(crate) fn update(&mut self, msg: DialingDirectoryMsg) -> Task<Message> {
+        match msg {
+            DialingDirectoryMsg::SelectAddress(idx) => {
+                // Double-click detection
+                let now = std::time::Instant::now();
+                let is_double_click = if let Some(last_time) = self.last_click_time {
+                    if let Some(last_idx) = self.last_clicked_index {
+                        last_idx == idx && now.duration_since(last_time).as_millis() < 250
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                self.last_click_time = Some(now);
+                self.last_clicked_index = Some(idx);
+                self.selected_bbs = idx;
+
+                if is_double_click {
+                    // Trigger connect on double-click
+                    return self.update(DialingDirectoryMsg::ConnectSelected);
+                }
+
+                Task::none()
+            }
+
+            DialingDirectoryMsg::ToggleFavorite(idx) => {
+                if idx < self.addresses.addresses.len() {
+                    self.addresses.addresses[idx].is_favored = !self.addresses.addresses[idx].is_favored;
+                }
+                Task::none()
+            }
+
+            DialingDirectoryMsg::ChangeFilterMode(mode) => {
+                self.filter_mode = mode;
+                Task::none()
+            }
+
+            DialingDirectoryMsg::FilterTextChanged(text) => {
+                self.filter_text = text;
+                Task::none()
+            }
+
+            DialingDirectoryMsg::AddAddress => {
+                let mut new_address = self.quick_connect_address.clone();
+                self.quick_connect_address = Address::default();
+                new_address.system_name = new_address.address.clone();
+                self.addresses.addresses.push(new_address);
+                self.selected_bbs = Some(self.addresses.addresses.len() - 1);
+                Task::none()
+            }
+
+            DialingDirectoryMsg::DeleteAddress(idx) => {
+                // Instead of deleting immediately, set pending_delete
+                self.pending_delete = Some(idx);
+                Task::none()
+            }
+
+            DialingDirectoryMsg::ConfirmDelete(idx) => {
+                // Actually delete the address
+                if idx < self.addresses.addresses.len() {
+                    self.addresses.addresses.remove(idx);
+                    // Adjust selected index if needed
+                    if let Some(selected) = self.selected_bbs {
+                        if selected == idx {
+                            self.selected_bbs = None;
+                        } else if selected > idx {
+                            self.selected_bbs = Some(selected - 1);
+                        }
+                    }
+
+                    // Save the address book
+                    if let Err(e) = self.addresses.store_phone_book() {
+                        eprintln!("Failed to save address book: {}", e);
+                    }
+                }
+                self.pending_delete = None;
+                Task::none()
+            }
+
+            DialingDirectoryMsg::AddressFieldChanged { id, field } => {
+                let addr = self.get_address_mut(id);
+
+                match field {
+                    AddressFieldChange::SystemName(name) => {
+                        addr.system_name = name;
+                    }
+                    AddressFieldChange::Address(address) => {
+                        addr.address = address;
+                    }
+                    AddressFieldChange::User(user) => {
+                        addr.user_name = user;
+                    }
+                    AddressFieldChange::Password(password) => {
+                        addr.password = password;
+                    }
+                    AddressFieldChange::AutoLogin(script) => {
+                        addr.auto_login = script;
+                    }
+                    AddressFieldChange::IemsiUser(user) => {
+                        addr.iemsi_user = user;
+                    }
+                    AddressFieldChange::IemsiPassword(password) => {
+                        addr.iemsi_password = password;
+                    }
+                    AddressFieldChange::Protocol(protocol) => {
+                        addr.protocol = protocol;
+                    }
+                    AddressFieldChange::Terminal(terminal) => {
+                        addr.terminal_type = terminal;
+                        // Reset screen mode when terminal changes
+                        addr.screen_mode = match terminal {
+                            TerminalEmulation::Ansi
+                            | TerminalEmulation::Ascii
+                            | TerminalEmulation::Avatar
+                            | TerminalEmulation::Rip
+                            | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
+                            TerminalEmulation::AtariST => ScreenMode::AtariST(40),
+                            TerminalEmulation::PETscii => ScreenMode::Vic,
+                            TerminalEmulation::ATAscii => ScreenMode::Antic,
+                            TerminalEmulation::ViewData | TerminalEmulation::Mode7 => ScreenMode::Videotex,
+                            TerminalEmulation::Skypix => ScreenMode::SkyPix,
+                        };
+                    }
+                    AddressFieldChange::ScreenMode(mode) => {
+                        addr.screen_mode = mode;
+                    }
+                    AddressFieldChange::Baud(baud) => {
+                        addr.baud_emulation = baud;
+                    }
+                    AddressFieldChange::Music(music) => {
+                        addr.ansi_music = music;
+                    }
+                    AddressFieldChange::Comment(comment) => {
+                        addr.comment = comment;
+                    }
+                    AddressFieldChange::OverrideIemsi(override_iemsi) => {
+                        addr.override_iemsi_settings = override_iemsi;
+                    }
+                    AddressFieldChange::IsFavored(is_favored) => {
+                        addr.is_favored = is_favored;
+                    }
+                }
+
+                Task::none()
+            }
+
+            DialingDirectoryMsg::ToggleShowPasswords => {
+                self.show_passwords = !self.show_passwords;
+                Task::none()
+            }
+
+            DialingDirectoryMsg::ConnectSelected => {
+                // Get the selected address
+                let addr = if let Some(idx) = self.selected_bbs {
+                    if idx < self.addresses.addresses.len() {
+                        self.addresses.addresses[idx].clone()
+                    } else {
+                        return Task::none();
+                    }
+                } else {
+                    self.quick_connect_address.clone()
+                };
+
+                // Increment call counter for the selected address
+                if let Some(idx) = self.selected_bbs {
+                    self.addresses.addresses[idx].number_of_calls += 1;
+                    self.addresses.addresses[idx].last_call = Some(chrono::Utc::now());
+                }
+
+                // Save the address book
+                if let Err(e) = self.addresses.store_phone_book() {
+                    eprintln!("Failed to save address book: {}", e);
+                }
+
+                // Return a task that triggers the connection
+                // You'll need to handle this in the parent component
+                Task::done(Message::Connect(addr))
+            }
+
+            DialingDirectoryMsg::Cancel => {
+                // Cancel the delete operation
+                if self.pending_delete.is_some() {
+                    self.pending_delete = None;
+                    return Task::none();
+                }
+
+                // Save any changes before closing
+                if let Err(e) = self.addresses.store_phone_book() {
+                    eprintln!("Failed to save address book: {}", e);
+                }
+
+                // Return a task that closes the dialog
+                Task::done(Message::CloseDialog)
+            }
+
+            DialingDirectoryMsg::GeneratePassword => {
+                // Generate a random password
+                let mut rng = Rng::default();
+                let mut pw = String::new();
+                for _ in 0..16 {
+                    pw.push(unsafe { char::from_u32_unchecked(rng.gen_range(b'0'..=b'z')) });
+                }
+                let addr = self.get_address_mut(self.selected_bbs);
+                addr.password = pw;
+                Task::none()
+            }
+
+            DialingDirectoryMsg::NavigateUp => {
+                let addresses = self.filtered();
+
+                if let Some(selected_idx) = self.selected_bbs {
+                    // Find current selection in filtered list
+                    if let Some((pos, _)) = addresses.iter().enumerate().find(|(_, (idx, _))| *idx == selected_idx) {
+                        if pos > 0 {
+                            // Select previous item
+                            let (new_idx, _) = addresses[pos - 1];
+                            self.selected_bbs = Some(new_idx);
+                        } else {
+                            // At top, move to quick connect if available
+                            let show_quick_connect = self.filter_text.is_empty() && matches!(self.filter_mode, DialingDirectoryFilter::All);
+                            if show_quick_connect {
+                                self.selected_bbs = None;
+                            }
+                        }
+                    }
+                } else if !addresses.is_empty() {
+                    // No selection (on quick connect), select last item
+                    let (idx, _) = addresses[addresses.len() - 1];
+                    self.selected_bbs = Some(idx);
+                }
+                Task::none()
+            }
+
+            DialingDirectoryMsg::NavigateDown => {
+                let addresses = self.filtered();
+                let show_quick_connect = self.filter_text.is_empty() && matches!(self.filter_mode, DialingDirectoryFilter::All);
+
+                if let Some(selected_idx) = self.selected_bbs {
+                    // Find current selection in filtered list
+                    if let Some((pos, _)) = addresses.iter().enumerate().find(|(_, (idx, _))| *idx == selected_idx) {
+                        if pos + 1 < addresses.len() {
+                            // Select next item
+                            let (new_idx, _) = addresses[pos + 1];
+                            self.selected_bbs = Some(new_idx);
+                        } else if show_quick_connect {
+                            // At bottom, wrap to quick connect
+                            self.selected_bbs = None;
+                        }
+                    }
+                } else if !addresses.is_empty() {
+                    // Currently on quick connect, select first item
+                    let (idx, _) = addresses[0];
+                    self.selected_bbs = Some(idx);
+                }
+                Task::none()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum DialingDirectoryMsg {
+    SelectAddress(Option<usize>),
+    ToggleFavorite(usize),
+    ChangeFilterMode(DialingDirectoryFilter),
+    FilterTextChanged(String),
+    AddAddress,
+    DeleteAddress(usize),
+    AddressFieldChanged { id: Option<usize>, field: AddressFieldChange },
+    ToggleShowPasswords,
+    GeneratePassword,
+    ConnectSelected,
+    Cancel,
+    NavigateUp,
+    NavigateDown,
+    ConfirmDelete(usize),
+}
+
+#[derive(Debug, Clone)]
+pub enum AddressFieldChange {
+    SystemName(String),
+    Address(String),
+    User(String),
+    Password(String),
+    AutoLogin(String),
+    IemsiUser(String),
+    IemsiPassword(String),
+    Protocol(ConnectionType),
+    Terminal(TerminalEmulation),
+    ScreenMode(ScreenMode),
+    Baud(BaudEmulation),
+    Music(MusicOption),
+    Comment(String),
+    OverrideIemsi(bool),
+    IsFavored(bool),
+}
+
+impl From<DialingDirectoryMsg> for Message {
+    fn from(m: DialingDirectoryMsg) -> Self {
+        Message::DialingDirectory(m)
+    }
+}

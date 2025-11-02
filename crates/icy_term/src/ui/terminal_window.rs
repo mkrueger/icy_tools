@@ -19,7 +19,7 @@ const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");
 const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
 const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
-const SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
+const _SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
 const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.icy");
 
 pub struct TerminalWindow {
@@ -284,32 +284,6 @@ impl TerminalWindow {
             download_btn = download_btn.on_press(Message::Download);
         }
 
-        // Settings dropdown menu
-        let settings_menu = button(
-            row![
-                svg(svg::Handle::from_memory(SETTINGS_SVG))
-                    .width(Length::Fixed(16.0))
-                    .height(Length::Fixed(16.0))
-            ]
-            .spacing(3)
-            .align_y(Alignment::Center),
-        )
-        .on_press(Message::ShowSettings)
-        .padding([4, 6]);
-
-        // Settings dropdown menu
-        let capture_menu = button(
-            row![
-                svg(svg::Handle::from_memory(SETTINGS_SVG))
-                    .width(Length::Fixed(16.0))
-                    .height(Length::Fixed(16.0))
-            ]
-            .spacing(3)
-            .align_y(Alignment::Center),
-        )
-        .on_press(Message::ShowCaptureDialog)
-        .padding([4, 6]);
-
         let mut bar_content = row![phonebook_btn, container(text(" | ").size(10)).padding([0, 2]), upload_btn, download_btn,]
             .spacing(3)
             .align_y(Alignment::Center);
@@ -406,13 +380,29 @@ impl TerminalWindow {
             bar_content = bar_content.push(stop_capture_btn);
         }
 
-        bar_content = bar_content.push(settings_menu).push(capture_menu);
-
         if *VERSION < *LATEST_VERSION {
             bar_content = bar_content.push(self.create_update_notification());
         }
 
         bar_content = bar_content.push(Space::new().width(Length::Fill));
+
+        // Settings dropdown menu
+        /*let settings_menu = button(
+            row![
+                svg(svg::Handle::from_memory(SETTINGS_SVG))
+                    .width(Length::Fixed(16.0))
+                    .height(Length::Fixed(16.0))
+            ]
+            .spacing(3)
+            .align_y(Alignment::Center),
+        )*/
+        let settings_menu = button(
+            text("⚙").size(16), // Gear symbol - most common for settings
+        )
+        .on_press(Message::ShowSettings)
+        .padding([4, 6]);
+
+        bar_content = bar_content.push(settings_menu);
 
         container(bar_content.padding([3, 6]))
             .style(|theme: &iced::Theme| container::Style {
