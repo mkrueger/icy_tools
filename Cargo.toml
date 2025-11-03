@@ -10,6 +10,7 @@ members = [
 	"crates/icy_view",
 	"crates/icy_view_gui",
 	"crates/iced_engine_gui",
+	"crates/icy_mail",
 ]
 [workspace.package]
 version = "0.3.0"
@@ -26,8 +27,7 @@ icy_view_gui = { path = "crates/icy_view_gui" }
 iced_engine_gui = { path = "crates/iced_engine_gui" } 
 
 codepages = { git ="https://github.com/mkrueger/icy_board" }
-
-zip = { version = "5.1.1"}
+zip = { version = "6.0.0"}
 lazy_static = "1.4.0"
 semver = "1.0.27"
 thiserror = "2.0.17"
@@ -42,7 +42,8 @@ fluent-bundle = "0.16.0"
 rust-embed = "8.3.0"
 once_cell = "1.18.0"
 toml = "0.8.23"
-bstr = "1.11.3"
+bstr = "1.12.1"
+
 regex = "1.11.3"
 directories = "6.0.0"
 tokio = { version = "1.47.1", features = ["full"] }

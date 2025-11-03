@@ -1,0 +1,100 @@
+[package]
+name = "icy_mail"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "An offline QWK mail reader"
+repository = "https://github.com/mkrueger/icy_tools"
+
+[dependencies]
+#jamjam = { git ="https://github.com/mkrueger/icy_board" }
+jamjam = { path ="../../../icy_board/crates/jamjam" }
+
+iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
+# iced_aw = { workspace = true, features = ["menu"]  }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+versions = "7.0.0"
+regex = { workspace = true }
+github_release_check = "0.2.1"
+semver = { workspace = true }
+webbrowser = { workspace = true }
+iced_engine_gui = { workspace = true }
+bstr = { workspace = true }
+clap = { workspace = true }
+
+#sound
+rodio = { workspace = true }
+icy_engine = { workspace = true }
+walkdir = { workspace = true }
+toml = { workspace = true }
+
+lazy_static = { workspace = true }
+notify = "8.2.0"
+human_bytes = { version = "0.4", default-features = false }
+
+clipboard-rs = "0.3.0"
+
+chrono = { workspace = true }  # Utc hanldung
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+i18n-embed = { workspace = true }
+i18n-embed-fl = { workspace = true }
+rust-embed = { workspace = true }
+once_cell = { workspace = true }
+zip = { workspace = true }
+
+log = { workspace = true }
+log4rs = "1.4.0"
+web-time = "1.1.0"
+
+# WebSocket support
+tungstenite = { version = "0.28.0", features = [
+    "rustls-tls-webpki-roots", # webpki root CAs
+    "__rustls-tls",            # use Rustls
+]}
+
+http = "1.3.1"
+url = "2.5.7"
+rustls = { version = "0.23.32", features = [
+    "tls12",
+ #   "dangerous_configuration"  # Allow invalid certs/etc.
+]}
+webpki-roots = "1.0.3"
+getrandom =  { version = "0.3.3" }
+
+directories = { workspace = true }
+open = "5.3.2"
+rfd = "0.15.4"
+
+tracing-subscriber = "0.3"
+async-recursion = "1.1.1"
+
+[build-dependencies]
+winres = "0.1"
+
+[package.metadata.bundle]
+name = "Icy Mail"
+identifier = "com.github.icy_mail"
+icon = [ "build/mac/128x128@2x.png" ]
+resources = []
+copyright = "Copyright (c) Mike Krüger 2025. All rights reserved."
+
+[package.metadata.deb]
+section="Mail"
+copyright = "Copyright (c) Mike Krüger 2025. All rights reserved."
+revision=""
+depends = "libasound2"
+assets = [
+    ["target/release/icy_mail", "/usr/bin/", "755"],
+    ["build/linux/icy_mail.desktop", "/usr/share/applications/", "644"],
+    ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_mail.png", "644"],
+    ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_mail.png", "644"],
+]
+
+
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"
