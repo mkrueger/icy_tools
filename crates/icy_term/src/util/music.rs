@@ -443,13 +443,19 @@ impl SoundBackgroundThreadData {
                     _ => continue,
                 };
 
+                let kind = if fastrand::bool() {
+                    PulseClickKind::Hayes
+                } else {
+                    PulseClickKind::USRobotics
+                };
+
                 for pulse_idx in 0..num_pulses {
                     if self.handle_receive() {
                         res = false;
                         break;
                     }
 
-                    let click = PulseClick::new(sample_rate, click_ms);
+                    let click = PulseClick::new_kind(kind, sample_rate, click_ms);
                     stream_handle.mixer().add(click);
                     thread::sleep(Duration::from_millis(click_ms));
 
@@ -607,6 +613,12 @@ fn pulse_profile_for(tone: DialTone) -> PulseProfile {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+enum PulseClickKind {
+    Hayes,
+    USRobotics,
+}
+
 struct PulseClick {
     sample_rate: u32,
     total_samples: u32,
@@ -617,23 +629,43 @@ struct PulseClick {
     bounce_start: f32,
     bounce_end: f32,
     seed: u32,
+    kind: PulseClickKind,
 }
 
 impl PulseClick {
-    fn new(sample_rate: u32, duration_ms: u64) -> Self {
+    fn new_kind(kind: PulseClickKind, sample_rate: u32, duration_ms: u64) -> Self {
         let total_samples = (((duration_ms as f64 / 1000.0) * sample_rate as f64).ceil() as u32).max(1);
-
         let seed = fastrand::u32(0..1_000_000);
+
+        // Profile-specific parameter ranges
+        let (primary_freq, accent_freq, thunk_freq, bounce_start, bounce_end) = match kind {
+            PulseClickKind::Hayes => (
+                4200.0 + fastrand::f32() * 800.0,  // sharper relay chirp
+                7500.0 + fastrand::f32() * 1200.0, // high metallic ring
+                220.0 + fastrand::f32() * 80.0,    // light body
+                0.0012 + fastrand::f32() * 0.0004,
+                0.0020 + fastrand::f32() * 0.0005,
+            ),
+            PulseClickKind::USRobotics => (
+                3600.0 + fastrand::f32() * 700.0,  // lower, chunkier relay
+                5800.0 + fastrand::f32() * 1000.0, // less bright ring
+                180.0 + fastrand::f32() * 70.0,    // heavier body
+                0.0018 + fastrand::f32() * 0.0005,
+                0.0028 + fastrand::f32() * 0.0007,
+            ),
+        };
+
         Self {
             sample_rate,
             total_samples,
             index: 0,
-            primary_freq: 4200.0 + fastrand::f32() * 800.0, // Higher, sharper relay chirp
-            accent_freq: 7500.0 + fastrand::f32() * 1200.0, // High metallic ring
-            thunk_freq: 220.0 + fastrand::f32() * 80.0,     // Lighter mechanical body
-            bounce_start: 0.0012 + fastrand::f32() * 0.0004,
-            bounce_end: 0.0020 + fastrand::f32() * 0.0005,
+            primary_freq,
+            accent_freq,
+            thunk_freq,
+            bounce_start,
+            bounce_end,
             seed,
+            kind,
         }
     }
 
@@ -641,13 +673,11 @@ impl PulseClick {
     fn time(&self) -> f32 {
         self.index as f32 / self.sample_rate as f32
     }
-
     #[inline]
     fn ratio(&self) -> f32 {
         self.index as f32 / self.total_samples as f32
     }
 
-    #[inline]
     fn next_sample(&mut self) -> f32 {
         if self.index >= self.total_samples {
             return 0.0;
@@ -657,56 +687,129 @@ impl PulseClick {
         let mix = self.ratio();
         let mut sample = 0.0;
 
-        // Very sharp, quick attack—Hayes-style relay snap.
-        match self.index {
-            0 => sample += 1.4,
-            1 => sample -= 1.2,
-            2 => sample += 0.7,
-            _ => {}
+        // Attack pattern differs slightly by modem type
+        match self.kind {
+            PulseClickKind::Hayes => match self.index {
+                0 => sample += 1.4,
+                1 => sample -= 1.2,
+                2 => sample += 0.7,
+                _ => {}
+            },
+            PulseClickKind::USRobotics => match self.index {
+                0 => sample += 1.3,
+                1 => sample -= 1.15,
+                2 => sample += 0.75,
+                3 => sample -= 0.40,
+                _ => {}
+            },
         }
 
-        // Ultra-high chirp (9–11 kHz) for that classic modem "squeak"
-        if t < 0.0008 {
-            let chirp_freq = 10000.0 + fastrand::f32() * 1500.0;
-            let chirp_decay = (-t * 9000.0).exp();
-            sample += (t * chirp_freq * std::f32::consts::TAU).sin() * chirp_decay * 0.6;
+        // High chirp / sparkle
+        match self.kind {
+            PulseClickKind::Hayes => {
+                if t < 0.0008 {
+                    let freq = 10000.0 + fastrand::f32() * 1500.0;
+                    let decay = (-t * 9000.0).exp();
+                    sample += (t * freq * std::f32::consts::TAU).sin() * decay * 0.6;
+                }
+            }
+            PulseClickKind::USRobotics => {
+                if t < 0.0012 {
+                    let freq = 7500.0 + fastrand::f32() * 1500.0;
+                    let decay = (-t * 7500.0).exp();
+                    sample += (t * freq * std::f32::consts::TAU).sin() * decay * 0.5;
+                }
+            }
         }
 
-        // Primary relay "chirp" resonance (brighter, faster decay).
-        let primary_decay = (-t * 6800.0).exp();
-        sample += (t * self.primary_freq * std::f32::consts::TAU).sin() * primary_decay * 1.0;
+        // Primary relay chirp
+        let primary_decay = match self.kind {
+            PulseClickKind::Hayes => (-t * 6800.0).exp(),
+            PulseClickKind::USRobotics => (-t * 5500.0).exp(),
+        };
+        sample += (t * self.primary_freq * std::f32::consts::TAU).sin()
+            * primary_decay
+            * match self.kind {
+                PulseClickKind::Hayes => 1.0,
+                PulseClickKind::USRobotics => 0.95,
+            };
 
-        // Accent high ring (very short—modem relays ring briefly).
-        let accent_decay = (-t * 8000.0).exp();
-        sample += (t * self.accent_freq * std::f32::consts::TAU).sin() * accent_decay * 0.5;
+        // Accent ring
+        let accent_decay = match self.kind {
+            PulseClickKind::Hayes => (-t * 8000.0).exp(),
+            PulseClickKind::USRobotics => (-t * 6500.0).exp(),
+        };
+        sample += (t * self.accent_freq * std::f32::consts::TAU).sin()
+            * accent_decay
+            * match self.kind {
+                PulseClickKind::Hayes => 0.5,
+                PulseClickKind::USRobotics => 0.45,
+            };
 
-        // Much lighter low-freq thump (Hayes relays are mechanically lighter).
-        if t < 0.008 {
-            let thunk_decay = (-t * 280.0).exp();
-            sample += (t * self.thunk_freq * std::f32::consts::TAU).cos() * thunk_decay * 0.3;
+        // Low mechanical body
+        let thunk_limit = match self.kind {
+            PulseClickKind::Hayes => 0.008,
+            PulseClickKind::USRobotics => 0.012,
+        };
+        if t < thunk_limit {
+            let thunk_decay = match self.kind {
+                PulseClickKind::Hayes => (-t * 280.0).exp(),
+                PulseClickKind::USRobotics => (-t * 220.0).exp(),
+            };
+            sample += (t * self.thunk_freq * std::f32::consts::TAU).cos()
+                * thunk_decay
+                * match self.kind {
+                    PulseClickKind::Hayes => 0.3,
+                    PulseClickKind::USRobotics => 0.5,
+                };
         }
 
-        // Short grit burst (first 5 ms only, quick release).
-        if t < 0.005 {
-            let noise_env = (-t * 4200.0).exp();
+        // Grit / relay contact noise
+        let grit_limit = match self.kind {
+            PulseClickKind::Hayes => 0.005,
+            PulseClickKind::USRobotics => 0.007,
+        };
+        if t < grit_limit {
+            let noise_env = match self.kind {
+                PulseClickKind::Hayes => (-t * 4200.0).exp(),
+                PulseClickKind::USRobotics => (-t * 3500.0).exp(),
+            };
             let mut rng = fastrand::Rng::with_seed(self.seed as u64 + self.index as u64);
-            let noise = (rng.f32() * 2.0 - 1.0) * noise_env * 0.22;
-            sample += noise;
+            let noise_amp = match self.kind {
+                PulseClickKind::Hayes => 0.22,
+                PulseClickKind::USRobotics => 0.25,
+            };
+            sample += (rng.f32() * 2.0 - 1.0) * noise_env * noise_amp;
         }
 
-        // Minimal bounce (Hayes relays don't bounce much—they're crisp).
+        // Bounce
         if t >= self.bounce_start && t <= self.bounce_end {
             let rel = (t - self.bounce_start) / (self.bounce_end - self.bounce_start);
-            let bounce_env = (1.0 - rel).powf(3.0);
-            sample += bounce_env * 0.25;
+            let bounce_env = match self.kind {
+                PulseClickKind::Hayes => (1.0 - rel).powf(3.0),
+                PulseClickKind::USRobotics => (1.0 - rel).powf(2.8),
+            };
+            let bounce_amp = match self.kind {
+                PulseClickKind::Hayes => 0.25,
+                PulseClickKind::USRobotics => 0.30,
+            };
+            sample += bounce_env * bounce_amp;
         }
 
-        // Quick decay envelope for percussive, punchy character.
-        let envelope = (1.0 - mix).powf(2.2);
+        // Envelope
+        let envelope = match self.kind {
+            PulseClickKind::Hayes => (1.0 - mix).powf(2.2),
+            PulseClickKind::USRobotics => (1.0 - mix).powf(2.4),
+        };
         sample *= envelope;
 
-        // Hot drive—keep it loud and snappy.
-        sample = (sample * 1.45).clamp(-1.0, 1.0);
+        // Drive
+        let driven = sample
+            * match self.kind {
+                PulseClickKind::Hayes => 1.45,
+                PulseClickKind::USRobotics => 1.38,
+            };
+        sample = driven.clamp(-1.0, 1.0);
 
         self.index += 1;
         sample
