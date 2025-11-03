@@ -17,6 +17,7 @@ use rodio::{
 use web_time::{Duration, Instant};
 
 use crate::TerminalResult;
+use crate::DialTone;
 
 use super::Rng;
 
@@ -51,13 +52,14 @@ pub enum SoundData {
     PlayMusic(AnsiMusic),
     Beep,
     Clear,
-    LineSound,
-    PlayDialSound(String),
+    LineSound(DialTone),
+    PlayDialSound(DialTone, String),
     _PlayBusySound,
 
     StartPlay,
     StopPlay,
 }
+
 
 pub struct SoundThread {
     rx: Receiver<SoundData>,
@@ -133,12 +135,12 @@ impl SoundThread {
         self.send_data(SoundData::StopPlay)
     }
 
-    pub fn start_line_sound(&mut self) -> TerminalResult<()> {
-        self.send_data(SoundData::LineSound)
+    pub fn start_line_sound(&mut self, tone: DialTone) -> TerminalResult<()> {
+        self.send_data(SoundData::LineSound(tone))
     }
 
-    pub fn start_dial_sound(&mut self, phone_number: &str) -> TerminalResult<()> {
-        self.send_data(SoundData::PlayDialSound(phone_number.to_string()))
+    pub fn start_dial_sound(&mut self, tone: DialTone, phone_number: &str) -> TerminalResult<()> {
+        self.send_data(SoundData::PlayDialSound(tone, phone_number.to_string()))
     }
 
     pub(crate) fn play_music(&mut self, music: AnsiMusic) -> TerminalResult<()> {
@@ -231,11 +233,11 @@ impl SoundBackgroundThreadData {
                             self.line_sound_playing = false;
                             self.music.push_back(SoundData::Beep);
                         }
-                        SoundData::LineSound => {
-                            self.music.push_back(SoundData::LineSound);
+                        SoundData::LineSound(tone) => {
+                            self.music.push_back(SoundData::LineSound(tone));
                         }
-                        SoundData::PlayDialSound(phone_number) => {
-                            self.music.push_back(SoundData::PlayDialSound(phone_number));
+                        SoundData::PlayDialSound(tone, phone_number) => {
+                            self.music.push_back(SoundData::PlayDialSound(tone, phone_number));
                         }
                         SoundData::_PlayBusySound => {
                             self.line_sound_playing = false;
@@ -278,68 +280,97 @@ impl SoundBackgroundThreadData {
         match data {
             SoundData::PlayMusic(music) => self.play_music(&music),
             SoundData::Beep => self.beep(),
-            SoundData::LineSound => self.play_line_sound(),
-            SoundData::PlayDialSound(phone_number) => {
-                if self.play_dial_sound(&phone_number) {
-                    self.play_busysound();
+            SoundData::LineSound(tone) => self.play_line_sound(tone),
+            SoundData::PlayDialSound(tone, phone_number) => {
+                if self.play_dial_sound(tone, &phone_number) {
+                    self.play_busysound(tone);
                 }
             }
-            SoundData::_PlayBusySound => self.play_busysound(),
+            SoundData::_PlayBusySound => self.play_busysound(DialTone::US),
             _ => {}
         }
     }
 
-    fn play_busysound(&mut self) {
+    fn play_busysound(&mut self, tone: DialTone) {
         let _ = self.tx.send(SoundData::StartPlay);
 
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
         let sample_rate = stream_handle.config().sample_rate();
 
-        // North American busy signal: 480 Hz + 620 Hz
-        // Pattern: 500ms on, 500ms off
-        const BUSY_TONE_ON_MS: u64 = 500;
-        const BUSY_TONE_OFF_MS: u64 = 500;
-        const BUSY_CYCLES: usize = 8; // Play 8 cycles (8 seconds total)
+        // Region-specific busy signal parameters
+        let (freq1, freq2, on_ms, off_ms, cycles) = match tone {
+            DialTone::US => {
+                // North American busy signal: 480 Hz + 620 Hz
+                // Pattern: 500ms on, 500ms off
+                (480.0, 620.0, 500, 500, 8)
+            }
+            DialTone::UK => {
+                // UK busy signal: 400 Hz single tone
+                // Pattern: 375ms on, 375ms off
+                (400.0, 400.0, 375, 375, 8)
+            }
+            DialTone::Europe => {
+                // European busy signal: 425 Hz single tone
+                // Pattern: 500ms on, 500ms off
+                (425.0, 425.0, 500, 500, 8)
+            }
+            DialTone::France => {
+                // French busy signal: 440 Hz single tone
+                // Pattern: 500ms on, 500ms off
+                (440.0, 440.0, 500, 500, 8)
+            }
+            DialTone::Japan => {
+                // Japanese busy signal: 400 Hz single tone
+                // Pattern: 500ms on, 500ms off
+                (400.0, 400.0, 500, 500, 8)
+            }
+        };
 
-        for _ in 0..BUSY_CYCLES {
+        for _ in 0..cycles {
             // Check for stop signal
             if self.handle_receive() {
                 break;
             }
 
-            // Generate the two tones for busy signal
-            let tone1 = SignalGenerator::new(sample_rate, 480.0, Function::Sine).amplify(0.15);
-            let tone2 = SignalGenerator::new(sample_rate, 620.0, Function::Sine).amplify(0.15);
-
-            // Mix them together and play for the "on" duration
-            let busy_tone = tone1.mix(tone2).take_duration(Duration::from_millis(BUSY_TONE_ON_MS));
+            // Generate the tone(s) for busy signal
+            let tone1 = SignalGenerator::new(sample_rate, freq1, Function::Sine).amplify(0.15);
+            
+            let busy_tone = if freq1 == freq2 {
+                // Single frequency (UK, Europe, France, Japan)
+                // Mix with silent tone to maintain consistent type
+                let tone2 = SignalGenerator::new(sample_rate, freq2, Function::Sine).amplify(0.0);
+                tone1.mix(tone2).take_duration(Duration::from_millis(on_ms))
+            } else {
+                // Dual frequency (US)
+                let tone2 = SignalGenerator::new(sample_rate, freq2, Function::Sine).amplify(0.15);
+                tone1.mix(tone2).take_duration(Duration::from_millis(on_ms))
+            };
 
             // Play the tone
             stream_handle.mixer().add(busy_tone);
 
             // Wait for tone duration
-            thread::sleep(Duration::from_millis(BUSY_TONE_ON_MS));
+            thread::sleep(Duration::from_millis(on_ms));
 
             // Silent period
-            thread::sleep(Duration::from_millis(BUSY_TONE_OFF_MS));
+            thread::sleep(Duration::from_millis(off_ms));
         }
 
         let _ = self.tx.send(SoundData::StopPlay);
     }
 
-    fn play_dial_sound(&mut self, phone_number: &str) -> bool {
+    fn play_dial_sound(&mut self, tone: DialTone, phone_number: &str) -> bool {
         let mut res = true;
         let _ = self.tx.send(SoundData::StartPlay);
 
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
         let sample_rate = stream_handle.config().sample_rate();
 
-        // 1. Initial dial tone (brief)
-        let dial_tone = SignalGenerator::new(sample_rate, 350.0, Function::Sine)
-            .amplify(0.1)
-            .mix(SignalGenerator::new(sample_rate, 440.0, Function::Sine).amplify(0.1))
+        let dial_tone = mix_dial_tone(tone, sample_rate)
             .take_duration(Duration::from_millis(500));
         stream_handle.mixer().add(dial_tone);
+
+
         thread::sleep(Duration::from_millis(500));
 
         // Standard DTMF timing
@@ -392,23 +423,15 @@ impl SoundBackgroundThreadData {
         res
     }
 
-    fn play_line_sound(&mut self) {
+    fn play_line_sound(&mut self, tone: DialTone) {
         self.line_sound_playing = true;
         let _ = self.tx.send(SoundData::StartPlay);
 
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
         let sample_rate = stream_handle.config().sample_rate();
 
-        // Phone line dial tone: 350 Hz + 440 Hz combined (North American standard)
-        // For a more authentic sound, you could also use 425 Hz (European) or other standards
-        let tone1 = SignalGenerator::new(sample_rate, 350.0, Function::Sine).amplify(0.15);
-        let tone2 = SignalGenerator::new(sample_rate, 440.0, Function::Sine).amplify(0.15);
-
-        // Mix the two tones together for authentic dial tone
-        let mixed = tone1.mix(tone2);
-
-        // Add to mixer - this will play continuously
-        stream_handle.mixer().add(mixed);
+        let dial_tone = mix_dial_tone(tone, sample_rate);
+        stream_handle.mixer().add(dial_tone);
 
         // Keep checking for stop signal
         while self.line_sound_playing {
@@ -468,4 +491,39 @@ impl SoundBackgroundThreadData {
 
         let _ = self.tx.send(SoundData::StopPlay);
     }
+}
+
+fn mix_dial_tone(tone: DialTone, sample_rate: u32) -> impl Source<Item = f32> + Send {
+    match tone {
+        DialTone::US => {
+            // Phone line dial tone: 350 Hz + 440 Hz combined (North American standard)
+            let tone1 = SignalGenerator::new(sample_rate, 350.0, Function::Sine).amplify(0.15);
+            let tone2 = SignalGenerator::new(sample_rate, 440.0, Function::Sine).amplify(0.15);
+            tone1.mix(tone2)
+        }
+        DialTone::UK => {
+            
+            let tone1 = SignalGenerator::new(sample_rate, 350.0, Function::Sine).amplify(0.15);
+            let tone2: rodio::source::Amplify<SignalGenerator> = SignalGenerator::new(sample_rate, 450.0, Function::Sine).amplify(0.15);
+            tone1.mix(tone2)
+        }
+        DialTone::Europe => {
+            let tone1 = SignalGenerator::new(sample_rate, 425.0, Function::Sine).amplify(0.15);
+            // Mix with silent tone to match the return type
+            let tone2 = SignalGenerator::new(sample_rate, 425.0, Function::Sine).amplify(0.0);
+            tone1.mix(tone2)
+        }
+        DialTone::France => {
+            let tone1 = SignalGenerator::new(sample_rate, 440.0, Function::Sine).amplify(0.15);
+            // Mix with silent tone to match the return type
+            let tone2 = SignalGenerator::new(sample_rate, 440.0, Function::Sine).amplify(0.0);
+            tone1.mix(tone2)
+        }
+        DialTone::Japan => {
+            let tone1 = SignalGenerator::new(sample_rate, 400.0, Function::Sine).amplify(0.15);
+            // Mix with silent tone to match the return type
+            let tone2 = SignalGenerator::new(sample_rate, 400.0, Function::Sine).amplify(0.0);
+            tone1.mix(tone2)
+        }
+    } // No semicolon here - we want to return the value
 }

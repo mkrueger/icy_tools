@@ -62,6 +62,21 @@ impl Default for IEMSISettings {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum DialTone {
+    /// 350 + 440 Hz dial tone
+    #[default]
+    US,
+    /// 350 + 450 Hz dial tone
+    UK,
+    /// Europe 425 Hz
+    Europe,
+    /// France 440 Hz
+    France,
+    /// Japan 400 Hz
+    Japan
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Options {
     #[serde(default = "default_connect_timeout")]
@@ -80,6 +95,9 @@ pub struct Options {
     // pub bind: KeyBindings,
     #[serde(default)]
     pub iemsi: IEMSISettings,
+
+    #[serde(default)]
+    pub dial_tone: DialTone,
 
     // pub window_rect: Option<Rect>,
     #[serde(default)]
@@ -123,6 +141,7 @@ impl Default for Options {
             is_dark_mode: None,
             //            window_rect: None,
             modems: Vec::new(),
+            dial_tone: DialTone::default(),
         }
     }
 }

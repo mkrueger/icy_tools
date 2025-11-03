@@ -760,7 +760,8 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::OpenLineSound => {
-                let r = self.sound_thread.lock().unwrap().start_line_sound();
+                let dial_tone = self.settings_dialog.original_options.lock().unwrap().dial_tone;
+                let r = self.sound_thread.lock().unwrap().start_line_sound(dial_tone);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::OpenLineSound: {r}");
                 }
@@ -768,7 +769,8 @@ impl MainWindow {
             }
 
             TerminalEvent::OpenDialSound(phone_number) => {
-                let r = self.sound_thread.lock().unwrap().start_dial_sound(&phone_number);
+                let dial_tone = self.settings_dialog.original_options.lock().unwrap().dial_tone;
+                let r = self.sound_thread.lock().unwrap().start_dial_sound(dial_tone, &phone_number);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::OpenDialSound: {r}");
                 }
