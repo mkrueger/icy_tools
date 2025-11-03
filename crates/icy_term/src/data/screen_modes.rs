@@ -1,8 +1,8 @@
 use std::fmt::{self, Display};
 
 use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_LOWER, CP437, Color, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, VIEWDATA,
-    VIEWDATA_PALETTE, editor::EditState,
+    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_LOWER, CP437, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
+    editor::EditState,
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -273,27 +273,5 @@ impl ScreenMode {
         // Clear the first layer and stop any sixel threads
         buffer.layers[0].clear();
         buffer.stop_sixel_threads();
-    }
-
-    #[allow(clippy::match_same_arms)]
-    pub(crate) fn get_selection_fg(&self) -> Color {
-        match self {
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Unicode(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0x00, 0xAA),
-            ScreenMode::Vic => Color::new(0x37, 0x39, 0xC4),
-            ScreenMode::Antic => Color::new(0x09, 0x51, 0x83),
-            ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0, 0, 0),
-            ScreenMode::AtariST(_) => Color::new(0, 0, 0),
-        }
-    }
-
-    #[allow(clippy::match_same_arms)]
-    pub(crate) fn get_selection_bg(&self) -> Color {
-        match self {
-            ScreenMode::Default | ScreenMode::Vga(_, _) | ScreenMode::Unicode(_, _) | ScreenMode::Rip | ScreenMode::SkyPix => Color::new(0xAA, 0xAA, 0xAA),
-            ScreenMode::Vic => Color::new(0xB0, 0x3F, 0xB6),
-            ScreenMode::Antic => Color::new(0xFF, 0xFF, 0xFF),
-            ScreenMode::Videotex | ScreenMode::Mode7 => Color::new(0xFF, 0xFF, 0xFF),
-            ScreenMode::AtariST(_) => Color::new(0xFF, 0xFF, 0xFF),
-        }
     }
 }

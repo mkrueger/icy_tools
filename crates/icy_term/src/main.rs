@@ -66,7 +66,7 @@ struct Localizations;
 
 use once_cell::sync::Lazy;
 
-use crate::util::Rng;
+use crate::{ui::WindowManager, util::Rng};
 static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
     let loader = i18n_embed::fluent::fluent_language_loader!();
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
@@ -84,8 +84,6 @@ fn get_log_file() -> anyhow::Result<PathBuf> {
 
 fn main() {
     use std::fs;
-
-    use crate::ui::MainWindow;
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big
@@ -131,17 +129,11 @@ fn main() {
 
     log::info!("Starting iCY TERM {}", *VERSION);
     icy_net::websocket::init_websocket_providers();
-    let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
-    let settings = iced::window::Settings {
-        icon: window_icon,
-        ..iced::window::Settings::default()
-    };
 
-    iced::application(MainWindow::new, MainWindow::update, MainWindow::view)
-        .theme(MainWindow::theme)
-        .subscription(MainWindow::subscription) // Add this line
-        .title(|_window: &MainWindow| -> String { format!("iCY TERM {}", *crate::VERSION) })
-        .window(settings)
+    iced::daemon(WindowManager::new, WindowManager::update, WindowManager::view)
+        .theme(WindowManager::theme)
+        .subscription(WindowManager::subscription) // Add this line
+        .title(WindowManager::title)
         .run()
         .expect("Failed to run application");
     log::info!("shutting down.");

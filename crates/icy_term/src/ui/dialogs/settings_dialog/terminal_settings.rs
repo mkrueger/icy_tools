@@ -8,17 +8,24 @@ use iced_engine_gui::settings::{LABEL_WIDTH, SECTION_PADDING, effect_box, left_l
 use crate::ui::settings_dialog::{INPUT_SPACING, SettingsDialogState, SettingsMsg};
 
 impl SettingsDialogState {
-    pub fn terminal_settings_content(&self) -> Element<'_, crate::ui::Message> {
+    pub fn terminal_settings_content<'a>(&self) -> Element<'a, crate::ui::Message> {
+        let temp_options = self.temp_options.lock().unwrap();
+        let console_beep = temp_options.console_beep;
+        drop(temp_options); // Release the lock early
+
         column![effect_box(
             column![
                 // Console Beep
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-console-beep-checkbox")),
-                    checkbox("", self.temp_options.console_beep)
-                        .on_toggle(|checked| {
-                            let mut new_options = self.temp_options.clone();
-                            new_options.console_beep = checked;
-                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                    checkbox("", console_beep)
+                        .on_toggle({
+                            let temp_options = self.temp_options.clone();
+                            move |checked| {
+                                let mut new_options = temp_options.lock().unwrap().clone();
+                                new_options.console_beep = checked;
+                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            }
                         })
                         .size(18),
                 ]

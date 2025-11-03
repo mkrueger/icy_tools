@@ -14,12 +14,13 @@ use std::mem::swap;
 static CONNECT_TOADDRESS_PLACEHOLDER: Lazy<String> = Lazy::new(|| fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to-address"));
 
 impl super::DialingDirectoryState {
-    pub fn filtered(&self) -> Vec<(usize, &Address)> {
+    pub fn filtered(&self) -> Vec<(usize, Address)> {
         let fav = matches!(self.filter_mode, DialingDirectoryFilter::Favourites);
         let needle = self.filter_text.trim().to_lowercase();
-
-        let mut filtered: Vec<(usize, &Address)> = self
+        let mut filtered: Vec<(usize, Address)> = self
             .addresses
+            .lock()
+            .unwrap()
             .addresses
             .iter()
             .enumerate()
@@ -32,6 +33,7 @@ impl super::DialingDirectoryState {
                 }
                 a.system_name.to_lowercase().contains(&needle) || a.address.to_lowercase().contains(&needle)
             })
+            .map(|(idx, a)| (idx, a.clone()))
             .collect();
 
         // Sort by: 1) Favorites first, 2) Number of calls (descending)
@@ -67,20 +69,20 @@ impl super::DialingDirectoryState {
             let mut col = Column::new();
             let show_quick_connect = self.filter_text.is_empty();
 
-            if show_quick_connect && !self.addresses.addresses.is_empty() {
+            if show_quick_connect && !self.addresses.lock().unwrap().addresses.is_empty() {
                 let selected = self.selected_bbs.is_none();
-                let entry = address_row_entry(selected, None, &CONNECT_TOADDRESS_PLACEHOLDER, "", false, u32::MAX, "");
+                let entry = address_row_entry(selected, None, CONNECT_TOADDRESS_PLACEHOLDER.to_string(), String::new(), false, u32::MAX, "");
                 col = col.push(entry);
             }
 
-            for (idx, a) in &addresses {
-                let selected = self.selected_bbs == Some(*idx);
+            for (idx, a) in addresses {
+                let selected = self.selected_bbs == Some(idx);
                 // Pass the filter text for highlighting
                 let entry = address_row_entry(
                     selected,
-                    Some(*idx),
-                    &a.system_name,
-                    &a.address,
+                    Some(idx),
+                    a.system_name,
+                    a.address,
                     a.is_favored,
                     a.number_of_calls as u32,
                     &self.filter_text, // Pass filter text for highlighting
@@ -126,13 +128,13 @@ impl super::DialingDirectoryState {
 fn address_row_entry<'a>(
     selected: bool,
     idx: Option<usize>,
-    name: &'a str,
-    addr: &'a str,
+    name: String,
+    addr: String,
     favored: bool,
     calls: u32,
     search_text: &'a str, // Add search text parameter
 ) -> Element<'a, Message> {
-    fn truncate_text(text: &str, max_chars: usize) -> String {
+    fn truncate_text(text: String, max_chars: usize) -> String {
         if text.chars().count() <= max_chars {
             text.to_string()
         } else {

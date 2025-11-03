@@ -8,9 +8,8 @@ use iced_engine_gui::settings::{SECTION_PADDING, effect_box_toggleable, left_lab
 use crate::ui::settings_dialog::{INPUT_SPACING, SettingsDialogState, SettingsMsg};
 
 impl SettingsDialogState {
-    pub fn iemsi_settings_content(&self) -> Element<'_, crate::ui::Message> {
-        let iemsi = &self.temp_options.iemsi;
-
+    pub fn iemsi_settings_content<'a>(&self) -> Element<'a, crate::ui::Message> {
+        let iemsi = &self.temp_options.lock().unwrap().iemsi;
         column![
             // IEMSI Autologin section
             section_header(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-autologin-section")),
@@ -20,10 +19,13 @@ impl SettingsDialogState {
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-enabled-checkbox")),
                         checkbox("", iemsi.autologin)
-                            .on_toggle(|checked| {
-                                let mut new_options = self.temp_options.clone();
-                                new_options.iemsi.autologin = checked;
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            .on_toggle({
+                                let temp_options = self.temp_options.clone();
+                                move |checked| {
+                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    new_options.iemsi.autologin = checked;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
                             })
                             .size(18),
                     ]
@@ -33,10 +35,13 @@ impl SettingsDialogState {
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-alias")),
                         text_input("", &iemsi.alias)
-                            .on_input(|value| {
-                                let mut new_options = self.temp_options.clone();
-                                new_options.iemsi.alias = value;
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            .on_input({
+                                let temp_options = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    new_options.iemsi.alias = value;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
                             })
                             .width(Length::Fill)
                             .size(14),
@@ -47,10 +52,13 @@ impl SettingsDialogState {
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-location")),
                         text_input("", &iemsi.location)
-                            .on_input(|value| {
-                                let mut new_options = self.temp_options.clone();
-                                new_options.iemsi.location = value;
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            .on_input({
+                                let temp_options = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    new_options.iemsi.location = value;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
                             })
                             .width(Length::Fill)
                             .size(14),
@@ -61,10 +69,13 @@ impl SettingsDialogState {
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-data-phone")),
                         text_input("", &iemsi.data_phone)
-                            .on_input(|value| {
-                                let mut new_options = self.temp_options.clone();
-                                new_options.iemsi.data_phone = value;
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            .on_input({
+                                let temp_options = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    new_options.iemsi.data_phone = value;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
                             })
                             .width(Length::Fill)
                             .size(14),
@@ -75,10 +86,13 @@ impl SettingsDialogState {
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-voice-phone")),
                         text_input("", &iemsi.voice_phone)
-                            .on_input(|value| {
-                                let mut new_options = self.temp_options.clone();
-                                new_options.iemsi.voice_phone = value;
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            .on_input({
+                                let temp_options = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    new_options.iemsi.voice_phone = value;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
                             })
                             .width(Length::Fill)
                             .size(14),
@@ -89,10 +103,13 @@ impl SettingsDialogState {
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-birth-date")),
                         text_input("", &iemsi.birth_date)
-                            .on_input(|value| {
-                                let mut new_options = self.temp_options.clone();
-                                new_options.iemsi.birth_date = value;
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            .on_input({
+                                let temp_options = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    new_options.iemsi.birth_date = value;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
                             })
                             .width(Length::Fill)
                             .size(14),

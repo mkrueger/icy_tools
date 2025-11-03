@@ -67,19 +67,24 @@ pub struct TerminalShaderRenderer {
     uniform_buffer: iced::wgpu::Buffer,
     monitor_color_buffer: iced::wgpu::Buffer,
     texture_size: (u32, u32), // NEW: track current texture dimensions
+    renderer_id: u64,
 }
+
+static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl shader::Primitive for TerminalShader {
     type Renderer = TerminalShaderRenderer;
 
     fn initialize(&self, device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self::Renderer {
+        let renderer_id = RENDERER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
-            label: Some("Terminal CRT Shader"),
+            label: Some(&format!("Terminal CRT Shader {}", renderer_id)),
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
-            label: Some("Terminal Shader Bind Group Layout"),
+            label: Some(&format!("Terminal Shader Bind Group Layout {}", renderer_id)),
             entries: &[
                 iced::wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -121,13 +126,13 @@ impl shader::Primitive for TerminalShader {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
-            label: Some("Terminal Shader Pipeline Layout"),
+            label: Some(&format!("Terminal Shader Pipeline Layout {}", renderer_id)),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
-            label: Some("Terminal Shader Pipeline"),
+            label: Some(&format!("Terminal Shader Pipeline {}", renderer_id)),
             layout: Some(&pipeline_layout),
             vertex: iced::wgpu::VertexState {
                 module: &shader,
@@ -163,7 +168,7 @@ impl shader::Primitive for TerminalShader {
         // Choose sampler filtering based on pixel-perfect preference
         let want_pixel_perfect = self.monitor_settings.use_pixel_perfect_scaling;
         let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
-            label: Some("Terminal Texture Sampler"),
+            label: Some(&format!("Terminal Texture Sampler {}", renderer_id)),
             address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
             address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
             address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
@@ -182,14 +187,14 @@ impl shader::Primitive for TerminalShader {
         });
 
         let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some("Terminal Shader Uniforms"),
+            label: Some(&format!("Terminal Shader Uniforms {}", renderer_id)),
             size: std::mem::size_of::<CRTUniforms>() as u64,
             usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let monitor_color_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some("Monitor Color Buffer"),
+            label: Some(&format!("Monitor Color Buffer {}", renderer_id)),
             size: std::mem::size_of::<[f32; 4]>() as u64,
             usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -205,6 +210,7 @@ impl shader::Primitive for TerminalShader {
             uniform_buffer,
             monitor_color_buffer,
             texture_size: (0, 0),
+            renderer_id,
         }
     }
 
@@ -226,7 +232,7 @@ impl shader::Primitive for TerminalShader {
 
         if need_new_texture {
             let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                label: Some("Terminal Texture"),
+                label: Some(&format!("Terminal Texture {}", renderer.renderer_id)),
                 size: iced::wgpu::Extent3d {
                     width: w.max(1),
                     height: h.max(1),
@@ -243,7 +249,7 @@ impl shader::Primitive for TerminalShader {
             let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                label: Some("Terminal Shader Bind Group"),
+                label: Some(&format!("Terminal Shader Bind Group {}", renderer.renderer_id)),
                 layout: &renderer.bind_group_layout,
                 entries: &[
                     iced::wgpu::BindGroupEntry {
@@ -419,7 +425,7 @@ impl shader::Primitive for TerminalShader {
     }
 
     fn render(&self, renderer: &Self::Renderer, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
-        encoder.push_debug_group("Terminal CRT Shader Render");
+        encoder.push_debug_group(&format!("Terminal CRT Shader Render {}", renderer.renderer_id));
 
         let term_w = self.terminal_size.0.max(1) as f32;
         let term_h = self.terminal_size.1.max(1) as f32;
@@ -576,14 +582,15 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                 start: icy_engine::Position::new(0, 0),
                 size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
             };
+            let (fg, rg) = edit_state.get_buffer().buffer_type.get_selection_colors();
 
             // Pass blink_on to actually animate ANSI blinking attributes
             let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
                 rect,
                 blink_on: state.character_blink.is_on(),
                 selection: edit_state.get_selection(),
-                selection_fg: Some(self.monitor_settings.selection_fg.clone()),
-                selection_bg: Some(self.monitor_settings.selection_bg.clone()),
+                selection_fg: Some(fg),
+                selection_bg: Some(rg),
             });
             size = (img_size.width as u32, img_size.height as u32);
             rgba_data = data;

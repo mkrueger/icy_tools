@@ -6,7 +6,7 @@ use iced::widget::{Space, checkbox, column, container, pick_list, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Theme};
 
 pub const CHECKBOX_SIZE: f32 = 18.0;
-pub fn show_monitor_settings<'a>(s: &'a MonitorSettings) -> Element<'a, MonitorSettingsMessage> {
+pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSettingsMessage> {
     let monitor_type_options = vec![
         MonitorType::Color,
         MonitorType::Grayscale,

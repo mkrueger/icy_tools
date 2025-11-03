@@ -39,10 +39,6 @@ pub enum MonitorSettingsMessage {
     NoiseLevelChanged(f32),
     SyncWobbleChanged(f32),
 
-    // Selection colors (optional if you expose them later)
-    SelectionFgChanged(Color),
-    SelectionBgChanged(Color),
-
     BackgroundEffectChanged(crate::BackgroundEffect),
 
     Noop,
@@ -83,10 +79,6 @@ pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorS
         MonitorSettingsMessage::NoiseToggleChanged(v) => settings.use_noise = v,
         MonitorSettingsMessage::NoiseLevelChanged(v) => settings.noise_level = v,
         MonitorSettingsMessage::SyncWobbleChanged(v) => settings.sync_wobble = v,
-
-        // Selection colors (if used)
-        MonitorSettingsMessage::SelectionFgChanged(c) => settings.selection_fg = iced_to_icy_color(c),
-        MonitorSettingsMessage::SelectionBgChanged(c) => settings.selection_bg = iced_to_icy_color(c),
 
         MonitorSettingsMessage::BackgroundEffectChanged(be) => settings.background_effect = be,
         MonitorSettingsMessage::Noop => { /* Do nothing */ }

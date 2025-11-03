@@ -8,6 +8,8 @@ use iced::{
 };
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 mod address_list;
 mod address_options_panel;
@@ -29,7 +31,7 @@ impl Default for DialingDirectoryFilter {
 
 #[derive(Debug, Clone)]
 pub struct DialingDirectoryState {
-    pub addresses: AddressBook,
+    pub addresses: Arc<Mutex<AddressBook>>,
     pub selected_bbs: Option<usize>,
     pub filter_mode: DialingDirectoryFilter,
     pub filter_text: String,
@@ -43,7 +45,7 @@ pub struct DialingDirectoryState {
 }
 
 impl DialingDirectoryState {
-    pub fn new(addresses: AddressBook) -> Self {
+    pub fn new(addresses: Arc<Mutex<AddressBook>>) -> Self {
         Self {
             addresses,
             selected_bbs: None,
@@ -55,15 +57,6 @@ impl DialingDirectoryState {
             last_click_time: None,
             last_clicked_index: None,
         }
-    }
-
-    pub fn get_address_mut(&mut self, id: Option<usize>) -> &mut Address {
-        if let Some(idx) = id {
-            if idx < self.addresses.addresses.len() {
-                return &mut self.addresses.addresses[idx];
-            }
-        }
-        &mut self.quick_connect_address
     }
 
     pub fn view(&self, options: &crate::Options) -> Element<'_, Message> {
@@ -149,8 +142,8 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::ToggleFavorite(idx) => {
-                if idx < self.addresses.addresses.len() {
-                    self.addresses.addresses[idx].is_favored = !self.addresses.addresses[idx].is_favored;
+                if idx < self.addresses.lock().unwrap().addresses.len() {
+                    self.addresses.lock().unwrap().addresses[idx].is_favored = !self.addresses.lock().unwrap().addresses[idx].is_favored;
                 }
                 Task::none()
             }
@@ -169,8 +162,8 @@ impl DialingDirectoryState {
                 let mut new_address = self.quick_connect_address.clone();
                 self.quick_connect_address = Address::default();
                 new_address.system_name = new_address.address.clone();
-                self.addresses.addresses.push(new_address);
-                self.selected_bbs = Some(self.addresses.addresses.len() - 1);
+                self.addresses.lock().unwrap().addresses.push(new_address);
+                self.selected_bbs = Some(self.addresses.lock().unwrap().addresses.len() - 1);
                 Task::none()
             }
 
@@ -182,8 +175,8 @@ impl DialingDirectoryState {
 
             DialingDirectoryMsg::ConfirmDelete(idx) => {
                 // Actually delete the address
-                if idx < self.addresses.addresses.len() {
-                    self.addresses.addresses.remove(idx);
+                if idx < self.addresses.lock().unwrap().addresses.len() {
+                    self.addresses.lock().unwrap().addresses.remove(idx);
                     // Adjust selected index if needed
                     if let Some(selected) = self.selected_bbs {
                         if selected == idx {
@@ -194,7 +187,7 @@ impl DialingDirectoryState {
                     }
 
                     // Save the address book
-                    if let Err(e) = self.addresses.store_phone_book() {
+                    if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
                         eprintln!("Failed to save address book: {}", e);
                     }
                 }
@@ -203,7 +196,12 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::AddressFieldChanged { id, field } => {
-                let addr = self.get_address_mut(id);
+                let mut lock = self.addresses.lock().unwrap();
+                let addr = if let Some(id) = id {
+                    &mut lock.addresses[id]
+                } else {
+                    &mut self.quick_connect_address
+                };
 
                 match field {
                     AddressFieldChange::SystemName(name) => {
@@ -277,8 +275,8 @@ impl DialingDirectoryState {
             DialingDirectoryMsg::ConnectSelected => {
                 // Get the selected address
                 let addr = if let Some(idx) = self.selected_bbs {
-                    if idx < self.addresses.addresses.len() {
-                        self.addresses.addresses[idx].clone()
+                    if idx < self.addresses.lock().unwrap().addresses.len() {
+                        self.addresses.lock().unwrap().addresses[idx].clone()
                     } else {
                         return Task::none();
                     }
@@ -288,12 +286,12 @@ impl DialingDirectoryState {
 
                 // Increment call counter for the selected address
                 if let Some(idx) = self.selected_bbs {
-                    self.addresses.addresses[idx].number_of_calls += 1;
-                    self.addresses.addresses[idx].last_call = Some(chrono::Utc::now());
+                    self.addresses.lock().unwrap().addresses[idx].number_of_calls += 1;
+                    self.addresses.lock().unwrap().addresses[idx].last_call = Some(chrono::Utc::now());
                 }
 
                 // Save the address book
-                if let Err(e) = self.addresses.store_phone_book() {
+                if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
                     eprintln!("Failed to save address book: {}", e);
                 }
 
@@ -310,7 +308,7 @@ impl DialingDirectoryState {
                 }
 
                 // Save any changes before closing
-                if let Err(e) = self.addresses.store_phone_book() {
+                if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
                     eprintln!("Failed to save address book: {}", e);
                 }
 
@@ -325,7 +323,13 @@ impl DialingDirectoryState {
                 for _ in 0..16 {
                     pw.push(unsafe { char::from_u32_unchecked(rng.gen_range(b'0'..=b'z')) });
                 }
-                let addr = self.get_address_mut(self.selected_bbs);
+                let mut lock = self.addresses.lock().unwrap();
+                let addr = if let Some(id) = self.selected_bbs {
+                    &mut lock.addresses[id]
+                } else {
+                    &mut self.quick_connect_address
+                };
+
                 addr.password = pw;
                 Task::none()
             }

@@ -1,0 +1,226 @@
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+
+use iced::{
+    Element, Event, Subscription, Task, Theme, Vector,
+    advanced::graphics::core::keyboard,
+    widget::{operation, space},
+    window,
+};
+
+use crate::{
+    AddressBook, Options, load_window_icon,
+    terminal_thread::TerminalEvent,
+    ui::{MainWindow, MainWindowMode, Message},
+    util::SoundThread,
+};
+
+pub struct WindowManager {
+    windows: BTreeMap<window::Id, MainWindow>,
+
+    mode: MainWindowMode,
+    addresses: Arc<Mutex<AddressBook>>,
+    options: Arc<Mutex<Options>>,
+    temp_options: Arc<Mutex<Options>>,
+
+    // sound thread
+    pub sound_thread: Arc<Mutex<SoundThread>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum WindowManagerMessage {
+    OpenWindow,
+    CloseWindow(window::Id),
+    WindowOpened(window::Id),
+    WindowClosed(window::Id),
+    WindowMessage(window::Id, Message),
+    Event(window::Id, iced::Event),
+    UpdateBuffers,
+}
+
+impl WindowManager {
+    pub fn new() -> (Self, Task<WindowManagerMessage>) {
+        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+        let settings = window::Settings {
+            icon: window_icon,
+            ..window::Settings::default()
+        };
+        let (_, open) = window::open(settings);
+
+        let options = match Options::load_options() {
+            Ok(options) => options,
+            Err(e) => {
+                log::error!("Error loading options file: {e}");
+                Options::default()
+            }
+        };
+
+        // Create a single sound thread to be shared by all windows
+        let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
+        let mut mode = MainWindowMode::SplashScreen;
+
+        let addresses = match AddressBook::load_phone_book() {
+            Ok(addresses) => addresses,
+            Err(err) => {
+                unsafe { crate::PHONE_LOCK = true };
+                mode = MainWindowMode::ShowErrorDialog(
+                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-title"),
+                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-secondary"),
+                    format!("{}", err),
+                    Box::new(MainWindowMode::SplashScreen),
+                );
+                AddressBook::default()
+            }
+        };
+        let options = Arc::new(Mutex::new(options));
+        let temp_options = options.clone();
+        (
+            Self {
+                windows: BTreeMap::new(),
+                sound_thread,
+                mode,
+                addresses: Arc::new(Mutex::new(addresses)),
+                options,
+                temp_options,
+            },
+            open.map(WindowManagerMessage::WindowOpened),
+        )
+    }
+
+    pub fn title(&self, _window: window::Id) -> String {
+        format!("iCY TERM {}", *crate::VERSION)
+    }
+
+    pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
+        match message {
+            WindowManagerMessage::OpenWindow => {
+                let Some(last_window) = self.windows.keys().last() else {
+                    return Task::none();
+                };
+
+                window::position(*last_window)
+                    .then(|last_position| {
+                        let position = last_position.map_or(window::Position::Default, |last_position| {
+                            window::Position::Specific(last_position + Vector::new(20.0, 20.0))
+                        });
+                        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+                        let settings = window::Settings {
+                            position,
+                            icon: window_icon,
+                            ..window::Settings::default()
+                        };
+
+                        let (_, open) = window::open(settings);
+
+                        open
+                    })
+                    .map(WindowManagerMessage::WindowOpened)
+            }
+            WindowManagerMessage::CloseWindow(id) => window::close(id),
+            WindowManagerMessage::WindowOpened(id) => {
+                let window: MainWindow = MainWindow::new(
+                    id.clone(),
+                    self.mode.clone(),
+                    self.sound_thread.clone(),
+                    self.addresses.clone(),
+                    self.options.clone(),
+                    self.temp_options.clone(),
+                );
+                // reset mode to default after opening window
+                self.mode = MainWindowMode::SplashScreen;
+                let focus_input: Task<()> = operation::focus(format!("input-{id}"));
+
+                self.windows.insert(id, window);
+
+                focus_input.map(move |_: ()| WindowManagerMessage::WindowOpened(id))
+            }
+            WindowManagerMessage::WindowClosed(id) => {
+                self.windows.remove(&id);
+                if self.windows.is_empty() { iced::exit() } else { Task::none() }
+            }
+
+            WindowManagerMessage::WindowMessage(id, msg) => {
+                if let Some(window) = self.windows.get_mut(&id) {
+                    return window.update(msg).map(move |msg| WindowManagerMessage::WindowMessage(id, msg));
+                }
+                Task::none()
+            }
+
+            WindowManagerMessage::Event(window_id, event) => {
+                // Handle the event for the specific window
+                if let Some(window) = self.windows.get(&window_id) {
+                    if let Some(msg) = window.handle_event(&event) {
+                        return Task::done(WindowManagerMessage::WindowMessage(window_id, msg));
+                    }
+                }
+                Task::none()
+            }
+
+            WindowManagerMessage::UpdateBuffers => {
+                let mut tasks = vec![];
+                for (id, _window) in self.windows.iter() {
+                    let id = id.clone();
+                    tasks.push(Task::done(WindowManagerMessage::WindowMessage(
+                        id,
+                        Message::TerminalEvent(TerminalEvent::BufferUpdated),
+                    )));
+                }
+                Task::batch(tasks)
+            }
+        }
+    }
+
+    pub fn view(&self, window_id: window::Id) -> Element<'_, WindowManagerMessage> {
+        let id = window_id.clone();
+        if let Some(window) = self.windows.get(&window_id) {
+            window.view().map(move |msg| WindowManagerMessage::WindowMessage(id, msg))
+        } else {
+            space().into()
+        }
+    }
+
+    pub fn theme(&self, window: window::Id) -> Option<Theme> {
+        Some(self.windows.get(&window)?.theme())
+    }
+
+    pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
+        let subs = vec![
+            window::close_events().map(WindowManagerMessage::WindowClosed),
+            iced::event::listen_with(|event, _status, window_id| {
+                match &event {
+                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // println!("Key pressed: {:?} with modifiers: {:?}", key, modifiers);
+                        if modifiers.shift() {
+                            if modifiers.command() {
+                                match &key {
+                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                        "n" => return Some(WindowManagerMessage::OpenWindow),
+                                        _ => {}
+                                    },
+                                    _ => {}
+                                }
+                            }
+                        } else {
+                            if modifiers.command() {
+                                match &key {
+                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                        "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
+                                        _ => {}
+                                    },
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    _ => { /* Handle other events if necessary */ }
+                }
+
+                Some(WindowManagerMessage::Event(window_id, event))
+            }),
+            iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::UpdateBuffers),
+        ];
+        iced::Subscription::batch(subs)
+    }
+}

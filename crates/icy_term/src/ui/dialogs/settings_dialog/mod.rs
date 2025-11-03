@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use i18n_embed_fl::fl;
 use iced::{
     Border, Color, Element, Length,
@@ -59,24 +61,19 @@ pub enum SettingsMsg {
 
 pub struct SettingsDialogState {
     pub current_category: SettingsCategory,
-    pub temp_options: Options,
-    pub original_options: Options,
+    pub temp_options: Arc<Mutex<Options>>,
+    pub original_options: Arc<Mutex<Options>>,
     pub selected_modem_index: usize,
 }
 
 impl SettingsDialogState {
-    pub fn new(options: Options) -> Self {
+    pub fn new(original_options: Arc<Mutex<Options>>, temp_options: Arc<Mutex<Options>>) -> Self {
         Self {
             current_category: SettingsCategory::Monitor,
-            temp_options: options.clone(),
-            original_options: options,
+            temp_options,
+            original_options,
             selected_modem_index: 0,
         }
-    }
-
-    pub fn reset(&mut self, options: &Options) {
-        self.temp_options = options.clone();
-        self.original_options = options.clone();
     }
 
     pub fn update(&mut self, message: SettingsMsg) -> Option<crate::ui::Message> {
@@ -86,13 +83,13 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::UpdateOptions(options) => {
-                self.temp_options = options;
+                *self.temp_options.lock().unwrap() = options;
                 None
             }
             SettingsMsg::ResetCategory(category) => {
                 match category {
                     SettingsCategory::Monitor => {
-                        self.temp_options.reset_monitor_settings();
+                        self.temp_options.lock().unwrap().reset_monitor_settings();
                     }
                     SettingsCategory::Keybinds => {
                         // self.temp_options.reset_keybindings();
@@ -109,15 +106,17 @@ impl SettingsDialogState {
             }
             SettingsMsg::Save => {
                 // Save the options and close dialog
-                self.original_options = self.temp_options.clone();
-                if let Err(e) = self.temp_options.store_options() {
+                let tmp = self.temp_options.lock().unwrap().clone();
+                *self.original_options.lock().unwrap() = tmp;
+                if let Err(e) = self.original_options.lock().unwrap().store_options() {
                     log::error!("Failed to save options: {}", e);
                 }
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             SettingsMsg::Cancel => {
                 // Reset to original options and close
-                self.temp_options = self.original_options.clone();
+                let tmp = self.original_options.lock().unwrap().clone();
+                *self.temp_options.lock().unwrap() = tmp;
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             SettingsMsg::SelectModem(index) => {
@@ -125,19 +124,24 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::AddModem => {
+                let len = self.temp_options.lock().unwrap().modems.len();
                 let new_modem = crate::data::modem::Modem {
-                    name: format!("Modem {}", self.temp_options.modems.len() + 1),
+                    name: format!("Modem {}", len + 1),
                     ..Default::default()
                 };
-                self.temp_options.modems.push(new_modem);
-                self.selected_modem_index = self.temp_options.modems.len() - 1;
+                self.temp_options.lock().unwrap().modems.push(new_modem);
+                self.selected_modem_index = len;
                 None
             }
             SettingsMsg::RemoveModem(index) => {
-                if index < self.temp_options.modems.len() {
-                    self.temp_options.modems.remove(index);
-                    if !self.temp_options.modems.is_empty() {
-                        self.selected_modem_index = index.min(self.temp_options.modems.len() - 1);
+                let mut temp_options = self.temp_options.lock().unwrap();
+                if index < temp_options.modems.len() {
+                    temp_options.modems.remove(index);
+                    // After removal, get the new length
+                    let new_len = temp_options.modems.len();
+                    if new_len > 0 {
+                        // Select the previous item if possible, otherwise stay at current position
+                        self.selected_modem_index = index.min(new_len - 1);
                     } else {
                         self.selected_modem_index = 0;
                     }
@@ -145,7 +149,7 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::MonitorSettings(settings) => {
-                update_monitor_settings(&mut self.temp_options.monitor_settings, settings);
+                update_monitor_settings(&mut self.temp_options.lock().unwrap().monitor_settings, settings);
                 None
             }
             SettingsMsg::Noop => None,
@@ -212,7 +216,8 @@ impl SettingsDialogState {
         // Settings content for current category
         let settings_content = match self.current_category {
             SettingsCategory::Monitor => {
-                show_monitor_settings(&self.temp_options.monitor_settings).map(|msg| crate::ui::Message::SettingsDialog(SettingsMsg::MonitorSettings(msg)))
+                let monitor_settings = self.temp_options.lock().unwrap().monitor_settings.clone();
+                show_monitor_settings(monitor_settings).map(|msg| crate::ui::Message::SettingsDialog(SettingsMsg::MonitorSettings(msg)))
             }
             SettingsCategory::IEMSI => self.iemsi_settings_content(),
             SettingsCategory::Terminal => self.terminal_settings_content(),

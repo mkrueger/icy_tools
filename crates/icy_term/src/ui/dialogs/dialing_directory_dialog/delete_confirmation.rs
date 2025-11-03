@@ -8,10 +8,10 @@ use iced::{
 
 impl super::DialingDirectoryState {
     pub fn delete_confirmation_modal(&self, idx: usize) -> Element<'_, Message> {
-        let system_name = if idx < self.addresses.addresses.len() {
-            &self.addresses.addresses[idx].system_name
+        let system_name = if let Some(addr) = self.addresses.lock().unwrap().addresses.get(idx) {
+            addr.system_name.clone()
         } else {
-            "Unknown"
+            "Unknown".to_string()
         };
 
         let title = text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-title")).size(22);

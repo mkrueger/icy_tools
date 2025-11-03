@@ -62,7 +62,7 @@ impl fmt::Display for TerminalEmulationWrapper {
 impl super::DialingDirectoryState {
     pub fn create_option_panel(&self, options: &crate::Options) -> Element<'_, Message> {
         let addr = if let Some(addr_idx) = self.selected_bbs {
-            self.addresses.addresses[addr_idx].clone()
+            self.addresses.lock().unwrap().addresses[addr_idx].clone()
         } else {
             self.quick_connect_address.clone()
         };

@@ -114,12 +114,6 @@ pub struct MonitorSettings {
     pub use_noise: bool,
     pub noise_level: f32,
     pub sync_wobble: f32,
-
-    #[serde(skip)]
-    pub selection_fg: Color,
-
-    #[serde(skip)]
-    pub selection_bg: Color,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -178,8 +172,6 @@ impl MonitorSettings {
 
             // Effects
             background_effect: BackgroundEffect::None,
-            selection_fg: Color::new(0xAB, 0x00, 0xAB),
-            selection_bg: Color::new(0xAB, 0xAB, 0xAB),
 
             // Scaling
             use_pixel_perfect_scaling: false,

@@ -15,13 +15,13 @@ use crate::{
     util::SoundThread,
 };
 use clipboard_rs::Clipboard;
-use iced::{Element, Event, Task, Theme, keyboard};
+use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::{AttributedChar, Position, UnicodeConverter, ansi::BaudEmulation};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use tokio::sync::mpsc;
 
 use crate::{
-    Address, AddressBook, Options, ScreenMode,
+    Address, AddressBook, Options,
     terminal::terminal_thread::{ConnectionConfig, TerminalCommand, TerminalEvent, create_terminal_thread},
     terminal_thread::ModemConfig,
     ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, show_iemsi, terminal_window},
@@ -47,6 +47,7 @@ pub enum MainWindowMode {
 }
 
 pub struct MainWindow {
+    _id: window::Id,
     pub state: MainWindowState,
     pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
     pub settings_dialog: settings_dialog::SettingsDialogState,
@@ -90,30 +91,14 @@ pub struct MainWindow {
 static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
 
 impl MainWindow {
-    pub fn new() -> Self {
-        let mut options = match Options::load_options() {
-            Ok(options) => options,
-            Err(e) => {
-                log::error!("Error loading options file: {e}");
-                Options::default()
-            }
-        };
-        let mut mode = MainWindowMode::SplashScreen;
-
-        let addresses = match AddressBook::load_phone_book() {
-            Ok(addresses) => addresses,
-            Err(err) => {
-                unsafe { crate::PHONE_LOCK = true };
-                mode = MainWindowMode::ShowErrorDialog(
-                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-title"),
-                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-secondary"),
-                    format!("{}", err),
-                    Box::new(MainWindowMode::SplashScreen),
-                );
-                AddressBook::default()
-            }
-        };
-
+    pub fn new(
+        id: window::Id,
+        mode: MainWindowMode,
+        sound_thread: Arc<Mutex<SoundThread>>,
+        addresses: Arc<Mutex<AddressBook>>,
+        options: Arc<Mutex<Options>>,
+        temp_options: Arc<Mutex<Options>>,
+    ) -> Self {
         let default_capture_path = directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
@@ -124,25 +109,21 @@ impl MainWindow {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
             .join("export.icy");
 
-        // Create shared edit state for terminal
-        let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
-        let terminal_window = terminal_window::TerminalWindow::new(sound_thread.clone());
+        let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
         let edit_state = terminal_window.scene.edit_state.clone();
-
-        options.monitor_settings.selection_fg = ScreenMode::Vga(80, 25).get_selection_fg();
-        options.monitor_settings.selection_bg = ScreenMode::Vga(80, 25).get_selection_bg();
 
         // Create terminal thread
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_state.clone(), icy_net::telnet::TerminalEmulation::Ansi);
 
         Self {
+            _id: id,
             state: MainWindowState {
                 mode,
                 #[cfg(test)]
                 options_written: false,
             },
             dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
-            settings_dialog: settings_dialog::SettingsDialogState::new(options),
+            settings_dialog: settings_dialog::SettingsDialogState::new(options, temp_options),
             capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
             terminal_window,
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
@@ -181,8 +162,9 @@ impl MainWindow {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
             Message::Connect(address) => {
                 let modem = if matches!(address.protocol, ConnectionType::Modem) {
+                    let options = &self.settings_dialog.original_options.lock().unwrap();
                     // Find the modem in options that matches the address
-                    let modem_opt = self.settings_dialog.original_options.modems.iter().find(|m| m.name == address.address);
+                    let modem_opt = options.modems.iter().find(|m| m.name == address.address);
 
                     if let Some(modem_config) = modem_opt {
                         Some(ModemConfig {
@@ -226,6 +208,7 @@ impl MainWindow {
                 } else {
                     None
                 };
+                let options = &self.settings_dialog.original_options.lock().unwrap();
 
                 // Send connect command to terminal thread
                 let config = ConnectionConfig {
@@ -251,7 +234,7 @@ impl MainWindow {
                     modem,
                     music_option: address.ansi_music,
                     screen_mode: address.get_screen_mode(),
-                    auto_login: self.settings_dialog.original_options.iemsi.autologin,
+                    auto_login: options.iemsi.autologin,
                     login_exp: address.auto_login.clone(),
                 };
 
@@ -271,8 +254,6 @@ impl MainWindow {
                     screen_mode.apply_to_edit_state(&mut state);
                 }
                 self.unicode_converter = get_unicode_converter(&address.terminal_type);
-                self.settings_dialog.original_options.monitor_settings.selection_fg = screen_mode.get_selection_fg();
-                self.settings_dialog.original_options.monitor_settings.selection_bg = screen_mode.get_selection_bg();
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
                 self.current_address = Some(address);
@@ -615,7 +596,6 @@ impl MainWindow {
                 if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
                     match clipboard.get_text() {
                         Ok(text) => {
-                            println!("Pasting text from clipboard: {}", text);
                             // Convert text to bytes using the current unicode converter
                             let mut data: Vec<u8> = Vec::new();
                             for ch in text.chars() {
@@ -630,7 +610,6 @@ impl MainWindow {
                             }
                         }
                         Err(err) => {
-                            println!("Failed to get clipboard text: {}", err);
                             log::error!("Failed to get clipboard text: {}", err);
                         }
                     }
@@ -816,229 +795,37 @@ impl MainWindow {
 
     pub fn theme(&self) -> Theme {
         if self.get_mode() == MainWindowMode::ShowSettings {
-            self.settings_dialog.temp_options.monitor_settings.get_theme()
+            self.settings_dialog.temp_options.lock().unwrap().monitor_settings.get_theme()
         } else {
-            self.settings_dialog.original_options.monitor_settings.get_theme()
+            self.settings_dialog.original_options.lock().unwrap().monitor_settings.get_theme()
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let settings = if self.get_mode() == MainWindowMode::ShowSettings {
-            &self.settings_dialog.temp_options
-        } else {
-            &self.settings_dialog.original_options
+        let terminal_view = {
+            let settings = if self.get_mode() == MainWindowMode::ShowSettings {
+                &self.settings_dialog.temp_options.lock().unwrap()
+            } else {
+                &self.settings_dialog.original_options.lock().unwrap()
+            };
+            self.terminal_window.view(settings)
         };
 
-        //        let theme = IcyTheme::default();
         match &self.state.mode {
-            MainWindowMode::ShowTerminal | MainWindowMode::SplashScreen => self.terminal_window.view(settings),
-            MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options),
-            MainWindowMode::ShowSettings => self.settings_dialog.view(self.terminal_window.view(settings)),
-            MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, self.terminal_window.view(settings)),
-            MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, self.terminal_window.view(settings)),
-            MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(self.terminal_window.view(settings)),
-            MainWindowMode::ShowExportDialog => self.export_dialog.view(self.terminal_window.view(settings)),
-            MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(self.terminal_window.view(settings)),
-            MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, self.terminal_window.view(settings)),
-            MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(self.terminal_window.view(settings)),
+            MainWindowMode::ShowTerminal | MainWindowMode::SplashScreen => terminal_view,
+            MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options.lock().unwrap()),
+            MainWindowMode::ShowSettings => self.settings_dialog.view(terminal_view),
+            MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, terminal_view),
+            MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, terminal_view),
+            MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(terminal_view),
+            MainWindowMode::ShowExportDialog => self.export_dialog.view(terminal_view),
+            MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(terminal_view),
+            MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
+            MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
             MainWindowMode::ShowHelpDialog => self.help_dialog.view(),
             MainWindowMode::ShowAboutDialog => self.about_dialog.view(),
-            MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => {
-                error_dialog::view(self.terminal_window.view(settings), title, secondary_msg, error_message)
-            }
+            MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => error_dialog::view(terminal_view, title, secondary_msg, error_message),
         }
-    }
-
-    pub fn subscription(&self) -> iced::Subscription<Message> {
-        let keyboard_sub = if matches!(self.state.mode, MainWindowMode::ShowDialingDirectory) {
-            iced::event::listen_with(|event, _status, _| match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
-                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::NavigateUp))
-                    }
-                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
-                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::NavigateDown))
-                    }
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => {
-                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::ConnectSelected))
-                    }
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
-                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Cancel))
-                    }
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::SelectProtocol(_)) {
-            iced::event::listen_with(|event, _status, _| match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowSettings) {
-            iced::event::listen_with(|event, _status, _| match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::SettingsDialog(settings_dialog::SettingsMsg::Cancel)),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowCaptureDialog) {
-            iced::event::listen_with(|event, _status, _| match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::Cancel)),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowIEMSI) {
-            iced::event::listen_with(|event, _status, _| match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ShowIemsi(show_iemsi::IemsiMsg::Close)),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowTerminal) {
-            iced::event::listen_with(move |event, _status: iced::event::Status, _| {
-                match event {
-                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
-                        if modifiers.alt() || modifiers.logo() {
-                            match &key {
-                                keyboard::Key::Named(named) => {
-                                    println!("Named key pressed with Alt: {:?}", named);
-                                    match named {
-                                        keyboard::key::Named::PageUp => return Some(Message::Upload),
-                                        keyboard::key::Named::PageDown => return Some(Message::Download),
-                                        _ => {}
-                                    }
-                                }
-                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                    "f" => return Some(Message::ShowFindDialog),
-                                    "i" => return Some(Message::ShowExportScreenDialog),
-                                    "d" => return Some(Message::ShowDialingDirectory),
-                                    "h" => return Some(Message::Hangup),
-                                    "l" => return Some(Message::SendLoginAndPassword(true, true)),
-                                    "n" => return Some(Message::SendLoginAndPassword(true, false)),
-                                    "s" => return Some(Message::SendLoginAndPassword(false, true)),
-
-                                    "o" => return Some(Message::ShowSettings),
-                                    "p" => return Some(Message::ShowCaptureDialog),
-                                    "x" => return Some(Message::QuitIcyTerm),
-                                    "a" => return Some(Message::ShowAboutDialog),
-                                    "c" => return Some(Message::ClearScreen),
-                                    _ => {}
-                                },
-                                _ => {}
-                            }
-                        } else if modifiers.command() {
-                            if let keyboard::Key::Character(s) = &key {
-                                if s.to_lowercase() == "c" {
-                                    return Some(Message::Copy);
-                                }
-                                if s.to_lowercase() == "v" {
-                                    return Some(Message::Paste);
-                                }
-                            }
-                        } else if modifiers.is_empty() {
-                            // Handle function keys without modifiers
-                            match &key {
-                                keyboard::Key::Named(named) => match named {
-                                    keyboard::key::Named::F1 => return Some(Message::ShowHelpDialog),
-                                    _ => {}
-                                },
-                                _ => {}
-                            }
-                        }
-
-                        // Try to map the key with modifiers using the key map
-                        if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, modifiers) {
-                            return Some(Message::SendData(bytes));
-                        }
-
-                        if let Some(text) = text {
-                            Some(Message::SendString(text.to_string()))
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowFindDialog) {
-            // Handle find dialog keyboard shortcuts
-            iced::event::listen_with(|event, _status: iced::event::Status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::FindDialog(find_dialog::FindDialogMsg::CloseDialog)),
-                    keyboard::Key::Named(keyboard::key::Named::PageUp) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindPrev)),
-                    keyboard::Key::Named(keyboard::key::Named::PageDown) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowExportDialog) {
-            // Handle find dialog keyboard shortcuts
-            iced::event::listen_with(|event, _status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_screen_dialog::ExportScreenMsg::Cancel)),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::SplashScreen) {
-            iced::event::listen_with(|event, _status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseSplashScreen),
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowBaudEmulationDialog) {
-            iced::event::listen_with(|event, _status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-                    _ => None,
-                },
-                _ => None,
-            })
-        } else if matches!(self.state.mode, MainWindowMode::ShowHelpDialog) || matches!(self.state.mode, MainWindowMode::ShowAboutDialog) {
-            iced::event::listen_with(|event, _status, _| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-                _ => None,
-            })
-        } else {
-            iced::Subscription::none()
-        };
-
-        // Add a subscription for terminal events (polling)
-        let terminal_sub = iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::TerminalEvent(TerminalEvent::BufferUpdated));
-
-        let fullscreen_sub = iced::event::listen_with(|event, _status, _| match event {
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::Enter),
-                modifiers,
-                ..
-            }) => {
-                if modifiers.alt() {
-                    Some(Message::ToggleFullscreen)
-                } else {
-                    None
-                }
-            }
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::Shift),
-                ..
-            }) => Some(Message::ShiftPressed(true)),
-
-            Event::Keyboard(keyboard::Event::KeyReleased {
-                key: keyboard::Key::Named(keyboard::key::Named::Shift),
-                ..
-            }) => Some(Message::ShiftPressed(true)),
-
-            _ => None,
-        });
-
-        iced::Subscription::batch([terminal_sub, fullscreen_sub, keyboard_sub])
     }
 
     pub fn get_mode(&self) -> MainWindowMode {
@@ -1088,11 +875,181 @@ impl MainWindow {
         }
         self.state.mode = MainWindowMode::ShowTerminal;
     }
-}
 
-impl Default for MainWindow {
-    fn default() -> Self {
-        Self::new()
+    pub fn handle_event(&self, event: &Event) -> Option<Message> {
+        match &self.state.mode {
+            MainWindowMode::ShowDialingDirectory => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::NavigateUp))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::NavigateDown))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::ConnectSelected))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
+                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Cancel))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::SelectProtocol(_) => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowSettings => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::SettingsDialog(settings_dialog::SettingsMsg::Cancel)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowCaptureDialog => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::Cancel)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowIEMSI => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ShowIemsi(show_iemsi::IemsiMsg::Close)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowTerminal => {
+                match event {
+                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                        // Handle Alt+Enter for fullscreen toggle
+                        if modifiers.alt() && matches!(key, keyboard::Key::Named(keyboard::key::Named::Enter)) {
+                            return Some(Message::ToggleFullscreen);
+                        }
+
+                        if modifiers.alt() || modifiers.logo() {
+                            match &key {
+                                keyboard::Key::Named(named) => match named {
+                                    keyboard::key::Named::PageUp => return Some(Message::Upload),
+                                    keyboard::key::Named::PageDown => return Some(Message::Download),
+                                    _ => {}
+                                },
+                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                    "f" => return Some(Message::ShowFindDialog),
+                                    "i" => return Some(Message::ShowExportScreenDialog),
+                                    "d" => return Some(Message::ShowDialingDirectory),
+                                    "h" => return Some(Message::Hangup),
+                                    "l" => return Some(Message::SendLoginAndPassword(true, true)),
+                                    "u" => return Some(Message::SendLoginAndPassword(true, false)),
+                                    "s" => return Some(Message::SendLoginAndPassword(false, true)),
+                                    "o" => return Some(Message::ShowSettings),
+                                    "p" => return Some(Message::ShowCaptureDialog),
+                                    "x" => return Some(Message::QuitIcyTerm),
+                                    "a" => return Some(Message::ShowAboutDialog),
+                                    "c" => return Some(Message::ClearScreen),
+                                    _ => {}
+                                },
+                                _ => {}
+                            }
+                        } else if modifiers.command() {
+                            if let keyboard::Key::Character(s) = &key {
+                                if s.to_lowercase() == "c" {
+                                    return Some(Message::Copy);
+                                }
+                                if s.to_lowercase() == "v" {
+                                    return Some(Message::Paste);
+                                }
+                            }
+                        } else if modifiers.is_empty() {
+                            // Handle function keys without modifiers
+                            match &key {
+                                keyboard::Key::Named(named) => match named {
+                                    keyboard::key::Named::F1 => return Some(Message::ShowHelpDialog),
+                                    _ => {}
+                                },
+                                _ => {}
+                            }
+                        }
+
+                        // Try to map the key with modifiers using the key map
+                        if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, *modifiers) {
+                            return Some(Message::SendData(bytes));
+                        }
+
+                        if let Some(text) = text {
+                            Some(Message::SendString(text.to_string()))
+                        } else {
+                            None
+                        }
+                    } /*
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Shift),
+                    ..
+                    }) => Some(Message::ShiftPressed(true)),
+                    Event::Keyboard(keyboard::Event::KeyReleased {
+                    key: keyboard::Key::Named(keyboard::key::Named::Shift),
+                    ..
+                    }) => Some(Message::ShiftPressed(false)),*/
+                    _ => None,
+                }
+            }
+            MainWindowMode::ShowFindDialog => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::FindDialog(find_dialog::FindDialogMsg::CloseDialog)),
+                    keyboard::Key::Named(keyboard::key::Named::PageUp) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindPrev)),
+                    keyboard::Key::Named(keyboard::key::Named::PageDown) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowExportDialog => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_screen_dialog::ExportScreenMsg::Cancel)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::SplashScreen => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseSplashScreen),
+                _ => None,
+            },
+            MainWindowMode::ShowBaudEmulationDialog => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowHelpDialog | MainWindowMode::ShowAboutDialog => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+                _ => None,
+            },
+            _ => {
+                // Handle global shortcuts that work in any mode
+                match event {
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: keyboard::Key::Named(keyboard::key::Named::Enter),
+                        modifiers,
+                        ..
+                    }) if modifiers.alt() => Some(Message::ToggleFullscreen),
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: keyboard::Key::Named(keyboard::key::Named::Shift),
+                        ..
+                    }) => Some(Message::ShiftPressed(true)),
+                    Event::Keyboard(keyboard::Event::KeyReleased {
+                        key: keyboard::Key::Named(keyboard::key::Named::Shift),
+                        ..
+                    }) => Some(Message::ShiftPressed(false)),
+                    _ => None,
+                }
+            }
+        }
     }
 }
 

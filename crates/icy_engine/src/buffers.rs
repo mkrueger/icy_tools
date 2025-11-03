@@ -51,6 +51,31 @@ impl BufferType {
             BufferType::Viewdata => 4,
         }
     }
+
+    pub fn get_selection_colors(&self) -> (Color, Color) {
+        match self {
+            // CP437 and Unicode use VGA-style magenta on gray selection
+            BufferType::CP437 | BufferType::Unicode => (
+                Color::new(0xAA, 0x00, 0xAA), // Magenta foreground
+                Color::new(0xAA, 0xAA, 0xAA), // Gray background
+            ),
+            // Petscii uses Commodore VIC colors
+            BufferType::Petscii => (
+                Color::new(0x37, 0x39, 0xC4), // VIC blue foreground
+                Color::new(0xB0, 0x3F, 0xB6), // VIC purple background
+            ),
+            // Atascii uses Atari ANTIC colors
+            BufferType::Atascii => (
+                Color::new(0x09, 0x51, 0x83), // ANTIC blue foreground
+                Color::new(0xFF, 0xFF, 0xFF), // White background
+            ),
+            // Viewdata uses black on white like Videotex/Mode7
+            BufferType::Viewdata => (
+                Color::new(0x00, 0x00, 0x00), // Black foreground
+                Color::new(0xFF, 0xFF, 0xFF), // White background
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
