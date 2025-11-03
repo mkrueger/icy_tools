@@ -53,7 +53,7 @@ pub enum SoundData {
     Beep,
     Clear,
     LineSound(DialTone),
-    PlayDialSound(DialTone, String),
+    PlayDialSound(bool, DialTone, String),
     _PlayBusySound,
 
     StartPlay,
@@ -138,8 +138,8 @@ impl SoundThread {
         self.send_data(SoundData::LineSound(tone))
     }
 
-    pub fn start_dial_sound(&mut self, tone: DialTone, phone_number: &str) -> TerminalResult<()> {
-        self.send_data(SoundData::PlayDialSound(tone, phone_number.to_string()))
+    pub fn start_dial_sound(&mut self, tone_dial: bool, tone: DialTone, phone_number: &str) -> TerminalResult<()> {
+        self.send_data(SoundData::PlayDialSound(tone_dial, tone, phone_number.to_string()))
     }
 
     pub(crate) fn play_music(&mut self, music: AnsiMusic) -> TerminalResult<()> {
@@ -235,8 +235,8 @@ impl SoundBackgroundThreadData {
                         SoundData::LineSound(tone) => {
                             self.music.push_back(SoundData::LineSound(tone));
                         }
-                        SoundData::PlayDialSound(tone, phone_number) => {
-                            self.music.push_back(SoundData::PlayDialSound(tone, phone_number));
+                        SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
+                            self.music.push_back(SoundData::PlayDialSound(tone_dial, tone, phone_number));
                         }
                         SoundData::_PlayBusySound => {
                             self.line_sound_playing = false;
@@ -280,8 +280,8 @@ impl SoundBackgroundThreadData {
             SoundData::PlayMusic(music) => self.play_music(&music),
             SoundData::Beep => self.beep(),
             SoundData::LineSound(tone) => self.play_line_sound(tone),
-            SoundData::PlayDialSound(tone, phone_number) => {
-                if self.play_dial_sound(tone, &phone_number) {
+            SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
+                if self.play_dial_sound(tone_dial, tone, &phone_number) {
                     self.play_busysound(tone);
                 }
             }
@@ -358,7 +358,7 @@ impl SoundBackgroundThreadData {
         let _ = self.tx.send(SoundData::StopPlay);
     }
 
-    fn play_dial_sound(&mut self, tone: DialTone, phone_number: &str) -> bool {
+    fn play_dial_sound(&mut self, tone_dial: bool, tone: DialTone, phone_number: &str) -> bool {
         let mut res = true;
         let _ = self.tx.send(SoundData::StartPlay);
 
@@ -374,46 +374,93 @@ impl SoundBackgroundThreadData {
         const TONE_DURATION_MS: u64 = 200; // Duration of each tone
         const INTER_DIGIT_PAUSE_MS: u64 = 100; // Pause between digits
 
-        for ch in phone_number.chars() {
-            // Check for stop signal
-            if self.handle_receive() {
-                res = false;
-                break;
-            }
+        if tone_dial {
+            for ch in phone_number.chars() {
+                // Check for stop signal
+                if self.handle_receive() {
+                    res = false;
+                    break;
+                }
 
-            // Convert to uppercase for letter lookup
-            let ch_upper = ch.to_ascii_uppercase();
+                // Convert to uppercase for letter lookup
+                let ch_upper = ch.to_ascii_uppercase();
 
-            // Skip non-alphanumeric characters (spaces, dashes, parentheses, etc.)
-            if !ch_upper.is_alphanumeric() {
-                // Optional: Add a small pause for separators like spaces or dashes
-                if ch == ' ' || ch == '-' || ch == '.' {
+                // Skip non-alphanumeric characters (spaces, dashes, parentheses, etc.)
+                if !ch_upper.is_alphanumeric() {
+                    // Optional: Add a small pause for separators like spaces or dashes
+                    if ch == ' ' || ch == '-' || ch == '.' {
+                        thread::sleep(Duration::from_millis(INTER_DIGIT_PAUSE_MS));
+                    }
+                    continue;
+                }
+
+                // Look up DTMF frequencies for this character
+                if let Some(&(low_freq, high_freq)) = DTMF_FREQUENCIES.get(&ch_upper) {
+                    // Generate the two tones
+                    let low_tone = SignalGenerator::new(sample_rate, low_freq, Function::Sine).amplify(0.15);
+                    let high_tone = SignalGenerator::new(sample_rate, high_freq, Function::Sine).amplify(0.15);
+
+                    // Mix them together for DTMF
+                    let dtmf_tone = low_tone.mix(high_tone).take_duration(Duration::from_millis(TONE_DURATION_MS));
+
+                    // Play the tone
+                    stream_handle.mixer().add(dtmf_tone);
+
+                    // Wait for tone duration
+                    thread::sleep(Duration::from_millis(TONE_DURATION_MS));
+
+                    // Inter-digit pause
                     thread::sleep(Duration::from_millis(INTER_DIGIT_PAUSE_MS));
                 }
-                continue;
+                // If character not found in DTMF table, just skip it
             }
-
-            // Look up DTMF frequencies for this character
-            if let Some(&(low_freq, high_freq)) = DTMF_FREQUENCIES.get(&ch_upper) {
-                // Generate the two tones
-                let low_tone = SignalGenerator::new(sample_rate, low_freq, Function::Sine).amplify(0.15);
-                let high_tone = SignalGenerator::new(sample_rate, high_freq, Function::Sine).amplify(0.15);
-
-                // Mix them together for DTMF
-                let dtmf_tone = low_tone.mix(high_tone).take_duration(Duration::from_millis(TONE_DURATION_MS));
-
-                // Play the tone
-                stream_handle.mixer().add(dtmf_tone);
-
-                // Wait for tone duration
-                thread::sleep(Duration::from_millis(TONE_DURATION_MS));
-
-                // Inter-digit pause
-                thread::sleep(Duration::from_millis(INTER_DIGIT_PAUSE_MS));
+        } else {
+            // Pulse (Rotary) dialing using region-specific profile
+            let profile = pulse_profile_for(tone);
+            let pulse_ms = (1000.0 / profile.pulses_per_second).round() as u64;
+            let mut click_ms = (pulse_ms as f32 * profile.break_ratio).round() as u64;
+            if click_ms == 0 {
+                click_ms = 1;
             }
-            // If character not found in DTMF table, just skip it
+            let quiet_ms = pulse_ms.saturating_sub(click_ms);
+
+            for ch in phone_number.chars() {
+                if self.handle_receive() {
+                    res = false;
+                    break;
+                }
+
+                if !ch.is_ascii_digit() {
+                    if ch == ' ' || ch == '-' || ch == '.' {
+                        thread::sleep(Duration::from_millis(profile.inter_digit_pause_ms / 2));
+                    }
+                    continue;
+                }
+
+                let num_pulses = match ch {
+                    '0' => 10,
+                    '1'..='9' => ch.to_digit(10).unwrap() as usize,
+                    _ => continue,
+                };
+
+                for pulse_idx in 0..num_pulses {
+                    if self.handle_receive() {
+                        res = false;
+                        break;
+                    }
+
+                    let click = PulseClick::new(sample_rate, click_ms);
+                    stream_handle.mixer().add(click);
+                    thread::sleep(Duration::from_millis(click_ms));
+
+                    if pulse_idx < num_pulses - 1 && quiet_ms > 0 {
+                        thread::sleep(Duration::from_millis(quiet_ms));
+                    }
+                }
+
+                thread::sleep(Duration::from_millis(profile.inter_digit_pause_ms));
+            }
         }
-
         if !res {
             let _ = self.tx.send(SoundData::StopPlay);
         }
@@ -522,4 +569,168 @@ fn mix_dial_tone(tone: DialTone, sample_rate: u32) -> impl Source<Item = f32> + 
             tone1.mix(tone2)
         }
     } // No semicolon here - we want to return the value
+}
+
+struct PulseProfile {
+    pulses_per_second: f32, // usually 10.0
+    break_ratio: f32,       // fraction of each pulse that is 'break' (click)
+    inter_digit_pause_ms: u64,
+}
+
+fn pulse_profile_for(tone: DialTone) -> PulseProfile {
+    match tone {
+        DialTone::US => PulseProfile {
+            pulses_per_second: 10.0,
+            break_ratio: 0.60,
+            inter_digit_pause_ms: 700,
+        },
+        DialTone::UK => PulseProfile {
+            pulses_per_second: 10.0,
+            break_ratio: 0.67,
+            inter_digit_pause_ms: 700,
+        },
+        DialTone::Europe => PulseProfile {
+            pulses_per_second: 10.0,
+            break_ratio: 0.60,
+            inter_digit_pause_ms: 700,
+        },
+        DialTone::France => PulseProfile {
+            pulses_per_second: 10.0,
+            break_ratio: 0.60,
+            inter_digit_pause_ms: 700,
+        },
+        DialTone::Japan => PulseProfile {
+            pulses_per_second: 10.0,
+            break_ratio: 0.60,
+            inter_digit_pause_ms: 700,
+        },
+    }
+}
+
+struct PulseClick {
+    sample_rate: u32,
+    total_samples: u32,
+    index: u32,
+    primary_freq: f32,
+    accent_freq: f32,
+    thunk_freq: f32,
+    bounce_start: f32,
+    bounce_end: f32,
+    seed: u32,
+}
+
+impl PulseClick {
+    fn new(sample_rate: u32, duration_ms: u64) -> Self {
+        let total_samples = (((duration_ms as f64 / 1000.0) * sample_rate as f64).ceil() as u32).max(1);
+
+        let seed = fastrand::u32(0..1_000_000);
+        Self {
+            sample_rate,
+            total_samples,
+            index: 0,
+            primary_freq: 4200.0 + fastrand::f32() * 800.0, // Higher, sharper relay chirp
+            accent_freq: 7500.0 + fastrand::f32() * 1200.0, // High metallic ring
+            thunk_freq: 220.0 + fastrand::f32() * 80.0,     // Lighter mechanical body
+            bounce_start: 0.0012 + fastrand::f32() * 0.0004,
+            bounce_end: 0.0020 + fastrand::f32() * 0.0005,
+            seed,
+        }
+    }
+
+    #[inline]
+    fn time(&self) -> f32 {
+        self.index as f32 / self.sample_rate as f32
+    }
+
+    #[inline]
+    fn ratio(&self) -> f32 {
+        self.index as f32 / self.total_samples as f32
+    }
+
+    #[inline]
+    fn next_sample(&mut self) -> f32 {
+        if self.index >= self.total_samples {
+            return 0.0;
+        }
+
+        let t = self.time();
+        let mix = self.ratio();
+        let mut sample = 0.0;
+
+        // Very sharp, quick attack—Hayes-style relay snap.
+        match self.index {
+            0 => sample += 1.4,
+            1 => sample -= 1.2,
+            2 => sample += 0.7,
+            _ => {}
+        }
+
+        // Ultra-high chirp (9–11 kHz) for that classic modem "squeak"
+        if t < 0.0008 {
+            let chirp_freq = 10000.0 + fastrand::f32() * 1500.0;
+            let chirp_decay = (-t * 9000.0).exp();
+            sample += (t * chirp_freq * std::f32::consts::TAU).sin() * chirp_decay * 0.6;
+        }
+
+        // Primary relay "chirp" resonance (brighter, faster decay).
+        let primary_decay = (-t * 6800.0).exp();
+        sample += (t * self.primary_freq * std::f32::consts::TAU).sin() * primary_decay * 1.0;
+
+        // Accent high ring (very short—modem relays ring briefly).
+        let accent_decay = (-t * 8000.0).exp();
+        sample += (t * self.accent_freq * std::f32::consts::TAU).sin() * accent_decay * 0.5;
+
+        // Much lighter low-freq thump (Hayes relays are mechanically lighter).
+        if t < 0.008 {
+            let thunk_decay = (-t * 280.0).exp();
+            sample += (t * self.thunk_freq * std::f32::consts::TAU).cos() * thunk_decay * 0.3;
+        }
+
+        // Short grit burst (first 5 ms only, quick release).
+        if t < 0.005 {
+            let noise_env = (-t * 4200.0).exp();
+            let mut rng = fastrand::Rng::with_seed(self.seed as u64 + self.index as u64);
+            let noise = (rng.f32() * 2.0 - 1.0) * noise_env * 0.22;
+            sample += noise;
+        }
+
+        // Minimal bounce (Hayes relays don't bounce much—they're crisp).
+        if t >= self.bounce_start && t <= self.bounce_end {
+            let rel = (t - self.bounce_start) / (self.bounce_end - self.bounce_start);
+            let bounce_env = (1.0 - rel).powf(3.0);
+            sample += bounce_env * 0.25;
+        }
+
+        // Quick decay envelope for percussive, punchy character.
+        let envelope = (1.0 - mix).powf(2.2);
+        sample *= envelope;
+
+        // Hot drive—keep it loud and snappy.
+        sample = (sample * 1.45).clamp(-1.0, 1.0);
+
+        self.index += 1;
+        sample
+    }
+}
+
+impl Iterator for PulseClick {
+    type Item = f32;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.total_samples { None } else { Some(self.next_sample()) }
+    }
+}
+
+impl Source for PulseClick {
+    fn channels(&self) -> u16 {
+        1
+    }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        Some(Duration::from_secs_f64(self.total_samples as f64 / self.sample_rate as f64))
+    }
+    fn current_span_len(&self) -> Option<usize> {
+        Some((self.total_samples - self.index) as usize)
+    }
 }

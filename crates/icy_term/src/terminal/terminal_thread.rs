@@ -52,7 +52,7 @@ pub enum TerminalEvent {
     PlayMusic(icy_engine::ansi::sound::AnsiMusic),
     Beep,
     OpenLineSound,
-    OpenDialSound(String),
+    OpenDialSound(bool, String),
     StopSound,
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
@@ -275,8 +275,8 @@ impl TerminalThread {
                         ModemCommand::PlayLineSound => {
                             let _ = self.event_tx.send(TerminalEvent::OpenLineSound);
                         }
-                        ModemCommand::PlayDialSound(phone_number) => {
-                            let _ = self.event_tx.send(TerminalEvent::OpenDialSound(phone_number));
+                        ModemCommand::PlayDialSound(tone_dial, phone_number) => {
+                            let _ = self.event_tx.send(TerminalEvent::OpenDialSound(tone_dial, phone_number));
                         }
                         ModemCommand::StopSound => {
                             let _ = self.event_tx.send(TerminalEvent::StopSound);

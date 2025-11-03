@@ -8,7 +8,7 @@ pub enum ModemCommand {
     Nothing,
     Output(Vec<u8>),
     PlayLineSound,
-    PlayDialSound(String),
+    PlayDialSound(bool, String),
     StopSound,
 }
 
@@ -42,13 +42,34 @@ impl EmulatedModem {
                     // Enter pressed - process command
                     let command = String::from_utf8_lossy(&self.local_command_buffer).trim().to_ascii_uppercase();
                     self.local_command_buffer.clear();
+
+                    if command.starts_with("ATDT") {
+                        let phone_number = command[4..].trim();
+                        self.line_open = true;
+                        if phone_number.is_empty() {
+                            return ModemCommand::PlayLineSound;
+                        } else {
+                            return ModemCommand::PlayDialSound(true, phone_number.to_string());
+                        }
+                    }
+
+                    if command.starts_with("ATDP") {
+                        let phone_number = command[4..].trim();
+                        self.line_open = true;
+                        if phone_number.is_empty() {
+                            return ModemCommand::PlayLineSound;
+                        } else {
+                            return ModemCommand::PlayDialSound(false, phone_number.to_string());
+                        }
+                    }
+
                     if command.starts_with("ATD") {
                         let phone_number = command[3..].trim();
                         self.line_open = true;
                         if phone_number.is_empty() {
                             return ModemCommand::PlayLineSound;
                         } else {
-                            return ModemCommand::PlayDialSound(phone_number.to_string());
+                            return ModemCommand::PlayDialSound(true, phone_number.to_string());
                         }
                     }
 
