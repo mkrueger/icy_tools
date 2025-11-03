@@ -74,7 +74,7 @@ pub enum DialTone {
     /// France 440 Hz
     France,
     /// Japan 400 Hz
-    Japan
+    Japan,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

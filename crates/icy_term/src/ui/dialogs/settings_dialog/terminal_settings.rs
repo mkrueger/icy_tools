@@ -73,30 +73,23 @@ impl SettingsDialogState {
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),
-                
                 // Dial Tone selection
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-dial-tone")),
-                    pick_list(
-                        &DialToneOption::ALL[..],
-                        Some(DialToneOption::from(dial_tone)),
-                        {
-                            let temp_options = self.temp_options.clone();
-                            move |value: DialToneOption| {
-                                let mut new_options = temp_options.lock().unwrap().clone();
-                                new_options.dial_tone = value.into();
-                                crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
-                            }
+                    pick_list(&DialToneOption::ALL[..], Some(DialToneOption::from(dial_tone)), {
+                        let temp_options = self.temp_options.clone();
+                        move |value: DialToneOption| {
+                            let mut new_options = temp_options.lock().unwrap().clone();
+                            new_options.dial_tone = value.into();
+                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                         }
-                    )
+                    })
                     .width(Length::Fixed(200.0))
                     .text_size(14),
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),
-                
                 Space::new().height(12.0),
-                
                 // Open Settings Directory button
                 row![
                     Space::new().width(Length::Fixed(LABEL_WIDTH)),

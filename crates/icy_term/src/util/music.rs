@@ -16,8 +16,8 @@ use rodio::{
 };
 use web_time::{Duration, Instant};
 
-use crate::TerminalResult;
 use crate::DialTone;
+use crate::TerminalResult;
 
 use super::Rng;
 
@@ -59,7 +59,6 @@ pub enum SoundData {
     StartPlay,
     StopPlay,
 }
-
 
 pub struct SoundThread {
     rx: Receiver<SoundData>,
@@ -334,7 +333,7 @@ impl SoundBackgroundThreadData {
 
             // Generate the tone(s) for busy signal
             let tone1 = SignalGenerator::new(sample_rate, freq1, Function::Sine).amplify(0.15);
-            
+
             let busy_tone = if freq1 == freq2 {
                 // Single frequency (UK, Europe, France, Japan)
                 // Mix with silent tone to maintain consistent type
@@ -366,10 +365,8 @@ impl SoundBackgroundThreadData {
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
         let sample_rate = stream_handle.config().sample_rate();
 
-        let dial_tone = mix_dial_tone(tone, sample_rate)
-            .take_duration(Duration::from_millis(500));
+        let dial_tone = mix_dial_tone(tone, sample_rate).take_duration(Duration::from_millis(500));
         stream_handle.mixer().add(dial_tone);
-
 
         thread::sleep(Duration::from_millis(500));
 
@@ -502,7 +499,6 @@ fn mix_dial_tone(tone: DialTone, sample_rate: u32) -> impl Source<Item = f32> + 
             tone1.mix(tone2)
         }
         DialTone::UK => {
-            
             let tone1 = SignalGenerator::new(sample_rate, 350.0, Function::Sine).amplify(0.15);
             let tone2: rodio::source::Amplify<SignalGenerator> = SignalGenerator::new(sample_rate, 450.0, Function::Sine).amplify(0.15);
             tone1.mix(tone2)
