@@ -134,7 +134,7 @@ impl TheDrawFont {
             o += 2;
 
             let mut char_lookup_table = Vec::new();
-            for i in 0..CHAR_TABLE_SIZE {
+            for _ in 0..CHAR_TABLE_SIZE {
                 let cur_char = bytes[o] as u16 | ((bytes[o + 1] as u16) << 8);
                 o += 2;
                 char_lookup_table.push(cur_char);
@@ -360,9 +360,7 @@ impl TheDrawFont {
         let Some(glyph) = table_entry else {
             return None;
         };
-        let pos = editor.get_caret().get_position();
-        let end_pos = glyph.render(editor, self.font_type, edit_mode);
-        Some(Size::new(glyph.size.width, end_pos.y - pos.y + 1))
+        Some(glyph.render(editor, self.font_type, edit_mode))
     }
 
     pub const OUTLINE_STYLES: usize = 19;
@@ -495,7 +493,8 @@ impl AnsiFont for TheDrawFont {
             return caret_pos;
         }
         if let Some(Some(glyph)) = &self.char_table.get(char_offset as usize) {
-            return glyph.render(editor, self.font_type, edit_mode);
+            let size = glyph.render(editor, self.font_type, edit_mode);
+            return caret_pos + (size.width, 0).into();
         }
         return caret_pos;
     }
