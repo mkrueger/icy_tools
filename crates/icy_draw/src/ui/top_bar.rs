@@ -9,7 +9,7 @@ use egui::{FontId, Image, TextFormat, containers::menu, text::LayoutJob};
 use i18n_embed_fl::fl;
 use icy_engine::{FontMode, IceMode, PaletteMode, editor::ICY_CLIPBOARD_TYPE};
 
-use crate::{LATEST_VERSION, MainWindow, Message, SETTINGS, Settings, VERSION, button_with_shortcut};
+use crate::{CLIPBOARD_CONTEXT, LATEST_VERSION, MainWindow, Message, SETTINGS, Settings, VERSION, button_with_shortcut};
 
 lazy_static::lazy_static! {
     pub static ref DOCK_LEFT_SVG: Image<'static> = Image::new(egui::include_image!("../../data/icons/dock_left.svg"));
@@ -154,11 +154,7 @@ impl<'a> MainWindow<'a> {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(200.0);
 
-                    let has_icy_img = if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                        clipboard.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
-                    } else {
-                        false
-                    };
+                    let has_icy_img = CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()));
 
                     let button = button_with_shortcut(ui, has_icy_img, fl!(crate::LANGUAGE_LOADER, "menu-paste-as-new-image"), "");
                     if button.clicked() {

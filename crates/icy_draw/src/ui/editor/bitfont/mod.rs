@@ -13,7 +13,7 @@ use i18n_embed_fl::fl;
 use icy_engine::{BitFont, Buffer, EngineResult, Glyph, Size, TextAttribute, TextPane};
 use icy_engine_gui::{BufferView, show_terminal_area};
 
-use crate::{AnsiEditor, ClipboardHandler, Document, DocumentOptions, Message, SETTINGS, TerminalResult, UndoHandler, model::Tool, to_message};
+use crate::{AnsiEditor, CLIPBOARD_CONTEXT, ClipboardHandler, Document, DocumentOptions, Message, SETTINGS, TerminalResult, UndoHandler, model::Tool, to_message};
 
 use self::undo::UndoOperation;
 
@@ -415,11 +415,9 @@ impl ClipboardHandler for BitFontEditor {
     fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         if let Some(ch) = self.selected_char_opt {
             if let Some(_data) = self.font.get_clipboard_data(ch) {
-                if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                    let data = self.font.get_clipboard_data(ch).unwrap();
-                    if let Err(err) = clipboard.set_buffer(BITFONT_GLYPH, data) {
-                        log::error!("Failed to set clipboard data: {}", err);
-                    }
+                let data: Vec<u8> = self.font.get_clipboard_data(ch).unwrap();
+                if let Err(err) = CLIPBOARD_CONTEXT.set_buffer(BITFONT_GLYPH, data) {
+                    log::error!("Failed to set clipboard data: {}", err);
                 }
             }
         }
@@ -430,17 +428,11 @@ impl ClipboardHandler for BitFontEditor {
         if self.selected_char_opt.is_none() {
             return false;
         }
-        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-            return clipboard.has(ContentFormat::Other(BITFONT_GLYPH.into()));
-        }
-        false
+        return CLIPBOARD_CONTEXT.has(ContentFormat::Other(BITFONT_GLYPH.into()));
     }
 
     fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
-        let Ok(clipboard) = clipboard_rs::ClipboardContext::new() else {
-            return Ok(());
-        };
-        if let Ok(data) = clipboard.get_buffer(BITFONT_GLYPH) {
+        if let Ok(data) = CLIPBOARD_CONTEXT.get_buffer(BITFONT_GLYPH) {
             let (_, g) = Glyph::from_clipbard_data(&data);
             if let Some(ch) = self.selected_char_opt {
                 let op = undo::Paste::new(ch, g);

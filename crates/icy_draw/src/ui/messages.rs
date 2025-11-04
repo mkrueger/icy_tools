@@ -9,7 +9,7 @@ use egui::mutex::Mutex;
 use icy_engine::{AnsiFont, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane, editor::ICY_CLIPBOARD_TYPE};
 
 use crate::{
-    AnsiEditor, BRUSH_TOOL, Document, MainWindow, NewFileDialog, SETTINGS, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, util::autosave,
+    AnsiEditor, BRUSH_TOOL, CLIPBOARD_CONTEXT, Document, MainWindow, NewFileDialog, SETTINGS, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, util::autosave
 };
 
 #[derive(Clone)]
@@ -576,42 +576,38 @@ impl<'a> MainWindow<'a> {
             }
 
             Message::PasteAsNewImage => {
-                if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                    if let Ok(data) = clipboard.get_buffer(ICY_CLIPBOARD_TYPE) {
-                        let mut buf = icy_engine::Buffer::new((80, 24));
-                        buf.is_terminal_buffer = false;
-                        let editor = AnsiEditor::new(&self.gl, buf);
+                if let Ok(data) = CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+                    let mut buf = icy_engine::Buffer::new((80, 24));
+                    buf.is_terminal_buffer = false;
+                    let editor = AnsiEditor::new(&self.gl, buf);
 
-                        {
-                            let mut lock = editor.buffer_view.lock();
-                            let state = lock.get_edit_state_mut();
-                            if let Some(mut layer) = state.from_clipboard_data(&data) {
-                                layer.set_offset((0, 0));
-                                layer.role = icy_engine::Role::Normal;
-                                layer.properties.has_alpha_channel = false;
-                                let lc = layer.get_line_count();
+                    {
+                        let mut lock = editor.buffer_view.lock();
+                        let state = lock.get_edit_state_mut();
+                        if let Some(mut layer) = state.from_clipboard_data(&data) {
+                            layer.set_offset((0, 0));
+                            layer.role = icy_engine::Role::Normal;
+                            layer.properties.has_alpha_channel = false;
+                            let lc = layer.get_line_count();
 
-                                state.get_buffer_mut().layers.clear();
-                                state.get_buffer_mut().layers.push(layer);
-                                state.get_buffer_mut().set_height(lc);
-                            }
+                            state.get_buffer_mut().layers.clear();
+                            state.get_buffer_mut().layers.push(layer);
+                            state.get_buffer_mut().set_height(lc);
                         }
-
-                        crate::add_child(&mut self.document_tree, None, Box::new(editor));
                     }
+
+                    crate::add_child(&mut self.document_tree, None, Box::new(editor));
                 }
             }
 
             Message::PasteAsBrush => {
                 self.run_editor_command(0, |_, editor, _| {
-                    if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                        if let Ok(data) = clipboard.get_buffer(ICY_CLIPBOARD_TYPE) {
-                            let mut lock = editor.buffer_view.lock();
-                            let state = lock.get_edit_state_mut();
-                            if let Some(layer) = state.from_clipboard_data(&data) {
-                                unsafe {
-                                    crate::model::brush_imp::CUSTOM_BRUSH = Some(layer);
-                                }
+                    if let Ok(data) = CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+                        let mut lock = editor.buffer_view.lock();
+                        let state = lock.get_edit_state_mut();
+                        if let Some(layer) = state.from_clipboard_data(&data) {
+                            unsafe {
+                                crate::model::brush_imp::CUSTOM_BRUSH = Some(layer);
                             }
                         }
                     }

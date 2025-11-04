@@ -48,6 +48,7 @@ lazy_static::lazy_static! {
         VERSION.clone()
     };
 
+    static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
 }
 
 #[derive(RustEmbed)]

@@ -21,9 +21,7 @@ use icy_engine::{
 use icy_engine_gui::{BufferView, CaretShape, TerminalCalc, show_terminal_area};
 
 use crate::{
-    ClipboardHandler, Commands, Document, DocumentOptions, Message, SETTINGS, SavingError, TerminalResult, UndoHandler,
-    model::{DragPos, MKey, MModifiers, Tool},
-    paint::ColorMode,
+    CLIPBOARD_CONTEXT, ClipboardHandler, Commands, Document, DocumentOptions, Message, SETTINGS, SavingError, TerminalResult, UndoHandler, model::{DragPos, MKey, MModifiers, Tool}, paint::ColorMode
 };
 
 pub enum Event {
@@ -144,22 +142,15 @@ impl ClipboardHandler for AnsiEditor {
             vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
         }
 
-        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-            if let Err(err) = clipboard.set(vec) {
-                log::error!("Failed to set clipboard content: {}", err);
-            }
-        } else {
-            log::error!("Failed to access clipboard");
+        if let Err(err) = CLIPBOARD_CONTEXT.set(vec) {
+            log::error!("Failed to set clipboard content: {}", err);
         }
 
         Ok(())
     }
 
     fn can_paste(&self) -> bool {
-        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-            return clipboard.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into())) || clipboard.has(ContentFormat::Image) | clipboard.has(ContentFormat::Text);
-        }
-        false
+        return CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into())) || CLIPBOARD_CONTEXT.has(ContentFormat::Image) || CLIPBOARD_CONTEXT.has(ContentFormat::Text);
     }
 
     fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
@@ -167,20 +158,18 @@ impl ClipboardHandler for AnsiEditor {
             return Ok(());
         }
 
-        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-            if let Ok(data) = clipboard.get_buffer(ICY_CLIPBOARD_TYPE) {
-                self.buffer_view.lock().get_edit_state_mut().paste_clipboard_data(&data)?;
-            } else if let Ok(img) = clipboard.get_image() {
-                let mut sixel = Sixel::new(Position::default());
-                sixel.picture_data = img.to_rgba8().unwrap().as_raw().clone();
-                let (w, h) = img.get_size();
-                sixel.set_width(w as i32);
-                sixel.set_height(h as i32);
-                self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
-            } else if let Ok(text) = clipboard.get_text() {
+        if let Ok(data) = CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+            self.buffer_view.lock().get_edit_state_mut().paste_clipboard_data(&data)?;
+        } else if let Ok(img) = CLIPBOARD_CONTEXT.get_image() {
+            let mut sixel = Sixel::new(Position::default());
+            sixel.picture_data = img.to_rgba8().unwrap().as_raw().clone();
+            let (w, h) = img.get_size();
+            sixel.set_width(w as i32);
+            sixel.set_height(h as i32);
+            self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
+        } else if let Ok(text) = CLIPBOARD_CONTEXT.get_text() {
                 self.buffer_view.lock().get_edit_state_mut().paste_text(&text)?;
             }
-        }
         Ok(())
     }
 }
