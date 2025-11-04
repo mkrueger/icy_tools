@@ -1,9 +1,10 @@
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+
 use crate::{Blink, Message, MonitorSettings, Terminal, now_ms};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::{Position, Selection, TextPane};
-
-static mut SCALE_FACTOR: f32 = 1.0;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -43,31 +44,24 @@ pub struct TerminalShader {
     terminal_size: (u32, u32),
     // Store the monitor settings for CRT effects
     monitor_settings: MonitorSettings,
+    instance_id: u64,
 }
 
-impl TerminalShader {
-    pub fn new(monitor_settings: MonitorSettings) -> Self {
-        Self {
-            terminal_rgba: Vec::new(),
-            terminal_size: (800, 600),
-            monitor_settings,
-        }
-    }
+// Add per-instance resources struct
+struct InstanceResources {
+    texture: iced::wgpu::Texture,
+    texture_view: iced::wgpu::TextureView,
+    bind_group: iced::wgpu::BindGroup,
+    uniform_buffer: iced::wgpu::Buffer,
+    monitor_color_buffer: iced::wgpu::Buffer,
+    texture_size: (u32, u32),
 }
-
 // Renderer struct for GPU resources
-#[derive(Debug)]
 pub struct TerminalShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
-    bind_group: Option<iced::wgpu::BindGroup>,
-    texture: Option<iced::wgpu::Texture>,
-    texture_view: Option<iced::wgpu::TextureView>,
     sampler: iced::wgpu::Sampler,
-    uniform_buffer: iced::wgpu::Buffer,
-    monitor_color_buffer: iced::wgpu::Buffer,
-    texture_size: (u32, u32), // NEW: track current texture dimensions
-    renderer_id: u64,
+    instances: HashMap<u64, InstanceResources>, // NEW: per-instance resources
 }
 
 static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -78,6 +72,7 @@ impl shader::Primitive for TerminalShader {
     fn initialize(&self, device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self::Renderer {
         let renderer_id = RENDERER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+        // ...existing shader and pipeline creation code unchanged...
         let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
             label: Some(&format!("Terminal CRT Shader {}", renderer_id)),
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
@@ -86,6 +81,7 @@ impl shader::Primitive for TerminalShader {
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some(&format!("Terminal Shader Bind Group Layout {}", renderer_id)),
             entries: &[
+                // ...existing entries unchanged...
                 iced::wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: iced::wgpu::ShaderStages::FRAGMENT,
@@ -165,7 +161,6 @@ impl shader::Primitive for TerminalShader {
             cache: None,
         });
 
-        // Choose sampler filtering based on pixel-perfect preference
         let want_pixel_perfect = self.monitor_settings.use_pixel_perfect_scaling;
         let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
             label: Some(&format!("Terminal Texture Sampler {}", renderer_id)),
@@ -186,31 +181,11 @@ impl shader::Primitive for TerminalShader {
             ..Default::default()
         });
 
-        let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some(&format!("Terminal Shader Uniforms {}", renderer_id)),
-            size: std::mem::size_of::<CRTUniforms>() as u64,
-            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let monitor_color_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some(&format!("Monitor Color Buffer {}", renderer_id)),
-            size: std::mem::size_of::<[f32; 4]>() as u64,
-            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         TerminalShaderRenderer {
             pipeline,
             bind_group_layout,
-            bind_group: None,
-            texture: None,
-            texture_view: None,
             sampler,
-            uniform_buffer,
-            monitor_color_buffer,
-            texture_size: (0, 0),
-            renderer_id,
+            instances: HashMap::new(), // NEW: empty map of instances
         }
     }
 
@@ -222,17 +197,28 @@ impl shader::Primitive for TerminalShader {
         bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
-        unsafe {
-            SCALE_FACTOR = _viewport.scale_factor();
-        }
-
-        // Only (re)create texture if size changed or not yet allocated
+        let id = self.instance_id;
         let (w, h) = self.terminal_size;
-        let need_new_texture = renderer.texture.is_none() || renderer.texture_size.0 != w || renderer.texture_size.1 != h;
 
-        if need_new_texture {
+        // Get or create per-instance resources
+        let resources = renderer.instances.entry(id).or_insert_with(|| {
+            // Create per-instance resources
+            let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                label: Some(&format!("Terminal Uniforms Instance {}", id)),
+                size: std::mem::size_of::<CRTUniforms>() as u64,
+                usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            let monitor_color_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                label: Some(&format!("Monitor Color Instance {}", id)),
+                size: std::mem::size_of::<[f32; 4]>() as u64,
+                usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
             let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                label: Some(&format!("Terminal Texture {}", renderer.renderer_id)),
+                label: Some(&format!("Terminal Texture Instance {}", id)),
                 size: iced::wgpu::Extent3d {
                     width: w.max(1),
                     height: h.max(1),
@@ -249,7 +235,7 @@ impl shader::Primitive for TerminalShader {
             let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                label: Some(&format!("Terminal Shader Bind Group {}", renderer.renderer_id)),
+                label: Some(&format!("Terminal BindGroup Instance {}", id)),
                 layout: &renderer.bind_group_layout,
                 entries: &[
                     iced::wgpu::BindGroupEntry {
@@ -262,44 +248,94 @@ impl shader::Primitive for TerminalShader {
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: renderer.uniform_buffer.as_entire_binding(),
+                        resource: uniform_buffer.as_entire_binding(),
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: renderer.monitor_color_buffer.as_entire_binding(),
+                        resource: monitor_color_buffer.as_entire_binding(),
                     },
                 ],
             });
 
-            renderer.texture = Some(texture);
-            renderer.texture_view = Some(texture_view);
-            renderer.bind_group = Some(bind_group);
-            renderer.texture_size = (w, h);
+            InstanceResources {
+                texture,
+                texture_view,
+                bind_group,
+                uniform_buffer,
+                monitor_color_buffer,
+                texture_size: (w, h),
+            }
+        });
+
+        // Recreate texture if size changed
+        if resources.texture_size != (w, h) {
+            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                label: Some(&format!("Terminal Texture Instance {}", id)),
+                size: iced::wgpu::Extent3d {
+                    width: w.max(1),
+                    height: h.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: iced::wgpu::TextureDimension::D2,
+                format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+            let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                label: Some(&format!("Terminal BindGroup Instance {}", id)),
+                layout: &renderer.bind_group_layout,
+                entries: &[
+                    iced::wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: iced::wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    iced::wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: iced::wgpu::BindingResource::Sampler(&renderer.sampler),
+                    },
+                    iced::wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: resources.uniform_buffer.as_entire_binding(),
+                    },
+                    iced::wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: resources.monitor_color_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+            resources.texture = texture;
+            resources.texture_view = texture_view;
+            resources.bind_group = bind_group;
+            resources.texture_size = (w, h);
         }
 
-        // Upload new pixel data only if we have something
+        // Upload texture data for this instance
         if !self.terminal_rgba.is_empty() {
-            if let Some(texture) = &renderer.texture {
-                queue.write_texture(
-                    iced::wgpu::TexelCopyTextureInfo {
-                        texture,
-                        mip_level: 0,
-                        origin: iced::wgpu::Origin3d::ZERO,
-                        aspect: iced::wgpu::TextureAspect::All,
-                    },
-                    &self.terminal_rgba,
-                    iced::wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * w),
-                        rows_per_image: Some(h),
-                    },
-                    iced::wgpu::Extent3d {
-                        width: w.max(1),
-                        height: h.max(1),
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
+            queue.write_texture(
+                iced::wgpu::TexelCopyTextureInfo {
+                    texture: &resources.texture,
+                    mip_level: 0,
+                    origin: iced::wgpu::Origin3d::ZERO,
+                    aspect: iced::wgpu::TextureAspect::All,
+                },
+                &self.terminal_rgba,
+                iced::wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * w),
+                    rows_per_image: Some(h),
+                },
+                iced::wgpu::Extent3d {
+                    width: w.max(1),
+                    height: h.max(1),
+                    depth_or_array_layers: 1,
+                },
+            );
         }
 
         // Aspect ratio fit
@@ -316,6 +352,7 @@ impl shader::Primitive for TerminalShader {
         let scaled_w = term_w * display_scale;
         let scaled_h = term_h * display_scale;
 
+        // ...rest of uniform data setup unchanged...
         let monitor_color = match self.monitor_settings.monitor_type {
             crate::MonitorType::Color => [1.0, 1.0, 1.0, 1.0],
             crate::MonitorType::Grayscale => [1.0, 1.0, 1.0, 1.0],
@@ -329,104 +366,88 @@ impl shader::Primitive for TerminalShader {
             }
         };
 
-        let brightness_mul = self.monitor_settings.brightness / 100.0; // 100 -> 1.0
-        let contrast_mul = self.monitor_settings.contrast / 100.0; // 100 -> 1.0
-        let gamma_val = self.monitor_settings.gamma;
-        let saturation_mul = self.monitor_settings.saturation / 100.0; // 100 -> 1.0
-
-        // Curvature values (only active if enabled)
-        let use_curv = self.monitor_settings.use_curvature;
-        let curv_x = if use_curv { (100.0 - self.monitor_settings.curvature_x) / 10.0 } else { 0.0 };
-        let curv_y = if use_curv { (100.0 - self.monitor_settings.curvature_y) / 10.0 } else { 0.0 };
-        let enable_curvature = if use_curv { 1.0 } else { 0.0 };
-
-        // Scanline values (only active if enabled)
-        let use_scan = self.monitor_settings.use_scanlines;
-        let scanline_thickness = if use_scan { self.monitor_settings.scanline_thickness } else { 0.5 };
-        let scanline_sharpness = if use_scan { self.monitor_settings.scanline_sharpness } else { 0.5 };
-        let scanline_phase = if use_scan { self.monitor_settings.scanline_phase } else { 0.0 };
-        let enable_scanlines = if use_scan { 1.0 } else { 0.0 };
-
-        // Noise values (only active if enabled)
-        let use_noise = self.monitor_settings.use_noise;
-        // Assuming UI noise_level 0..100
-        let nl = if use_noise {
-            (self.monitor_settings.noise_level / 100.0).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let enable_noise = if use_noise { 1.0 } else { 0.0 };
-
-        // Bloom - scale UI values (0-100) to shader-appropriate ranges
-        let use_bloom = self.monitor_settings.use_bloom;
-        let bloom_threshold = if use_bloom {
-            // UI: 0-100, where lower = more bloom
-            // Shader expects: 0-1, where lower = more bloom
-            (self.monitor_settings.bloom_threshold / 100.0).clamp(0.0, 1.0)
-        } else {
-            1.0 // Threshold of 1.0 = no pixels pass
-        };
-
-        let bloom_radius = if use_bloom {
-            // UI: 0-100, but shader expects pixels (typically 1-10)
-            // Scale down to reasonable pixel radius
-            (self.monitor_settings.bloom_radius / 10.0).max(0.5)
-        } else {
-            0.0
-        };
-
-        let bloom_intensity = if use_bloom {
-            // UI: 0-100, shader expects multiplier (typically 0.1-2.0)
-            // Scale to reasonable intensity range
-            (self.monitor_settings.glow_strength / 50.0).max(0.0)
-        } else {
-            0.0
-        };
-
-        let enable_bloom = if use_bloom { 1.0 } else { 0.0 };
-
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
-            brightness: brightness_mul,
-            contrast: contrast_mul,
-            gamma: gamma_val,
-            saturation: saturation_mul,
+            brightness: self.monitor_settings.brightness / 100.0,
+            contrast: self.monitor_settings.contrast / 100.0,
+            gamma: self.monitor_settings.gamma,
+            saturation: self.monitor_settings.saturation / 100.0,
             monitor_type: self.monitor_settings.monitor_type.to_index() as f32,
             resolution: [scaled_w, scaled_h],
-
-            curvature_x: curv_x,
-            curvature_y: curv_y,
-            enable_curvature,
-
-            scanline_thickness,
-            scanline_sharpness,
-            scanline_phase,
-            enable_scanlines,
-
-            noise_level: nl,
+            curvature_x: if self.monitor_settings.use_curvature {
+                (100.0 - self.monitor_settings.curvature_x) / 10.0
+            } else {
+                0.0
+            },
+            curvature_y: if self.monitor_settings.use_curvature {
+                (100.0 - self.monitor_settings.curvature_y) / 10.0
+            } else {
+                0.0
+            },
+            enable_curvature: if self.monitor_settings.use_curvature { 1.0 } else { 0.0 },
+            scanline_thickness: if self.monitor_settings.use_scanlines {
+                self.monitor_settings.scanline_thickness
+            } else {
+                0.5
+            },
+            scanline_sharpness: if self.monitor_settings.use_scanlines {
+                self.monitor_settings.scanline_sharpness
+            } else {
+                0.5
+            },
+            scanline_phase: if self.monitor_settings.use_scanlines {
+                self.monitor_settings.scanline_phase
+            } else {
+                0.0
+            },
+            enable_scanlines: if self.monitor_settings.use_scanlines { 1.0 } else { 0.0 },
+            noise_level: if self.monitor_settings.use_noise {
+                (self.monitor_settings.noise_level / 100.0).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
             sync_wobble: if self.monitor_settings.use_noise {
                 (self.monitor_settings.sync_wobble / 100.0).clamp(0.0, 1.0)
             } else {
                 0.0
             },
-            enable_noise,
-
-            bloom_threshold,
-            bloom_radius,
-            bloom_intensity,
-            enable_bloom,
+            enable_noise: if self.monitor_settings.use_noise { 1.0 } else { 0.0 },
+            bloom_threshold: if self.monitor_settings.use_bloom {
+                (self.monitor_settings.bloom_threshold / 100.0).clamp(0.0, 1.0)
+            } else {
+                1.0
+            },
+            bloom_radius: if self.monitor_settings.use_bloom {
+                (self.monitor_settings.bloom_radius / 10.0).max(0.5)
+            } else {
+                0.0
+            },
+            bloom_intensity: if self.monitor_settings.use_bloom {
+                (self.monitor_settings.glow_strength / 50.0).max(0.0)
+            } else {
+                0.0
+            },
+            enable_bloom: if self.monitor_settings.use_bloom { 1.0 } else { 0.0 },
         };
 
+        // Write to this instance's uniform buffers
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
-        queue.write_buffer(&renderer.uniform_buffer, 0, uniform_bytes);
+        queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);
 
         let color_bytes = unsafe { std::slice::from_raw_parts(monitor_color.as_ptr() as *const u8, std::mem::size_of::<[f32; 4]>()) };
-        queue.write_buffer(&renderer.monitor_color_buffer, 0, color_bytes);
+        queue.write_buffer(&resources.monitor_color_buffer, 0, color_bytes);
     }
 
     fn render(&self, renderer: &Self::Renderer, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
-        encoder.push_debug_group(&format!("Terminal CRT Shader Render {}", renderer.renderer_id));
+        encoder.push_debug_group(&format!("Terminal Instance {} Render", self.instance_id));
 
+        // Get this instance's resources
+        let Some(resources) = renderer.instances.get(&self.instance_id) else {
+            encoder.pop_debug_group();
+            return;
+        };
+
+        // ...rest of render code unchanged except using instance bind_group...
         let term_w = self.terminal_size.0.max(1) as f32;
         let term_h = self.terminal_size.1.max(1) as f32;
         let avail_w = clip_bounds.width.max(1) as f32;
@@ -442,7 +463,6 @@ impl shader::Primitive for TerminalShader {
         let offset_x = clip_bounds.x as f32 + (avail_w - scaled_w) / 2.0;
         let offset_y = clip_bounds.y as f32 + (avail_h - scaled_h) / 2.0;
 
-        // If pixel-perfect, snap to integer pixels
         let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
             (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
         } else {
@@ -465,34 +485,29 @@ impl shader::Primitive for TerminalShader {
             occlusion_query_set: None,
         });
 
-        // Calculate scissor rect ensuring it's within clip_bounds
         let sc_x = vp_x.max(0.0).floor() as u32;
         let sc_y = vp_y.max(0.0).floor() as u32;
         let sc_w = vp_w.max(1.0).floor() as u32;
         let sc_h = vp_h.max(1.0).floor() as u32;
 
-        // Clamp scissor rect to clip_bounds to avoid out-of-bounds
         let scissor_x = sc_x.min(clip_bounds.x + clip_bounds.width);
         let scissor_y = sc_y.min(clip_bounds.y + clip_bounds.height);
         let scissor_width = sc_w.min((clip_bounds.x + clip_bounds.width).saturating_sub(scissor_x));
         let scissor_height = sc_h.min((clip_bounds.y + clip_bounds.height).saturating_sub(scissor_y));
 
-        // Only set scissor and viewport if we have valid dimensions
         if scissor_width > 0 && scissor_height > 0 && vp_w > 0.0 && vp_h > 0.0 {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             render_pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
-
             render_pass.set_pipeline(&renderer.pipeline);
-            if let Some(bind_group) = &renderer.bind_group {
-                render_pass.set_bind_group(0, bind_group, &[]);
-                render_pass.draw(0..3, 0..1);
-            }
+            render_pass.set_bind_group(0, &resources.bind_group, &[]); // Use instance-specific bind group
+            render_pass.draw(0..3, 0..1);
         }
 
         drop(render_pass);
         encoder.pop_debug_group();
     }
 }
+
 // Program wrapper that renders the terminal and creates the shader
 pub struct CRTShaderProgram<'a> {
     term: &'a Terminal,
@@ -525,6 +540,7 @@ pub struct CRTShaderState {
     hovered_rip_field: bool,
 
     last_rendered_size: Option<(u32, u32)>,
+    instance_id: u64,
 }
 
 impl CRTShaderState {
@@ -532,6 +548,8 @@ impl CRTShaderState {
         self.caret_blink.reset();
     }
 }
+
+static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 impl Default for CRTShaderState {
     fn default() -> Self {
@@ -548,6 +566,8 @@ impl Default for CRTShaderState {
             hovered_link: None,
             hovered_rip_field: false,
             last_rendered_size: None,
+            instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            //            scale_factor: 1.0,
         }
     }
 }
@@ -560,17 +580,16 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         let mut rgba_data = Vec::new();
         let size;
 
-        // Local variables to allow caret overlay after lock is released
         let mut caret_pos_opt = None;
         let mut caret_visible = false;
         let mut font_w = 0usize;
         let mut font_h = 0usize;
         let no_scrollback;
+
         if let Ok(edit_state) = self.term.edit_state.try_lock() {
             no_scrollback = edit_state.scrollback_offset == 0;
             let buffer = edit_state.get_display_buffer();
 
-            // Capture caret & font metrics
             caret_pos_opt = Some(edit_state.get_caret().get_position());
             caret_visible = edit_state.get_caret().is_visible();
             if let Some(font) = buffer.get_font(0) {
@@ -584,7 +603,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             };
             let (fg, rg) = edit_state.get_buffer().buffer_type.get_selection_colors();
 
-            // Pass blink_on to actually animate ANSI blinking attributes
             let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
                 rect,
                 blink_on: state.character_blink.is_on(),
@@ -595,13 +613,10 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             size = (img_size.width as u32, img_size.height as u32);
             rgba_data = data;
         } else {
-            // IMPORTANT: Use a consistent fallback size instead of bounds
-            // This prevents size oscillation when the lock fails
             if let Some(last_size) = state.last_rendered_size {
                 size = last_size;
             } else {
-                // Initial fallback - use standard terminal size
-                size = (640, 400); // 80x25 with 8x16 font
+                size = (640, 400);
             }
             no_scrollback = true;
         }
@@ -648,6 +663,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             terminal_rgba: rgba_data,
             terminal_size: size,
             monitor_settings: self.monitor_settings.clone(),
+            instance_id: state.instance_id,
         }
     }
 
@@ -893,23 +909,10 @@ impl CaretStyle {
 fn map_mouse_to_cell(
     term: &Terminal,
     monitor: &MonitorSettings,
-    logical_bounds: Rectangle, // bounds passed to update()/draw() (logical coordinates)
-    logical_mx: f32,           // mouse x in logical space
-    logical_my: f32,           // mouse y in logical space
+    bounds: Rectangle,
+    mx: f32, // mouse x in logical space
+    my: f32, // mouse y in logical space
 ) -> Option<Position> {
-    // 1. Obtain scale factor (logical -> physical)
-    // Prefer querying window; fallback to stored SCALE_FACTOR if needed.
-    let scale_factor = unsafe { SCALE_FACTOR };
-
-    // 2. Promote logical coordinates to physical pixels
-    let phys_bounds_x: f32 = logical_bounds.x * scale_factor;
-    let phys_bounds_y = logical_bounds.y * scale_factor;
-    let phys_bounds_w = logical_bounds.width * scale_factor;
-    let phys_bounds_h = logical_bounds.height * scale_factor;
-
-    let phys_mx = logical_mx * scale_factor;
-    let phys_my = logical_my * scale_factor;
-
     // 3. Lock edit state & obtain font + buffer size (already in pixel units)
     let edit = term.edit_state.try_lock().ok()?;
     let buffer = edit.get_display_buffer();
@@ -927,8 +930,8 @@ fn map_mouse_to_cell(
     }
 
     // 4. Aspect-fit scale in PHYSICAL space (match render())
-    let avail_w = phys_bounds_w.max(1.0);
-    let avail_h = phys_bounds_h.max(1.0);
+    let avail_w = bounds.width.max(1.0);
+    let avail_h = bounds.height.max(1.0);
     let uniform_scale = (avail_w / term_px_w).min(avail_h / term_px_h);
 
     let use_pp = monitor.use_pixel_perfect_scaling;
@@ -938,8 +941,8 @@ fn map_mouse_to_cell(
     let scaled_h = term_px_h * display_scale;
 
     // 5. Center terminal inside physical bounds (same as render())
-    let offset_x = phys_bounds_x + (avail_w - scaled_w) / 2.0;
-    let offset_y = phys_bounds_y + (avail_h - scaled_h) / 2.0;
+    let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
+    let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
 
     // 6. Pixel-perfect rounding (only position & size used for viewport clipping)
     let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
@@ -949,13 +952,13 @@ fn map_mouse_to_cell(
     };
 
     // 7. Hit test in physical viewport
-    if phys_mx < vp_x || phys_my < vp_y || phys_mx >= vp_x + vp_w || phys_my >= vp_y + vp_h {
+    if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
         return None;
     }
 
     // 8. Undo scaling using display_scale, not viewport width ratios
-    let local_px_x = (phys_mx - vp_x) / display_scale;
-    let local_px_y = (phys_my - vp_y) / display_scale;
+    let local_px_x = (mx - vp_x) / display_scale;
+    let local_px_y = (my - vp_y) / display_scale;
 
     // 9. Convert to cell indices
     let cx = (local_px_x / font_w).floor() as i32;

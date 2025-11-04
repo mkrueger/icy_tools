@@ -21,17 +21,11 @@ pub struct TerminalView<'a> {
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn new(term: &'a Terminal) -> Self {
-        Self { term }
-    }
-
-    pub fn show(term: &'a Terminal) -> Element<'a, Message> {
-        Element::new(Self { term })
-    }
-
     pub fn show_with_effects(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
         if !matches!(term.edit_state.lock().unwrap().get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
-            iced::widget::container(crate::terminal_shader::create_crt_shader(term, settings)).into()
+            iced::widget::container(crate::terminal_shader::create_crt_shader(term, settings))
+                .id(term.id.clone())
+                .into()
         } else {
             // Only use direct rendering for Color mode with no filter
             Element::new(Self { term })

@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use iced::{Color, widget::canvas::Cache};
+use iced::{
+    Color,
+    widget::{self, canvas::Cache},
+};
 use icy_engine::editor::EditState;
 
 pub struct Terminal {
@@ -9,6 +12,7 @@ pub struct Terminal {
     pub char_width: f32,
     pub char_height: f32,
     pub cache: Cache,
+    pub id: widget::Id,
 }
 
 impl Terminal {
@@ -19,6 +23,7 @@ impl Terminal {
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,
             cache: Cache::default(),
+            id: widget::Id::unique(),
         }
     }
 
