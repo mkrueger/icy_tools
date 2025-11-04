@@ -1074,7 +1074,8 @@ impl TextPane for Buffer {
             pos.x = x;
             let ch = self.get_char(pos);
             if x > 0 && ch.is_transparent() {
-                if last_char.attribute.get_background() > 0 {
+                let bg = last_char.attribute.get_background();
+                if bg != TextAttribute::TRANSPARENT_COLOR && bg > 0 {
                     length = x + 1;
                 }
             } else if !ch.is_transparent() {

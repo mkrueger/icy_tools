@@ -36,6 +36,13 @@ impl AttributedChar {
         AttributedChar { ch, attribute }
     }
 
+    pub fn from_char(ch: char) -> Self {
+        AttributedChar {
+            ch,
+            attribute: TextAttribute::default(),
+        }
+    }
+
     pub fn is_transparent(self) -> bool {
         (self.ch == '\0' || self.ch == ' ') || self.attribute.get_background() == self.attribute.get_foreground()
     }

@@ -1,3 +1,4 @@
+mod from_buffer;
 mod tdf_container;
 
 use icy_engine::{AnsiFont, Buffer, FontGlyph, FontType, Position, Size, TextPane, editor::EditState, font::TheDrawFont};

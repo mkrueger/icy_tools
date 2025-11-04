@@ -1,4 +1,4 @@
-use crate::{AttributedChar, Size, TextAttribute, UnicodeConverter, editor::EditState};
+use crate::{AttributedChar, Buffer, Size, TextAttribute, TextPane, UnicodeConverter, editor::EditState};
 use i18n_embed_fl::fl;
 
 pub mod font;
@@ -125,5 +125,148 @@ impl FontGlyph {
         max_width = max_width.max(cur.x - caret_pos.x);
 
         Size::new(max_width, max_height)
+    }
+
+    pub fn from_buffer(buffer: &Buffer, font_type: FontType) -> Self {
+        let mut data = Vec::new();
+        let mut max_width = 0;
+
+        // Helper function to get the actual line length (excluding trailing spaces)
+        fn get_actual_line_length(buffer: &Buffer, y: i32) -> i32 {
+            let mut len = 0;
+            for x in 0..buffer.get_width() {
+                let ch = buffer.get_char((x, y));
+                if !ch.is_transparent() || ch.attribute.get_background() != TextAttribute::TRANSPARENT_COLOR && ch.attribute.get_background() > 0 {
+                    len = x + 1;
+                }
+            }
+            len
+        }
+
+        // Determine the actual bounds of the content
+        let mut actual_height = 0;
+        for y in 0..buffer.get_height() {
+            let line_length = get_actual_line_length(buffer, y);
+            if line_length > 0 {
+                actual_height = y + 1;
+                // Check for & terminator to get actual width
+                let mut actual_line_length = 0;
+                for x in 0..line_length {
+                    let ch = buffer.get_char((x, y));
+                    actual_line_length = x + 1;
+                    if ch.ch == '&' {
+                        break; // Stop at &
+                    }
+                }
+                max_width = max_width.max(actual_line_length);
+            }
+        }
+
+        if actual_height == 0 {
+            return FontGlyph {
+                size: Size::new(0, 0),
+                data: Vec::new(),
+            };
+        }
+
+        match font_type {
+            FontType::Outline => {
+                const VALID_OUTLINE_CHARS: &str = " @OABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%'()*+,-./:;<=>?[\\]^_`{|}~";
+
+                for y in 0..actual_height {
+                    if y > 0 {
+                        data.push(13); // CR for new line
+                    }
+
+                    let line_length = get_actual_line_length(buffer, y);
+                    let mut line_data = Vec::new();
+
+                    for x in 0..line_length {
+                        let ch = buffer.get_char((x, y));
+
+                        // Check for end-of-line marker
+                        if ch.ch == '&' {
+                            line_data.push(b'&');
+                            break; // Stop processing this line
+                        }
+
+                        // Only include valid outline characters
+                        if VALID_OUTLINE_CHARS.contains(ch.ch) {
+                            line_data.push(ch.ch as u8);
+                        }
+                    }
+
+                    data.extend(line_data);
+                }
+            }
+
+            FontType::Block => {
+                for y in 0..actual_height {
+                    if y > 0 {
+                        data.push(13); // CR for new line
+                    }
+
+                    let line_length = get_actual_line_length(buffer, y);
+
+                    for x in 0..line_length {
+                        let ch = buffer.get_char((x, y));
+
+                        // Include character
+                        data.push(ch.ch as u8);
+
+                        // Check for end-of-line marker
+                        if ch.ch == '&' {
+                            break; // Stop processing this line
+                        }
+                    }
+                }
+            }
+
+            FontType::Color => {
+                for y in 0..actual_height {
+                    if y > 0 {
+                        data.push(13); // CR for new line (no attribute byte after CR)
+                    }
+
+                    let line_length = get_actual_line_length(buffer, y);
+
+                    for x in 0..line_length {
+                        let ch = buffer.get_char((x, y));
+
+                        // Check for end-of-line marker
+                        if ch.ch == '&' {
+                            // & doesn't have an attribute byte in color mode
+                            data.push(b'&');
+                            break; // Stop processing this line
+                        }
+
+                        // Add character and its attribute
+                        data.push(ch.ch as u8);
+                        data.push(ch.attribute.as_u8(crate::IceMode::Ice));
+                    }
+                }
+            }
+
+            FontType::Figlet => {
+                // Figlet fonts are text-based and have different structure
+                // For now, just store the raw characters without attributes
+                for y in 0..actual_height {
+                    if y > 0 {
+                        data.push(b'\n'); // Use newline for Figlet
+                    }
+
+                    let line_length = get_actual_line_length(buffer, y);
+                    for x in 0..line_length {
+                        let ch = buffer.get_char((x, y));
+                        data.push(ch.ch as u8);
+                    }
+                }
+            }
+        }
+
+        FontGlyph {
+            size: Size::new(max_width, actual_height),
+            data,
+        }
     }
 }
