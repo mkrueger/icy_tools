@@ -568,27 +568,9 @@ impl TerminalThread {
             *state.get_caret_mut() = caret;
 
             let result = state.get_buffer_mut();
-            // transform sixels to layers
             while !result.sixel_threads.is_empty() {
                 thread::sleep(Duration::from_millis(50));
                 let _ = result.update_sixel_threads();
-            }
-
-            while !result.layers[0].sixels.is_empty() {
-                if let Some(mut sixel) = result.layers[0].sixels.pop() {
-                    let size = sixel.get_size();
-                    let font_size = result.get_font_dimensions();
-                    let size = icy_engine::Size::new(
-                        (size.width + font_size.width - 1) / font_size.width,
-                        (size.height + font_size.height - 1) / font_size.height,
-                    );
-                    let mut layer = icy_engine::Layer::new("Sixel", size);
-                    layer.role = icy_engine::Role::Image;
-                    layer.set_offset(sixel.position);
-                    sixel.position = icy_engine::Position::default();
-                    layer.sixels.push(sixel);
-                    result.layers.push(layer);
-                }
             }
         }
 

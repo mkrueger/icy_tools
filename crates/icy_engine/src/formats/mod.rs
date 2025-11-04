@@ -240,27 +240,30 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
         }
     }
 
-    // transform sixels to layers
-    while !result.sixel_threads.is_empty() {
-        thread::sleep(Duration::from_millis(50));
-        result.update_sixel_threads()?;
-    }
-    let mut num = 0;
-    while !result.layers[0].sixels.is_empty() {
-        if let Some(mut sixel) = result.layers[0].sixels.pop() {
-            let size = sixel.get_size();
-            let font_size = result.get_font_dimensions();
-            let size = Size::new(
-                (size.width + font_size.width - 1) / font_size.width,
-                (size.height + font_size.height - 1) / font_size.height,
-            );
-            num += 1;
-            let mut layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-new-sixel_layer_name", number = num), size);
-            layer.role = Role::Image;
-            layer.set_offset(sixel.position);
-            sixel.position = Position::default();
-            layer.sixels.push(sixel);
-            result.layers.push(layer);
+    // transform sixels to layers for non terminal buffers (makes sense in icy_draw for example)
+    if !result.is_terminal_buffer {
+        while !result.sixel_threads.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+            result.update_sixel_threads()?;
+        }
+
+        let mut num = 0;
+        while !result.layers[0].sixels.is_empty() {
+            if let Some(mut sixel) = result.layers[0].sixels.pop() {
+                let size = sixel.get_size();
+                let font_size = result.get_font_dimensions();
+                let size = Size::new(
+                    (size.width + font_size.width - 1) / font_size.width,
+                    (size.height + font_size.height - 1) / font_size.height,
+                );
+                num += 1;
+                let mut layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-new-sixel_layer_name", number = num), size);
+                layer.role = Role::Image;
+                layer.set_offset(sixel.position);
+                sixel.position = Position::default();
+                layer.sixels.push(sixel);
+                result.layers.push(layer);
+            }
         }
     }
 

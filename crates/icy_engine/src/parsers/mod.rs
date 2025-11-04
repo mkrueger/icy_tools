@@ -282,70 +282,166 @@ impl Buffer {
     }
 
     fn scroll_up(&mut self, layer: usize) {
+        let font_dims = self.get_font_dimensions();
+
         let start_line: i32 = self.get_first_editable_line();
         let end_line = self.get_last_editable_line();
 
         let start_column = self.get_first_editable_column();
         let end_column = self.get_last_editable_column();
 
-        let layer = &mut self.layers[layer];
+        let layer_ref = &mut self.layers[layer];
         for x in start_column..=end_column {
             (start_line..end_line).for_each(|y| {
-                let ch = layer.get_char((x, y + 1));
-                layer.set_char((x, y), ch);
+                let ch = layer_ref.get_char((x, y + 1));
+                layer_ref.set_char((x, y), ch);
             });
-            layer.set_char((x, end_line), AttributedChar::default());
+            layer_ref.set_char((x, end_line), AttributedChar::default());
+        }
+
+        let mut remove_indices: Vec<usize> = Vec::new();
+        for (i, sixel) in layer_ref.sixels.iter_mut().enumerate() {
+            let rect = sixel.as_rectangle(font_dims);
+            let top = rect.start.y;
+
+            if top == start_line {
+                // This sixel's top row is being overwritten; drop it.
+                remove_indices.push(i);
+            } else if top > start_line && top <= end_line {
+                // Shift upward one row in cell space.
+                sixel.position.y -= 1;
+            }
+            // If top < start_line, it's above the editable region; leave it.
+            // If top > end_line, outside affected scroll band; leave it.
+        }
+
+        // Remove in reverse to keep indices valid.
+        for idx in remove_indices.into_iter().rev() {
+            println!("Removing sixel at index {}", idx);
+            layer_ref.sixels.remove(idx);
         }
     }
 
     fn scroll_down(&mut self, layer: usize) {
+        let font_dims = self.get_font_dimensions();
+
         let start_line: i32 = self.get_first_editable_line();
         let end_line = self.get_last_editable_line();
 
         let start_column = self.get_first_editable_column();
         let end_column = self.get_last_editable_column();
 
-        let layer = &mut self.layers[layer];
+        let layer_ref = &mut self.layers[layer];
+        // Shift character data downward
         for x in start_column..=end_column {
             ((start_line + 1)..=end_line).rev().for_each(|y| {
-                let ch = layer.get_char((x, y - 1));
-                layer.set_char((x, y), ch);
+                let ch = layer_ref.get_char((x, y - 1));
+                layer_ref.set_char((x, y), ch);
             });
-            layer.set_char((x, start_line), AttributedChar::default());
+            layer_ref.set_char((x, start_line), AttributedChar::default());
+        }
+
+        // === NEW: vertical sixel scroll (down) ===
+        let mut remove_indices: Vec<usize> = Vec::new();
+        for (i, sixel) in layer_ref.sixels.iter_mut().enumerate() {
+            let rect = sixel.as_rectangle(font_dims);
+            let top = rect.start.y;
+            let bottom = top + rect.size.height - 1;
+
+            // Remove if its bottom row is being lost at end_line
+            if bottom == end_line {
+                remove_indices.push(i);
+            } else if top >= start_line && bottom < end_line {
+                // Fully within scroll band: move down one row
+                sixel.position.y += 1;
+            }
+            // Else (partially outside band) leave unchanged
+        }
+        for idx in remove_indices.into_iter().rev() {
+            layer_ref.sixels.remove(idx);
         }
     }
 
     fn scroll_left(&mut self, layer: usize) {
+        let font_dims = self.get_font_dimensions();
+
         let start_line: i32 = self.get_first_editable_line();
         let end_line = self.get_last_editable_line();
 
         let start_column = self.get_first_editable_column() as usize;
         let end_column = self.get_last_editable_column() + 1;
 
-        let layer = &mut self.layers[layer];
-        for i in start_line..=end_line {
-            let line = &mut layer.lines[i as usize];
+        let layer_ref = &mut self.layers[layer];
+        // Shift character data left
+        for y in start_line..=end_line {
+            let line = &mut layer_ref.lines[y as usize];
             if line.chars.len() > start_column {
                 line.chars.insert(end_column as usize, AttributedChar::default());
                 line.chars.remove(start_column);
             }
         }
+
+        // === NEW: horizontal sixel scroll (left) ===
+        let mut remove_indices: Vec<usize> = Vec::new();
+        for (i, sixel) in layer_ref.sixels.iter_mut().enumerate() {
+            let rect = sixel.as_rectangle(font_dims);
+            let left = rect.start.x;
+            let right = left + rect.size.width - 1;
+            // We only act if vertically inside editable band (optional refinement)
+            if rect.start.y < start_line || rect.start.y > end_line {
+                continue;
+            }
+
+            if left == start_column as i32 {
+                // Its leftmost column is lost
+                remove_indices.push(i);
+            } else if left > start_column as i32 && right <= end_column as i32 {
+                sixel.position.x -= 1;
+            }
+        }
+        for idx in remove_indices.into_iter().rev() {
+            layer_ref.sixels.remove(idx);
+        }
     }
 
     fn scroll_right(&mut self, layer: usize) {
-        let start_line = self.get_first_editable_line();
+        let font_dims = self.get_font_dimensions();
+
+        let start_line: i32 = self.get_first_editable_line();
         let end_line = self.get_last_editable_line();
 
         let start_column = self.get_first_editable_column() as usize;
         let end_column = self.get_last_editable_column() as usize;
 
-        let layer = &mut self.layers[layer];
-        for i in start_line..=end_line {
-            let line = &mut layer.lines[i as usize];
+        let layer_ref = &mut self.layers[layer];
+        // Shift character data right
+        for y in start_line..=end_line {
+            let line: &mut Line = &mut layer_ref.lines[y as usize];
             if line.chars.len() > start_column {
                 line.chars.insert(start_column, AttributedChar::default());
                 line.chars.remove(end_column + 1);
             }
+        }
+
+        // === NEW: horizontal sixel scroll (right) ===
+        let mut remove_indices: Vec<usize> = Vec::new();
+        for (i, sixel) in layer_ref.sixels.iter_mut().enumerate() {
+            let rect = sixel.as_rectangle(font_dims);
+            let left = rect.start.x;
+            let right = left + rect.size.width - 1;
+            if rect.start.y < start_line || rect.start.y > end_line {
+                continue;
+            }
+
+            if right == end_column as i32 {
+                // Rightmost column gets pushed out
+                remove_indices.push(i);
+            } else if left >= start_column as i32 && right < end_column as i32 {
+                sixel.position.x += 1;
+            }
+        }
+        for idx in remove_indices.into_iter().rev() {
+            layer_ref.sixels.remove(idx);
         }
     }
 
