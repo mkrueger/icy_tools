@@ -136,7 +136,6 @@ impl TheDrawFont {
             let mut char_lookup_table = Vec::new();
             for i in 0..CHAR_TABLE_SIZE {
                 let cur_char = bytes[o] as u16 | ((bytes[o + 1] as u16) << 8);
-                println!("Char offset: {i}:{:04X}", cur_char);
                 o += 2;
                 char_lookup_table.push(cur_char);
             }
