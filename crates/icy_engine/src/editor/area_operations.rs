@@ -771,7 +771,7 @@ mod tests {
             }
         }
 
-        let rect = Rectangle::from(5, 5, 10, 10);
+        let rect = Rectangle::from(5, 5, 9, 9);
         state.set_selection(rect).unwrap();
         state.erase_selection().unwrap();
         for y in 0..20 {
@@ -779,7 +779,7 @@ mod tests {
                 let pos = Position::new(x, y);
                 let ch = state.get_buffer().get_char(pos);
 
-                if rect.is_inside(pos) {
+                if rect.is_inside_inclusive(pos) {
                     assert_eq!(ch.ch, ' ');
                 } else {
                     assert_eq!(ch.ch, '#');
@@ -807,7 +807,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -856,7 +856,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -905,13 +905,15 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
         state.set_char((5, 5), '#'.into()).unwrap();
         state.set_char((0, 9), '#'.into()).unwrap();
+
         state.justify_right().unwrap();
+
         for y in 10..20 {
             for x in 10..20 {
                 let ch = state.get_buffer().get_char((x, y));
@@ -953,7 +955,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -1001,7 +1003,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();

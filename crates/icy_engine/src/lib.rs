@@ -295,6 +295,14 @@ impl Rectangle {
         self.start.x..self.bottom_right().x
     }
 
+    pub fn y_range_inclusive(&self) -> std::ops::RangeInclusive<i32> {
+        self.start.y..=self.bottom_right().y
+    }
+
+    pub fn x_range_inclusive(&self) -> std::ops::RangeInclusive<i32> {
+        self.start.x..=self.bottom_right().x
+    }
+
     pub fn left(&self) -> i32 {
         self.start.x
     }
@@ -319,6 +327,11 @@ impl Rectangle {
         let pos = pos.into();
 
         self.start.x <= pos.x && self.start.y <= pos.y && pos.x < self.start.x + self.size.width && pos.y < self.start.y + self.size.height
+    }
+
+    pub fn is_inside_inclusive(&self, pos: impl Into<Position>) -> bool {
+        let pos = pos.into();
+        self.start.x <= pos.x && self.start.y <= pos.y && pos.x <= self.start.x + self.size.width && pos.y <= self.start.y + self.size.height
     }
 }
 

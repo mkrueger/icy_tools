@@ -366,8 +366,8 @@ impl OutputRenderer {
                         let layer = selection.as_rectangle();
                         let layer_x = layer.left() as f32 * buffer_view.calc.char_size.x - top_pos.x;
                         let layer_y = layer.top() as f32 * buffer_view.calc.char_size.y - top_pos.y;
-                        let layer_w = layer.get_width() as f32 * buffer_view.calc.char_size.x;
-                        let layer_h = layer.get_height() as f32 * buffer_view.calc.char_size.y;
+                        let layer_w = (1 + layer.get_width()) as f32 * buffer_view.calc.char_size.x;
+                        let layer_h = (1 + layer.get_height()) as f32 * buffer_view.calc.char_size.y;
                         let x = buffer_rect.left() + layer_x;
                         let y = buffer_rect.top() + layer_y;
                         let y = info.screen_size_px[1] as f32 - y * info.pixels_per_point;
