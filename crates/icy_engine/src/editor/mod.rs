@@ -15,6 +15,7 @@ mod area_operations;
 mod edit_operations;
 pub use area_operations::*;
 mod font_operations;
+mod rtf_generator;
 mod selection_operations;
 mod tag_operations;
 

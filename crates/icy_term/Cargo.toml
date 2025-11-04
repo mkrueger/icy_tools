@@ -14,6 +14,7 @@ icy_net = { git ="https://github.com/mkrueger/icy_board" }
 iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 # iced_aw = { workspace = true, features = ["menu"]  }
 
+image = "0.25.8"
 tokio = { workspace = true }
 serde = { workspace = true }
 versions = "7.0.0"

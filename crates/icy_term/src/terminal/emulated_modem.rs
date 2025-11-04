@@ -22,6 +22,7 @@ impl EmulatedModem {
             self.line_open = false;
             return ModemCommand::StopSound;
         }
+        let mut out_vec = Vec::new();
         for &byte in data {
             // Check for ESC sequence - clear buffer if found
             if byte == 27 {
@@ -35,10 +36,14 @@ impl EmulatedModem {
                     if !self.local_command_buffer.is_empty() {
                         self.local_command_buffer.pop();
                         // Echo backspace to terminal (backspace, space, backspace to clear)
-                        return ModemCommand::Output(vec![8, b' ', 8]);
+                        out_vec.extend_from_slice(&[8, b' ', 8]);
                     }
                 }
                 13 => {
+                    if data.len() > 1 {
+                        out_vec.push(b'\r');
+                        continue;
+                    }
                     // Enter pressed - process command
                     let command = String::from_utf8_lossy(&self.local_command_buffer).trim().to_ascii_uppercase();
                     self.local_command_buffer.clear();
@@ -93,9 +98,12 @@ impl EmulatedModem {
                 _ => {
                     // Printable ASCII character - add to buffer and echo
                     self.local_command_buffer.push(byte);
-                    return ModemCommand::Output(vec![byte]);
+                    out_vec.push(byte);
                 }
             }
+        }
+        if !out_vec.is_empty() {
+            return ModemCommand::Output(out_vec);
         }
         ModemCommand::Nothing
     }

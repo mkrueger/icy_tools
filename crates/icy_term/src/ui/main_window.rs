@@ -14,10 +14,11 @@ use crate::{
     },
     util::SoundThread,
 };
-use clipboard_rs::Clipboard;
+use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{AttributedChar, Position, UnicodeConverter, ansi::BaudEmulation};
+use icy_engine::{AttributedChar, Position, RenderOptions, Shape, UnicodeConverter, ansi::BaudEmulation};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use image::DynamicImage;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -554,30 +555,40 @@ impl MainWindow {
                     // Get the selected text
                     let copy_text: Option<String> = edit_state.get_copy_text();
 
-                    // Check if we should append to existing clipboard data (shift was held during selection)
-                    /*
-                    if self.shift_pressed_during_selection {
-                        if let Some(clipboard_data) = edit_state.get_clipboard_data() {
-                            // Append to existing clipboard data
-                            if let Err(err) =
-                                icy_engine::util::push_data(&mut self.clipboard, icy_engine::util::BUFFER_DATA, &clipboard_data, copy_text.clone())
-                            {
-                                log::error!("Error while copying with append: {}", err);
-                            } else {
-                                // Clear selection after successful append
-                                let _ = edit_state.clear_selection();
-                                self.shift_pressed_during_selection = false;
-                                return Task::none();
-                            }
-                        }
-                    }*/
-
                     // Normal copy (not appending)
-
                     if let Some(text) = copy_text {
+                        if text.is_empty() {
+                            return Task::none();
+                        }
                         if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                            if let Err(err) = clipboard.set_text(text) {
-                                log::error!("Failed to set clipboard text: {}", err);
+                            let rich_text = edit_state.get_copy_rich_text().unwrap();
+
+                            let selection = edit_state.get_selection().unwrap();
+                            if selection.shape == Shape::Rectangle {
+                                let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
+                                    rect: selection.as_rectangle(),
+                                    blink_on: true,
+                                    selection: None,
+                                    selection_fg: None,
+                                    selection_bg: None,
+                                });
+
+                                let dynamic_image = DynamicImage::ImageRgba8(
+                                    image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data)
+                                        .expect("Failed to create image buffer from raw data"),
+                                );
+                                let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
+                                if let Err(err) = clipboard.set(vec![
+                                    ClipboardContent::Text(text),
+                                    ClipboardContent::Rtf(rich_text),
+                                    ClipboardContent::Image(img),
+                                ]) {
+                                    log::error!("Failed to set clipboard text: {}", err);
+                                }
+                            } else {
+                                if let Err(err) = clipboard.set(vec![ClipboardContent::Text(text), ClipboardContent::Rtf(rich_text)]) {
+                                    log::error!("Failed to set clipboard text: {}", err);
+                                }
                             }
                         } else {
                             log::error!("Failed to access clipboard");
@@ -606,7 +617,6 @@ impl MainWindow {
                             // Send the data to the terminal
                             if !data.is_empty() {
                                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
-                                log::debug!("Pasted {} characters from clipboard", text.len());
                             }
                         }
                         Err(err) => {
