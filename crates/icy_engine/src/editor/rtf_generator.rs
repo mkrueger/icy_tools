@@ -27,6 +27,7 @@ impl EditState {
 
         // Helper to extract RGB from a TextAttribute's color indices.
         let palette = &self.buffer.palette;
+        let buffer = self.get_display_buffer();
 
         // Enumerate selection to gather colors first
         if matches!(selection.shape, Shape::Rectangle) {
@@ -34,7 +35,7 @@ impl EditState {
             let end = selection.max();
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
-                    let ch = self.buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y));
                     add_color(palette.get_rgb(ch.attribute.get_foreground()));
                     let bg = ch.attribute.get_background();
                     if bg & (1 << 31) == 0 {
@@ -51,7 +52,7 @@ impl EditState {
             };
             if start.y == end.y {
                 for x in start.x..=end.x {
-                    let ch = self.buffer.get_char(Position::new(x, start.y));
+                    let ch = buffer.get_char(Position::new(x, start.y));
                     add_color(palette.get_rgb(ch.attribute.get_foreground()));
                     let bg = ch.attribute.get_background();
                     if bg & (1 << 31) == 0 {
@@ -59,8 +60,8 @@ impl EditState {
                     }
                 }
             } else {
-                for x in start.x..(self.buffer.get_line_length(start.y)) {
-                    let ch = self.buffer.get_char(Position::new(x, start.y));
+                for x in start.x..(buffer.get_line_length(start.y)) {
+                    let ch = buffer.get_char(Position::new(x, start.y));
                     add_color(palette.get_rgb(ch.attribute.get_foreground()));
                     let bg = ch.attribute.get_background();
                     if bg & (1 << 31) == 0 {
@@ -68,8 +69,8 @@ impl EditState {
                     }
                 }
                 for y in start.y + 1..end.y {
-                    for x in 0..(self.buffer.get_line_length(y)) {
-                        let ch = self.buffer.get_char(Position::new(x, y));
+                    for x in 0..(buffer.get_line_length(y)) {
+                        let ch = buffer.get_char(Position::new(x, y));
                         add_color(palette.get_rgb(ch.attribute.get_foreground()));
                         let bg = ch.attribute.get_background();
                         if bg & (1 << 31) == 0 {
@@ -78,7 +79,7 @@ impl EditState {
                     }
                 }
                 for x in 0..=end.x {
-                    let ch = self.buffer.get_char(Position::new(x, end.y));
+                    let ch = buffer.get_char(Position::new(x, end.y));
                     add_color(palette.get_rgb(ch.attribute.get_foreground()));
                     let bg = ch.attribute.get_background();
                     if bg & (1 << 31) == 0 {
@@ -203,7 +204,7 @@ impl EditState {
             let end = selection.max();
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
-                    let ch = self.buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y));
                     let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
@@ -235,7 +236,7 @@ impl EditState {
             if start.y == end.y {
                 // Single line selection
                 for x in start.x..=end.x {
-                    let ch = self.buffer.get_char(Position::new(x, start.y));
+                    let ch = buffer.get_char(Position::new(x, start.y));
                     let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
@@ -259,8 +260,8 @@ impl EditState {
             } else {
                 // Multi-line selection
                 // First line (partial)
-                for x in start.x..(self.buffer.get_line_length(start.y)) {
-                    let ch = self.buffer.get_char(Position::new(x, start.y));
+                for x in start.x..(buffer.get_line_length(start.y)) {
+                    let ch = buffer.get_char(Position::new(x, start.y));
                     let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
@@ -283,8 +284,8 @@ impl EditState {
 
                 // Middle lines (full)
                 for y in start.y + 1..end.y {
-                    for x in 0..(self.buffer.get_line_length(y)) {
-                        let ch = self.buffer.get_char(Position::new(x, y));
+                    for x in 0..(buffer.get_line_length(y)) {
+                        let ch = buffer.get_char(Position::new(x, y));
                         let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
                         let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                         let fg_idx = *color_map.get(&fg_rgb).unwrap();
@@ -308,7 +309,7 @@ impl EditState {
 
                 // Last line (partial)
                 for x in 0..=end.x {
-                    let ch = self.buffer.get_char(Position::new(x, end.y));
+                    let ch = buffer.get_char(Position::new(x, end.y));
                     let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();

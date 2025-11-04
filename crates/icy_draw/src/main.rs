@@ -47,6 +47,7 @@ lazy_static::lazy_static! {
         }
         VERSION.clone()
     };
+
 }
 
 #[derive(RustEmbed)]

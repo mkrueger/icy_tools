@@ -17,6 +17,9 @@ pub use blink::*;
 pub mod theme;
 pub use theme::*;
 
+pub mod render_unicode;
+pub use render_unicode::*;
+
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};
@@ -178,10 +181,10 @@ impl MonitorSettings {
 
             // CRT effects - all disabled for neutral
             use_bloom: false,
-            bloom_threshold: 0.7,
-            bloom_radius: 0.0,
-            glow_strength: 0.0,
-            phosphor_persistence: 0.0,
+            bloom_threshold: 25.0,
+            bloom_radius: 6.0,
+            glow_strength: 15.0,
+            phosphor_persistence: 10.0,
 
             use_scanlines: false,
             scanline_thickness: 0.5,

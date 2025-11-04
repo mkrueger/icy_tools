@@ -9,7 +9,7 @@ impl EditState {
         if !self.is_something_selected() {
             return None;
         };
-        let Some(layer) = self.get_cur_layer() else {
+        let Some(layer) = self.get_cur_display_layer() else {
             return None;
         };
 

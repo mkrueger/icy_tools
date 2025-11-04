@@ -286,6 +286,14 @@ impl EditState {
         }
     }
 
+    pub fn get_cur_display_layer(&self) -> Option<&Layer> {
+        if let Ok(layer) = self.get_current_layer() {
+            self.get_display_buffer().layers.get(layer)
+        } else {
+            None
+        }
+    }
+
     pub fn get_cur_layer_mut(&mut self) -> Option<&mut Layer> {
         if let Ok(layer) = self.get_current_layer() {
             self.buffer.layers.get_mut(layer)
@@ -311,13 +319,14 @@ impl EditState {
             return None;
         };
 
+        let buffer = self.get_display_buffer();
         let mut res = String::new();
         if matches!(selection.shape, Shape::Rectangle) {
             let start = selection.min();
             let end = selection.max();
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
-                    let ch = self.buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }
                 res.push('\n');
@@ -330,24 +339,24 @@ impl EditState {
             };
             if start.y == end.y {
                 for x in start.x..=end.x {
-                    let ch = self.buffer.get_char(Position::new(x, start.y));
+                    let ch = buffer.get_char(Position::new(x, start.y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }
             } else {
-                for x in start.x..(self.buffer.get_line_length(start.y)) {
-                    let ch = self.buffer.get_char(Position::new(x, start.y));
+                for x in start.x..(buffer.get_line_length(start.y)) {
+                    let ch = buffer.get_char(Position::new(x, start.y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }
                 res.push('\n');
                 for y in start.y + 1..end.y {
-                    for x in 0..(self.buffer.get_line_length(y)) {
-                        let ch = self.buffer.get_char(Position::new(x, y));
+                    for x in 0..(buffer.get_line_length(y)) {
+                        let ch = buffer.get_char(Position::new(x, y));
                         res.push(self.unicode_converter.convert_to_unicode(ch));
                     }
                     res.push('\n');
                 }
                 for x in 0..=end.x {
-                    let ch = self.buffer.get_char(Position::new(x, end.y));
+                    let ch = buffer.get_char(Position::new(x, end.y));
                     res.push(self.unicode_converter.convert_to_unicode(ch));
                 }
             }

@@ -566,7 +566,7 @@ impl MainWindow {
                     }
 
                     if let Some(selection) = edit_state.get_selection() {
-                        let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
+                        let (size, data) = edit_state.get_display_buffer().render_to_rgba(&RenderOptions {
                             rect: selection,
                             blink_on: true,
                             selection: None,

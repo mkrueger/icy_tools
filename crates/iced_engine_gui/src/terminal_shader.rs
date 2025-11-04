@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Mutex, atomic::AtomicU64};
 
-use crate::{Blink, Message, MonitorSettings, Terminal, now_ms};
+use crate::{Blink, Message, MonitorSettings, RenderUnicodeOptions, Terminal, now_ms, render_unicode_to_rgba};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::{Position, Selection, TextPane};
@@ -595,79 +595,78 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
     fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
         let mut rgba_data = Vec::new();
-        let size;
-
+        let mut size = (640, 400); // fallback
         let mut caret_pos_opt = None;
         let mut caret_visible = false;
         let mut font_w = 0usize;
         let mut font_h = 0usize;
-        let no_scrollback;
+        let mut no_scrollback = true;
 
         if let Ok(edit_state) = self.term.edit_state.try_lock() {
             no_scrollback = edit_state.scrollback_offset == 0;
             let buffer = edit_state.get_display_buffer();
-
             caret_pos_opt = Some(edit_state.get_caret().get_position());
             caret_visible = edit_state.get_caret().is_visible();
+
             if let Some(font) = buffer.get_font(0) {
                 font_w = font.size.width as usize;
                 font_h = font.size.height as usize;
             }
 
-            let rect = icy_engine::Rectangle {
-                start: icy_engine::Position::new(0, 0),
-                size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
-            };
-            let (fg, rg) = edit_state.get_buffer().buffer_type.get_selection_colors();
+            let (fg_sel, bg_sel) = edit_state.get_buffer().buffer_type.get_selection_colors();
 
-            let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
-                rect: rect.into(),
-                blink_on: state.character_blink.is_on(),
-                selection: edit_state.get_selection(),
-                selection_fg: Some(fg),
-                selection_bg: Some(rg),
-            });
-            size = (img_size.width as u32, img_size.height as u32);
-            rgba_data = data;
-        } else {
-            if let Some(last_size) = state.last_rendered_size {
-                size = last_size;
+            if matches!(edit_state.get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
+                // Unicode path
+                let (img_size, data) = render_unicode_to_rgba(&RenderUnicodeOptions {
+                    buffer,
+                    selection: edit_state.get_selection(),
+                    selection_fg: Some(fg_sel),
+                    selection_bg: Some(bg_sel),
+                    blink_on: state.character_blink.is_on(),
+                    font_px_size: Some(font_h as f32), // reuse existing font height as pixel size
+                                                       //                draw_bold: true,
+                });
+                size = (img_size.width as u32, img_size.height as u32);
+                rgba_data = data;
             } else {
-                size = (640, 400);
+                // Existing ANSI path
+                let rect = icy_engine::Rectangle {
+                    start: icy_engine::Position::new(0, 0),
+                    size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
+                };
+                let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
+                    rect: rect.into(),
+                    blink_on: state.character_blink.is_on(),
+                    selection: edit_state.get_selection(),
+                    selection_fg: Some(fg_sel),
+                    selection_bg: Some(bg_sel),
+                });
+                size = (img_size.width as u32, img_size.height as u32);
+                rgba_data = data;
             }
-            no_scrollback = true;
         }
 
-        // Caret overlay only if we have the metrics & want it visible this phase
+        // Caret overlay (shared)
         if state.caret_blink.is_on() && no_scrollback && caret_visible {
             if let Some(caret_pos) = caret_pos_opt {
                 if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                     let line_bytes = (size.0 as usize) * 4;
-
                     let cell_x = caret_pos.x;
                     let cell_y = caret_pos.y;
                     if cell_x >= 0 && cell_y >= 0 {
                         let px_x = (cell_x as usize) * font_w;
                         let px_y = (cell_y as usize) * font_h;
-
                         if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
-                            // ===== DOS-like inverted caret =====
-                            let style = CaretStyle::FullBlock; // Change this to control caret size
+                            let style = CaretStyle::FullBlock;
                             let caret_rows = style.rows(font_h);
                             let start_row = font_h - caret_rows;
-
-                            // Invert the colors in the caret area
                             for row in start_row..font_h {
                                 let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                 let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
-
-                                // XOR-style color inversion for each pixel
                                 for p in slice.chunks_exact_mut(4) {
-                                    // Invert RGB components, preserve alpha
-                                    p[0] = 255 - p[0]; // Invert Red
-                                    p[1] = 255 - p[1]; // Invert Green
-                                    p[2] = 255 - p[2]; // Invert Blue
-                                    // p[3] unchanged (keep original alpha)
+                                    p[0] = 255 - p[0];
+                                    p[1] = 255 - p[1];
+                                    p[2] = 255 - p[2];
                                 }
                             }
                         }
