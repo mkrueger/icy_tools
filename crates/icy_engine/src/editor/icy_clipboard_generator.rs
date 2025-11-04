@@ -2,7 +2,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, BufferType, Layer, Position, Role, TextAttribute, TextPane, editor::EditState};
 
-pub const ICY_CLIPBOARD_TYPE: &str = "icy_clipboard";
+pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 
 impl EditState {
     pub fn get_clipboard_data(&self) -> Option<Vec<u8>> {
