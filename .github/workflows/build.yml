@@ -118,11 +118,12 @@ jobs:
         path: |
           ${{ matrix.app }}.exe
           file_id.diz
+  
   build_mac:
     strategy:
       matrix:
         app: [icy_term, icy_draw, icy_view]
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo bundle & get
