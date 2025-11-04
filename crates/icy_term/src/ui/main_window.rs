@@ -17,7 +17,7 @@ use crate::{
 };
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{AttributedChar, Position, RenderOptions, Shape, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
+use icy_engine::{AttributedChar, Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -554,8 +554,9 @@ impl MainWindow {
                 // Implement clipboard copy from selection
                 if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
                     let mut vec = vec![];
-                    
+                    println!("Copying selection to clipboard");
                     if let Some(text) = edit_state.get_copy_text() {
+                        println!("Copying text to clipboard: {}", text);
                         vec.push(ClipboardContent::Text(text.clone()));
                     } else {
                         return Task::none();
@@ -564,10 +565,9 @@ impl MainWindow {
                         vec.push(ClipboardContent::Rtf(rich_text));
                     }
 
-                    let selection = edit_state.get_selection().unwrap();
-                    if selection.shape == Shape::Rectangle {
+                    if let Some(selection) = edit_state.get_selection() {
                         let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
-                            rect: selection.as_rectangle(),
+                            rect: selection,
                             blink_on: true,
                             selection: None,
                             selection_fg: None,
@@ -575,21 +575,22 @@ impl MainWindow {
                         });
 
                         let dynamic_image = DynamicImage::ImageRgba8(
-                            image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data)
-                                .expect("Failed to create image buffer from raw data"),
+                            image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("Failed to create image buffer from raw data"),
                         );
                         let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
-                        
+                        println!("Copying image to clipboard: {}x{}", size.width, size.height);
                         vec.push(ClipboardContent::Image(img));
                     }
 
                     if let Some(data) = edit_state.get_clipboard_data() {
                         vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
                     }
-                    
+
                     if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
                         if let Err(err) = clipboard.set(vec) {
                             log::error!("Failed to set clipboard content: {}", err);
+                        } else {
+                            println!("Clipboard content set successfully");
                         }
                     } else {
                         log::error!("Failed to access clipboard");

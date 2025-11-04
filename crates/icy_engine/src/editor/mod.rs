@@ -20,10 +20,7 @@ mod selection_operations;
 mod tag_operations;
 pub use icy_clipboard_generator::*;
 
-use crate::{
-    Buffer, Caret, EngineResult, Layer, Position, Selection, SelectionMask, Shape, TextPane, UnicodeConverter,
-    ascii, overlay_mask::OverlayMask,
-};
+use crate::{Buffer, Caret, EngineResult, Layer, Position, Selection, SelectionMask, Shape, TextPane, UnicodeConverter, ascii, overlay_mask::OverlayMask};
 
 pub struct EditState {
     buffer: Buffer,

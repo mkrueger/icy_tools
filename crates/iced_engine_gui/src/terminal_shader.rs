@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU32;
 use std::sync::{Mutex, atomic::AtomicU64};
 
 use crate::{Blink, Message, MonitorSettings, Terminal, now_ms};
@@ -197,6 +198,8 @@ impl shader::Primitive for TerminalShader {
         bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
+        set_scale_factor(_viewport.scale_factor() as f32);
+
         if let Ok(mut pending) = PENDING_INSTANCE_REMOVALS.lock() {
             for id in pending.drain(..) {
                 renderer.instances.remove(&id);
@@ -618,7 +621,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             let (fg, rg) = edit_state.get_buffer().buffer_type.get_selection_colors();
 
             let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
-                rect,
+                rect: rect.into(),
                 blink_on: state.character_blink.is_on(),
                 selection: edit_state.get_selection(),
                 selection_fg: Some(fg),
@@ -920,6 +923,19 @@ impl CaretStyle {
     }
 }
 
+static SCALE_FACTOR_BITS: AtomicU32 = AtomicU32::new(f32::to_bits(1.0));
+
+#[inline]
+fn set_scale_factor(sf: f32) {
+    // You can clamp or sanity-check here if desired
+    SCALE_FACTOR_BITS.store(sf.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+#[inline]
+fn get_scale_factor() -> f32 {
+    f32::from_bits(SCALE_FACTOR_BITS.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 fn map_mouse_to_cell(
     term: &Terminal,
     monitor: &MonitorSettings,
@@ -933,6 +949,11 @@ fn map_mouse_to_cell(
     let font = buffer.get_font(0)?;
     let font_w = font.size.width as f32;
     let font_h = font.size.height as f32;
+
+    let scale_factor = get_scale_factor();
+    let bounds = bounds * scale_factor;
+    let mx = mx * scale_factor;
+    let my = my * scale_factor;
     if font_w <= 0.0 || font_h <= 0.0 {
         return None;
     }

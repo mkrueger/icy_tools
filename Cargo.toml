@@ -53,6 +53,7 @@ rodio = { version = "0.21.1" }
 arboard = { version = "3.6.1" }
 anyhow = "1.0.100"
 webbrowser = "1.0.6"
+rayon = "1.11.0"
 
 iced = "0.14.0-dev"
 #iced_aw = { git = "https://github.com/iced-rs/iced_aw.git" }

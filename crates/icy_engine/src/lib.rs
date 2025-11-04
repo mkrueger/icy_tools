@@ -32,6 +32,7 @@ mod position;
 pub use position::*;
 
 mod buffers;
+mod buffers_rendering;
 pub use buffers::*;
 
 #[macro_use]

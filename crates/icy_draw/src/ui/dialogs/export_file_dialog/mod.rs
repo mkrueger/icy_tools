@@ -218,12 +218,9 @@ impl ModalDialog for ExportFileDialog {
                 if ext == "png" {
                     let lock = &editor.buffer_view.lock();
                     let buf = lock.get_buffer();
-                    let (size, pixels) = buf.render_to_rgba(&icy_engine::RenderOptions {
-                        rect: Rectangle::from(0, 0, buf.get_width(), buf.get_height()),
-                        blink_on: true,
-                        ..Default::default()
-                    });
-                    let image_buffer = image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels);
+                    let (size, pixels) = buf.render_to_rgba(&Rectangle::from(0, 0, buf.get_width(), buf.get_height()).into());
+                    let image_buffer: Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> =
+                        image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels);
                     match image_buffer {
                         Some(img) => {
                             if let Err(err) = img.save(&self.current_output_path()) {
@@ -260,19 +257,11 @@ impl ModalDialog for ExportFileDialog {
                     let mut pb = NoProgress {};
                     std::thread::spawn(move || w.write(fs, &mut pb).unwrap());
 
-                    let (size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
-                        rect: Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()),
-                        blink_on: true,
-                        ..Default::default()
-                    });
+                    let (size, data) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()).into());
                     let img = get_image(data, size);
                     c.add_frame_rgba(0, img, 0.0)?;
 
-                    let (size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
-                        rect: Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()),
-                        blink_on: false,
-                        ..Default::default()
-                    });
+                    let (size, data) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()).into());
                     let img = get_image(data, size);
                     c.add_frame_rgba(1, img, 0.556)?;
                     return Ok(None);

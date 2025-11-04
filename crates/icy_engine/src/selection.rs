@@ -111,6 +111,25 @@ impl Selection {
     pub fn as_rectangle(&self) -> Rectangle {
         Rectangle::from_min_size(self.min(), self.size())
     }
+
+    pub fn as_rectangle_with_width(&self, buffer_width: i32) -> Rectangle {
+        match self.shape {
+            Shape::Rectangle => Rectangle::from_min_size(self.min(), self.size()),
+            Shape::Lines => {
+                if self.anchor.y == self.lead.y {
+                    // Single line selection
+                    let left = self.anchor.x.min(self.lead.x);
+                    let right = self.anchor.x.max(self.lead.x) + 1;
+                    Rectangle::from_coords(left, self.anchor.y, right, self.anchor.y + 1)
+                } else {
+                    // Multi-line selection uses full buffer width
+                    let min_y = self.anchor.y.min(self.lead.y);
+                    let max_y = self.anchor.y.max(self.lead.y) + 1;
+                    Rectangle::from_coords(0, min_y, buffer_width - 1, max_y)
+                }
+            }
+        }
+    }
 }
 
 impl From<Rectangle> for Selection {

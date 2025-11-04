@@ -14,7 +14,8 @@ use eframe::{
 };
 use i18n_embed_fl::fl;
 use icy_engine::{
-    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, Sixel, TextAttribute, TextPane, UnicodeConverter, attribute, editor::{AtomicUndoGuard, ICY_CLIPBOARD_TYPE, UndoState}
+    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, Sixel, TextAttribute, TextPane, UnicodeConverter, attribute,
+    editor::{AtomicUndoGuard, ICY_CLIPBOARD_TYPE, UndoState},
 };
 
 use icy_engine_gui::{BufferView, CaretShape, TerminalCalc, show_terminal_area};
@@ -107,7 +108,7 @@ impl ClipboardHandler for AnsiEditor {
     }
 
     fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
-        let mut lock  =self.buffer_view.lock();
+        let mut lock = self.buffer_view.lock();
         let edit_state = lock.get_edit_state_mut();
         let mut vec = vec![];
         if let Some(text) = edit_state.get_copy_text() {
@@ -135,14 +136,14 @@ impl ClipboardHandler for AnsiEditor {
                     .expect("Failed to create image buffer from raw data"),
             );
             let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
-            
+
             vec.push(ClipboardContent::Image(img));
         }*/
 
         if let Some(data) = edit_state.get_clipboard_data() {
             vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
         }
-        
+
         if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
             if let Err(err) = clipboard.set(vec) {
                 log::error!("Failed to set clipboard content: {}", err);

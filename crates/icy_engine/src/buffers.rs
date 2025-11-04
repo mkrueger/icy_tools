@@ -516,16 +516,36 @@ pub struct BufferFeatures {
     pub use_extended_attributes: bool,
 }
 
+/// Options for rendering a buffer to RGBA format
 #[derive(Default)]
 pub struct RenderOptions {
-    pub rect: Rectangle,
+    /// The rectangle area to render from the buffer
+    pub rect: crate::Selection,
 
+    /// Whether blinking characters should be shown (true) or hidden (false)
     pub blink_on: bool,
 
+    /// Optional selection to highlight with custom colors
+    /// If Some, cells within this selection will be rendered with selection colors
     pub selection: Option<crate::Selection>,
 
+    /// Custom foreground color for selected text (requires selection to be Some)
+    /// If None and selection is Some, colors will be inverted
     pub selection_fg: Option<Color>,
+
+    /// Custom background color for selected text (requires selection to be Some)  
+    /// If None and selection is Some, colors will be inverted
     pub selection_bg: Option<Color>,
+}
+
+impl From<Rectangle> for RenderOptions {
+    fn from(value: Rectangle) -> Self {
+        Self {
+            rect: value.into(),
+            blink_on: true,
+            ..Default::default()
+        }
+    }
 }
 
 impl Buffer {
@@ -941,254 +961,6 @@ impl Buffer {
     pub fn to_screeny(&self, y: i32) -> f64 {
         let font_dimensions = self.get_font_dimensions();
         y as f64 * font_dimensions.height as f64
-    }
-
-    /// Renders the buffer to RGBA format into a pre-existing buffer.
-    /// The buffer will be resized if necessary to accommodate the rendered size.
-    /// Returns the size of the rendered image.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no font is set at index 0.
-    pub fn render_to_rgba_buffer(&self, options: &RenderOptions, pixels: &mut Vec<u8>) -> Size {
-        let font_size = self.get_font(0).unwrap().size;
-
-        let px_width = options.rect.get_width() * font_size.width;
-        let px_height = options.rect.get_height() * font_size.height;
-        let line_bytes = px_width * 4;
-        let required_size = (line_bytes * px_height) as usize;
-
-        // Resize the buffer if necessary, but try to avoid reallocation
-        if pixels.len() != required_size {
-            pixels.resize(required_size, 0);
-        } else {
-            // Clear existing content
-            pixels.fill(0);
-        }
-
-        // Pre-cache palette RGB values for faster lookup
-        let mut palette_cache = [(0u8, 0u8, 0u8); 256];
-        for i in 0..self.palette.len() {
-            palette_cache[i] = self.palette.get_rgb(i as u32);
-        }
-        let draw_selection = options.selection.is_some();
-
-        for y in 0..options.rect.get_height() {
-            for x in 0..options.rect.get_width() {
-                let pos = Position::new(x + options.rect.start.x, y + options.rect.start.y);
-                let ch = self.get_char(pos);
-                let font = if let Some(font) = self.get_font(ch.get_font_page()) {
-                    font
-                } else {
-                    log::error!("Font page {} not found, using font 0", ch.get_font_page());
-                    self.get_font(0).unwrap()
-                };
-
-                let mut fg = if ch.attribute.is_bold() && ch.attribute.get_foreground() < 8 {
-                    ch.attribute.get_foreground() + 8
-                } else {
-                    ch.attribute.get_foreground()
-                };
-
-                let bg = ch.attribute.get_background();
-
-                if ch.attribute.is_blinking() && !options.blink_on {
-                    fg = ch.attribute.get_background();
-                }
-
-                // Check if this position is selected
-                let is_selected = draw_selection && options.selection.as_ref().map(|sel| sel.is_inside(pos)).unwrap_or(false);
-
-                let (f_r, f_g, f_b, b_r, b_g, b_b) = if is_selected {
-                    // Apply selection colors
-                    match (&options.selection_fg, &options.selection_bg) {
-                        (Some(sel_fg), Some(sel_bg)) => {
-                            // Use explicit selection colors
-                            let (f_r, f_g, f_b) = sel_fg.get_rgb();
-                            let (b_r, b_g, b_b) = sel_bg.get_rgb();
-                            (f_r, f_g, f_b, b_r, b_g, b_b)
-                        }
-                        _ => {
-                            // Swap foreground and background
-                            let (f_r, f_g, f_b) = palette_cache[bg as usize];
-                            let (b_r, b_g, b_b) = palette_cache[fg as usize];
-                            (f_r, f_g, f_b, b_r, b_g, b_b)
-                        }
-                    }
-                } else {
-                    // Normal colors
-                    let (f_r, f_g, f_b) = palette_cache[fg as usize];
-                    let (b_r, b_g, b_b) = palette_cache[bg as usize];
-                    (f_r, f_g, f_b, b_r, b_g, b_b)
-                };
-
-                if let Some(glyph) = font.get_glyph(ch.ch) {
-                    let cur_font_size = font.size;
-                    let max_cy = cur_font_size.height.min(font_size.height);
-                    let max_cx = cur_font_size.width.min(font_size.width);
-
-                    // Calculate base offset for this character cell
-                    let base_x = (x * font_size.width) * 4;
-                    let base_y = y * font_size.height;
-
-                    for cy in 0..max_cy {
-                        let glyph_row = glyph.data[cy as usize];
-                        let y_offset = (base_y + cy) * line_bytes;
-
-                        for cx in 0..max_cx {
-                            let offset = (base_x + cx * 4 + y_offset) as usize;
-
-                            if glyph_row & (128 >> cx) == 0 {
-                                // Background pixel
-                                unsafe {
-                                    // Use unsafe for performance - we know the bounds are correct
-                                    *pixels.get_unchecked_mut(offset) = b_r;
-                                    *pixels.get_unchecked_mut(offset + 1) = b_g;
-                                    *pixels.get_unchecked_mut(offset + 2) = b_b;
-                                    *pixels.get_unchecked_mut(offset + 3) = 0xFF;
-                                }
-                            } else {
-                                // Foreground pixel
-                                unsafe {
-                                    *pixels.get_unchecked_mut(offset) = f_r;
-                                    *pixels.get_unchecked_mut(offset + 1) = f_g;
-                                    *pixels.get_unchecked_mut(offset + 2) = f_b;
-                                    *pixels.get_unchecked_mut(offset + 3) = 0xFF;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // No glyph - fill with background color
-                    let base_x = (x * font_size.width) * 4;
-                    let base_y = y * font_size.height;
-
-                    for cy in 0..font_size.height {
-                        let y_offset = (base_y + cy) * line_bytes;
-                        for cx in 0..font_size.width {
-                            let offset = (base_x + cx * 4 + y_offset) as usize;
-                            unsafe {
-                                *pixels.get_unchecked_mut(offset) = b_r;
-                                *pixels.get_unchecked_mut(offset + 1) = b_g;
-                                *pixels.get_unchecked_mut(offset + 2) = b_b;
-                                *pixels.get_unchecked_mut(offset + 3) = 0xFF;
-                            }
-                        }
-                    }
-                }
-
-                // Draw underline if needed
-                if ch.attribute.is_underlined() {
-                    let base_x = (x * font_size.width) * 4;
-                    let base_y = y * font_size.height;
-
-                    // Determine underline position - typically 1 or 2 pixels from bottom
-                    let underline_y = if ch.attribute.is_double_underlined() {
-                        // Double underline: draw at bottom-2 and bottom
-                        vec![font_size.height - 2, font_size.height - 1]
-                    } else {
-                        // Single underline: draw at bottom-1
-                        vec![font_size.height - 1]
-                    };
-
-                    for line_y in underline_y {
-                        if line_y < font_size.height {
-                            let y_offset = (base_y + line_y) * line_bytes;
-                            for cx in 0..font_size.width {
-                                let offset = (base_x + cx * 4 + y_offset) as usize;
-                                if offset + 3 < pixels.len() {
-                                    unsafe {
-                                        *pixels.get_unchecked_mut(offset) = f_r;
-                                        *pixels.get_unchecked_mut(offset + 1) = f_g;
-                                        *pixels.get_unchecked_mut(offset + 2) = f_b;
-                                        *pixels.get_unchecked_mut(offset + 3) = 0xFF;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Draw overline if needed
-                if ch.attribute.is_overlined() {
-                    let base_x = (x * font_size.width) * 4;
-                    let base_y = y * font_size.height;
-
-                    // Overline at top of character cell
-                    let y_offset = base_y * line_bytes;
-                    for cx in 0..font_size.width {
-                        let offset = (base_x + cx * 4 + y_offset) as usize;
-                        if offset + 3 < pixels.len() {
-                            unsafe {
-                                *pixels.get_unchecked_mut(offset) = f_r;
-                                *pixels.get_unchecked_mut(offset + 1) = f_g;
-                                *pixels.get_unchecked_mut(offset + 2) = f_b;
-                                *pixels.get_unchecked_mut(offset + 3) = 0xFF;
-                            }
-                        }
-                    }
-                }
-
-                // Draw strikethrough if needed
-                if ch.attribute.is_crossed_out() {
-                    let base_x = (x * font_size.width) * 4;
-                    let base_y = y * font_size.height;
-
-                    // Strikethrough in middle of character cell
-                    let middle_y = font_size.height / 2;
-                    let y_offset = (base_y + middle_y) * line_bytes;
-                    for cx in 0..font_size.width {
-                        let offset = (base_x + cx * 4 + y_offset) as usize;
-                        if offset + 3 < pixels.len() {
-                            unsafe {
-                                *pixels.get_unchecked_mut(offset) = f_r;
-                                *pixels.get_unchecked_mut(offset + 1) = f_g;
-                                *pixels.get_unchecked_mut(offset + 2) = f_b;
-                                *pixels.get_unchecked_mut(offset + 3) = 0xFF;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Render sixels on top
-        for layer in &self.layers {
-            for sixel in &layer.sixels {
-                let sx = layer.get_offset().x + sixel.position.x - options.rect.start.x;
-                let sx_px = sx * font_size.width;
-                let sy = layer.get_offset().y + sixel.position.y - options.rect.start.y;
-                let sy_pix = sy * font_size.height;
-                let sixel_line_bytes = (sixel.get_width() * 4) as usize;
-
-                let mut sixel_line = 0;
-                for y in sy_pix..(sy_pix + sixel.get_height()) {
-                    if y < 0 {
-                        continue;
-                    }
-                    let y = y as usize;
-                    let offset = y * line_bytes as usize + sx_px as usize * 4;
-                    let o = sixel_line * sixel_line_bytes;
-                    if offset + sixel_line_bytes > pixels.len() {
-                        break;
-                    }
-
-                    // Use copy_from_slice for bulk copying
-                    pixels[offset..(offset + sixel_line_bytes)].copy_from_slice(&sixel.picture_data[o..(o + sixel_line_bytes)]);
-                    sixel_line += 1;
-                }
-            }
-        }
-
-        Size::new(px_width, px_height)
-    }
-
-    /// Original render_to_rgba that allocates a new buffer
-    /// Consider using render_to_rgba_buffer with a reusable buffer for better performance
-    pub fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
-        let mut pixels = Vec::new();
-        let size = self.render_to_rgba_buffer(options, &mut pixels);
-        (size, pixels)
     }
 
     pub fn use_letter_spacing(&self) -> bool {
