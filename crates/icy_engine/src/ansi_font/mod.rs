@@ -8,7 +8,7 @@ pub mod figlet;
 pub trait AnsiFont: Send {
     fn name(&self) -> &str;
     fn has_char(&self, ch: char) -> bool;
-    fn render_next(&self, editor: &mut EditState, prev_char: char, ch: char) -> Position;
+    fn render_next(&self, editor: &mut EditState, prev_char: char, ch: char, edit_mode: bool) -> Position;
 
     fn font_type(&self) -> FontType;
 

@@ -394,7 +394,7 @@ impl Tool for FontTool {
             }
 
             MKey::Return => {
-                let pos = font.render_next(editor.buffer_view.lock().get_edit_state_mut(), self.prev_char, '\n');
+                let pos = font.render_next(editor.buffer_view.lock().get_edit_state_mut(), self.prev_char, '\n', false);
                 editor.set_caret(pos.x, pos.y);
                 /*
                 if let Some(size) = self.sizes.last() {
@@ -472,7 +472,7 @@ impl Tool for FontTool {
                 let _ = editor.buffer_view.lock().get_edit_state_mut().undo_caret_position();
                 let ch = unsafe { char::from_u32_unchecked(ch as u32) };
                 if font.has_char(ch) {
-                    let next_pos = font.render_next(editor.buffer_view.lock().get_edit_state_mut(), self.prev_char, ch);
+                    let next_pos = font.render_next(editor.buffer_view.lock().get_edit_state_mut(), self.prev_char, ch, false);
                     self.prev_char = ch;
                     editor.set_caret(next_pos.x, next_pos.y);
                 } else {

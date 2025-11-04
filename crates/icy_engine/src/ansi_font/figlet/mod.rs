@@ -102,7 +102,7 @@ impl AnsiFont for FIGFont {
         self.chars.contains_key(&ch)
     }
 
-    fn render_next(&self, editor: &mut crate::editor::EditState, _prev_char: char, ch: char) -> crate::Position {
+    fn render_next(&self, editor: &mut crate::editor::EditState, _prev_char: char, ch: char, _edit_mode: bool) -> crate::Position {
         if ch == '\n' {
             return Position::new(0, editor.get_caret().get_position().y + self.header.height() as i32);
         }

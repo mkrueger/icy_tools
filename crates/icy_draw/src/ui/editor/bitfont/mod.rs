@@ -13,7 +13,9 @@ use i18n_embed_fl::fl;
 use icy_engine::{BitFont, Buffer, EngineResult, Glyph, Size, TextAttribute, TextPane};
 use icy_engine_gui::{BufferView, show_terminal_area};
 
-use crate::{AnsiEditor, CLIPBOARD_CONTEXT, ClipboardHandler, Document, DocumentOptions, Message, SETTINGS, TerminalResult, UndoHandler, model::Tool, to_message};
+use crate::{
+    AnsiEditor, CLIPBOARD_CONTEXT, ClipboardHandler, Document, DocumentOptions, Message, SETTINGS, TerminalResult, UndoHandler, model::Tool, to_message,
+};
 
 use self::undo::UndoOperation;
 

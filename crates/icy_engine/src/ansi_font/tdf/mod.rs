@@ -18,7 +18,7 @@ pub struct FontGlyph {
 }
 
 impl FontGlyph {
-    fn render(&self, editor: &mut EditState, font_type: FontType) -> Position {
+    fn render(&self, editor: &mut EditState, font_type: FontType, edit_mode: bool) -> Position {
         let caret_pos = editor.get_caret().get_position();
         let outline_style = editor.get_outline_style();
         let color: TextAttribute = editor.get_caret().attribute;
@@ -31,7 +31,6 @@ impl FontGlyph {
         while char_offset < self.data.len() {
             let ch = self.data[char_offset];
             char_offset += 1;
-
             if ch == 13 {
                 cur.x = caret_pos.x;
                 cur.y += 1;
@@ -39,12 +38,12 @@ impl FontGlyph {
             } else {
                 let mut attributed_char = match font_type {
                     FontType::Outline => {
-                        if ch == b'@' || ch == b' ' && leading_space {
+                        if ch == b'@' && !edit_mode || ch == b' ' && leading_space {
                             cur.x += 1;
                             continue;
                         }
                         leading_space = false;
-                        if ch == b'O' {
+                        if ch == b'O' && !edit_mode {
                             AttributedChar::new(' ', color)
                         } else {
                             AttributedChar::new(font::TheDrawFont::transform_outline(outline_style, ch) as char, color)
@@ -55,22 +54,31 @@ impl FontGlyph {
                             cur.x += 1;
                             continue;
                         }
-                        if ch == 0xF7 {
+
+                        if ch == 0xFF && !edit_mode {
                             AttributedChar::new(' ', color)
                         } else {
                             AttributedChar::new(ch as char, color)
                         }
                     }
                     FontType::Color => {
-                        let ch = ch as char;
-                        let ch_attr = TextAttribute::from_u8(self.data[char_offset], crate::IceMode::Ice); // tdf fonts don't support ice mode by default
-                        char_offset += 1;
-                        let ch = AttributedChar::new(ch, ch_attr);
-                        if ch.is_transparent() {
-                            cur.x += 1;
-                            continue;
+                        if ch == b'&' {
+                            if edit_mode {
+                                AttributedChar::new('&', TextAttribute::default())
+                            } else {
+                                AttributedChar::new(' ', TextAttribute::default())
+                            }
+                        } else {
+                            let ch = if ch == 0xFF && !edit_mode { ' ' } else { ch as char };
+                            let ch_attr = TextAttribute::from_u8(self.data[char_offset], crate::IceMode::Ice); // tdf fonts don't support ice mode by default
+                            char_offset += 1;
+                            let result = AttributedChar::new(ch, ch_attr);
+                            if result.is_transparent() {
+                                cur.x += 1;
+                                continue;
+                            }
+                            result
                         }
-                        ch
                     }
                     _ => {
                         panic!("Unsupported font type");
@@ -80,6 +88,7 @@ impl FontGlyph {
                     attributed_char.ch = converter.convert_to_unicode(attributed_char);
                 }
                 editor.set_char(cur, attributed_char).unwrap();
+
                 cur.x += 1;
             }
         }

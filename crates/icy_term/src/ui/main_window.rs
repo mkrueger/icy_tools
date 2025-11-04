@@ -586,16 +586,11 @@ impl MainWindow {
                         vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
                     }
 
-                    if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                        if let Err(err) = clipboard.set(vec) {
-                            log::error!("Failed to set clipboard content: {}", err);
-                        } else {
-                            println!("Clipboard content set successfully");
-                        }
+                    if let Err(err) = crate::CLIPBOARD_CONTEXT.set(vec) {
+                        log::error!("Failed to set clipboard content: {}", err);
                     } else {
-                        log::error!("Failed to access clipboard");
+                        println!("Clipboard content set successfully");
                     }
-
                     // Clear selection after copy
                     let _ = edit_state.clear_selection();
                     self.shift_pressed_during_selection = false;
@@ -605,27 +600,23 @@ impl MainWindow {
 
             Message::Paste => {
                 self.clear_selection();
-                if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                    match clipboard.get_text() {
-                        Ok(text) => {
-                            // Convert text to bytes using the current unicode converter
-                            let mut data: Vec<u8> = Vec::new();
-                            for ch in text.chars() {
-                                let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
-                                data.push(converted_byte as u8);
-                            }
-
-                            // Send the data to the terminal
-                            if !data.is_empty() {
-                                let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
-                            }
+                match crate::CLIPBOARD_CONTEXT.get_text() {
+                    Ok(text) => {
+                        // Convert text to bytes using the current unicode converter
+                        let mut data: Vec<u8> = Vec::new();
+                        for ch in text.chars() {
+                            let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                            data.push(converted_byte as u8);
                         }
-                        Err(err) => {
-                            log::error!("Failed to get clipboard text: {}", err);
+
+                        // Send the data to the terminal
+                        if !data.is_empty() {
+                            let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                         }
                     }
-                } else {
-                    log::error!("Failed to access clipboard");
+                    Err(err) => {
+                        log::error!("Failed to get clipboard text: {}", err);
+                    }
                 }
                 Task::none()
             }

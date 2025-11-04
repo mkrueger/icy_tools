@@ -119,7 +119,7 @@ impl SelectFontDialog {
             };
             let mut prev = ' ';
             for ch in b {
-                let pos = font.render_next(&mut state, prev, ch);
+                let pos = font.render_next(&mut state, prev, ch, false);
                 prev = ch;
                 state.get_caret_mut().set_position(pos);
             }

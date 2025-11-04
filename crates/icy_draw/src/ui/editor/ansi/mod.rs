@@ -21,7 +21,9 @@ use icy_engine::{
 use icy_engine_gui::{BufferView, CaretShape, TerminalCalc, show_terminal_area};
 
 use crate::{
-    CLIPBOARD_CONTEXT, ClipboardHandler, Commands, Document, DocumentOptions, Message, SETTINGS, SavingError, TerminalResult, UndoHandler, model::{DragPos, MKey, MModifiers, Tool}, paint::ColorMode
+    CLIPBOARD_CONTEXT, ClipboardHandler, Commands, Document, DocumentOptions, Message, SETTINGS, SavingError, TerminalResult, UndoHandler,
+    model::{DragPos, MKey, MModifiers, Tool},
+    paint::ColorMode,
 };
 
 pub enum Event {
@@ -60,6 +62,7 @@ pub struct AnsiEditor {
     pub request_focus: bool,
     pub color_mode: ColorMode,
     pub tool_switch: bool,
+    pub insert_tdf_font_space: bool,
 }
 
 impl UndoHandler for AnsiEditor {
@@ -150,7 +153,9 @@ impl ClipboardHandler for AnsiEditor {
     }
 
     fn can_paste(&self) -> bool {
-        return CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into())) || CLIPBOARD_CONTEXT.has(ContentFormat::Image) || CLIPBOARD_CONTEXT.has(ContentFormat::Text);
+        return CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
+            || CLIPBOARD_CONTEXT.has(ContentFormat::Image)
+            || CLIPBOARD_CONTEXT.has(ContentFormat::Text);
     }
 
     fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
@@ -168,8 +173,8 @@ impl ClipboardHandler for AnsiEditor {
             sixel.set_height(h as i32);
             self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
         } else if let Ok(text) = CLIPBOARD_CONTEXT.get_text() {
-                self.buffer_view.lock().get_edit_state_mut().paste_text(&text)?;
-            }
+            self.buffer_view.lock().get_edit_state_mut().paste_text(&text)?;
+        }
         Ok(())
     }
 }
@@ -309,6 +314,7 @@ impl AnsiEditor {
             request_focus: false,
             color_mode: ColorMode::Both,
             tool_switch: true,
+            insert_tdf_font_space: false,
         }
     }
 
@@ -643,8 +649,13 @@ impl AnsiEditor {
 
                     /* egui::Event::CompositionEnd(text) |*/
                     egui::Event::Text(text) => {
+                        let may_tdf_space = self.insert_tdf_font_space && ui.input(|i| i.modifiers.shift_only());
                         if !ui.input(|i| i.modifiers.ctrl || i.modifiers.command || i.modifiers.alt) {
                             for c in text.chars() {
+                                if c == ' ' && may_tdf_space {
+                                    self.type_cp437_key(0xFF as char);
+                                    continue;
+                                }
                                 cur_tool.handle_key(self, MKey::Character(c as u16), MModifiers::None);
                             }
                         }

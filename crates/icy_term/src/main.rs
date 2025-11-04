@@ -44,6 +44,7 @@ pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     static ref START_TIME: Instant = Instant::now();
+    static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
 }
 
 lazy_static::lazy_static! {

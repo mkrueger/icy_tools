@@ -134,8 +134,9 @@ impl TheDrawFont {
             o += 2;
 
             let mut char_lookup_table = Vec::new();
-            for _ in 0..CHAR_TABLE_SIZE {
+            for i in 0..CHAR_TABLE_SIZE {
                 let cur_char = bytes[o] as u16 | ((bytes[o + 1] as u16) << 8);
+                println!("Char offset: {i}:{:04X}", cur_char);
                 o += 2;
                 char_lookup_table.push(cur_char);
             }
@@ -143,8 +144,6 @@ impl TheDrawFont {
             let mut char_table = Vec::new();
             for char_offset in char_lookup_table {
                 let mut char_offset = char_offset as usize;
-
-                let mut char_data = Vec::new();
 
                 if char_offset == 0xFFFF {
                     char_table.push(None);
@@ -156,39 +155,72 @@ impl TheDrawFont {
                 }
                 char_offset += o;
 
+                if char_offset + 2 > bytes.len() {
+                    log::error!("Cannot read glyph dimensions at offset {}", char_offset);
+                    char_table.push(None);
+                    continue;
+                }
+
                 let width = bytes[char_offset] as usize;
                 char_offset += 1;
                 let height = bytes[char_offset] as usize;
                 char_offset += 1;
 
+                let mut char_data = Vec::new();
+                let mut valid_glyph = true;
+
+                // Read glyph data according to font type
                 loop {
                     if char_offset >= bytes.len() {
-                        log::error!("Data overflow reading char at offset {char_offset}, skipping char.");
-                        char_data.clear();
+                        log::error!("Data overflow reading char at offset {char_offset}");
+                        valid_glyph = false;
                         break;
                     }
 
-                    let mut ch = bytes[char_offset];
+                    let ch = bytes[char_offset];
                     char_offset += 1;
+
+                    // Check for end of glyph data
                     if ch == 0 {
                         break;
                     }
+
                     char_data.push(ch);
 
-                    if matches!(font_type, FontType::Color) {
-                        if ch == 13 {
-                            continue;
+                    // Handle font type specific data
+                    match font_type {
+                        FontType::Color => {
+                            // For color fonts, we need to read the attribute byte
+                            // EXCEPT for CR (13) and '&' (38)
+                            if ch != 13 && ch != b'&' {
+                                if char_offset >= bytes.len() {
+                                    log::error!("Data overflow reading color byte at offset {char_offset}");
+                                    valid_glyph = false;
+                                    break;
+                                }
+                                let color_byte = bytes[char_offset];
+                                char_offset += 1;
+                                char_data.push(color_byte);
+                            }
                         }
-                        ch = bytes[char_offset];
-                        char_offset += 1;
-                        char_data.push(ch);
+                        FontType::Outline | FontType::Block => {
+                            // No additional bytes for outline/block fonts
+                        }
+                        _ => {
+                            log::error!("Unsupported font type during read: {:?}", font_type);
+                            valid_glyph = false;
+                            break;
+                        }
                     }
                 }
-                if !char_data.is_empty() {
+
+                if valid_glyph && !char_data.is_empty() {
                     char_table.push(Some(FontGlyph {
-                        size: (width, height).into(),
+                        size: Size::new(width as i32, height as i32),
                         data: char_data,
                     }));
+                } else {
+                    char_table.push(None);
                 }
             }
             o += block_size;
@@ -320,7 +352,7 @@ impl TheDrawFont {
         }
     }
 
-    pub fn render(&self, editor: &mut EditState, char_code: u8) -> Option<Size> {
+    pub fn render(&self, editor: &mut EditState, char_code: u8, edit_mode: bool) -> Option<Size> {
         let char_index = (char_code as i32) - b' ' as i32 - 1;
         if char_index < 0 || char_index > self.char_table.len() as i32 {
             return None;
@@ -330,7 +362,7 @@ impl TheDrawFont {
             return None;
         };
         let pos = editor.get_caret().get_position();
-        let end_pos = glyph.render(editor, self.font_type);
+        let end_pos = glyph.render(editor, self.font_type, edit_mode);
         Some(Size::new(glyph.size.width, end_pos.y - pos.y + 1))
     }
 
@@ -454,7 +486,7 @@ impl AnsiFont for TheDrawFont {
         self.has_char(ch as u8)
     }
 
-    fn render_next(&self, editor: &mut EditState, _prev_char: char, ch: char) -> Position {
+    fn render_next(&self, editor: &mut EditState, _prev_char: char, ch: char, edit_mode: bool) -> Position {
         if ch == '\n' {
             return Position::new(0, editor.get_caret().get_position().y + self.get_font_height());
         }
@@ -464,7 +496,7 @@ impl AnsiFont for TheDrawFont {
             return caret_pos;
         }
         if let Some(Some(glyph)) = &self.char_table.get(char_offset as usize) {
-            return glyph.render(editor, self.font_type);
+            return glyph.render(editor, self.font_type, edit_mode);
         }
         return caret_pos;
     }

@@ -149,9 +149,13 @@ impl EditState {
             for line in &mut layer.lines {
                 for ch in &mut line.chars {
                     let fg = ch.attribute.get_foreground();
-                    ch.attribute.set_foreground(table[fg as usize]);
+
+                    let new_fg = table.get(fg as usize).copied().unwrap_or(7);
+                    ch.attribute.set_foreground(new_fg);
+
                     let bg = ch.attribute.get_background();
-                    ch.attribute.set_background(table[bg as usize]);
+                    let new_bg = table.get(bg as usize).copied().unwrap_or(0);
+                    ch.attribute.set_background(new_bg);
                 }
             }
         }
@@ -339,8 +343,12 @@ fn get_palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize)
                 }
                 let fg = ch.attribute.get_foreground();
                 let bg = ch.attribute.get_background();
-                color_count[fg as usize] += 1;
-                color_count[bg as usize] += 1;
+                if (fg as usize) < color_count.len() {
+                    color_count[fg as usize] += 1;
+                }
+                if (bg as usize) < color_count.len() {
+                    color_count[bg as usize] += 1;
+                }
             }
         }
     }

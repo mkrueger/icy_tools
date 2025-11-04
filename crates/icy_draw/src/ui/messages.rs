@@ -9,7 +9,8 @@ use egui::mutex::Mutex;
 use icy_engine::{AnsiFont, BitFont, EngineResult, IceMode, PaletteMode, Size, Tag, TextPane, editor::ICY_CLIPBOARD_TYPE};
 
 use crate::{
-    AnsiEditor, BRUSH_TOOL, CLIPBOARD_CONTEXT, Document, MainWindow, NewFileDialog, SETTINGS, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog, Settings, util::autosave
+    AnsiEditor, BRUSH_TOOL, CLIPBOARD_CONTEXT, Document, MainWindow, NewFileDialog, SETTINGS, SaveFileDialog, SelectCharacterDialog, SelectOutlineDialog,
+    Settings, util::autosave,
 };
 
 #[derive(Clone)]

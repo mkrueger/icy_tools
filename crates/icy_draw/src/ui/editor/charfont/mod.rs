@@ -437,17 +437,21 @@ fn set_attribute(layer: &mut Layer, attr: TextAttribute) {
 impl CharFontEditor {
     pub fn new(gl: &Arc<glow::Context>, fonts: Vec<TheDrawFont>) -> Self {
         let mut buffer = Buffer::new(Size::new(30, 12));
+        let font = BitFont::from_bytes("TDF_FONT", include_bytes!("TDF_FONT.psf")).unwrap();
+        buffer.set_font(0, font.clone());
         set_up_layers(&mut buffer);
-        let ansi_editor = AnsiEditor::new(gl, buffer);
+        let mut ansi_editor = AnsiEditor::new(gl, buffer);
+        ansi_editor.insert_tdf_font_space = true;
 
         let mut buffer = Buffer::new(Size::new(30, 12));
+        buffer.set_font(0, font.clone());
         buffer.is_terminal_buffer = false;
         let mut buffer_view = BufferView::from_buffer(gl, buffer);
         buffer_view.interactive = false;
         let outline_previewbuffer_view = Arc::new(Mutex::new(buffer_view));
 
         let mut res = Self {
-            font: BitFont::default(),
+            font,
             ansi_editor,
             selected_char_opt: Some('A'),
             old_selected_char_opt: None,
@@ -514,7 +518,7 @@ impl CharFontEditor {
                     }
                 }
 
-                font.render(self.outline_previewbuffer_view.lock().get_edit_state_mut(), ch as u8);
+                font.render(self.outline_previewbuffer_view.lock().get_edit_state_mut(), ch as u8, true);
             }
         }
     }
@@ -533,7 +537,7 @@ impl CharFontEditor {
             edit_state.set_outline_style(usize::MAX);
             edit_state.set_is_buffer_dirty();
             if let Some(ch) = self.selected_char_opt {
-                font.render(edit_state, ch as u8);
+                font.render(edit_state, ch as u8, true);
             }
             edit_state.get_undo_stack().lock().unwrap().clear();
             self.old_selected_char_opt = self.selected_char_opt;
@@ -565,13 +569,27 @@ impl CharFontEditor {
                                 data.push(13);
                             }
                             let lw = buf.get_line_length(y);
+                            let mut line_data = Vec::new();
+                            let mut actual_width = 0;
+
                             for x in 0..lw {
                                 let ch = buf.get_char((x, y));
+                                if ch.ch == '&' {
+                                    // Only save & if it's the last character on the line
+                                    if x == lw - 1 {
+                                        line_data.push(b'&');
+                                        actual_width = x + 1;
+                                    }
+                                    break; // Stop processing this line
+                                }
                                 if VALID_OUTLINE_CHARS.contains(ch.ch) {
-                                    data.push(ch.ch as u8);
+                                    line_data.push(ch.ch as u8);
+                                    actual_width = x + 1;
                                 }
                             }
-                            w = w.max(lw);
+
+                            data.extend(line_data);
+                            w = w.max(actual_width);
                             h = y;
                         }
 
@@ -588,11 +606,25 @@ impl CharFontEditor {
                                 data.push(13);
                             }
                             let lw = buf.get_line_length(y);
+                            let mut line_data = Vec::new();
+                            let mut actual_width = 0;
+
                             for x in 0..lw {
                                 let ch = buf.get_char((x, y));
-                                data.push(ch.ch as u8);
+                                if ch.ch == '&' {
+                                    // Only save & if it's the last character on the line
+                                    if x == lw - 1 {
+                                        line_data.push(b'&');
+                                        actual_width = x + 1;
+                                    }
+                                    break; // Stop processing this line
+                                }
+                                line_data.push(ch.ch as u8);
+                                actual_width = x + 1;
                             }
-                            w = w.max(lw);
+
+                            data.extend(line_data);
+                            w = w.max(actual_width);
                             h = y;
                         }
 
@@ -609,12 +641,25 @@ impl CharFontEditor {
                                 data.push(13);
                             }
                             let lw = buf.get_line_length(y);
+                            let mut actual_width = 0;
+
                             for x in 0..lw {
                                 let ch = buf.get_char((x, y));
+                                if ch.ch == '&' {
+                                    // Only save & if it's the last character on the line
+                                    // & doesn't have an attribute byte in color mode
+                                    if x == lw - 1 {
+                                        data.push(b'&');
+                                        actual_width = x + 1;
+                                    }
+                                    break; // Stop processing this line
+                                }
                                 data.push(ch.ch as u8);
                                 data.push(ch.attribute.as_u8(icy_engine::IceMode::Ice));
+                                actual_width = x + 1;
                             }
-                            w = w.max(lw);
+
+                            w = w.max(actual_width);
                             h = y;
                         }
 
