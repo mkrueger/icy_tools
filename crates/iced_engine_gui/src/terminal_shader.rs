@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
+use std::sync::{Mutex, atomic::AtomicU64};
 
 use crate::{Blink, Message, MonitorSettings, Terminal, now_ms};
 use iced::widget::shader;
@@ -61,7 +61,7 @@ pub struct TerminalShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
-    instances: HashMap<u64, InstanceResources>, // NEW: per-instance resources
+    instances: HashMap<u64, InstanceResources>,
 }
 
 static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -197,6 +197,12 @@ impl shader::Primitive for TerminalShader {
         bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
+        if let Ok(mut pending) = PENDING_INSTANCE_REMOVALS.lock() {
+            for id in pending.drain(..) {
+                renderer.instances.remove(&id);
+            }
+        }
+
         let id = self.instance_id;
         let (w, h) = self.terminal_size;
 
@@ -520,6 +526,9 @@ impl<'a> CRTShaderProgram<'a> {
     }
 }
 
+static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
+static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
 pub struct CRTShaderState {
     caret_blink: crate::Blink,
     character_blink: crate::Blink,
@@ -549,7 +558,13 @@ impl CRTShaderState {
     }
 }
 
-static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
+impl Drop for CRTShaderState {
+    fn drop(&mut self) {
+        if let Ok(mut v) = PENDING_INSTANCE_REMOVALS.lock() {
+            v.push(self.instance_id);
+        }
+    }
+}
 
 impl Default for CRTShaderState {
     fn default() -> Self {
@@ -567,7 +582,6 @@ impl Default for CRTShaderState {
             hovered_rip_field: false,
             last_rendered_size: None,
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            //            scale_factor: 1.0,
         }
     }
 }
