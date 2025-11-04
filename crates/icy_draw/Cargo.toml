@@ -59,6 +59,7 @@ i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
+clipboard-rs = { workspace = true }
 
 [features]
 default = []

@@ -7,15 +7,14 @@ use std::{
     sync::Arc,
 };
 
+use clipboard_rs::{Clipboard, ClipboardContent, ContentFormat, common::RustImage};
 use eframe::{
     egui::{self, Key, Response},
     epaint::{Vec2, mutex::Mutex},
 };
 use i18n_embed_fl::fl;
 use icy_engine::{
-    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, TextAttribute, TextPane, UnicodeConverter, attribute,
-    editor::{AtomicUndoGuard, UndoState},
-    util::{BUFFER_DATA, pop_cliboard_text, pop_data, pop_sixel_image},
+    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, Sixel, TextAttribute, TextPane, UnicodeConverter, attribute, editor::{AtomicUndoGuard, ICY_CLIPBOARD_TYPE, UndoState}
 };
 
 use icy_engine_gui::{BufferView, CaretShape, TerminalCalc, show_terminal_area};
@@ -108,33 +107,58 @@ impl ClipboardHandler for AnsiEditor {
     }
 
     fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
-        /*  let text = self.buffer_view.lock().get_edit_state_mut().get_copy_text();
-        if let Some(text) = text {
-            ctx.copy_text(text);
+        let mut lock  =self.buffer_view.lock();
+        let edit_state = lock.get_edit_state_mut();
+        let mut vec = vec![];
+        if let Some(text) = edit_state.get_copy_text() {
+            vec.push(ClipboardContent::Text(text.clone()));
+        } else {
+            return Ok(());
+        }
+        if let Some(rich_text) = edit_state.get_copy_rich_text() {
+            vec.push(ClipboardContent::Rtf(rich_text));
+        }
+
+        /*
+        let selection = edit_state.get_selection().unwrap();
+        if selection.shape == Shape::Rectangle {
+            let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
+                rect: selection.as_rectangle(),
+                blink_on: true,
+                selection: None,
+                selection_fg: None,
+                selection_bg: None,
+            });
+
+            let dynamic_image = DynamicImage::ImageRgba8(
+                image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data)
+                    .expect("Failed to create image buffer from raw data"),
+            );
+            let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
+            
+            vec.push(ClipboardContent::Image(img));
         }*/
 
-        if let Some(_data) = self.buffer_view.lock().get_edit_state_mut().get_clipboard_data() {
-            // TODO: CLIPBOARD HANDLING
-            // push_data(&Clipboard::new().unwrap(), BUFFER_DATA, &data, None)?;
-            /*
-            let mut clipboard_data: Vec<u8> = Vec::new();
-            clipboard_data.extend(b"iced");
-            clipboard_data.extend(u16::to_le_bytes(BUFFER_DATA));
-            clipboard_data.extend(data);
-            while clipboard_data.len() % 4 != 0 {
-                clipboard_data.push(0);
+        if let Some(data) = edit_state.get_clipboard_data() {
+            vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+        }
+        
+        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+            if let Err(err) = clipboard.set(vec) {
+                log::error!("Failed to set clipboard content: {}", err);
             }
-            let image = ColorImage::from_rgba_unmultiplied([clipboard_data.len() / 4, 1], &clipboard_data);
-            ctx.copy_image(image);*/
         } else {
-            log::error!("can't get clipboard data!");
+            log::error!("Failed to access clipboard");
         }
 
         Ok(())
     }
 
     fn can_paste(&self) -> bool {
-        pop_data(BUFFER_DATA).is_some() || pop_sixel_image().is_some() || pop_cliboard_text().is_some()
+        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+            return clipboard.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into())) || clipboard.has(ContentFormat::Image) | clipboard.has(ContentFormat::Text);
+        }
+        false
     }
 
     fn paste(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
@@ -142,12 +166,19 @@ impl ClipboardHandler for AnsiEditor {
             return Ok(());
         }
 
-        if let Some(data) = pop_data(BUFFER_DATA) {
-            self.buffer_view.lock().get_edit_state_mut().paste_clipboard_data(&data)?;
-        } else if let Some(sixel) = pop_sixel_image() {
-            self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
-        } else if let Some(text) = pop_cliboard_text() {
-            self.buffer_view.lock().get_edit_state_mut().paste_text(&text)?;
+        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+            if let Ok(data) = clipboard.get_buffer(ICY_CLIPBOARD_TYPE) {
+                self.buffer_view.lock().get_edit_state_mut().paste_clipboard_data(&data)?;
+            } else if let Ok(img) = clipboard.get_image() {
+                let mut sixel = Sixel::new(Position::default());
+                sixel.picture_data = img.to_rgba8().unwrap().as_raw().clone();
+                let (w, h) = img.get_size();
+                sixel.set_width(w as i32);
+                sixel.set_height(h as i32);
+                self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
+            } else if let Ok(text) = clipboard.get_text() {
+                self.buffer_view.lock().get_edit_state_mut().paste_text(&text)?;
+            }
         }
         Ok(())
     }

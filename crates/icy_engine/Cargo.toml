@@ -7,9 +7,7 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["clipboard", "minimal"]
-clipboard = ["arboard"]
-
+default = [ "minimal"]
 minimal = []
 
 [dependencies]
@@ -31,7 +29,6 @@ i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
-arboard = { version = "3.4.1", optional = true }
 icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
 bitflags = "2.8.0"

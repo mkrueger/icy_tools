@@ -2,6 +2,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
+    vec,
 };
 
 use crate::{
@@ -16,7 +17,7 @@ use crate::{
 };
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{AttributedChar, Position, RenderOptions, Shape, UnicodeConverter, ansi::BaudEmulation};
+use icy_engine::{AttributedChar, Position, RenderOptions, Shape, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -552,47 +553,46 @@ impl MainWindow {
             Message::Copy => {
                 // Implement clipboard copy from selection
                 if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
-                    // Get the selected text
-                    let copy_text: Option<String> = edit_state.get_copy_text();
+                    let mut vec = vec![];
+                    
+                    if let Some(text) = edit_state.get_copy_text() {
+                        vec.push(ClipboardContent::Text(text.clone()));
+                    } else {
+                        return Task::none();
+                    }
+                    if let Some(rich_text) = edit_state.get_copy_rich_text() {
+                        vec.push(ClipboardContent::Rtf(rich_text));
+                    }
 
-                    // Normal copy (not appending)
-                    if let Some(text) = copy_text {
-                        if text.is_empty() {
-                            return Task::none();
+                    let selection = edit_state.get_selection().unwrap();
+                    if selection.shape == Shape::Rectangle {
+                        let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
+                            rect: selection.as_rectangle(),
+                            blink_on: true,
+                            selection: None,
+                            selection_fg: None,
+                            selection_bg: None,
+                        });
+
+                        let dynamic_image = DynamicImage::ImageRgba8(
+                            image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data)
+                                .expect("Failed to create image buffer from raw data"),
+                        );
+                        let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
+                        
+                        vec.push(ClipboardContent::Image(img));
+                    }
+
+                    if let Some(data) = edit_state.get_clipboard_data() {
+                        vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+                    }
+                    
+                    if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+                        if let Err(err) = clipboard.set(vec) {
+                            log::error!("Failed to set clipboard content: {}", err);
                         }
-                        if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
-                            let rich_text = edit_state.get_copy_rich_text().unwrap();
-
-                            let selection = edit_state.get_selection().unwrap();
-                            if selection.shape == Shape::Rectangle {
-                                let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
-                                    rect: selection.as_rectangle(),
-                                    blink_on: true,
-                                    selection: None,
-                                    selection_fg: None,
-                                    selection_bg: None,
-                                });
-
-                                let dynamic_image = DynamicImage::ImageRgba8(
-                                    image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data)
-                                        .expect("Failed to create image buffer from raw data"),
-                                );
-                                let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
-                                if let Err(err) = clipboard.set(vec![
-                                    ClipboardContent::Text(text),
-                                    ClipboardContent::Rtf(rich_text),
-                                    ClipboardContent::Image(img),
-                                ]) {
-                                    log::error!("Failed to set clipboard text: {}", err);
-                                }
-                            } else {
-                                if let Err(err) = clipboard.set(vec![ClipboardContent::Text(text), ClipboardContent::Rtf(rich_text)]) {
-                                    log::error!("Failed to set clipboard text: {}", err);
-                                }
-                            }
-                        } else {
-                            log::error!("Failed to access clipboard");
-                        }
+                    } else {
+                        log::error!("Failed to access clipboard");
                     }
 
                     // Clear selection after copy

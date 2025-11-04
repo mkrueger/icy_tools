@@ -1,15 +1,13 @@
 use std::{collections::HashMap, time::Instant};
 
+use clipboard_rs::{Clipboard, ContentFormat};
 use eframe::{
     egui::{self, TopBottomPanel, Ui},
     epaint::Vec2,
 };
 use egui::{FontId, Image, TextFormat, containers::menu, text::LayoutJob};
 use i18n_embed_fl::fl;
-use icy_engine::{
-    FontMode, IceMode, PaletteMode,
-    util::{BUFFER_DATA, pop_data},
-};
+use icy_engine::{FontMode, IceMode, PaletteMode, editor::ICY_CLIPBOARD_TYPE};
 
 use crate::{LATEST_VERSION, MainWindow, Message, SETTINGS, Settings, VERSION, button_with_shortcut};
 
@@ -156,13 +154,19 @@ impl<'a> MainWindow<'a> {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     ui.set_min_width(200.0);
 
-                    let button = button_with_shortcut(ui, pop_data(BUFFER_DATA).is_some(), fl!(crate::LANGUAGE_LOADER, "menu-paste-as-new-image"), "");
+                    let has_icy_img = if let Ok(clipboard) = clipboard_rs::ClipboardContext::new() {
+                        clipboard.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
+                    } else {
+                        false
+                    };
+
+                    let button = button_with_shortcut(ui, has_icy_img, fl!(crate::LANGUAGE_LOADER, "menu-paste-as-new-image"), "");
                     if button.clicked() {
                         result = Some(Message::PasteAsNewImage);
                         ui.close_kind(egui::UiKind::Menu);
                     }
 
-                    let button = button_with_shortcut(ui, pop_data(BUFFER_DATA).is_some(), fl!(crate::LANGUAGE_LOADER, "menu-paste-as-brush"), "");
+                    let button = button_with_shortcut(ui, has_icy_img, fl!(crate::LANGUAGE_LOADER, "menu-paste-as-brush"), "");
                     if button.clicked() {
                         result = Some(Message::PasteAsBrush);
                         ui.close_kind(egui::UiKind::Menu);
