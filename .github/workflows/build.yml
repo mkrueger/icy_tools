@@ -60,37 +60,6 @@ jobs:
      with:
       name: ${{ env.APP_IMG }}
       path: ${{ env.APP_IMG }}
-  
-  build_linux_lts:
-   strategy:
-     matrix:
-       app: [icy_term, icy_draw, icy_view]
-   runs-on: ubuntu-22.04
-   steps:
-   - uses: actions/checkout@v4
-   - name: Install required libraries
-     run: |
-       sudo apt-get install build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev
-       git submodule update --init
-   - name: Build deb
-     id: build-deb
-     run: |
-       cargo install cargo-deb
-       export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
-       echo "VERSION=$version" >> $GITHUB_ENV
-       echo "Version: $version"
-       cd crates/${{ matrix.app }}
-       export DEB=$(cargo deb)
-       echo "Copy $DEB to ${{ matrix.app }}.deb"
-       mv $DEB "../../${{ matrix.app }}.deb"
-       cd ../..
-   - name: 'Upload deb'
-     uses: actions/upload-artifact@v4
-     with:
-       name: ${{ matrix.app }}_linux_22_04_${{ env.VERSION }}
-       path: |
-         ${{ matrix.app }}.deb
-         file_id.diz
 
   build_windows:
     strategy:
