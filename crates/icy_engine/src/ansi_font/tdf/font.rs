@@ -3,12 +3,12 @@ use std::{error::Error, fs::File, io::Read, path::Path};
 
 use super::{FontGlyph, FontType};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TheDrawFont {
     pub name: String,
     pub font_type: FontType,
     pub spaces: i32,
-    char_table: Vec<Option<FontGlyph>>,
+    pub char_table: Vec<Option<FontGlyph>>,
 }
 
 static THE_DRAW_FONT_ID: &[u8; 18] = b"TheDraw FONTS file";
@@ -344,6 +344,15 @@ impl TheDrawFont {
         }
     }
 
+    pub fn get_glyph(&self, ch: char) -> Option<&FontGlyph> {
+        let char_offset = (ch as i32) - b' ' as i32 - 1;
+        if char_offset < 0 || char_offset >= self.char_table.len() as i32 {
+            return None;
+        }
+        let table_entry = &self.char_table[char_offset as usize];
+        table_entry.as_ref()
+    }
+
     pub fn clear_glyph(&mut self, ch: char) {
         let char_offset = (ch as i32) - b' ' as i32 - 1;
         if char_offset > 0 || char_offset < self.char_table.len() as i32 {
@@ -505,43 +514,5 @@ impl AnsiFont for TheDrawFont {
 
     fn as_bytes(&self) -> EngineResult<Vec<u8>> {
         self.as_tdf_bytes()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{FontType, TheDrawFont};
-    const TEST_FONT: &[u8] = include_bytes!("CODERX.TDF");
-
-    #[test]
-    fn test_load() {
-        let result = TheDrawFont::from_bytes(TEST_FONT).unwrap();
-        for r in &result {
-            assert!(matches!(r.font_type, FontType::Color));
-        }
-        assert_eq!(6, result.len());
-        assert_eq!("Coder Blue", result[0].name);
-        assert_eq!("Coder Green", result[1].name);
-        assert_eq!("Coder Margen", result[2].name);
-        assert_eq!("Coder Purple", result[3].name);
-        assert_eq!("Coder Red", result[4].name);
-        assert_eq!("Coder Silver", result[5].name);
-    }
-
-    #[test]
-    fn test_load_save_multi() {
-        let result = TheDrawFont::from_bytes(TEST_FONT).unwrap();
-        let bundle = TheDrawFont::create_font_bundle(&result).unwrap();
-        let result = TheDrawFont::from_bytes(&bundle).unwrap();
-        for r in &result {
-            assert!(matches!(r.font_type, FontType::Color));
-        }
-        assert_eq!(6, result.len());
-        assert_eq!("Coder Blue", result[0].name);
-        assert_eq!("Coder Green", result[1].name);
-        assert_eq!("Coder Margen", result[2].name);
-        assert_eq!("Coder Purple", result[3].name);
-        assert_eq!("Coder Red", result[4].name);
-        assert_eq!("Coder Silver", result[5].name);
     }
 }

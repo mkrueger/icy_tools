@@ -3,10 +3,11 @@ use i18n_embed_fl::fl;
 
 pub mod font;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum FontType {
     Outline,
     Block,
+    #[default]
     Color,
     Figlet,
 }
@@ -82,9 +83,12 @@ impl FontGlyph {
                             let ch_attr = if is_eol_marker {
                                 TextAttribute::default()
                             } else {
-                                let attr = TextAttribute::from_u8(self.data[char_offset], crate::IceMode::Ice);
-                                char_offset += 1;
-                                attr
+                                if let Some(next_byte) = self.data.get(char_offset) {
+                                    char_offset += 1;
+                                    TextAttribute::from_u8(*next_byte, crate::IceMode::Ice)
+                                } else {
+                                    TextAttribute::default()
+                                }
                             };
 
                             if ch == 0xFF && !edit_mode {
