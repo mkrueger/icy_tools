@@ -84,6 +84,7 @@ dialing_directory-generate = Genera
 dialing_directory-screen_mode = Modo de pantalla
 dialing_directory-terminal_type = Tipo de terminal
 dialing_directory-music-option = Música Ansi
+dialing_directory-resolution = Columnas×Filas
 dialing_directory-baud-emulation = Emulación de baudios
 dialing_directory-autologin = Cadena de autologin
 dialing_directory-comment = Comentario

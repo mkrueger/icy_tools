@@ -84,6 +84,7 @@ dialing_directory-password = Passwort
 dialing_directory-generate = Generiere
 dialing_directory-screen_mode = Modus
 dialing_directory-terminal_type = Terminaltyp
+dialing_directory-resolution = Spalten×Zeilen
 dialing_directory-music-option = Musik
 dialing_directory-autologin = Autologin
 dialing_directory-comment = Kommentar

@@ -36,7 +36,11 @@ impl Default for ScreenMode {
 impl ScreenMode {
     pub fn is_custom_vga(self) -> bool {
         match self {
-            ScreenMode::Vga(w, h) => w == 40 && h == 25,
+            ScreenMode::Vga(w, h) => {
+                // Treat any VGA size not in the predefined set as custom.
+                let predefined = [(80, 25), (80, 50), (132, 37), (132, 52)];
+                !predefined.contains(&(w, h))
+            }
             _ => false,
         }
     }

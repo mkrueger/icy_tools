@@ -1,6 +1,6 @@
-use crate::VGA_MODES;
 use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
+use crate::{ScreenMode, VGA_MODES};
 use i18n_embed_fl::fl;
 use iced::Padding;
 use iced::widget::tooltip;
@@ -254,7 +254,13 @@ impl super::DialingDirectoryState {
                 || addr.terminal_type == TerminalEmulation::Avatar
                 || addr.terminal_type == TerminalEmulation::Ascii
             {
-                let screen_mode_pick = pick_list(VGA_MODES.to_vec(), Some(addr.screen_mode), move |sm| {
+                // Build dynamic VGA mode list so current custom size appears selected.
+                let mut vga_modes = VGA_MODES.to_vec();
+                if addr.screen_mode.is_custom_vga() && !vga_modes.contains(&addr.screen_mode) {
+                    vga_modes.push(addr.screen_mode);
+                }
+
+                let screen_mode_pick = pick_list(vga_modes, Some(addr.screen_mode), move |sm| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
                         id,
                         field: AddressFieldChange::ScreenMode(sm),
@@ -268,6 +274,47 @@ impl super::DialingDirectoryState {
                         .spacing(12)
                         .align_y(Alignment::Center),
                 );
+
+                // If custom VGA, expose editable columns/rows.
+                if let ScreenMode::Vga(w, h) = addr.screen_mode {
+                    // Determine if custom via helper; shows inputs for any non-standard size.
+                    if addr.screen_mode.is_custom_vga() {
+                        let cols_str = w.to_string();
+                        let rows_str = h.to_string();
+
+                        // Cols input
+                        let cols_input = text_input("", &cols_str)
+                            .on_input(move |s| {
+                                let new_w = s.parse::<i32>().map(|v| v.clamp(1, 255)).unwrap_or(w);
+                                Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                    id,
+                                    field: AddressFieldChange::ScreenMode(ScreenMode::Vga(new_w, h)),
+                                })
+                            })
+                            .padding(6)
+                            .size(14)
+                            .width(Length::Fixed(70.0));
+
+                        // Rows input
+                        let rows_input = text_input("", &rows_str)
+                            .on_input(move |s| {
+                                let new_h = s.parse::<i32>().map(|v| v.clamp(1, 80)).unwrap_or(h);
+                                Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                    id,
+                                    field: AddressFieldChange::ScreenMode(ScreenMode::Vga(w, new_h)),
+                                })
+                            })
+                            .padding(6)
+                            .size(14)
+                            .width(Length::Fixed(70.0));
+
+                        server_content = server_content.push(
+                            row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-resolution")), cols_input, rows_input,]
+                                .spacing(12)
+                                .align_y(Alignment::Center),
+                        );
+                    }
+                }
             }
 
             // Music option row (only for ANSI/UTF8ANSI)

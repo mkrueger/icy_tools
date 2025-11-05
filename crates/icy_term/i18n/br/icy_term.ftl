@@ -84,6 +84,7 @@ dialing_directory-generate = Gera
 dialing_directory-screen_mode = Modo de tela
 dialing_directory-terminal_type = Tipo de terminal
 dialing_directory-music-option = Música ANSI
+dialing_directory-resolution = Colunas×Linhas
 dialing_directory-baud-emulation = Emulação de baud
 dialing_directory-autologin = String de login automático
 dialing_directory-comment = Comentário:

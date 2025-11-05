@@ -83,6 +83,7 @@ dialing_directory-password = Password
 dialing_directory-generate = Gener
 dialing_directory-screen_mode = Modalità schermo
 dialing_directory-terminal_type = Tipo di terminale
+dialing_directory-resolution = Colonne×Righe
 dialing_directory-music-option = Musica ANSI
 dialing_directory-baud-emulation = Emulazione baud
 dialing_directory-autologin = Stringa di login automatico
