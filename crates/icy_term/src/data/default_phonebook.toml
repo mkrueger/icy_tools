@@ -60,3 +60,12 @@ protocol = "Telnet"
 terminal_type = "Ansi"
 screen_mode = "Vga(80, 25)"
 comment = "ENiGMA½ WHQ"
+
+[[addresses]]
+system_name = "Shurato's Heavenly Sphere"
+is_favored = false
+address = "shsbbs.net:23"
+protocol = "Telnet"
+terminal_type = "Ansi"
+screen_mode = "Vga(80, 25)"
+comment = "Supports IEMSI"
