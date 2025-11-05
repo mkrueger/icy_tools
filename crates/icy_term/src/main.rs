@@ -12,7 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 //mod ui;
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
@@ -37,6 +37,7 @@ pub use terminal::*;
 
 pub mod features;
 mod icons;
+pub mod mcp;
 pub mod ui;
 mod util;
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -92,17 +93,17 @@ struct Args {
     /// URL format is: [(telnet|ssh|raw)://][user[:password]@]domainname[:port]
     #[arg(value_name = "URL")]
     url: Option<String>,
+
+    /// Enable MCP server on specified port
+    #[arg(long, value_name = "PORT")]
+    mcp_port: Option<u16>,
 }
+
+pub type McpHandler = Option<tokio::sync::mpsc::UnboundedReceiver<mcp::McpCommand>>;
 
 fn main() {
     use std::fs;
     let args = Args::parse();
-    if let Some(url) = &args.url {
-        if let Err(e) = crate::Address::parse_url(url.clone()) {
-            eprintln!("Error parsing URL '{}': {}", url, e);
-            std::process::exit(1);
-        }
-    }
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big
@@ -143,6 +144,34 @@ fn main() {
         eprintln!("Failed to create log file");
     }
 
+    if let Some(url) = &args.url {
+        if let Err(e) = crate::Address::parse_url(url.clone()) {
+            eprintln!("Error parsing URL '{}': {}", url, e);
+            std::process::exit(1);
+        }
+    }
+
+    // Start MCP server if requested
+    let mcp_rx = if let Some(port) = args.mcp_port {
+        let (mcp_server, command_rx) = mcp::McpServer::new();
+        let mcp_server = Arc::new(mcp_server);
+        let mcp_clone = mcp_server.clone();
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                if let Err(e) = mcp_clone.start(port).await {
+                    log::error!("MCP server error: {}", e);
+                }
+            });
+        });
+
+        log::info!("MCP server started on port {}", port);
+        Some(std::sync::Mutex::new(Some(command_rx)))
+    } else {
+        None
+    };
+
     let mut rng = Rng::default();
     rng.next();
 
@@ -150,19 +179,26 @@ fn main() {
     icy_net::websocket::init_websocket_providers();
 
     let url_for_closure = args.url;
+    let mcp_rx = Arc::new(mcp_rx);
+
     iced::daemon(
         move || {
-            if let Some(url) = &url_for_closure {
-                WindowManager::with_url(url.clone())
+            let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() {
+                mutex.lock().unwrap().take()
             } else {
-                WindowManager::new()
+                None
+            };
+            if let Some(ref url) = url_for_closure {
+                WindowManager::with_url(mcp_receiver, url.clone())
+            } else {
+                WindowManager::new(mcp_receiver)
             }
         },
         WindowManager::update,
         WindowManager::view,
     )
     .theme(WindowManager::theme)
-    .subscription(WindowManager::subscription) // Add this line
+    .subscription(WindowManager::subscription)
     .title(WindowManager::title)
     .run()
     .expect("Failed to run application");

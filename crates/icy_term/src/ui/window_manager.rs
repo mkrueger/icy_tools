@@ -11,7 +11,7 @@ use iced::{
 };
 
 use crate::{
-    AddressBook, Options, load_window_icon,
+    AddressBook, McpHandler, Options, load_window_icon,
     terminal_thread::TerminalEvent,
     ui::{MainWindow, MainWindowMode, Message},
     util::SoundThread,
@@ -25,6 +25,7 @@ pub struct WindowManager {
     options: Arc<Mutex<Options>>,
     temp_options: Arc<Mutex<Options>>,
     url: Option<String>,
+    mcp_rx: McpHandler,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -44,7 +45,7 @@ pub enum WindowManagerMessage {
 const DEFAULT_SIZE: Size = Size::new(853.0, 597.0);
 
 impl WindowManager {
-    pub fn new() -> (Self, Task<WindowManagerMessage>) {
+    pub fn new(mcp_rx: McpHandler) -> (Self, Task<WindowManagerMessage>) {
         let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
         let settings = window::Settings {
             size: DEFAULT_SIZE,
@@ -89,13 +90,14 @@ impl WindowManager {
                 options,
                 temp_options,
                 url: None,
+                mcp_rx,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
     }
 
-    pub fn with_url(url: String) -> (WindowManager, Task<WindowManagerMessage>) {
-        let mut manager = Self::new();
+    pub fn with_url(mcp_rx: McpHandler, url: String) -> (WindowManager, Task<WindowManagerMessage>) {
+        let mut manager = Self::new(mcp_rx);
         manager.0.url = Some(url);
         manager
     }
@@ -132,7 +134,7 @@ impl WindowManager {
             }
             WindowManagerMessage::CloseWindow(id) => window::close(id),
             WindowManagerMessage::WindowOpened(id) => {
-                let window: MainWindow = MainWindow::new(
+                let mut window: MainWindow = MainWindow::new(
                     id.clone(),
                     self.mode.clone(),
                     self.sound_thread.clone(),
@@ -140,6 +142,10 @@ impl WindowManager {
                     self.options.clone(),
                     self.temp_options.clone(),
                 );
+                if let Some(mcp_rx) = self.mcp_rx.take() {
+                    window.mcp_rx = Some(mcp_rx);
+                }
+
                 // reset mode to default after opening window
                 self.mode = MainWindowMode::ShowTerminal;
                 let focus_input: Task<()> = operation::focus(format!("input-{id}"));

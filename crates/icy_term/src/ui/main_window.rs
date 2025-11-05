@@ -6,7 +6,8 @@ use std::{
 };
 
 use crate::{
-    get_unicode_converter,
+    McpHandler, get_unicode_converter,
+    mcp::{self, McpCommand, types::ScreenCaptureFormat},
     ui::{
         Message,
         dialogs::find_dialog,
@@ -15,9 +16,10 @@ use crate::{
     },
     util::SoundThread,
 };
+
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, TextPane, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -88,7 +90,10 @@ pub struct MainWindow {
     pub initial_upload_directory: Option<PathBuf>,
     pub show_find_dialog: bool,
     show_disconnect: bool,
+
+    pub mcp_rx: McpHandler,
 }
+
 static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
 
 impl MainWindow {
@@ -155,6 +160,7 @@ impl MainWindow {
             show_find_dialog: false,
             show_disconnect: false,
             sound_thread,
+            mcp_rx: None,
         }
     }
 
@@ -677,6 +683,209 @@ impl MainWindow {
                 }
                 Task::none()
             }
+
+            Message::McpCommand(cmd) => {
+                match cmd.as_ref() {
+                    McpCommand::Connect(url) => {
+                        // Parse and connect to the URL
+                        match crate::Address::parse_url(url.clone()) {
+                            Ok(address) => {
+                                return self.update(Message::Connect(address));
+                            }
+                            Err(e) => {
+                                log::error!("Failed to parse URL {}: {}", url, e);
+                            }
+                        }
+                    }
+                    McpCommand::Disconnect => {
+                        return self.update(Message::Hangup);
+                    }
+                    McpCommand::SendText(text) => {
+                        return self.update(Message::SendString(text.clone()));
+                    }
+                    McpCommand::SendKey(key) => {
+                        // Parse special keys and send appropriate bytes
+                        let bytes = self.parse_key_string(key);
+                        if let Some(data) = bytes {
+                            return self.update(Message::SendData(data));
+                        }
+                    }
+                    McpCommand::CaptureScreen(format, response_tx) => {
+                        // Capture the current screen in the requested format
+                        let data = if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
+                            let buffer = state.get_buffer_mut();
+                            let mut opt = icy_engine::SaveOptions::default();
+                            opt.modern_terminal_output = true;
+                            match format {
+                                ScreenCaptureFormat::Text => buffer.to_bytes("asc", &opt).unwrap_or_default(),
+                                ScreenCaptureFormat::Ansi => buffer.to_bytes("ans", &opt).unwrap_or_default(),
+                            }
+                        } else {
+                            Vec::new()
+                        };
+
+                        // Take the sender out of the Arc<Mutex> and send the response
+                        if let Ok(mut tx_guard) = response_tx.lock() {
+                            if let Some(tx) = tx_guard.take() {
+                                let _ = tx.send(data);
+                            }
+                        }
+                    }
+                    McpCommand::SetTerminal { terminal_type, rows, columns } => {
+                        // Update terminal settings
+                        // Parse terminal type manually since FromStr is not implemented
+                        let emulation = match terminal_type.to_lowercase().as_str() {
+                            "ansi" | "ansi-bbs" => TerminalEmulation::Ansi,
+                            "petscii" | "c64" | "commodore" => TerminalEmulation::PETscii,
+                            "viewdata" => TerminalEmulation::ViewData,
+                            "mode7" => TerminalEmulation::Mode7,
+                            "atascii" | "atari" => TerminalEmulation::ATAscii,
+                            "atarist" | "atari-st" => TerminalEmulation::AtariST,
+                            _ => {
+                                log::warn!("Unknown terminal type: {}, defaulting to ANSI", terminal_type);
+                                TerminalEmulation::Ansi
+                            }
+                        };
+
+                        unsafe {
+                            TERM_EMULATION = emulation;
+                        }
+                        self.unicode_converter = get_unicode_converter(&emulation);
+                        // Note: SetTerminalType command may not exist, we should update terminal_type in ConnectionConfig instead
+                        // For now, just log it
+                        log::info!("Terminal type changed to: {:?}", emulation);
+
+                        if let (Some(rows), Some(cols)) = (rows, columns) {
+                            // Resize terminal buffer
+                            if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
+                                let new_size = icy_engine::Size::new(*cols as i32, *rows as i32);
+                                // Create a new buffer with the desired size
+                                let mut new_buffer = icy_engine::Buffer::new(new_size);
+                                // Copy content from old buffer if needed
+                                let old_buffer = state.get_buffer();
+                                for y in 0..new_size.height.min(old_buffer.get_size().height) {
+                                    for x in 0..new_size.width.min(old_buffer.get_size().width) {
+                                        let ch = old_buffer.get_char(icy_engine::Position::new(x, y));
+                                        new_buffer.layers[0].set_char(icy_engine::Position::new(x, y), ch);
+                                    }
+                                }
+                                *state.get_buffer_mut() = new_buffer;
+                                self.terminal_window.terminal.cache.clear();
+                            }
+                        }
+                    }
+                    McpCommand::UploadFile { protocol, file_path } => {
+                        // Start file upload
+                        if let Ok(protocol_type) = protocol.parse::<icy_net::protocol::TransferProtocolType>() {
+                            let path = PathBuf::from(file_path);
+                            if path.exists() {
+                                let _ = self.terminal_tx.send(TerminalCommand::StartUpload(protocol_type, vec![path]));
+                                self.state.mode = MainWindowMode::FileTransfer(false);
+                            }
+                        }
+                    }
+                    McpCommand::DownloadFile { protocol, save_path } => {
+                        // Start file download
+                        if let Ok(protocol_type) = protocol.parse::<icy_net::protocol::TransferProtocolType>() {
+                            let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol_type, Some(save_path.clone())));
+                            self.state.mode = MainWindowMode::FileTransfer(true);
+                        }
+                    }
+                    McpCommand::RunMacro { name: _, commands } => {
+                        // Execute macro commands sequentially
+                        for command in commands {
+                            // Parse and execute each command
+                            // This could be sending text, keys, or other actions
+                            let _ = self.update(Message::SendString(command.clone()));
+                        }
+                    }
+                    McpCommand::SearchBuffer {
+                        pattern,
+                        case_sensitive,
+                        regex: _,
+                    } => {
+                        // Set up search parameters and trigger search
+                        // The find_dialog doesn't have search_text or use_regex fields, we need to handle this differently
+                        // For now, just set case_sensitive
+                        self.find_dialog.case_sensitive = *case_sensitive;
+                        // We'll need to modify the find dialog to support setting search text programmatically
+                        log::info!("Search requested for pattern: {}", pattern);
+                        return self.update(Message::FindDialog(find_dialog::FindDialogMsg::FindNext));
+                    }
+                    McpCommand::ClearScreen => {
+                        return self.update(Message::ClearScreen);
+                    }
+                    McpCommand::SaveSession(file_path) => {
+                        // Save the current terminal buffer to a file
+                        if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
+                            let buffer = state.get_buffer_mut();
+                            if let Ok(bytes) = buffer.to_bytes("icy", &icy_engine::SaveOptions::default()) {
+                                if let Err(e) = std::fs::write(file_path, bytes) {
+                                    log::error!("Failed to save session: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    McpCommand::LoadSession(file_path) => {
+                        // Load a session from a file
+                        if let Ok(_bytes) = std::fs::read(file_path) {
+                            if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
+                                let path = PathBuf::from(file_path);
+                                if let Ok(buffer) = icy_engine::Buffer::load_buffer(&path, true, None) {
+                                    *state.get_buffer_mut() = buffer;
+                                    self.terminal_window.terminal.cache.clear();
+                                }
+                            }
+                        }
+                    }
+                    McpCommand::GetState(response_tx) => {
+                        // Gather current terminal state
+                        let state = if let Ok(edit_state) = self.terminal_window.terminal.edit_state.lock() {
+                            let buffer = edit_state.get_display_buffer();
+                            let cursor = edit_state.get_caret().get_position();
+                            mcp::types::TerminalState {
+                                cursor_position: (cursor.x as usize, cursor.y as usize),
+                                screen_size: (buffer.get_size().width as usize, buffer.get_size().height as usize),
+                                current_buffer: String::new(),
+                                is_connected: self.is_connected,
+                                current_bbs: self.current_address.as_ref().map(|addr| addr.system_name.clone()),
+                            }
+                        } else {
+                            mcp::types::TerminalState {
+                                cursor_position: (0, 0),
+                                screen_size: (80, 25),
+                                current_buffer: String::new(),
+                                is_connected: false,
+                                current_bbs: None,
+                            }
+                        };
+
+                        // Take the sender out of the Arc<Mutex> and send the response
+                        if let Ok(mut tx_guard) = response_tx.lock() {
+                            if let Some(tx) = tx_guard.take() {
+                                let _ = tx.send(state);
+                            }
+                        }
+                    }
+
+                    McpCommand::ListAddresses(response_tx) => {
+                        // Get addresses from the address book
+                        let addresses = if let Ok(book) = self.dialing_directory.addresses.lock() {
+                            book.addresses.clone()
+                        } else {
+                            Vec::new()
+                        };
+
+                        // Take the sender out of the Arc<Mutex> and send the response
+                        if let Ok(mut tx_guard) = response_tx.lock() {
+                            if let Some(tx) = tx_guard.take() {
+                                let _ = tx.send(addresses);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -731,6 +940,17 @@ impl MainWindow {
 
                 for event in events {
                     let _ = self.handle_terminal_event(event);
+                }
+
+                let mut mcp_commands = Vec::new();
+                if let Some(rx) = &mut self.mcp_rx {
+                    while let Ok(cmd) = rx.try_recv() {
+                        mcp_commands.push(cmd);
+                    }
+                }
+
+                for cmd in mcp_commands {
+                    let _ = self.update(Message::McpCommand(Arc::new(cmd)));
                 }
 
                 Task::none()
@@ -1047,6 +1267,50 @@ impl MainWindow {
                 }
             }
         }
+    }
+
+    fn parse_key_string(&self, key_str: &str) -> Option<Vec<u8>> {
+        let key = match key_str.to_lowercase().as_str() {
+            "enter" => keyboard::Key::Named(keyboard::key::Named::Enter),
+            "escape" | "esc" => keyboard::Key::Named(keyboard::key::Named::Escape),
+            "tab" => keyboard::Key::Named(keyboard::key::Named::Tab),
+            "backspace" => keyboard::Key::Named(keyboard::key::Named::Backspace),
+            "delete" | "del" => keyboard::Key::Named(keyboard::key::Named::Delete),
+            "home" => keyboard::Key::Named(keyboard::key::Named::Home),
+            "end" => keyboard::Key::Named(keyboard::key::Named::End),
+            "pageup" | "pgup" => keyboard::Key::Named(keyboard::key::Named::PageUp),
+            "pagedown" | "pgdn" => keyboard::Key::Named(keyboard::key::Named::PageDown),
+            "up" | "arrowup" => keyboard::Key::Named(keyboard::key::Named::ArrowUp),
+            "down" | "arrowdown" => keyboard::Key::Named(keyboard::key::Named::ArrowDown),
+            "left" | "arrowleft" => keyboard::Key::Named(keyboard::key::Named::ArrowLeft),
+            "right" | "arrowright" => keyboard::Key::Named(keyboard::key::Named::ArrowRight),
+            "f1" => keyboard::Key::Named(keyboard::key::Named::F1),
+            "f2" => keyboard::Key::Named(keyboard::key::Named::F2),
+            "f3" => keyboard::Key::Named(keyboard::key::Named::F3),
+            "f4" => keyboard::Key::Named(keyboard::key::Named::F4),
+            "f5" => keyboard::Key::Named(keyboard::key::Named::F5),
+            "f6" => keyboard::Key::Named(keyboard::key::Named::F6),
+            "f7" => keyboard::Key::Named(keyboard::key::Named::F7),
+            "f8" => keyboard::Key::Named(keyboard::key::Named::F8),
+            "f9" => keyboard::Key::Named(keyboard::key::Named::F9),
+            "f10" => keyboard::Key::Named(keyboard::key::Named::F10),
+            "f11" => keyboard::Key::Named(keyboard::key::Named::F11),
+            "f12" => keyboard::Key::Named(keyboard::key::Named::F12),
+            _ => return None,
+        };
+
+        // Check for modifiers in the key string (e.g., "Ctrl+C", "Alt+F4")
+        let modifiers = if key_str.contains("ctrl+") || key_str.contains("control+") {
+            keyboard::Modifiers::CTRL
+        } else if key_str.contains("alt+") {
+            keyboard::Modifiers::ALT
+        } else if key_str.contains("shift+") {
+            keyboard::Modifiers::SHIFT
+        } else {
+            keyboard::Modifiers::empty()
+        };
+
+        Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, modifiers)
     }
 }
 

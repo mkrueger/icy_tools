@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use icy_engine::ansi::BaudEmulation;
 use icy_net::protocol::TransferState;
 
@@ -61,4 +63,5 @@ pub enum Message {
     ClearScreen,
     SetFocus(bool),
     SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
+    McpCommand(Arc<crate::mcp::McpCommand>),
 }
