@@ -24,6 +24,19 @@ impl UnicodeConverter for CP437Converter {
     }
 }
 
+#[derive(Default)]
+pub struct IdentityConverter {}
+
+impl UnicodeConverter for IdentityConverter {
+    fn convert_from_unicode(&self, ch: char, _font_page: usize) -> char {
+        ch
+    }
+
+    fn convert_to_unicode(&self, attributed_char: AttributedChar) -> char {
+        attributed_char.ch
+    }
+}
+
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
         match ch {

@@ -11,14 +11,16 @@ license.workspace = true
 icy_engine = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
-fontdue = "0.9"
+rustybuzz = "0.20.1"
+ttf-parser = "0.21"
+tiny-skia = "0.11"
+parking_lot = "0.12.5"
 
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
 image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
 iced = { workspace = true, features = [ "tokio", "svg", "image", "advanced", "debug", "canvas", "lazy", "wgpu"  ]  }
 
 raqote = { version = "0.8.5", default-features = false }
-rustybuzz = "0.20.0"
 evictor = { version = "0.5.1", default-features = false }
 
 lazy_static = { workspace = true }

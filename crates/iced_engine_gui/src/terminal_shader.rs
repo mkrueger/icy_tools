@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Mutex, atomic::AtomicU64};
 
-use crate::{Blink, Message, MonitorSettings, RenderUnicodeOptions, Terminal, now_ms, render_unicode_to_rgba};
+use crate::{Blink, Message, MonitorSettings, RenderUnicodeOptions, Terminal, UnicodeGlyphCache, now_ms, render_unicode_to_rgba};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
@@ -555,6 +556,8 @@ pub struct CRTShaderState {
 
     last_rendered_size: Option<(u32, u32)>,
     instance_id: u64,
+
+    unicode_glyph_cache: Arc<parking_lot::Mutex<Option<UnicodeGlyphCache>>>,
 }
 
 impl CRTShaderState {
@@ -588,6 +591,7 @@ impl Default for CRTShaderState {
             hovered_rip_field: false,
             last_rendered_size: None,
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 }
@@ -619,15 +623,15 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             let (fg_sel, bg_sel) = edit_state.get_buffer().buffer_type.get_selection_colors();
 
             if matches!(edit_state.get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
-                // Unicode path
+                // Unicode path - use cached glyph cache with Arc<Mutex<>>
                 let (img_size, data) = render_unicode_to_rgba(&RenderUnicodeOptions {
                     buffer,
                     selection: edit_state.get_selection(),
                     selection_fg: Some(fg_sel),
                     selection_bg: Some(bg_sel),
                     blink_on: state.character_blink.is_on(),
-                    font_px_size: Some(font_h as f32), // reuse existing font height as pixel size
-                                                       //                draw_bold: true,
+                    font_px_size: Some(font_h as f32),
+                    glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
                 });
                 size = (img_size.width as u32, img_size.height as u32);
                 rgba_data = data;

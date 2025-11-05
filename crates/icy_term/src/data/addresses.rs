@@ -93,16 +93,14 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, scr
 #[must_use]
 pub fn get_unicode_converter(emulator: &TerminalEmulation) -> Box<dyn UnicodeConverter> {
     match emulator {
-        TerminalEmulation::Ansi
-        | TerminalEmulation::Utf8Ansi
-        | TerminalEmulation::Avatar
-        | TerminalEmulation::Ascii
-        | TerminalEmulation::Rip
-        | TerminalEmulation::Skypix => Box::<ascii::CP437Converter>::default(),
+        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii | TerminalEmulation::Rip | TerminalEmulation::Skypix => {
+            Box::<ascii::CP437Converter>::default()
+        }
         TerminalEmulation::PETscii => Box::<petscii::CharConverter>::default(),
         TerminalEmulation::ATAscii | TerminalEmulation::AtariST => Box::<atascii::CharConverter>::default(),
         TerminalEmulation::ViewData => Box::<viewdata::CharConverter>::default(),
         TerminalEmulation::Mode7 => Box::<mode7::CharConverter>::default(),
+        TerminalEmulation::Utf8Ansi => Box::<ascii::IdentityConverter>::default(),
     }
 }
 

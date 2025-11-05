@@ -216,9 +216,11 @@ impl ScreenMode {
                 buffer.palette = Palette::dos_default();
                 buffer.buffer_type = icy_engine::BufferType::CP437;
             }
-            ScreenMode::Unicode(_x, y) => {
+            ScreenMode::Unicode(_x, _y) => {
                 buffer.clear_font_table();
-                buffer.set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
+                let mut font = BitFont::default();
+                font.size = Size::new(32, 64);
+                buffer.set_font(0, font);
                 buffer.palette = Palette::dos_default();
                 buffer.buffer_type = icy_engine::BufferType::Unicode;
             }

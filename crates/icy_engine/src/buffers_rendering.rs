@@ -88,14 +88,42 @@ impl Buffer {
                         if let Some((efr, efg, efb, ebr, ebg, ebb)) = explicit_sel_colors {
                             (efr, efg, efb, ebr, ebg, ebb)
                         } else {
-                            // Invert fallback
-                            let (f_r, f_g, f_b) = palette_cache[bg as usize];
-                            let (b_r, b_g, b_b) = palette_cache[fg as usize];
+                            // Invert fallback - handle transparent colors
+                            let bg_idx = bg as usize;
+                            let fg_idx = fg as usize;
+
+                            // Use default colors for transparent/out-of-bounds indices
+                            let (f_r, f_g, f_b) = if bg_idx < palette_cache.len() {
+                                palette_cache[bg_idx]
+                            } else {
+                                (0, 0, 0) // Default to black for transparent background
+                            };
+
+                            let (b_r, b_g, b_b) = if fg_idx < palette_cache.len() {
+                                palette_cache[fg_idx]
+                            } else {
+                                (255, 255, 255) // Default to white for transparent foreground
+                            };
+
                             (f_r, f_g, f_b, b_r, b_g, b_b)
                         }
                     } else {
-                        let (f_r, f_g, f_b) = palette_cache[fg as usize];
-                        let (b_r, b_g, b_b) = palette_cache[bg as usize];
+                        let fg_idx = fg as usize;
+                        let bg_idx = bg as usize;
+
+                        // Handle transparent colors
+                        let (f_r, f_g, f_b) = if fg_idx < palette_cache.len() {
+                            palette_cache[fg_idx]
+                        } else {
+                            (255, 255, 255) // Default to white for transparent foreground
+                        };
+
+                        let (b_r, b_g, b_b) = if bg_idx < palette_cache.len() {
+                            palette_cache[bg_idx]
+                        } else {
+                            (0, 0, 0) // Default to black for transparent background
+                        };
+
                         (f_r, f_g, f_b, b_r, b_g, b_b)
                     };
 
@@ -218,14 +246,42 @@ impl Buffer {
                         if let Some((efr, efg, efb, ebr, ebg, ebb)) = explicit_sel_colors {
                             (efr, efg, efb, ebr, ebg, ebb)
                         } else {
-                            // Invert fallback
-                            let (f_r, f_g, f_b) = palette_cache[bg as usize];
-                            let (b_r, b_g, b_b) = palette_cache[fg as usize];
+                            // Invert fallback - handle transparent colors
+                            let bg_idx = bg as usize;
+                            let fg_idx = fg as usize;
+
+                            // Use default colors for transparent/out-of-bounds indices
+                            let (f_r, f_g, f_b) = if bg_idx < palette_cache.len() {
+                                palette_cache[bg_idx]
+                            } else {
+                                (0, 0, 0) // Default to black for transparent background
+                            };
+
+                            let (b_r, b_g, b_b) = if fg_idx < palette_cache.len() {
+                                palette_cache[fg_idx]
+                            } else {
+                                (255, 255, 255) // Default to white for transparent foreground
+                            };
+
                             (f_r, f_g, f_b, b_r, b_g, b_b)
                         }
                     } else {
-                        let (f_r, f_g, f_b) = palette_cache[fg as usize];
-                        let (b_r, b_g, b_b) = palette_cache[bg as usize];
+                        let fg_idx = fg as usize;
+                        let bg_idx = bg as usize;
+
+                        // Handle transparent colors
+                        let (f_r, f_g, f_b) = if fg_idx < palette_cache.len() {
+                            palette_cache[fg_idx]
+                        } else {
+                            (255, 255, 255) // Default to white for transparent foreground
+                        };
+
+                        let (b_r, b_g, b_b) = if bg_idx < palette_cache.len() {
+                            palette_cache[bg_idx]
+                        } else {
+                            (0, 0, 0) // Default to black for transparent background
+                        };
+
                         (f_r, f_g, f_b, b_r, b_g, b_b)
                     };
 

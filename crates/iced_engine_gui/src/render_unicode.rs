@@ -1,35 +1,7 @@
-use fontdue::{Font, Metrics};
+use crate::UnicodeGlyphCache;
 use icy_engine::{Position, TextPane};
-use std::collections::HashMap;
-
-pub struct UnicodeGlyphCache {
-    font: Font,
-    font_bold: Font,
-    glyphs: HashMap<(char, bool), (Metrics, Vec<u8>)>, // Key includes bold flag
-}
-
-impl UnicodeGlyphCache {
-    fn new(font_bytes: &'static [u8], font_bold_bytes: &'static [u8], _cell_w: usize, _cell_h: usize) -> Self {
-        let font = Font::from_bytes(font_bytes, fontdue::FontSettings::default()).expect("valid font");
-        let font_bold = Font::from_bytes(font_bold_bytes, fontdue::FontSettings::default()).expect("valid bold font");
-        Self {
-            font,
-            font_bold,
-            glyphs: HashMap::new(),
-        }
-    }
-
-    fn get(&mut self, ch: char, px_size: f32, is_bold: bool) -> (Metrics, &[u8]) {
-        let key = (ch, is_bold);
-        if !self.glyphs.contains_key(&key) {
-            let font = if is_bold { &self.font_bold } else { &self.font };
-            let (metrics, bitmap) = font.rasterize(ch, px_size);
-            self.glyphs.insert(key, (metrics, bitmap));
-        }
-        let (m, bm) = self.glyphs.get(&key).unwrap();
-        (*m, bm.as_slice())
-    }
-}
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub struct RenderUnicodeOptions<'a> {
     pub buffer: &'a icy_engine::Buffer,
@@ -37,61 +9,28 @@ pub struct RenderUnicodeOptions<'a> {
     pub selection_fg: Option<icy_engine::Color>,
     pub selection_bg: Option<icy_engine::Color>,
     pub blink_on: bool,
-    pub font_px_size: Option<f32>, // Allow override
+    pub font_px_size: Option<f32>,
+    pub glyph_cache: Arc<Mutex<Option<UnicodeGlyphCache>>>, // Arc<Mutex> for interior mutability
 }
-
-const TIGHT_MODE: bool = true;
 
 pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::Size, Vec<u8>) {
     let buf = opts.buffer;
     let width = buf.get_width();
     let height = buf.get_height();
 
-    // Prefer buffer font cell size if available; do NOT hard-code doubled dimensions:
-    let (cell_w, cell_h) = (8 * 2, 16 * 2);
+    let size = buf.get_font_dimensions();
+    let (cell_w, cell_h) = (size.width as usize, size.height as usize);
 
-    static FONT_REGULAR: &[u8] = include_bytes!("../fonts/CascadiaMono-Regular.ttf");
-    static FONT_BOLD: &[u8] = include_bytes!("../fonts/CascadiaMono-Bold.ttf");
+    //static FONT_REGULAR: &[u8] = include_bytes!("../fonts/modern-fixedsys-excelsior/FSEX301-L2.ttf");
+    // static FONT_REGULAR: &[u8] = include_bytes!("../fonts/1985-ibm-pc-vga/PxPlus_IBM_VGA8.ttf");
+    static FONT_REGULAR: &[u8] = include_bytes!("../fonts/modern-pro-font-win-tweaked/ProFontWindows.ttf");
+    static FONT_BOLD_OPT: Option<&[u8]> = None;
 
-    let mut glyph_cache = UnicodeGlyphCache::new(FONT_REGULAR, FONT_BOLD, cell_w, cell_h);
+    // Lock and get or create the cache
+    let mut cache_guard = opts.glyph_cache.lock();
+    let glyph_cache = cache_guard.get_or_insert_with(|| UnicodeGlyphCache::new(FONT_REGULAR, FONT_BOLD_OPT));
 
-    // Base px size guess
-    let mut px_size = opts.font_px_size.unwrap_or(cell_h as f32);
-
-    // Sample a canonical wide glyph (use 'M'); fallback to 'W' or first printable
-    let sample_char = 'M';
-    let (sm_metrics, _) = glyph_cache.get(sample_char, px_size, false);
-
-    // Vertical line metrics
-    if let Some(lm) = glyph_cache.font.horizontal_line_metrics(px_size) {
-        let vert_core = lm.ascent - lm.descent;
-        let vert_scale = (cell_h as f32 - 2.0).max(4.0) / vert_core;
-
-        // Horizontal target uses advance width (better than bitmap width)
-        let horiz_scale = (cell_w as f32) / sm_metrics.advance_width.max(1.0);
-
-        // Choose smaller scale to avoid overflow; clamp to reasonable range
-        let applied_scale = vert_scale.min(horiz_scale).clamp(0.5, 1.5);
-        px_size *= applied_scale;
-    }
-
-    // Recompute line metrics at final px_size
-    // Recompute line metrics at final px_size
-    let lm2 = glyph_cache.font.horizontal_line_metrics(px_size);
-    let (ascent, descent) = lm2
-        .map(|lm| (lm.ascent, lm.descent)) // descent is negative
-        .unwrap_or((px_size * 0.78, -px_size * 0.22));
-    let core_h = ascent - descent; // positive usable vertical ink
-    let free_space = (cell_h as f32 - core_h).max(0.0);
-
-    // Raise baseline: instead of equal top/bottom padding, give less top padding
-    // Tunables:
-    const TOP_PAD_FACTOR: f32 = 0.28; // 0.25–0.30 lifts glyphs slightly
-    const DESCENT_LIFT_FACTOR: f32 = 0.18; // lift a bit more if descent is large
-
-    let top_pad = free_space * TOP_PAD_FACTOR;
-    let extra_descent_bias = (-descent).max(0.0) * DESCENT_LIFT_FACTOR;
-    let baseline = (top_pad + ascent + extra_descent_bias).clamp(0.0, cell_h as f32) as i32;
+    let px_size = opts.font_px_size.unwrap_or((cell_h as f32) * 0.90);
 
     let px_w = width as usize * cell_w;
     let px_h = height as usize * cell_h;
@@ -109,9 +48,9 @@ pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::S
         (fr, fg_, fb, br, bg_, bb)
     });
 
-    for y in 0..height {
-        for x in 0..width {
-            let pos = Position::new(x, y);
+    for row in 0..height {
+        for col in 0..width {
+            let pos = Position::new(col, row);
             let ch_attr = buf.get_char(pos);
             let ch = ch_attr.ch;
 
@@ -122,7 +61,8 @@ pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::S
             if ch_attr.attribute.is_blinking() && !opts.blink_on {
                 fg_idx = bg_idx;
             }
-            if is_bold && fg_idx < 8 {
+            // Simulated bold brightening only if no bold face
+            if is_bold && fg_idx < 8 && !glyph_cache.has_bold() {
                 fg_idx += 8;
             }
 
@@ -141,70 +81,108 @@ pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::S
                 (fr_, fg_, fb_, br_, bg_, bb_)
             };
 
-            let cell_px_x = x as usize * cell_w;
-            let cell_px_y = y as usize * cell_h;
+            let cell_px_x = col as usize * cell_w;
+            let cell_px_y = row as usize * cell_h;
 
             // Background fill
             unsafe {
                 for cy in 0..cell_h {
-                    let row_off = (cell_px_y + cy) * (px_w * 4) + cell_px_x * 4;
-                    let slice = rgba.get_unchecked_mut(row_off..row_off + cell_w * 4);
-                    for p in slice.chunks_exact_mut(4) {
-                        p[0] = br;
-                        p[1] = bg;
-                        p[2] = bb;
-                        p[3] = 0xFF;
+                    let off = (cell_px_y + cy) * (px_w * 4) + cell_px_x * 4;
+                    let slice = rgba.get_unchecked_mut(off..off + cell_w * 4);
+                    for px in slice.chunks_exact_mut(4) {
+                        px[0] = br;
+                        px[1] = bg;
+                        px[2] = bb;
+                        px[3] = 0xFF;
                     }
                 }
             }
 
-            // Glyph render
-            if ch != '\0' && ch != ' ' {
-                let (metrics, bitmap) = glyph_cache.get(ch, px_size, is_bold);
+            if ch == '\0' || ch == ' ' {
+                continue;
+            }
 
-                let gw = metrics.width;
-                let gh = metrics.height;
-                let advance = metrics.advance_width;
-                let xmin = metrics.xmin;
+            // let units_em = glyph_cache.units_per_em() as f32;
+            // let scale = px_size / units_em;
+            // let ascender_px = glyph_cache.ascender() as f32 * scale;
+            // let descender_px = (-glyph_cache.descender()) as f32 * scale;
 
-                // Horizontal positioning: left-align by advance, not centering trimmed bitmap.
-                // We shift so glyph ink starts at cell left + optional padding.
-                let hpad = if TIGHT_MODE {
-                    0
-                } else {
-                    ((cell_w as f32 - advance).max(0.0) / 2.0).floor() as i32
-                };
-                let off_x = (cell_px_x as i32 + hpad - xmin).max(cell_px_x as i32);
+            // Use the cached glyph cache - it's mutable through the Mutex
+            if let Some(rg) = glyph_cache.get(ch, px_size, is_bold) {
+                let gw = rg.width as i32;
+                let gh = rg.height as i32;
+                if gw == 0 || gh == 0 {
+                    continue;
+                }
 
-                // Vertical placement using adjusted baseline & ymin
-                let glyph_top = baseline + metrics.ymin;
-                let mut off_y = cell_px_y as i32 + glyph_top;
-                // Prevent clipping above
+                // Horizontal (unchanged center logic)
+                let mut off_x = cell_px_x as i32 + (cell_w as i32 - gw) / 2;
+                if off_x < cell_px_x as i32 {
+                    off_x = cell_px_x as i32;
+                }
+                if off_x + gw > (cell_px_x + cell_w) as i32 {
+                    off_x = (cell_px_x + cell_w) as i32 - gw;
+                }
+
+                // Vertical placement - position baseline in upper portion of cell
+                // Most terminal fonts expect baseline around 70-80% from top
+                let baseline_from_top = (cell_h as f32 * 0.75).round();
+                let baseline_y = cell_px_y as f32 + baseline_from_top;
+
+                // The glyph's ymin is distance from baseline to top (negative for chars above baseline)
+                // In our flipped coordinate system, we need to account for this
+                let glyph_top_y = baseline_y - (rg.height as f32);
+                let mut off_y = glyph_top_y as i32;
+
+                // Adjust for lowercase characters - they should sit slightly lower
+                if ch.is_lowercase() && !matches!(ch, 'g' | 'j' | 'p' | 'q' | 'y') {
+                    off_y += 1;
+                }
+
+                // For characters with descenders, allow them to go below baseline
+                if matches!(ch, 'g' | 'j' | 'p' | 'q' | 'y') {
+                    off_y += 2; // Allow descenders to extend lower
+                }
+
+                // Ensure we don't go above the cell
                 if off_y < cell_px_y as i32 {
                     off_y = cell_px_y as i32;
                 }
-                // Prevent overflow below
-                if off_y + gh as i32 > (cell_px_y + cell_h) as i32 {
-                    off_y = (cell_px_y + cell_h).saturating_sub(gh) as i32;
+
+                // For most characters, ensure they don't extend too far down
+                // But allow descenders to go a bit past the cell bottom if needed
+                let max_y = if matches!(ch, 'g' | 'j' | 'p' | 'q' | 'y') {
+                    (cell_px_y + cell_h) as i32 + 2 // Allow slight overflow for descenders
+                } else {
+                    (cell_px_y + cell_h) as i32
+                };
+
+                if off_y + gh > max_y {
+                    off_y = max_y - gh;
+                    if off_y < cell_px_y as i32 {
+                        off_y = cell_px_y as i32;
+                    }
                 }
 
-                // Coverage thresholds tuned for sharper look
-                const MIN_COV: u8 = 30;
-                const SOLID_COV: u8 = 200;
+                const MIN_COV: u8 = 8;
+                const SOLID_COV: u8 = 220;
 
-                for gy in 0..gh {
-                    let py = off_y + gy as i32;
-                    if py < cell_px_y as i32 || py >= (cell_px_y + cell_h) as i32 || py >= px_h as i32 {
+                for yy in 0..gh {
+                    let py = off_y + yy;
+                    // Allow slight overflow for descenders
+                    if py < cell_px_y as i32 || py >= (cell_px_y + cell_h) as i32 + 2 {
                         continue;
                     }
+                    if py >= px_h as i32 {
+                        continue;
+                    } // But don't go past buffer
                     let row_off = py as usize * (px_w * 4);
-
-                    for gx in 0..gw {
-                        let px = off_x + gx as i32;
-                        if px < cell_px_x as i32 || px >= (cell_px_x + cell_w) as i32 || px >= px_w as i32 {
+                    for xx in 0..gw {
+                        let px = off_x + xx;
+                        if px < cell_px_x as i32 || px >= (cell_px_x + cell_w) as i32 {
                             continue;
                         }
-                        let cov = bitmap[gy * gw + gx];
+                        let cov = rg.pixels[(yy * gw + xx) as usize];
                         if cov < MIN_COV {
                             continue;
                         }
@@ -221,48 +199,6 @@ pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::S
                             rgba[o + 2] = (fb as f32 * alpha + bb as f32 * inv) as u8;
                         }
                     }
-                }
-            }
-
-            // Attributes (unchanged except using current vars)
-            if ch_attr.attribute.is_underlined() {
-                let rows: &[usize] = if ch_attr.attribute.is_double_underlined() {
-                    &[cell_h.saturating_sub(3), cell_h.saturating_sub(1)]
-                } else {
-                    &[cell_h.saturating_sub(2)]
-                };
-                for r in rows {
-                    if *r >= cell_h {
-                        continue;
-                    }
-                    let py = cell_px_y + *r;
-                    let row_off = py * (px_w * 4) + cell_px_x * 4;
-                    for cx in 0..cell_w {
-                        let o = row_off + cx * 4;
-                        rgba[o] = fr;
-                        rgba[o + 1] = fg;
-                        rgba[o + 2] = fb;
-                    }
-                }
-            }
-            if ch_attr.attribute.is_overlined() {
-                let py = cell_px_y;
-                let row_off = py * (px_w * 4) + cell_px_x * 4;
-                for cx in 0..cell_w {
-                    let o = row_off + cx * 4;
-                    rgba[o] = fr;
-                    rgba[o + 1] = fg;
-                    rgba[o + 2] = fb;
-                }
-            }
-            if ch_attr.attribute.is_crossed_out() {
-                let py = cell_px_y + cell_h / 2;
-                let row_off = py * (px_w * 4) + cell_px_x * 4;
-                for cx in 0..cell_w {
-                    let o = row_off + cx * 4;
-                    rgba[o] = fr;
-                    rgba[o + 1] = fg;
-                    rgba[o + 2] = fb;
                 }
             }
         }

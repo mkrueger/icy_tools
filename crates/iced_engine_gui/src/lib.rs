@@ -20,6 +20,9 @@ pub use theme::*;
 pub mod render_unicode;
 pub use render_unicode::*;
 
+pub mod unicode_glyph_cache;
+pub use unicode_glyph_cache::*;
+
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};
