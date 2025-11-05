@@ -71,7 +71,8 @@ pub fn create_weclome_screen() -> EditState {
     // Write "IcyTerm ready." message at the marked position
     let mut caret_pos = Position::default();
     if let Some((x, y)) = ready_position {
-        let ready_msg = "READY.";
+        let variants = ["READY.", "STANDING BY...", "OK", "AWAITING INPUT", "SESSION STARTED.", "SYSTEM READY"];
+        let ready_msg = variants[fastrand::usize(0..variants.len())];
 
         for (i, msg_char) in ready_msg.chars().enumerate() {
             let new_x = x + i as i32;
