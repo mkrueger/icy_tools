@@ -24,6 +24,8 @@ semver = { workspace = true }
 webbrowser = { workspace = true }
 iced_engine_gui = { workspace = true }
 fastrand = { workspace = true }
+clap = { workspace = true }
+
 #sound
 rodio = { workspace = true }
 icy_engine = { workspace = true }

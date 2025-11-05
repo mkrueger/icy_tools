@@ -104,7 +104,7 @@ impl FileTransferDialogState {
             });
 
             // Progress section with animated style
-            let progress = transfer_info.total_bytes_transfered as f32 / max(1, transfer_info.file_size) as f32;
+            let progress = transfer_info.cur_bytes_transfered as f32 / max(1, transfer_info.file_size) as f32;
             let percentage = (progress * 100.0) as u32;
 
             let progress_section = column![
@@ -117,7 +117,7 @@ impl FileTransferDialogState {
                     Space::new().width(8.0),
                     text(format!(
                         "({} / {})",
-                        human_bytes(transfer_info.total_bytes_transfered as f64),
+                        human_bytes(transfer_info.cur_bytes_transfered as f64),
                         human_bytes(transfer_info.file_size as f64)
                     ))
                     .size(14)

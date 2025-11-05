@@ -24,6 +24,7 @@ pub struct WindowManager {
     addresses: Arc<Mutex<AddressBook>>,
     options: Arc<Mutex<Options>>,
     temp_options: Arc<Mutex<Options>>,
+    url: Option<String>,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -87,9 +88,16 @@ impl WindowManager {
                 addresses: Arc::new(Mutex::new(addresses)),
                 options,
                 temp_options,
+                url: None,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
+    }
+
+    pub fn with_url(url: String) -> (WindowManager, Task<WindowManagerMessage>) {
+        let mut manager = Self::new();
+        manager.0.url = Some(url);
+        manager
     }
 
     pub fn title(&self, _window: window::Id) -> String {
@@ -137,6 +145,13 @@ impl WindowManager {
                 let focus_input: Task<()> = operation::focus(format!("input-{id}"));
 
                 self.windows.insert(id, window);
+
+                if let Some(url) = self.url.take() {
+                    if let Ok(address) = crate::Address::parse_url(url) {
+                        println!("Connecting to address from URL: {:?}", address);
+                        return Task::done(WindowManagerMessage::WindowMessage(id, Message::Connect(address)));
+                    }
+                }
 
                 focus_input.map(move |_: ()| WindowManagerMessage::WindowOpened(id))
             }

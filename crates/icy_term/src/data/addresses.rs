@@ -1,4 +1,4 @@
-use crate::{ScreenMode, TerminalResult};
+use crate::{Res, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
@@ -471,6 +471,80 @@ impl Address {
             TerminalEmulation::Skypix => ScreenMode::SkyPix,
             TerminalEmulation::AtariST => ScreenMode::AtariST(40),
         }
+    }
+
+    pub fn parse_url(url: String) -> Res<Address> {
+        let url = url.trim();
+
+        // Parse the URL - handle cases with and without protocol
+        let parsed_url = if !url.contains("://") {
+            // Default to telnet if no protocol specified
+            format!("telnet://{}", url)
+        } else {
+            url.to_string()
+        };
+
+        // Use the url crate for basic parsing
+        let parsed = url::Url::parse(&parsed_url)?;
+
+        // Create a new address with the parsed system name (hostname)
+        let mut address = Address::new(parsed.host_str().unwrap_or("").to_string());
+
+        // Determine protocol from scheme
+        address.protocol = match parsed.scheme() {
+            "telnet" => ConnectionType::Telnet,
+            "ssh" => ConnectionType::SSH,
+            "raw" => ConnectionType::Raw,
+            "ws" => ConnectionType::Websocket,
+            "wss" => ConnectionType::SecureWebsocket,
+            scheme => {
+                return Err(format!("Unsupported protocol: {}", scheme).into());
+            }
+        };
+
+        // Extract username and password if present
+        if !parsed.username().is_empty() {
+            address.user_name = parsed.username().to_string();
+        }
+
+        if let Some(password) = parsed.password() {
+            address.password = password.to_string();
+        }
+
+        // Build the address string (host:port)
+        let mut addr = parsed.host_str().unwrap_or("").to_string();
+
+        // Add port if specified, otherwise use defaults
+        let port = parsed.port().unwrap_or_else(|| match address.protocol {
+            ConnectionType::Telnet => 23,
+            ConnectionType::SSH => 22,
+            ConnectionType::Raw => 23,
+            ConnectionType::Websocket => 80,
+            ConnectionType::SecureWebsocket => 443,
+            _ => 23,
+        });
+
+        // Only append non-default ports
+        let is_default_port = match address.protocol {
+            ConnectionType::Telnet => port == 23,
+            ConnectionType::SSH => port == 22,
+            ConnectionType::Raw => port == 23,
+            ConnectionType::Websocket => port == 80,
+            ConnectionType::SecureWebsocket => port == 443,
+            _ => false,
+        };
+
+        if !is_default_port {
+            addr = format!("{}:{}", addr, port);
+        }
+
+        address.address = addr;
+
+        // Set reasonable defaults for BBS connections
+        address.terminal_type = TerminalEmulation::Ansi;
+        address.ice_mode = true;
+
+        Ok(address)
     }
 }
 

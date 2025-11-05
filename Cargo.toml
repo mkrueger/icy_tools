@@ -45,6 +45,7 @@ toml = "0.8.23"
 bstr = "1.12.1"
 fastrand = "2.3.0"
 clipboard-rs = "0.3.0"
+#rmcp = "0.8.5"
 
 regex = "1.11.3"
 directories = "6.0.0"

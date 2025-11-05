@@ -41,6 +41,8 @@ pub mod ui;
 mod util;
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+use clap::Parser;
+
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     static ref START_TIME: Instant = Instant::now();
@@ -83,8 +85,24 @@ fn get_log_file() -> anyhow::Result<PathBuf> {
     Err(anyhow::anyhow!("Error getting log directory"))
 }
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Connect to a BBS using the specified URL
+    /// URL format is: [(telnet|ssh|raw)://][user[:password]@]domainname[:port]
+    #[arg(value_name = "URL")]
+    url: Option<String>,
+}
+
 fn main() {
     use std::fs;
+    let args = Args::parse();
+    if let Some(url) = &args.url {
+        if let Err(e) = crate::Address::parse_url(url.clone()) {
+            eprintln!("Error parsing URL '{}': {}", url, e);
+            std::process::exit(1);
+        }
+    }
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big
@@ -131,12 +149,23 @@ fn main() {
     log::info!("Starting iCY TERM {}", *VERSION);
     icy_net::websocket::init_websocket_providers();
 
-    iced::daemon(WindowManager::new, WindowManager::update, WindowManager::view)
-        .theme(WindowManager::theme)
-        .subscription(WindowManager::subscription) // Add this line
-        .title(WindowManager::title)
-        .run()
-        .expect("Failed to run application");
+    let url_for_closure = args.url;
+    iced::daemon(
+        move || {
+            if let Some(url) = &url_for_closure {
+                WindowManager::with_url(url.clone())
+            } else {
+                WindowManager::new()
+            }
+        },
+        WindowManager::update,
+        WindowManager::view,
+    )
+    .theme(WindowManager::theme)
+    .subscription(WindowManager::subscription) // Add this line
+    .title(WindowManager::title)
+    .run()
+    .expect("Failed to run application");
     log::info!("shutting down.");
 }
 
