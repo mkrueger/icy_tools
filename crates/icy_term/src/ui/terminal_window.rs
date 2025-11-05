@@ -4,12 +4,9 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text, vertical_slider},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
-use icy_engine::{Buffer, TextPane, ansi::BaudEmulation, editor::EditState};
+use icy_engine::{TextPane, ansi::BaudEmulation};
 use icy_net::telnet::TerminalEmulation;
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 // use iced_aw::{menu, menu_bar, menu_items};
 
 use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message, util::SoundThread};
@@ -20,7 +17,6 @@ const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
 const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const _SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
-const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/main_screen.icy");
 
 pub struct TerminalWindow {
     pub scene: Terminal,
@@ -35,17 +31,7 @@ pub struct TerminalWindow {
 
 impl TerminalWindow {
     pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
-        // Create a default EditState wrapped in Arc<Mutex>
-        let edit_state: Arc<Mutex<EditState>> = Arc::new(Mutex::new(EditState::default()));
-        // If parsing fails, try using the ANSI parser directly
-        let mut buffer = Buffer::from_bytes(&Path::new("a.icy"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
-        buffer.buffer_type = icy_engine::BufferType::CP437;
-        buffer.is_terminal_buffer = true;
-        buffer.terminal_state.fixed_size = true;
-        buffer.update_hyperlinks();
-
-        edit_state.lock().unwrap().set_buffer(buffer);
-        edit_state.lock().unwrap().get_caret_mut().set_is_visible(false);
+        let edit_state = Arc::new(Mutex::new(super::welcome_screen::create_weclome_screen()));
 
         Self {
             scene: Terminal::new(edit_state),

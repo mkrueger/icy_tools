@@ -182,7 +182,7 @@ impl MonitorSettings {
             // CRT effects - all disabled for neutral
             use_bloom: false,
             bloom_threshold: 25.0,
-            bloom_radius: 6.0,
+            bloom_radius: 3.0,
             glow_strength: 15.0,
             phosphor_persistence: 10.0,
 

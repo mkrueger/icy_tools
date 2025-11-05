@@ -4,7 +4,7 @@ use std::{
 };
 
 use iced::{
-    Element, Event, Subscription, Task, Theme, Vector,
+    Element, Event, Size, Subscription, Task, Theme, Vector,
     advanced::graphics::core::keyboard,
     widget::{operation, space},
     window,
@@ -40,10 +40,13 @@ pub enum WindowManagerMessage {
     UpdateBuffers,
 }
 
+const DEFAULT_SIZE: Size = Size::new(853.0, 597.0);
+
 impl WindowManager {
     pub fn new() -> (Self, Task<WindowManagerMessage>) {
         let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
         let settings = window::Settings {
+            size: DEFAULT_SIZE,
             icon: window_icon,
             ..window::Settings::default()
         };
@@ -59,7 +62,7 @@ impl WindowManager {
 
         // Create a single sound thread to be shared by all windows
         let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
-        let mut mode = MainWindowMode::SplashScreen;
+        let mut mode = MainWindowMode::ShowTerminal;
 
         let addresses = match AddressBook::load_phone_book() {
             Ok(addresses) => addresses,
@@ -69,7 +72,7 @@ impl WindowManager {
                     i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-title"),
                     i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-secondary"),
                     format!("{}", err),
-                    Box::new(MainWindowMode::SplashScreen),
+                    Box::new(MainWindowMode::ShowTerminal),
                 );
                 AddressBook::default()
             }
@@ -109,6 +112,7 @@ impl WindowManager {
                         let settings = window::Settings {
                             position,
                             icon: window_icon,
+                            size: DEFAULT_SIZE,
                             ..window::Settings::default()
                         };
 
@@ -129,7 +133,7 @@ impl WindowManager {
                     self.temp_options.clone(),
                 );
                 // reset mode to default after opening window
-                self.mode = MainWindowMode::SplashScreen;
+                self.mode = MainWindowMode::ShowTerminal;
                 let focus_input: Task<()> = operation::focus(format!("input-{id}"));
 
                 self.windows.insert(id, window);

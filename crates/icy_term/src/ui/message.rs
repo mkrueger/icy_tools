@@ -56,7 +56,6 @@ pub enum Message {
     Copy,
     Paste,
     ShiftPressed(bool),
-    CloseSplashScreen,
     SelectBps(BaudEmulation),
     QuitIcyTerm,
     ClearScreen,

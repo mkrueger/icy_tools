@@ -13,6 +13,8 @@ pub use modal::*;
 pub mod terminal_window;
 pub use terminal_window::*;
 
+pub mod welcome_screen;
+
 pub mod message;
 pub use message::*;
 

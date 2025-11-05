@@ -17,7 +17,7 @@ use crate::{
 };
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{AttributedChar, Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -31,7 +31,6 @@ use crate::{
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
-    SplashScreen,
     ShowTerminal,
     #[default]
     ShowDialingDirectory,
@@ -625,11 +624,6 @@ impl MainWindow {
                 self.shift_pressed_during_selection = pressed;
                 Task::none()
             }
-            Message::CloseSplashScreen => {
-                self.switch_to_terminal_screen();
-
-                Task::none()
-            }
             Message::SelectBps(bps) => {
                 let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(bps));
                 self.switch_to_terminal_screen();
@@ -816,7 +810,7 @@ impl MainWindow {
         };
 
         match &self.state.mode {
-            MainWindowMode::ShowTerminal | MainWindowMode::SplashScreen => terminal_view,
+            MainWindowMode::ShowTerminal => terminal_view,
             MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options.lock().unwrap()),
             MainWindowMode::ShowSettings => self.settings_dialog.view(terminal_view),
             MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, terminal_view),
@@ -856,27 +850,6 @@ impl MainWindow {
     }
 
     fn switch_to_terminal_screen(&mut self) {
-        if self.get_mode() == MainWindowMode::SplashScreen {
-            if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
-                let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
-                buffer.clear_screen(0, caret);
-                caret.set_is_visible(true);
-
-                let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
-                buffer.clear_screen(0, caret);
-                caret.set_is_visible(true);
-
-                // Write "IcyTerm ready." message
-                let ready_msg = format!("IcyTerm {} ready.", crate::VERSION.to_string());
-                for ch in ready_msg.chars() {
-                    buffer.print_char(0, caret, AttributedChar::new(ch, icy_engine::TextAttribute::default()));
-                }
-                caret.set_position(Position::new(0, 1));
-
-                // Clear the cache to force redraw
-                self.terminal_window.scene.cache.clear();
-            }
-        }
         self.state.mode = MainWindowMode::ShowTerminal;
     }
 
@@ -1017,10 +990,6 @@ impl MainWindow {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_screen_dialog::ExportScreenMsg::Cancel)),
                     _ => None,
                 },
-                _ => None,
-            },
-            MainWindowMode::SplashScreen => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseSplashScreen),
                 _ => None,
             },
             MainWindowMode::ShowBaudEmulationDialog => match event {

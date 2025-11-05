@@ -11,8 +11,7 @@ use icy_engine_gui::{BufferView, show_terminal_area};
 
 use crate::{
     AnsiEditor, BitFontEditor, ClipboardHandler, Document, DocumentOptions, DrawGlyphStyle, Message, SETTINGS, SelectOutlineDialog, TerminalResult,
-    UndoHandler,
-    model::Tool,
+    UndoHandler, model::Tool,
 };
 
 pub struct CharFontEditor {
