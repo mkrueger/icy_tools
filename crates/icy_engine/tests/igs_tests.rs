@@ -14,7 +14,6 @@ pub fn test_igs() {
             continue;
         }
 
-        println!("test {:?}...", cur_entry);
         let png_file = cur_entry.with_extension("png");
         let reader = io::BufReader::new(File::open(&png_file).unwrap());
         png::Decoder::new(reader).read_info().unwrap().next_frame(&mut img_buf).unwrap();

@@ -102,8 +102,7 @@ impl DialingDirectoryState {
         .gap(10)
         .style(container::rounded_box)
         .padding(8);
-        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
-            .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
+        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"))).on_press(Message::from(DialingDirectoryMsg::Cancel));
         let connect_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")))
             .on_press(Message::from(DialingDirectoryMsg::ConnectSelected))
             .style(button::primary);
@@ -143,7 +142,8 @@ impl DialingDirectoryState {
 
             DialingDirectoryMsg::ToggleFavorite(idx) => {
                 if idx < self.addresses.lock().unwrap().addresses.len() {
-                    self.addresses.lock().unwrap().addresses[idx].is_favored = !self.addresses.lock().unwrap().addresses[idx].is_favored;
+                    let tmp = self.addresses.lock().unwrap().addresses[idx].is_favored;
+                    self.addresses.lock().unwrap().addresses[idx].is_favored = !tmp;
                 }
                 Task::none()
             }
@@ -311,7 +311,6 @@ impl DialingDirectoryState {
                 if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
                     eprintln!("Failed to save address book: {}", e);
                 }
-
                 // Return a task that closes the dialog
                 Task::done(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }

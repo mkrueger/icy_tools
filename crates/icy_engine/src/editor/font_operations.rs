@@ -159,9 +159,7 @@ impl EditState {
                     ch.attribute.set_foreground(new_fg);
 
                     let bg = ch.attribute.get_background();
-                    if bg >= table.len() as u32 {
-                        println!("bg: {:08X}", bg);
-                    }
+
                     let new_bg = if bg == TextAttribute::TRANSPARENT_COLOR {
                         0
                     } else {

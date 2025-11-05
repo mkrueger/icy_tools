@@ -1009,7 +1009,6 @@ impl DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
-        println!("cmd:{:?} arguments: {:?}", command, parameters);
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() < 1 {

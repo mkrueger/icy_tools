@@ -1,7 +1,6 @@
 #![allow(static_mut_refs)]
-use iced::Element;
-
 use crate::{MonitorSettings, Terminal};
+use iced::Element;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -9,6 +8,8 @@ pub enum Message {
     OpenLink(String),
     Copy,
     RipCommand(String),
+
+    SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
 }
 
 pub struct TerminalView<'a> {

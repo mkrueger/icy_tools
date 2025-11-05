@@ -246,6 +246,7 @@ pub struct Buffer {
     pub file_name: Option<PathBuf>,
 
     pub terminal_state: TerminalState,
+
     pub buffer_type: BufferType,
     pub ice_mode: IceMode,
     pub palette_mode: PaletteMode,
@@ -714,11 +715,11 @@ impl Buffer {
     pub fn reset_terminal(&mut self) {
         if self.is_terminal_buffer {
             let fixed = self.terminal_state.fixed_size;
-            self.terminal_state = TerminalState::from(self.original_size);
+            self.terminal_state.reset_terminal(self.original_size);
             self.size = self.original_size;
             self.terminal_state.fixed_size = fixed;
         } else {
-            self.terminal_state = TerminalState::from(self.size);
+            self.terminal_state.reset_terminal(self.size);
         }
         self.terminal_state.cleared_screen = true;
     }

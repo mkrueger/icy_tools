@@ -12,13 +12,14 @@ use self::sound::{AnsiMusic, MusicState};
 
 use super::{BufferParser, TAB};
 use crate::{
-    AttributedChar, AutoWrapMode, BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, FF, FontSelectionState, HyperLink, IceMode, LF, MouseMode,
-    OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
+    AttributedChar, AutoWrapMode, BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, ExtMouseMode, FF, FontSelectionState, HyperLink, IceMode, LF,
+    MouseMode, OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
 };
 
 mod ansi_commands;
 pub mod constants;
 mod dcs;
+pub mod mouse_event;
 mod osc;
 pub mod sound;
 
@@ -415,8 +416,41 @@ impl BufferParser for Parser {
                                 buf.terminal_state.clear_margins_left_right();
                             }
 
-                            Some(9 | 1000..=1007 | 1015 | 1016) => {
-                                buf.terminal_state.mouse_mode = MouseMode::Default;
+                            // Mouse tracking modes - turn off
+                            Some(9 | 1000 | 1001 | 1002 | 1003) => {
+                                buf.terminal_state.reset_mouse_mode();
+                            }
+                            Some(1004) => {
+                                // Turn off focus event reporting
+                                buf.terminal_state.mouse_state.focus_out_event_enabled = false;
+                            }
+                            Some(1007) => {
+                                // Turn off alternate scroll mode
+                                buf.terminal_state.mouse_state.alternate_scroll_enabled = false;
+                            }
+                            Some(1005) => {
+                                // Turn off UTF-8 extended mouse mode
+                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::Extended) {
+                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                }
+                            }
+                            Some(1006) => {
+                                // Turn off SGR extended mouse mode
+                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::SGR) {
+                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                }
+                            }
+                            Some(1015) => {
+                                // Turn off URXVT extended mouse mode
+                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::URXVT) {
+                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                }
+                            }
+                            Some(1016) => {
+                                // Turn off pixel position mode
+                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::PixelPosition) {
+                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                }
                             }
                             _ => {
                                 return self.unsupported_escape_error();
@@ -442,26 +476,28 @@ impl BufferParser for Parser {
                             Some(69) => buf.terminal_state.dec_margin_mode_left_right = true,
 
                             // Mouse tracking see https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Normal-tracking-mode
-                            Some(9) => buf.terminal_state.mouse_mode = MouseMode::X10,
-                            Some(1000) => buf.terminal_state.mouse_mode = MouseMode::VT200,
+                            Some(9) => buf.terminal_state.set_mouse_mode(MouseMode::X10),
+                            Some(1000) => buf.terminal_state.set_mouse_mode(MouseMode::VT200),
                             Some(1001) => {
-                                buf.terminal_state.mouse_mode = MouseMode::VT200_Highlight;
+                                buf.terminal_state.set_mouse_mode(MouseMode::VT200_Highlight);
                             }
-                            Some(1002) => buf.terminal_state.mouse_mode = MouseMode::ButtonEvents,
-                            Some(1003) => buf.terminal_state.mouse_mode = MouseMode::AnyEvents,
+                            Some(1002) => buf.terminal_state.set_mouse_mode(MouseMode::ButtonEvents),
+                            Some(1003) => buf.terminal_state.set_mouse_mode(MouseMode::AnyEvents),
 
-                            Some(1004) => buf.terminal_state.mouse_mode = MouseMode::FocusEvent,
+                            Some(1004) => buf.terminal_state.mouse_state.focus_out_event_enabled = true,
                             Some(1007) => {
-                                buf.terminal_state.mouse_mode = MouseMode::AlternateScroll;
+                                buf.terminal_state.mouse_state.alternate_scroll_enabled = true;
                             }
-                            Some(1005) => buf.terminal_state.mouse_mode = MouseMode::ExtendedMode,
+                            Some(1005) => buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::Extended,
                             Some(1006) => {
-                                buf.terminal_state.mouse_mode = MouseMode::SGRExtendedMode;
+                                buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::SGR;
                             }
                             Some(1015) => {
-                                buf.terminal_state.mouse_mode = MouseMode::URXVTExtendedMode;
+                                buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::URXVT;
                             }
-                            Some(1016) => buf.terminal_state.mouse_mode = MouseMode::PixelPosition,
+                            Some(1016) => {
+                                buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::PixelPosition;
+                            }
 
                             Some(cmd) => {
                                 return Err(ParserError::UnsupportedCustomCommand(*cmd).into());
@@ -560,21 +596,31 @@ impl BufferParser for Parser {
                                     params.push("35");
                                 }
 
-                                match buf.terminal_state.mouse_mode {
-                                    MouseMode::Default => {}
+                                match buf.terminal_state.mouse_mode() {
+                                    MouseMode::OFF => {}
                                     MouseMode::X10 => params.push("9"),
                                     MouseMode::VT200 => params.push("1000"),
                                     MouseMode::VT200_Highlight => params.push("1001"),
                                     MouseMode::ButtonEvents => params.push("1002"),
                                     MouseMode::AnyEvents => params.push("1003"),
-                                    MouseMode::FocusEvent => params.push("1004"),
-                                    MouseMode::AlternateScroll => params.push("1007"),
-                                    MouseMode::ExtendedMode => params.push("1005"),
-                                    MouseMode::SGRExtendedMode => params.push("1006"),
-                                    MouseMode::URXVTExtendedMode => params.push("1015"),
-                                    MouseMode::PixelPosition => params.push("1016"),
                                 }
 
+                                if buf.terminal_state.mouse_state.focus_out_event_enabled {
+                                    params.push("1004");
+                                }
+
+                                if buf.terminal_state.mouse_state.alternate_scroll_enabled {
+                                    params.push("1007");
+                                }
+
+                                // Report the extended encoding mode
+                                match buf.terminal_state.mouse_state.extended_mode {
+                                    ExtMouseMode::None => {}
+                                    ExtMouseMode::Extended => params.push("1005"),
+                                    ExtMouseMode::SGR => params.push("1006"),
+                                    ExtMouseMode::URXVT => params.push("1015"),
+                                    ExtMouseMode::PixelPosition => params.push("1016"),
+                                }
                                 let mode_report = if params.is_empty() {
                                     "\x1B[=2;n".to_string()
                                 } else {

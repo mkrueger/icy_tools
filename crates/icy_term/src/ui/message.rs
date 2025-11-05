@@ -60,4 +60,5 @@ pub enum Message {
     QuitIcyTerm,
     ClearScreen,
     SetFocus(bool),
+    SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
 }

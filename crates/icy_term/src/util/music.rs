@@ -221,39 +221,36 @@ impl SoundBackgroundThreadData {
         let mut result = false;
         loop {
             match self.rx.try_recv() {
-                Ok(data) => {
-                    println!("Sound thread received: {:?}", data);
-                    match data {
-                        SoundData::PlayMusic(m) => {
-                            self.line_sound_playing = false;
-                            self.music.push_back(SoundData::PlayMusic(m));
-                        }
-                        SoundData::Beep => {
-                            self.line_sound_playing = false;
-                            self.music.push_back(SoundData::Beep);
-                        }
-                        SoundData::LineSound(tone) => {
-                            self.music.push_back(SoundData::LineSound(tone));
-                        }
-                        SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
-                            self.music.push_back(SoundData::PlayDialSound(tone_dial, tone, phone_number));
-                        }
-                        SoundData::_PlayBusySound => {
-                            self.line_sound_playing = false;
-                            self.music.push_back(SoundData::_PlayBusySound);
-                        }
-                        SoundData::StopPlay => {
-                            self.line_sound_playing = false;
-                            result = true;
-                        }
-                        SoundData::Clear => {
-                            result = true;
-                            self.music.clear();
-                            self.line_sound_playing = false;
-                        }
-                        _ => {}
+                Ok(data) => match data {
+                    SoundData::PlayMusic(m) => {
+                        self.line_sound_playing = false;
+                        self.music.push_back(SoundData::PlayMusic(m));
                     }
-                }
+                    SoundData::Beep => {
+                        self.line_sound_playing = false;
+                        self.music.push_back(SoundData::Beep);
+                    }
+                    SoundData::LineSound(tone) => {
+                        self.music.push_back(SoundData::LineSound(tone));
+                    }
+                    SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
+                        self.music.push_back(SoundData::PlayDialSound(tone_dial, tone, phone_number));
+                    }
+                    SoundData::_PlayBusySound => {
+                        self.line_sound_playing = false;
+                        self.music.push_back(SoundData::_PlayBusySound);
+                    }
+                    SoundData::StopPlay => {
+                        self.line_sound_playing = false;
+                        result = true;
+                    }
+                    SoundData::Clear => {
+                        result = true;
+                        self.music.clear();
+                        self.line_sound_playing = false;
+                    }
+                    _ => {}
+                },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.line_sound_playing = false;

@@ -59,6 +59,8 @@ impl TerminalWindow {
                     // TODO: Handle RIP command
                     Message::None
                 } // _ => Message::None,
+
+                iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
             }
         });
 

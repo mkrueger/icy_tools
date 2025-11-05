@@ -5,7 +5,8 @@ use std::sync::{Mutex, atomic::AtomicU64};
 use crate::{Blink, Message, MonitorSettings, RenderUnicodeOptions, Terminal, now_ms, render_unicode_to_rgba};
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
-use icy_engine::{Position, Selection, TextPane};
+use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
+use icy_engine::{MouseState, Position, Selection, TextPane};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -545,6 +546,7 @@ pub struct CRTShaderState {
     // Modifier tracking
     alt_pressed: bool,
     shift_pressed: bool,
+    ctrl_pressed: bool,
 
     // Hover tracking
     hovered_cell: Option<Position>,
@@ -580,6 +582,7 @@ impl Default for CRTShaderState {
             shift_pressed_during_selection: false,
             alt_pressed: false,
             shift_pressed: false,
+            ctrl_pressed: false,
             hovered_cell: None,
             hovered_link: None,
             hovered_rip_field: false,
@@ -711,14 +714,13 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                 }
             }
         }
-        // If we can't get the lock, keep the last known size to prevent oscillation
 
-        // ...rest of the update method stays the same...
         // Track modifier keys
         if let iced::Event::Keyboard(kbd_event) = event {
             match kbd_event {
                 iced::keyboard::Event::ModifiersChanged(mods) => {
                     state.alt_pressed = mods.alt();
+                    state.ctrl_pressed = mods.command();
                     state.shift_pressed = mods.shift();
                 }
                 _ => {}
@@ -726,106 +728,180 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         // Handle mouse events
+        // Handle mouse events
         if let iced::Event::Mouse(mouse_event) = event {
+            // Check if mouse tracking is enabled
+            let mouse_state = if let Ok(edit_state) = self.term.edit_state.lock() {
+                edit_state.get_buffer().terminal_state.mouse_state.clone()
+            } else {
+                MouseState::default()
+            };
+
+            let mouse_tracking_enabled = mouse_state.tracking_enabled();
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = cursor.position() {
                         let cell_pos = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y);
                         state.hovered_cell = cell_pos;
 
-                        // Check for hyperlinks
-                        if let Some(cell) = cell_pos {
-                            if let Ok(edit_state) = self.term.edit_state.try_lock() {
-                                let buffer = edit_state.get_display_buffer();
+                        // Send mouse motion event if mouse tracking is enabled
+                        if mouse_tracking_enabled {
+                            if let Some(cell) = cell_pos {
+                                // Check if we should report motion events based on the mouse mode
+                                let should_report_motion = match mouse_state.mouse_mode {
+                                    icy_engine::MouseMode::ButtonEvents => state.dragging, // Only when button is pressed
+                                    icy_engine::MouseMode::AnyEvents => true,              // Always report motion
+                                    _ => false,                                            // Other modes don't report motion
+                                };
 
-                                // Check hyperlinks
-                                let mut found_link = None;
-                                for hyperlink in buffer.layers[0].hyperlinks() {
-                                    if buffer.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
-                                        found_link = Some(hyperlink.get_url(buffer));
-                                        break;
-                                    }
+                                if should_report_motion {
+                                    let modifiers = KeyModifiers {
+                                        shift: state.shift_pressed,
+                                        ctrl: state.ctrl_pressed,
+                                        alt: state.alt_pressed,
+                                        meta: false, // Would need to track meta state
+                                    };
+
+                                    // Determine which button is being held during motion
+                                    let button = if state.dragging {
+                                        MouseButton::Left // Track which button started the drag
+                                    } else {
+                                        MouseButton::None // No button for any-event motion
+                                    };
+
+                                    let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                        mouse_state: mouse_state.clone(),
+                                        event_type: MouseEventType::Motion,
+                                        position: cell,
+                                        button,
+                                        modifiers,
+                                    };
+
+                                    return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                                 }
-
-                                if state.hovered_link != found_link {
-                                    state.hovered_link = found_link;
-                                    needs_redraw = true;
-                                }
-
-                                // TODO: Check RIP fields when available
-                                // if self.term.use_rip {
-                                //     check RIP mouse fields
-                                // }
-                            }
-                        } else {
-                            if state.hovered_link.is_some() {
-                                state.hovered_link = None;
-                                needs_redraw = true;
                             }
                         }
 
-                        // Handle dragging for selection
-                        if state.dragging {
+                        if !mouse_tracking_enabled {
                             if let Some(cell) = cell_pos {
-                                if state.last_drag_position != Some(cell) {
-                                    state.last_drag_position = Some(cell);
-                                    if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
-                                        // Update selection
-                                        if let Some(mut sel) = edit_state.get_selection().clone() {
-                                            if !sel.locked {
-                                                sel.lead = cell;
-                                                sel.shape = if state.alt_pressed {
-                                                    icy_engine::Shape::Rectangle
-                                                } else {
-                                                    icy_engine::Shape::Lines
-                                                };
-                                                let _ = edit_state.set_selection(sel);
-                                            }
+                                if let Ok(edit_state) = self.term.edit_state.try_lock() {
+                                    let buffer = edit_state.get_display_buffer();
+
+                                    // Check hyperlinks
+                                    let mut found_link = None;
+                                    for hyperlink in buffer.layers[0].hyperlinks() {
+                                        if buffer.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
+                                            found_link = Some(hyperlink.get_url(buffer));
+                                            break;
                                         }
                                     }
+
+                                    if state.hovered_link != found_link {
+                                        state.hovered_link = found_link;
+                                        needs_redraw = true;
+                                    }
+                                }
+                            } else {
+                                if state.hovered_link.is_some() {
+                                    state.hovered_link = None;
                                     needs_redraw = true;
+                                }
+                            }
+
+                            // Handle dragging for selection (only when not in mouse tracking mode)
+                            if state.dragging {
+                                if let Some(cell) = cell_pos {
+                                    if state.last_drag_position != Some(cell) {
+                                        state.last_drag_position = Some(cell);
+                                        if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                            // Update selection
+                                            if let Some(mut sel) = edit_state.get_selection().clone() {
+                                                if !sel.locked {
+                                                    sel.lead = cell;
+                                                    sel.shape = if state.alt_pressed {
+                                                        icy_engine::Shape::Rectangle
+                                                    } else {
+                                                        icy_engine::Shape::Lines
+                                                    };
+                                                    let _ = edit_state.set_selection(sel);
+                                                }
+                                            }
+                                        }
+                                        needs_redraw = true;
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                mouse::Event::ButtonPressed(button) => {
                     if let Some(position) = cursor.position() {
                         if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
-                            // Check if clicking on a hyperlink
-                            if let Some(url) = &state.hovered_link {
-                                return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
+                            // Convert iced mouse button to our MouseButton type
+                            let mouse_button = match button {
+                                mouse::Button::Left => MouseButton::Left,
+                                mouse::Button::Middle => MouseButton::Middle,
+                                mouse::Button::Right => MouseButton::Right,
+                                _ => return None, // Skip other buttons for now
+                            };
+
+                            // Send mouse press event if mouse tracking is enabled
+                            if mouse_tracking_enabled {
+                                let modifiers = KeyModifiers {
+                                    shift: state.shift_pressed,
+                                    ctrl: state.ctrl_pressed,
+                                    alt: state.alt_pressed,
+                                    meta: false, // Would need to track meta state
+                                };
+
+                                state.dragging = matches!(button, mouse::Button::Left);
+
+                                let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                    mouse_state: mouse_state.clone(),
+                                    event_type: MouseEventType::Press,
+                                    position: cell,
+                                    button: mouse_button,
+                                    modifiers,
+                                };
+
+                                return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                             }
 
-                            // TODO: Handle RIP field clicks
-                            // if self.term.use_rip && state.hovered_rip_field {
-                            //     handle RIP command
-                            // }
-
-                            // Start selection
-                            if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
-                                // Clear existing selection unless shift is held
-                                if !state.shift_pressed {
-                                    let _ = edit_state.clear_selection();
+                            // Handle normal terminal interactions when mouse tracking is disabled
+                            if matches!(button, mouse::Button::Left) {
+                                // Check if clicking on a hyperlink
+                                if let Some(url) = &state.hovered_link {
+                                    return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
                                 }
 
-                                // Create new selection
-                                let mut sel = Selection::new(cell);
-                                sel.shape = if state.alt_pressed {
-                                    icy_engine::Shape::Rectangle
-                                } else {
-                                    icy_engine::Shape::Lines
-                                };
-                                sel.locked = false;
-                                let _ = edit_state.set_selection(sel);
+                                // Start selection
+                                if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                    // Clear existing selection unless shift is held
+                                    if !state.shift_pressed {
+                                        let _ = edit_state.clear_selection();
+                                    }
 
-                                state.dragging = true;
-                                state.drag_anchor = Some(cell);
-                                state.last_drag_position = Some(cell);
-                                needs_redraw = true;
+                                    // Create new selection
+                                    let mut sel = Selection::new(cell);
+                                    sel.shape = if state.alt_pressed {
+                                        icy_engine::Shape::Rectangle
+                                    } else {
+                                        icy_engine::Shape::Lines
+                                    };
+                                    sel.locked = false;
+                                    let _ = edit_state.set_selection(sel);
+
+                                    state.dragging = true;
+                                    state.drag_anchor = Some(cell);
+                                    state.last_drag_position = Some(cell);
+                                    needs_redraw = true;
+                                }
+                            } else if matches!(button, mouse::Button::Middle) {
+                                // Middle click to copy
+                                return Some(iced::widget::Action::publish(Message::Copy));
                             }
-                        } else {
+                        } else if !mouse_tracking_enabled {
                             // Clicked outside terminal area - clear selection
                             if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
                                 let _ = edit_state.clear_selection();
@@ -835,8 +911,43 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                     }
                 }
 
-                mouse::Event::ButtonReleased(mouse::Button::Left) => {
-                    if state.dragging {
+                mouse::Event::ButtonReleased(button) => {
+                    // Convert iced mouse button to our MouseButton type
+                    let mouse_button = match button {
+                        mouse::Button::Left => MouseButton::Left,
+                        mouse::Button::Middle => MouseButton::Middle,
+                        mouse::Button::Right => MouseButton::Right,
+                        _ => return None, // Skip other buttons for now
+                    };
+
+                    // Send mouse release event if mouse tracking is enabled
+                    if mouse_tracking_enabled {
+                        if let Some(position) = cursor.position() {
+                            if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
+                                let modifiers = KeyModifiers {
+                                    shift: state.shift_pressed,
+                                    ctrl: state.ctrl_pressed,
+                                    alt: state.alt_pressed,
+                                    meta: false,
+                                };
+
+                                if matches!(button, mouse::Button::Left) {
+                                    state.dragging = false;
+                                }
+
+                                let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                    mouse_state: mouse_state.clone(),
+                                    event_type: MouseEventType::Release,
+                                    position: cell,
+                                    button: mouse_button,
+                                    modifiers,
+                                };
+
+                                return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                            }
+                        }
+                    } else if matches!(button, mouse::Button::Left) && state.dragging {
+                        // Handle selection release when not in mouse tracking mode
                         state.dragging = false;
                         state.shift_pressed_during_selection = state.shift_pressed;
 
@@ -854,26 +965,55 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                     }
                 }
 
-                mouse::Event::ButtonPressed(mouse::Button::Middle) => {
-                    // Middle click to copy (if you want this feature)
-                    return Some(iced::widget::Action::publish(Message::Copy));
-                }
-
                 mouse::Event::WheelScrolled { delta } => {
-                    match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => {
-                            let lines = -(*y as i32); // Negative for natural scrolling
-                            return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                    if mouse_tracking_enabled {
+                        // Send wheel events as button press events
+                        if let Some(position) = cursor.position() {
+                            if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
+                                let lines = match delta {
+                                    mouse::ScrollDelta::Lines { y, .. } => *y,
+                                    mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0,
+                                };
+
+                                if lines != 0.0 {
+                                    let button = if lines < 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };
+
+                                    let modifiers = KeyModifiers {
+                                        shift: state.shift_pressed,
+                                        ctrl: state.ctrl_pressed,
+                                        alt: state.alt_pressed,
+                                        meta: false,
+                                    };
+
+                                    let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                        mouse_state: mouse_state.clone(),
+                                        event_type: MouseEventType::Press,
+                                        position: cell,
+                                        button,
+                                        modifiers,
+                                    };
+
+                                    // Wheel events are sent as press events
+                                    return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                }
+                            }
                         }
-                        mouse::ScrollDelta::Pixels { y, .. } => {
-                            let lines = -((*y / 20.0) as i32); // Convert pixels to lines
-                            if lines != 0 {
+                    } else {
+                        // Normal scrolling when mouse tracking is disabled
+                        match delta {
+                            mouse::ScrollDelta::Lines { y, .. } => {
+                                let lines = -(*y as i32); // Negative for natural scrolling
                                 return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                            }
+                            mouse::ScrollDelta::Pixels { y, .. } => {
+                                let lines = -((*y / 20.0) as i32); // Convert pixels to lines
+                                if lines != 0 {
+                                    return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                                }
                             }
                         }
                     }
                 }
-
                 _ => {}
             }
         }

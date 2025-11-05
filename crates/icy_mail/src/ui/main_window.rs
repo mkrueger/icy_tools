@@ -94,7 +94,6 @@ impl MainWindow {
             ),
 
             Message::PackageSelected(path) => {
-                println!("Loading package: {:?}", path);
                 self.mode = MainWindowMode::LoadingPackage;
                 self.loading_progress = 0.0;
                 self.loading_message = format!("Loading {}", path.file_name().unwrap_or_default().to_string_lossy());
@@ -103,7 +102,6 @@ impl MainWindow {
                     async move { tokio::task::spawn_blocking(move || QwkPackage::load_from_file(path).map(Arc::new)).await },
                     |result| match result {
                         Ok(Ok(package)) => {
-                            println!("Package load task completed");
                             Message::PackageLoaded(package)
                         }
                         Ok(Err(e)) => Message::PackageLoadError(format!("Failed to load package: {}", e)),

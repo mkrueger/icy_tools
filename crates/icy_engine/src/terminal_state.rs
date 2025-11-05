@@ -25,6 +25,21 @@ pub enum FontSelectionState {
     Failure,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct MouseState {
+    pub mouse_mode: MouseMode,
+    pub focus_out_event_enabled: bool,
+    pub mouse_tracking_enabled: bool,
+    pub alternate_scroll_enabled: bool,
+    pub extended_mode: ExtMouseMode,
+}
+
+impl MouseState {
+    pub fn tracking_enabled(&self) -> bool {
+        self.mouse_mode != MouseMode::OFF
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TerminalState {
     size: Size,
@@ -34,7 +49,7 @@ pub struct TerminalState {
     pub auto_wrap_mode: AutoWrapMode,
     margins_top_bottom: Option<(i32, i32)>,
     margins_left_right: Option<(i32, i32)>,
-    pub mouse_mode: MouseMode,
+    pub mouse_state: MouseState,
     pub dec_margin_mode_left_right: bool,
 
     pub font_selection_state: FontSelectionState,
@@ -50,10 +65,11 @@ pub struct TerminalState {
     pub fixed_size: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum MouseMode {
     // no mouse reporting
-    Default,
+    #[default]
+    OFF,
 
     /// X10 compatibility mode (9)
     X10,
@@ -62,14 +78,17 @@ pub enum MouseMode {
     /// VT200 highlight mode (1001)
     #[allow(non_camel_case_types)]
     VT200_Highlight,
-
     ButtonEvents,
     AnyEvents,
-    FocusEvent,
-    AlternateScroll,
-    ExtendedMode,
-    SGRExtendedMode,
-    URXVTExtendedMode,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub enum ExtMouseMode {
+    #[default]
+    None,
+    Extended,
+    SGR,
+    URXVT,
     PixelPosition,
 }
 
@@ -80,7 +99,7 @@ impl TerminalState {
             scroll_state: TerminalScrolling::Smooth,
             origin_mode: OriginMode::UpperLeftCorner,
             auto_wrap_mode: AutoWrapMode::AutoWrap,
-            mouse_mode: MouseMode::Default,
+            mouse_state: MouseState::default(),
             margins_top_bottom: None,
             margins_left_right: None,
             dec_margin_mode_left_right: false,
@@ -97,6 +116,18 @@ impl TerminalState {
         };
         ret.reset_tabs();
         ret
+    }
+
+    pub fn mouse_mode(&self) -> MouseMode {
+        self.mouse_state.mouse_mode
+    }
+
+    pub fn set_mouse_mode(&mut self, mode: MouseMode) {
+        self.mouse_state.mouse_mode = mode;
+    }
+
+    pub fn reset_mouse_mode(&mut self) {
+        self.mouse_state = MouseState::default();
     }
 
     pub fn get_width(&self) -> i32 {
@@ -233,5 +264,34 @@ impl TerminalState {
         self.text_window = None;
         self.clear_margins_top_bottom();
         self.clear_margins_left_right();
+    }
+
+    pub fn reset_terminal(&mut self, size: Size) {
+        let size = size.into();
+
+        // Update size first (tab stops depend on width)
+        self.size = size;
+
+        // Core modes
+        self.origin_mode = OriginMode::UpperLeftCorner;
+        self.scroll_state = TerminalScrolling::Smooth;
+        self.auto_wrap_mode = AutoWrapMode::AutoWrap;
+
+        // Margins & text window
+        self.margins_top_bottom = None;
+        self.margins_left_right = None;
+        self.text_window = None;
+        self.dec_margin_mode_left_right = false;
+
+        // Mouse state remains...
+
+        // Font selection result back to "no request"
+        self.font_selection_state = FontSelectionState::NoRequest;
+
+        // Screen cleared flag (buffer will usually act on this)
+        self.cleared_screen = true;
+
+        // Recompute tab stops
+        self.reset_tabs();
     }
 }

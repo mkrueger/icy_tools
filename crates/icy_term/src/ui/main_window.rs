@@ -553,9 +553,7 @@ impl MainWindow {
                 // Implement clipboard copy from selection
                 if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
                     let mut vec = vec![];
-                    println!("Copying selection to clipboard");
                     if let Some(text) = edit_state.get_copy_text() {
-                        println!("Copying text to clipboard: {}", text);
                         vec.push(ClipboardContent::Text(text.clone()));
                     } else {
                         return Task::none();
@@ -577,7 +575,6 @@ impl MainWindow {
                             image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("Failed to create image buffer from raw data"),
                         );
                         let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
-                        println!("Copying image to clipboard: {}x{}", size.width, size.height);
                         vec.push(ClipboardContent::Image(img));
                     }
 
@@ -587,8 +584,6 @@ impl MainWindow {
 
                     if let Err(err) = crate::CLIPBOARD_CONTEXT.set(vec) {
                         log::error!("Failed to set clipboard content: {}", err);
-                    } else {
-                        println!("Clipboard content set successfully");
                     }
                     // Clear selection after copy
                     let _ = edit_state.clear_selection();
@@ -666,6 +661,20 @@ impl MainWindow {
             }
             Message::SetFocus(focus) => {
                 self.terminal_window.set_focus(focus);
+                Task::none()
+            }
+
+            Message::SendMouseEvent(evt) => {
+                let escape_sequence = evt.generate_mouse_report();
+                // Send the escape sequence to the terminal if one was generated
+                if let Some(seq) = escape_sequence {
+                    let mut data: Vec<u8> = Vec::new();
+                    for ch in seq.chars() {
+                        let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                        data.push(converted_byte as u8);
+                    }
+                    let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+                }
                 Task::none()
             }
         }

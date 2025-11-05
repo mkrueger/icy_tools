@@ -494,7 +494,7 @@ fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
             Ok(_) => unsafe {
                 READ_ADDRESSES = true;
             },
-            Err(e) => println!("watch error: {e:}"),
+            Err(e) => eprintln!("watch error: {e:}"),
         }
     }
 

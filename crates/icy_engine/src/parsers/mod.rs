@@ -1,4 +1,7 @@
-use crate::{EngineResult, Line, Size, TextPane};
+use crate::{
+    EngineResult, Line, Size, TextPane,
+    ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType},
+};
 use std::cmp::{max, min};
 
 use self::{ansi::sound::AnsiMusic, rip::bgi::MouseField};
@@ -45,6 +48,7 @@ pub enum CallbackAction {
     Pause(u32),
     ScrollDown(i32),
     PlayGISTSound(Vec<i16>),
+    SendMouseEvent(MouseEventType, Position, MouseButton, KeyModifiers),
 }
 
 pub trait UnicodeConverter: Send + Sync {
@@ -317,7 +321,6 @@ impl Buffer {
 
         // Remove in reverse to keep indices valid.
         for idx in remove_indices.into_iter().rev() {
-            println!("Removing sixel at index {}", idx);
             layer_ref.sixels.remove(idx);
         }
     }
