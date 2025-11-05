@@ -19,7 +19,7 @@ const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 const _SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
 
 pub struct TerminalWindow {
-    pub scene: Terminal,
+    pub terminal: Terminal,
     pub is_connected: bool,
     pub is_capturing: bool,
     pub current_address: Option<Address>,
@@ -34,7 +34,7 @@ impl TerminalWindow {
         let edit_state = Arc::new(Mutex::new(super::welcome_screen::create_weclome_screen()));
 
         Self {
-            scene: Terminal::new(edit_state),
+            terminal: Terminal::new(edit_state),
             is_connected: false,
             is_capturing: false,
             current_address: None,
@@ -50,7 +50,7 @@ impl TerminalWindow {
         let button_bar = self.create_button_bar();
 
         // Create the main terminal area
-        let terminal_view = TerminalView::show_with_effects(&self.scene, options.monitor_settings.clone()).map(|terminal_msg| {
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, options.monitor_settings.clone()).map(|terminal_msg| {
             match terminal_msg {
                 iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
                 iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
@@ -63,7 +63,7 @@ impl TerminalWindow {
         });
 
         // Get scrollback info from EditState
-        let (has_scrollback, scroll_position, max_scroll) = if let Ok(edit_state) = self.scene.edit_state.lock() {
+        let (has_scrollback, scroll_position, max_scroll) = if let Ok(edit_state) = self.terminal.edit_state.lock() {
             let buffer = edit_state.get_buffer();
             let has_scrollback = !buffer.scrollback_lines.is_empty();
             let scroll_offset = edit_state.scrollback_offset as i32;
@@ -443,7 +443,7 @@ impl TerminalWindow {
             TerminalEmulation::AtariST => "Atari ST",
         };
 
-        let (buffer_width, buffer_height) = if let Ok(edit_state) = self.scene.edit_state.lock() {
+        let (buffer_width, buffer_height) = if let Ok(edit_state) = self.terminal.edit_state.lock() {
             let size = edit_state.get_buffer().get_size();
             (size.width, size.height)
         } else {
@@ -683,6 +683,10 @@ impl TerminalWindow {
 
     pub fn toggle_capture(&mut self) {
         self.is_capturing = !self.is_capturing;
+    }
+
+    pub fn set_focus(&mut self, has_focus: bool) {
+        self.terminal.has_focus = has_focus;
     }
 }
 

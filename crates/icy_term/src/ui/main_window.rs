@@ -111,7 +111,7 @@ impl MainWindow {
             .join("export.icy");
 
         let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
-        let edit_state = terminal_window.scene.edit_state.clone();
+        let edit_state = terminal_window.terminal.edit_state.clone();
 
         // Create terminal thread
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_state.clone(), icy_net::telnet::TerminalEmulation::Ansi);
@@ -184,7 +184,7 @@ impl MainWindow {
                         log::error!("{}", error_msg);
 
                         // Display error message in terminal
-                        if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                        if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
                             let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
                             buffer.clear_screen(0, caret);
 
@@ -244,7 +244,7 @@ impl MainWindow {
                 }
 
                 let screen_mode = address.get_screen_mode();
-                if let Ok(mut state) = self.terminal_window.scene.edit_state.lock() {
+                if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
                     let (buffer, caret, _) = state.get_buffer_and_caret_mut();
                     buffer.clear_screen(0, caret);
                     unsafe {
@@ -268,14 +268,14 @@ impl MainWindow {
             }
             Message::SendData(data) => {
                 self.clear_selection();
-                self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(0);
+                self.terminal_window.terminal.edit_state.lock().unwrap().set_scroll_position(0);
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
 
             Message::SendString(s) => {
                 self.clear_selection();
-                self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(0);
+                self.terminal_window.terminal.edit_state.lock().unwrap().set_scroll_position(0);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
                     let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
@@ -488,8 +488,8 @@ impl MainWindow {
                 Task::none()
             }
             Message::FindDialog(msg) => {
-                self.terminal_window.scene.cache.clear();
-                if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
+                self.terminal_window.terminal.cache.clear();
+                if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.terminal.edit_state.clone()) {
                     return self.update(close_msg);
                 }
 
@@ -501,7 +501,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::ExportDialog(msg) => {
-                if let Some(response) = self.export_dialog.update(msg, self.terminal_window.scene.edit_state.clone()) {
+                if let Some(response) = self.export_dialog.update(msg, self.terminal_window.terminal.edit_state.clone()) {
                     match response {
                         Message::CloseDialog(mode) => {
                             self.state.mode = *mode;
@@ -519,11 +519,11 @@ impl MainWindow {
             Message::None => Task::none(),
 
             Message::ScrollTerminal(line) => {
-                self.terminal_window.scene.edit_state.lock().unwrap().set_scroll_position(line);
+                self.terminal_window.terminal.edit_state.lock().unwrap().set_scroll_position(line);
                 Task::none()
             }
             Message::ScrollRelative(lines) => {
-                let mut state = self.terminal_window.scene.edit_state.lock().unwrap();
+                let mut state = self.terminal_window.terminal.edit_state.lock().unwrap();
                 let current_offset = state.scrollback_offset as i32;
                 let max_offset = state.get_max_scrollback_offset() as i32;
                 let new_offset = (current_offset + lines).clamp(0, max_offset);
@@ -551,7 +551,7 @@ impl MainWindow {
 
             Message::Copy => {
                 // Implement clipboard copy from selection
-                if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
                     let mut vec = vec![];
                     println!("Copying selection to clipboard");
                     if let Some(text) = edit_state.get_copy_text() {
@@ -655,13 +655,17 @@ impl MainWindow {
                 iced::exit()
             }
             Message::ClearScreen => {
-                if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+                if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
                     edit_state.clear_scrollback_buffer();
                     let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
                     buffer.clear_screen(0, caret);
                     caret.set_position(Position::new(0, 0));
-                    self.terminal_window.scene.cache.clear();
+                    self.terminal_window.terminal.cache.clear();
                 }
+                Task::none()
+            }
+            Message::SetFocus(focus) => {
+                self.terminal_window.set_focus(focus);
                 Task::none()
             }
         }
@@ -708,7 +712,7 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::BufferUpdated => {
-                self.terminal_window.scene.cache.clear();
+                self.terminal_window.terminal.cache.clear();
                 let mut events = Vec::new();
                 if let Some(rx) = &mut self.terminal_rx {
                     while let Ok(event) = rx.try_recv() {
@@ -843,7 +847,7 @@ impl MainWindow {
     }
 
     fn clear_selection(&mut self) {
-        if let Ok(mut edit_state) = self.terminal_window.scene.edit_state.lock() {
+        if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
             let _ = edit_state.clear_selection();
             self.shift_pressed_during_selection = false;
         }
@@ -854,6 +858,17 @@ impl MainWindow {
     }
 
     pub fn handle_event(&self, event: &Event) -> Option<Message> {
+        match event {
+            Event::Window(window::Event::Focused) => {
+                return Some(Message::SetFocus(true));
+            }
+            Event::Window(window::Event::Unfocused) => {
+                return Some(Message::SetFocus(false));
+            }
+
+            _ => {}
+        }
+
         match &self.state.mode {
             MainWindowMode::ShowDialingDirectory => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {

@@ -59,4 +59,5 @@ pub enum Message {
     SelectBps(BaudEmulation),
     QuitIcyTerm,
     ClearScreen,
+    SetFocus(bool),
 }

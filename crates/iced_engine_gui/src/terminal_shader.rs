@@ -647,7 +647,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         // Caret overlay (shared)
-        if state.caret_blink.is_on() && no_scrollback && caret_visible {
+        if state.caret_blink.is_on() && no_scrollback && caret_visible && self.term.has_focus {
             if let Some(caret_pos) = caret_pos_opt {
                 if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                     let line_bytes = (size.0 as usize) * 4;

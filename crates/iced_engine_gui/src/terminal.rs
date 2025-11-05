@@ -13,6 +13,7 @@ pub struct Terminal {
     pub char_height: f32,
     pub cache: Cache,
     pub id: widget::Id,
+    pub has_focus: bool,
 }
 
 impl Terminal {
@@ -24,6 +25,7 @@ impl Terminal {
             char_height: 20.0,
             cache: Cache::default(),
             id: widget::Id::unique(),
+            has_focus: false,
         }
     }
 

@@ -3,14 +3,22 @@ use icy_engine::editor::EditState;
 use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane};
 use std::path::Path;
 
-const MAIN_SCREEN_ANSI: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");
+const MAIN_SCREEN_ANSI1: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");
+const MAIN_SCREEN_ANSI2: &[u8] = include_bytes!("../../data/welcome_screen.2.icy");
 
 pub fn create_weclome_screen() -> EditState {
     // Create a default EditState
     let mut edit_state = EditState::default();
 
     // Load the welcome screen from MAIN_SCREEN_ANSI
-    let mut buffer = Buffer::from_bytes(&Path::new("a.icy"), true, MAIN_SCREEN_ANSI, None, None).unwrap();
+    let mut buffer = Buffer::from_bytes(
+        &Path::new("a.icy"),
+        true,
+        if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 },
+        None,
+        None,
+    )
+    .unwrap();
     buffer.buffer_type = icy_engine::BufferType::CP437;
     buffer.is_terminal_buffer = true;
     buffer.terminal_state.fixed_size = true;
