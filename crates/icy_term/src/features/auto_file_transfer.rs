@@ -22,8 +22,8 @@ impl AutoFileTransfer {
 impl Default for AutoFileTransfer {
     fn default() -> Self {
         Self {
-            zmodem_dl: PatternRecognizer::from(b"\x18B00000000000000", true),
-            zmodem_ul: PatternRecognizer::from(b"\x18B0100000023be50", true),
+            zmodem_dl: PatternRecognizer::from(b"\x18B00", true), // ZRQINIT
+            zmodem_ul: PatternRecognizer::from(b"\x18B01", true), // ZRINIT
         }
     }
 }
