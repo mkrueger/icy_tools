@@ -104,7 +104,6 @@ dialing_directory-starred-items = Filtrar elements destacats
 dialing_directory-no-entries = No hi ha entrades coincidents
 dialing_directory-add-bbs-button = Afegir BBS
 dialing_directory-version-warning = Aquest directori de marcatge es va crear amb una versió més nova d'IcyTerm. Si us plau, utilitza una versió més nova. No es guardaran els canvis.
-dialing_directory-custom-iemsi-login-data = Dades de login IEMSI personalitzades
 dialing_directory-open_cache_button=Obre el directori de la memòria cau…
 dialing_directory-generate-tooltip = Generar un contrasenya aleatòria
 dialing_directory-generate-disabled-tooltip= 

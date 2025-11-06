@@ -9,3 +9,6 @@ pub use modem::*;
 
 pub mod screen_modes;
 pub use screen_modes::*;
+
+pub mod connection_info;
+pub use connection_info::*;

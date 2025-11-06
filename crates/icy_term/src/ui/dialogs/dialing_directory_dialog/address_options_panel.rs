@@ -1,12 +1,12 @@
 use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
-use crate::{ScreenMode, VGA_MODES};
+use crate::{ConnectionInformation, ScreenMode, VGA_MODES};
 use i18n_embed_fl::fl;
 use iced::Padding;
 use iced::widget::tooltip;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, button, checkbox, column, container, pick_list, row, scrollable, svg, text, text_input},
+    widget::{Space, button, column, container, pick_list, row, scrollable, svg, text, text_input},
 };
 use iced_engine_gui::settings::{SECTION_SPACING, effect_box, left_label, section_header};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
@@ -176,30 +176,38 @@ impl super::DialingDirectoryState {
                 );
             }
 
-            // Protocol row
-            let protocols = vec![
-                ConnectionTypeWrapper(ConnectionType::Telnet),
-                ConnectionTypeWrapper(ConnectionType::Raw),
-                ConnectionTypeWrapper(ConnectionType::Modem),
-                ConnectionTypeWrapper(ConnectionType::SSH),
-                ConnectionTypeWrapper(ConnectionType::Websocket),
-                ConnectionTypeWrapper(ConnectionType::SecureWebsocket),
-            ];
+            let address_has_protocol = if let Ok(info) = ConnectionInformation::parse(&addr.address) {
+                info.protocol.is_some()
+            } else {
+                false
+            };
 
-            let protocol_pick = pick_list(protocols, Some(ConnectionTypeWrapper(addr.protocol)), move |p: ConnectionTypeWrapper| {
-                Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                    id,
-                    field: AddressFieldChange::Protocol(p.0),
+            if !address_has_protocol {
+                let protocols = vec![
+                    ConnectionTypeWrapper(ConnectionType::Telnet),
+                    ConnectionTypeWrapper(ConnectionType::Raw),
+                    ConnectionTypeWrapper(ConnectionType::Modem),
+                    ConnectionTypeWrapper(ConnectionType::SSH),
+                    ConnectionTypeWrapper(ConnectionType::Websocket),
+                    ConnectionTypeWrapper(ConnectionType::SecureWebsocket),
+                ];
+
+                let protocol_pick = pick_list(protocols, Some(ConnectionTypeWrapper(addr.protocol)), move |p: ConnectionTypeWrapper| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::Protocol(p.0),
+                    })
                 })
-            })
-            .width(Length::Fixed(180.0))
-            .text_size(14);
+                .width(Length::Fixed(180.0))
+                .text_size(14);
 
-            server_content = server_content.push(
-                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")), protocol_pick,]
-                    .spacing(12)
-                    .align_y(Alignment::Center),
-            );
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")), protocol_pick,]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
+            }
+
             const COMBO_WIDTH: f32 = 110.0;
             // Baud emulation row (only if not Modem protocol)
             if addr.protocol != ConnectionType::Modem {
@@ -443,69 +451,6 @@ impl super::DialingDirectoryState {
                     .spacing(12)
                     .align_y(Alignment::Center),
             );
-
-            // IEMSI override checkbox
-            let override_toggle = checkbox("", addr.override_iemsi_settings)
-                .on_toggle(move |v| {
-                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                        id,
-                        field: AddressFieldChange::OverrideIemsi(v),
-                    })
-                })
-                .size(18);
-
-            login_content = login_content.push(
-                row![
-                    left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-custom-iemsi-login-data")),
-                    override_toggle
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-            );
-
-            // IEMSI fields (if override is enabled)
-            if addr.override_iemsi_settings {
-                let iemsi_user = text_input("", &addr.iemsi_user)
-                    .on_input(move |s| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::IemsiUser(s),
-                        })
-                    })
-                    .padding(6)
-                    .size(14)
-                    .width(Length::Fill);
-
-                let iemsi_pw = text_input("", &addr.iemsi_password)
-                    .on_input(move |s| {
-                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                            id,
-                            field: AddressFieldChange::IemsiPassword(s),
-                        })
-                    })
-                    .secure(!self.show_passwords)
-                    .padding(6)
-                    .size(14)
-                    .width(Length::Fill);
-
-                login_content = login_content
-                    .push(
-                        row![
-                            left_label(format!("  IEMSI {}", fl!(crate::LANGUAGE_LOADER, "dialing_directory-user"))),
-                            iemsi_user
-                        ]
-                        .spacing(12)
-                        .align_y(Alignment::Center),
-                    )
-                    .push(
-                        row![
-                            left_label(format!("  IEMSI {}", fl!(crate::LANGUAGE_LOADER, "dialing_directory-password"))),
-                            iemsi_pw
-                        ]
-                        .spacing(12)
-                        .align_y(Alignment::Center),
-                    );
-            }
 
             Some(effect_box(login_content.into()).into())
         } else {

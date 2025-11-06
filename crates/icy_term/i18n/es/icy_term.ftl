@@ -104,7 +104,6 @@ dialing_directory-starred-items = Filtrar elementos favoritos
 dialing_directory-no-entries = No hay entradas coincidentes
 dialing_directory-add-bbs-button = Añadir BBS
 dialing_directory-version-warning = Este directorio de marcación fue creado con una versión más reciente de IcyTerm. Por favor, usa una versión más reciente. No se guardarán cambios.
-dialing_directory-custom-iemsi-login-data = Datos de inicio de sesión IEMSI personalizados
 dialing_directory-open_cache_button=Abrir directorio de caché…
 dialing_directory-generate-tooltip = Generar una contraseña aleatoria
 dialing_directory-generate-disabled-tooltip= 

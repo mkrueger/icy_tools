@@ -145,7 +145,7 @@ fn main() {
     }
 
     if let Some(url) = &args.url {
-        if let Err(e) = crate::Address::parse_url(url.clone()) {
+        if let Err(e) = crate::ConnectionInformation::parse(url) {
             eprintln!("Error parsing URL '{}': {}", url, e);
             std::process::exit(1);
         }

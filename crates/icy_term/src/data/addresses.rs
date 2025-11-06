@@ -1,4 +1,4 @@
-use crate::{Res, ScreenMode, TerminalResult};
+use crate::{ConnectionInformation, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
@@ -314,15 +314,48 @@ pub struct Address {
 
     #[serde(default, skip_serializing_if = "is_zero")]
     pub downloaded_bytes: usize,
+}
 
-    #[serde(default, skip_serializing_if = "is_default_bool")]
-    pub override_iemsi_settings: bool,
+impl From<ConnectionInformation> for Address {
+    fn from(info: ConnectionInformation) -> Self {
+        let time = Utc::now();
+        unsafe {
+            current_id = current_id.wrapping_add(1);
+        }
 
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub iemsi_user: String,
+        // Build the address string (host:port)
+        let address = if let Some(port) = &info.port {
+            format!("{}:{}", info.host, port)
+        } else {
+            info.host.clone()
+        };
 
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub iemsi_password: String,
+        Self {
+            system_name: info.host.clone(),
+            user_name: info.user_name.clone().unwrap_or_default(),
+            password: info.password.clone().unwrap_or_default(),
+            comment: String::new(),
+            terminal_type: TerminalEmulation::default(),
+            font_name: None,
+            screen_mode: ScreenMode::default(),
+            auto_login: String::new(),
+            address,
+            proxy_command: String::new(),
+            protocol: info.protocol(),
+            ansi_music: MusicOption::default(),
+            ice_mode: true,
+            is_favored: false,
+            created: time,
+            updated: time,
+            overall_duration: Duration::zero(),
+            number_of_calls: 0,
+            last_call: None,
+            last_call_duration: Duration::zero(),
+            uploaded_bytes: 0,
+            downloaded_bytes: 0,
+            baud_emulation: BaudEmulation::default(),
+        }
+    }
 }
 
 // Helper functions for skip_serializing_if
@@ -398,9 +431,6 @@ impl Address {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
-            override_iemsi_settings: false,
-            iemsi_user: String::new(),
-            iemsi_password: String::new(),
         }
     }
 
@@ -471,80 +501,6 @@ impl Address {
             TerminalEmulation::Skypix => ScreenMode::SkyPix,
             TerminalEmulation::AtariST => ScreenMode::AtariST(40),
         }
-    }
-
-    pub fn parse_url(url: String) -> Res<Address> {
-        let url = url.trim();
-
-        // Parse the URL - handle cases with and without protocol
-        let parsed_url = if !url.contains("://") {
-            // Default to telnet if no protocol specified
-            format!("telnet://{}", url)
-        } else {
-            url.to_string()
-        };
-
-        // Use the url crate for basic parsing
-        let parsed = url::Url::parse(&parsed_url)?;
-
-        // Create a new address with the parsed system name (hostname)
-        let mut address = Address::new(parsed.host_str().unwrap_or("").to_string());
-
-        // Determine protocol from scheme
-        address.protocol = match parsed.scheme() {
-            "telnet" => ConnectionType::Telnet,
-            "ssh" => ConnectionType::SSH,
-            "raw" => ConnectionType::Raw,
-            "ws" => ConnectionType::Websocket,
-            "wss" => ConnectionType::SecureWebsocket,
-            scheme => {
-                return Err(format!("Unsupported protocol: {}", scheme).into());
-            }
-        };
-
-        // Extract username and password if present
-        if !parsed.username().is_empty() {
-            address.user_name = parsed.username().to_string();
-        }
-
-        if let Some(password) = parsed.password() {
-            address.password = password.to_string();
-        }
-
-        // Build the address string (host:port)
-        let mut addr = parsed.host_str().unwrap_or("").to_string();
-
-        // Add port if specified, otherwise use defaults
-        let port = parsed.port().unwrap_or_else(|| match address.protocol {
-            ConnectionType::Telnet => 23,
-            ConnectionType::SSH => 22,
-            ConnectionType::Raw => 23,
-            ConnectionType::Websocket => 80,
-            ConnectionType::SecureWebsocket => 443,
-            _ => 23,
-        });
-
-        // Only append non-default ports
-        let is_default_port = match address.protocol {
-            ConnectionType::Telnet => port == 23,
-            ConnectionType::SSH => port == 22,
-            ConnectionType::Raw => port == 23,
-            ConnectionType::Websocket => port == 80,
-            ConnectionType::SecureWebsocket => port == 443,
-            _ => false,
-        };
-
-        if !is_default_port {
-            addr = format!("{}:{}", addr, port);
-        }
-
-        address.address = addr;
-
-        // Set reasonable defaults for BBS connections
-        address.terminal_type = TerminalEmulation::Ansi;
-        address.ice_mode = true;
-
-        Ok(address)
     }
 }
 

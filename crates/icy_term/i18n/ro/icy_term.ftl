@@ -104,7 +104,6 @@ dialing_directory-starred-items = Filtrează elementele marcate
 dialing_directory-no-entries = Nu există intrări corespunzătoare
 dialing_directory-add-bbs-button = Adaugă BBS
 dialing_directory-version-warning = Acest director de apelare a fost creat cu o versiune mai nouă de IcyTerm. Te rugăm să folosești o versiune mai nouă. Nu se vor salva modificările.
-dialing_directory-custom-iemsi-login-data = Date de autentificare IEMSI personalizate
 dialing_directory-open_cache_button=Deschide directorul cache…
 dialing_directory-generate-tooltip = Generează o parolă aleatorie
 dialing_directory-generate-disabled-tooltip= 

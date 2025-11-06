@@ -219,12 +219,6 @@ impl DialingDirectoryState {
                     AddressFieldChange::AutoLogin(script) => {
                         addr.auto_login = script;
                     }
-                    AddressFieldChange::IemsiUser(user) => {
-                        addr.iemsi_user = user;
-                    }
-                    AddressFieldChange::IemsiPassword(password) => {
-                        addr.iemsi_password = password;
-                    }
                     AddressFieldChange::Protocol(protocol) => {
                         addr.protocol = protocol;
                     }
@@ -255,9 +249,6 @@ impl DialingDirectoryState {
                     }
                     AddressFieldChange::Comment(comment) => {
                         addr.comment = comment;
-                    }
-                    AddressFieldChange::OverrideIemsi(override_iemsi) => {
-                        addr.override_iemsi_settings = override_iemsi;
                     }
                     AddressFieldChange::IsFavored(is_favored) => {
                         addr.is_favored = is_favored;
@@ -297,7 +288,7 @@ impl DialingDirectoryState {
 
                 // Return a task that triggers the connection
                 // You'll need to handle this in the parent component
-                Task::done(Message::Connect(addr))
+                Task::done(Message::Connect(addr.into()))
             }
 
             DialingDirectoryMsg::Cancel => {
@@ -411,15 +402,12 @@ pub enum AddressFieldChange {
     User(String),
     Password(String),
     AutoLogin(String),
-    IemsiUser(String),
-    IemsiPassword(String),
     Protocol(ConnectionType),
     Terminal(TerminalEmulation),
     ScreenMode(ScreenMode),
     Baud(BaudEmulation),
     Music(MusicOption),
     Comment(String),
-    OverrideIemsi(bool),
     IsFavored(bool),
 }
 

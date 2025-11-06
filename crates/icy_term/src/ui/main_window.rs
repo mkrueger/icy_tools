@@ -217,26 +217,25 @@ impl MainWindow {
                 };
                 let options = &self.settings_dialog.original_options.lock().unwrap();
 
+                unsafe {
+                    TERM_EMULATION = address.terminal_type;
+                }
+                self.unicode_converter = get_unicode_converter(&address.terminal_type);
+
                 // Send connect command to terminal thread
                 let config = ConnectionConfig {
-                    connection_type: icy_net::ConnectionType::from(address.protocol.clone()),
-                    address: address.address.clone(),
+                    connection_info: address.clone().into(),
                     terminal_type: address.terminal_type,
                     baud_emulation: address.baud_emulation,
                     window_size: (80, 25),
                     timeout: web_time::Duration::from_secs(30),
-                    user_name: opt_non_empty(&address.user_name),
-                    password: opt_non_empty(&address.password),
-                    iemsi_user_name: if address.override_iemsi_settings {
-                        opt_non_empty(&address.iemsi_user)
-                    } else {
+                    user_name: if address.user_name.is_empty() {
                         None
-                    },
-                    iemsi_password: if address.override_iemsi_settings {
-                        opt_non_empty(&address.iemsi_password)
                     } else {
-                        None
+                        Some(address.user_name.clone())
                     },
+                    password: if address.password.is_empty() { None } else { Some(address.password.clone()) },
+
                     proxy_command: None, // fill from settings if needed
                     modem,
                     music_option: address.ansi_music,
@@ -244,10 +243,6 @@ impl MainWindow {
                     auto_login: options.iemsi.autologin,
                     login_exp: address.auto_login.clone(),
                 };
-
-                unsafe {
-                    TERM_EMULATION = address.terminal_type;
-                }
 
                 let screen_mode = address.get_screen_mode();
                 if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
@@ -260,7 +255,6 @@ impl MainWindow {
                     caret.set_is_visible(true);
                     screen_mode.apply_to_edit_state(&mut state);
                 }
-                self.unicode_converter = get_unicode_converter(&address.terminal_type);
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
                 self.current_address = Some(address);
@@ -688,9 +682,9 @@ impl MainWindow {
                 match cmd.as_ref() {
                     McpCommand::Connect(url) => {
                         // Parse and connect to the URL
-                        match crate::Address::parse_url(url.clone()) {
+                        match crate::ConnectionInformation::parse(url) {
                             Ok(address) => {
-                                return self.update(Message::Connect(address));
+                                return self.update(Message::Connect(address.into()));
                             }
                             Err(e) => {
                                 log::error!("Failed to parse URL {}: {}", url, e);
@@ -1312,8 +1306,4 @@ impl MainWindow {
 
         Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, modifiers)
     }
-}
-
-fn opt_non_empty(s: &str) -> Option<String> {
-    if s.trim().is_empty() { None } else { Some(s.to_string()) }
 }

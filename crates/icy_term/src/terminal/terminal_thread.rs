@@ -1,7 +1,7 @@
-use crate::ScreenMode;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, AutoLogin};
+use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
 use icy_engine::editor::EditState;
@@ -17,7 +17,7 @@ use icy_net::{
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
 };
-use log::{debug, error, trace};
+use log::{debug, error};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -61,16 +61,18 @@ pub enum TerminalEvent {
 
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
-    pub connection_type: ConnectionType,
-    pub address: String,
+    pub connection_info: ConnectionInformation,
     pub terminal_type: TerminalEmulation,
     pub window_size: (u16, u16),
     pub timeout: Duration,
-    pub user_name: Option<String>,
-    pub password: Option<String>,
 
-    pub iemsi_user_name: Option<String>,
-    pub iemsi_password: Option<String>,
+    /// BBS user name - the one in connection info may be empty
+    /// or different (e.g. for auto-login)
+    pub user_name: Option<String>,
+
+    /// BBS password - the one in connection info may be empty
+    /// or different (e.g. for auto-login)
+    pub password: Option<String>,
 
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
@@ -310,19 +312,19 @@ impl TerminalThread {
             self.disconnect().await;
         }
 
-        trace!(
-            "Connecting: type={:?} addr={} window={:?}",
-            config.connection_type, config.address, config.window_size
-        );
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
         self.baud_emulator.set_baud_rate(config.baud_emulation);
-        self.process_data(format!("ATDT{}\r\n", config.address).as_bytes()).await;
+        self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
+
+        let user_name = config.connection_info.user_name.clone().unwrap_or_default();
+        let password = config.connection_info.password.clone().unwrap_or_default();
+
         // Set up auto-login if configured
         if config.auto_login && config.user_name.is_some() && config.password.is_some() {
-            let (user_name, password) = if config.auto_login && config.iemsi_user_name.is_some() && config.iemsi_password.is_some() {
-                (config.iemsi_user_name.clone(), config.iemsi_password.clone())
-            } else {
+            let (user_name, password) = if config.auto_login && config.user_name.is_some() && config.password.is_some() {
                 (config.user_name.clone(), config.password.clone())
+            } else {
+                (config.connection_info.user_name.clone(), config.connection_info.password.clone())
             };
             if user_name.is_some() || password.is_some() {
                 self.auto_login = Some(AutoLogin::new(config.login_exp.clone(), user_name.unwrap(), password.unwrap()));
@@ -331,26 +333,26 @@ impl TerminalThread {
             self.auto_login = None;
         }
 
-        let connection: Box<dyn Connection> = match config.connection_type {
+        let connection: Box<dyn Connection> = match config.connection_info.protocol() {
             ConnectionType::Telnet => {
                 let term_caps = TermCaps {
                     terminal: config.terminal_type,
                     window_size: config.window_size,
                 };
-                Box::new(TelnetConnection::open(&config.address, term_caps, config.timeout).await?)
+                Box::new(TelnetConnection::open(&config.connection_info.host, term_caps, config.timeout).await?)
             }
-            ConnectionType::Raw => Box::new(RawConnection::open(&config.address, config.timeout).await?),
+            ConnectionType::Raw => Box::new(RawConnection::open(&config.connection_info.host, config.timeout).await?),
             ConnectionType::SSH => {
                 let term_caps = TermCaps {
                     terminal: config.terminal_type,
                     window_size: config.window_size,
                 };
                 let creds = Credentials {
-                    user_name: config.user_name.unwrap_or_default().clone(),
-                    password: config.password.unwrap_or_default().clone(),
+                    user_name,
+                    password,
                     proxy_command: config.proxy_command.clone(),
                 };
-                Box::new(SSHConnection::open(&config.address, term_caps, creds).await?)
+                Box::new(SSHConnection::open(&config.connection_info.host, term_caps, creds).await?)
             }
             ConnectionType::Modem => {
                 let Some(m) = &config.modem else {
@@ -368,10 +370,10 @@ impl TerminalThread {
                     init_string: String::new().clone(),
                     dial_string: m.dial_string.clone(),
                 };
-                Box::new(ModemConnection::open(serial, modem, config.address.clone()).await?)
+                Box::new(ModemConnection::open(serial, modem, config.connection_info.host.clone()).await?)
             }
-            ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.address, false).await?),
-            ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.address, true).await?),
+            ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.host, false).await?),
+            ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.host, true).await?),
             other => {
                 return Err(format!("Unsupported connection type: {other:?}").into());
             }

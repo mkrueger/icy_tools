@@ -153,9 +153,8 @@ impl WindowManager {
                 self.windows.insert(id, window);
 
                 if let Some(url) = self.url.take() {
-                    if let Ok(address) = crate::Address::parse_url(url) {
-                        println!("Connecting to address from URL: {:?}", address);
-                        return Task::done(WindowManagerMessage::WindowMessage(id, Message::Connect(address)));
+                    if let Ok(connection_info) = crate::ConnectionInformation::parse(&url) {
+                        return Task::done(WindowManagerMessage::WindowMessage(id, Message::Connect(connection_info.into())));
                     }
                 }
 
