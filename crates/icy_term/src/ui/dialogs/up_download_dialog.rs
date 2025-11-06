@@ -154,15 +154,14 @@ impl FileTransferDialogState {
             .spacing(4);
 
             // Stats grid
-            let time = Instant::now();
-            let elapsed_time = time.duration_since(state.start_time);
-            let elapsed_str = format_duration(elapsed_time);
-            let bps = if elapsed_time.as_secs_f64() > 0.0 {
-                (transfer_info.cur_bytes_transfered as f64 / elapsed_time.as_secs_f64()) as u64 / 100
+            let bps = state.get_current_bps(is_download);
+
+            let rate_text = format!("{}/s", human_bytes(bps as f64));
+            let elapsed_str = format_duration(if is_download {
+                state.recieve_state.start_time.elapsed()
             } else {
-                0
-            };
-            let rate_text = format!("{}/s", human_bytes(100.0 * bps as f64));
+                state.send_state.start_time.elapsed()
+            });
 
             let stats_grid = row![
                 self.create_stat_card("⚡", fl!(crate::LANGUAGE_LOADER, "transfer-rate"), rate_text),
