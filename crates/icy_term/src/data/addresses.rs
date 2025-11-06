@@ -332,8 +332,8 @@ impl From<ConnectionInformation> for Address {
 
         Self {
             system_name: info.host.clone(),
-            user_name: info.user_name.clone().unwrap_or_default(),
-            password: info.password.clone().unwrap_or_default(),
+            user_name: info.user_name().clone().unwrap_or_default(),
+            password: info.password().clone().unwrap_or_default(),
             comment: String::new(),
             terminal_type: TerminalEmulation::default(),
             font_name: None,

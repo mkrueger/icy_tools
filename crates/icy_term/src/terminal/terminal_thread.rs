@@ -17,7 +17,7 @@ use icy_net::{
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
 };
-use log::{debug, error};
+use log::error;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -316,43 +316,40 @@ impl TerminalThread {
         self.baud_emulator.set_baud_rate(config.baud_emulation);
         self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
 
-        let user_name = config.connection_info.user_name.clone().unwrap_or_default();
-        let password = config.connection_info.password.clone().unwrap_or_default();
+        let (user_name, password) = if config.auto_login && config.user_name.is_some() && config.password.is_some() {
+            (config.user_name.clone(), config.password.clone())
+        } else {
+            (config.connection_info.user_name(), config.connection_info.password())
+        };
 
         // Set up auto-login if configured
         if config.auto_login && config.user_name.is_some() && config.password.is_some() {
-            let (user_name, password) = if config.auto_login && config.user_name.is_some() && config.password.is_some() {
-                (config.user_name.clone(), config.password.clone())
-            } else {
-                (config.connection_info.user_name.clone(), config.connection_info.password.clone())
-            };
             if user_name.is_some() || password.is_some() {
-                self.auto_login = Some(AutoLogin::new(config.login_exp.clone(), user_name.unwrap(), password.unwrap()));
+                self.auto_login = Some(AutoLogin::new(config.login_exp.clone(), user_name.clone().unwrap(), password.clone().unwrap()));
             }
         } else {
             self.auto_login = None;
         }
-
         let connection: Box<dyn Connection> = match config.connection_info.protocol() {
             ConnectionType::Telnet => {
                 let term_caps = TermCaps {
                     terminal: config.terminal_type,
                     window_size: config.window_size,
                 };
-                Box::new(TelnetConnection::open(&config.connection_info.host, term_caps, config.timeout).await?)
+                Box::new(TelnetConnection::open(&config.connection_info.endpoint(), term_caps, config.timeout).await?)
             }
-            ConnectionType::Raw => Box::new(RawConnection::open(&config.connection_info.host, config.timeout).await?),
+            ConnectionType::Raw => Box::new(RawConnection::open(&config.connection_info.endpoint(), config.timeout).await?),
             ConnectionType::SSH => {
                 let term_caps = TermCaps {
                     terminal: config.terminal_type,
                     window_size: config.window_size,
                 };
                 let creds = Credentials {
-                    user_name,
-                    password,
+                    user_name: user_name.unwrap_or_default(),
+                    password: password.unwrap_or_default(),
                     proxy_command: config.proxy_command.clone(),
                 };
-                Box::new(SSHConnection::open(&config.connection_info.host, term_caps, creds).await?)
+                Box::new(SSHConnection::open(&config.connection_info.endpoint(), term_caps, creds).await?)
             }
             ConnectionType::Modem => {
                 let Some(m) = &config.modem else {
@@ -372,8 +369,8 @@ impl TerminalThread {
                 };
                 Box::new(ModemConnection::open(serial, modem, config.connection_info.host.clone()).await?)
             }
-            ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.host, false).await?),
-            ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.host, true).await?),
+            ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), false).await?),
+            ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), true).await?),
             other => {
                 return Err(format!("Unsupported connection type: {other:?}").into());
             }
@@ -386,7 +383,6 @@ impl TerminalThread {
         self.auto_file_transfer = AutoFileTransfer::default();
 
         let _ = self.event_tx.send(TerminalEvent::Connected);
-        debug!("Connected successfully");
         Ok(())
     }
 

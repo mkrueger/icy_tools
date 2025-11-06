@@ -980,7 +980,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                 };
 
                                 if lines != 0.0 {
-                                    let button = if lines < 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };
+                                    let button = if lines > 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };
 
                                     let modifiers = KeyModifiers {
                                         shift: state.shift_pressed,

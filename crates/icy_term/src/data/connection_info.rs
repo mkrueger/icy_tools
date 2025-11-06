@@ -8,8 +8,10 @@ pub struct ConnectionInformation {
     pub protocol: Option<ConnectionType>,
     pub host: String,
     pub port: Option<u16>,
-    pub user_name: Option<String>,
-    pub password: Option<String>,
+
+    user_name_injected: bool,
+    user_name: Option<String>,
+    password: Option<String>,
 }
 
 impl From<Address> for ConnectionInformation {
@@ -19,6 +21,7 @@ impl From<Address> for ConnectionInformation {
                 protocol: Some(ConnectionType::Modem),
                 host: address.address,
                 port: None,
+                user_name_injected: true,
                 user_name: None,
                 password: None,
             };
@@ -32,10 +35,12 @@ impl From<Address> for ConnectionInformation {
 
         if result.user_name.is_none() && !address.user_name.is_empty() {
             result.user_name = Some(address.user_name);
+            result.user_name_injected = true;
         }
 
         if result.password.is_none() && !address.password.is_empty() {
             result.password = Some(address.password);
+            result.user_name_injected = true;
         }
 
         result
@@ -64,21 +69,25 @@ impl fmt::Display for ConnectionInformation {
         }
 
         // Username and password
-        if let Some(username) = &self.user_name {
-            write!(f, "{}", username)?;
-        }
-        if let Some(password) = &self.password {
-            write!(f, ":{}", password)?;
-        }
-        if self.user_name.is_some() || self.password.is_some() {
-            write!(f, "@")?;
+        if !self.user_name_injected {
+            if let Some(username) = &self.user_name {
+                write!(f, "{}", username)?;
+            }
+            if let Some(password) = &self.password {
+                write!(f, ":{}", password)?;
+            }
+            if self.user_name.is_some() || self.password.is_some() {
+                write!(f, "@")?;
+            }
         }
 
         // Host
         write!(f, "{}", self.host)?;
 
-        if let Some(port) = &self.port {
-            write!(f, ":{}", port)?;
+        if !self.is_default_port() {
+            if let Some(port) = &self.port {
+                write!(f, ":{}", port)?;
+            }
         }
 
         Ok(())
@@ -86,6 +95,14 @@ impl fmt::Display for ConnectionInformation {
 }
 
 impl ConnectionInformation {
+    pub fn user_name(&self) -> Option<String> {
+        self.user_name.clone()
+    }
+
+    pub fn password(&self) -> Option<String> {
+        self.password.clone()
+    }
+
     pub fn parse(url: &str) -> Res<Self> {
         let url = url.trim();
 
@@ -104,6 +121,7 @@ impl ConnectionInformation {
                         port: None,
                         user_name: None,
                         password: None,
+                        user_name_injected: false,
                     });
                 }
 
@@ -141,6 +159,7 @@ impl ConnectionInformation {
                     protocol,
                     host,
                     port,
+                    user_name_injected: false,
                     user_name,
                     password,
                 })
@@ -186,6 +205,7 @@ impl ConnectionInformation {
             protocol: None,
             host,
             port,
+            user_name_injected: user_name.is_some(),
             user_name,
             password,
         })
@@ -204,6 +224,21 @@ impl ConnectionInformation {
             ConnectionType::SecureWebsocket => 443,
             _ => 23,
         })
+    }
+    pub fn is_default_port(&self) -> bool {
+        self.port.is_none()
+            || match self.protocol() {
+                ConnectionType::Telnet => self.port == Some(23),
+                ConnectionType::SSH => self.port == Some(22),
+                ConnectionType::Raw => self.port == Some(23),
+                ConnectionType::Websocket => self.port == Some(80),
+                ConnectionType::SecureWebsocket => self.port == Some(443),
+                _ => false,
+            }
+    }
+
+    pub fn endpoint(&self) -> String {
+        format!("{}:{}", self.host, self.port())
     }
 }
 
@@ -295,6 +330,7 @@ mod tests {
             protocol: Some(ConnectionType::Telnet),
             host: "bbs.example.com".to_string(),
             port: None,
+            user_name_injected: false,
             user_name: None,
             password: None,
         };
@@ -311,6 +347,7 @@ mod tests {
             port: Some(2222),
             user_name: Some("sysop".to_string()),
             password: Some("secret".to_string()),
+            user_name_injected: false,
         };
 
         let display = format!("{}", conn_info);
@@ -325,6 +362,7 @@ mod tests {
             port: Some(8888),
             user_name: None,
             password: None,
+            user_name_injected: false,
         };
 
         let display = format!("{}", conn_info);
@@ -339,6 +377,7 @@ mod tests {
             port: None,
             user_name: None,
             password: None,
+            user_name_injected: false,
         };
 
         // Should default to Telnet
@@ -354,6 +393,7 @@ mod tests {
             port: None,
             user_name: None,
             password: None,
+            user_name_injected: false,
         };
         assert_eq!(telnet.port(), 23);
 
@@ -364,6 +404,7 @@ mod tests {
             port: None,
             user_name: None,
             password: None,
+            user_name_injected: false,
         };
         assert_eq!(ssh.port(), 22);
 
@@ -374,6 +415,7 @@ mod tests {
             port: None,
             user_name: None,
             password: None,
+            user_name_injected: false,
         };
         assert_eq!(ws.port(), 80);
 
@@ -384,6 +426,7 @@ mod tests {
             port: None,
             user_name: None,
             password: None,
+            user_name_injected: false,
         };
         assert_eq!(wss.port(), 443);
     }
