@@ -64,4 +64,7 @@ pub enum Message {
     SetFocus(bool),
     SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
     McpCommand(Arc<crate::mcp::McpCommand>),
+
+    FocusNext,
+    FocusPrevious,
 }

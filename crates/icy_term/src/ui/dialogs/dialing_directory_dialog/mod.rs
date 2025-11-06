@@ -6,6 +6,7 @@ use iced::{
     Alignment, Element, Length, Task,
     widget::{Space, button, column, container, row, svg, text},
 };
+use iced::{Event, keyboard};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use std::sync::Arc;
@@ -373,6 +374,22 @@ impl DialingDirectoryState {
                 }
                 Task::none()
             }
+        }
+    }
+
+    pub(crate) fn handle_event(&self, event: &iced::Event) -> Option<Message> {
+        match event {
+            Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => match key {
+                keyboard::Key::Named(keyboard::key::Named::Tab) => {
+                    if modifiers.shift() {
+                        Some(Message::FocusPrevious)
+                    } else {
+                        Some(Message::FocusNext)
+                    }
+                }
+                _ => None,
+            },
+            _ => None,
         }
     }
 }

@@ -665,6 +665,8 @@ impl MainWindow {
                 self.terminal_window.set_focus(focus);
                 Task::none()
             }
+            Message::FocusNext => iced::widget::operation::focus_next(),
+            Message::FocusPrevious => iced::widget::operation::focus_previous(),
 
             Message::SendMouseEvent(evt) => {
                 let escape_sequence = evt.generate_mouse_report();
@@ -1107,7 +1109,7 @@ impl MainWindow {
                         Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::ConnectSelected))
                     }
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Close)),
-                    _ => None,
+                    _ => self.dialing_directory.handle_event(event),
                 },
                 _ => None,
             },
@@ -1121,14 +1123,14 @@ impl MainWindow {
             MainWindowMode::ShowSettings => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::SettingsDialog(settings_dialog::SettingsMsg::Cancel)),
-                    _ => None,
+                    _ => self.dialing_directory.handle_event(event),
                 },
                 _ => None,
             },
             MainWindowMode::ShowCaptureDialog => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::Cancel)),
-                    _ => None,
+                    _ => self.dialing_directory.handle_event(event),
                 },
                 _ => None,
             },
@@ -1226,7 +1228,7 @@ impl MainWindow {
             MainWindowMode::ShowExportDialog => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_screen_dialog::ExportScreenMsg::Cancel)),
-                    _ => None,
+                    _ => self.dialing_directory.handle_event(event),
                 },
                 _ => None,
             },
