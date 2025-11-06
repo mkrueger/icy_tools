@@ -142,17 +142,17 @@ impl HelpDialog {
                         action: fl!(crate::LANGUAGE_LOADER, "help-action-capture-session"),
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-capture-session"),
                     },
-                    Shortcut {
-                        keys: format!("{mod_symbol} F"),
-                        action: fl!(crate::LANGUAGE_LOADER, "help-action-find"),
-                        desc: fl!(crate::LANGUAGE_LOADER, "help-desc-find"),
-                    },
                 ],
             },
             Category {
                 icon: "⚙️",
                 name: fl!(crate::LANGUAGE_LOADER, "help-category-tools"),
                 shortcuts: vec![
+                    Shortcut {
+                        keys: format!("{mod_symbol} F"),
+                        action: fl!(crate::LANGUAGE_LOADER, "help-action-find"),
+                        desc: fl!(crate::LANGUAGE_LOADER, "help-desc-find"),
+                    },
                     Shortcut {
                         keys: format!("{mod_symbol} O"),
                         action: fl!(crate::LANGUAGE_LOADER, "menu-item-settings"),
@@ -196,7 +196,7 @@ impl HelpDialog {
         fn pill(content: &str) -> Element<'static, crate::ui::Message> {
             container(
                 text(content.to_owned())
-                    .size(12)
+                    .size(14)
                     .font(iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::default()
@@ -235,7 +235,7 @@ impl HelpDialog {
             for (i, p) in parts.iter().enumerate() {
                 r = r.push(pill(p));
                 if i + 1 < parts.len() {
-                    r = r.push(text("+").size(12).style(|theme: &Theme| text::Style {
+                    r = r.push(text("+").size(14).style(|theme: &Theme| text::Style {
                         color: Some(theme.extended_palette().background.base.text),
                         ..Default::default()
                     }));
@@ -287,7 +287,7 @@ impl HelpDialog {
                         ..Default::default()
                     }),
                     text(fl!(crate::LANGUAGE_LOADER, "help-subtitle")).size(12).style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().background.base.text),
+                        color: Some(theme.extended_palette().secondary.base.color),
                         ..Default::default()
                     }),
                 ]
@@ -313,9 +313,9 @@ impl HelpDialog {
                 let shaded = (cat_index + row_index) % 2 == 0;
                 let shortcut_row = container(
                     row![
-                        container(key_group(&sc.keys.clone())).width(Length::Fixed(220.0)), // Clone keys
+                        container(key_group(&sc.keys.clone())).width(Length::Fixed(200.0)), // Clone keys
                         Space::new().width(16),
-                        container(text(sc.action.clone()).size(13).style(|theme: &Theme| text::Style {
+                        container(text(sc.action.clone()).size(14).style(|theme: &Theme| text::Style {
                             // Clone action
                             color: Some(theme.palette().text),
                             ..Default::default()
@@ -323,9 +323,9 @@ impl HelpDialog {
                         .width(Length::Fixed(140.0)),
                         Space::new().width(12),
                         text(sc.desc.clone()) // Clone desc
-                            .size(12)
+                            .size(14)
                             .style(|theme: &Theme| text::Style {
-                                color: Some(theme.extended_palette().background.base.text),
+                                color: Some(theme.palette().text),
                                 ..Default::default()
                             })
                             .width(Length::Fill),
@@ -352,7 +352,7 @@ impl HelpDialog {
         let footer = container(
             row![
                 Space::new().width(Length::Fill),
-                button(text(fl!(crate::LANGUAGE_LOADER, "dialog-close_button")).size(13))
+                button(text(fl!(crate::LANGUAGE_LOADER, "dialog-close_button")).size(14))
                     .padding(Padding::from([5, 20]))
                     .on_press(crate::ui::Message::CloseDialog(Box::new(crate::ui::MainWindowMode::ShowTerminal)))
                     .style(|theme: &Theme, status| {
@@ -412,7 +412,7 @@ impl HelpDialog {
             ]
             .spacing(0),
         )
-        .width(Length::Fixed(780.0))
+        .width(Length::Fixed(700.0))
         .height(Length::Fixed(500.0))
         .style(|theme: &Theme| container::Style {
             background: Some(iced::Background::Color(theme.extended_palette().background.base.color)),
