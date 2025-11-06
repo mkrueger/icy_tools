@@ -29,7 +29,18 @@ impl OutputFormat for Ascii {
             let line_length = buf.get_line_length(pos.y);
             while pos.x < line_length {
                 let ch = buf.get_char(pos);
-                result.push(if ch.ch == '\0' { b' ' } else { ch.ch as u8 });
+                if options.modern_terminal_output {
+                    // Modern UTF-8 output
+                    let char_to_write = if ch.ch == '\0' { ' ' } else { ch.ch };
+                    let uni = buf.buffer_type.convert_to_unicode(char_to_write);
+                    // Use the unicode converter for proper CP437 to Unicode conversion
+                    for byte in uni.to_string().as_bytes() {
+                        result.push(*byte);
+                    }
+                } else {
+                    // Legacy ASCII/CP437 output
+                    result.push(if ch.ch == '\0' { b' ' } else { ch.ch as u8 });
+                }
                 pos.x += 1;
             }
 

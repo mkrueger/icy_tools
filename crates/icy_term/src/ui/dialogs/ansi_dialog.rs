@@ -59,7 +59,7 @@ impl AnsiDialog {
             // Bottom button bar
             container(row![
                 Space::new().width(Length::Fill),
-                button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ok-button")).size(14))
+                button(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")).size(14))
                     .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
                     .style(button::primary)
                     .padding([6, 20]),

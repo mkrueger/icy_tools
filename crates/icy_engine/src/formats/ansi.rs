@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
+use codepages::tables::UNICODE_TO_CP437;
 use icy_sauce::char_caps::ContentType;
 
 use crate::Color;
@@ -599,16 +599,8 @@ impl StringGenerator {
                     if cell.ch == '\0' {
                         vec![b' ']
                     } else {
-                        if buf.buffer_type == crate::BufferType::CP437 {
-                            let uni_ch = if let Some(uni_ch) = CP437_TO_UNICODE.get(cell.ch as usize) {
-                                uni_ch.to_string()
-                            } else {
-                                cell.ch.to_string()
-                            };
-                            uni_ch.as_bytes().to_vec()
-                        } else {
-                            cell.ch.to_string().as_bytes().to_vec()
-                        }
+                        let uni_ch = buf.buffer_type.convert_to_unicode(cell.ch);
+                        uni_ch.to_string().as_bytes().to_vec()
                     }
                 } else {
                     let mut ch = cell.ch;

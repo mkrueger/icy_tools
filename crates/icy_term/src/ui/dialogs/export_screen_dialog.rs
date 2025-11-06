@@ -280,7 +280,7 @@ impl ExportScreenDialogState {
             export_button = export_button.on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Export));
         }
 
-        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
+        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
             .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel))
             .padding([8, 16])
             .style(button::secondary);

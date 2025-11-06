@@ -6,7 +6,9 @@ use iced::{
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
 use icy_engine::{TextPane, ansi::BaudEmulation};
 use icy_net::telnet::TerminalEmulation;
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+};
 // use iced_aw::{menu, menu_bar, menu_items};
 
 use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message, util::SoundThread};
@@ -31,7 +33,7 @@ pub struct TerminalWindow {
 
 impl TerminalWindow {
     pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
-        let edit_state = Arc::new(Mutex::new(super::welcome_screen::create_weclome_screen()));
+        let edit_state = Arc::new(Mutex::new(super::welcome_screen::create_welcome_screen()));
 
         Self {
             terminal: Terminal::new(edit_state),
@@ -466,6 +468,8 @@ impl TerminalWindow {
                 }
                 icy_net::ConnectionType::Websocket => "WebSocket".to_string(),
                 icy_net::ConnectionType::SecureWebsocket => "WSS".to_string(),
+                icy_net::ConnectionType::Rlogin => "Rlogin".to_string(),
+                icy_net::ConnectionType::RloginSwapped => "Rlogin (Swapped)".to_string(),
                 _ => "Unknown".to_string(),
             }
         } else {

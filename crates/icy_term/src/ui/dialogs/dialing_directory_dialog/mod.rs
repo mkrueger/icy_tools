@@ -73,7 +73,7 @@ impl DialingDirectoryState {
         // If there's a pending delete, show the confirmation modal
         if let Some(idx) = self.pending_delete {
             let overlay = self.delete_confirmation_modal(idx);
-            modal(main_content, overlay, Message::from(DialingDirectoryMsg::Cancel)).into()
+            modal(main_content, overlay, Message::from(DialingDirectoryMsg::Close)).into()
         } else {
             main_content.into()
         }
@@ -102,11 +102,11 @@ impl DialingDirectoryState {
         .gap(10)
         .style(container::rounded_box)
         .padding(8);
-        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button"))).on_press(Message::from(DialingDirectoryMsg::Cancel));
+        let close_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-close_button"))).on_press(Message::from(DialingDirectoryMsg::Close));
         let connect_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")))
             .on_press(Message::from(DialingDirectoryMsg::ConnectSelected))
             .style(button::primary);
-        row![del_btn, Space::new().width(Length::Fill), cancel_btn, connect_btn]
+        row![del_btn, Space::new().width(Length::Fill), close_btn, connect_btn]
             .spacing(12)
             .align_y(Alignment::Center)
             .padding(12)
@@ -291,7 +291,7 @@ impl DialingDirectoryState {
                 Task::done(Message::Connect(addr.into()))
             }
 
-            DialingDirectoryMsg::Cancel => {
+            DialingDirectoryMsg::Close => {
                 // Cancel the delete operation
                 if self.pending_delete.is_some() {
                     self.pending_delete = None;
@@ -389,7 +389,7 @@ pub enum DialingDirectoryMsg {
     ToggleShowPasswords,
     GeneratePassword,
     ConnectSelected,
-    Cancel,
+    Close,
     NavigateUp,
     NavigateDown,
     ConfirmDelete(usize),

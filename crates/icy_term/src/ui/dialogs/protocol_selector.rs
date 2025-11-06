@@ -129,7 +129,7 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
         protocol_rows = protocol_rows.push(protocol_button);
     }
 
-    let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14.0))
+    let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")).size(14.0))
         .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
         .style(button::secondary);
 

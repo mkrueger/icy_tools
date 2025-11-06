@@ -121,13 +121,15 @@ impl Display for ConnectionType {
     }
 }
 */
-pub const ALL: [ConnectionType; 6] = [
+pub const ALL: [ConnectionType; 8] = [
     ConnectionType::Telnet,
     ConnectionType::Raw,
     ConnectionType::Modem,
     ConnectionType::SSH,
     ConnectionType::SecureWebsocket,
     ConnectionType::Websocket,
+    ConnectionType::Rlogin,
+    ConnectionType::RloginSwapped,
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,16 +326,24 @@ impl From<ConnectionInformation> for Address {
         }
 
         // Build the address string (host:port)
-        let address = if let Some(port) = &info.port {
-            format!("{}:{}", info.host, port)
+        let address = if info.protocol() == ConnectionType::SSH {
+            info.to_string()
         } else {
-            info.host.clone()
+            info.endpoint()
         };
 
         Self {
             system_name: info.host.clone(),
-            user_name: info.user_name().clone().unwrap_or_default(),
-            password: info.password().clone().unwrap_or_default(),
+            user_name: if info.protocol() == ConnectionType::SSH {
+                String::new()
+            } else {
+                info.user_name().clone().unwrap_or_default()
+            },
+            password: if info.protocol() == ConnectionType::SSH {
+                String::new()
+            } else {
+                info.password().clone().unwrap_or_default()
+            },
             comment: String::new(),
             terminal_type: TerminalEmulation::default(),
             font_name: None,

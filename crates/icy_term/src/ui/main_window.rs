@@ -240,7 +240,7 @@ impl MainWindow {
                     modem,
                     music_option: address.ansi_music,
                     screen_mode: address.get_screen_mode(),
-                    auto_login: options.iemsi.autologin,
+                    iemsi_auto_login: options.iemsi.autologin,
                     login_exp: address.auto_login.clone(),
                 };
 
@@ -1104,9 +1104,7 @@ impl MainWindow {
                     keyboard::Key::Named(keyboard::key::Named::Enter) => {
                         Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::ConnectSelected))
                     }
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
-                        Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Cancel))
-                    }
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::DialingDirectory(dialing_directory_dialog::DialingDirectoryMsg::Close)),
                     _ => None,
                 },
                 _ => None,

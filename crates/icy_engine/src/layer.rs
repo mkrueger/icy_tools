@@ -65,7 +65,7 @@ impl std::fmt::Display for Layer {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
                 let ch = self.get_char((x, y));
-                str.push(p.convert_to_unicode(ch));
+                str.push(p.convert_to_unicode(ch.ch));
             }
             str.push('\n');
         }

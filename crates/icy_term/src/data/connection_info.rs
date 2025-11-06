@@ -42,7 +42,6 @@ impl From<Address> for ConnectionInformation {
             result.password = Some(address.password);
             result.user_name_injected = true;
         }
-
         result
     }
 }
@@ -63,6 +62,8 @@ impl fmt::Display for ConnectionInformation {
                     ConnectionType::Websocket => "ws",
                     ConnectionType::SecureWebsocket => "wss",
                     ConnectionType::Modem => "modem",
+                    ConnectionType::Rlogin => "rlogin",
+                    ConnectionType::RloginSwapped => "rlogin-swapped",
                     _ => "unknown",
                 }
             )?;
@@ -133,6 +134,8 @@ impl ConnectionInformation {
                     "ws" => Some(ConnectionType::Websocket),
                     "wss" => Some(ConnectionType::SecureWebsocket),
                     "modem" => Some(ConnectionType::Modem),
+                    "rlogin" => Some(ConnectionType::Rlogin),
+                    "rlogin-swapped" => Some(ConnectionType::RloginSwapped),
                     _ => None,
                 };
 
@@ -222,6 +225,7 @@ impl ConnectionInformation {
             ConnectionType::Raw => 23,
             ConnectionType::Websocket => 80,
             ConnectionType::SecureWebsocket => 443,
+            ConnectionType::Rlogin | ConnectionType::RloginSwapped => 513,
             _ => 23,
         })
     }
@@ -233,6 +237,8 @@ impl ConnectionInformation {
                 ConnectionType::Raw => self.port == Some(23),
                 ConnectionType::Websocket => self.port == Some(80),
                 ConnectionType::SecureWebsocket => self.port == Some(443),
+                ConnectionType::Serial => self.port == Some(23),
+                ConnectionType::Rlogin | ConnectionType::RloginSwapped => self.port == Some(513),
                 _ => false,
             }
     }
@@ -269,6 +275,18 @@ mod tests {
         assert_eq!(conn_info.port, Some(2222));
         assert_eq!(conn_info.user_name, Some("user".to_string()));
         assert_eq!(conn_info.password, Some("pass".to_string()));
+    }
+
+    #[test]
+    fn test_parse_ssh_with_credentials_without_port() {
+        let url = "ssh://bbs:shsbbs@shsbbs.net";
+        let conn_info: ConnectionInformation = ConnectionInformation::parse(url).unwrap();
+
+        assert_eq!(conn_info.protocol, Some(ConnectionType::SSH));
+        assert_eq!(conn_info.host, "shsbbs.net");
+        assert_eq!(conn_info.port, None);
+        assert_eq!(conn_info.user_name, Some("bbs".to_string()));
+        assert_eq!(conn_info.password, Some("shsbbs".to_string()));
     }
 
     #[test]

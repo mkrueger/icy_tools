@@ -327,7 +327,7 @@ impl EditState {
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
                     let ch = buffer.get_char((x, y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch));
+                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
                 }
                 res.push('\n');
             }
@@ -340,24 +340,24 @@ impl EditState {
             if start.y == end.y {
                 for x in start.x..=end.x {
                     let ch = buffer.get_char(Position::new(x, start.y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch));
+                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
                 }
             } else {
                 for x in start.x..(buffer.get_line_length(start.y)) {
                     let ch = buffer.get_char(Position::new(x, start.y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch));
+                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
                 }
                 res.push('\n');
                 for y in start.y + 1..end.y {
                     for x in 0..(buffer.get_line_length(y)) {
                         let ch = buffer.get_char(Position::new(x, y));
-                        res.push(self.unicode_converter.convert_to_unicode(ch));
+                        res.push(self.unicode_converter.convert_to_unicode(ch.ch));
                     }
                     res.push('\n');
                 }
                 for x in 0..=end.x {
                     let ch = buffer.get_char(Position::new(x, end.y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch));
+                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
                 }
             }
         }

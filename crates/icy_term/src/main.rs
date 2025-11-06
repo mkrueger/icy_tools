@@ -12,7 +12,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 //mod ui;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicU16},
+};
 
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
@@ -101,6 +104,8 @@ struct Args {
 
 pub type McpHandler = Option<tokio::sync::mpsc::UnboundedReceiver<mcp::McpCommand>>;
 
+pub static MCP_PORT: AtomicU16 = AtomicU16::new(0);
+
 fn main() {
     use std::fs;
     let args = Args::parse();
@@ -166,6 +171,7 @@ fn main() {
             });
         });
 
+        MCP_PORT.store(port, std::sync::atomic::Ordering::Relaxed);
         log::info!("MCP server started on port {}", port);
         Some(std::sync::Mutex::new(Some(command_rx)))
     } else {

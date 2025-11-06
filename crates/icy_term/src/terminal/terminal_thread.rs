@@ -7,6 +7,7 @@ use icy_engine::ansi::BaudEmulation;
 use icy_engine::editor::EditState;
 use icy_engine::{BufferParser, CallbackAction, TextAttribute};
 use icy_net::iemsi::EmsiISI;
+use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
@@ -83,7 +84,7 @@ pub struct ConnectionConfig {
     pub baud_emulation: BaudEmulation,
 
     // Auto-login configuration
-    pub auto_login: bool,
+    pub iemsi_auto_login: bool,
     pub login_exp: String,
 }
 
@@ -316,20 +317,8 @@ impl TerminalThread {
         self.baud_emulator.set_baud_rate(config.baud_emulation);
         self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
 
-        let (user_name, password) = if config.auto_login && config.user_name.is_some() && config.password.is_some() {
-            (config.user_name.clone(), config.password.clone())
-        } else {
-            (config.connection_info.user_name(), config.connection_info.password())
-        };
+        self.setup_auto_login(&config);
 
-        // Set up auto-login if configured
-        if config.auto_login && config.user_name.is_some() && config.password.is_some() {
-            if user_name.is_some() || password.is_some() {
-                self.auto_login = Some(AutoLogin::new(config.login_exp.clone(), user_name.clone().unwrap(), password.clone().unwrap()));
-            }
-        } else {
-            self.auto_login = None;
-        }
         let connection: Box<dyn Connection> = match config.connection_info.protocol() {
             ConnectionType::Telnet => {
                 let term_caps = TermCaps {
@@ -344,6 +333,12 @@ impl TerminalThread {
                     terminal: config.terminal_type,
                     window_size: config.window_size,
                 };
+                let (user_name, password) = if config.connection_info.user_name().is_some() && config.connection_info.password().is_some() {
+                    (config.connection_info.user_name(), config.connection_info.password())
+                } else {
+                    (config.user_name.clone(), config.password.clone())
+                };
+
                 let creds = Credentials {
                     user_name: user_name.unwrap_or_default(),
                     password: password.unwrap_or_default(),
@@ -364,13 +359,33 @@ impl TerminalThread {
                     flow_control: m.flow_control,
                 };
                 let modem = ModemConfiguration {
-                    init_string: String::new().clone(),
+                    init_string: m.init_string.clone(),
                     dial_string: m.dial_string.clone(),
                 };
                 Box::new(ModemConnection::open(serial, modem, config.connection_info.host.clone()).await?)
             }
             ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), false).await?),
             ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), true).await?),
+            ConnectionType::Rlogin => {
+                let rlogin_config = RloginConfig {
+                    user_name: config.user_name.clone().unwrap_or_default(),
+                    password: config.password.clone().unwrap_or_default(),
+                    terminal_emulation: config.terminal_type,
+                    swapped: false,
+                    escape_sequence: None,
+                };
+                Box::new(icy_net::rlogin::RloginConnection::open(&config.connection_info.endpoint(), rlogin_config, config.timeout).await?)
+            }
+            ConnectionType::RloginSwapped => {
+                let rlogin_config = RloginConfig {
+                    user_name: config.user_name.clone().unwrap_or_default(),
+                    password: config.password.clone().unwrap_or_default(),
+                    terminal_emulation: config.terminal_type,
+                    swapped: true,
+                    escape_sequence: None,
+                };
+                Box::new(icy_net::rlogin::RloginConnection::open(&config.connection_info.endpoint(), rlogin_config, config.timeout).await?)
+            }
             other => {
                 return Err(format!("Unsupported connection type: {other:?}").into());
             }
@@ -384,6 +399,51 @@ impl TerminalThread {
 
         let _ = self.event_tx.send(TerminalEvent::Connected);
         Ok(())
+    }
+
+    fn setup_auto_login(&mut self, config: &ConnectionConfig) {
+        if !config.iemsi_auto_login {
+            self.auto_login = None;
+            return;
+        }
+
+        // Determine effective credentials with clear precedence
+        let mut effective_user = config.user_name.as_ref().filter(|s| !s.is_empty()).cloned().or_else(|| {
+            if config.connection_info.protocol() != ConnectionType::SSH {
+                config.connection_info.user_name()
+            } else {
+                None
+            }
+        });
+
+        let mut effective_pass = config.password.as_ref().filter(|s| !s.is_empty()).cloned().or_else(|| {
+            if config.connection_info.protocol() != ConnectionType::SSH {
+                config.connection_info.password()
+            } else {
+                None
+            }
+        });
+
+        // Normalize empty strings to None
+        if let Some(u) = &effective_user {
+            if u.trim().is_empty() {
+                effective_user = None;
+            }
+        }
+        if let Some(p) = &effective_pass {
+            if p.trim().is_empty() {
+                effective_pass = None;
+            }
+        }
+
+        // Decide auto-login (requires BOTH credentials and non-SSH)
+        if effective_user.is_some() && effective_pass.is_some() {
+            self.auto_login = Some(AutoLogin::new(
+                config.login_exp.clone(),
+                effective_user.clone().unwrap(),
+                effective_pass.clone().unwrap(),
+            ));
+        }
     }
 
     async fn disconnect(&mut self) {
@@ -406,9 +466,11 @@ impl TerminalThread {
     async fn send_login(&mut self) {
         if let Some(auto_login) = &self.auto_login {
             if let Some(conn) = &mut self.connection {
-                // Send username and password
-                let login_data = format!("{}\r{}\r", auto_login.user_name, auto_login.password);
-                let _ = conn.send(login_data.as_bytes()).await;
+                // Send username, wait briefly, then password
+                // Some BBSes need a delay between username and password
+                let _ = conn.send(format!("{}\r", auto_login.user_name).as_bytes()).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                let _ = conn.send(format!("{}\r", auto_login.password).as_bytes()).await;
             }
         }
     }

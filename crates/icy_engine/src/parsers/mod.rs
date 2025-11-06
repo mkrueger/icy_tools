@@ -53,7 +53,7 @@ pub enum CallbackAction {
 
 pub trait UnicodeConverter: Send + Sync {
     fn convert_from_unicode(&self, ch: char, font_page: usize) -> char;
-    fn convert_to_unicode(&self, attributed_char: AttributedChar) -> char;
+    fn convert_to_unicode(&self, ch: char) -> char;
 }
 
 const EMPTY_MOUSE_FIELD: Vec<MouseField> = Vec::new();

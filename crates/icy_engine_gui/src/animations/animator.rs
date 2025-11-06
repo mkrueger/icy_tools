@@ -86,10 +86,10 @@ impl LuaBuffer {
         let buffer_type = self.buffer.buffer_type;
         let ch = match buffer_type {
             icy_engine::BufferType::Unicode => ch.ch,
-            icy_engine::BufferType::CP437 => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch),
-            icy_engine::BufferType::Petscii => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch),
-            icy_engine::BufferType::Atascii => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch),
-            icy_engine::BufferType::Viewdata => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch),
+            icy_engine::BufferType::CP437 => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
+            icy_engine::BufferType::Petscii => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
+            icy_engine::BufferType::Atascii => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
+            icy_engine::BufferType::Viewdata => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
         };
         ch.to_string()
     }

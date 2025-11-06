@@ -56,8 +56,8 @@ impl super::DialingDirectoryState {
             }
         });
 
-        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
-            .on_press(Message::from(DialingDirectoryMsg::Cancel))
+        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
+            .on_press(Message::from(DialingDirectoryMsg::Close))
             .style(button::secondary);
 
         let modal_content = container(

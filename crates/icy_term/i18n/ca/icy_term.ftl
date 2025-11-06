@@ -1,5 +1,7 @@
 connect-to = Connecta a { $address }...
 
+dialog-ok_button = D'acord
+dialog-cancel_button = Cancel·lar
 dialog-close_button = Tancar
 
 settings-heading = Configuració
@@ -93,8 +95,7 @@ dialing_directory-add = Afegir nou BBS
 dialing_directory-settings = { settings-heading }
 dialing_directory-connect-to-address = <Connecta a l'adreça>
 dialing_directory-connect-button = Connectar
-dialing_directory-cancel-button = Cancel·lar
-dialing_directory-ok-button = D'acord
+
 dialing_directory-not-called = Encara no trucat
 dialing_directory-last-call-date-format=Última trucada el %m/%d/%Y a les %H:%M
 dialing_directory-created-at-date-format=Creat el %m/%d/%Y a les %H:%M

@@ -1,4 +1,4 @@
-use crate::VERSION;
+use crate::{MCP_PORT, VERSION};
 use icy_engine::editor::EditState;
 use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane};
 use std::path::Path;
@@ -6,7 +6,7 @@ use std::path::Path;
 const MAIN_SCREEN_ANSI1: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");
 const MAIN_SCREEN_ANSI2: &[u8] = include_bytes!("../../data/welcome_screen.2.icy");
 
-pub fn create_weclome_screen() -> EditState {
+pub fn create_welcome_screen() -> EditState {
     // Create a default EditState
     let mut edit_state = EditState::default();
 
@@ -79,20 +79,44 @@ pub fn create_weclome_screen() -> EditState {
     // Write "IcyTerm ready." message at the marked position
     let mut caret_pos = Position::default();
     if let Some((x, y)) = ready_position {
-        let variants = ["READY.", "STANDING BY...", "OK", "AWAITING INPUT", "SESSION STARTED.", "SYSTEM READY"];
-        let ready_msg = variants[fastrand::usize(0..variants.len())];
+        caret_pos = Position::new(x, y);
+    }
 
-        for (i, msg_char) in ready_msg.chars().enumerate() {
-            let new_x = x + i as i32;
-            if new_x < buffer.get_width() {
-                let new_ch = AttributedChar::new(msg_char, TextAttribute::default());
-                buffer.layers[0].set_char(Position::new(new_x, y), new_ch);
+    // Check if MCP port is set and print message
+    let port = MCP_PORT.load(std::sync::atomic::Ordering::Relaxed);
+    if port != 0 {
+        // Print MCP message in yellow (color 14)
+        let mcp_msg = format!("MCP SERVER STARTED ON PORT {}.", port);
+        let yellow_attr = TextAttribute::from_u8(0x0E, icy_engine::IceMode::Ice);
+
+        for msg_char in mcp_msg.chars() {
+            if caret_pos.x < buffer.get_width() {
+                let new_ch = AttributedChar::new(msg_char, yellow_attr);
+                buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
+                caret_pos.x += 1;
             }
         }
 
         // Set cursor position after the ready message
-        caret_pos = Position::new(0, y + 1);
+        caret_pos = Position::new(0, caret_pos.y + 1);
+
+        // Reset MCP_PORT to 0
+        MCP_PORT.store(0, std::sync::atomic::Ordering::Relaxed);
     }
+
+    let variants = ["READY.", "STANDING BY...", "OK", "AWAITING INPUT", "SESSION STARTED.", "SYSTEM READY"];
+    let ready_msg = variants[fastrand::usize(0..variants.len())];
+
+    for msg_char in ready_msg.chars() {
+        if caret_pos.x < buffer.get_width() {
+            let new_ch = AttributedChar::new(msg_char, TextAttribute::default());
+            buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
+            caret_pos.x += 1;
+        }
+    }
+
+    // Set cursor position after the ready message
+    caret_pos = Position::new(0, caret_pos.y + 1);
 
     buffer.update_hyperlinks();
     edit_state.set_buffer(buffer);

@@ -226,7 +226,7 @@ impl DialogState {
             return false;
         }
 
-        let ch = converter.convert_to_unicode(attributed_char);
+        let ch = converter.convert_to_unicode(attributed_char.ch);
         if self.case_sensitive {
             self.conv_pattern[cur_len] == ch
         } else {

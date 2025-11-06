@@ -32,7 +32,7 @@ impl EditState {
                     AttributedChar::invisible()
                 };
                 let c = if need_convert_to_unicode {
-                    self.unicode_converter.convert_to_unicode(ch)
+                    self.unicode_converter.convert_to_unicode(ch.ch)
                 } else {
                     ch.ch
                 };

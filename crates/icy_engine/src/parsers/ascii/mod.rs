@@ -1,7 +1,7 @@
 use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
 
 use super::{BufferParser, TAB};
-use crate::{AttributedChar, BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, FF, LF, UnicodeConverter};
+use crate::{BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, FF, LF, UnicodeConverter};
 #[derive(Default)]
 pub struct Parser {}
 
@@ -16,10 +16,10 @@ impl UnicodeConverter for CP437Converter {
         if let Some(tch) = UNICODE_TO_CP437.get(&ch) { *tch as char } else { ch }
     }
 
-    fn convert_to_unicode(&self, attributed_char: AttributedChar) -> char {
-        match CP437_TO_UNICODE.get(attributed_char.ch as usize) {
+    fn convert_to_unicode(&self, ch: char) -> char {
+        match CP437_TO_UNICODE.get(ch as usize) {
             Some(out_ch) => *out_ch,
-            _ => attributed_char.ch,
+            _ => ch,
         }
     }
 }
@@ -32,8 +32,8 @@ impl UnicodeConverter for IdentityConverter {
         ch
     }
 
-    fn convert_to_unicode(&self, attributed_char: AttributedChar) -> char {
-        attributed_char.ch
+    fn convert_to_unicode(&self, ch: char) -> char {
+        ch
     }
 }
 

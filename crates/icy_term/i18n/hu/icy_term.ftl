@@ -1,5 +1,7 @@
 connect-to = Csatlakozás { $address }...
 
+dialog-ok_button = OK
+dialog-cancel_button = Mégse
 dialog-close_button = Bezárás
 
 settings-heading = Beállítások
@@ -93,8 +95,6 @@ dialing_directory-add = Új BBS hozzáadása
 dialing_directory-settings = { settings-heading }
 dialing_directory-connect-to-address = <Csatlakozás a címhez>
 dialing_directory-connect-button = Csatlakozás
-dialing_directory-cancel-button = Mégse
-dialing_directory-ok-button = OK
 dialing_directory-not-called = Még nem hívott
 dialing_directory-last-call-date-format=Az utolsó hívás %m/%d/%Y %H:%M-kor volt
 dialing_directory-created-at-date-format=Létrehozva %m/%d/%Y %H:%M-kor

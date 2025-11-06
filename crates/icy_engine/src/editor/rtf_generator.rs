@@ -205,7 +205,7 @@ impl EditState {
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
                     let ch = buffer.get_char((x, y));
-                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
+                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch.ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
@@ -237,7 +237,7 @@ impl EditState {
                 // Single line selection
                 for x in start.x..=end.x {
                     let ch = buffer.get_char(Position::new(x, start.y));
-                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
+                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch.ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
@@ -262,7 +262,7 @@ impl EditState {
                 // First line (partial)
                 for x in start.x..(buffer.get_line_length(start.y)) {
                     let ch = buffer.get_char(Position::new(x, start.y));
-                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
+                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch.ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
@@ -286,7 +286,7 @@ impl EditState {
                 for y in start.y + 1..end.y {
                     for x in 0..(buffer.get_line_length(y)) {
                         let ch = buffer.get_char(Position::new(x, y));
-                        let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
+                        let unicode_ch = self.unicode_converter.convert_to_unicode(ch.ch);
                         let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                         let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
@@ -310,7 +310,7 @@ impl EditState {
                 // Last line (partial)
                 for x in 0..=end.x {
                     let ch = buffer.get_char(Position::new(x, end.y));
-                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch);
+                    let unicode_ch = self.unicode_converter.convert_to_unicode(ch.ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
 

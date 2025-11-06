@@ -108,7 +108,7 @@ impl FontGlyph {
                     }
                 };
                 if editor.get_buffer().buffer_type == crate::BufferType::Unicode {
-                    attributed_char.ch = converter.convert_to_unicode(attributed_char);
+                    attributed_char.ch = converter.convert_to_unicode(attributed_char.ch);
                 }
                 editor.set_char(cur, attributed_char).unwrap();
 

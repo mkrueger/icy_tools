@@ -61,7 +61,11 @@ impl McpServer {
                         },
                         {
                             "name": "disconnect",
-                            "description": "Disconnect from the current BBS"
+                            "description": "Disconnect from the current BBS",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
                         },
                         {
                             "name": "send_text",
@@ -109,15 +113,27 @@ impl McpServer {
                         },
                         {
                             "name": "get_state",
-                            "description": "Get current terminal state"
+                            "description": "Get current terminal state",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
                         },
                         {
                             "name": "list_addresses",
-                            "description": "List available BBS addresses from the address book. Do not show username & password to the user. This is a security risk but remember them."
+                            "description": "List available BBS addresses from the address book. Do not show username & password to the user. This is a security risk but remember them.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
                         },
                         {
                             "name": "clear_screen",
-                            "description": "Clear the terminal screen"
+                            "description": "Clear the terminal screen",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
                         }
                     ]
                 }))
@@ -166,6 +182,7 @@ impl McpServer {
                         }))
                     }
                     "disconnect" => {
+                        // No arguments needed, just send the command
                         tx.send(McpCommand::Disconnect).map_err(|e| Error {
                             code: ErrorCode::InternalError,
                             message: format!("Failed to send command: {}", e),
@@ -179,12 +196,10 @@ impl McpServer {
                             }]
                         }))
                     }
+
                     "send_text" => {
-                        let text = arguments["text"].as_str().ok_or_else(|| Error {
-                            code: ErrorCode::InvalidParams,
-                            message: "Missing text parameter".to_string(),
-                            data: None,
-                        })?;
+                        // Check if text exists, provide empty string as default
+                        let text = arguments["text"].as_str().unwrap_or("");
 
                         // Replace escape sequences
                         let processed_text = text
@@ -206,12 +221,18 @@ impl McpServer {
                             }]
                         }))
                     }
+
                     "send_key" => {
-                        let key = arguments["key"].as_str().ok_or_else(|| Error {
-                            code: ErrorCode::InvalidParams,
-                            message: "Missing key parameter".to_string(),
-                            data: None,
-                        })?;
+                        // Check if key exists, return error if missing since it's required
+                        let key = arguments["key"].as_str();
+                        if key.is_none() {
+                            return Err(Error {
+                                code: ErrorCode::InvalidParams,
+                                message: "Missing required 'key' parameter".to_string(),
+                                data: None,
+                            });
+                        }
+                        let key = key.unwrap();
 
                         tx.send(McpCommand::SendKey(key.to_string())).map_err(|e| Error {
                             code: ErrorCode::InternalError,
@@ -226,7 +247,9 @@ impl McpServer {
                             }]
                         }))
                     }
+
                     "capture_screen" => {
+                        // Default to "text" if format is missing
                         let format_str = arguments["format"].as_str().unwrap_or("text");
                         let format = match format_str {
                             "ansi" => ScreenCaptureFormat::Ansi,
@@ -258,7 +281,9 @@ impl McpServer {
                             }),
                         }
                     }
+
                     "get_state" => {
+                        // No arguments needed
                         let (response_tx, response_rx) = oneshot::channel();
                         tx.send(McpCommand::GetState(Arc::new(Mutex::new(Some(response_tx))))).map_err(|e| Error {
                             code: ErrorCode::InternalError,
@@ -284,7 +309,24 @@ impl McpServer {
                             }),
                         }
                     }
+
+                    "clear_screen" => {
+                        // No arguments needed
+                        tx.send(McpCommand::ClearScreen).map_err(|e| Error {
+                            code: ErrorCode::InternalError,
+                            message: format!("Failed to send command: {}", e),
+                            data: None,
+                        })?;
+
+                        Ok(serde_json::json!({
+                            "content": [{
+                                "type": "text",
+                                "text": "Screen cleared"
+                            }]
+                        }))
+                    }
                     "list_addresses" => {
+                        // No arguments needed for list_addresses, so we just proceed
                         let (response_tx, response_rx) = oneshot::channel();
                         tx.send(McpCommand::ListAddresses(Arc::new(Mutex::new(Some(response_tx))))).map_err(|e| Error {
                             code: ErrorCode::InternalError,
@@ -304,7 +346,7 @@ impl McpServer {
                                             entry.push_str(&format!("\n  Username: {}", a.user_name));
                                         }
 
-                                        // Add password if present (masked for security)
+                                        // Add password if present (show actual password as requested)
                                         if !a.password.is_empty() {
                                             entry.push_str(&format!("\n  Password: {}", a.password));
                                         }
@@ -318,14 +360,15 @@ impl McpServer {
                                         entry
                                     })
                                     .collect::<Vec<_>>()
-                                    .join("\n");
+                                    .join("\n\n");
+
                                 Ok(serde_json::json!({
                                     "content": [{
                                         "type": "text",
                                         "text": if text.is_empty() {
                                             "No addresses found".to_string()
                                         } else {
-                                            format!("BBS Directory:\n{}", text)
+                                            format!("BBS Directory:\n\n{}", text)
                                         }
                                     }]
                                 }))
@@ -337,20 +380,7 @@ impl McpServer {
                             }),
                         }
                     }
-                    "clear_screen" => {
-                        tx.send(McpCommand::ClearScreen).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
 
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": "Screen cleared"
-                            }]
-                        }))
-                    }
                     _ => Err(Error {
                         code: ErrorCode::MethodNotFound,
                         message: format!("Unknown tool: {}", tool_name),
@@ -382,8 +412,13 @@ impl McpServer {
             log::info!("MCP Client initialized successfully");
         });
 
-        // Keep your existing direct method handlers for backwards compatibility
-        // ... (rest of your existing handlers)
+        handler.add_notification("notifications/cancelled", |params: Params| {
+            if let Ok(value) = params.parse::<serde_json::Value>() {
+                let request_id = value.get("requestId").and_then(|v| v.as_i64());
+                let reason = value.get("reason").and_then(|v| v.as_str());
+                log::info!("Request {:?} cancelled: {:?}", request_id, reason);
+            }
+        });
 
         (Self { handler, command_tx }, command_rx)
     }

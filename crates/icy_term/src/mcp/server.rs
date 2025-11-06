@@ -41,7 +41,6 @@ async fn handle_request(body: bytes::Bytes, server: Arc<McpServer>) -> Result<im
     log::debug!("MCP Request: {}", json_request);
     // Handle the JSON-RPC request
     let response = server.handler.handle_request(&json_request).await;
-
     log::debug!("MCP Response: {:?}", response);
     // Return the response
     let response_body = response.unwrap_or_else(|| {

@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use codepages::tables::CP437_TO_UNICODE;
-
-use crate::{Buffer, BufferFeatures, BufferType, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, parse_with_parser, parsers};
+use crate::{Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, parse_with_parser, parsers};
 
 use super::{LoadData, SaveOptions};
 
@@ -77,12 +75,8 @@ impl OutputFormat for PCBoard {
                     if ch.ch == '\0' {
                         result.push(b' ')
                     } else {
-                        let uni_ch = if buf.buffer_type == BufferType::Unicode {
-                            ch.ch.to_string()
-                        } else {
-                            CP437_TO_UNICODE[ch.ch as usize].to_string()
-                        };
-                        result.extend(uni_ch.as_bytes().to_vec());
+                        let uni_ch = buf.buffer_type.convert_to_unicode(ch.ch);
+                        result.extend(uni_ch.to_string().as_bytes().to_vec());
                     }
                 } else {
                     result.push(if ch.ch == '\0' { b' ' } else { ch.ch as u8 });

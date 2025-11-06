@@ -1,5 +1,5 @@
-use std::cmp::max;
 use std::time::Duration;
+use std::{cmp::max, time::Instant};
 
 use human_bytes::human_bytes;
 use i18n_embed_fl::fl;
@@ -154,9 +154,15 @@ impl FileTransferDialogState {
             .spacing(4);
 
             // Stats grid
-            let elapsed_time = state.end_time.duration_since(state.start_time);
+            let time = Instant::now();
+            let elapsed_time = time.duration_since(state.start_time);
             let elapsed_str = format_duration(elapsed_time);
-            let rate_text = format!("{}/s", human_bytes(transfer_info.get_bps() as f64));
+            let bps = if elapsed_time.as_secs_f64() > 0.0 {
+                (transfer_info.cur_bytes_transfered as f64 / elapsed_time.as_secs_f64()) as u64 / 100
+            } else {
+                0
+            };
+            let rate_text = format!("{}/s", human_bytes(100.0 * bps as f64));
 
             let stats_grid = row![
                 self.create_stat_card("⚡", fl!(crate::LANGUAGE_LOADER, "transfer-rate"), rate_text),
@@ -170,9 +176,9 @@ impl FileTransferDialogState {
 
             // Action buttons
             let button_label = if state.is_finished {
-                fl!(crate::LANGUAGE_LOADER, "dialing_directory-ok-button")
+                fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")
             } else {
-                fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")
+                fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")
             };
 
             let action_button = button(
@@ -461,7 +467,7 @@ impl FileTransferDialogState {
                     button(row![
                         text("✕").size(14),
                         Space::new().width(4.0),
-                        text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14),
+                        text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")).size(14),
                     ])
                     .on_press(crate::ui::Message::TransferDialog(TransferMsg::Close))
                     .padding([10, 20])

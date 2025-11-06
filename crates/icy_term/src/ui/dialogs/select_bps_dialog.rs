@@ -254,7 +254,7 @@ impl SelectBpsDialog {
         let scrollable_list = scrollable(column![list, Space::new().height(4), custom_row,].spacing(6).padding([4, 8])).height(Length::Fill);
 
         // Buttons
-        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")).size(14))
+        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")).size(14))
             .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             .padding([6, 14])
             .style(|theme: &iced::Theme, _| {
@@ -272,7 +272,7 @@ impl SelectBpsDialog {
                 }
             });
 
-        let ok_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ok-button")).size(14))
+        let ok_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")).size(14))
             .on_press(crate::ui::Message::ApplyBaudEmulation)
             .padding([6, 14])
             .style(|theme: &iced::Theme, status| {

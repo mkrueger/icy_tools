@@ -543,7 +543,7 @@ impl AnsiEditor {
 
     pub fn type_cp437_key(&mut self, mut char_code: char) {
         if self.buffer_view.lock().get_edit_state().get_buffer().buffer_type == BufferType::Unicode {
-            char_code = icy_engine::ascii::CP437Converter::default().convert_to_unicode(AttributedChar::new(char_code, TextAttribute::default()));
+            char_code = icy_engine::ascii::CP437Converter::default().convert_to_unicode(char_code);
         }
 
         let pos = self.buffer_view.lock().get_caret().get_position();

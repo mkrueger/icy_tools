@@ -202,7 +202,7 @@ impl ShowIemsiDialog {
         ];
 
         // Styled OK button
-        let ok_button = button(container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ok-button")).size(14)).center_x(Length::Fixed(60.0)))
+        let ok_button = button(container(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")).size(14)).center_x(Length::Fixed(60.0)))
             .on_press(crate::ui::Message::ShowIemsi(IemsiMsg::Close))
             .padding(10.0)
             .style(|theme: &iced::Theme, status| {

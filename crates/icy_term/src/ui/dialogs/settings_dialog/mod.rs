@@ -226,12 +226,12 @@ impl SettingsDialogState {
         };
 
         // Buttons
-        let ok_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ok-button")))
+        let ok_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")))
             .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::Save))
             .padding([8, 16])
             .style(button::primary);
 
-        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-cancel-button")))
+        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
             .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::Cancel))
             .padding([8, 16])
             .style(button::secondary);

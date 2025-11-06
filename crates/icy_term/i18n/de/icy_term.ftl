@@ -1,5 +1,7 @@
 connect-to = Verbinde zu { $address }...
 
+dialog-ok_button = OK
+dialog-cancel_button = Abbrechen
 dialog-close_button = Schließen
 
 settings-heading = Einstellungen
@@ -93,8 +95,6 @@ dialing_directory-add = Neue BBS
 dialing_directory-settings = { settings-heading }
 dialing_directory-connect-to-address = <Verbinde zu Addresse>
 dialing_directory-connect-button = Verbinden
-dialing_directory-cancel-button = Abbrechen
-dialing_directory-ok-button = OK
 dialing_directory-not-called = Noch nicht verbunden
 dialing_directory-last-call-date-format=Zuletzt verbunden am %d.%m.%Y um %H:%M
 dialing_directory-created-at-date-format=Erstellt am %d.%m.%Y um %H:%M

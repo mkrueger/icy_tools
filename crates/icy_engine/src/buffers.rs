@@ -76,6 +76,37 @@ impl BufferType {
             ),
         }
     }
+
+    pub fn convert_to_unicode(&self, ch: char) -> char {
+        match self {
+            BufferType::Unicode => ch, // Already Unicode, no conversion needed
+
+            BufferType::CP437 => {
+                // Use the CP437 converter for DOS/ANSI characters
+                parsers::ascii::CP437Converter::default().convert_to_unicode(ch)
+            }
+
+            BufferType::Petscii => {
+                // Use the PETSCII converter for Commodore characters
+                parsers::petscii::CharConverter::default().convert_to_unicode(ch)
+            }
+
+            BufferType::Atascii => {
+                // Use the ATASCII converter for Atari characters
+                parsers::atascii::CharConverter::default().convert_to_unicode(ch)
+            }
+
+            BufferType::Viewdata => {
+                // Viewdata/Teletext uses mostly ASCII with some special graphics
+                // For now, pass through ASCII chars and replace control chars with space
+                if ch.is_ascii_graphic() || ch == ' ' {
+                    ch
+                } else {
+                    ' ' // Replace non-printable with space for Viewdata
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -303,7 +334,7 @@ impl std::fmt::Display for Buffer {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
                 let ch = self.get_char((x, y));
-                str.push(p.convert_to_unicode(ch));
+                str.push(p.convert_to_unicode(ch.ch));
             }
             str.push('\n');
         }

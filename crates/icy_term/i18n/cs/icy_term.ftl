@@ -1,5 +1,7 @@
 connect-to = Připojit k { $address }...
 
+dialog-ok_button = OK
+dialog-cancel_button = Zrušit
 dialog-close_button = Zavřít
 
 settings-heading = Nastavení
@@ -93,8 +95,6 @@ dialing_directory-add = Přidat nový BBS
 dialing_directory-settings = { settings-heading }
 dialing_directory-connect-to-address = <Připojit k adrese>
 dialing_directory-connect-button = Připojit
-dialing_directory-cancel-button = Zrušit
-dialing_directory-ok-button = OK
 dialing_directory-not-called = Ještě nebylo voláno
 dialing_directory-last-call-date-format=Poslední volání bylo %m/%d/%Y v %H:%M
 dialing_directory-created-at-date-format=Vytvořeno %m/%d/%Y v %H:%M

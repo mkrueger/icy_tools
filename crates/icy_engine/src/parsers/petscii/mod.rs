@@ -167,11 +167,11 @@ impl UnicodeConverter for CharConverter {
         }
     }
 
-    fn convert_to_unicode(&self, ch: AttributedChar) -> char {
-        if let Some(tch) = PETSCII_TO_UNICODE.get(&(ch.ch as u8)) {
+    fn convert_to_unicode(&self, ch: char) -> char {
+        if let Some(tch) = PETSCII_TO_UNICODE.get(&(ch as u8)) {
             *tch as char
         } else {
-            ch.ch
+            ch
         }
     }
 }
