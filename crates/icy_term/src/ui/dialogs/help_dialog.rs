@@ -70,7 +70,7 @@ impl HelpDialog {
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-auto-login"),
                     },
                     Shortcut {
-                        keys: format!("{mod_symbol} N"),
+                        keys: format!("{mod_symbol} U"),
                         action: fl!(crate::LANGUAGE_LOADER, "help-action-send-username"),
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-send-username"),
                     },
