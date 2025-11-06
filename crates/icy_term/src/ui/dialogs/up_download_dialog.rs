@@ -1,5 +1,5 @@
+use std::cmp::max;
 use std::time::Duration;
-use std::{cmp::max, time::Instant};
 
 use human_bytes::human_bytes;
 use i18n_embed_fl::fl;

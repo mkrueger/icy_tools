@@ -111,6 +111,9 @@ dialing_directory-generate-disabled-tooltip=
     ștergeți-o mai întâi pentru a genera una nouă
 dialing_directory-invalid_modem = Modem nevalid
 dialing_directory-no_modem_configured = Niciun modem configurat
+dialing_directory-select-modem = Selectează Modem
+dialing_directory-login-settings = Setări autentificare
+dialing_directory-notes = Note
 
 terminal-upload = Încărcare
 terminal-download = Descărcare

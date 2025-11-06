@@ -139,26 +139,36 @@ impl super::DialingDirectoryState {
                         field: AddressFieldChange::Address(modem_name),
                     })
                 })
-                .placeholder("Select Modem")
+                .placeholder(fl!(crate::LANGUAGE_LOADER, "dialing_directory-select-modem"))
                 .width(Length::Fill)
                 .text_size(14);
 
-                let mut modem_row = row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")), modem_picker,]
+                let modem_row = row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")), modem_picker,]
                     .spacing(12)
                     .align_y(Alignment::Center);
 
+                server_content = server_content.push(modem_row);
+
+                // Show error message in a separate row if no modem is selected but address is set
                 if selected_modem.is_none() && !addr.address.is_empty() {
                     let err_msg = if modem_names.is_empty() {
                         fl!(crate::LANGUAGE_LOADER, "dialing_directory-no_modem_configured")
                     } else {
                         fl!(crate::LANGUAGE_LOADER, "dialing_directory-invalid_modem")
                     };
-                    modem_row = modem_row.push(text(format!("⚠ {}", err_msg)).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().danger.base.color),
-                        ..Default::default()
-                    }));
+
+                    let error_row = row![
+                        left_label(String::new()), // Offset to align with the field
+                        text(format!("⚠ {}", err_msg)).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
+                            color: Some(theme.extended_palette().danger.base.color),
+                            ..Default::default()
+                        })
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center);
+
+                    server_content = server_content.push(error_row);
                 }
-                server_content = server_content.push(modem_row);
             } else {
                 let address_field = text_input("", &addr.address)
                     .on_input(move |s| {
@@ -486,14 +496,14 @@ impl super::DialingDirectoryState {
             if let Some(login) = login_section {
                 content = content
                     .push(Space::new().height(SECTION_SPACING))
-                    .push(section_header("Login Settings".to_string()))
+                    .push(section_header(fl!(crate::LANGUAGE_LOADER, "dialing_directory-login-settings")))
                     .push(login);
             }
 
             if let Some(notes) = comment_section {
                 content = content
                     .push(Space::new().height(SECTION_SPACING))
-                    .push(section_header("Notes".to_string()))
+                    .push(section_header(fl!(crate::LANGUAGE_LOADER, "dialing_directory-notes")))
                     .push(notes);
             }
         } else {

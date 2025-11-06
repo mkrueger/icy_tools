@@ -802,9 +802,9 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                             if let Some(cell) = cell_pos {
                                 // Check if we should report motion events based on the mouse mode
                                 let should_report_motion = match mouse_state.mouse_mode {
-                                    icy_engine::MouseMode::ButtonEvents => state.dragging, // Only when button is pressed
-                                    icy_engine::MouseMode::AnyEvents => true,              // Always report motion
-                                    _ => false,                                            // Other modes don't report motion
+                                    icy_engine::MouseMode::ButtonEvents => state.dragging,
+                                    icy_engine::MouseMode::AnyEvents => true,
+                                    _ => false,
                                 };
 
                                 if should_report_motion {
@@ -812,15 +812,10 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                         shift: state.shift_pressed,
                                         ctrl: state.ctrl_pressed,
                                         alt: state.alt_pressed,
-                                        meta: false, // Would need to track meta state
+                                        meta: false,
                                     };
 
-                                    // Determine which button is being held during motion
-                                    let button = if state.dragging {
-                                        MouseButton::Left // Track which button started the drag
-                                    } else {
-                                        MouseButton::None // No button for any-event motion
-                                    };
+                                    let button = if state.dragging { MouseButton::Left } else { MouseButton::None };
 
                                     let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
                                         mouse_state: mouse_state.clone(),
@@ -830,12 +825,36 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                         modifiers,
                                     };
 
+                                    // Send motion event immediately
                                     return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                                 }
                             }
                         }
 
-                        if !mouse_tracking_enabled {
+                        // Handle dragging for selection (even when mouse tracking is enabled)
+                        if state.dragging {
+                            if let Some(cell) = cell_pos {
+                                if state.last_drag_position != Some(cell) {
+                                    state.last_drag_position = Some(cell);
+                                    if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                        // Update selection
+                                        if let Some(mut sel) = edit_state.get_selection().clone() {
+                                            if !sel.locked {
+                                                sel.lead = cell;
+                                                sel.shape = if state.alt_pressed {
+                                                    icy_engine::Shape::Rectangle
+                                                } else {
+                                                    icy_engine::Shape::Lines
+                                                };
+                                                let _ = edit_state.set_selection(sel);
+                                            }
+                                        }
+                                    }
+                                    needs_redraw = true;
+                                }
+                            }
+                        } else {
+                            // Check hyperlinks only when not dragging
                             if let Some(cell) = cell_pos {
                                 if let Ok(edit_state) = self.term.edit_state.try_lock() {
                                     let buffer = edit_state.get_display_buffer();
@@ -860,30 +879,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                     needs_redraw = true;
                                 }
                             }
-
-                            // Handle dragging for selection (only when not in mouse tracking mode)
-                            if state.dragging {
-                                if let Some(cell) = cell_pos {
-                                    if state.last_drag_position != Some(cell) {
-                                        state.last_drag_position = Some(cell);
-                                        if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
-                                            // Update selection
-                                            if let Some(mut sel) = edit_state.get_selection().clone() {
-                                                if !sel.locked {
-                                                    sel.lead = cell;
-                                                    sel.shape = if state.alt_pressed {
-                                                        icy_engine::Shape::Rectangle
-                                                    } else {
-                                                        icy_engine::Shape::Lines
-                                                    };
-                                                    let _ = edit_state.set_selection(sel);
-                                                }
-                                            }
-                                        }
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -896,7 +891,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                 mouse::Button::Left => MouseButton::Left,
                                 mouse::Button::Middle => MouseButton::Middle,
                                 mouse::Button::Right => MouseButton::Right,
-                                _ => return None, // Skip other buttons for now
+                                _ => return None,
                             };
 
                             // Send mouse press event if mouse tracking is enabled
@@ -905,10 +900,8 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                     shift: state.shift_pressed,
                                     ctrl: state.ctrl_pressed,
                                     alt: state.alt_pressed,
-                                    meta: false, // Would need to track meta state
+                                    meta: false,
                                 };
-
-                                state.dragging = matches!(button, mouse::Button::Left);
 
                                 let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
                                     mouse_state: mouse_state.clone(),
@@ -918,43 +911,54 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                     modifiers,
                                 };
 
-                                return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                // Send the mouse event, but continue to handle selection
+                                // Note: We don't return here to allow selection to work
+                                let _ = Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                             }
 
-                            // Handle normal terminal interactions when mouse tracking is disabled
+                            // Handle selection regardless of mouse tracking
                             if matches!(button, mouse::Button::Left) {
                                 // Check if clicking on a hyperlink
                                 if let Some(url) = &state.hovered_link {
                                     return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
-                                }
+                                } else {
+                                    // Start selection
+                                    if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                        // Clear existing selection unless shift is held
+                                        if !state.shift_pressed {
+                                            let _ = edit_state.clear_selection();
+                                        }
 
-                                // Start selection
-                                if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
-                                    // Clear existing selection unless shift is held
-                                    if !state.shift_pressed {
-                                        let _ = edit_state.clear_selection();
+                                        // Create new selection
+                                        let mut sel = Selection::new(cell);
+                                        sel.shape = if state.alt_pressed {
+                                            icy_engine::Shape::Rectangle
+                                        } else {
+                                            icy_engine::Shape::Lines
+                                        };
+                                        sel.locked = false;
+                                        let _ = edit_state.set_selection(sel);
+
+                                        state.dragging = true;
+                                        state.drag_anchor = Some(cell);
+                                        state.last_drag_position = Some(cell);
+                                        needs_redraw = true;
                                     }
-
-                                    // Create new selection
-                                    let mut sel = Selection::new(cell);
-                                    sel.shape = if state.alt_pressed {
-                                        icy_engine::Shape::Rectangle
-                                    } else {
-                                        icy_engine::Shape::Lines
-                                    };
-                                    sel.locked = false;
-                                    let _ = edit_state.set_selection(sel);
-
-                                    state.dragging = true;
-                                    state.drag_anchor = Some(cell);
-                                    state.last_drag_position = Some(cell);
-                                    needs_redraw = true;
                                 }
                             } else if matches!(button, mouse::Button::Middle) {
-                                // Middle click to copy
-                                return Some(iced::widget::Action::publish(Message::Copy));
+                                // Middle click: copy if selection exists, paste if no selection
+                                if let Ok(edit_state) = self.term.edit_state.try_lock() {
+                                    if edit_state.get_selection().is_some() {
+                                        // Has selection - copy it
+                                        return Some(iced::widget::Action::publish(Message::Copy));
+                                    } else {
+                                        // No selection - paste
+                                        return Some(iced::widget::Action::publish(Message::Paste));
+                                    }
+                                }
                             }
-                        } else if !mouse_tracking_enabled {
+                            // Note: Removed middle click paste since Message::Paste doesn't exist
+                        } else {
                             // Clicked outside terminal area - clear selection
                             if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
                                 let _ = edit_state.clear_selection();

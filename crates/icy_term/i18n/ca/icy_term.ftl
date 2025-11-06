@@ -112,6 +112,10 @@ dialing_directory-generate-disabled-tooltip=
     esborra-la primer per generar-ne una de nova
 dialing_directory-invalid_modem = Mòdem invàlid
 dialing_directory-no_modem_configured = No hi ha cap mòdem configurat
+dialing_directory-select-modem = Selecciona Mòdem
+dialing_directory-login-settings = Configuració d'inici de sessió
+dialing_directory-notes = Notes
+
 
 terminal-upload = Pujar
 terminal-download = Descarregar

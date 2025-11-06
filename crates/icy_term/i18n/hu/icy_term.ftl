@@ -111,6 +111,9 @@ dialing_directory-generate-disabled-tooltip=
     először töröld, hogy új jelszót generálhass
 dialing_directory-invalid_modem = Érvénytelen modem
 dialing_directory-no_modem_configured = Nincs konfigurálva modem
+dialing_directory-select-modem = Modem kiválasztása
+dialing_directory-login-settings = Bejelentkezési beállítások
+dialing_directory-notes = Megjegyzések
 
 terminal-upload = Feltöltés
 terminal-download = Letöltés

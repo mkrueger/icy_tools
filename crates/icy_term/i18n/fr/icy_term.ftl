@@ -111,7 +111,9 @@ dialing_directory-generate-disabled-tooltip=
     supprimez-le d'abord pour en générer un nouveau
 dialing_directory-invalid_modem = Modem invalide
 dialing_directory-no_modem_configured = Aucun modem configuré
-
+dialing_directory-select-modem = Sélectionner Modem
+dialing_directory-login-settings = Paramètres de connexion
+dialing_directory-notes = Notes
 
 terminal-upload = Télécharger
 terminal-download = Télécharger

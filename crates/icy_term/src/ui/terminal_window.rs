@@ -55,6 +55,7 @@ impl TerminalWindow {
                 iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
                 iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
                 iced_engine_gui::Message::Copy => Message::Copy,
+                iced_engine_gui::Message::Paste => Message::Paste,
                 iced_engine_gui::Message::RipCommand(_cmd) => {
                     // TODO: Handle RIP command
                     Message::None

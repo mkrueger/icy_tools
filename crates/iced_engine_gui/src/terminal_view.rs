@@ -7,6 +7,7 @@ pub enum Message {
     Scroll(i32),
     OpenLink(String),
     Copy,
+    Paste,
     RipCommand(String),
 
     SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),

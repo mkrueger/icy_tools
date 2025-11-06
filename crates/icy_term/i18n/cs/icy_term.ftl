@@ -111,6 +111,9 @@ dialing_directory-generate-disabled-tooltip=
     nejprve jej smažte, abyste mohli vygenerovat nové
 dialing_directory-invalid_modem = Neplatný modem
 dialing_directory-no_modem_configured = Není nakonfigurován žádný modem
+dialing_directory-select-modem = Vybrat modem
+dialing_directory-login-settings = Nastavení přihlášení
+dialing_directory-notes = Poznámky
 
 terminal-upload = Nahrát
 terminal-download = Stáhnout
