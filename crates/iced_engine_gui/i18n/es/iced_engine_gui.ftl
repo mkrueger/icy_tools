@@ -25,6 +25,7 @@ settings-monitor-custom = Personalizado
 settings-enabled-checkbox = Habilitado
 settings-appearance-section = Apariencia
 settings-integer-scaling-label = Usar escalado entero
+settings-bilinear-filtering-label = Filtrado bilineal
 settings-color-tone-section = Color y tono
 settings-bloom-glow-section = Bloom y brillo
 settings-bloom-threshold-label = Umbral

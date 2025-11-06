@@ -25,6 +25,7 @@ settings-monitor-custom = Benutzerdefiniert
 settings-enabled-checkbox = Aktiviert
 settings-appearance-section = Erscheinungsbild
 settings-integer-scaling-label = Ganzzahlige Skalierung
+settings-bilinear-filtering-label = Bilinear-Filterung
 settings-color-tone-section = Farbe & Ton
 settings-bloom-glow-section = Bloom & Beleuchtung
 settings-bloom-threshold-label = Schwellwert

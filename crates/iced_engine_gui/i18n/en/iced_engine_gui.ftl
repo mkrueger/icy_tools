@@ -25,6 +25,7 @@ settings-monitor-custom = Custom
 settings-enabled-checkbox = Enabled
 settings-appearance-section = Appearance
 settings-integer-scaling-label = Use integer scaling
+settings-bilinear-filtering-label = Bilinear Filtering
 settings-color-tone-section = Color & Tone
 settings-bloom-glow-section = Bloom & Glow
 settings-bloom-threshold-label = Threshold

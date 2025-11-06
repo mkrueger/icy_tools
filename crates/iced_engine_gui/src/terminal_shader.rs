@@ -68,6 +68,7 @@ pub struct TerminalShaderRenderer {
 }
 
 static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static mut FILTER_MODE: iced::wgpu::FilterMode = iced::wgpu::FilterMode::Linear;
 
 impl shader::Primitive for TerminalShader {
     type Renderer = TerminalShaderRenderer;
@@ -164,22 +165,19 @@ impl shader::Primitive for TerminalShader {
             cache: None,
         });
 
-        let want_pixel_perfect = self.monitor_settings.use_pixel_perfect_scaling;
+        let filter_mode = if self.monitor_settings.use_bilinear_filtering {
+            iced::wgpu::FilterMode::Linear
+        } else {
+            iced::wgpu::FilterMode::Nearest
+        };
+        unsafe { FILTER_MODE = filter_mode };
         let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
             label: Some(&format!("Terminal Texture Sampler {}", renderer_id)),
             address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
             address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
             address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
-            mag_filter: if want_pixel_perfect {
-                iced::wgpu::FilterMode::Nearest
-            } else {
-                iced::wgpu::FilterMode::Linear
-            },
-            min_filter: if want_pixel_perfect {
-                iced::wgpu::FilterMode::Nearest
-            } else {
-                iced::wgpu::FilterMode::Linear
-            },
+            mag_filter: filter_mode,
+            min_filter: filter_mode,
             mipmap_filter: iced::wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -201,6 +199,57 @@ impl shader::Primitive for TerminalShader {
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
         set_scale_factor(_viewport.scale_factor() as f32);
+
+        // Check if we need to recreate the sampler due to filter mode change
+        let desired_filter = if self.monitor_settings.use_bilinear_filtering {
+            iced::wgpu::FilterMode::Linear
+        } else {
+            iced::wgpu::FilterMode::Nearest
+        };
+        if desired_filter != unsafe { FILTER_MODE } {
+            unsafe { FILTER_MODE = desired_filter };
+            // Recreate sampler if filter mode changed
+            // We need to track the current filter mode in the renderer
+            // For now, recreate it every frame (small overhead but ensures correctness)
+            let new_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+                label: Some("Terminal Texture Sampler"),
+                address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
+                address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
+                address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
+                mag_filter: desired_filter,
+                min_filter: desired_filter,
+                mipmap_filter: iced::wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+
+            renderer.sampler = new_sampler;
+            // Update ALL existing instances' bind groups with the new sampler
+            for (_instance_id, resources) in renderer.instances.iter_mut() {
+                let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                    label: Some(&format!("Terminal BindGroup Instance {}", _instance_id)),
+                    layout: &renderer.bind_group_layout,
+                    entries: &[
+                        iced::wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: iced::wgpu::BindingResource::TextureView(&resources.texture_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: iced::wgpu::BindingResource::Sampler(&renderer.sampler), // Use new sampler
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: resources.uniform_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: resources.monitor_color_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+                resources.bind_group = bind_group;
+            }
+        }
 
         if let Ok(mut pending) = PENDING_INSTANCE_REMOVALS.lock() {
             for id in pending.drain(..) {

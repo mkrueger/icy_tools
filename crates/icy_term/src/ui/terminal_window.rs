@@ -6,9 +6,7 @@ use iced::{
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
 use icy_engine::{TextPane, ansi::BaudEmulation};
 use icy_net::telnet::TerminalEmulation;
-use std::{
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 // use iced_aw::{menu, menu_bar, menu_items};
 
 use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message, util::SoundThread};

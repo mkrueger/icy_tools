@@ -102,6 +102,8 @@ pub struct MonitorSettings {
 
     pub use_pixel_perfect_scaling: bool,
 
+    pub use_bilinear_filtering: bool,
+
     pub use_bloom: bool,
     pub bloom_threshold: f32,
     pub bloom_radius: f32,
@@ -181,6 +183,7 @@ impl MonitorSettings {
 
             // Scaling
             use_pixel_perfect_scaling: false,
+            use_bilinear_filtering: false,
 
             // CRT effects - all disabled for neutral
             use_bloom: false,

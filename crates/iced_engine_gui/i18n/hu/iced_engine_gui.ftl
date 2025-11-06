@@ -25,6 +25,7 @@ settings-monitor-custom = Egyedi
 settings-enabled-checkbox = Engedélyezve
 settings-appearance-section = Megjelenés
 settings-integer-scaling-label = Egész pixeles skálázás használata
+settings-bilinear-filtering-label = Bilineáris szűrés
 settings-color-tone-section = Szín és tónus
 settings-bloom-glow-section = Bloom és ragyogás
 settings-bloom-threshold-label = Küszöb

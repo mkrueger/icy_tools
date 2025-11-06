@@ -25,6 +25,7 @@ settings-monitor-custom=Personalitzat
 settings-enabled-checkbox = Habilitat
 settings-appearance-section = Aspecte
 settings-integer-scaling-label = Utilitzar escalat enter
+settings-bilinear-filtering-label = Filtrat bilineal
 settings-color-tone-section = Color i to
 settings-bloom-glow-section = Bloom i resplendor
 settings-bloom-threshold-label = Llindar

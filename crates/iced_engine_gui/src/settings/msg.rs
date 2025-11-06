@@ -9,6 +9,7 @@ pub enum MonitorSettingsMessage {
     CustomColorChanged(Color),
     BorderColorChanged(Color),
     PixelPerfectScalingChanged(bool),
+    BilinearFilteringChanged(bool),
 
     // Tone (always applied now)
     BrightnessChanged(f32),
@@ -51,6 +52,7 @@ pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorS
         MonitorSettingsMessage::CustomColorChanged(c) => settings.custom_monitor_color = iced_to_icy_color(c),
         MonitorSettingsMessage::BorderColorChanged(c) => settings.border_color = iced_to_icy_color(c),
         MonitorSettingsMessage::PixelPerfectScalingChanged(v) => settings.use_pixel_perfect_scaling = v,
+        MonitorSettingsMessage::BilinearFilteringChanged(v) => settings.use_bilinear_filtering = v,
 
         MonitorSettingsMessage::BrightnessChanged(v) => settings.brightness = v,
         MonitorSettingsMessage::ContrastChanged(v) => settings.contrast = v,

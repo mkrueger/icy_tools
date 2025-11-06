@@ -25,6 +25,7 @@ settings-monitor-custom=Vlastní
 settings-enabled-checkbox = Povolit
 settings-appearance-section = Vzhled
 settings-integer-scaling-label = Použít celočíselné škálování
+settings-bilinear-filtering-label = Bilineární filtrování
 settings-color-tone-section = Barva a tón
 settings-bloom-glow-section = Bloom a záře
 settings-bloom-threshold-label = Prahová hodnota
