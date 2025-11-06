@@ -1,4 +1,4 @@
-pub mod ansi_dialog;
+pub mod about_dialog;
 pub mod capture_dialog;
 pub mod dialing_directory_dialog;
 pub mod error_dialog;

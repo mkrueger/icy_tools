@@ -88,6 +88,7 @@ wasm-bindgen-futures = "0.4"
 wasm_thread = { version = "0.2.0", features = ["es_modules"]}
 
 [build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 winres = "0.1"
 
 [package.metadata.bundle]

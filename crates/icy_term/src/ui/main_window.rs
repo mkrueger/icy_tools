@@ -62,7 +62,7 @@ pub struct MainWindow {
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
     pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
     pub help_dialog: crate::ui::dialogs::help_dialog::HelpDialog,
-    pub about_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog,
+    pub about_dialog: crate::ui::dialogs::about_dialog::AboutDialog,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -140,7 +140,7 @@ impl MainWindow {
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
             help_dialog: crate::ui::dialogs::help_dialog::HelpDialog::new(),
-            about_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog::new(super::ansi_dialog::ABOUT_ANSI),
+            about_dialog: crate::ui::dialogs::about_dialog::AboutDialog::new(super::about_dialog::ABOUT_ANSI),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
