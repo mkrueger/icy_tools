@@ -210,3 +210,62 @@ error-address-book-load-secondary=Soubor adresáře se zdá být poškozen. IcyT
      • Pokud máte zálohu, obnovte ji před restartem.
 
     Technické detaily:
+
+# Help dialog
+help-title = Klávesové zkratky
+help-subtitle = Rychlá referenční příručka pro iCY TERM
+
+# Categories
+help-category-connection = Připojení
+help-category-authentication = Autentizace
+help-category-file-transfer = Přenos souborů
+help-category-windows = Okna
+help-category-display = Zobrazení
+help-category-tools = Nástroje
+help-category-editing = Úpravy
+
+# Actions (some reference existing keys)
+help-action-switch-window = Přepnout okno
+help-action-smart-paste = Chytré vložení
+help-key-middle-click = Prostřední tlačítko
+
+# Descriptions
+help-desc-dialing-directory = Otevřít telefonní seznam BBS
+help-desc-disconnect = Odpojit aktuální spojení
+help-desc-exit = Ukončit iCY TERM
+help-desc-auto-login = Odeslat uživatelské jméno a heslo
+help-desc-send-username = Odeslat pouze uživatelské jméno
+help-desc-send-password = Odeslat pouze heslo
+help-desc-upload = Odeslat soubory na BBS
+help-desc-download = Stáhnout soubory z BBS
+help-desc-close-window = Zavřít aktuální okno
+help-desc-new-window = Otevřít nové terminálové okno
+help-desc-switch-window = Přeskočit na okno 1–10
+help-desc-fullscreen = Přepnout režim celé obrazovky
+help-desc-clear-screen = Vymazat obsah obrazovky
+help-desc-capture-screen = Uložit obrazovku jako obrázek
+help-desc-capture-session = Spustit / zastavit textový záznam
+help-desc-find = Hledat v bufferu
+help-desc-settings = Otevřít nastavení
+help-desc-about = Zobrazit informace o iCY TERM
+help-desc-help = Zobrazit tento dialog
+help-desc-copy = Kopírovat výběr
+help-desc-paste = Vložit ze schránky
+help-desc-smart-paste = Vložit nebo nejdříve kopírovat výběr
+
+# Action labels (reused or standalone)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Odpojit
+help-action-exit = Ukončit
+help-action-auto-login = Auto-login
+help-action-send-username = Odeslat uživatelské jméno
+help-action-send-password = Odeslat heslo
+help-action-close-window = Zavřít okno
+help-action-new-window = Nové okno
+help-action-fullscreen = Celá obrazovka
+help-action-clear-screen = Vymazat obrazovku
+help-action-capture-screen = Zachytit obrazovku
+help-action-capture-session = Zachytit relaci
+help-action-find = Najít
+help-action-about = O aplikaci
+help-action-help = Nápověda

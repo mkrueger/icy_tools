@@ -210,3 +210,62 @@ error-address-book-load-secondary=Fișierul agendei pare corupt. IcyTerm va porn
      • Dacă ai un backup, restaurează-l înainte de repornire.
 
     Detalii tehnice:
+
+# Help dialog
+help-title = Comenzi rapide de la tastatură
+help-subtitle = Referință rapidă pentru iCY TERM
+
+# Categorii
+help-category-connection = Conexiune
+help-category-authentication = Autentificare
+help-category-file-transfer = Transfer fișiere
+help-category-windows = Ferestre
+help-category-display = Afișare
+help-category-tools = Instrumente
+help-category-editing = Editare
+
+# Acțiuni suplimentare
+help-action-switch-window = Schimbă fereastra
+help-action-smart-paste = Lipire inteligentă
+help-key-middle-click = Click mijloc
+
+# Descrieri
+help-desc-dialing-directory = Deschide directorul de apelare BBS
+help-desc-disconnect = Deconectează conexiunea curentă
+help-desc-exit = Ieșire din iCY TERM
+help-desc-auto-login = Trimite nume utilizator și parolă
+help-desc-send-username = Trimite doar numele utilizatorului
+help-desc-send-password = Trimite doar parola
+help-desc-upload = Trimite fișiere către BBS
+help-desc-download = Primește fișiere de la BBS
+help-desc-close-window = Închide fereastra curentă
+help-desc-new-window = Deschide o fereastră nouă
+help-desc-switch-window = Sari la fereastra 1–10
+help-desc-fullscreen = Comută modul ecran complet
+help-desc-clear-screen = Curăță conținutul ecranului
+help-desc-capture-screen = Salvează ecranul ca imagine
+help-desc-capture-session = Pornește/Oprește capturarea textului
+help-desc-find = Caută în buffer
+help-desc-settings = Deschide setările
+help-desc-about = Afișează informații despre iCY TERM
+help-desc-help = Afișează acest dialog
+help-desc-copy = Copiază selecția
+help-desc-paste = Lipește din clipboard
+help-desc-smart-paste = Lipește sau (dacă există selecție) mai întâi copiază
+
+# Etichete acțiuni (unele pot referenția chei existente)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Deconectare
+help-action-exit = Ieșire
+help-action-auto-login = Autentificare automată
+help-action-send-username = Trimite nume utilizator
+help-action-send-password = Trimite parolă
+help-action-close-window = Închide fereastra
+help-action-new-window = Fereastră nouă
+help-action-fullscreen = Ecran complet
+help-action-clear-screen = Curăță ecranul
+help-action-capture-screen = Capturează ecranul
+help-action-capture-session = Capturează sesiunea
+help-action-find = Caută
+help-action-about = Despre
+help-action-help = Ajutor

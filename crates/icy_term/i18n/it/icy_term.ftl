@@ -209,3 +209,62 @@ error-address-book-load-secondary=Il file della rubrica sembra corrotto. IcyTerm
      • Se hai un backup, ripristinalo prima del riavvio.
 
     Dettagli tecnici:
+
+# Help dialog
+help-title = Scorciatoie da tastiera
+help-subtitle = Riferimento rapido per iCY TERM
+
+# Categories
+help-category-connection = Connessione
+help-category-authentication = Autenticazione
+help-category-file-transfer = Trasferimento file
+help-category-windows = Finestre
+help-category-display = Schermo
+help-category-tools = Strumenti
+help-category-editing = Modifica
+
+# Actions (extra)
+help-action-switch-window = Cambia finestra
+help-action-smart-paste = Incolla intelligente
+help-key-middle-click = Clic centrale
+
+# Descriptions
+help-desc-dialing-directory = Apri la rubrica BBS
+help-desc-disconnect = Disconnetti la connessione corrente
+help-desc-exit = Chiudi iCY TERM
+help-desc-auto-login = Invia nome utente e password
+help-desc-send-username = Invia solo il nome utente
+help-desc-send-password = Invia solo la password
+help-desc-upload = Invia file al BBS
+help-desc-download = Ricevi file dal BBS
+help-desc-close-window = Chiudi la finestra corrente
+help-desc-new-window = Apri una nuova finestra del terminale
+help-desc-switch-window = Vai alla finestra 1–10
+help-desc-fullscreen = Attiva/disattiva schermo intero
+help-desc-clear-screen = Pulisci il contenuto dello schermo
+help-desc-capture-screen = Salva lo schermo come immagine
+help-desc-capture-session = Avvia/ferma la registrazione testo
+help-desc-find = Cerca nel buffer
+help-desc-settings = Apri impostazioni
+help-desc-about = Mostra informazioni su iCY TERM
+help-desc-help = Mostra questo dialogo
+help-desc-copy = Copia selezione
+help-desc-paste = Incolla dagli appunti
+help-desc-smart-paste = Incolla oppure (se c'è selezione) prima copia
+
+# Action labels (riuso dove possibile)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Disconnetti
+help-action-exit = Esci
+help-action-auto-login = Auto-login
+help-action-send-username = Invia nome utente
+help-action-send-password = Invia password
+help-action-close-window = Chiudi finestra
+help-action-new-window = Nuova finestra
+help-action-fullscreen = Schermo intero
+help-action-clear-screen = Pulisci schermo
+help-action-capture-screen = Cattura schermo
+help-action-capture-session = Cattura sessione
+help-action-find = Trova
+help-action-about = Informazioni
+help-action-help = Aiuto

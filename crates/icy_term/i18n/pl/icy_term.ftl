@@ -209,3 +209,62 @@ error-address-book-load-secondary=Plik książki adresowej wydaje się uszkodzon
      • Jeśli masz kopię, przywróć ją przed restartem.
 
     Szczegóły techniczne:
+
+# Help dialog
+help-title = Skróty klawiszowe
+help-subtitle = Szybka ściągawka dla iCY TERM
+
+# Kategorie
+help-category-connection = Połączenie
+help-category-authentication = Uwierzytelnianie
+help-category-file-transfer = Transfer plików
+help-category-windows = Okna
+help-category-display = Wyświetlanie
+help-category-tools = Narzędzia
+help-category-editing = Edycja
+
+# Dodatkowe akcje
+help-action-switch-window = Przełącz okno
+help-action-smart-paste = Inteligentne wklejanie
+help-key-middle-click = Środkowy przycisk
+
+# Opisy
+help-desc-dialing-directory = Otwórz katalog wybierania BBS
+help-desc-disconnect = Rozłącz bieżące połączenie
+help-desc-exit = Zakończ działanie iCY TERM
+help-desc-auto-login = Wyślij nazwę użytkownika i hasło
+help-desc-send-username = Wyślij tylko nazwę użytkownika
+help-desc-send-password = Wyślij tylko hasło
+help-desc-upload = Prześlij pliki do BBS
+help-desc-download = Pobierz pliki z BBS
+help-desc-close-window = Zamknij bieżące okno
+help-desc-new-window = Otwórz nowe okno terminala
+help-desc-switch-window = Skocz do okna 1–10
+help-desc-fullscreen = Przełącz tryb pełnego ekranu
+help-desc-clear-screen = Wyczyść zawartość ekranu
+help-desc-capture-screen = Zapisz ekran jako obraz
+help-desc-capture-session = Rozpocznij/Zatrzymaj przechwytywanie tekstu
+help-desc-find = Szukaj w buforze
+help-desc-settings = Otwórz ustawienia
+help-desc-about = Pokaż informacje o iCY TERM
+help-desc-help = Pokaż ten dialog
+help-desc-copy = Skopiuj zaznaczenie
+help-desc-paste = Wklej ze schowka
+help-desc-smart-paste = Wklej albo (jeśli jest zaznaczenie) najpierw skopiuj
+
+# Etykiety akcji (tam gdzie można, używamy istniejących kluczy)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Rozłącz
+help-action-exit = Wyjdź
+help-action-auto-login = Auto‑login
+help-action-send-username = Wyślij nazwę użytkownika
+help-action-send-password = Wyślij hasło
+help-action-close-window = Zamknij okno
+help-action-new-window = Nowe okno
+help-action-fullscreen = Pełny ekran
+help-action-clear-screen = Wyczyść ekran
+help-action-capture-screen = Przechwyć ekran
+help-action-capture-session = Przechwyć sesję
+help-action-find = Szukaj
+help-action-about = O programie
+help-action-help = Pomoc

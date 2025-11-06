@@ -210,3 +210,66 @@ error-address-book-load-secondary=Die Adressbuch-Datei scheint beschädigt zu se
      • Falls ein Backup existiert, vor dem Neustart zurückspielen.
 
     Technische Details:
+
+# Help dialog
+help-title = Tastaturkürzel
+help-subtitle = Schnellreferenz für iCY TERM
+
+# Kategorien
+help-category-connection = Verbindung
+help-category-authentication = Authentifizierung
+help-category-file-transfer = Dateiübertragung
+help-category-windows = Fenster
+help-category-display = Anzeige
+help-category-tools = Werkzeuge
+help-category-editing = Bearbeitung
+
+# Aktionen (einige verweisen auf bestehende Menüeinträge)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Trennen
+help-action-exit = Beenden
+help-action-auto-login = Auto-Login
+help-action-send-username = Benutzername senden
+help-action-send-password = Passwort senden
+help-action-close-window = Fenster schließen
+help-action-new-window = Neues Fenster
+help-action-fullscreen = Vollbild
+help-action-clear-screen = Bildschirm löschen
+help-action-capture-screen = Bildschirm aufnehmen
+help-action-capture-session = Sitzung aufnehmen
+help-action-find = Suchen
+help-action-about = Über iCY TERM
+help-action-help = Hilfe
+
+help-action-switch-window = Fenster wechseln
+help-action-smart-paste = Smart-Einfügen
+help-key-middle-click = Mittelklick
+
+# Beschreibungen
+help-desc-dialing-directory = BBS-Adressbuch öffnen
+help-desc-disconnect = Aktuelle Verbindung trennen
+help-desc-exit = iCY TERM beenden
+help-desc-auto-login = Benutzername & Passwort senden
+help-desc-send-username = Nur den Benutzernamen senden
+help-desc-send-password = Nur das Passwort senden
+help-desc-upload = Dateien zur BBS senden
+help-desc-download = Dateien von der BBS empfangen
+help-desc-close-window = Aktuelles Fenster schließen
+help-desc-new-window = Neues Terminalfenster öffnen
+help-desc-switch-window = Zu Fenster 1–10 springen
+help-desc-fullscreen = Vollbildmodus umschalten
+help-desc-clear-screen = Terminalanzeige leeren
+help-desc-capture-screen = Bildschirm als Bild speichern
+help-desc-capture-session = Textaufzeichnung starten/stoppen
+help-desc-find = Im Buffer suchen
+help-desc-settings = Einstellungen öffnen
+help-desc-about = Info über iCY TERM anzeigen
+help-desc-help = Diesen Dialog anzeigen
+help-desc-copy = Auswahl kopieren
+help-desc-paste = Aus Zwischenablage einfügen
+help-desc-smart-paste = Einfügen oder Auswahl kopieren
+help-desc-smart-paste = Einfügen, oder falls Auswahl existiert, zuerst kopieren
+
+# Falls du die Einstellungen/Aktionsnamen konsolidieren willst, könntest du auch:
+# help-action-settings = { menu-item-settings }
+# help-desc-settings bereits definiert.

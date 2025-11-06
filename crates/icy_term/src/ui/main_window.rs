@@ -61,7 +61,7 @@ pub struct MainWindow {
     pub export_dialog: export_screen_dialog::ExportScreenDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
     pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
-    pub help_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog,
+    pub help_dialog: crate::ui::dialogs::help_dialog::HelpDialog,
     pub about_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog,
 
     // sound thread
@@ -139,7 +139,7 @@ impl MainWindow {
             export_dialog: export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
-            help_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog::new(super::ansi_dialog::HELP_ANSI),
+            help_dialog: crate::ui::dialogs::help_dialog::HelpDialog::new(),
             about_dialog: crate::ui::dialogs::ansi_dialog::AnsiDialog::new(super::ansi_dialog::ABOUT_ANSI),
 
             terminal_tx,
@@ -1051,7 +1051,7 @@ impl MainWindow {
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(terminal_view),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
-            MainWindowMode::ShowHelpDialog => self.help_dialog.view(),
+            MainWindowMode::ShowHelpDialog => self.help_dialog.view(terminal_view),
             MainWindowMode::ShowAboutDialog => self.about_dialog.view(),
             MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => error_dialog::view(terminal_view, title, secondary_msg, error_message),
         }

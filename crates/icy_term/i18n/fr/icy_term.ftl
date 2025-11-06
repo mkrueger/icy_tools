@@ -209,3 +209,62 @@ error-address-book-load-secondary=Le fichier du répertoire semble corrompu. Icy
      • Si vous avez une sauvegarde, restaurez-la avant de redémarrer.
 
     Détails techniques :
+
+# Help dialog
+help-title = Raccourcis clavier
+help-subtitle = Référence rapide pour iCY TERM
+
+# Catégories
+help-category-connection = Connexion
+help-category-authentication = Authentification
+help-category-file-transfer = Transfert de fichiers
+help-category-windows = Fenêtres
+help-category-display = Affichage
+help-category-tools = Outils
+help-category-editing = Édition
+
+# Actions supplémentaires
+help-action-switch-window = Changer de fenêtre
+help-action-smart-paste = Collage intelligent
+help-key-middle-click = Clic milieu
+
+# Descriptions
+help-desc-dialing-directory = Ouvrir la liste BBS
+help-desc-disconnect = Déconnecter la connexion courante
+help-desc-exit = Quitter iCY TERM
+help-desc-auto-login = Envoyer utilisateur et mot de passe
+help-desc-send-username = Envoyer uniquement l’utilisateur
+help-desc-send-password = Envoyer uniquement le mot de passe
+help-desc-upload = Envoyer des fichiers vers le BBS
+help-desc-download = Recevoir des fichiers du BBS
+help-desc-close-window = Fermer la fenêtre courante
+help-desc-new-window = Ouvrir une nouvelle fenêtre terminal
+help-desc-switch-window = Aller aux fenêtres 1–10
+help-desc-fullscreen = Basculer plein écran
+help-desc-clear-screen = Effacer l’affichage du terminal
+help-desc-capture-screen = Sauvegarder l’écran en image
+help-desc-capture-session = Démarrer/arrêter la capture texte
+help-desc-find = Rechercher dans le tampon
+help-desc-settings = Ouvrir les paramètres
+help-desc-about = Afficher les infos sur iCY TERM
+help-desc-help = Afficher ce dialogue
+help-desc-copy = Copier la sélection
+help-desc-paste = Coller depuis le presse‑papiers
+help-desc-smart-paste = Coller ou (s’il y a une sélection) la copier d’abord
+
+# Libellés d’action (réutilisation quand possible)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Déconnecter
+help-action-exit = Quitter
+help-action-auto-login = Auto-login
+help-action-send-username = Envoyer utilisateur
+help-action-send-password = Envoyer mot de passe
+help-action-close-window = Fermer fenêtre
+help-action-new-window = Nouvelle fenêtre
+help-action-fullscreen = Plein écran
+help-action-clear-screen = Effacer écran
+help-action-capture-screen = Capturer écran
+help-action-capture-session = Capturer session
+help-action-find = Rechercher
+help-action-about = À propos
+help-action-help = Aide

@@ -209,3 +209,62 @@ error-address-book-load-secondary=El archivo del directorio parece dañado. IcyT
      • Si tienes una copia, restáurala antes de reiniciar.
 
     Detalles técnicos:
+
+# Help dialog
+help-title = Atajos de teclado
+help-subtitle = Referencia rápida para iCY TERM
+
+# Categorías
+help-category-connection = Conexión
+help-category-authentication = Autenticación
+help-category-file-transfer = Transferencia de archivos
+help-category-windows = Ventanas
+help-category-display = Pantalla
+help-category-tools = Herramientas
+help-category-editing = Edición
+
+# Acciones adicionales
+help-action-switch-window = Cambiar ventana
+help-action-smart-paste = Pegado inteligente
+help-key-middle-click = Clic central
+
+# Descripciones
+help-desc-dialing-directory = Abrir la lista BBS
+help-desc-disconnect = Desconectar la conexión actual
+help-desc-exit = Salir de iCY TERM
+help-desc-auto-login = Enviar usuario y contraseña
+help-desc-send-username = Enviar solo el usuario
+help-desc-send-password = Enviar solo la contraseña
+help-desc-upload = Enviar archivos al BBS
+help-desc-download = Recibir archivos del BBS
+help-desc-close-window = Cerrar la ventana actual
+help-desc-new-window = Abrir una nueva ventana de terminal
+help-desc-switch-window = Ir a ventanas 1–10
+help-desc-fullscreen = Alternar pantalla completa
+help-desc-clear-screen = Limpiar el contenido de la pantalla
+help-desc-capture-screen = Guardar la pantalla como imagen
+help-desc-capture-session = Iniciar/detener captura de texto
+help-desc-find = Buscar en el búfer
+help-desc-settings = Abrir configuración
+help-desc-about = Mostrar información sobre iCY TERM
+help-desc-help = Mostrar este diálogo
+help-desc-copy = Copiar selección
+help-desc-paste = Pegar desde el portapapeles
+help-desc-smart-paste = Pegar o (si hay selección) copiar primero
+
+# Etiquetas de acción
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Desconectar
+help-action-exit = Salir
+help-action-auto-login = Auto‑login
+help-action-send-username = Enviar usuario
+help-action-send-password = Enviar contraseña
+help-action-close-window = Cerrar ventana
+help-action-new-window = Nueva ventana
+help-action-fullscreen = Pantalla completa
+help-action-clear-screen = Limpiar pantalla
+help-action-capture-screen = Capturar pantalla
+help-action-capture-session = Capturar sesión
+help-action-find = Buscar
+help-action-about = Acerca de
+help-action-help = Ayuda

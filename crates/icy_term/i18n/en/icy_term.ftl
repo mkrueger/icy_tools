@@ -212,3 +212,61 @@ error-address-book-load-secondary=The address book file appears to be corrupted.
      • If you have a backup, restore it before restarting.
 
     Technical details:
+
+# Help dialog
+help-title = Keyboard Shortcuts
+help-subtitle = Quick reference for iCY TERM
+
+# Categories
+help-category-connection = Connection
+help-category-authentication = Authentication
+help-category-file-transfer = File Transfer
+help-category-windows = Windows
+help-category-display = Display
+help-category-tools = Tools
+help-category-editing = Editing
+
+# Actions (some may already exist in menu translations)
+help-action-switch-window = Switch Window
+help-action-smart-paste = Smart Paste
+help-key-middle-click = Middle Click
+
+# Descriptions
+help-desc-dialing-directory = Open BBS address book
+help-desc-disconnect = Hang up current connection
+help-desc-exit = Quit iCY TERM
+help-desc-auto-login = Send username & password
+help-desc-send-username = Send username only
+help-desc-send-password = Send password only
+help-desc-upload = Send files to BBS
+help-desc-download = Receive files from BBS
+help-desc-close-window = Close current window
+help-desc-new-window = Open new terminal window
+help-desc-switch-window = Jump to window 1-10
+help-desc-fullscreen = Toggle fullscreen mode
+help-desc-clear-screen = Clear terminal display
+help-desc-capture-screen = Save screen as image
+help-desc-capture-session = Start/stop text capture
+help-desc-find = Search in buffer
+help-desc-settings = Open preferences
+help-desc-about = About iCY TERM
+help-desc-help = Show this dialog
+help-desc-copy = Copy selection
+help-desc-paste = Paste from clipboard
+help-desc-smart-paste = Paste or copy selection
+
+help-action-dialing-directory = Dialing Directory
+help-action-disconnect = Disconnect
+help-action-exit = Exit
+help-action-auto-login = Auto Login
+help-action-send-username = Send Username
+help-action-send-password = Send Password
+help-action-close-window = Close Window
+help-action-new-window = New Window
+help-action-fullscreen = Fullscreen
+help-action-clear-screen = Clear Screen
+help-action-capture-screen = Capture Screen
+help-action-capture-session = Capture Session
+help-action-find = Find
+help-action-about = About
+help-action-help = Help

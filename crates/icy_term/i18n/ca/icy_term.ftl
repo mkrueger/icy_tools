@@ -212,3 +212,62 @@ error-address-book-load-secondary=El fitxer de la llibreta d’adreces sembla ma
      • Si tens una còpia, restaura-la abans de reiniciar.
 
     Detalls tècnics:
+
+# Help dialog
+help-title = Dreceres de teclat
+help-subtitle = Referència ràpida per a iCY TERM
+
+# Categories
+help-category-connection = Connexió
+help-category-authentication = Autenticació
+help-category-file-transfer = Transferència de fitxers
+help-category-windows = Finestres
+help-category-display = Pantalla
+help-category-tools = Eines
+help-category-editing = Edició
+
+# Actions (extra)
+help-action-switch-window = Canvia finestra
+help-action-smart-paste = Enganxat intel·ligent
+help-key-middle-click = Clic del mig
+
+# Descriptions
+help-desc-dialing-directory = Obre la llista BBS
+help-desc-disconnect = Desconnecta la connexió actual
+help-desc-exit = Surt d'iCY TERM
+help-desc-auto-login = Envia usuari i contrasenya
+help-desc-send-username = Envia només l'usuari
+help-desc-send-password = Envia només la contrasenya
+help-desc-upload = Envia fitxers al BBS
+help-desc-download = Rep fitxers del BBS
+help-desc-close-window = Tanca la finestra actual
+help-desc-new-window = Obre una nova finestra de terminal
+help-desc-switch-window = Ves a la finestra 1–10
+help-desc-fullscreen = Commuta la pantalla completa
+help-desc-clear-screen = Neteja el contingut de la pantalla
+help-desc-capture-screen = Desa la pantalla com a imatge
+help-desc-capture-session = Inicia/atura la captura de text
+help-desc-find = Cerca a la memòria intermèdia
+help-desc-settings = Obre la configuració
+help-desc-about = Mostra informació sobre iCY TERM
+help-desc-help = Mostra aquest diàleg
+help-desc-copy = Copia la selecció
+help-desc-paste = Enganxa des del porta-retalls
+help-desc-smart-paste = Enganxa o (si hi ha selecció) primer copia
+
+# Action labels (reuse where possible)
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Desconnecta
+help-action-exit = Surt
+help-action-auto-login = Inici de sessió automàtic
+help-action-send-username = Envia usuari
+help-action-send-password = Envia contrasenya
+help-action-close-window = Tanca finestra
+help-action-new-window = Nova finestra
+help-action-fullscreen = Pantalla completa
+help-action-clear-screen = Neteja pantalla
+help-action-capture-screen = Captura pantalla
+help-action-capture-session = Captura sessió
+help-action-find = Cerca
+help-action-about = Quant a
+help-action-help = Ajuda

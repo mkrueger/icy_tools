@@ -210,3 +210,62 @@ error-address-book-load-secondary=O arquivo do diretório de discagem parece est
      • Se tiver um backup, restaure-o antes de reiniciar.
 
     Detalhes técnicos:
+
+# Help dialog
+help-title = Atalhos de teclado
+help-subtitle = Referência rápida do iCY TERM
+
+# Categories
+help-category-connection = Conexão
+help-category-authentication = Autenticação
+help-category-file-transfer = Transferência de arquivos
+help-category-windows = Janelas
+help-category-display = Exibição
+help-category-tools = Ferramentas
+help-category-editing = Edição
+
+# Actions (extra)
+help-action-switch-window = Trocar janela
+help-action-smart-paste = Colagem inteligente
+help-key-middle-click = Clique do meio
+
+# Descriptions
+help-desc-dialing-directory = Abrir lista de BBS
+help-desc-disconnect = Desconectar a conexão atual
+help-desc-exit = Sair do iCY TERM
+help-desc-auto-login = Enviar usuário e senha
+help-desc-send-username = Enviar somente o usuário
+help-desc-send-password = Enviar somente a senha
+help-desc-upload = Enviar arquivos para o BBS
+help-desc-download = Receber arquivos do BBS
+help-desc-close-window = Fechar a janela atual
+help-desc-new-window = Abrir uma nova janela de terminal
+help-desc-switch-window = Ir para janelas 1–10
+help-desc-fullscreen = Alternar modo tela cheia
+help-desc-clear-screen = Limpar conteúdo da tela
+help-desc-capture-screen = Salvar a tela como imagem
+help-desc-capture-session = Iniciar/parar captura de texto
+help-desc-find = Buscar no buffer
+help-desc-settings = Abrir configurações
+help-desc-about = Mostrar informações do iCY TERM
+help-desc-help = Mostrar este diálogo
+help-desc-copy = Copiar seleção
+help-desc-paste = Colar da área de transferência
+help-desc-smart-paste = Colar ou (se houver seleção) copiá-la antes
+
+# Action labels
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Desconectar
+help-action-exit = Sair
+help-action-auto-login = Auto‑login
+help-action-send-username = Enviar usuário
+help-action-send-password = Enviar senha
+help-action-close-window = Fechar janela
+help-action-new-window = Nova janela
+help-action-fullscreen = Tela cheia
+help-action-clear-screen = Limpar tela
+help-action-capture-screen = Capturar tela
+help-action-capture-session = Capturar sessão
+help-action-find = Buscar
+help-action-about = Sobre
+help-action-help = Ajuda

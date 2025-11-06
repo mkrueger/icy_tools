@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use crate::ui::{MainWindowMode, Message};
 
 // Include the help ANSI file at compile time
-pub const HELP_ANSI: &[u8] = include_bytes!("../../../data/help.icy");
 pub const ABOUT_ANSI: &[u8] = include_bytes!("../../../data/about.icy");
 
 pub struct AnsiDialog {

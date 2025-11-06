@@ -210,3 +210,62 @@ error-address-book-load-secondary=Úgy tűnik a címlista fájl sérült. Az Icy
      • Ha van mentésed, állítsd vissza újraindítás előtt.
 
     Technikai részletek:
+
+# Help dialog
+help-title = Gyorsbillentyűk
+help-subtitle = Gyors referencia az iCY TERM-hez
+
+# Kategóriák
+help-category-connection = Kapcsolat
+help-category-authentication = Hitelesítés
+help-category-file-transfer = Fájlátvitel
+help-category-windows = Ablakok
+help-category-display = Megjelenítés
+help-category-tools = Eszközök
+help-category-editing = Szerkesztés
+
+# További akciók
+help-action-switch-window = Ablak váltása
+help-action-smart-paste = Intelligens beillesztés
+help-key-middle-click = Középső kattintás
+
+# Leírások
+help-desc-dialing-directory = BBS címjegyzék megnyitása
+help-desc-disconnect = Aktuális kapcsolat bontása
+help-desc-exit = iCY TERM bezárása
+help-desc-auto-login = Felhasználónév és jelszó küldése
+help-desc-send-username = Csak felhasználónév küldése
+help-desc-send-password = Csak jelszó küldése
+help-desc-upload = Fájlok küldése a BBS-re
+help-desc-download = Fájlok letöltése a BBS-ről
+help-desc-close-window = Aktuális ablak bezárása
+help-desc-new-window = Új terminál ablak megnyitása
+help-desc-switch-window = Ugrás az 1–10. ablakra
+help-desc-fullscreen = Teljes képernyő mód váltása
+help-desc-clear-screen = Terminál kijelző törlése
+help-desc-capture-screen = Képernyő mentése képként
+help-desc-capture-session = Szövegrögzítés indítása/leállítása
+help-desc-find = Keresés a pufferben
+help-desc-settings = Beállítások megnyitása
+help-desc-about = Információ az iCY TERM-ről
+help-desc-help = Ennek a párbeszédnek a megjelenítése
+help-desc-copy = Kijelölés másolása
+help-desc-paste = Beillesztés a vágólapról
+help-desc-smart-paste = Beillesztés vagy (ha van kijelölés) előbb másolás
+
+# Akció címkék
+help-action-dialing-directory = { terminal-dialing_directory }
+help-action-disconnect = Leválasztás
+help-action-exit = Kilépés
+help-action-auto-login = Automatikus bejelentkezés
+help-action-send-username = Felhasználónév küldése
+help-action-send-password = Jelszó küldése
+help-action-close-window = Ablak bezárása
+help-action-new-window = Új ablak
+help-action-fullscreen = Teljes képernyő
+help-action-clear-screen = Képernyő törlése
+help-action-capture-screen = Képernyő mentése
+help-action-capture-session = Munkamenet rögzítése
+help-action-find = Keresés
+help-action-about = Névjegy
+help-action-help = Súgó
