@@ -50,7 +50,7 @@ pub enum MainWindowMode {
 }
 
 pub struct MainWindow {
-    _id: window::Id,
+    pub id: usize,
     pub state: MainWindowState,
     pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
     pub settings_dialog: settings_dialog::SettingsDialogState,
@@ -92,13 +92,14 @@ pub struct MainWindow {
     show_disconnect: bool,
 
     pub mcp_rx: McpHandler,
+    pub title: String,
 }
 
 static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
 
 impl MainWindow {
     pub fn new(
-        id: window::Id,
+        id: usize,
         mode: MainWindowMode,
         sound_thread: Arc<Mutex<SoundThread>>,
         addresses: Arc<Mutex<AddressBook>>,
@@ -122,7 +123,8 @@ impl MainWindow {
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_state.clone(), icy_net::telnet::TerminalEmulation::Ansi);
 
         Self {
-            _id: id,
+            id,
+            title: format!("iCY TERM {}", *crate::VERSION),
             state: MainWindowState {
                 mode,
                 #[cfg(test)]

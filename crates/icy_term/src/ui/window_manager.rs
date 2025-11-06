@@ -36,8 +36,10 @@ pub enum WindowManagerMessage {
     OpenWindow,
     CloseWindow(window::Id),
     WindowOpened(window::Id),
+    FocusWindow(usize),
     WindowClosed(window::Id),
     WindowMessage(window::Id, Message),
+    TitleChanged(window::Id, String),
     Event(window::Id, iced::Event),
     UpdateBuffers,
 }
@@ -102,8 +104,21 @@ impl WindowManager {
         manager
     }
 
-    pub fn title(&self, _window: window::Id) -> String {
-        format!("iCY TERM {}", *crate::VERSION)
+    pub fn title(&self, window: window::Id) -> String {
+        if self.windows.iter().count() == 1 {
+            return self.windows.get(&window).map(|window| window.title.clone()).unwrap_or_default();
+        }
+
+        self.windows
+            .get(&window)
+            .map(|window| {
+                if window.id < 10 {
+                    format!("{} - ⌘{}", window.title, window.id)
+                } else {
+                    window.title.clone()
+                }
+            })
+            .unwrap_or_default()
     }
 
     pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
@@ -135,13 +150,14 @@ impl WindowManager {
             WindowManagerMessage::CloseWindow(id) => window::close(id),
             WindowManagerMessage::WindowOpened(id) => {
                 let mut window: MainWindow = MainWindow::new(
-                    id.clone(),
+                    self.find_next_id(),
                     self.mode.clone(),
                     self.sound_thread.clone(),
                     self.addresses.clone(),
                     self.options.clone(),
                     self.temp_options.clone(),
                 );
+
                 if let Some(mcp_rx) = self.mcp_rx.take() {
                     window.mcp_rx = Some(mcp_rx);
                 }
@@ -193,6 +209,23 @@ impl WindowManager {
                 }
                 Task::batch(tasks)
             }
+
+            WindowManagerMessage::TitleChanged(id, title) => {
+                if let Some(window) = self.windows.get_mut(&id) {
+                    window.title = title.clone();
+                }
+                Task::none()
+            }
+
+            WindowManagerMessage::FocusWindow(target_id) => {
+                // Find the window with the target ID number
+                for (window_id, window) in self.windows.iter() {
+                    if window.id == target_id {
+                        return window::gain_focus(*window_id);
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -215,7 +248,23 @@ impl WindowManager {
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // println!("Key pressed: {:?} with modifiers: {:?}", key, modifiers);
+                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
+                            match &key {
+                                keyboard::Key::Character(s) => {
+                                    if let Some(digit) = s.chars().next() {
+                                        if digit.is_ascii_digit() {
+                                            let target_id = digit.to_digit(10).unwrap() as usize;
+                                            // Special case: Alt+0 focuses window 10
+                                            let target_id = if target_id == 0 { 10 } else { target_id };
+
+                                            return Some(WindowManagerMessage::FocusWindow(target_id));
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
                         if modifiers.shift() {
                             if modifiers.command() {
                                 match &key {
@@ -246,5 +295,19 @@ impl WindowManager {
             iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
         iced::Subscription::batch(subs)
+    }
+
+    fn find_next_id(&self) -> usize {
+        let used_ids: std::collections::HashSet<usize> = self.windows.values().map(|w| w.id).collect();
+
+        // Start from 1 (or 0 if you prefer 0-based)
+        for id in 1.. {
+            if !used_ids.contains(&id) {
+                return id;
+            }
+        }
+
+        // This should never be reached, but as a fallback
+        1
     }
 }
