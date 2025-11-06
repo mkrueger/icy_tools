@@ -1144,12 +1144,17 @@ impl MainWindow {
             MainWindowMode::ShowTerminal => {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                        #[cfg(target_os = "macos")]
+                        let cmd_key = modifiers.command();
+                        #[cfg(not(target_os = "macos"))]
+                        let cmd_key = modifiers.alt();
+
                         // Handle Alt+Enter for fullscreen toggle
-                        if modifiers.alt() && matches!(key, keyboard::Key::Named(keyboard::key::Named::Enter)) {
+                        if cmd_key && matches!(key, keyboard::Key::Named(keyboard::key::Named::Enter)) {
                             return Some(Message::ToggleFullscreen);
                         }
 
-                        if modifiers.alt() || modifiers.logo() {
+                        if cmd_key {
                             match &key {
                                 keyboard::Key::Named(named) => match named {
                                     keyboard::key::Named::PageUp => return Some(Message::Upload),
@@ -1250,7 +1255,14 @@ impl MainWindow {
                         key: keyboard::Key::Named(keyboard::key::Named::Enter),
                         modifiers,
                         ..
-                    }) if modifiers.alt() => Some(Message::ToggleFullscreen),
+                    }) => {
+                        #[cfg(target_os = "macos")]
+                        let cmd_key = modifiers.command();
+                        #[cfg(not(target_os = "macos"))]
+                        let cmd_key = modifiers.alt();
+
+                        if cmd_key { Some(Message::ToggleFullscreen) } else { None }
+                    }
                     Event::Keyboard(keyboard::Event::KeyPressed {
                         key: keyboard::Key::Named(keyboard::key::Named::Shift),
                         ..
