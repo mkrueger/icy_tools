@@ -1029,6 +1029,10 @@ impl MainWindow {
                 self.terminal_window.iemsi_info = Some(*isi);
                 Task::none()
             }
+            TerminalEvent::UpdatePictureData(size, data) => {
+                self.terminal_window.terminal.update_picture(size, data);
+                Task::none()
+            }
         }
     }
 

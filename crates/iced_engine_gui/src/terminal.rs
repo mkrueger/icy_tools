@@ -10,6 +10,7 @@ pub struct Terminal {
     pub char_height: f32,
     pub id: widget::Id,
     pub has_focus: bool,
+    pub picture_data: Option<(icy_engine::Size, Vec<u8>)>,
 }
 
 impl Terminal {
@@ -21,6 +22,7 @@ impl Terminal {
             char_height: 20.0,
             id: widget::Id::unique(),
             has_focus: false,
+            picture_data: None,
         }
     }
 
@@ -30,5 +32,9 @@ impl Terminal {
     pub fn buffer_color_to_iced(color: icy_engine::Color) -> Color {
         let (r, g, b) = color.get_rgb_f32();
         Color::from_rgb(r, g, b)
+    }
+
+    pub fn update_picture(&mut self, size: icy_engine::Size, data: Vec<u8>) {
+        self.picture_data = Some((size, data));
     }
 }

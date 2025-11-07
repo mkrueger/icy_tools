@@ -60,6 +60,7 @@ pub enum TerminalEvent {
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
+    UpdatePictureData(icy_engine::Size, Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -234,6 +235,10 @@ impl TerminalThread {
                         }
 
                         self.read_connection(&mut read_buffer).await;
+                        if let Some((size, data)) = self.buffer_parser.get_picture_data() {
+                            let _ = self.event_tx.send(TerminalEvent::UpdatePictureData(size, data));
+                        }
+
                     }
                 }
             }

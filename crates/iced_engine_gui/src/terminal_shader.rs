@@ -725,34 +725,40 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
             let (fg_sel, bg_sel) = edit_state.get_buffer().buffer_type.get_selection_colors();
 
-            if matches!(edit_state.get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
-                // Unicode path - use cached glyph cache with Arc<Mutex<>>
-                let (img_size, data) = render_unicode_to_rgba(&RenderUnicodeOptions {
-                    buffer,
-                    selection: edit_state.get_selection(),
-                    selection_fg: Some(fg_sel),
-                    selection_bg: Some(bg_sel),
-                    blink_on: state.character_blink.is_on(),
-                    font_px_size: Some(font_h as f32),
-                    glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
-                });
-                size = (img_size.width as u32, img_size.height as u32);
-                rgba_data = data;
+            if let Some((s, data)) = &self.term.picture_data {
+                // Use cached rendering if available
+                size = (s.width as u32, s.height as u32);
+                rgba_data = data.clone();
             } else {
-                // Existing ANSI path
-                let rect = icy_engine::Rectangle {
-                    start: icy_engine::Position::new(0, 0),
-                    size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
-                };
-                let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
-                    rect: rect.into(),
-                    blink_on: state.character_blink.is_on(),
-                    selection: edit_state.get_selection(),
-                    selection_fg: Some(fg_sel),
-                    selection_bg: Some(bg_sel),
-                });
-                size = (img_size.width as u32, img_size.height as u32);
-                rgba_data = data;
+                if matches!(edit_state.get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
+                    // Unicode path - use cached glyph cache with Arc<Mutex<>>
+                    let (img_size, data) = render_unicode_to_rgba(&RenderUnicodeOptions {
+                        buffer,
+                        selection: edit_state.get_selection(),
+                        selection_fg: Some(fg_sel),
+                        selection_bg: Some(bg_sel),
+                        blink_on: state.character_blink.is_on(),
+                        font_px_size: Some(font_h as f32),
+                        glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
+                    });
+                    size = (img_size.width as u32, img_size.height as u32);
+                    rgba_data = data;
+                } else {
+                    // Existing ANSI path
+                    let rect = icy_engine::Rectangle {
+                        start: icy_engine::Position::new(0, 0),
+                        size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
+                    };
+                    let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
+                        rect: rect.into(),
+                        blink_on: state.character_blink.is_on(),
+                        selection: edit_state.get_selection(),
+                        selection_fg: Some(fg_sel),
+                        selection_bg: Some(bg_sel),
+                    });
+                    size = (img_size.width as u32, img_size.height as u32);
+                    rgba_data = data;
+                }
             }
         }
 
