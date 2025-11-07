@@ -295,6 +295,19 @@ impl MainWindow {
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
+            Message::RipCommand(clear_screen, cmd) => {
+                if clear_screen {
+                    self.terminal_window.terminal.clear_picture_data();
+                }
+                // Send the RIP command
+                let mut data: Vec<u8> = Vec::new();
+                for ch in cmd.chars() {
+                    let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                    data.push(converted_byte as u8);
+                }
+                let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+                Task::none()
+            }
 
             Message::TerminalEvent(event) => self.handle_terminal_event(event),
             Message::CaptureDialog(msg) => {
@@ -1029,8 +1042,12 @@ impl MainWindow {
                 self.terminal_window.iemsi_info = Some(*isi);
                 Task::none()
             }
-            TerminalEvent::UpdatePictureData(size, data) => {
-                self.terminal_window.terminal.update_picture(size, data);
+            TerminalEvent::ClearPictureData => {
+                self.terminal_window.terminal.clear_picture_data();
+                Task::none()
+            }
+            TerminalEvent::UpdatePictureData(size, data, mouse_fields) => {
+                self.terminal_window.terminal.update_picture(size, data, mouse_fields);
                 Task::none()
             }
         }

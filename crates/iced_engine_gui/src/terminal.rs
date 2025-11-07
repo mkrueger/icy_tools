@@ -11,6 +11,7 @@ pub struct Terminal {
     pub id: widget::Id,
     pub has_focus: bool,
     pub picture_data: Option<(icy_engine::Size, Vec<u8>)>,
+    pub mouse_fields: Vec<icy_engine::rip::bgi::MouseField>,
 }
 
 impl Terminal {
@@ -23,6 +24,7 @@ impl Terminal {
             id: widget::Id::unique(),
             has_focus: false,
             picture_data: None,
+            mouse_fields: Vec::new(),
         }
     }
 
@@ -34,7 +36,13 @@ impl Terminal {
         Color::from_rgb(r, g, b)
     }
 
-    pub fn update_picture(&mut self, size: icy_engine::Size, data: Vec<u8>) {
+    pub fn update_picture(&mut self, size: icy_engine::Size, data: Vec<u8>, mouse_fields: Vec<icy_engine::rip::bgi::MouseField>) {
         self.picture_data = Some((size, data));
+        self.mouse_fields = mouse_fields;
+    }
+
+    pub fn clear_picture_data(&mut self) {
+        self.picture_data = None;
+        self.mouse_fields.clear();
     }
 }

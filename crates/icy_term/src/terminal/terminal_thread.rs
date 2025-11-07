@@ -60,7 +60,8 @@ pub enum TerminalEvent {
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
-    UpdatePictureData(icy_engine::Size, Vec<u8>),
+    ClearPictureData,
+    UpdatePictureData(icy_engine::Size, Vec<u8>, Vec<icy_engine::rip::bgi::MouseField>),
 }
 
 #[derive(Debug, Clone)]
@@ -234,11 +235,14 @@ impl TerminalThread {
                             poll_interval += 1;
                         }
 
-                        self.read_connection(&mut read_buffer).await;
-                        if let Some((size, data)) = self.buffer_parser.get_picture_data() {
-                            let _ = self.event_tx.send(TerminalEvent::UpdatePictureData(size, data));
+                        let data = self.read_connection(&mut read_buffer).await;
+                        if data > 0 && self.buffer_parser.has_renederer() {
+                            if self.buffer_parser.picture_is_empty() {
+                                let _ = self.event_tx.send(TerminalEvent::ClearPictureData);
+                            } else if let Some((size, data)) = self.buffer_parser.get_picture_data() {
+                                let _ = self.event_tx.send(TerminalEvent::UpdatePictureData(size, data, self.buffer_parser.get_mouse_fields()));
+                            }
                         }
-
                     }
                 }
             }
@@ -490,10 +494,10 @@ impl TerminalThread {
         }
     }
 
-    async fn read_connection(&mut self, buffer: &mut [u8]) {
+    async fn read_connection(&mut self, buffer: &mut [u8]) -> usize {
         if let Some(conn) = &mut self.connection {
             match conn.try_read(buffer).await {
-                Ok(0) => {}
+                Ok(0) => 0,
                 Ok(size) => {
                     let mut data = buffer[..size].to_vec();
 
@@ -504,13 +508,17 @@ impl TerminalThread {
                         self.process_data(&data).await;
                         let _ = self.event_tx.send(TerminalEvent::DataReceived(data));
                     }
+                    size
                 }
                 Err(e) => {
                     error!("Connection read error: {e}");
                     self.disconnect().await;
                     self.process_data(format!("\n\r{}", e).as_bytes()).await;
+                    0
                 }
             }
+        } else {
+            0
         }
     }
 

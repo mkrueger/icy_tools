@@ -539,6 +539,14 @@ impl BufferParser for Parser {
         }
     }
 
+    fn has_renederer(&self) -> bool {
+        true
+    }
+
+    fn picture_is_empty(&self) -> bool {
+        false
+    }
+
     fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
         self.command_executor.get_picture_data()
     }

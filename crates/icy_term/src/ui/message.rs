@@ -67,4 +67,5 @@ pub enum Message {
 
     FocusNext,
     FocusPrevious,
+    RipCommand(bool, String),
 }

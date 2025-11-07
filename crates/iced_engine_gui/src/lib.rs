@@ -23,6 +23,9 @@ pub use render_unicode::*;
 pub mod unicode_glyph_cache;
 pub use unicode_glyph_cache::*;
 
+pub mod crt_shader;
+pub use crt_shader::*;
+
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};

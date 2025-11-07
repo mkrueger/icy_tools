@@ -50,19 +50,14 @@ impl TerminalWindow {
         let button_bar = self.create_button_bar();
 
         // Create the main terminal area
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, options.monitor_settings.clone()).map(|terminal_msg| {
-            match terminal_msg {
-                iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
-                iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
-                iced_engine_gui::Message::Copy => Message::Copy,
-                iced_engine_gui::Message::Paste => Message::Paste,
-                iced_engine_gui::Message::RipCommand(_cmd) => {
-                    // TODO: Handle RIP command
-                    Message::None
-                } // _ => Message::None,
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, options.monitor_settings.clone()).map(|terminal_msg| match terminal_msg {
+            iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
+            iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
+            iced_engine_gui::Message::Copy => Message::Copy,
+            iced_engine_gui::Message::Paste => Message::Paste,
+            iced_engine_gui::Message::RipCommand(clear_screen, cmd) => Message::RipCommand(clear_screen, cmd),
 
-                iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
-            }
+            iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
         });
 
         // Get scrollback info from EditState

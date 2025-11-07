@@ -1,5 +1,5 @@
 #![allow(static_mut_refs)]
-use crate::{MonitorSettings, Terminal};
+use crate::{MonitorSettings, Terminal, create_crt_shader};
 use iced::Element;
 
 #[derive(Debug, Clone)]
@@ -8,7 +8,8 @@ pub enum Message {
     OpenLink(String),
     Copy,
     Paste,
-    RipCommand(String),
+    /// The bool indicates whether to clear the RIP screen before sending the command
+    RipCommand(bool, String),
 
     SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
 }
@@ -19,8 +20,6 @@ pub struct TerminalView<'a> {
 
 impl<'a> TerminalView<'a> {
     pub fn show_with_effects(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
-        iced::widget::container(crate::terminal_shader::create_crt_shader(term, settings))
-            .id(term.id.clone())
-            .into()
+        iced::widget::container(create_crt_shader(term, settings)).id(term.id.clone()).into()
     }
 }

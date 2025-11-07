@@ -74,6 +74,14 @@ pub trait BufferParser: Send {
         EMPTY_MOUSE_FIELD
     }
 
+    fn has_renederer(&self) -> bool {
+        false
+    }
+
+    fn picture_is_empty(&self) -> bool {
+        true
+    }
+
     fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
         None
     }

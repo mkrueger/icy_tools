@@ -167,11 +167,20 @@ impl Parser {
 }
 
 impl BufferParser for Parser {
+    fn has_renederer(&self) -> bool {
+        true
+    }
+
+    fn picture_is_empty(&self) -> bool {
+        self.rip_counter == 0
+    }
+
     fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
         if buf.terminal_state.cleared_screen {
             buf.terminal_state.cleared_screen = false;
             self.bgi.graph_defaults();
-            self.rip_counter += 1;
+            self.rip_counter = 0;
+            self.last_rip_update = 0;
         }
 
         match self.state {
@@ -402,7 +411,7 @@ impl BufferParser for Parser {
                 pixels.push(0);
                 pixels.push(0);
                 pixels.push(0);
-                pixels.push(0);
+                pixels.push(255);
                 continue;
             }
             let (r, g, b) = pal.get_rgb(*i as u32);
