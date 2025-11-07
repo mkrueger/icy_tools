@@ -148,7 +148,7 @@ impl OutputFormat for XBin {
         }
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::XBin, icy_sauce::char_caps::ContentType::Unknown(0), &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::XBin, icy_sauce::char_caps::CharacterFormat::Unknown(0), &mut result)?;
         }
         Ok(result)
     }

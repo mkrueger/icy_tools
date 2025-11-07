@@ -8,7 +8,8 @@ use std::{
 };
 
 use i18n_embed_fl::fl;
-use icy_sauce::char_caps::{CharCaps, ContentType};
+use icy_sauce::bin_caps::BinCaps;
+use icy_sauce::char_caps::{AspectRatio, CharCaps, CharacterFormat, LetterSpacing};
 use icy_sauce::{SauceDataType, SauceInformation, SauceMetaInformation};
 
 use crate::ansi::MusicOption;
@@ -396,7 +397,7 @@ impl Buffer {
                 self.layers[0].set_size(size);
             }
 
-            if let Some(font) = &caps.font_opt {
+            if let Some(font) = &caps.font_opt() {
                 if let Ok(font) = BitFont::from_sauce_name(&font.to_string()) {
                     self.set_font(0, font);
                 }
@@ -404,8 +405,8 @@ impl Buffer {
             if caps.use_ice {
                 self.ice_mode = IceMode::Ice;
             }
-            self.use_aspect_ratio = caps.use_aspect_ratio;
-            self.use_letter_spacing = caps.use_letter_spacing;
+            self.use_aspect_ratio = caps.aspect_ratio == AspectRatio::LegacyDevice;
+            self.use_letter_spacing = caps.letter_spacing == LetterSpacing::NinePixel;
         }
         self.is_font_table_dirty = true;
         self.sauce_data = sauce.get_meta_information();
@@ -448,23 +449,43 @@ impl Buffer {
         frame
     }
 
-    pub(crate) fn write_sauce_info(&self, data_type: SauceDataType, content_type: ContentType, result: &mut Vec<u8>) -> anyhow::Result<()> {
-        let caps = CharCaps {
-            content_type,
-            width: self.get_width() as u16,
-            height: self.get_height() as u16,
-            font_opt: None,
-            use_ice: self.ice_mode == IceMode::Ice,
-            use_letter_spacing: self.use_letter_spacing,
-            use_aspect_ratio: self.use_aspect_ratio,
-        };
-
-        self.get_sauce_meta()
+    pub(crate) fn write_sauce_info(&self, data_type: SauceDataType, content_type: CharacterFormat, result: &mut Vec<u8>) -> anyhow::Result<()> {
+        let mut builder = self
+            .get_sauce_meta()
             .to_builder()?
-            .with_data_type(data_type)
-            .with_char_caps(caps)?
-            .build()
-            .write(result, result.len() as u32)?;
+            .with_file_size(result.len() as u32)
+            .with_data_type(data_type);
+
+        match data_type {
+            SauceDataType::Character => {
+                let mut caps = CharCaps::new(content_type);
+                caps.width = self.get_width() as u16;
+                caps.height = self.get_height() as u16;
+                caps.use_ice = self.ice_mode == IceMode::Ice;
+                caps.letter_spacing = if self.use_letter_spacing {
+                    LetterSpacing::NinePixel
+                } else {
+                    LetterSpacing::Legacy
+                };
+                caps.aspect_ratio = if self.use_aspect_ratio {
+                    AspectRatio::LegacyDevice
+                } else {
+                    AspectRatio::Legacy
+                };
+                builder = builder.with_char_caps(caps)?;
+            }
+            SauceDataType::BinaryText => {
+                builder = builder.with_bin_caps(BinCaps::binary_text(self.get_width() as u16).unwrap()).unwrap();
+            }
+            SauceDataType::XBin => {
+                builder = builder
+                    .with_bin_caps(BinCaps::xbin(self.get_width() as u16, self.get_height() as u16).unwrap())
+                    .unwrap();
+            }
+            _ => {}
+        }
+
+        builder.build().write(result)?;
 
         Ok(())
     }

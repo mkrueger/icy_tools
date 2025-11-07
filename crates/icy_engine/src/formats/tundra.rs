@@ -144,7 +144,11 @@ impl OutputFormat for TundraDraw {
         }
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::TundraDraw, &mut result)?;
+            buf.write_sauce_info(
+                icy_sauce::SauceDataType::Character,
+                icy_sauce::char_caps::CharacterFormat::TundraDraw,
+                &mut result,
+            )?;
         }
         Ok(result)
     }

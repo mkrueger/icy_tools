@@ -76,7 +76,7 @@ impl OutputFormat for Artworx {
             }
         }
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::Ansi, &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Ansi, &mut result)?;
         }
         Ok(result)
     }

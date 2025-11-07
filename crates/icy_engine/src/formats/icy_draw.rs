@@ -87,7 +87,7 @@ impl OutputFormat for IcyDraw {
 
         if buf.has_sauce() {
             let mut sauce_vec: Vec<u8> = Vec::new();
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::Ansi, &mut sauce_vec)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Ansi, &mut sauce_vec)?;
             let sauce_data = general_purpose::STANDARD.encode(&sauce_vec);
             if let Err(err) = encoder.add_ztxt_chunk("SAUCE".to_string(), sauce_data) {
                 return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());

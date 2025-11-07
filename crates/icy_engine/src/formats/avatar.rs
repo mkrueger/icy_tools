@@ -153,7 +153,7 @@ impl OutputFormat for Avatar {
         }
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::Avatar, &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Avatar, &mut result)?;
         }
         Ok(result)
     }

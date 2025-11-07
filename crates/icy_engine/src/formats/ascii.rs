@@ -55,7 +55,7 @@ impl OutputFormat for Ascii {
         }
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::ContentType::Ascii, &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Ascii, &mut result)?;
         }
         Ok(result)
     }

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use codepages::tables::UNICODE_TO_CP437;
-use icy_sauce::char_caps::ContentType;
 
 use crate::Color;
 use crate::ansi::constants::COLOR_OFFSETS;
@@ -46,7 +45,7 @@ impl OutputFormat for Ansi {
         result.extend(str_gen.get_data());
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, ContentType::Ansi, &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Ansi, &mut result)?;
         }
         Ok(result)
     }
