@@ -8,9 +8,9 @@ And type "cargo build --release" - in target/release is icy_play.
 That should work for all unix based OSes:
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/mkrueger/icy_play.git
-cd icy_play
-cargo build --release
+git clone https://github.com/mkrueger/icy_tools.git
+cd icy_tools
+cargo build --release --bin icy_play
 sudo cp target/release/icy_play /usr/bin
 ```
 
