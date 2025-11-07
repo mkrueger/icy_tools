@@ -857,8 +857,8 @@ fonts![
         16,
         31
     ),
-    (C64_UPPER, "Commodore/C64_PETSCII_shifted.psf", "Commodore 64 (UPPER)", 8, 8, 32),
-    (C64_LOWER, "Commodore/C64_PETSCII_unshifted.psf", "Commodore 64 (Lower)", 8, 8, 33),
+    (C64_UNSHIFTED, "Commodore/C64_PETSCII_unshifted.psf", "Commodore 64 (Unshifted)", 8, 8, 32),
+    (C64_SHIFTED, "Commodore/C64_PETSCII_shifted.psf", "Commodore 64 (Shifted)", 8, 8, 33),
     (C128_UPPER, "Commodore/Commodore_128_UPPER_8x16.f16", "Commodore 128 (UPPER)", 8, 8, 34),
     (C128_LOWER, "Commodore/Commodore_128_Lower_8x16.f16", "Commodore 128 (Lower)", 8, 8, 35),
     (ATARI, "Atari/Atari_ATASCII.psf", "Atari", 8, 8, 36),

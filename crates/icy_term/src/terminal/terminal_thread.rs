@@ -55,6 +55,8 @@ pub enum TerminalEvent {
     OpenLineSound,
     OpenDialSound(bool, String),
     StopSound,
+    Reconnect,
+    Connect(String),
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
@@ -283,6 +285,14 @@ impl TerminalThread {
                         }
                         ModemCommand::StopSound => {
                             let _ = self.event_tx.send(TerminalEvent::StopSound);
+                        }
+                        ModemCommand::Reconnect => {
+                            self.process_data(b"\r\nRECONNECT...\r\n").await;
+                            let _ = self.event_tx.send(TerminalEvent::Reconnect);
+                        }
+                        ModemCommand::Connect(address) => {
+                            self.process_data(format!("\r\nCALLING...\r\n").as_bytes()).await;
+                            let _ = self.event_tx.send(TerminalEvent::Connect(address));
                         }
                     }
                 }

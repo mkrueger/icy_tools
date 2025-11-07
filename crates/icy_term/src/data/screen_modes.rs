@@ -1,8 +1,8 @@
 use std::fmt::{self, Display};
 
 use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_LOWER, CP437, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
-    editor::EditState,
+    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, VIEWDATA,
+    VIEWDATA_PALETTE, editor::EditState,
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -236,8 +236,8 @@ impl ScreenMode {
             }
             ScreenMode::Vic => {
                 buffer.clear_font_table();
-                buffer.set_font(0, BitFont::from_bytes("", C64_LOWER).unwrap());
-                buffer.set_font(1, BitFont::from_bytes("", C64_LOWER).unwrap());
+                buffer.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
+                buffer.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
                 buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 buffer.buffer_type = icy_engine::BufferType::Petscii;
             }

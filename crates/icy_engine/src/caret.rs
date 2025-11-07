@@ -2,6 +2,14 @@ use crate::TextPane;
 
 use super::{Position, TextAttribute};
 
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub enum CaretShape {
+    #[default]
+    Block,
+    Underline,
+    Bar,
+}
+
 #[derive(Clone)]
 pub struct Caret {
     pub(super) pos: Position,
@@ -10,6 +18,7 @@ pub struct Caret {
     is_visible: bool,
     pub is_blinking: bool,
     ice_mode: bool,
+    shape: CaretShape,
 }
 
 impl Caret {
@@ -76,6 +85,7 @@ impl Caret {
         self.is_visible = true;
         self.is_blinking = true;
         self.ice_mode = false;
+        self.shape = CaretShape::Block;
     }
 
     pub fn get_font_page(&self) -> usize {
@@ -111,6 +121,14 @@ impl Caret {
         let x = ((self.pos.x / 8 + 1) * 8).min(buf.get_width() - 1);
         self.set_x_position(x);
     }
+
+    pub fn shape(&self) -> CaretShape {
+        self.shape
+    }
+
+    pub fn set_shape(&mut self, block: CaretShape) {
+        self.shape = block;
+    }
 }
 
 impl std::fmt::Debug for Caret {
@@ -132,6 +150,7 @@ impl Default for Caret {
             is_visible: true,
             is_blinking: true,
             ice_mode: false,
+            shape: CaretShape::Block,
         }
     }
 }

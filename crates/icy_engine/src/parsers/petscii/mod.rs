@@ -6,119 +6,79 @@ pub struct Parser {
     underline_mode: bool,
     reverse_mode: bool,
     got_esc: bool,
+    /// true = shifted (upper+lower case set), false = unshifted (upper+graphics)
     shift_mode: bool,
+    /// capital shift (forces uppercase while in shifted mode)
     c_shift: bool,
 }
 
 impl Parser {
-    pub fn handle_reverse_mode(&self, ch: u8) -> u8 {
-        if self.reverse_mode { ch + 0x80 } else { ch }
+    #[inline]
+    pub fn apply_reverse(&self, ch: u8) -> u8 {
+        if self.reverse_mode { ch | 0x80 } else { ch }
     }
 
-    /// .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
+    fn petscii_to_internal(&self, code: u8) -> Result<u8, ParserError> {
+        // Map incoming PETSCII byte to internal screen code.
+        // We keep the existing scheme (screen codes roughly follow PETSCII ranges)
+        // but adjust lowercase / graphics behavior depending on shift_mode.
+        let mapped = match code {
+            0x20..=0x3F => code,
+            0x40..=0x5F => code - 0x40,
+            0x60..=0x7F => {
+                // Lowercase range in ASCII. In PETSCII unshifted it is graphics, so keep raw in unshifted.
+                // In shifted mode it should show lowercase letters; font page 1 has lowercase glyphs at uppercase positions,
+                // so translate to uppercase (subtract 0x20). Apply capital shift (c_shift) to force uppercase glyphs even in shifted mode.
+                code - 0x20
+            }
+            0xA0..=0xBF => {
+                // Extended punctuation / graphics set; keep previous scheme.
+                code - 0x40
+            }
+            0xC0..=0xFE => {
+                // Upper graphics set (reverse/shifted variants); keep offset.
+                code - 0x80
+            }
+            _ => {
+                return Err(ParserError::UnsupportedControlCode(code as u32).into());
+            }
+        };
+        Ok(mapped)
+    }
+
+    /// Handle C128-specific ESC sequences (currently mostly placeholders).
     pub fn handle_c128_escapes(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: u8) -> EngineResult<CallbackAction> {
         self.got_esc = false;
 
         match ch {
-            b'O' => {} // Cancel quote and insert mode
-            b'Q' => {
-                buf.clear_line_end(current_layer, caret);
-            } // Erase to end of current line
-            b'P' => {
-                buf.clear_line_start(current_layer, caret);
-            } // Cancel quote and insert mode
-            b'@' => {
-                buf.clear_buffer_down(current_layer, caret);
-            } // Erase to end of screen
-
-            b'J' => {
-                caret.cr(buf);
-            } // Move to start of current line
-            b'K' => {
-                caret.eol(buf);
-            } // Move to end of current line
-
-            b'A' => {
-                log::error!("enable auto insert mode unsupported.");
-            } // Enable auto-insert mode
-            b'C' => {
-                log::error!("disable auto insert mode unsupported.");
-            } // Disable auto-insert mode
-
-            b'D' => {
-                buf.remove_terminal_line(current_layer, caret.pos.y);
-            } // Delete current line
-            b'I' => {
-                buf.insert_terminal_line(current_layer, caret.pos.y);
-            } // Insert line
-
-            b'Y' => {
-                log::error!("Set default tab stops (8 spaces) unsupported.");
-            } // Set default tab stops (8 spaces)
-            b'Z' => {
-                log::error!("Clear all tab stops unsupported.");
-            } // Clear all tab stops
-
-            b'L' => {
-                log::error!("Enable scrolling unsupported.");
-            } // Enable scrolling
-            b'M' => {
-                log::error!("Disable scrolling unsupported.");
-            } // Disable scrolling
-
-            b'V' => {
-                log::error!("Scroll up unsupported.");
-            } // Scroll up
-            b'W' => {
-                log::error!("Scroll down unsupported.");
-            } // Scroll down
-
-            b'G' => {
-                log::error!("Enable bell unsupported.");
-            } // Enable bell (by CTRL G)
-            b'H' => {
-                log::error!("Disable bell unsupported.");
-            } // Disable bell
-
-            b'E' => {
-                log::error!("Set cursor to non-flashing mode unsupported.");
-            } // Set cursor to non-flashing mode
-            b'F' => {
-                log::error!("Set cursor to flashing mode unsupported.");
-            } // Set cursor to flashing mode
-
-            b'B' => {
-                log::error!("Set bottom of screen window at cursor position unsupported.");
-            } // Set bottom of screen window at cursor position
-            b'T' => {
-                log::error!("Set top of screen window at cursor position unsupported.");
-            } // Set top of screen window at cursor position
-
-            b'X' => {
-                log::error!("Swap 40/80 column display output device unsupported.");
-            } // Swap 40/80 column display output device
-
-            b'U' => {
-                log::error!("Change to underlined cursor unsupported.");
-            } // Change to underlined cursor
-            b'S' => {
-                log::error!("Change to block cursor unsupported.");
-            } // Change to block cursor
-
-            b'R' => {
-                log::error!("Set screen to reverse video unsupported.");
-            } // Set screen to reverse video
-            b'N' => {
-                log::error!("Set screen to normal (non reverse video) state unsupported.");
-            } // Set screen to normal (non reverse video) state
-
-            _ => {
-                log::error!("Unknown C128 escape code: 0x{:02X}/'{}'", ch, ch as char);
-            }
+            b'O' => {} // Cancel quote/insert (NYI)
+            b'Q' => buf.clear_line_end(current_layer, caret),
+            b'P' => buf.clear_line_start(current_layer, caret),
+            b'@' => buf.clear_buffer_down(current_layer, caret),
+            b'J' => caret.cr(buf),
+            b'K' => caret.eol(buf),
+            b'A' => log::error!("Auto-insert mode unsupported."),
+            b'C' => log::error!("Disable auto-insert mode unsupported."),
+            b'D' => buf.remove_terminal_line(current_layer, caret.pos.y),
+            b'I' => buf.insert_terminal_line(current_layer, caret.pos.y),
+            b'Y' => log::error!("Set default tab stops unsupported."),
+            b'Z' => log::error!("Clear all tab stops unsupported."),
+            b'L' => log::error!("Enable scrolling unsupported."),
+            b'M' => log::error!("Disable scrolling unsupported."),
+            b'V' => log::error!("Scroll up unsupported."),
+            b'W' => log::error!("Scroll down unsupported."),
+            b'G' => log::error!("Enable bell unsupported."),
+            b'H' => log::error!("Disable bell unsupported."),
+            b'E' => log::error!("Cursor non-flashing unsupported."),
+            b'F' => log::error!("Cursor flashing unsupported."),
+            b'B' => log::error!("Set bottom window unsupported."),
+            b'T' => log::error!("Set top window unsupported."),
+            b'X' => log::error!("Swap 40/80 columns unsupported."),
+            b'U' => log::error!("Underline cursor unsupported."),
+            b'S' => log::error!("Block cursor unsupported."),
+            b'R' => log::error!("Screen reverse video unsupported."),
+            b'N' => log::error!("Screen normal video unsupported."),
+            _ => log::error!("Unknown C128 escape code: 0x{:02X}/'{}'", ch, ch as char),
         }
         Ok(CallbackAction::NoUpdate)
     }
@@ -128,6 +88,7 @@ impl Parser {
             return;
         }
         self.shift_mode = shift_mode;
+        // Update font page for all existing characters.
         for y in 0..buf.get_height() {
             for x in 0..buf.get_width() {
                 let mut ch = buf.get_char((x, y));
@@ -178,13 +139,20 @@ impl UnicodeConverter for CharConverter {
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
-        let ch = ch as u8;
+        let byte = ch as u8;
         if self.got_esc {
-            return self.handle_c128_escapes(buf, current_layer, caret, ch);
+            return self.handle_c128_escapes(buf, current_layer, caret, byte);
         }
 
-        match ch {
-            0x02 => self.underline_mode = true, // C128
+        match byte {
+            0x02 => {
+                // Enable underline (C128 specific)
+                self.underline_mode = true;
+            }
+            0x03 => {
+                // Disable underline (avoid permanent underline)
+                self.underline_mode = false;
+            }
             0x05 => caret.set_foreground(WHITE),
             0x07 => return Ok(CallbackAction::Beep),
             0x08 => self.c_shift = false,
@@ -195,6 +163,7 @@ impl BufferParser for Parser {
                 self.reverse_mode = false;
             }
             0x0E => self.update_shift_mode(buf, current_layer, false),
+            0x0F => self.update_shift_mode(buf, current_layer, true), // Some sources use 0x0F as SHIFT IN
             0x11 => caret.down(buf, current_layer, 1),
             0x12 => self.reverse_mode = true,
             0x13 => caret.home(buf),
@@ -205,7 +174,7 @@ impl BufferParser for Parser {
             0x1E => caret.set_foreground(GREEN),
             0x1F => caret.set_foreground(BLUE),
             0x81 => caret.set_foreground(ORANGE),
-            0x8E => self.update_shift_mode(buf, current_layer, true),
+            0x8E => self.update_shift_mode(buf, current_layer, true), // SHIFT IN
             0x90 => caret.set_foreground(BLACK),
             0x91 => caret.up(buf, current_layer, 1),
             0x92 => self.reverse_mode = false,
@@ -225,17 +194,14 @@ impl BufferParser for Parser {
             0x9F => caret.set_foreground(CYAN),
             0xFF => buf.print_value(current_layer, caret, 94), // PI character
             _ => {
-                let tch = match ch {
-                    0x20..=0x3F => ch,
-                    0x40..=0x5F | 0xA0..=0xBF => ch - 0x40,
-                    0x60..=0x7F => ch - 0x20,
-                    0xC0..=0xFE => ch - 0x80,
-                    _ => {
-                        return Err(ParserError::UnsupportedControlCode(ch as u32).into());
-                    }
-                };
-                let mut ch = AttributedChar::new(self.handle_reverse_mode(tch) as char, caret.attribute);
+                let tch = self.petscii_to_internal(byte)?;
+                let mut ch = AttributedChar::new(self.apply_reverse(tch) as char, caret.attribute);
                 ch.set_font_page(usize::from(self.shift_mode));
+                if self.underline_mode {
+                    let mut a = ch.attribute;
+                    a.set_is_underlined(true);
+                    ch.attribute = a;
+                }
                 buf.print_char(current_layer, caret, ch);
             }
         }

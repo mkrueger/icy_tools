@@ -135,6 +135,7 @@ impl EditState {
         let mut scroll_buffer = Buffer::new(self.buffer.get_size());
 
         // Copy buffer settings
+        scroll_buffer.set_font_table(self.buffer.get_font_table());
         scroll_buffer.is_terminal_buffer = self.buffer.is_terminal_buffer;
         scroll_buffer.terminal_state = self.buffer.terminal_state.clone();
         scroll_buffer.buffer_type = self.buffer.buffer_type;

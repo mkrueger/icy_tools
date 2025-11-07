@@ -59,8 +59,7 @@ impl AboutDialog {
         edit_state.get_caret_mut().set_is_visible(false);
 
         let edit_state = Arc::new(Mutex::new(edit_state));
-        let mut terminal = Terminal::new(edit_state.clone());
-        terminal.redraw();
+        let terminal = Terminal::new(edit_state.clone());
 
         Self { terminal }
     }

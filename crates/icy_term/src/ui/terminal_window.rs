@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, svg, text, vertical_slider},
+    widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
 use icy_engine::{TextPane, ansi::BaudEmulation};
@@ -78,33 +78,8 @@ impl TerminalWindow {
 
         // Create terminal area with optional scrollbar
         let terminal_area = if has_scrollback && max_scroll > 0 {
-            // Create a custom scrollbar using a vertical slider
-            let scrollbar = vertical_slider(
-                0..=max_scroll,
-                (scroll_position) as i32, // Invert: 0 at bottom, max at top
-                move |value| Message::ScrollTerminal((value) as usize),
-            )
-            .width(12)
-            .height(Length::Fill)
-            .step(1);
-
             // Combine terminal view and scrollbar side by side
-            let terminal_with_scrollbar = row![
-                container(terminal_view).width(Length::Fill).height(Length::Fill),
-                container(scrollbar)
-                    .width(Length::Fixed(16.0))
-                    .height(Length::Fill)
-                    .style(|theme: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
-                        border: Border {
-                            color: theme.extended_palette().background.strong.color,
-                            width: 0.0,
-                            radius: 0.0.into(),
-                        },
-                        ..Default::default()
-                    })
-            ]
-            .spacing(0);
+            let terminal_with_scrollbar = row![container(terminal_view).width(Length::Fill).height(Length::Fill)].spacing(0);
 
             // Add scroll position indicator if not at bottom
             if scroll_position < 0 {

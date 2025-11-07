@@ -847,6 +847,60 @@ impl Parser {
         )))
     }
 
+    /// Sequence: `CSI > Ps c`
+    /// Mnemonic: DA2
+    /// Description: Secondary Device Attributes
+    ///
+    /// The secondary DA response reports the terminal type, firmware version,
+    /// and hardware options.
+    ///
+    /// Response format: CSI > Pp ; Pv ; Pc c
+    /// Where:
+    ///   Pp = Terminal type code
+    ///   Pv = Firmware version (version * 100 + patchlevel)  
+    ///   Pc = Hardware options (always 0 for software terminals)
+    ///
+    /// Common terminal type codes:
+    ///   0 = VT100
+    ///   1 = VT220
+    ///   2 = VT240
+    ///   18 = VT330
+    ///   19 = VT340
+    ///   24 = VT320
+    ///   32 = VT382
+    ///   41 = VT420
+    ///   61 = VT510
+    ///   64 = VT520
+    ///   65 = VT525
+    ///
+    /// We'll identify as VT500-series compatible (like VT525)
+    ///
+    /// Source: DEC VT510 Manual
+    /// Status: DEC private; VT220+
+    pub(crate) fn secondary_device_attributes(&mut self) -> EngineResult<CallbackAction> {
+        self.state = EngineState::Default;
+
+        // Terminal type: 65 = VT525-compatible
+        // Version: major * 100 + minor * 10 + patch
+        let major: i32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+        let minor: i32 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+        let patch: i32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
+        let version = major * 100 + minor * 10 + patch;
+
+        // Hardware options: 0 (software terminal, no hardware options)
+        // Could use bit flags here for features:
+        //   1 = 132 columns
+        //   2 = Printer port
+        //   4 = Sixel graphics
+        //   8 = Selective erase
+        //   16 = User-defined keys
+        //   32 = National replacement character sets
+        //   64 = Technical character set
+        //   128 = Locator port (mouse)
+        let hardware_options = 1 | 4 | 8 | 128;
+        Ok(CallbackAction::SendString(format!("\x1b[>65;{};{}c", version, hardware_options)))
+    }
+
     /// Sequence: `CSI Ps ; Pn1 ; Pn2 ; Pn3 t`</p>
     /// Mnemonic: CT24BC</p>
     /// Description: Select a 24-bit colour</p>

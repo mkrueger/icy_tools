@@ -7,7 +7,7 @@ use crate::{Blink, Message, MonitorSettings, RenderUnicodeOptions, Terminal, Uni
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
-use icy_engine::{MouseState, Position, Selection, TextPane};
+use icy_engine::{Caret, CaretShape, MouseState, Position, Selection, TextPane};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -578,6 +578,64 @@ impl<'a> CRTShaderProgram<'a> {
     pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
         Self { term, monitor_settings }
     }
+
+    fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize) {
+        // Check both the caret's is_blinking property and the blink timer state
+        let should_draw = caret.is_visible() && (!caret.is_blinking || state.caret_blink.is_on());
+
+        if should_draw && self.term.has_focus {
+            let caret_pos = caret.get_position();
+            if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
+                let line_bytes = (size.0 as usize) * 4;
+                let cell_x = caret_pos.x;
+                let cell_y = caret_pos.y;
+                if cell_x >= 0 && cell_y >= 0 {
+                    let px_x = (cell_x as usize) * font_w;
+                    let px_y = (cell_y as usize) * font_h;
+                    if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
+                        match caret.shape() {
+                            CaretShape::Bar => {
+                                // Draw a vertical bar on the left edge of the character cell
+                                let bar_width = 2.min(font_w); // 2 pixels wide or font width if smaller
+                                for row in 0..font_h {
+                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                    let slice = &mut rgba_data[row_offset..row_offset + bar_width * 4];
+                                    for p in slice.chunks_exact_mut(4) {
+                                        p[0] = 255 - p[0];
+                                        p[1] = 255 - p[1];
+                                        p[2] = 255 - p[2];
+                                    }
+                                }
+                            }
+                            CaretShape::Block => {
+                                for row in 0..font_h {
+                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+                                    for p in slice.chunks_exact_mut(4) {
+                                        p[0] = 255 - p[0];
+                                        p[1] = 255 - p[1];
+                                        p[2] = 255 - p[2];
+                                    }
+                                }
+                            }
+                            CaretShape::Underline => {
+                                let start_row = font_h - 2;
+                                for row in start_row..font_h {
+                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+                                    for p in slice.chunks_exact_mut(4) {
+                                        p[0] = 255 - p[0];
+                                        p[1] = 255 - p[1];
+                                        p[2] = 255 - p[2];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -652,8 +710,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
         let mut rgba_data = Vec::new();
         let mut size = (640, 400); // fallback
-        let mut caret_pos_opt = None;
-        let mut caret_visible = false;
         let mut font_w = 0usize;
         let mut font_h = 0usize;
         let mut no_scrollback = true;
@@ -661,8 +717,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         if let Ok(edit_state) = self.term.edit_state.try_lock() {
             no_scrollback = edit_state.scrollback_offset == 0;
             let buffer = edit_state.get_display_buffer();
-            caret_pos_opt = Some(edit_state.get_caret().get_position());
-            caret_visible = edit_state.get_caret().is_visible();
 
             if let Some(font) = buffer.get_font(0) {
                 font_w = font.size.width as usize;
@@ -703,31 +757,9 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         // Caret overlay (shared)
-        if state.caret_blink.is_on() && no_scrollback && caret_visible && self.term.has_focus {
-            if let Some(caret_pos) = caret_pos_opt {
-                if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
-                    let line_bytes = (size.0 as usize) * 4;
-                    let cell_x = caret_pos.x;
-                    let cell_y = caret_pos.y;
-                    if cell_x >= 0 && cell_y >= 0 {
-                        let px_x = (cell_x as usize) * font_w;
-                        let px_y = (cell_y as usize) * font_h;
-                        if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
-                            let style = CaretStyle::FullBlock;
-                            let caret_rows = style.rows(font_h);
-                            let start_row = font_h - caret_rows;
-                            for row in start_row..font_h {
-                                let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
-                                for p in slice.chunks_exact_mut(4) {
-                                    p[0] = 255 - p[0];
-                                    p[1] = 255 - p[1];
-                                    p[2] = 255 - p[2];
-                                }
-                            }
-                        }
-                    }
-                }
+        if no_scrollback {
+            if let Ok(edit_state) = self.term.edit_state.try_lock() {
+                self.draw_caret(&edit_state.get_caret(), state, &mut rgba_data, size, font_w, font_h);
             }
         }
 
@@ -1098,25 +1130,6 @@ pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: MonitorSettin
         .width(iced::Length::Fill)
         .height(iced::Length::Fill)
         .into()
-}
-
-#[derive(Clone, Copy)]
-pub enum CaretStyle {
-    FullBlock,
-    HalfBlock,
-    QuarterBlock,
-    Underline,
-}
-
-impl CaretStyle {
-    fn rows(self, font_h: usize) -> usize {
-        match self {
-            CaretStyle::FullBlock => font_h,
-            CaretStyle::HalfBlock => (font_h / 2).max(1),
-            CaretStyle::QuarterBlock => (font_h / 4).max(1),
-            CaretStyle::Underline => 2.min(font_h),
-        }
-    }
 }
 
 static SCALE_FACTOR_BITS: AtomicU32 = AtomicU32::new(f32::to_bits(1.0));

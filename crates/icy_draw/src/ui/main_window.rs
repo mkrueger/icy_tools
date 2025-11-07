@@ -568,9 +568,13 @@ pub fn is_font_extensions(ext: &str) -> bool {
         || "f11" == ext
         || "f10" == ext
         || "f09" == ext
+        || "f9" == ext
         || "f08" == ext
+        || "f8" == ext
         || "f07" == ext
+        || "f7" == ext
         || "f06" == ext
+        || "f6" == ext
         || "f05" == ext
         || "f04" == ext
         || "f03" == ext

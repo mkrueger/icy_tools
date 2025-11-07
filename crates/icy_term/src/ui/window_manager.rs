@@ -248,12 +248,7 @@ impl WindowManager {
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        #[cfg(target_os = "macos")]
-                        let cmd_key = modifiers.command();
-                        #[cfg(not(target_os = "macos"))]
-                        let cmd_key = modifiers.alt();
-
-                        if cmd_key && !modifiers.shift() && !modifiers.control() {
+                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
                             match &key {
                                 keyboard::Key::Character(s) => {
                                     if let Some(digit) = s.chars().next() {
@@ -269,28 +264,26 @@ impl WindowManager {
                                 _ => {}
                             }
                         }
-                        #[cfg(target_os = "macos")]
-                        let has_shift = true;
-                        #[cfg(not(target_os = "macos"))]
-                        let has_shift = modifiers.shift();
 
-                        if has_shift && modifiers.command() {
-                            match &key {
-                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                    "n" => return Some(WindowManagerMessage::OpenWindow),
+                        if modifiers.shift() {
+                            if modifiers.command() {
+                                match &key {
+                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                        "n" => return Some(WindowManagerMessage::OpenWindow),
+                                        _ => {}
+                                    },
                                     _ => {}
-                                },
-                                _ => {}
+                                }
                             }
-                        }
-
-                        if !modifiers.shift() && modifiers.command() {
-                            match &key {
-                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                    "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
+                        } else {
+                            if modifiers.command() {
+                                match &key {
+                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                        "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
+                                        _ => {}
+                                    },
                                     _ => {}
-                                },
-                                _ => {}
+                                }
                             }
                         }
                     }
@@ -299,7 +292,7 @@ impl WindowManager {
 
                 Some(WindowManagerMessage::Event(window_id, event))
             }),
-            iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::UpdateBuffers),
+            iced::time::every(std::time::Duration::from_millis(60)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
         iced::Subscription::batch(subs)
     }

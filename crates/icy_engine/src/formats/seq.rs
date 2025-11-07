@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, Buffer, BufferFeatures, BufferParser, C64_DEFAULT_PALETTE, C64_LOWER, C64_UPPER, Caret, EngineResult, OutputFormat, Palette,
+    AttributedChar, BitFont, Buffer, BufferFeatures, BufferParser, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, Caret, EngineResult, OutputFormat, Palette,
     TextPane, petscii,
 };
 
@@ -33,8 +33,8 @@ impl OutputFormat for Seq {
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((40, 25));
         result.clear_font_table();
-        result.set_font(0, BitFont::from_bytes("", C64_UPPER).unwrap());
-        result.set_font(1, BitFont::from_bytes("", C64_LOWER).unwrap());
+        result.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
+        result.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
 
         for y in 0..result.get_height() {
             for x in 0..result.get_width() {

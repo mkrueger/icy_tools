@@ -75,6 +75,7 @@ pub struct MainWindow {
     is_connected: bool,
     connection_time: Option<Instant>,
     current_address: Option<Address>,
+    last_address: Option<Address>,
 
     unicode_converter: Box<dyn UnicodeConverter>,
 
@@ -148,6 +149,7 @@ impl MainWindow {
             is_connected: false,
             connection_time: None,
             current_address: None,
+            last_address: None,
 
             capture_file: None,
             captured_data: Vec::new(),
@@ -261,6 +263,13 @@ impl MainWindow {
                 self.terminal_window.connect(Some(address.clone()));
                 self.current_address = Some(address);
                 self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+
+            Message::Reconnect => {
+                if let Some(address) = &self.last_address {
+                    return self.update(Message::Connect(address.clone()));
+                }
                 Task::none()
             }
             Message::Hangup => {
@@ -490,7 +499,6 @@ impl MainWindow {
                 Task::none()
             }
             Message::FindDialog(msg) => {
-                self.terminal_window.terminal.cache.clear();
                 if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.terminal.edit_state.clone()) {
                     return self.update(close_msg);
                 }
@@ -520,16 +528,12 @@ impl MainWindow {
             }
             Message::None => Task::none(),
 
-            Message::ScrollTerminal(line) => {
-                self.terminal_window.terminal.edit_state.lock().unwrap().set_scroll_position(line);
-                Task::none()
-            }
             Message::ScrollRelative(lines) => {
                 let mut state = self.terminal_window.terminal.edit_state.lock().unwrap();
                 let current_offset = state.scrollback_offset as i32;
                 let max_offset = state.get_max_scrollback_offset() as i32;
-                let new_offset = (current_offset + lines).clamp(0, max_offset);
-                state.set_scroll_position(new_offset as usize);
+                let new_offset = (current_offset - lines).clamp(0, max_offset) as usize;
+                state.set_scroll_position(new_offset);
                 Task::none()
             }
 
@@ -657,7 +661,6 @@ impl MainWindow {
                     let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
                     buffer.clear_screen(0, caret);
                     caret.set_position(Position::new(0, 0));
-                    self.terminal_window.terminal.cache.clear();
                 }
                 Task::none()
             }
@@ -768,7 +771,6 @@ impl MainWindow {
                                     }
                                 }
                                 *state.get_buffer_mut() = new_buffer;
-                                self.terminal_window.terminal.cache.clear();
                             }
                         }
                     }
@@ -831,7 +833,6 @@ impl MainWindow {
                                 let path = PathBuf::from(file_path);
                                 if let Ok(buffer) = icy_engine::Buffer::load_buffer(&path, true, None) {
                                     *state.get_buffer_mut() = buffer;
-                                    self.terminal_window.terminal.cache.clear();
                                 }
                             }
                         }
@@ -909,6 +910,7 @@ impl MainWindow {
         match event {
             TerminalEvent::Connected => {
                 self.is_connected = true;
+                self.last_address = self.current_address.clone();
                 self.terminal_window.is_connected = true;
                 self.connection_time = Some(Instant::now());
                 self.show_disconnect = false;
@@ -927,8 +929,16 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            TerminalEvent::Reconnect => {
+                return self.update(Message::Reconnect);
+            }
+            TerminalEvent::Connect(address) => {
+                if let Ok(e) = crate::ConnectionInformation::parse(&address) {
+                    return self.update(Message::Connect(e.into()));
+                }
+                Task::none()
+            } // 20forbeers.com:1337
             TerminalEvent::BufferUpdated => {
-                self.terminal_window.terminal.cache.clear();
                 let mut events = Vec::new();
                 if let Some(rx) = &mut self.terminal_rx {
                     while let Ok(event) = rx.try_recv() {
@@ -1061,7 +1071,12 @@ impl MainWindow {
         self.state.mode.clone()
     }
 
-    fn map_key_event_to_bytes(terminal_type: TerminalEmulation, key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Option<Vec<u8>> {
+    fn map_key_event_to_bytes(
+        terminal_type: TerminalEmulation,
+        key: &keyboard::Key,
+        physical: &keyboard::key::Physical,
+        modifiers: keyboard::Modifiers,
+    ) -> Option<Vec<u8>> {
         let key_map = match terminal_type {
             icy_net::telnet::TerminalEmulation::PETscii => iced_engine_gui::key_map::C64_KEY_MAP,
             icy_net::telnet::TerminalEmulation::ViewData | icy_net::telnet::TerminalEmulation::Mode7 => iced_engine_gui::key_map::VIDEOTERM_KEY_MAP,
@@ -1070,7 +1085,7 @@ impl MainWindow {
         };
 
         // Use the lookup_key function from the key_map module
-        iced_engine_gui::key_map::lookup_key(key, modifiers, key_map)
+        iced_engine_gui::key_map::lookup_key(key, physical, modifiers, key_map)
     }
 
     fn clear_selection(&mut self) {
@@ -1143,7 +1158,13 @@ impl MainWindow {
             },
             MainWindowMode::ShowTerminal => {
                 match event {
-                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        text,
+                        physical_key,
+                        ..
+                    }) => {
                         #[cfg(target_os = "macos")]
                         let cmd_key = modifiers.command();
                         #[cfg(not(target_os = "macos"))]
@@ -1199,7 +1220,7 @@ impl MainWindow {
                         }
 
                         // Try to map the key with modifiers using the key map
-                        if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, *modifiers) {
+                        if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, &physical_key, *modifiers) {
                             return Some(Message::SendData(bytes));
                         }
 
@@ -1318,6 +1339,8 @@ impl MainWindow {
             keyboard::Modifiers::empty()
         };
 
-        Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, modifiers)
+        let physical = keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
+
+        Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, &physical, modifiers)
     }
 }

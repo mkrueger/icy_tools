@@ -522,6 +522,10 @@ impl Buffer {
             }
         }
     }
+
+    pub fn clear_scrollback(&mut self) {
+        self.scrollback_lines.clear();
+    }
 }
 
 pub fn analyze_font_usage(buf: &Buffer) -> Vec<usize> {

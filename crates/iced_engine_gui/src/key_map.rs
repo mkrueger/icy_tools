@@ -1,9 +1,10 @@
-use iced::keyboard;
+use iced::keyboard::{self, key::Code};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyWithModifiers {
     Named(keyboard::key::Named, bool, bool), // key, shift, ctrl
     Character(char, bool, bool),             // char, shift, ctrl
+    KeyCode(Code, bool, bool),
 }
 
 // Helper function to create entries
@@ -25,6 +26,10 @@ const fn char_key_shift(ch: char) -> KeyWithModifiers {
 
 const fn char_key_ctrl(ch: char) -> KeyWithModifiers {
     KeyWithModifiers::Character(ch, false, true)
+}
+
+const fn key_code_key(code: Code) -> KeyWithModifiers {
+    KeyWithModifiers::KeyCode(code, false, false)
 }
 
 pub static ANSI_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
@@ -233,8 +238,10 @@ pub static VIDEOTERM_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key(keyboard::key::Named::Backspace), &[0x7F]),
     (named_key(keyboard::key::Named::Delete), &[0x7F]),
     (named_key(keyboard::key::Named::Escape), &[0x1B]),
-    (named_key(keyboard::key::Named::F1), &[b'*']),
     (named_key(keyboard::key::Named::F2), &[0b101_1111]),
+    (key_code_key(keyboard::key::Code::Backquote), &[b'*']),
+    (key_code_key(keyboard::key::Code::NumpadMultiply), &[b'*']),
+    (key_code_key(keyboard::key::Code::NumpadEnter), &[0b101_1111]),
     (named_key(keyboard::key::Named::ArrowUp), &[0x0B]),
     (named_key(keyboard::key::Named::ArrowDown), &[b'\n']),
     (named_key(keyboard::key::Named::ArrowRight), &[b'\t']),
@@ -245,21 +252,60 @@ pub static VIDEOTERM_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key_shift(keyboard::key::Named::ArrowLeft), &[0x08]),
 ];
 
-pub fn lookup_key(key: &keyboard::Key, modifiers: keyboard::Modifiers, map: &[(KeyWithModifiers, &[u8])]) -> Option<Vec<u8>> {
-    let key_with_mods = match key {
-        keyboard::Key::Named(named) => KeyWithModifiers::Named(*named, modifiers.shift(), modifiers.control() || modifiers.command()),
-        keyboard::Key::Character(s) => {
-            let ch = s.chars().next()?;
-            KeyWithModifiers::Character(ch.to_lowercase().next()?, modifiers.shift(), modifiers.control() || modifiers.command())
-        }
-        _ => return None,
-    };
+pub fn lookup_key(
+    key: &keyboard::Key,
+    physical: &keyboard::key::Physical,
+    modifiers: keyboard::Modifiers,
+    map: &[(KeyWithModifiers, &[u8])],
+) -> Option<Vec<u8>> {
+    let shift = modifiers.shift();
+    let ctrl = modifiers.control() || modifiers.command();
 
-    for (mapped_key, bytes) in map {
-        if *mapped_key == key_with_mods {
-            return Some(bytes.to_vec());
+    // Always also check physical key code
+    if let keyboard::key::Physical::Code(code) = physical {
+        let physical_key_with_mods = KeyWithModifiers::KeyCode(*code, shift, ctrl);
+        for (mapped_key, bytes) in map {
+            if *mapped_key == physical_key_with_mods {
+                return Some(bytes.to_vec());
+            }
         }
     }
 
+    // Try logical key interpretations
+    match key {
+        keyboard::Key::Named(named) => {
+            let key_with_mods = KeyWithModifiers::Named(*named, shift, ctrl);
+            for (mapped_key, bytes) in map {
+                if *mapped_key == key_with_mods {
+                    return Some(bytes.to_vec());
+                }
+            }
+        }
+        keyboard::Key::Character(s) => {
+            if let Some(ch) = s.chars().next() {
+                // Try exact character
+                let key_with_mods = KeyWithModifiers::Character(ch, shift, ctrl);
+                for (mapped_key, bytes) in map {
+                    if *mapped_key == key_with_mods {
+                        return Some(bytes.to_vec());
+                    }
+                }
+
+                // Try lowercase version
+                if let Some(lower_ch) = ch.to_lowercase().next() {
+                    if lower_ch != ch {
+                        // Only try if actually different
+                        let key_with_mods = KeyWithModifiers::Character(lower_ch, shift, ctrl);
+                        for (mapped_key, bytes) in map {
+                            if *mapped_key == key_with_mods {
+                                return Some(bytes.to_vec());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
     None
 }
