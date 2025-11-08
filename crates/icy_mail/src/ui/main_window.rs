@@ -101,9 +101,7 @@ impl MainWindow {
                 Task::perform(
                     async move { tokio::task::spawn_blocking(move || QwkPackage::load_from_file(path).map(Arc::new)).await },
                     |result| match result {
-                        Ok(Ok(package)) => {
-                            Message::PackageLoaded(package)
-                        }
+                        Ok(Ok(package)) => Message::PackageLoaded(package),
                         Ok(Err(e)) => Message::PackageLoadError(format!("Failed to load package: {}", e)),
                         Err(e) => Message::PackageLoadError(format!("Thread error: {}", e)),
                     },

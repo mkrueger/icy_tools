@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use crate::EXT_MUSIC_LIST;
-use icy_sauce::SauceInformation;
 
 use super::{EXT_IMAGE_LIST, EXT_WHITE_LIST};
 mod files;
 mod zip;
 pub use files::*;
 mod sixteencolors;
+use icy_sauce::SauceRecord;
 pub use sixteencolors::*;
 
 pub trait Item {
@@ -27,9 +27,9 @@ pub trait Item {
         None
     }
 
-    fn get_sauce(&mut self) -> Option<SauceInformation> {
+    fn get_sauce(&mut self) -> Option<SauceRecord> {
         if let Some(file) = self.read_data() {
-            if let Ok(info) = SauceInformation::read(&file) {
+            if let Ok(info) = SauceRecord::from_bytes(&file) {
                 return info;
             }
         }

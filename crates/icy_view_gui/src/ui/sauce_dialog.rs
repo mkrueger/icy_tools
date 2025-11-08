@@ -1,10 +1,10 @@
 use eframe::egui::{self, Layout};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_sauce::SauceInformation;
+use icy_sauce::prelude::*;
 
 pub struct SauceDialog {
-    sauce: SauceInformation,
+    sauce: SauceRecord,
 }
 
 pub enum Message {
@@ -12,7 +12,7 @@ pub enum Message {
 }
 
 impl SauceDialog {
-    pub fn new(sauce: SauceInformation) -> Self {
+    pub fn new(sauce: SauceRecord) -> Self {
         Self { sauce }
     }
 
@@ -46,40 +46,56 @@ impl SauceDialog {
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(fl!(crate::LANGUAGE_LOADER, "sauce-dialog-date-label"));
                     });
-                    let t = self.sauce.get_date().unwrap().format("%Y-%m-%d").to_string();
+                    let t = format!("{}-{}-{}", self.sauce.date().year, self.sauce.date().month, self.sauce.date().day);
                     ui.add(egui::TextEdit::singleline(&mut t.as_str()).char_limit(20));
                     ui.end_row();
-                    if let Ok(caps) = self.sauce.get_character_capabilities() {
-                        if let Some(font) = &caps.font_opt {
+                    match self.sauce.capabilities() {
+                        Some(Capabilities::Character(CharacterCapabilities {
+                            font_opt,
+                            ice_colors,
+                            aspect_ratio,
+                            letter_spacing,
+                            ..
+                        }))
+                        | Some(Capabilities::Binary(BinaryCapabilities {
+                            font_opt,
+                            ice_colors,
+                            aspect_ratio,
+                            letter_spacing,
+                            ..
+                        })) => {
+                            if let Some(font) = &font_opt {
+                                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.label(fl!(crate::LANGUAGE_LOADER, "sauce-dialog-font-name"));
+                                });
+                                ui.add(egui::TextEdit::singleline(&mut font.to_string()).char_limit(20));
+                                ui.end_row();
+                            }
+
                             ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(fl!(crate::LANGUAGE_LOADER, "sauce-dialog-font-name"));
+                                ui.label(fl!(crate::LANGUAGE_LOADER, "sauce-dialog-flags-label"));
                             });
-                            ui.add(egui::TextEdit::singleline(&mut font.to_string()).char_limit(20));
-                            ui.end_row();
-                        }
-
-                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(fl!(crate::LANGUAGE_LOADER, "sauce-dialog-flags-label"));
-                        });
-                        let mut flags: String = String::new();
-                        if caps.use_ice {
-                            flags.push_str("ice colors");
-                        }
-
-                        if caps.use_letter_spacing {
-                            if !flags.is_empty() {
-                                flags.push_str(", ");
+                            let mut flags: String = String::new();
+                            if ice_colors {
+                                flags.push_str("ice colors");
                             }
-                            flags.push_str("letter spacing");
-                        }
 
-                        if caps.use_aspect_ratio {
-                            if !flags.is_empty() {
-                                flags.push_str(", ");
+                            if letter_spacing.use_letter_spacing() {
+                                if !flags.is_empty() {
+                                    flags.push_str(", ");
+                                }
+                                flags.push_str("letter spacing");
                             }
-                            flags.push_str("aspect ratio");
+
+                            if aspect_ratio.use_aspect_ratio() {
+                                if !flags.is_empty() {
+                                    flags.push_str(", ");
+                                }
+                                flags.push_str("aspect ratio");
+                            }
+                            ui.add(egui::TextEdit::singleline(&mut flags.to_string().as_str()).char_limit(20));
                         }
-                        ui.add(egui::TextEdit::singleline(&mut flags.to_string().as_str()).char_limit(20));
+                        _ => {}
                     }
 
                     ui.end_row();

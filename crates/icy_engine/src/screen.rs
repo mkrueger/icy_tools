@@ -1,4 +1,1 @@
-pub trait Screen {
-    
-
-}
+pub trait Screen {}

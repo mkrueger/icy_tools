@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-#	"crates/icy_draw", 
+	"crates/icy_draw", 
 	"crates/icy_engine",
-#	"crates/icy_engine_gui",
+	"crates/icy_engine_gui",
 	"crates/icy_play", 
 	"crates/icy_term",
-#	"crates/icy_view",
-#	"crates/icy_view_gui",
+	"crates/icy_view",
+	"crates/icy_view_gui",
 	"crates/iced_engine_gui",
-#	"crates/icy_mail",
+	"crates/icy_mail",
 ]
 [workspace.package]
 version = "0.3.0"

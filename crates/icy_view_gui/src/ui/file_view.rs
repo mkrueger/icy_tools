@@ -5,6 +5,7 @@ use eframe::{
 };
 use egui::{ScrollArea, TextEdit, Ui};
 use i18n_embed_fl::fl;
+use icy_sauce::prelude::*;
 use wildcard::Wildcard;
 
 use core::f32;
@@ -324,30 +325,48 @@ impl FileView {
                                     ui.label(fl!(crate::LANGUAGE_LOADER, "heading-screen-mode"));
                                 });
                                 let mut flags: String = String::new();
-                                if let Ok(caps) = sauce.get_character_capabilities() {
-                                    if caps.use_ice {
-                                        flags.push_str("ICE");
-                                    }
-
-                                    if caps.use_letter_spacing {
-                                        if !flags.is_empty() {
-                                            flags.push(',');
+                                match sauce.capabilities() {
+                                    Some(Capabilities::Character(CharacterCapabilities {
+                                        columns,
+                                        lines,
+                                        ice_colors,
+                                        aspect_ratio,
+                                        letter_spacing,
+                                        ..
+                                    }))
+                                    | Some(Capabilities::Binary(BinaryCapabilities {
+                                        columns,
+                                        lines,
+                                        ice_colors,
+                                        aspect_ratio,
+                                        letter_spacing,
+                                        ..
+                                    })) => {
+                                        if ice_colors {
+                                            flags.push_str("ICE");
                                         }
-                                        flags.push_str("9px");
-                                    }
 
-                                    if caps.use_aspect_ratio {
-                                        if !flags.is_empty() {
-                                            flags.push(',');
+                                        if letter_spacing == LetterSpacing::NinePixel {
+                                            if !flags.is_empty() {
+                                                flags.push(',');
+                                            }
+                                            flags.push_str("9px");
                                         }
-                                        flags.push_str("AR");
-                                    }
 
-                                    if flags.is_empty() {
-                                        ui.strong(RichText::new(format!("{}x{}", caps.width, caps.height)));
-                                    } else {
-                                        ui.strong(RichText::new(format!("{}x{} ({})", caps.width, caps.height, flags)));
+                                        if aspect_ratio == AspectRatio::LegacyDevice {
+                                            if !flags.is_empty() {
+                                                flags.push(',');
+                                            }
+                                            flags.push_str("AR");
+                                        }
+
+                                        if flags.is_empty() {
+                                            ui.strong(RichText::new(format!("{}x{}", lines, columns)));
+                                        } else {
+                                            ui.strong(RichText::new(format!("{}x{} ({})", lines, columns, flags)));
+                                        }
                                     }
+                                    _ => {}
                                 }
                                 ui.end_row();
                             });

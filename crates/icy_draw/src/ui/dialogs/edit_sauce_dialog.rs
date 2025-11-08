@@ -2,13 +2,12 @@ use bstr::BString;
 use eframe::egui::{self, Layout};
 use egui_modal::Modal;
 use i18n_embed_fl::fl;
-use icy_sauce::SauceMetaInformation;
 
 use crate::{AnsiEditor, Message, ModalDialog, TerminalResult, to_message};
 
 pub struct EditSauceDialog {
     pub should_commit: bool,
-    pub sauce_data: SauceMetaInformation,
+    pub sauce_data: icy_sauce::MetaData,
     pub comments: String,
 }
 

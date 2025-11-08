@@ -385,8 +385,24 @@ impl Buffer {
 
     pub(crate) fn load_sauce(&mut self, sauce: icy_sauce::SauceRecord) {
         match sauce.capabilities() {
-            Some(Capabilities::Character(CharacterCapabilities { columns, lines, font_opt, ice_colors, aspect_ratio, letter_spacing, .. })) |
-            Some(Capabilities::Binary(BinaryCapabilities { columns, lines, font_opt, ice_colors, aspect_ratio, letter_spacing, .. })) => {
+            Some(Capabilities::Character(CharacterCapabilities {
+                columns,
+                lines,
+                font_opt,
+                ice_colors,
+                aspect_ratio,
+                letter_spacing,
+                ..
+            }))
+            | Some(Capabilities::Binary(BinaryCapabilities {
+                columns,
+                lines,
+                font_opt,
+                ice_colors,
+                aspect_ratio,
+                letter_spacing,
+                ..
+            })) => {
                 // check limits, some files have wrong sauce data, even if 0 is specified
                 // some files specify the pixel size there and don't have line breaks in the file
                 let size = Size::new(columns.clamp(1, 1000) as i32, lines as i32);
@@ -408,11 +424,9 @@ impl Buffer {
                 self.use_aspect_ratio = aspect_ratio == AspectRatio::LegacyDevice;
                 self.use_letter_spacing = letter_spacing == LetterSpacing::NinePixel;
             }
-            _ => {
-
-            }
+            _ => {}
         }
-        
+
         self.is_font_table_dirty = true;
         self.sauce_data = sauce.metadata();
     }
@@ -455,11 +469,7 @@ impl Buffer {
     }
 
     pub(crate) fn write_sauce_info(&self, data_type: SauceDataType, content_type: CharacterFormat, result: &mut Vec<u8>) -> anyhow::Result<()> {
-        let mut builder = self
-            .get_sauce_meta()
-            .to_builder()?
-            .file_size(result.len() as u32)
-            .data_type(data_type);
+        let mut builder = self.get_sauce_meta().to_builder()?.file_size(result.len() as u32).data_type(data_type);
 
         match data_type {
             SauceDataType::Character => {
@@ -480,11 +490,15 @@ impl Buffer {
                 builder = builder.capabilities(Capabilities::Character(caps))?;
             }
             SauceDataType::BinaryText => {
-                builder = builder.capabilities(Capabilities::Binary(BinaryCapabilities::binary_text(self.get_width() as u16).unwrap())).unwrap();
+                builder = builder
+                    .capabilities(Capabilities::Binary(BinaryCapabilities::binary_text(self.get_width() as u16).unwrap()))
+                    .unwrap();
             }
             SauceDataType::XBin => {
                 builder = builder
-                    .capabilities(Capabilities::Binary(BinaryCapabilities::xbin(self.get_width() as u16, self.get_height() as u16).unwrap()))
+                    .capabilities(Capabilities::Binary(
+                        BinaryCapabilities::xbin(self.get_width() as u16, self.get_height() as u16).unwrap(),
+                    ))
                     .unwrap();
             }
             _ => {}
