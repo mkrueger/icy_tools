@@ -1,8 +1,8 @@
-use icy_engine::{AttributedChar, Buffer, FontGlyph, FontType, Position, TextAttribute};
+use icy_engine::{AttributedChar, FontGlyph, FontType, Position, TextAttribute, TextBuffer};
 
 #[test]
 fn test_from_buffer_empty() {
-    let buffer = Buffer::new((10, 10));
+    let buffer = TextBuffer::new((10, 10));
 
     let glyph = FontGlyph::from_buffer(&buffer, FontType::Block);
     assert_eq!(glyph.size.width, 0);
@@ -12,7 +12,7 @@ fn test_from_buffer_empty() {
 
 #[test]
 fn test_from_buffer_block_simple() {
-    let mut buffer = Buffer::new((5, 3));
+    let mut buffer = TextBuffer::new((5, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'B' as char));
     buffer.layers[0].set_char(Position::new(2, 0), AttributedChar::from_char(b'C' as char));
@@ -25,7 +25,7 @@ fn test_from_buffer_block_simple() {
 
 #[test]
 fn test_from_buffer_block_multiline() {
-    let mut buffer = Buffer::new((5, 5));
+    let mut buffer = TextBuffer::new((5, 5));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'B' as char));
     buffer.layers[0].set_char(Position::new(0, 1), AttributedChar::from_char(b'C' as char));
@@ -47,7 +47,7 @@ fn test_from_buffer_block_multiline() {
 
 #[test]
 fn test_from_buffer_block_with_ampersand() {
-    let mut buffer = Buffer::new((10, 3));
+    let mut buffer = TextBuffer::new((10, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'B' as char));
     buffer.layers[0].set_char(Position::new(2, 0), AttributedChar::from_char(b'&' as char));
@@ -70,7 +70,7 @@ fn test_from_buffer_block_with_ampersand() {
 
 #[test]
 fn test_from_buffer_color_simple() {
-    let mut buffer = Buffer::new((5, 3));
+    let mut buffer = TextBuffer::new((5, 3));
     let ch = AttributedChar::new('A', TextAttribute::from_u8(0x1E, icy_engine::IceMode::Ice));
     buffer.layers[0].set_char(Position::new(0, 0), ch);
 
@@ -91,7 +91,7 @@ fn test_from_buffer_color_simple() {
 
 #[test]
 fn test_from_buffer_color_multiline() {
-    let mut buffer = Buffer::new((5, 5));
+    let mut buffer = TextBuffer::new((5, 5));
 
     let ch = AttributedChar::new('X', TextAttribute::from_u8(0x14, icy_engine::IceMode::Ice));
     buffer.layers[0].set_char(Position::new(0, 0), ch);
@@ -117,7 +117,7 @@ fn test_from_buffer_color_multiline() {
 
 #[test]
 fn test_from_buffer_color_with_ampersand() {
-    let mut buffer = Buffer::new((10, 3));
+    let mut buffer = TextBuffer::new((10, 3));
 
     let ch = AttributedChar::new('A', TextAttribute::from_u8(0x1A, icy_engine::IceMode::Ice));
     buffer.layers[0].set_char(Position::new(0, 0), ch);
@@ -146,7 +146,7 @@ fn test_from_buffer_color_with_ampersand() {
 
 #[test]
 fn test_from_buffer_outline_valid_chars() {
-    let mut buffer = Buffer::new((10, 3));
+    let mut buffer = TextBuffer::new((10, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'B' as char));
     buffer.layers[0].set_char(Position::new(2, 0), AttributedChar::from_char(b'@' as char));
@@ -163,7 +163,7 @@ fn test_from_buffer_outline_valid_chars() {
 
 #[test]
 fn test_from_buffer_outline_with_spaces() {
-    let mut buffer = Buffer::new((10, 3));
+    let mut buffer = TextBuffer::new((10, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b' ' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(2, 0), AttributedChar::from_char(b' ' as char));
@@ -178,7 +178,7 @@ fn test_from_buffer_outline_with_spaces() {
 
 #[test]
 fn test_from_buffer_outline_multiline() {
-    let mut buffer = Buffer::new((5, 5));
+    let mut buffer = TextBuffer::new((5, 5));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'X' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'Y' as char));
     buffer.layers[0].set_char(Position::new(0, 1), AttributedChar::from_char(b'Z' as char));
@@ -193,7 +193,7 @@ fn test_from_buffer_outline_multiline() {
 
 #[test]
 fn test_from_buffer_outline_with_ampersand() {
-    let mut buffer = Buffer::new((10, 3));
+    let mut buffer = TextBuffer::new((10, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'B' as char));
     buffer.layers[0].set_char(Position::new(2, 0), AttributedChar::from_char(b'&' as char));
@@ -207,7 +207,7 @@ fn test_from_buffer_outline_with_ampersand() {
 
 #[test]
 fn test_from_buffer_figlet() {
-    let mut buffer = Buffer::new((5, 3));
+    let mut buffer = TextBuffer::new((5, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'#' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'#' as char));
     buffer.layers[0].set_char(Position::new(0, 1), AttributedChar::from_char(b'#' as char));
@@ -222,7 +222,7 @@ fn test_from_buffer_figlet() {
 
 #[test]
 fn test_from_buffer_trailing_empty_lines() {
-    let mut buffer = Buffer::new((5, 5));
+    let mut buffer = TextBuffer::new((5, 5));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'B' as char));
     // Lines 1-4 are empty
@@ -235,7 +235,7 @@ fn test_from_buffer_trailing_empty_lines() {
 
 #[test]
 fn test_from_buffer_sparse_content() {
-    let mut buffer = Buffer::new((10, 10));
+    let mut buffer = TextBuffer::new((10, 10));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'A' as char));
     // Skip line 1
     buffer.layers[0].set_char(Position::new(0, 2), AttributedChar::from_char(b'B' as char));
@@ -258,7 +258,7 @@ fn test_from_buffer_sparse_content() {
 
 #[test]
 fn test_from_buffer_color_0xff_character() {
-    let mut buffer = Buffer::new((5, 3));
+    let mut buffer = TextBuffer::new((5, 3));
 
     let ch = AttributedChar::new(0xFF as char, TextAttribute::from_u8(0x07, icy_engine::IceMode::Ice));
     buffer.layers[0].set_char(Position::new(0, 0), ch);
@@ -280,7 +280,7 @@ fn test_from_buffer_color_0xff_character() {
 
 #[test]
 fn test_from_buffer_only_ampersand() {
-    let mut buffer = Buffer::new((5, 3));
+    let mut buffer = TextBuffer::new((5, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'&' as char));
 
     let glyph = FontGlyph::from_buffer(&buffer, FontType::Block);
@@ -291,7 +291,7 @@ fn test_from_buffer_only_ampersand() {
 
 #[test]
 fn test_from_buffer_ampersand_first_char() {
-    let mut buffer = Buffer::new((5, 3));
+    let mut buffer = TextBuffer::new((5, 3));
     buffer.layers[0].set_char(Position::new(0, 0), AttributedChar::from_char(b'&' as char));
     buffer.layers[0].set_char(Position::new(1, 0), AttributedChar::from_char(b'A' as char));
 

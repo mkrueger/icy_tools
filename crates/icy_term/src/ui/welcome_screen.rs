@@ -1,5 +1,5 @@
 use crate::{MCP_PORT, VERSION};
-use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane, TextScreen};
+use icy_engine::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane, TextScreen};
 use std::path::Path;
 
 const MAIN_SCREEN_ANSI1: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");
@@ -10,7 +10,7 @@ pub fn create_welcome_screen() -> TextScreen {
     let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
     // Load the welcome screen from MAIN_SCREEN_ANSI
-    let mut buffer = Buffer::from_bytes(
+    let mut buffer = TextBuffer::from_bytes(
         &Path::new("a.icy"),
         true,
         if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 },
@@ -119,7 +119,7 @@ pub fn create_welcome_screen() -> TextScreen {
 
     buffer.update_hyperlinks();
     screen.buffer = buffer;
-    screen.caret.position = caret_pos;
+    screen.caret.set_position(caret_pos);
 
     screen
 }

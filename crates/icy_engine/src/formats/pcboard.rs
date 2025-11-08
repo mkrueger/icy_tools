@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    Buffer, BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen, parse_with_parser, parsers,
+    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen, parse_with_parser,
+    parsers,
 };
 
 use super::{LoadData, SaveOptions};
@@ -24,7 +25,7 @@ impl OutputFormat for PCBoard {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.palette.len() != 16 {
             return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
         }
@@ -125,7 +126,7 @@ impl OutputFormat for PCBoard {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
         let mut result = TextScreen::new((width, 25));
@@ -154,7 +155,7 @@ impl OutputFormat for PCBoard {
     }
 }
 
-pub fn get_save_sauce_default_pcb(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_pcb(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
     }

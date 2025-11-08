@@ -180,13 +180,13 @@ impl Parser {
     pub(crate) fn select_graphic_rendition(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if self.parsed_numbers.is_empty() {
-            buf.caret_mut().reset_color_attribute(); // Reset or normal
+            buf.caret_default_colors(); // Reset or normal
         }
         let mut i = 0;
         while i < self.parsed_numbers.len() {
             let n = self.parsed_numbers[i];
             match n {
-                0 => buf.caret_mut().reset_color_attribute(), // Reset or normal
+                0 => buf.caret_default_colors(), // Reset or normal
                 1 => buf.caret_mut().attribute.set_is_bold(true),
                 2 => {
                     buf.caret_mut().attribute.set_is_faint(true);
@@ -371,7 +371,8 @@ impl Parser {
         // DECSTBM - Set Top and Bottom Margins
 
         buf.terminal_state_mut().set_margins_top_bottom(top, bottom);
-        buf.caret_mut().position = buf.upper_left_position();
+        let pos = buf.upper_left_position();
+        buf.caret_mut().set_position(pos);
         Ok(CallbackAction::NoUpdate)
     }
 
@@ -436,7 +437,8 @@ impl Parser {
             }
         };
 
-        buf.caret_mut().position = buf.upper_left_position();
+        let pos = buf.upper_left_position();
+        buf.caret_mut().set_position(pos);
         buf.terminal_state_mut().set_margins_top_bottom(top, bottom);
         buf.terminal_state_mut().set_margins_left_right(left, right);
 
@@ -532,7 +534,7 @@ impl Parser {
     /// Status: SCO private
     pub(crate) fn save_cursor_position(&mut self, caret: &Caret) {
         self.state = EngineState::Default;
-        self.saved_pos = caret.position;
+        self.saved_pos = caret.position();
     }
 
     /// Sequence: `CSI u`</p>
@@ -548,7 +550,7 @@ impl Parser {
         // CSI u
         // RCP - Restore Cursor Position
         self.state = EngineState::Default;
-        caret.position = self.saved_pos;
+        caret.set_position(self.saved_pos);
     }
 
     /// Sequence: `CSI Pn X`</p>

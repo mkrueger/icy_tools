@@ -41,7 +41,7 @@ impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         match ch {
             '\x00' | '\u{00FF}' => {
-                buf.caret_mut().reset_color_attribute();
+                buf.caret_default_colors();
             }
             BEL => {
                 return Ok(CallbackAction::Beep);

@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, text},
 };
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
-use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane, TextScreen, ansi::MusicOption};
+use icy_engine::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane, TextScreen, ansi::MusicOption};
 use std::sync::{Arc, Mutex};
 
 use crate::{
@@ -25,7 +25,7 @@ impl AboutDialog {
         let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
         // Load the help ANSI file
-        match Buffer::from_bytes(std::path::Path::new("a.icy"), true, ansi, Some(MusicOption::Off), None) {
+        match TextBuffer::from_bytes(std::path::Path::new("a.icy"), true, ansi, Some(MusicOption::Off), None) {
             Ok(mut buffer) => {
                 highlight_version(&mut buffer);
 
@@ -56,7 +56,7 @@ impl AboutDialog {
                 panic!("Failed to load help ANSI: {}", e);
             }
         }
-        screen.caret.set_is_visible(false);
+        screen.caret.visible = false;
 
         let edit_screen = Arc::new(Mutex::new(screen));
         let terminal = Terminal::new(edit_screen.clone());
@@ -137,7 +137,7 @@ impl AboutDialog {
     }
 }
 
-fn highlight_version(buffer: &mut Buffer) {
+fn highlight_version(buffer: &mut TextBuffer) {
     for y in 0..buffer.get_height() {
         for x in 0..buffer.get_width() {
             let ch = buffer.get_char((x, y).into());

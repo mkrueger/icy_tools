@@ -494,9 +494,9 @@ impl AnsiFont for TheDrawFont {
 
     fn render_next(&self, editor: &mut EditState, _prev_char: char, ch: char, edit_mode: bool) -> Position {
         if ch == '\n' {
-            return Position::new(0, editor.get_caret().get_position().y + self.get_font_height());
+            return Position::new(0, editor.get_caret().position().y + self.get_font_height());
         }
-        let caret_pos = editor.get_caret().get_position();
+        let caret_pos = editor.get_caret().position();
         let char_offset = (ch as i32) - b' ' as i32 - 1;
         if char_offset < 0 || char_offset > self.char_table.len() as i32 {
             return caret_pos;

@@ -53,11 +53,11 @@ impl Parser {
             let bg_color = if let Some(1) = self.parsed_numbers.get(1) {
                 [0, 0, 0, 0]
             } else {
-                let (r, g, b) = buf.palette().get_rgb(buf.caret().get_attribute().get_background());
+                let (r, g, b) = buf.palette().get_rgb(buf.caret().attribute.get_background());
                 [0xff, r, g, b]
             };
 
-            let p = buf.caret().get_position();
+            let p = buf.caret().position();
             let dcs_string = std::mem::take(&mut self.parse_string);
             let handle = thread::spawn(move || Sixel::parse_from(p, 1, vertical_scale, bg_color, &dcs_string[i + 1..]));
 

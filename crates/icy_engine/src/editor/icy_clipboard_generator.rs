@@ -70,7 +70,7 @@ impl EditState {
             for x in 0..width {
                 let mut ch = unsafe { char::from_u32_unchecked(u32::from_le_bytes(data[0..4].try_into().unwrap())) };
                 if need_convert_to_unicode {
-                    let font_page = self.caret.get_font_page();
+                    let font_page = self.caret.font_page();
                     ch = self.unicode_converter.convert_from_unicode(ch, font_page);
                 }
                 let attr_ch = AttributedChar {

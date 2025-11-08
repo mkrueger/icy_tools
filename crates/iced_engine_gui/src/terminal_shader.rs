@@ -577,10 +577,10 @@ impl<'a> CRTShaderProgram<'a> {
 
     pub fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize) {
         // Check both the caret's is_blinking property and the blink timer state
-        let should_draw = caret.is_visible() && (!caret.is_blinking || state.caret_blink.is_on());
+        let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
 
         if should_draw && self.term.has_focus {
-            let caret_pos = caret.get_position();
+            let caret_pos = caret.position();
             if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                 let line_bytes = (size.0 as usize) * 4;
                 let cell_x = caret_pos.x;
@@ -589,7 +589,7 @@ impl<'a> CRTShaderProgram<'a> {
                     let px_x = (cell_x as usize) * font_w;
                     let px_y = (cell_y as usize) * font_h;
                     if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
-                        match caret.shape() {
+                        match caret.shape {
                             CaretShape::Bar => {
                                 // Draw a vertical bar on the left edge of the character cell
                                 let bar_width = 2.min(font_w); // 2 pixels wide or font width if smaller

@@ -43,8 +43,8 @@ impl BufferParser for Parser {
             '\x7E' => buf.bs(),
             '\x7F' | '\u{009E}' | '\u{009F}' => { /* TAB TODO */ }
             '\u{009B}' => return Ok(buf.lf()),
-            '\u{009C}' => buf.remove_terminal_line(buf.caret().position.y),
-            '\u{009D}' => buf.insert_terminal_line(buf.caret().position.y),
+            '\u{009C}' => buf.remove_terminal_line(buf.caret().y),
+            '\u{009D}' => buf.insert_terminal_line(buf.caret().y),
             //   '\u{009E}' => { /* clear TAB stops TODO */ }
             //   '\u{009F}' => { /* set TAB stops TODO */ }
             '\u{00FD}' => return Ok(CallbackAction::Beep),

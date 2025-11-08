@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    Buffer, BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen, avatar::AVT_MOVE_CURSOR,
-    parse_with_parser, parsers,
+    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen,
+    avatar::AVT_MOVE_CURSOR, parse_with_parser, parsers,
 };
 
 use super::{LoadData, SaveOptions};
@@ -41,7 +41,7 @@ impl OutputFormat for Avatar {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.palette.len() != 16 {
             return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
         }
@@ -159,7 +159,7 @@ impl OutputFormat for Avatar {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
         let mut result = TextScreen::new((width, 25));
@@ -178,7 +178,7 @@ impl OutputFormat for Avatar {
     }
 }
 
-pub fn get_save_sauce_default_avt(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_avt(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
     }
@@ -192,18 +192,18 @@ pub fn get_save_sauce_default_avt(buf: &Buffer) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Buffer, OutputFormat, SaveOptions, TextPane};
+    use crate::{OutputFormat, SaveOptions, TextBuffer, TextPane};
 
     #[test]
     fn test_clear() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 12, b'X'], None, None).unwrap();
+        let buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 12, b'X'], None, None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(1, buf.get_real_buffer_width());
     }
 
     #[test]
     fn test_repeat() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X'], None, None).unwrap();
+        let buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X'], None, None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(5, buf.get_real_buffer_width());
         assert_eq!(b'X', buf.get_char((0, 0).into()).ch as u8);
@@ -215,14 +215,14 @@ mod tests {
 
     #[test]
     fn test_zero_repeat() {
-        let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[25, b'b', 0], None, None).unwrap();
+        let buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[25, b'b', 0], None, None).unwrap();
         assert_eq!(0, buf.get_line_count());
         assert_eq!(0, buf.get_real_buffer_width());
     }
 
     #[test]
     fn test_linebreak_bug() {
-        let buf = Buffer::from_bytes(
+        let buf = TextBuffer::from_bytes(
             &std::path::PathBuf::from("test.avt"),
             false,
             &[
@@ -272,7 +272,7 @@ mod tests {
     }
 
     fn test_avt(data: &[u8]) {
-        let mut buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None, None).unwrap();
+        let mut buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, data, None, None).unwrap();
         let converted = super::Avatar::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
 
         // more gentle output.

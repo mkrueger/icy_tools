@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{LoadData, Position, SaveOptions, TextAttribute};
-use crate::{AttributedChar, Buffer, BufferFeatures, EngineResult, OutputFormat, TextPane};
+use crate::{AttributedChar, BufferFeatures, EngineResult, OutputFormat, TextBuffer, TextPane};
 
 #[derive(Default)]
 pub(super) struct Bin {}
@@ -19,7 +19,7 @@ impl OutputFormat for Bin {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
 
         for y in 0..buf.get_height() {
@@ -35,8 +35,8 @@ impl OutputFormat for Bin {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((160, 25));
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+        let mut result = TextBuffer::new((160, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
@@ -77,7 +77,7 @@ impl OutputFormat for Bin {
     }
 }
 
-pub fn get_save_sauce_default_binary(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_binary(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 160 {
         return (true, "width != 160".to_string());
     }

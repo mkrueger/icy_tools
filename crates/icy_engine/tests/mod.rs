@@ -1,12 +1,12 @@
 use icy_engine::{
-    Buffer,
+    TextBuffer,
     editor::{EditState, UndoState},
 };
 pub mod tdf;
 
 #[test]
 fn test_set_aspect_ratio() {
-    let mut buffer = Buffer::new((80, 25));
+    let mut buffer = TextBuffer::new((80, 25));
     buffer.set_use_aspect_ratio(false);
     let mut edit_state = EditState::from_buffer(buffer);
 
@@ -20,7 +20,7 @@ fn test_set_aspect_ratio() {
 
 #[test]
 fn test_set_letter_spacing() {
-    let mut buffer = Buffer::new((80, 25));
+    let mut buffer = TextBuffer::new((80, 25));
     buffer.set_use_letter_spacing(false);
     let mut edit_state = EditState::from_buffer(buffer);
 

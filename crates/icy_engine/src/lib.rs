@@ -22,18 +22,11 @@ pub use text_attribute::*;
 mod attributed_char;
 pub use attributed_char::*;
 
-mod layer;
-pub use layer::*;
-
-mod line;
-pub use line::*;
-
 mod position;
 pub use position::*;
 
-mod buffers;
-mod buffers_rendering;
-pub use buffers::*;
+mod text_buffer;
+pub use text_buffer::*;
 
 #[macro_use]
 mod palette_handling;
@@ -85,9 +78,6 @@ use rust_embed::RustEmbed;
 
 pub mod screen;
 pub use screen::*;
-
-pub mod text_screen;
-pub use text_screen::*;
 
 #[derive(RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources

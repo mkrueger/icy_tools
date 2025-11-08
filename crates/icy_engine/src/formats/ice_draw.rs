@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BitFont, Buffer, EngineResult, IceMode, LoadingError, OutputFormat, Palette, Position, SavingError, Size, TextPane, analyze_font_usage,
+    AttributedChar, BitFont, EngineResult, IceMode, LoadingError, OutputFormat, Palette, Position, SavingError, Size, TextBuffer, TextPane, analyze_font_usage,
     guess_font_name,
 };
 
@@ -30,7 +30,7 @@ impl OutputFormat for IceDraw {
         "IceDraw"
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.ice_mode != IceMode::Ice {
             return Err(anyhow::anyhow!("Only ice mode files are supported by this format."));
         }
@@ -120,8 +120,8 @@ impl OutputFormat for IceDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
+    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+        let mut result = TextBuffer::new((80, 25));
         result.ice_mode = IceMode::Ice;
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
@@ -191,7 +191,7 @@ impl OutputFormat for IceDraw {
     }
 }
 
-pub fn get_save_sauce_default_idf(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_idf(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
     }
@@ -214,7 +214,7 @@ fn advance_pos(x1: i32, x2: i32, pos: &mut Position) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane, compare_buffers};
+    use crate::{AttributedChar, BitFont, Color, OutputFormat, TextAttribute, TextBuffer, TextPane, compare_buffers};
 
     #[test]
     pub fn test_ice() {
@@ -266,8 +266,8 @@ mod tests {
         test_ice_draw(&mut buffer);
     }
 
-    fn create_buffer() -> Buffer {
-        let mut buffer = Buffer::new((80, 25));
+    fn create_buffer() -> TextBuffer {
+        let mut buffer = TextBuffer::new((80, 25));
         for y in 0..buffer.get_height() {
             for x in 0..buffer.get_width() {
                 buffer.layers[0].set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
@@ -276,7 +276,7 @@ mod tests {
         buffer
     }
 
-    fn test_ice_draw(buffer: &mut Buffer) -> Buffer {
+    fn test_ice_draw(buffer: &mut TextBuffer) -> TextBuffer {
         let xb = super::IceDraw::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

@@ -2,7 +2,7 @@ use std::cmp::max;
 
 use crate::{
     AttributedChar, BitFont, CallbackAction, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
-    TerminalState, TextPane, caret,
+    TerminalState, TextAttribute, TextPane, caret,
 };
 
 pub trait Screen: TextPane + Send {
@@ -73,6 +73,14 @@ pub trait EditableScreen: Screen {
 
     fn caret_mut(&mut self) -> &mut caret::Caret;
 
+    fn caret_default_colors(&mut self) {
+        let font_page = self.caret_mut().font_page();
+        self.caret_mut().attribute = TextAttribute {
+            font_page,
+            ..Default::default()
+        };
+    }
+
     fn palette_mut(&mut self) -> &mut Palette;
 
     fn buffer_type_mut(&mut self) -> &mut crate::BufferType;
@@ -100,18 +108,19 @@ pub trait EditableScreen: Screen {
     fn update_sixel_threads(&mut self) -> EngineResult<bool>;
 
     fn lf(&mut self) -> CallbackAction {
-        let was_ooe = self.caret().position.y > self.get_last_editable_line();
+        let was_ooe = self.caret().y > self.get_last_editable_line();
         let mut line_inserted = 0;
-        self.caret_mut().position.x = 0;
-        self.caret_mut().position.y += 1;
+        self.caret_mut().x = 0;
+        let y = self.caret_mut().y;
+        self.caret_mut().y = y + 1;
 
-        while self.caret().position.y >= self.line_count() as i32 {
-            if self.terminal_state().fixed_size && self.caret().position.y >= self.terminal_state().get_height() {
+        while self.caret().y >= self.line_count() as i32 {
+            if self.terminal_state().fixed_size && self.caret().y >= self.terminal_state().get_height() {
                 line_inserted += 1;
                 if self.line_count() > 0 {
                     self.scroll_up();
                 }
-                self.caret_mut().position.y -= 1;
+                self.caret_mut().y -= 1;
                 continue;
             }
             let len = self.line_count();
@@ -126,8 +135,8 @@ pub trait EditableScreen: Screen {
             return CallbackAction::Update;
         }
 
-        if self.caret().position.y + 1 > self.get_height() {
-            self.set_height(self.caret().position.y + 1);
+        if self.caret().y + 1 > self.get_height() {
+            self.set_height(self.caret().y + 1);
         }
 
         if was_ooe {
@@ -150,21 +159,23 @@ pub trait EditableScreen: Screen {
 
     /// (carriage return, CR, \r, ^M), moves the printing position to the start of the line.
     fn cr(&mut self) {
-        self.caret_mut().position.x = 0;
+        self.caret_mut().x = 0;
     }
 
     fn eol(&mut self) {
-        self.caret_mut().position.x = self.get_width() - 1;
+        let x = self.get_width() - 1;
+        self.caret_mut().x = x;
     }
 
     fn home(&mut self) {
-        self.caret_mut().position = self.upper_left_position();
+        let pos = self.upper_left_position();
+        self.caret_mut().set_position(pos);
     }
 
     /// Delete character at caret position, shifting remaining characters in the line left.
     /// Implements a slower fallback using only get_char/set_char APIs.
     fn del(&mut self) {
-        let pos = self.caret().position;
+        let pos = self.caret().position();
         let line_len = self.get_line_length(pos.y);
         if pos.x < 0 || pos.y < 0 {
             return;
@@ -185,7 +196,7 @@ pub trait EditableScreen: Screen {
     /// Insert a blank character at caret, shifting existing characters right.
     /// Uses get_char/set_char only; slower but generic.
     fn ins(&mut self) {
-        let pos = self.caret().position;
+        let pos = self.caret().position();
         if pos.x < 0 || pos.y < 0 {
             return;
         }
@@ -208,54 +219,62 @@ pub trait EditableScreen: Screen {
             self.set_char((x, pos.y).into(), to_write);
         }
         // Advance caret after inserted blank
-        self.caret_mut().position.x = (pos.x + 1).min(self.get_width() - 1);
+        let x = self.get_width().saturating_sub(1);
+        self.caret_mut().x = (pos.x + 1).min(x);
     }
 
     /// (backspace, BS, \b, ^H), may overprint the previous character
     fn bs(&mut self) {
-        self.caret_mut().position.x = max(0, self.caret_mut().position.x - 1);
-        self.set_char(self.caret().position, AttributedChar::new(' ', self.caret().get_attribute()));
+        let x = max(0, self.caret_mut().x - 1);
+        self.caret_mut().x = x;
+        self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
     }
 
     fn left(&mut self, num: i32) {
-        self.caret_mut().position.x = self.caret().position.x.saturating_sub(num);
+        let x = self.caret().x.saturating_sub(num);
+        self.caret_mut().x = x;
         self.limit_caret_pos();
     }
 
     fn right(&mut self, num: i32) {
-        self.caret_mut().position.x = self.caret_mut().position.x.saturating_add(num);
+        let x = self.caret_mut().x.saturating_add(num);
+        self.caret_mut().x = x;
         self.limit_caret_pos();
     }
 
     fn up(&mut self, num: i32) {
-        self.caret_mut().position.y = self.caret().position.y.saturating_sub(num);
+        let y = self.caret().y.saturating_sub(num);
+        self.caret_mut().y = y;
         self.check_scrolling_on_caret_up(false);
         self.limit_caret_pos();
     }
 
     fn down(&mut self, num: i32) {
-        self.caret_mut().position.y += num;
+        let y = self.caret().y + num;
+        self.caret_mut().y = y;
         self.check_scrolling_on_caret_down(false);
         self.limit_caret_pos();
     }
 
     /// Moves the cursor down one line in the same column. If the cursor is at the bottom margin, the page scrolls up.
     fn index(&mut self) {
-        self.caret_mut().position.y += 1;
+        let y = self.caret_mut().y;
+        self.caret_mut().y = y + 1;
         self.check_scrolling_on_caret_down(true);
         self.limit_caret_pos();
     }
 
     /// Moves the cursor up one line in the same column. If the cursor is at the top margin, the page scrolls down.
     fn reverse_index(&mut self) {
-        self.caret_mut().position.y -= 1;
+        self.caret_mut().y -= 1;
         self.check_scrolling_on_caret_up(true);
         self.limit_caret_pos();
     }
 
     fn next_line(&mut self) {
-        self.caret_mut().position.y += 1;
-        self.caret_mut().position.x = 0;
+        let y = self.caret_mut().y;
+        self.caret_mut().y = y + 1;
+        self.caret_mut().x = 0;
         self.check_scrolling_on_caret_down(true);
         self.limit_caret_pos();
     }
@@ -263,17 +282,18 @@ pub trait EditableScreen: Screen {
     fn check_scrolling_on_caret_up(&mut self, force: bool) {
         if self.terminal_state().needs_scrolling() || force {
             let last = self.get_first_editable_line();
-            while self.caret().position.y < last {
+            while self.caret().y < last {
                 self.scroll_down();
-                self.caret_mut().position.y += 1;
+                let y = self.caret_mut().y;
+                self.caret_mut().y = y + 1;
             }
         }
     }
 
     fn check_scrolling_on_caret_down(&mut self, force: bool) {
-        if (self.terminal_state().needs_scrolling() || force) && self.caret().position.y > self.get_last_editable_line() {
+        if (self.terminal_state().needs_scrolling() || force) && self.caret().y > self.get_last_editable_line() {
             self.scroll_up();
-            self.caret_mut().position.y -= 1;
+            self.caret_mut().y -= 1;
         }
     }
 
@@ -291,26 +311,29 @@ pub trait EditableScreen: Screen {
         if self.caret().insert_mode {
             self.ins();
         }
-        if self.caret().position.y + 1 > self.get_height() {
-            self.set_height(self.caret().position.y + 1);
+        if self.caret().y + 1 > self.get_height() {
+            self.set_height(self.caret().y + 1);
         }
-        if self.terminal_state().is_terminal_buffer && self.caret().position.y + 1 > self.get_height() {
-            self.set_height(self.caret().position.y + 1);
+        if self.terminal_state().is_terminal_buffer && self.caret().y + 1 > self.get_height() {
+            self.set_height(self.caret().y + 1);
         }
 
-        self.set_char(self.caret().position, ch);
-        self.caret_mut().position.x += 1;
-        if self.caret().position.x
-            >= if self.terminal_state().is_terminal_buffer {
-                self.terminal_state().get_width()
-            } else {
-                buffer_width
-            }
-        {
+        self.set_char(self.caret().position(), ch);
+        let x = self.caret().x;
+        self.caret_mut().x = x + 1;
+
+        let real_width = if self.terminal_state().is_terminal_buffer {
+            self.terminal_state().get_width()
+        } else {
+            buffer_width
+        };
+
+        if self.caret().x >= real_width {
             if let crate::AutoWrapMode::AutoWrap = self.terminal_state_mut().auto_wrap_mode {
                 self.lf();
             } else {
-                self.caret_mut().position.x -= 1;
+                let y = self.caret().y;
+                self.caret_mut().y = y - 1;
             }
         }
     }
@@ -329,9 +352,9 @@ pub trait EditableScreen: Screen {
     fn set_scroll_position(&mut self, line: usize);
 
     fn clear_buffer_down(&mut self) {
-        let pos = self.caret().get_position();
+        let pos = self.caret().position();
         let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().get_attribute(),
+            attribute: self.caret().attribute,
             ..Default::default()
         };
 
@@ -343,9 +366,9 @@ pub trait EditableScreen: Screen {
     }
 
     fn clear_buffer_up(&mut self) {
-        let pos = self.caret().get_position();
+        let pos = self.caret().position();
         let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().get_attribute(),
+            attribute: self.caret().attribute,
             ..Default::default()
         };
 
@@ -357,9 +380,9 @@ pub trait EditableScreen: Screen {
     }
 
     fn clear_line(&mut self) {
-        let mut pos = self.caret().get_position();
+        let mut pos = self.caret().position();
         let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().get_attribute(),
+            attribute: self.caret().attribute,
             ..Default::default()
         };
         for x in 0..self.get_width() {
@@ -369,9 +392,9 @@ pub trait EditableScreen: Screen {
     }
 
     fn clear_line_end(&mut self) {
-        let mut pos = self.caret().get_position();
+        let mut pos = self.caret().position();
         let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().get_attribute(),
+            attribute: self.caret().attribute,
             ..Default::default()
         };
         for x in pos.x..self.get_width() {
@@ -381,9 +404,9 @@ pub trait EditableScreen: Screen {
     }
 
     fn clear_line_start(&mut self) {
-        let mut pos = self.caret().get_position();
+        let mut pos = self.caret().position();
         let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().get_attribute(),
+            attribute: self.caret().attribute,
             ..Default::default()
         };
         for x in 0..pos.x {
@@ -401,7 +424,9 @@ pub trait EditableScreen: Screen {
     fn add_hyperlink(&mut self, link: crate::HyperLink);
 
     fn tab_forward(&mut self) {
-        self.caret_mut().position.x = ((self.caret().position.x / 8 + 1) * 8).min(self.get_width() - 1);
+        let x = (self.caret().x / 8 + 1) * 8;
+        let w = self.get_width() - 1;
+        self.caret_mut().x = x.min(w);
     }
 
     fn limit_caret_pos(&mut self) {
@@ -409,16 +434,18 @@ pub trait EditableScreen: Screen {
             crate::OriginMode::UpperLeftCorner => {
                 if self.terminal_state().is_terminal_buffer {
                     let first = self.get_first_visible_line();
-                    self.caret_mut().position.y = self.caret().position.y.clamp(first, first + self.get_height() - 1);
+                    self.caret_mut().y = self.caret().y.clamp(first, first + self.get_height() - 1);
                 }
-                self.caret_mut().position.x = self.caret().position.x.clamp(0, (self.get_width() - 1).max(0));
+                let x = self.caret().x.clamp(0, (self.get_width() - 1).max(0));
+                self.caret_mut().x = x;
             }
             crate::OriginMode::WithinMargins => {
                 let first = self.get_first_editable_line();
                 let height = self.get_last_editable_line() - first;
-                let n = self.caret().position.y.clamp(first, (first + height - 1).max(first));
-                self.caret_mut().position.y = n;
-                self.caret_mut().position.x = self.caret().position.x.clamp(0, (self.get_width() - 1).max(0));
+                let n = self.caret().y.clamp(first, (first + height - 1).max(first));
+                self.caret_mut().y = n;
+                let x = self.caret().x.clamp(0, (self.get_width() - 1).max(0));
+                self.caret_mut().x = x;
             }
         }
     }

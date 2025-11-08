@@ -1,8 +1,8 @@
-use crate::{Buffer, Position, Rectangle, RenderOptions, TextPane};
+use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane};
 
 use super::Size;
 
-impl Buffer {
+impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
         let font_size = self.get_font(0).unwrap().size;
         let rect = options.rect.as_rectangle_with_width(self.get_width());

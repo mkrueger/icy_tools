@@ -20,10 +20,10 @@ mod selection_operations;
 mod tag_operations;
 pub use icy_clipboard_generator::*;
 
-use crate::{Buffer, Caret, EngineResult, Layer, Position, Selection, SelectionMask, Shape, TextPane, UnicodeConverter, ascii, overlay_mask::OverlayMask};
+use crate::{Caret, EngineResult, Layer, Position, Selection, SelectionMask, Shape, TextBuffer, TextPane, UnicodeConverter, ascii, overlay_mask::OverlayMask};
 
 pub struct EditState {
-    buffer: Buffer,
+    buffer: TextBuffer,
     caret: Caret,
     selection_opt: Option<Selection>,
     selection_mask: SelectionMask,
@@ -42,7 +42,7 @@ pub struct EditState {
     pub is_palette_dirty: bool,
     is_buffer_dirty: bool,
 
-    pub scrollback_buffer: Option<Buffer>,
+    pub scrollback_buffer: Option<TextBuffer>,
     pub scrollback_offset: usize,
 }
 
@@ -92,7 +92,7 @@ impl Drop for AtomicUndoGuard {
 
 impl Default for EditState {
     fn default() -> Self {
-        let buffer = Buffer::default();
+        let buffer = TextBuffer::default();
         let mut selection_mask = SelectionMask::default();
         selection_mask.set_size(buffer.get_size());
         let mut tool_overlay_mask = OverlayMask::default();
@@ -132,7 +132,7 @@ impl EditState {
         }
 
         // Create a new buffer with same settings as current buffer
-        let mut scroll_buffer = Buffer::new(self.buffer.get_size());
+        let mut scroll_buffer = TextBuffer::new(self.buffer.get_size());
 
         // Copy buffer settings
         scroll_buffer.set_font_table(self.buffer.get_font_table());
@@ -211,7 +211,7 @@ impl EditState {
         self.set_scroll_position(0);
     }
 
-    pub fn from_buffer(buffer: Buffer) -> Self {
+    pub fn from_buffer(buffer: TextBuffer) -> Self {
         let mut selection_mask = SelectionMask::default();
         selection_mask.set_size(buffer.get_size());
         let mut tool_overlay_mask = OverlayMask::default();
@@ -233,7 +233,7 @@ impl EditState {
         &*self.unicode_converter
     }
 
-    pub fn set_buffer(&mut self, buffer: Buffer) {
+    pub fn set_buffer(&mut self, buffer: TextBuffer) {
         self.buffer = buffer;
         self.set_mask_size();
     }
@@ -251,7 +251,7 @@ impl EditState {
         &mut self.tool_overlay_mask
     }
 
-    pub fn get_display_buffer(&self) -> &Buffer {
+    pub fn get_display_buffer(&self) -> &TextBuffer {
         if let Some(ref scrollback) = self.scrollback_buffer {
             scrollback
         } else {
@@ -259,11 +259,11 @@ impl EditState {
         }
     }
 
-    pub fn get_buffer(&self) -> &Buffer {
+    pub fn get_buffer(&self) -> &TextBuffer {
         &self.buffer
     }
 
-    pub fn get_buffer_mut(&mut self) -> &mut Buffer {
+    pub fn get_buffer_mut(&mut self) -> &mut TextBuffer {
         &mut self.buffer
     }
 
@@ -311,7 +311,7 @@ impl EditState {
         &mut self.caret
     }
 
-    pub fn get_buffer_and_caret_mut(&mut self) -> (&mut Buffer, &mut Caret, &mut Box<dyn UnicodeConverter>) {
+    pub fn get_buffer_and_caret_mut(&mut self) -> (&mut TextBuffer, &mut Caret, &mut Box<dyn UnicodeConverter>) {
         (&mut self.buffer, &mut self.caret, &mut self.unicode_converter)
     }
 

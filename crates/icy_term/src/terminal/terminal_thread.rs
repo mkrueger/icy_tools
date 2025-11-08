@@ -4,7 +4,7 @@ use crate::features::{AutoFileTransfer, AutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
-use icy_engine::{BufferParser, CallbackAction, EditableScreen, TextAttribute};
+use icy_engine::{BufferParser, CallbackAction, EditableScreen};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -469,7 +469,7 @@ impl TerminalThread {
             let _ = conn.shutdown().await;
         }
         if let Ok(mut state) = self.edit_screen.lock() {
-            state.caret_mut().set_attr(TextAttribute::default());
+            state.caret_default_colors();
         }
         self.process_data(b"\r\nNO CARRIER\r\n").await;
 
@@ -526,7 +526,6 @@ impl TerminalThread {
         let mut actions = Vec::new();
 
         if let Ok(mut screen) = self.edit_screen.lock() {
-            let caret = screen.caret().clone();
             {
                 if self.use_utf8 {
                     // UTF-8 mode: decode multi-byte sequences
@@ -645,7 +644,6 @@ impl TerminalThread {
 
                 screen.update_hyperlinks();
             }
-            *screen.caret_mut() = caret;
 
             while screen.sixel_threads_runnning() {
                 thread::sleep(Duration::from_millis(50));

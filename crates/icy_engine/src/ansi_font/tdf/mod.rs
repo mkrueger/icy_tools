@@ -1,4 +1,4 @@
-use crate::{AttributedChar, Buffer, Size, TextAttribute, TextPane, UnicodeConverter, editor::EditState};
+use crate::{AttributedChar, Size, TextAttribute, TextBuffer, TextPane, UnicodeConverter, editor::EditState};
 use i18n_embed_fl::fl;
 
 pub mod font;
@@ -20,7 +20,7 @@ pub struct FontGlyph {
 
 impl FontGlyph {
     fn render(&self, editor: &mut EditState, font_type: FontType, edit_mode: bool) -> Size {
-        let caret_pos = editor.get_caret().get_position();
+        let caret_pos = editor.get_caret().position();
         let outline_style = editor.get_outline_style();
         let color: TextAttribute = editor.get_caret().attribute;
         let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-char_font_glyph"));
@@ -127,12 +127,12 @@ impl FontGlyph {
         Size::new(max_width, max_height)
     }
 
-    pub fn from_buffer(buffer: &Buffer, font_type: FontType) -> Self {
+    pub fn from_buffer(buffer: &TextBuffer, font_type: FontType) -> Self {
         let mut data = Vec::new();
         let mut max_width = 0;
 
         // Helper function to get the actual line length (excluding trailing spaces)
-        fn get_actual_line_length(buffer: &Buffer, y: i32) -> i32 {
+        fn get_actual_line_length(buffer: &TextBuffer, y: i32) -> i32 {
             let mut len = 0;
             for x in 0..buffer.get_width() {
                 let ch = buffer.get_char((x, y).into());

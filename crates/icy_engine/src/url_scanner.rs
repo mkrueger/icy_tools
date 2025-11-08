@@ -1,6 +1,6 @@
-use crate::{Buffer, HyperLink, Position, TextPane};
+use crate::{HyperLink, Position, TextBuffer, TextPane};
 
-impl Buffer {
+impl TextBuffer {
     pub fn parse_hyperlinks(&self) -> Vec<HyperLink> {
         let mut result: Vec<HyperLink> = Vec::new();
 

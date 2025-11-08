@@ -19,7 +19,7 @@ impl BufferParser for Parser {
             self.ctrl_a = false;
             match ch {
                 'L' => buf.clear_screen(),
-                '\'' => buf.caret_mut().position = Position::default(),
+                '\'' => buf.caret_mut().set_position(Position::default()),
                 'J' => buf.clear_buffer_down(),
                 '>' => buf.clear_line_end(),
                 '<' => buf.left(1),
@@ -30,7 +30,7 @@ impl BufferParser for Parser {
                 }
                 'H' => {
                     self.is_bold = true;
-                    let fg = buf.caret().get_attribute().get_foreground();
+                    let fg = buf.caret().attribute.get_foreground();
                     if fg < 8 {
                         buf.caret_mut().set_foreground(fg + 8);
                     }
@@ -38,7 +38,7 @@ impl BufferParser for Parser {
                 'I' => buf.caret_mut().attribute.set_is_blinking(true),
                 'E' => {
                     self.high_bg = true;
-                    let bg = buf.caret().get_attribute().get_background();
+                    let bg = buf.caret().attribute.get_background();
                     if bg < 8 {
                         buf.caret_mut().set_background(bg + 8);
                     }
@@ -46,12 +46,12 @@ impl BufferParser for Parser {
                 'N' => {
                     self.high_bg = false;
                     self.is_bold = false;
-                    buf.caret_mut().reset_color_attribute();
-                    let fg = buf.caret().get_attribute().get_foreground();
+                    buf.caret_default_colors();
+                    let fg = buf.caret().attribute.get_foreground();
                     if fg > 7 {
                         buf.caret_mut().set_foreground(fg - 8);
                     }
-                    let bg = buf.caret().get_attribute().get_background();
+                    let bg = buf.caret().attribute.get_background();
                     if bg > 7 {
                         buf.caret_mut().set_background(bg - 8);
                     }

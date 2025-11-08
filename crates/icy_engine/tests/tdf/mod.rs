@@ -1,7 +1,7 @@
 mod from_buffer;
 mod tdf_container;
 
-use icy_engine::{AnsiFont, Buffer, FontGlyph, FontType, Position, Size, TextPane, editor::EditState, font::TheDrawFont};
+use icy_engine::{AnsiFont, FontGlyph, FontType, Position, Size, TextBuffer, TextPane, editor::EditState, font::TheDrawFont};
 
 #[test]
 fn test_tdf_font_basic_loading() {
@@ -76,7 +76,7 @@ fn test_tdf_render_block_multiline_cr() {
     };
     font.set_glyph('X', glyph);
 
-    let buffer = Buffer::new((20, 10));
+    let buffer = TextBuffer::new((20, 10));
     let mut edit = EditState::from_buffer(buffer);
     edit.get_caret_mut().set_position(Position::new(0, 0));
     let sz = font.render(&mut edit, b'X', false).expect("render size");
@@ -99,7 +99,7 @@ fn test_tdf_render_block_ampersand_edit_mode_visible() {
     };
     font.set_glyph('A', glyph);
 
-    let buffer = Buffer::new((10, 5));
+    let buffer = TextBuffer::new((10, 5));
     let mut edit = EditState::from_buffer(buffer);
     edit.get_caret_mut().set_position(Position::new(0, 0));
     let sz = font.render(&mut edit, b'A', true).expect("render");
@@ -131,7 +131,7 @@ fn test_tdf_render_color_font_attribute_consumption() {
     };
     font.set_glyph('C', glyph);
 
-    let buffer = Buffer::new((20, 8));
+    let buffer = TextBuffer::new((20, 8));
     let mut edit = EditState::from_buffer(buffer);
     edit.get_caret_mut().set_position(Position::new(0, 0));
     let sz = font.render(&mut edit, b'C', false).expect("size");
@@ -159,7 +159,7 @@ fn test_tdf_render_color_font_truncated_attribute_safe() {
     };
     font.set_glyph('T', glyph);
 
-    let buffer = Buffer::new((10, 5));
+    let buffer = TextBuffer::new((10, 5));
     let mut edit = EditState::from_buffer(buffer);
     edit.get_caret_mut().set_position(Position::new(0, 0));
     let sz = font.render(&mut edit, b'T', false).expect("render");
@@ -249,7 +249,7 @@ fn test_tdf_render_next_trait_drives_caret() {
             data: vec![b'A', b'B', b'C'],
         },
     );
-    let buffer = Buffer::new((10, 5));
+    let buffer = TextBuffer::new((10, 5));
     let mut edit = EditState::from_buffer(buffer);
     edit.get_caret_mut().set_position(Position::new(0, 0));
 

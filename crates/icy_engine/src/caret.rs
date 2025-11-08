@@ -10,65 +10,32 @@ pub enum CaretShape {
 
 #[derive(Clone)]
 pub struct Caret {
-    pub position: Position,
+    pub x: i32,
+    pub y: i32,
     pub attribute: TextAttribute,
     pub insert_mode: bool,
-    is_visible: bool,
-    pub is_blinking: bool,
-    ice_mode: bool,
-    shape: CaretShape,
+    pub visible: bool,
+    pub blinking: bool,
+    pub shape: CaretShape,
 }
 
 impl Caret {
-    pub fn new(pos: Position) -> Self {
-        Self {
-            position: pos,
-            ..Default::default()
-        }
+    pub fn from_xy(x: i32, y: i32) -> Self {
+        Self { x, y, ..Default::default() }
     }
 
-    pub fn new_xy(x: i32, y: i32) -> Self {
-        Self {
-            position: Position { x, y },
-            ..Default::default()
-        }
-    }
-
-    pub fn get_attribute(&self) -> TextAttribute {
-        let mut result = self.attribute;
-        if self.ice_mode {
-            let bg = result.get_background();
-            if bg < 8 && result.is_blinking() {
-                result.set_background(bg + 8);
-            }
-            // ice mode is not blinking
-            result.set_is_blinking(false);
-        }
-        result
-    }
-
-    pub fn get_position(&self) -> Position {
-        self.position
+    pub fn position(&self) -> Position {
+        Position::new(self.x, self.y)
     }
 
     pub fn set_position(&mut self, pos: Position) {
-        self.position = pos;
+        self.x = pos.x;
+        self.y = pos.y;
     }
 
     pub fn set_position_xy(&mut self, x: i32, y: i32) {
-        self.position = Position::new(x, y);
-    }
-
-    pub fn set_x_position(&mut self, x: i32) {
-        self.position.x = x;
-    }
-
-    pub fn set_y_position(&mut self, y: i32) {
-        self.position.y = y;
-    }
-
-    pub fn set_attr(&mut self, attr: TextAttribute) {
-        self.attribute = attr;
+        self.x = x;
+        self.y = y;
     }
 
     pub fn set_foreground(&mut self, color: u32) {
@@ -80,57 +47,28 @@ impl Caret {
     }
 
     pub(crate) fn reset(&mut self) {
-        self.position = Position::default();
+        self.x = 0;
+        self.y = 0;
         self.attribute = TextAttribute::default();
         self.insert_mode = false;
-        self.is_visible = true;
-        self.is_blinking = true;
-        self.ice_mode = false;
+        self.visible = true;
+        self.blinking = true;
         self.shape = CaretShape::Block;
     }
 
-    pub fn get_font_page(&self) -> usize {
+    pub fn font_page(&self) -> usize {
         self.attribute.get_font_page()
     }
 
     pub fn set_font_page(&mut self, page: usize) {
         self.attribute.set_font_page(page);
     }
-
-    pub fn reset_color_attribute(&mut self) {
-        let font_page = self.attribute.get_font_page();
-        self.attribute = TextAttribute::default();
-        self.attribute.set_font_page(font_page);
-    }
-
-    pub fn ice_mode(&self) -> bool {
-        self.ice_mode
-    }
-    pub fn set_ice_mode(&mut self, ice_mode: bool) {
-        self.ice_mode = ice_mode;
-    }
-
-    pub fn is_visible(&self) -> bool {
-        self.is_visible
-    }
-
-    pub fn set_is_visible(&mut self, is_visible: bool) {
-        self.is_visible = is_visible;
-    }
-
-    pub fn shape(&self) -> CaretShape {
-        self.shape
-    }
-
-    pub fn set_shape(&mut self, block: CaretShape) {
-        self.shape = block;
-    }
 }
 
 impl std::fmt::Debug for Caret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cursor")
-            .field("pos", &self.position)
+            .field("pos", &Position::new(self.x, self.y))
             .field("attr", &self.attribute)
             .field("insert_mode", &self.insert_mode)
             .finish_non_exhaustive()
@@ -140,12 +78,12 @@ impl std::fmt::Debug for Caret {
 impl Default for Caret {
     fn default() -> Self {
         Self {
-            position: Position::default(),
+            x: 0,
+            y: 0,
             attribute: TextAttribute::default(),
             insert_mode: false,
-            is_visible: true,
-            is_blinking: true,
-            ice_mode: false,
+            visible: true,
+            blinking: true,
             shape: CaretShape::Block,
         }
     }
@@ -153,6 +91,34 @@ impl Default for Caret {
 
 impl PartialEq for Caret {
     fn eq(&self, other: &Caret) -> bool {
-        self.position == other.position && self.attribute == other.attribute
+        self.x == other.x && self.y == other.y && self.attribute == other.attribute
+    }
+}
+
+impl From<Position> for Caret {
+    fn from(pos: Position) -> Self {
+        Self {
+            x: pos.x,
+            y: pos.y,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<(i32, i32)> for Caret {
+    fn from((x, y): (i32, i32)) -> Self {
+        Self { x, y, ..Default::default() }
+    }
+}
+
+impl From<Caret> for Position {
+    fn from(caret: Caret) -> Self {
+        Position::new(caret.x, caret.y)
+    }
+}
+
+impl From<&Caret> for Position {
+    fn from(caret: &Caret) -> Self {
+        Position::new(caret.x, caret.y)
     }
 }

@@ -104,13 +104,13 @@ impl AnsiFont for FIGFont {
 
     fn render_next(&self, editor: &mut crate::editor::EditState, _prev_char: char, ch: char, _edit_mode: bool) -> crate::Position {
         if ch == '\n' {
-            return Position::new(0, editor.get_caret().get_position().y + self.header.height() as i32);
+            return Position::new(0, editor.get_caret().position().y + self.header.height() as i32);
         }
         let Some(ch) = self.chars.get(&ch) else {
-            return editor.get_caret().get_position();
+            return editor.get_caret().position();
         };
 
-        let caret_pos = editor.get_caret().get_position();
+        let caret_pos = editor.get_caret().position();
 
         match self.header.horiz_layout() {
             header::LayoutMode::Full => {

@@ -2,7 +2,7 @@ use std::{collections::HashSet, io, path::Path};
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, Buffer, BufferFeatures, BufferType, EngineResult, IceMode, LoadingError, OutputFormat, PaletteMode, Position, SavingError, TextPane,
+    AttributedChar, BufferFeatures, BufferType, EngineResult, IceMode, LoadingError, OutputFormat, PaletteMode, Position, SavingError, TextBuffer, TextPane,
     analyze_font_usage,
 };
 
@@ -34,7 +34,7 @@ impl OutputFormat for TundraDraw {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = vec![TUNDRA_VER]; // version
         result.extend(TUNDRA_HEADER);
         let mut attr = TextAttribute::from_u8(0, buf.ice_mode);
@@ -149,8 +149,8 @@ impl OutputFormat for TundraDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+        let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
@@ -242,7 +242,7 @@ impl OutputFormat for TundraDraw {
     }
 }
 
-fn advance_pos(result: &Buffer, pos: &mut Position) -> bool {
+fn advance_pos(result: &TextBuffer, pos: &mut Position) -> bool {
     pos.x += 1;
     if pos.x >= result.get_width() {
         pos.x = 0;
@@ -257,7 +257,7 @@ fn to_u32(bytes: &[u8]) -> i32 {
 
 // const TND_GOTO_BLOCK_LEN: i32 = 1 + 2 * 4;
 
-pub fn get_save_sauce_default_tnd(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_tnd(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
     }
@@ -271,18 +271,18 @@ pub fn get_save_sauce_default_tnd(buf: &Buffer) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AttributedChar, Buffer, OutputFormat, TextAttribute, compare_buffers};
+    use crate::{AttributedChar, OutputFormat, TextAttribute, TextBuffer, compare_buffers};
 
     #[test]
     pub fn test_ice() {
-        let mut buffer = Buffer::new((80, 25));
+        let mut buffer = TextBuffer::new((80, 25));
         buffer.ice_mode = crate::IceMode::Ice;
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
         test_tundra(&mut buffer);
     }
 
-    fn test_tundra(buffer: &mut Buffer) -> Buffer {
+    fn test_tundra(buffer: &mut TextBuffer) -> TextBuffer {
         let xb = super::TundraDraw::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

@@ -33,7 +33,7 @@ impl OutputFormat for Renegade {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.palette.len() != 16 {
             return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
         }
@@ -73,7 +73,7 @@ impl OutputFormat for Renegade {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
         let mut result = TextScreen::new((width, 25));

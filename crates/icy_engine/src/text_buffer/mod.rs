@@ -10,11 +10,22 @@ use std::{
 use i18n_embed_fl::fl;
 use icy_sauce::prelude::*;
 
+pub mod buffers_rendering;
+
+pub mod line;
+pub use line::*;
+
+pub mod text_screen;
+pub use text_screen::*;
+
+pub mod layer;
+pub use layer::*;
+
 use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
 use crate::paint::HalfBlock;
 use crate::{
-    Color, EngineResult, FORMATS, Glyph, Layer, Line, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    Color, EngineResult, FORMATS, Glyph, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
     UnicodeConverter, attribute, parsers,
 };
 
@@ -270,7 +281,7 @@ impl FontMode {
     }
 }
 
-pub struct Buffer {
+pub struct TextBuffer {
     original_size: Size,
     size: Size,
     pub file_name: Option<PathBuf>,
@@ -310,7 +321,7 @@ pub struct Buffer {
     pub max_scrollback_lines: usize,
 }
 
-impl std::fmt::Debug for Buffer {
+impl std::fmt::Debug for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Buffer")
             .field("file_name", &self.file_name)
@@ -322,7 +333,7 @@ impl std::fmt::Debug for Buffer {
     }
 }
 
-impl std::fmt::Display for Buffer {
+impl std::fmt::Display for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut str = String::new();
         let p = parsers::ascii::CP437Converter::default();
@@ -339,7 +350,7 @@ impl std::fmt::Display for Buffer {
     }
 }
 
-impl Buffer {
+impl TextBuffer {
     pub fn scan_buffer_features(&self) -> BufferFeatures {
         let mut result = BufferFeatures::default();
         for layer in &self.layers {
@@ -430,8 +441,8 @@ impl Buffer {
     }
 
     /// Clones the buffer (without sixel threads)
-    pub fn flat_clone(&self, deep_layers: bool) -> Buffer {
-        let mut frame = Buffer::new(self.get_size());
+    pub fn flat_clone(&self, deep_layers: bool) -> TextBuffer {
+        let mut frame = TextBuffer::new(self.get_size());
         frame.file_name = self.file_name.clone();
         frame.terminal_state = self.terminal_state.clone();
         frame.buffer_type = self.buffer_type;
@@ -579,7 +590,7 @@ impl Buffer {
     }
 }
 
-pub fn analyze_font_usage(buf: &Buffer) -> Vec<usize> {
+pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<usize> {
     let mut hash_set = HashSet::new();
     for y in 0..buf.get_height() {
         for x in 0..buf.get_width() {
@@ -635,12 +646,12 @@ impl From<Rectangle> for RenderOptions {
     }
 }
 
-impl Buffer {
+impl TextBuffer {
     pub fn new(size: impl Into<Size>) -> Self {
         let mut font_table = HashMap::new();
         font_table.insert(0, BitFont::default());
         let size = size.into();
-        Buffer {
+        TextBuffer {
             file_name: None,
             original_size: size,
             size,
@@ -899,7 +910,7 @@ impl Buffer {
     #[must_use]
     pub fn create(size: impl Into<Size>) -> Self {
         let size = size.into();
-        let mut res = Buffer::new(size);
+        let mut res = TextBuffer::new(size);
         res.layers[0].lines.resize(size.height as usize, crate::Line::create(size.width));
 
         res
@@ -941,7 +952,7 @@ impl Buffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn load_buffer(file_name: &Path, skip_errors: bool, ansi_music: Option<MusicOption>) -> EngineResult<Buffer> {
+    pub fn load_buffer(file_name: &Path, skip_errors: bool, ansi_music: Option<MusicOption>) -> EngineResult<TextBuffer> {
         let mut f = match File::open(file_name) {
             Ok(f) => f,
             Err(err) => {
@@ -953,7 +964,7 @@ impl Buffer {
             return Err(LoadingError::ReadFileError(format!("{err}")).into());
         }
 
-        Buffer::from_bytes(file_name, skip_errors, &bytes, ansi_music, None)
+        TextBuffer::from_bytes(file_name, skip_errors, &bytes, ansi_music, None)
     }
 
     /// .
@@ -995,7 +1006,7 @@ impl Buffer {
         bytes: &[u8],
         ansi_music: Option<MusicOption>,
         default_terminal_width: Option<usize>,
-    ) -> EngineResult<Buffer> {
+    ) -> EngineResult<TextBuffer> {
         let ext = file_name.extension().unwrap_or_default().to_string_lossy();
         let mut len = bytes.len();
         let sauce_data = match SauceRecord::from_bytes(bytes) {
@@ -1080,13 +1091,13 @@ impl Buffer {
     }
 }
 
-impl Default for Buffer {
+impl Default for TextBuffer {
     fn default() -> Self {
-        Buffer::new((80, 25))
+        TextBuffer::new((80, 25))
     }
 }
 
-impl TextPane for Buffer {
+impl TextPane for TextBuffer {
     fn get_width(&self) -> i32 {
         self.size.width
     }
@@ -1173,11 +1184,11 @@ impl TextPane for Buffer {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AttributedChar, Buffer, Layer, SaveOptions, Size, TextAttribute, TextPane};
+    use crate::{AttributedChar, Layer, SaveOptions, Size, TextAttribute, TextBuffer, TextPane};
 
     #[test]
     fn test_respect_sauce_width() {
-        let mut buf = Buffer::default();
+        let mut buf = TextBuffer::default();
         buf.set_width(10);
         for x in 0..buf.get_width() {
             buf.layers[0].set_char((x, 0), AttributedChar::new('1', TextAttribute::default()));
@@ -1189,14 +1200,14 @@ mod tests {
         opt.save_sauce = true;
         let ansi_bytes = buf.to_bytes("ans", &opt).unwrap();
 
-        let loaded_buf = Buffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None, None).unwrap();
+        let loaded_buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None, None).unwrap();
         assert_eq!(10, loaded_buf.get_width());
         assert_eq!(10, loaded_buf.layers[0].get_width());
     }
 
     #[test]
     fn test_layer_offset() {
-        let mut buf: Buffer = Buffer::default();
+        let mut buf: TextBuffer = TextBuffer::default();
 
         let mut new_layer = Layer::new("1", Size::new(10, 10));
         new_layer.properties.has_alpha_channel = true;
@@ -1209,7 +1220,7 @@ mod tests {
 
     #[test]
     fn test_layer_negative_offset() {
-        let mut buf: Buffer = Buffer::default();
+        let mut buf: TextBuffer = TextBuffer::default();
 
         let mut new_layer = Layer::new("1", Size::new(10, 10));
         new_layer.properties.has_alpha_channel = true;

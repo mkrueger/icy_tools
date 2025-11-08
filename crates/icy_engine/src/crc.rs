@@ -4229,23 +4229,6 @@ pub static CRC32_TABLE: [[u32; 256]; 16] = [
 mod tests {
     use super::get_crc32;
     use crate::crc::get_crc16;
-    /*
-    #[test]
-    fn bench_test() {
-
-        let mut data = Vec::new();
-        for i in 0..1024 * 32 {
-            data.push(i as u8);
-        }
-
-        let now = SystemTime::now();
-
-        for _ in 1..5000 {
-            let crc = get_crc32(&data);
-            data[0]  = crc as u8;
-        }
-        let d = SystemTime::now().duration_since(now).unwrap();
-    }*/
 
     #[test]
     fn test_crc32() {

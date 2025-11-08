@@ -5,8 +5,8 @@ use codepages::tables::UNICODE_TO_CP437;
 
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
-    ANSI_FONTS, AttributedChar, BitFont, Buffer, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, XTERM_256_PALETTE,
-    analyze_font_usage, parse_with_parser, parsers,
+    ANSI_FONTS, AttributedChar, BitFont, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextBuffer, TextPane,
+    XTERM_256_PALETTE, analyze_font_usage, parse_with_parser, parsers,
 };
 use crate::{Color, EditableScreen, TextScreen};
 
@@ -32,7 +32,7 @@ impl OutputFormat for Ansi {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
         let mut result = Vec::new();
 
         let mut str_gen = StringGenerator::new(options.clone());
@@ -50,7 +50,7 @@ impl OutputFormat for Ansi {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::TextBuffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
         let mut result = TextScreen::new((width, 25));
@@ -139,7 +139,7 @@ impl StringGenerator {
         }
     }
 
-    fn get_color(&self, buf: &Buffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
+    fn get_color(&self, buf: &TextBuffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
         let attr = ch.attribute;
         let mut sgr = Vec::new();
         let mut sgr_tc = Vec::new();
@@ -321,7 +321,7 @@ impl StringGenerator {
         (state, sgr, sgr_tc)
     }
 
-    fn generate_cells<T: TextPane>(&self, buf: &Buffer, layer: &T, area: Rectangle, font_map: &HashMap<usize, usize>) -> (AnsiState, Vec<Vec<CharCell>>) {
+    fn generate_cells<T: TextPane>(&self, buf: &TextBuffer, layer: &T, area: Rectangle, font_map: &HashMap<usize, usize>) -> (AnsiState, Vec<Vec<CharCell>>) {
         let mut result: Vec<Vec<CharCell>> = Vec::new();
         let mut state = AnsiState {
             is_bold: false,
@@ -437,7 +437,7 @@ impl StringGenerator {
         (state, result)
     }
 
-    fn generate_ansi_font_map(buf: &Buffer) -> HashMap<usize, usize> {
+    fn generate_ansi_font_map(buf: &TextBuffer) -> HashMap<usize, usize> {
         let mut font_map = HashMap::new();
 
         let mut ansi_fonts = Vec::new();
@@ -458,7 +458,7 @@ impl StringGenerator {
         font_map
     }
 
-    pub fn screen_prep(&mut self, buf: &Buffer) {
+    pub fn screen_prep(&mut self, buf: &TextBuffer) {
         if matches!(buf.ice_mode, crate::IceMode::Ice) {
             self.push_result(&mut b"\x1b[?33h".to_vec());
         }
@@ -474,7 +474,7 @@ impl StringGenerator {
         }
     }
 
-    pub fn screen_end(&mut self, buf: &Buffer, mut state: AnsiState) {
+    pub fn screen_end(&mut self, buf: &TextBuffer, mut state: AnsiState) {
         let mut end_tags = 0;
         for tag in buf.tags.iter() {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
@@ -513,7 +513,7 @@ impl StringGenerator {
     /// # Panics
     ///
     /// Panics if .
-    pub fn generate<T: TextPane>(&mut self, buf: &Buffer, layer: &T) -> AnsiState {
+    pub fn generate<T: TextPane>(&mut self, buf: &TextBuffer, layer: &T) -> AnsiState {
         let mut result = Vec::new();
 
         let used_fonts = analyze_font_usage(buf);
@@ -691,7 +691,7 @@ impl StringGenerator {
 
     const CONTROL_CHARS: &'static str = "\x1b\x07\x08\x09\x0C\x7F\r\n";
 
-    pub fn add_sixels(&mut self, buf: &Buffer) {
+    pub fn add_sixels(&mut self, buf: &TextBuffer) {
         for layer in &buf.layers {
             for sixel in &layer.sixels {
                 match icy_sixel::sixel_string(
@@ -732,7 +732,7 @@ impl StringGenerator {
     }
 }
 
-pub fn get_save_sauce_default_ans(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_ans(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
     }

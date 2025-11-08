@@ -90,10 +90,10 @@ pub trait BufferParser: Send {
 
 #[cfg(test)]
 fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> TextScreen {
-    use crate::{Buffer, Caret, TextScreen};
+    use crate::{Caret, TextBuffer, TextScreen};
 
     let mut buf = TextScreen {
-        buffer: Buffer::create((80, 25)),
+        buffer: TextBuffer::create((80, 25)),
         caret: Caret::default(),
         current_layer: 0,
         selection_opt: None,

@@ -4,7 +4,7 @@ use base64::{Engine, engine::general_purpose};
 use icy_sauce::SauceRecord;
 use regex::Regex;
 
-use crate::{BitFont, Buffer, Color, EngineResult, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextPane, attribute};
+use crate::{BitFont, Color, EngineResult, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextBuffer, TextPane, attribute};
 
 use super::LoadData;
 
@@ -38,7 +38,7 @@ impl OutputFormat for IcyDraw {
         "Iced"
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
 
         let font_dims = buf.get_font_dimensions();
@@ -389,8 +389,8 @@ impl OutputFormat for IcyDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
+    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+        let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         result.layers.clear();
@@ -858,7 +858,7 @@ fn write_utf8_encoded_string(data: &mut Vec<u8>, s: &str) {
 
 const MAX_LINES: i32 = 80;
 
-impl Buffer {
+impl TextBuffer {
     pub fn is_line_empty(&self, line: i32) -> bool {
         for i in 0..self.get_width() {
             if !self.get_char((i, line).into()).is_transparent() {
@@ -906,7 +906,7 @@ impl Error for IcedError {
 mod tests {
     use std::path::Path;
 
-    use crate::{AttributedChar, Buffer, Color, Layer, OutputFormat, SaveOptions, TextAttribute, TextPane, compare_buffers};
+    use crate::{AttributedChar, Color, Layer, OutputFormat, SaveOptions, TextAttribute, TextBuffer, TextPane, compare_buffers};
 
     use super::IcyDraw;
     /*
@@ -985,7 +985,7 @@ mod tests {
 
     #[test]
     fn test_default_font_page() {
-        let mut buf = Buffer::default();
+        let mut buf = TextBuffer::default();
         buf.layers[0].default_font_page = 12;
         buf.layers.push(Layer::new("test", (80, 25)));
         buf.layers[1].default_font_page = 1;
@@ -998,7 +998,7 @@ mod tests {
 
     #[test]
     fn test_empty_buffer() {
-        let mut buf = Buffer::default();
+        let mut buf = TextBuffer::default();
         buf.set_width(12);
         buf.set_height(23);
 
@@ -1010,7 +1010,7 @@ mod tests {
 
     #[test]
     fn test_rgb_serialization_bug() {
-        let mut buf = Buffer::new((2, 2));
+        let mut buf = TextBuffer::new((2, 2));
         let fg = buf.palette.insert_color(Color::new(82, 85, 82));
         buf.layers[0].set_char(
             (0, 0),
@@ -1037,7 +1037,7 @@ mod tests {
     #[test]
     fn test_rgb_serialization_bug_2() {
         // was a bug in compare_buffers, but having more test doesn't hurt.
-        let mut buf = Buffer::new((2, 2));
+        let mut buf = TextBuffer::new((2, 2));
 
         let _ = buf.palette.insert_color(Color::new(1, 2, 3));
         let fg = buf.palette.insert_color(Color::new(4, 5, 6)); // 17
@@ -1059,7 +1059,7 @@ mod tests {
     #[test]
     fn test_nonstandard_palettes() {
         // was a bug in compare_buffers, but having more test doesn't hurt.
-        let mut buf = Buffer::new((2, 2));
+        let mut buf = TextBuffer::new((2, 2));
         buf.palette.set_color(9, Color::new(4, 5, 6));
         buf.palette.set_color(10, Color::new(7, 8, 9));
 
@@ -1081,7 +1081,7 @@ mod tests {
     #[test]
     fn test_fg_switch() {
         // was a bug in compare_buffers, but having more test doesn't hurt.
-        let mut buf = Buffer::new((2, 1));
+        let mut buf = TextBuffer::new((2, 1));
         let mut attribute = TextAttribute::new(1, 1);
         attribute.set_is_bold(true);
         buf.layers[0].set_char((0, 0), AttributedChar { ch: 'A', attribute });
@@ -1102,7 +1102,7 @@ mod tests {
 
     #[test]
     fn test_escape_char() {
-        let mut buf = Buffer::new((2, 2));
+        let mut buf = TextBuffer::new((2, 2));
         buf.layers[0].set_char(
             (0, 0),
             AttributedChar {
@@ -1119,7 +1119,7 @@ mod tests {
 
     #[test]
     fn test_0_255_chars() {
-        let mut buf = Buffer::new((2, 2));
+        let mut buf = TextBuffer::new((2, 2));
         buf.layers[0].set_char(
             (0, 0),
             AttributedChar {
@@ -1143,7 +1143,7 @@ mod tests {
 
     #[test]
     fn test_too_long_lines() {
-        let mut buf = Buffer::new((2, 2));
+        let mut buf = TextBuffer::new((2, 2));
         buf.layers[0].set_char(
             (0, 0),
             AttributedChar {
@@ -1174,7 +1174,7 @@ mod tests {
 
     #[test]
     fn test_space_persistance_buffer() {
-        let mut buf = Buffer::default();
+        let mut buf = TextBuffer::default();
         buf.layers[0].set_char(
             (0, 0),
             AttributedChar {
@@ -1191,7 +1191,7 @@ mod tests {
 
     #[test]
     fn test_invisible_layer_bug() {
-        let mut buf = Buffer::new((1, 1));
+        let mut buf = TextBuffer::new((1, 1));
         buf.layers.push(Layer::new("test", (1, 1)));
         buf.layers[1].set_char((0, 0), AttributedChar::new('a', TextAttribute::default()));
         buf.layers[0].properties.is_visible = false;
@@ -1208,7 +1208,7 @@ mod tests {
 
     #[test]
     fn test_invisisible_persistance_bug() {
-        let mut buf = Buffer::new((3, 1));
+        let mut buf = TextBuffer::new((3, 1));
         buf.layers.push(Layer::new("test", (3, 1)));
         buf.layers[1].set_char((0, 0), AttributedChar::new('a', TextAttribute::default()));
         buf.layers[1].set_char((2, 0), AttributedChar::new('b', TextAttribute::default()));

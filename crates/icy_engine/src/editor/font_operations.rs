@@ -8,7 +8,7 @@ use super::EditState;
 
 impl EditState {
     pub fn switch_to_font_page(&mut self, page: usize) -> EngineResult<()> {
-        let op = super::undo_operations::SwitchToFontPage::new(self.caret.get_font_page(), page);
+        let op = super::undo_operations::SwitchToFontPage::new(self.caret.font_page(), page);
         self.push_undo_action(Box::new(op))
     }
 
@@ -26,7 +26,7 @@ impl EditState {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
-                let op = super::undo_operations::AddFont::new(self.caret.get_font_page(), page, new_font);
+                let op = super::undo_operations::AddFont::new(self.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
             crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(anyhow::anyhow!("Not supported for this buffer type.")),
@@ -48,7 +48,7 @@ impl EditState {
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
                 if let Some(font) = self.get_buffer().get_font(0) {
-                    let op = super::undo_operations::SetFont::new(self.caret.get_font_page(), font.clone(), new_font);
+                    let op = super::undo_operations::SetFont::new(self.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
                     Err(anyhow::anyhow!("No font found in buffer."))
@@ -71,7 +71,7 @@ impl EditState {
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_sauce_name(name)?;
                 if let Some(font) = self.get_buffer().get_font(0) {
-                    let op = super::undo_operations::SetFont::new(self.caret.get_font_page(), font.clone(), new_font);
+                    let op = super::undo_operations::SetFont::new(self.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
                     Err(anyhow::anyhow!("No font found in buffer."))
@@ -91,7 +91,7 @@ impl EditState {
                     }
                 }
 
-                let op = super::undo_operations::AddFont::new(self.caret.get_font_page(), page, new_font);
+                let op = super::undo_operations::AddFont::new(self.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
             crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(anyhow::anyhow!("Not supported for this buffer type.")),
@@ -111,7 +111,7 @@ impl EditState {
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 if let Some(font) = self.get_buffer().get_font(0) {
-                    let op = super::undo_operations::SetFont::new(self.caret.get_font_page(), font.clone(), new_font);
+                    let op = super::undo_operations::SetFont::new(self.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
                     Err(anyhow::anyhow!("No font found in buffer."))
@@ -223,7 +223,7 @@ impl EditState {
 
     pub fn replace_font_usage(&mut self, from: usize, to: usize) -> EngineResult<()> {
         let old_layers = self.get_buffer().layers.clone();
-        let old_font_page = self.get_caret().get_font_page();
+        let old_font_page = self.get_caret().font_page();
         if old_font_page == from {
             self.get_caret_mut().set_font_page(to);
         }
@@ -241,12 +241,7 @@ impl EditState {
                 }
             }
         }
-        let op = super::undo_operations::ReplaceFontUsage::new(
-            old_font_page,
-            old_layers,
-            self.get_caret().get_font_page(),
-            self.get_buffer_mut().layers.clone(),
-        );
+        let op = super::undo_operations::ReplaceFontUsage::new(old_font_page, old_layers, self.get_caret().font_page(), self.get_buffer_mut().layers.clone());
         self.push_undo_action(Box::new(op))
     }
 

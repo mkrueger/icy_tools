@@ -56,7 +56,7 @@ impl Parser {
         if url.is_empty() {
             buf.caret_mut().attribute.set_is_underlined(false);
             let mut p = self.hyper_links.pop().unwrap();
-            let cp = buf.caret().get_position();
+            let cp = buf.caret().position();
             if cp.y == p.position.y {
                 p.length = cp.x - p.position.x;
             } else {
@@ -67,7 +67,7 @@ impl Parser {
             buf.caret_mut().attribute.set_is_underlined(true);
             self.hyper_links.push(crate::HyperLink {
                 url: Some(url),
-                position: buf.caret().get_position(),
+                position: buf.caret().position(),
                 length: 0,
             });
         }

@@ -22,7 +22,7 @@ impl OutputFormat for Seq {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Petscii {
             return Err(anyhow::anyhow!("Buffer is not a Petscii buffer!"));
         }
@@ -30,7 +30,7 @@ impl OutputFormat for Seq {
         Err(anyhow::anyhow!("not implemented!"))
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
         let mut result = TextScreen::new((40, 25));
 
         result.buffer.clear_font_table();

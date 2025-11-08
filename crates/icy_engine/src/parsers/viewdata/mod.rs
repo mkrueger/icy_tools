@@ -50,11 +50,11 @@ impl Parser {
     }
 
     fn fill_to_eol(buf: &mut dyn EditableScreen) {
-        if buf.caret().get_position().x <= 0 {
+        if buf.caret().position().x <= 0 {
             return;
         }
-        let sx = buf.caret().get_position().x;
-        let sy = buf.caret().get_position().y;
+        let sx = buf.caret().position().x;
+        let sy = buf.caret().position().y;
 
         let attr = buf.get_char((sx, sy).into()).attribute;
 
@@ -71,44 +71,49 @@ impl Parser {
 
     fn reset_on_row_change(&mut self, buf: &mut dyn EditableScreen) {
         self.reset_screen();
-        buf.caret_mut().reset_color_attribute();
+        buf.caret_default_colors();
     }
 
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: AttributedChar) {
-        buf.set_char(buf.caret().position, ch);
+        buf.set_char(buf.caret().position(), ch);
         self.caret_right(buf);
     }
 
     fn caret_down(&mut self, buf: &mut dyn EditableScreen) {
-        buf.caret_mut().position.y += 1;
-        if buf.caret().position.y >= buf.terminal_state().get_height() {
-            buf.caret_mut().position.y = 0;
+        let y = buf.caret().y;
+        buf.caret_mut().y = y + 1;
+        if buf.caret().y >= buf.terminal_state().get_height() {
+            buf.caret_mut().y = 0;
         }
         self.reset_on_row_change(buf);
     }
 
     fn caret_up(&self, buf: &mut dyn EditableScreen) {
-        if buf.caret().position.y > 0 {
-            buf.caret_mut().position.y = buf.caret().position.y.saturating_sub(1);
+        let y = if buf.caret().y > 0 {
+            buf.caret().y.saturating_sub(1)
         } else {
-            buf.caret_mut().position.y = buf.terminal_state().get_height() - 1;
-        }
+            buf.terminal_state().get_height() - 1
+        };
+        buf.caret_mut().y = y;
     }
 
     fn caret_right(&mut self, buf: &mut dyn EditableScreen) {
-        buf.caret_mut().position.x += 1;
-        if buf.caret().position.x >= buf.terminal_state().get_width() {
-            buf.caret_mut().position.x = 0;
+        let x = buf.caret().x;
+        buf.caret_mut().x = x + 1;
+        if buf.caret().x >= buf.terminal_state().get_width() {
+            buf.caret_mut().x = 0;
             self.caret_down(buf);
         }
     }
 
     #[allow(clippy::unused_self)]
     fn caret_left(&self, buf: &mut dyn EditableScreen) {
-        if buf.caret().position.x > 0 {
-            buf.caret_mut().position.x = buf.caret().position.x.saturating_sub(1);
+        if buf.caret().x > 0 {
+            let x = buf.caret().x.saturating_sub(1);
+            buf.caret_mut().x = x;
         } else {
-            buf.caret_mut().position.x = buf.terminal_state().get_width() - 1;
+            let x = buf.terminal_state().get_width().saturating_sub(1);
+            buf.caret_mut().x = x;
             self.caret_up(buf);
         }
     }
@@ -276,8 +281,7 @@ impl BufferParser for Parser {
                 // 12 / 0x0C
                 buf.reset_terminal();
                 buf.clear_screen();
-                buf.caret_mut().position = Position::default();
-                buf.caret_mut().reset_color_attribute();
+                buf.caret_default_colors();
 
                 self.reset_screen();
             }
@@ -294,10 +298,10 @@ impl BufferParser for Parser {
 
             // control codes 1
             0b001_0000 => {} // ignore
-            0b001_0001 => buf.caret_mut().set_is_visible(true),
+            0b001_0001 => buf.caret_mut().visible = true,
             0b001_0010 => {} // ignore
             0b001_0011 => {} // ignore
-            0b001_0100 => buf.caret_mut().set_is_visible(false),
+            0b001_0100 => buf.caret_mut().visible = false,
             0b001_0101 => {} // NAK
             0b001_0110 => {} // ignore
             0b001_0111 => {} // ignore

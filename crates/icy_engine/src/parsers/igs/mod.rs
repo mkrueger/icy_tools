@@ -86,7 +86,7 @@ impl Parser {
     }
 
     fn write_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
-        let caret_pos = buf.caret().get_position();
+        let caret_pos = buf.caret().position();
 
         let p = Position::new(caret_pos.x * 8, caret_pos.y * 8);
         self.command_executor.fill_color = buf.caret().attribute.background_color as u8;
@@ -95,7 +95,7 @@ impl Parser {
         self.command_executor.text_color = buf.caret().attribute.foreground_color as u8;
         self.command_executor.write_text(p, &ch.to_string());
 
-        buf.caret_mut().set_x_position(caret_pos.x + 1);
+        buf.caret_mut().x = caret_pos.x + 1;
 
         Ok(CallbackAction::Update)
     }
@@ -383,25 +383,28 @@ impl BufferParser for Parser {
             State::EscapeSequence => {
                 match ch {
                     'A' => {
-                        if buf.caret().position.y > 0 {
-                            buf.caret_mut().position.y -= 1;
+                        if buf.caret().y > 0 {
+                            buf.caret_mut().y -= 1;
                         }
                     }
                     'B' => {
                         let size = self.command_executor.get_char_resolution();
-                        if buf.caret().position.y < size.height {
-                            buf.caret_mut().position.y += 1;
+                        if buf.caret().y < size.height {
+                            let y = buf.caret().y;
+                            buf.caret_mut().y = y + 1;
                         }
                     }
                     'C' => {
                         let size = self.command_executor.get_char_resolution();
-                        if buf.caret().position.x < size.width {
-                            buf.caret_mut().position.x += 1;
+                        if buf.caret().x < size.width {
+                            let x = buf.caret_mut().x;
+                            buf.caret_mut().x = x + 1;
                         }
                     }
                     'D' => {
-                        if buf.caret().position.x > 0 {
-                            buf.caret_mut().position.x -= 1;
+                        if buf.caret().x > 0 {
+                            let x = buf.caret().x;
+                            buf.caret_mut().x = x - 1;
                         }
                     }
                     'E' => {
@@ -415,8 +418,8 @@ impl BufferParser for Parser {
                         buf.caret_mut().set_position(Position::default());
                     }
                     'I' => {
-                        if buf.caret().position.y > 0 {
-                            buf.caret_mut().position.y -= 1;
+                        if buf.caret().y > 0 {
+                            buf.caret_mut().y -= 1;
                         } else {
                             self.command_executor.scroll(-8);
                         }
@@ -428,8 +431,8 @@ impl BufferParser for Parser {
                     'K' => {
                         // erase to end of line
                         self.clear_line(
-                            buf.caret().get_position().y,
-                            buf.caret().get_position().x * 8,
+                            buf.caret().position().y,
+                            buf.caret().position().x * 8,
                             self.command_executor.get_resolution().width / 8,
                         );
                     }
@@ -463,15 +466,15 @@ impl BufferParser for Parser {
                     }
                     'e' => {
                         // Enable cursor
-                        buf.caret_mut().set_is_visible(true);
+                        buf.caret_mut().visible = true;
                     }
                     'f' => {
                         // Disable cursor
-                        buf.caret_mut().set_is_visible(false);
+                        buf.caret_mut().visible = false;
                     }
                     'j' => {
                         // Save cursor pos
-                        self.saved_caret_pos = buf.caret().get_position();
+                        self.saved_caret_pos = buf.caret().position();
                     }
                     'k' => {
                         // Restore cursor pos
@@ -479,12 +482,12 @@ impl BufferParser for Parser {
                     }
                     'l' => {
                         // Clear line
-                        self.clear_line(buf.caret().get_position().y, 0, self.command_executor.get_resolution().width / 8);
-                        buf.caret_mut().set_x_position(0);
+                        self.clear_line(buf.caret().position().y, 0, self.command_executor.get_resolution().width / 8);
+                        buf.caret_mut().x = 0;
                     }
                     'o' => {
                         // Clear to start of line
-                        self.clear_line(buf.caret().get_position().y, 0, buf.caret().get_position().x * 8);
+                        self.clear_line(buf.caret().position().y, 0, buf.caret().position().x * 8);
                     }
                     'p' => { // Reverse video
                     }
@@ -514,17 +517,17 @@ impl BufferParser for Parser {
                 0..=6 => Ok(CallbackAction::NoUpdate),
                 0x07 => Ok(CallbackAction::Beep),
                 0x0B | 0x0C => {
-                    let y = buf.caret().get_position().y;
-                    buf.caret_mut().set_y_position(y + 1);
-                    buf.caret_mut().set_x_position(0);
+                    let y = buf.caret().position().y;
+                    buf.caret_mut().y = y + 1;
+                    buf.caret_mut().x = 0;
                     Ok(CallbackAction::NoUpdate)
                 }
                 0x0D => {
-                    buf.caret_mut().set_x_position(0);
+                    buf.caret_mut().x = 0;
                     let size = self.command_executor.get_char_resolution();
-                    if buf.caret().get_position().y < size.height {
-                        let y = buf.caret().get_position().y;
-                        buf.caret_mut().set_y_position(y + 1);
+                    if buf.caret().position().y < size.height {
+                        let y = buf.caret().position().y;
+                        buf.caret_mut().y = y + 1;
                     } else {
                         self.command_executor.scroll(8);
                     }

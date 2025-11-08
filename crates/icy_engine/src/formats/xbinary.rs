@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, Buffer, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
-    TextPane, analyze_font_usage, guess_font_name,
+    AttributedChar, BitFont, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
+    TextBuffer, TextPane, analyze_font_usage, guess_font_name,
 };
 use std::path::Path;
 
@@ -40,7 +40,7 @@ impl OutputFormat for XBin {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         let mut result = Vec::new();
 
         result.extend_from_slice(b"XBIN");
@@ -153,8 +153,8 @@ impl OutputFormat for XBin {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+        let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
@@ -231,7 +231,7 @@ impl OutputFormat for XBin {
     }
 }
 
-fn advance_pos(result: &Buffer, pos: &mut Position) -> bool {
+fn advance_pos(result: &TextBuffer, pos: &mut Position) -> bool {
     pos.x += 1;
     if pos.x >= result.get_width() {
         pos.x = 0;
@@ -240,7 +240,7 @@ fn advance_pos(result: &Buffer, pos: &mut Position) -> bool {
     true
 }
 
-fn read_data_compressed(result: &mut Buffer, bytes: &[u8]) -> EngineResult<bool> {
+fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<bool> {
     let mut pos = Position::default();
     let mut o = 0;
     while o < bytes.len() {
@@ -325,7 +325,7 @@ fn read_data_compressed(result: &mut Buffer, bytes: &[u8]) -> EngineResult<bool>
     Ok(true)
 }
 
-fn decode_char(result: &Buffer, char_code: u8, attr: u8) -> AttributedChar {
+fn decode_char(result: &TextBuffer, char_code: u8, attr: u8) -> AttributedChar {
     let mut attribute = TextAttribute::from_u8(attr, result.ice_mode);
     if attribute.get_foreground() > 7 && matches!(result.font_mode, FontMode::FixedSize) {
         attribute.set_font_page(1);
@@ -334,7 +334,7 @@ fn decode_char(result: &Buffer, char_code: u8, attr: u8) -> AttributedChar {
     AttributedChar::new(char_code as char, attribute)
 }
 
-fn encode_attr(buf: &Buffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
+fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
     if fonts.len() == 2 {
         (ch.attribute.as_u8(buf.ice_mode) & 0b_1111_0111) | if ch.attribute.font_page == fonts[1] { 0b1000 } else { 0 }
     } else {
@@ -342,7 +342,7 @@ fn encode_attr(buf: &Buffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
     }
 }
 
-fn read_data_uncompressed(result: &mut Buffer, bytes: &[u8]) -> EngineResult<bool> {
+fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<bool> {
     let mut pos = Position::default();
     let mut o = 0;
     while o < bytes.len() {
@@ -368,7 +368,7 @@ fn count_length(
     mut run_ch: AttributedChar,
     mut end_run: Option<bool>,
     mut run_count: u8,
-    buffer: &Buffer,
+    buffer: &TextBuffer,
     y: i32,
     mut x: i32,
 ) -> usize {
@@ -459,7 +459,7 @@ fn count_length(
     count
 }
 
-fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &Buffer, fonts: &[usize]) -> EngineResult<()> {
+fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[usize]) -> EngineResult<()> {
     for y in 0..buffer.get_height() {
         let mut run_buf = Vec::new();
         let mut run_mode = Compression::Off;
@@ -581,13 +581,13 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &Buffer, fonts: &[usize]
     Ok(())
 }
 
-pub fn get_save_sauce_default_xb(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_xb(buf: &TextBuffer) -> (bool, String) {
     (buf.has_sauce(), String::new())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane, compare_buffers};
+    use crate::{AttributedChar, BitFont, Color, OutputFormat, TextAttribute, TextBuffer, TextPane, compare_buffers};
 
     #[test]
     pub fn test_blink() {
@@ -695,8 +695,8 @@ mod tests {
         assert!(ch.attribute.is_blinking());
     }
 
-    fn create_xb_buffer() -> Buffer {
-        let mut buffer: Buffer = Buffer::new((80, 25));
+    fn create_xb_buffer() -> TextBuffer {
+        let mut buffer: TextBuffer = TextBuffer::new((80, 25));
         for y in 0..buffer.get_height() {
             for x in 0..buffer.get_width() {
                 buffer.layers[0].set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
@@ -705,7 +705,7 @@ mod tests {
         buffer
     }
 
-    fn test_xbin(buffer: &mut Buffer) -> Buffer {
+    fn test_xbin(buffer: &mut TextBuffer) -> TextBuffer {
         let xb = super::XBin::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

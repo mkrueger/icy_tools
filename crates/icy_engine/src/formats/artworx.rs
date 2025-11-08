@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{LoadData, Position, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BitFont, Buffer, BufferFeatures, BufferType, Color, EGA_PALETTE, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette,
-    SavingError, TextPane, analyze_font_usage, guess_font_name,
+    AttributedChar, BitFont, BufferFeatures, BufferType, Color, EGA_PALETTE, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, SavingError,
+    TextBuffer, TextPane, analyze_font_usage, guess_font_name,
 };
 
 // http://fileformats.archiveteam.org/wiki/ArtWorx_Data_Format
@@ -35,7 +35,7 @@ impl OutputFormat for Artworx {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
         if buf.ice_mode != IceMode::Ice {
             return Err(anyhow::anyhow!("Only ice mode files are supported by this format."));
         }
@@ -81,8 +81,8 @@ impl OutputFormat for Artworx {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((80, 25));
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+        let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
@@ -173,7 +173,7 @@ pub fn to_ega_data(palette: &Palette) -> Vec<u8> {
     res
 }
 
-pub fn get_save_sauce_default_adf(buf: &Buffer) -> (bool, String) {
+pub fn get_save_sauce_default_adf(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
     }
@@ -187,7 +187,7 @@ pub fn get_save_sauce_default_adf(buf: &Buffer) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AttributedChar, BitFont, Buffer, Color, OutputFormat, TextAttribute, TextPane, compare_buffers};
+    use crate::{AttributedChar, BitFont, Color, OutputFormat, TextAttribute, TextBuffer, TextPane, compare_buffers};
 
     #[test]
     pub fn test_ice() {
@@ -229,8 +229,8 @@ mod tests {
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Blink)));
         test_artworx(&mut buffer);
     }
-    fn create_buffer() -> Buffer {
-        let mut buffer = Buffer::new((80, 25));
+    fn create_buffer() -> TextBuffer {
+        let mut buffer = TextBuffer::new((80, 25));
         for y in 0..buffer.get_height() {
             for x in 0..buffer.get_width() {
                 buffer.layers[0].set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
@@ -239,7 +239,7 @@ mod tests {
         buffer
     }
 
-    fn test_artworx(buffer: &mut Buffer) -> Buffer {
+    fn test_artworx(buffer: &mut TextBuffer) -> TextBuffer {
         let xb = super::Artworx::default();
         let mut opt = crate::SaveOptions::default();
         opt.compress = false;

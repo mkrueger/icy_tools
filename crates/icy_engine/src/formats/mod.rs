@@ -39,7 +39,7 @@ mod renegade;
 mod seq;
 
 #[cfg(test)]
-use crate::Buffer;
+use crate::TextBuffer;
 use crate::{
     ANSI_FONTS, BitFont, BufferFeatures, BufferParser, CallbackAction, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane,
     TextScreen, ansi::MusicOption,
@@ -178,14 +178,14 @@ pub trait OutputFormat: Send + Sync {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn to_bytes(&self, buf: &mut crate::Buffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>>;
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>>;
 
     /// .
     ///
     /// # Errors
     ///
     /// This function will return an error if .
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::Buffer>;
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::TextBuffer>;
 }
 
 lazy_static::lazy_static! {
@@ -270,7 +270,7 @@ pub fn parse_with_parser(result: &mut TextScreen, interpreter: &mut dyn BufferPa
     // get_line_count() returns the real height without empty lines
     // a caret move may move up, to load correctly it need to be checked.
     // The initial height of 24 lines may be too large for the real content height.
-    let real_height = result.buffer.get_line_count().max(result.caret.position.y + 1);
+    let real_height = result.buffer.get_line_count().max(result.caret.y + 1);
     result.buffer.set_height(real_height);
 
     for y in 0..result.get_height() {
@@ -375,11 +375,11 @@ impl Error for SavingError {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Buffer, Color, OutputFormat, SaveOptions};
+    use crate::{Color, OutputFormat, SaveOptions, TextBuffer};
     use std::path::PathBuf;
 
     fn test_ansi(data: &[u8]) {
-        let mut buf = Buffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
+        let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
         let converted: Vec<u8> = super::Ansi::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
         // more gentle output.
         let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_palette_color_bug() {
-        let mut buf = Buffer::new((3, 1));
+        let mut buf = TextBuffer::new((3, 1));
         buf.palette.set_color(25, Color::new(0xD3, 0xD3, 0xD3));
         buf.layers[0].set_char(
             (1, 0),
@@ -515,7 +515,7 @@ impl CompareOptions {
 }
 
 #[cfg(test)]
-pub(crate) fn compare_buffers(buf_old: &Buffer, buf_new: &Buffer, compare_options: CompareOptions) {
+pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compare_options: CompareOptions) {
     assert_eq!(buf_old.layers.len(), buf_new.layers.len());
     assert_eq!(
         buf_old.get_size(),

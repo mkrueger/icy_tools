@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{CallbackAction, EditableScreen, EngineResult, ParserError, TextAttribute};
+use crate::{CallbackAction, EditableScreen, EngineResult, ParserError, Position, TextAttribute};
 use std::cmp::{max, min};
 
 #[derive(Debug)]
@@ -76,17 +76,21 @@ impl BufferParser for Parser {
                         buf.caret_mut().attribute.set_is_blinking(true);
                     }
                     3 => {
-                        buf.caret_mut().position.y = max(0, buf.caret_mut().position.y - 1);
+                        let y = max(0, buf.caret_mut().y - 1);
+                        buf.caret_mut().y = y;
                     }
                     4 => {
-                        buf.caret_mut().position.y += 1;
+                        let y = buf.caret().y;
+                        buf.caret_mut().y = y + 1;
                     }
 
                     5 => {
-                        buf.caret_mut().position.x = max(0, buf.caret_mut().position.x - 1);
+                        let x = max(0, buf.caret_mut().x - 1);
+                        buf.caret_mut().x = x;
                     }
                     6 => {
-                        buf.caret_mut().position.x = min(79, buf.caret_mut().position.x + 1);
+                        let x = min(79, buf.caret_mut().x + 1);
+                        buf.caret_mut().x = x;
                     }
                     AVT_MOVE_CLREOL => {
                         return Err(ParserError::Description("todo: avt cleareol").into());
@@ -138,8 +142,7 @@ impl BufferParser for Parser {
                     Ok(CallbackAction::NoUpdate)
                 }
                 2 => {
-                    buf.caret_mut().position.x = self.avt_repeat_char as i32;
-                    buf.caret_mut().position.y = ch as i32;
+                    buf.caret_mut().set_position(Position::new(self.avt_repeat_char as i32, ch as i32));
 
                     self.avt_state = AvtReadState::Chars;
                     Ok(CallbackAction::NoUpdate)

@@ -1062,8 +1062,8 @@ impl DrawExecutor {
                     return Err(anyhow::anyhow!("Cursor command requires 1 argument"));
                 }
                 match parameters[0] {
-                    0 => buf.caret_mut().set_is_visible(false),
-                    1 => buf.caret_mut().set_is_visible(true),
+                    0 => buf.caret_mut().visible = false,
+                    1 => buf.caret_mut().visible = true,
                     2 | 3 => {
                         log::warn!("Backspace options not supported.");
                     }

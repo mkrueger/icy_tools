@@ -1,11 +1,11 @@
 use crate::{
-    AttributedChar, BitFont, Buffer, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Screen,
-    Selection, Sixel, Size, TerminalState, TextPane,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Screen, Selection,
+    Sixel, Size, TerminalState, TextBuffer, TextPane,
 };
 
 pub struct TextScreen {
     pub caret: Caret,
-    pub buffer: Buffer,
+    pub buffer: TextBuffer,
 
     pub current_layer: usize,
 
@@ -16,7 +16,7 @@ impl TextScreen {
     pub fn new(size: impl Into<Size>) -> Self {
         Self {
             caret: Caret::default(),
-            buffer: Buffer::new(size),
+            buffer: TextBuffer::new(size),
             current_layer: 0,
             selection_opt: None,
         }
@@ -436,7 +436,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_screen(&mut self) {
-        self.caret_mut().position = Position::default();
+        self.caret_mut().set_position(Position::default());
         self.stop_sixel_threads();
         let layer = &mut self.buffer.layers[self.current_layer];
         layer.clear();

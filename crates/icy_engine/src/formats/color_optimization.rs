@@ -1,4 +1,4 @@
-use crate::{BitFont, Buffer, Glyph, SaveOptions, TextAttribute, TextPane};
+use crate::{BitFont, Glyph, SaveOptions, TextAttribute, TextBuffer, TextPane};
 use std::collections::HashMap;
 
 enum GlyphShape {
@@ -17,7 +17,7 @@ pub struct ColorOptimizer {
 }
 
 impl ColorOptimizer {
-    pub fn new(buf: &Buffer, opt: &SaveOptions) -> Self {
+    pub fn new(buf: &TextBuffer, opt: &SaveOptions) -> Self {
         let shape_map = generate_shape_map(buf);
         Self {
             shape_map,
@@ -30,7 +30,7 @@ impl ColorOptimizer {
     /// # Panics
     ///
     /// Panics if .
-    pub fn optimize(&self, buffer: &Buffer) -> Buffer {
+    pub fn optimize(&self, buffer: &TextBuffer) -> TextBuffer {
         let mut b = buffer.flat_clone(false);
         let tags_enabled = b.show_tags;
         b.show_tags = false;
@@ -64,7 +64,7 @@ impl ColorOptimizer {
     }
 }
 
-fn generate_shape_map(buf: &Buffer) -> HashMap<usize, HashMap<char, GlyphShape>> {
+fn generate_shape_map(buf: &TextBuffer) -> HashMap<usize, HashMap<char, GlyphShape>> {
     let mut shape_map = HashMap::new();
     for (slot, font) in buf.font_iter() {
         let mut font_map = HashMap::new();
@@ -91,11 +91,11 @@ fn get_shape(font: &BitFont, glyph: &Glyph) -> GlyphShape {
 }
 #[cfg(test)]
 mod tests {
-    use crate::{AttributedChar, Buffer, ColorOptimizer, TextAttribute, TextPane};
+    use crate::{AttributedChar, ColorOptimizer, TextAttribute, TextBuffer, TextPane};
 
     #[test]
     pub fn test_foreground_optimization() {
-        let mut buffer = Buffer::new((5, 1));
+        let mut buffer = TextBuffer::new((5, 1));
         let attr = TextAttribute::new(14, 0);
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', attr));
 
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     pub fn test_background_optimization() {
-        let mut buffer = Buffer::new((5, 1));
+        let mut buffer = TextBuffer::new((5, 1));
         for x in 0..buffer.get_width() {
             let attr = TextAttribute::new(14, x as u32);
             buffer.layers[0].set_char((x, 0), AttributedChar::new(219 as char, attr));
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     pub fn test_ws_normalization() {
-        let mut buffer = Buffer::new((5, 1));
+        let mut buffer = TextBuffer::new((5, 1));
         for x in 0..buffer.get_width() {
             buffer.layers[0].set_char((x, 0), AttributedChar::new(0 as char, TextAttribute::default()));
         }

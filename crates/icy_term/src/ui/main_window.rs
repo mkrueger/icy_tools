@@ -246,7 +246,7 @@ impl MainWindow {
                 let screen_mode = address.get_screen_mode();
                 if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
                     screen.clear_screen();
-                    screen.caret_mut().set_is_visible(true);
+                    screen.caret_mut().visible = true;
                     screen_mode.apply_to_edit_screen(&mut *screen);
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
@@ -780,7 +780,7 @@ impl MainWindow {
                     McpCommand::GetState(response_tx) => {
                         // Gather current terminal state
                         let state = if let Ok(screen) = self.terminal_window.terminal.screen.lock() {
-                            let cursor = screen.caret().position;
+                            let cursor = screen.caret().position();
                             mcp::types::TerminalState {
                                 cursor_position: (cursor.x as usize, cursor.y as usize),
                                 screen_size: (screen.get_size().width as usize, screen.get_size().height as usize),

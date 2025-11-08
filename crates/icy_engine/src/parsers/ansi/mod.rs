@@ -219,7 +219,6 @@ impl BufferParser for Parser {
                             } else {
                                 // If no saved state, reset to defaults per VT100 spec
                                 buf.caret_mut().reset();
-                                buf.caret_mut().position = Position::default();
                                 buf.terminal_state_mut().origin_mode = OriginMode::UpperLeftCorner;
                                 buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
                             }
@@ -264,7 +263,7 @@ impl BufferParser for Parser {
                         'H' => {
                             // set tab at current column
                             self.state = EngineState::Default;
-                            let x = buf.caret().position.x;
+                            let x = buf.caret().x;
                             buf.terminal_state_mut().set_tab_at(x);
                             Ok(CallbackAction::NoUpdate)
                         }
@@ -284,7 +283,7 @@ impl BufferParser for Parser {
                         FF | BEL | BS | '\x09' | '\x7F' | '\x1B' | '\n' | '\r' => {
                             // non standard extension to print esc chars ESC ESC -> ESC
                             self.last_char = ch;
-                            let ch = AttributedChar::new(self.last_char, buf.caret().get_attribute());
+                            let ch = AttributedChar::new(self.last_char, buf.caret().attribute);
                             buf.print_char(ch);
                             Ok(CallbackAction::Update)
                         }
@@ -431,9 +430,9 @@ impl BufferParser for Parser {
                                 //  buf.terminal_state().origin_mode = OriginMode::WithinMargins;
                             }
                             Some(7) => buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::NoWrap,
-                            Some(25) => buf.caret_mut().set_is_visible(false),
-                            Some(33) => buf.caret_mut().set_ice_mode(false),
-                            Some(35) => buf.caret_mut().is_blinking = true,
+                            Some(25) => buf.caret_mut().visible = false,
+                            Some(33) => *buf.ice_mode_mut() = IceMode::Blink,
+                            Some(35) => buf.caret_mut().blinking = true,
 
                             Some(69) => {
                                 buf.terminal_state_mut().dec_margin_mode_left_right = false;
@@ -490,12 +489,9 @@ impl BufferParser for Parser {
                             Some(4) => buf.terminal_state_mut().scroll_state = TerminalScrolling::Smooth,
                             Some(6) => buf.terminal_state_mut().origin_mode = OriginMode::UpperLeftCorner,
                             Some(7) => buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap,
-                            Some(25) => buf.caret_mut().set_is_visible(true),
-                            Some(33) => {
-                                *buf.ice_mode_mut() = IceMode::Ice;
-                                buf.caret_mut().set_ice_mode(true);
-                            }
-                            Some(35) => buf.caret_mut().is_blinking = false,
+                            Some(25) => buf.caret_mut().visible = true,
+                            Some(33) => *buf.ice_mode_mut() = IceMode::Ice,
+                            Some(35) => buf.caret_mut().blinking = false,
 
                             Some(69) => buf.terminal_state_mut().dec_margin_mode_left_right = true,
 
@@ -610,13 +606,13 @@ impl BufferParser for Parser {
                                 if buf.terminal_state().auto_wrap_mode == AutoWrapMode::AutoWrap {
                                     params.push("7");
                                 }
-                                if buf.caret().is_visible() {
+                                if buf.caret().visible {
                                     params.push("25");
                                 }
-                                if buf.caret().ice_mode() {
+                                if buf.ice_mode() == IceMode::Ice {
                                     params.push("33");
                                 }
-                                if buf.caret().is_blinking {
+                                if buf.caret().blinking {
                                     params.push("35");
                                 }
 
@@ -812,33 +808,33 @@ impl BufferParser for Parser {
                             match style {
                                 0 | 1 => {
                                     // Blinking block (default)
-                                    buf.caret_mut().is_blinking = true;
-                                    buf.caret_mut().set_shape(crate::CaretShape::Block);
+                                    buf.caret_mut().blinking = true;
+                                    buf.caret_mut().shape = crate::CaretShape::Block;
                                 }
                                 2 => {
                                     // Steady block
-                                    buf.caret_mut().is_blinking = false;
-                                    buf.caret_mut().set_shape(crate::CaretShape::Block);
+                                    buf.caret_mut().blinking = false;
+                                    buf.caret_mut().shape = crate::CaretShape::Block;
                                 }
                                 3 => {
                                     // Blinking underline
-                                    buf.caret_mut().is_blinking = true;
-                                    buf.caret_mut().set_shape(crate::CaretShape::Underline);
+                                    buf.caret_mut().blinking = true;
+                                    buf.caret_mut().shape = crate::CaretShape::Underline;
                                 }
                                 4 => {
                                     // Steady underline
-                                    buf.caret_mut().is_blinking = false;
-                                    buf.caret_mut().set_shape(crate::CaretShape::Underline);
+                                    buf.caret_mut().blinking = false;
+                                    buf.caret_mut().shape = crate::CaretShape::Underline;
                                 }
                                 5 => {
                                     // Blinking bar
-                                    buf.caret_mut().is_blinking = true;
-                                    buf.caret_mut().set_shape(crate::CaretShape::Bar);
+                                    buf.caret_mut().blinking = true;
+                                    buf.caret_mut().shape = crate::CaretShape::Bar;
                                 }
                                 6 => {
                                     // Steady bar
-                                    buf.caret_mut().is_blinking = false;
-                                    buf.caret_mut().set_shape(crate::CaretShape::Bar);
+                                    buf.caret_mut().blinking = false;
+                                    buf.caret_mut().shape = crate::CaretShape::Bar;
                                 }
                                 _ => {
                                     // Invalid cursor style, ignore
@@ -866,16 +862,18 @@ impl BufferParser for Parser {
                     => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            buf.caret_mut().position = buf.upper_left_position();
+                            let pos = buf.upper_left_position();
+                            buf.caret_mut().set_position(pos);
                         } else {
                             let row = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
-                            buf.caret_mut().position.y = buf.get_first_visible_line() + row;
+                            let l = buf.get_first_visible_line();
+                            buf.caret_mut().y = l + row;
                             if self.parsed_numbers.len() > 1 {
                                 if self.parsed_numbers[1] >= 0 {
-                                    buf.caret_mut().position.x = max(0, self.parsed_numbers[1] - 1);
+                                    buf.caret_mut().x = max(0, self.parsed_numbers[1] - 1);
                                 }
                             } else {
-                                buf.caret_mut().position.x = 0;
+                                buf.caret_mut().x = 0;
                             }
                         }
                         buf.limit_caret_pos();
@@ -926,8 +924,8 @@ impl BufferParser for Parser {
                         // VPA - Line position absolute
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
-
-                        buf.caret_mut().position.y = buf.get_first_visible_line() + num;
+                        let first = buf.get_first_visible_line();
+                        buf.caret_mut().y = first + num;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -936,8 +934,9 @@ impl BufferParser for Parser {
                         // VPR - Line position forward
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-
-                        buf.caret_mut().position.y = buf.get_first_visible_line() + buf.caret().position.y + num;
+                        let first = buf.get_first_visible_line();
+                        let y = buf.caret().y;
+                        buf.caret_mut().y = first + y + num;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -946,7 +945,7 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
 
-                        buf.caret_mut().position.x = num;
+                        buf.caret_mut().x = num;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -955,8 +954,8 @@ impl BufferParser for Parser {
                         // HPR - Character position forward
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-
-                        buf.caret_mut().position.x += num;
+                        let x = buf.caret().x;
+                        buf.caret_mut().x = x + num;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -966,7 +965,7 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
 
-                        buf.caret_mut().position.x = num;
+                        buf.caret_mut().x = num;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -975,8 +974,10 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
 
-                        buf.caret_mut().position.y = buf.get_first_visible_line() + buf.caret().position.y + num;
-                        buf.caret_mut().position.x = 0;
+                        let first = buf.get_first_visible_line();
+                        let y = buf.caret().y + num;
+                        buf.caret_mut().y = first + y;
+                        buf.caret_mut().x = 0;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -985,8 +986,10 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
 
-                        buf.caret_mut().position.y = buf.get_first_visible_line() + buf.caret().position.y - num;
-                        buf.caret_mut().position.x = 0;
+                        let first = buf.get_first_visible_line();
+                        let y = buf.caret().y - num;
+                        buf.caret_mut().y = first + y;
+                        buf.caret_mut().x = 0;
                         buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
@@ -1010,8 +1013,8 @@ impl BufferParser for Parser {
                                 // Get cursor position
                                 let s = format!(
                                     "\x1b[{};{}R",
-                                    min(buf.terminal_state().get_height(), buf.caret().position.y + 1),
-                                    min(buf.terminal_state().get_width(), buf.caret().position.x + 1)
+                                    min(buf.terminal_state().get_height(), buf.caret().y + 1),
+                                    min(buf.terminal_state().get_width(), buf.caret().x + 1)
                                 );
                                 return Ok(CallbackAction::SendString(s));
                             }
@@ -1060,8 +1063,8 @@ impl BufferParser for Parser {
                             self.dotted_note = false;
                             self.state = EngineState::ParseAnsiMusic(MusicState::ParseMusicStyle);
                         } else if self.parsed_numbers.is_empty() {
-                            if buf.caret().position.y < buf.line_count() as i32 {
-                                buf.remove_terminal_line(buf.caret().position.y);
+                            if buf.caret().y < buf.line_count() as i32 {
+                                buf.remove_terminal_line(buf.caret().y);
                             }
                         } else {
                             if self.parsed_numbers.len() != 1 {
@@ -1069,9 +1072,9 @@ impl BufferParser for Parser {
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 let mut number = *number;
-                                number = min(number, buf.line_count() as i32 - buf.caret().position.y);
+                                number = min(number, buf.line_count() as i32 - buf.caret().y);
                                 for _ in 0..number {
-                                    buf.remove_terminal_line(buf.caret().position.y);
+                                    buf.remove_terminal_line(buf.caret().y);
                                 }
                             } else {
                                 return self.unsupported_escape_error();
@@ -1123,14 +1126,14 @@ impl BufferParser for Parser {
                         // Insert line
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            buf.insert_terminal_line(buf.caret().position.y);
+                            buf.insert_terminal_line(buf.caret().y);
                         } else {
                             if self.parsed_numbers.len() != 1 {
                                 return self.unsupported_escape_error();
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 for _ in 0..*number {
-                                    buf.insert_terminal_line(buf.caret().position.y);
+                                    buf.insert_terminal_line(buf.caret().y);
                                 }
                             } else {
                                 return self.unsupported_escape_error();
@@ -1285,7 +1288,7 @@ impl BufferParser for Parser {
                         }
                         match self.parsed_numbers.first() {
                             Some(1) => {
-                                buf.caret_mut().position.x = 0;
+                                buf.caret_mut().x = 0;
                             } // home
                             Some(2) => {
                                 buf.ins();
@@ -1338,7 +1341,7 @@ impl BufferParser for Parser {
                         // REP - Repeat the preceding graphic character Pn times (REP).
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-                        let ch = AttributedChar::new(self.last_char, buf.caret().get_attribute());
+                        let ch = AttributedChar::new(self.last_char, buf.caret().attribute);
                         (0..num).for_each(|_| buf.print_char(ch));
                         return Ok(CallbackAction::Update);
                     }
@@ -1353,7 +1356,7 @@ impl BufferParser for Parser {
                         let num = self.parsed_numbers.first().copied().unwrap_or(0);
                         match num {
                             0 => {
-                                let x = buf.caret().get_position().x;
+                                let x = buf.caret().position().x;
                                 buf.terminal_state_mut().remove_tab_stop(x);
                             }
                             3 | 5 => {
@@ -1374,8 +1377,8 @@ impl BufferParser for Parser {
 
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
                         (0..num).for_each(|_| {
-                            let x = buf.terminal_state().next_tab_stop(buf.caret().get_position().x);
-                            buf.caret_mut().set_x_position(x);
+                            let x = buf.terminal_state().next_tab_stop(buf.caret().position().x);
+                            buf.caret_mut().x = x;
                         });
                         return Ok(CallbackAction::Update);
                     }
@@ -1388,8 +1391,8 @@ impl BufferParser for Parser {
 
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
                         (0..num).for_each(|_| {
-                            let x = buf.terminal_state().prev_tab_stop(buf.caret().get_position().x);
-                            buf.caret_mut().set_x_position(x);
+                            let x = buf.terminal_state().prev_tab_stop(buf.caret().position().x);
+                            buf.caret_mut().x = x;
                         });
                         return Ok(CallbackAction::Update);
                     }
@@ -1446,10 +1449,10 @@ impl BufferParser for Parser {
                     if ch == crate::BS && self.bs_is_ctrl_char {
                         buf.bs();
                     } else if (ch == '\x00' || ch == '\u{00FF}') && self.bs_is_ctrl_char {
-                        buf.caret_mut().reset_color_attribute();
+                        buf.caret_default_colors();
                     } else {
                         self.last_char = ch;
-                        let ch = AttributedChar::new(self.last_char, buf.caret().get_attribute());
+                        let ch = AttributedChar::new(self.last_char, buf.caret().attribute);
                         buf.print_char(ch);
                     }
                     return Ok(CallbackAction::Update);
