@@ -3,7 +3,6 @@
 use std::mem;
 
 use i18n_embed_fl::fl;
-use icy_sauce::SauceMetaInformation;
 
 use crate::{AttributedChar, Buffer, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, parse_with_parser, parsers};
 
@@ -336,7 +335,7 @@ impl EditState {
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn update_sauce_data(&mut self, sauce: SauceMetaInformation) -> EngineResult<()> {
+    pub fn update_sauce_data(&mut self, sauce: icy_sauce::MetaData) -> EngineResult<()> {
         let op = super::undo_operations::SetSauceData::new(sauce, self.buffer.get_sauce_meta().clone());
         self.push_undo_action(Box::new(op))
     }

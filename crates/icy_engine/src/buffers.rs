@@ -8,9 +8,7 @@ use std::{
 };
 
 use i18n_embed_fl::fl;
-use icy_sauce::bin_caps::BinCaps;
-use icy_sauce::char_caps::{AspectRatio, CharCaps, CharacterFormat, LetterSpacing};
-use icy_sauce::{SauceDataType, SauceInformation, SauceMetaInformation};
+use icy_sauce::prelude::*;
 
 use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
@@ -286,7 +284,7 @@ pub struct Buffer {
 
     pub is_terminal_buffer: bool,
 
-    sauce_data: SauceMetaInformation,
+    sauce_data: icy_sauce::MetaData,
 
     pub palette: Palette,
 
@@ -378,38 +376,45 @@ impl Buffer {
         result
     }
 
-    pub fn get_sauce_meta(&self) -> &SauceMetaInformation {
+    pub fn get_sauce_meta(&self) -> &icy_sauce::MetaData {
         &self.sauce_data
     }
-    pub fn set_sauce_meta(&mut self, sauce: SauceMetaInformation) {
+    pub fn set_sauce_meta(&mut self, sauce: icy_sauce::MetaData) {
         self.sauce_data = sauce;
     }
 
-    pub(crate) fn load_sauce(&mut self, sauce: SauceInformation) {
-        if let Ok(caps) = sauce.get_character_capabilities() {
-            // check limits, some files have wrong sauce data, even if 0 is specified
-            // some files specify the pixel size there and don't have line breaks in the file
-            let size = Size::new(caps.width.clamp(1, 1000) as i32, caps.height as i32);
-            self.set_size(size);
-            self.terminal_state.set_size(size);
+    pub(crate) fn load_sauce(&mut self, sauce: icy_sauce::SauceRecord) {
+        match sauce.capabilities() {
+            Some(Capabilities::Character(CharacterCapabilities { columns, lines, font_opt, ice_colors, aspect_ratio, letter_spacing, .. })) |
+            Some(Capabilities::Binary(BinaryCapabilities { columns, lines, font_opt, ice_colors, aspect_ratio, letter_spacing, .. })) => {
+                // check limits, some files have wrong sauce data, even if 0 is specified
+                // some files specify the pixel size there and don't have line breaks in the file
+                let size = Size::new(columns.clamp(1, 1000) as i32, lines as i32);
+                self.set_size(size);
+                self.terminal_state.set_size(size);
 
-            if !self.layers.is_empty() {
-                self.layers[0].set_size(size);
-            }
-
-            if let Some(font) = &caps.font_opt() {
-                if let Ok(font) = BitFont::from_sauce_name(&font.to_string()) {
-                    self.set_font(0, font);
+                if !self.layers.is_empty() {
+                    self.layers[0].set_size(size);
                 }
+
+                if let Some(font) = &font_opt {
+                    if let Ok(font) = BitFont::from_sauce_name(&font.to_string()) {
+                        self.set_font(0, font);
+                    }
+                }
+                if ice_colors {
+                    self.ice_mode = IceMode::Ice;
+                }
+                self.use_aspect_ratio = aspect_ratio == AspectRatio::LegacyDevice;
+                self.use_letter_spacing = letter_spacing == LetterSpacing::NinePixel;
             }
-            if caps.use_ice {
-                self.ice_mode = IceMode::Ice;
+            _ => {
+
             }
-            self.use_aspect_ratio = caps.aspect_ratio == AspectRatio::LegacyDevice;
-            self.use_letter_spacing = caps.letter_spacing == LetterSpacing::NinePixel;
         }
+        
         self.is_font_table_dirty = true;
-        self.sauce_data = sauce.get_meta_information();
+        self.sauce_data = sauce.metadata();
     }
 
     /// Clones the buffer (without sixel threads)
@@ -453,15 +458,15 @@ impl Buffer {
         let mut builder = self
             .get_sauce_meta()
             .to_builder()?
-            .with_file_size(result.len() as u32)
-            .with_data_type(data_type);
+            .file_size(result.len() as u32)
+            .data_type(data_type);
 
         match data_type {
             SauceDataType::Character => {
-                let mut caps = CharCaps::new(content_type);
-                caps.width = self.get_width() as u16;
-                caps.height = self.get_height() as u16;
-                caps.use_ice = self.ice_mode == IceMode::Ice;
+                let mut caps = CharacterCapabilities::new(content_type);
+                caps.columns = self.get_width() as u16;
+                caps.lines = self.get_height() as u16;
+                caps.ice_colors = self.ice_mode == IceMode::Ice;
                 caps.letter_spacing = if self.use_letter_spacing {
                     LetterSpacing::NinePixel
                 } else {
@@ -472,14 +477,14 @@ impl Buffer {
                 } else {
                     AspectRatio::Legacy
                 };
-                builder = builder.with_char_caps(caps)?;
+                builder = builder.capabilities(Capabilities::Character(caps))?;
             }
             SauceDataType::BinaryText => {
-                builder = builder.with_bin_caps(BinCaps::binary_text(self.get_width() as u16).unwrap()).unwrap();
+                builder = builder.capabilities(Capabilities::Binary(BinaryCapabilities::binary_text(self.get_width() as u16).unwrap())).unwrap();
             }
             SauceDataType::XBin => {
                 builder = builder
-                    .with_bin_caps(BinCaps::xbin(self.get_width() as u16, self.get_height() as u16).unwrap())
+                    .capabilities(Capabilities::Binary(BinaryCapabilities::xbin(self.get_width() as u16, self.get_height() as u16).unwrap()))
                     .unwrap();
             }
             _ => {}
@@ -615,7 +620,7 @@ impl Buffer {
             original_size: size,
             size,
             terminal_state: TerminalState::from(size),
-            sauce_data: SauceMetaInformation::default(),
+            sauce_data: icy_sauce::MetaData::default(),
 
             buffer_type: BufferType::CP437,
             ice_mode: IceMode::Unlimited,
@@ -988,9 +993,9 @@ impl Buffer {
     ) -> EngineResult<Buffer> {
         let ext = file_name.extension().unwrap_or_default().to_string_lossy();
         let mut len = bytes.len();
-        let sauce_data: Option<SauceInformation> = match SauceInformation::read(bytes) {
+        let sauce_data = match SauceRecord::from_bytes(bytes) {
             Ok(Some(sauce)) => {
-                len -= sauce.info_len();
+                len -= sauce.record_len() - 1;
                 Some(sauce)
             }
             Ok(None) => None,

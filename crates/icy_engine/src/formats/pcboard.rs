@@ -118,7 +118,7 @@ impl OutputFormat for PCBoard {
         }
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::PCBoard, &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::CharacterFormat::PCBoard, &mut result)?;
         }
         Ok(result)
     }

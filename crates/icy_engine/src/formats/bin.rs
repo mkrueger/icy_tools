@@ -32,7 +32,7 @@ impl OutputFormat for Bin {
         if options.save_sauce {
             buf.write_sauce_info(
                 icy_sauce::SauceDataType::BinaryText,
-                icy_sauce::char_caps::CharacterFormat::Unknown(0),
+                icy_sauce::CharacterFormat::Unknown(0),
                 &mut result,
             )?;
         }

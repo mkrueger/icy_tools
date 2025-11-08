@@ -6,7 +6,6 @@ pub use ansi::*;
 
 mod pcboard;
 use i18n_embed_fl::fl;
-use icy_sauce::SauceInformation;
 pub use pcboard::*;
 
 mod avatar;
@@ -144,13 +143,13 @@ impl Default for SaveOptions {
 
 #[derive(Default)]
 pub struct LoadData {
-    sauce_opt: Option<SauceInformation>,
+    sauce_opt: Option<icy_sauce::SauceRecord>,
     ansi_music: Option<MusicOption>,
     default_terminal_width: Option<usize>,
 }
 
 impl LoadData {
-    pub fn new(sauce_opt: Option<SauceInformation>, ansi_music: Option<MusicOption>, default_terminal_width: Option<usize>) -> Self {
+    pub fn new(sauce_opt: Option<icy_sauce::SauceRecord>, ansi_music: Option<MusicOption>, default_terminal_width: Option<usize>) -> Self {
         LoadData {
             sauce_opt,
             ansi_music,

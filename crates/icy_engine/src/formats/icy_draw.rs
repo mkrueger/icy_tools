@@ -1,7 +1,7 @@
 use std::{error::Error, fmt::Alignment, path::Path};
 
 use base64::{Engine, engine::general_purpose};
-use icy_sauce::SauceInformation;
+use icy_sauce::SauceRecord;
 use regex::Regex;
 
 use crate::{BitFont, Buffer, Color, EngineResult, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextPane, attribute};
@@ -87,7 +87,7 @@ impl OutputFormat for IcyDraw {
 
         if buf.has_sauce() {
             let mut sauce_vec: Vec<u8> = Vec::new();
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Ansi, &mut sauce_vec)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::CharacterFormat::Ansi, &mut sauce_vec)?;
             let sauce_data = general_purpose::STANDARD.encode(&sauce_vec);
             if let Err(err) = encoder.add_ztxt_chunk("SAUCE".to_string(), sauce_data) {
                 return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
@@ -460,7 +460,7 @@ impl OutputFormat for IcyDraw {
                                 }
 
                                 "SAUCE" => {
-                                    if let Some(sauce) = SauceInformation::read(&bytes)? {
+                                    if let Some(sauce) = SauceRecord::from_bytes(&bytes)? {
                                         result.load_sauce(sauce);
                                     }
                                 }

@@ -83,6 +83,9 @@ use i18n_embed::{
 };
 use rust_embed::RustEmbed;
 
+pub mod screen;
+pub use screen::*;
+
 #[derive(RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources
 struct Localizations;

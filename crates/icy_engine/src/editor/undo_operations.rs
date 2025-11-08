@@ -4,7 +4,6 @@ use std::{
 };
 
 use i18n_embed_fl::fl;
-use icy_sauce::SauceMetaInformation;
 
 use crate::{
     AddType, AttributedChar, BitFont, EngineResult, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Selection, SelectionMask, Size, Tag,
@@ -1242,12 +1241,12 @@ impl UndoOperation for SwitchPalettte {
 
 #[derive(Default)]
 pub struct SetSauceData {
-    new: SauceMetaInformation,
-    old: SauceMetaInformation,
+    new: icy_sauce::MetaData,
+    old: icy_sauce::MetaData,
 }
 
 impl SetSauceData {
-    pub fn new(new: SauceMetaInformation, old: SauceMetaInformation) -> Self {
+    pub fn new(new: icy_sauce::MetaData, old: icy_sauce::MetaData) -> Self {
         Self { new, old }
     }
 }

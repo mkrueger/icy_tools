@@ -45,7 +45,7 @@ impl OutputFormat for Ansi {
         result.extend(str_gen.get_data());
 
         if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::char_caps::CharacterFormat::Ansi, &mut result)?;
+            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::CharacterFormat::Ansi, &mut result)?;
         }
         Ok(result)
     }
