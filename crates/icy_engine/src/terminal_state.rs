@@ -1,4 +1,4 @@
-use crate::{Buffer, Caret, Rectangle, Size, ansi::BaudEmulation};
+use crate::{Rectangle, Size, ansi::BaudEmulation};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalScrolling {
@@ -43,6 +43,7 @@ impl MouseState {
 #[derive(Debug, Clone)]
 pub struct TerminalState {
     size: Size,
+    pub is_terminal_buffer: bool,
 
     pub origin_mode: OriginMode,
     pub scroll_state: TerminalScrolling,
@@ -96,6 +97,7 @@ impl TerminalState {
     pub fn from(size: impl Into<Size>) -> Self {
         let mut ret = Self {
             size: size.into(),
+            is_terminal_buffer: true,
             scroll_state: TerminalScrolling::Smooth,
             origin_mode: OriginMode::UpperLeftCorner,
             auto_wrap_mode: AutoWrapMode::AutoWrap,
@@ -180,7 +182,7 @@ impl TerminalState {
         }
     }
 
-    pub fn next_tab_stop(&mut self, x: i32) -> i32 {
+    pub fn next_tab_stop(&self, x: i32) -> i32 {
         let mut i = 0;
         while i < self.tab_stops.len() && self.tab_stops[i] <= x {
             i += 1;
@@ -188,7 +190,7 @@ impl TerminalState {
         if i < self.tab_stops.len() { self.tab_stops[i] } else { self.get_width() }
     }
 
-    pub fn prev_tab_stop(&mut self, x: i32) -> i32 {
+    pub fn prev_tab_stop(&self, x: i32) -> i32 {
         let mut i = self.tab_stops.len() as i32 - 1;
         while i >= 0 && self.tab_stops[i as usize] >= x {
             i -= 1;
@@ -211,31 +213,16 @@ impl TerminalState {
         self.baud_rate = baud_rate;
     }
 
-    pub fn limit_caret_pos(&self, buf: &Buffer, caret: &mut Caret) {
-        match self.origin_mode {
-            crate::OriginMode::UpperLeftCorner => {
-                if buf.is_terminal_buffer {
-                    let first = buf.get_first_visible_line();
-                    caret.pos.y = caret.pos.y.clamp(first, first + self.get_height() - 1);
-                }
-                caret.pos.x = caret.pos.x.clamp(0, (self.get_width() - 1).max(0));
-            }
-            crate::OriginMode::WithinMargins => {
-                let first = buf.get_first_editable_line();
-                let height = buf.get_last_editable_line() - first;
-                let n = caret.pos.y.clamp(first, (first + height - 1).max(first));
-                caret.pos.y = n;
-                caret.pos.x = caret.pos.x.clamp(0, (self.get_width() - 1).max(0));
-            }
-        }
-    }
-
     pub fn get_margins_top_bottom(&self) -> Option<(i32, i32)> {
         self.margins_top_bottom
     }
 
     pub fn get_margins_left_right(&self) -> Option<(i32, i32)> {
         self.margins_left_right
+    }
+
+    pub fn needs_scrolling(&self) -> bool {
+        self.is_terminal_buffer && self.get_margins_top_bottom().is_some()
     }
 
     pub fn set_margins_top_bottom(&mut self, top: i32, bottom: i32) {

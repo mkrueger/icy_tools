@@ -249,7 +249,7 @@ impl<'a> MainWindow<'a> {
         }
         match Buffer::from_bytes(file_name, true, data, None, terminal_width) {
             Ok(mut buf) => {
-                buf.is_terminal_buffer = false;
+                buf.terminal_state.is_terminal_buffer = false;
                 let editor = AnsiEditor::new(&self.gl, buf);
                 add_child(&mut self.document_tree, full_path, Box::new(editor));
             }

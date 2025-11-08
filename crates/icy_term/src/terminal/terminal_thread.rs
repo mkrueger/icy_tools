@@ -4,8 +4,7 @@ use crate::features::{AutoFileTransfer, AutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
-use icy_engine::editor::EditState;
-use icy_engine::{BufferParser, CallbackAction, TextAttribute};
+use icy_engine::{BufferParser, CallbackAction, EditableScreen, TextAttribute};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -107,7 +106,7 @@ pub struct ModemConfig {
 
 pub struct TerminalThread {
     // Shared state with UI
-    edit_state: Arc<Mutex<EditState>>,
+    edit_screen: Arc<Mutex<dyn EditableScreen>>,
 
     // Thread-local state
     connection: Option<Box<dyn Connection>>,
@@ -133,14 +132,14 @@ pub struct TerminalThread {
 
 impl TerminalThread {
     pub fn spawn(
-        edit_state: Arc<Mutex<EditState>>,
+        edit_screen: Arc<Mutex<dyn EditableScreen>>,
         buffer_parser: Box<dyn BufferParser>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
         let mut thread = Self {
-            edit_state,
+            edit_screen,
             connection: None,
             buffer_parser,
             current_transfer: None,
@@ -250,8 +249,8 @@ impl TerminalThread {
     }
 
     fn perform_resize(&mut self, width: u16, height: u16) {
-        if let Ok(mut state) = self.edit_state.lock() {
-            state.get_buffer_mut().set_size((width as i32, height as i32));
+        if let Ok(mut state) = self.edit_screen.lock() {
+            state.set_size(icy_engine::Size::new(width as i32, height as i32));
         }
         // Optionally notify UI so layout can adjust
         let _ = self.event_tx.send(TerminalEvent::BufferUpdated);
@@ -469,8 +468,8 @@ impl TerminalThread {
         if let Some(mut conn) = self.connection.take() {
             let _ = conn.shutdown().await;
         }
-        if let Ok(mut state) = self.edit_state.lock() {
-            state.get_caret_mut().set_attr(TextAttribute::default());
+        if let Ok(mut state) = self.edit_screen.lock() {
+            state.caret_mut().set_attr(TextAttribute::default());
         }
         self.process_data(b"\r\nNO CARRIER\r\n").await;
 
@@ -526,11 +525,9 @@ impl TerminalThread {
     async fn process_data(&mut self, data: &[u8]) {
         let mut actions = Vec::new();
 
-        if let Ok(mut state) = self.edit_state.lock() {
-            let mut caret = state.get_caret().clone();
+        if let Ok(mut screen) = self.edit_screen.lock() {
+            let caret = screen.caret().clone();
             {
-                let buffer = state.get_buffer_mut();
-
                 if self.use_utf8 {
                     // UTF-8 mode: decode multi-byte sequences
                     let mut to_process = Vec::new();
@@ -609,7 +606,7 @@ impl TerminalThread {
                             self.auto_login = None;
                         }
 
-                        match self.buffer_parser.print_char(buffer, 0, &mut caret, ch) {
+                        match self.buffer_parser.print_char(&mut *screen, ch) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
                         }
@@ -639,21 +636,20 @@ impl TerminalThread {
                             self.auto_login = None;
                         }
 
-                        match self.buffer_parser.print_char(buffer, 0, &mut caret, byte as char) {
+                        match self.buffer_parser.print_char(&mut *screen, byte as char) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
                         }
                     }
                 }
 
-                buffer.update_hyperlinks();
+                screen.update_hyperlinks();
             }
-            *state.get_caret_mut() = caret;
+            *screen.caret_mut() = caret;
 
-            let result = state.get_buffer_mut();
-            while !result.sixel_threads.is_empty() {
+            while screen.sixel_threads_runnning() {
                 thread::sleep(Duration::from_millis(50));
-                let _ = result.update_sixel_threads();
+                let _ = screen.update_sixel_threads();
             }
         }
 
@@ -799,7 +795,7 @@ impl TerminalThread {
 
 // Helper function to create a terminal thread for the UI
 pub fn create_terminal_thread(
-    edit_state: Arc<Mutex<EditState>>,
+    edit_screen: Arc<Mutex<dyn EditableScreen>>,
     terminal_type: TerminalEmulation,
 ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
     use icy_engine::ansi::MusicOption;
@@ -810,7 +806,7 @@ pub fn create_terminal_thread(
         PathBuf::from(".cache"), // cache directory
     );
 
-    TerminalThread::spawn(edit_state, parser)
+    TerminalThread::spawn(edit_screen, parser)
 }
 
 fn copy_downloaded_files(transfer_state: &mut TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

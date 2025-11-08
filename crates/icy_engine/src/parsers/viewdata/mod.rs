@@ -1,6 +1,6 @@
 #![allow(clippy::match_same_arms)]
 use super::BufferParser;
-use crate::{AttributedChar, Buffer, CallbackAction, Caret, EngineResult, Position, TextPane, UnicodeConverter};
+use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, Position, UnicodeConverter};
 
 mod constants;
 
@@ -49,95 +49,96 @@ impl Parser {
         self.alpha_bg = 0;
     }
 
-    fn fill_to_eol(buf: &mut Buffer, caret: &Caret) {
-        if caret.get_position().x <= 0 {
+    fn fill_to_eol(buf: &mut dyn EditableScreen) {
+        if buf.caret().get_position().x <= 0 {
             return;
         }
-        let sx = caret.get_position().x;
-        let sy = caret.get_position().y;
+        let sx = buf.caret().get_position().x;
+        let sy = buf.caret().get_position().y;
 
-        let attr = buf.get_char((sx, sy)).attribute;
+        let attr = buf.get_char((sx, sy).into()).attribute;
 
-        for x in sx..buf.terminal_state.get_width() {
+        for x in sx..buf.terminal_state().get_width() {
             let p = Position::new(x, sy);
             let mut ch = buf.get_char(p);
             if ch.attribute != attr {
                 break;
             }
-            ch.attribute = caret.attribute;
-            buf.layers[0].set_char(p, ch);
+            ch.attribute = buf.caret().attribute;
+            buf.set_char(p, ch);
         }
     }
 
-    fn reset_on_row_change(&mut self, caret: &mut Caret) {
+    fn reset_on_row_change(&mut self, buf: &mut dyn EditableScreen) {
         self.reset_screen();
-        caret.reset_color_attribute();
+        buf.caret_mut().reset_color_attribute();
     }
 
-    fn print_char(&mut self, buf: &mut Buffer, caret: &mut Caret, ch: AttributedChar) {
-        buf.layers[0].set_char(caret.pos, ch);
-        self.caret_right(buf, caret);
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: AttributedChar) {
+        buf.set_char(buf.caret().position, ch);
+        self.caret_right(buf);
     }
 
-    fn caret_down(&mut self, buf: &Buffer, caret: &mut Caret) {
-        caret.pos.y += 1;
-        if caret.pos.y >= buf.terminal_state.get_height() {
-            caret.pos.y = 0;
+    fn caret_down(&mut self, buf: &mut dyn EditableScreen) {
+        buf.caret_mut().position.y += 1;
+        if buf.caret().position.y >= buf.terminal_state().get_height() {
+            buf.caret_mut().position.y = 0;
         }
-        self.reset_on_row_change(caret);
+        self.reset_on_row_change(buf);
     }
 
-    fn caret_up(buf: &Buffer, caret: &mut Caret) {
-        if caret.pos.y > 0 {
-            caret.pos.y = caret.pos.y.saturating_sub(1);
+    fn caret_up(&self, buf: &mut dyn EditableScreen) {
+        if buf.caret().position.y > 0 {
+            buf.caret_mut().position.y = buf.caret().position.y.saturating_sub(1);
         } else {
-            caret.pos.y = buf.terminal_state.get_height() - 1;
+            buf.caret_mut().position.y = buf.terminal_state().get_height() - 1;
         }
     }
 
-    fn caret_right(&mut self, buf: &Buffer, caret: &mut Caret) {
-        caret.pos.x += 1;
-        if caret.pos.x >= buf.terminal_state.get_width() {
-            caret.pos.x = 0;
-            self.caret_down(buf, caret);
+    fn caret_right(&mut self, buf: &mut dyn EditableScreen) {
+        buf.caret_mut().position.x += 1;
+        if buf.caret().position.x >= buf.terminal_state().get_width() {
+            buf.caret_mut().position.x = 0;
+            self.caret_down(buf);
         }
     }
 
     #[allow(clippy::unused_self)]
-    fn caret_left(&self, buf: &Buffer, caret: &mut Caret) {
-        if caret.pos.x > 0 {
-            caret.pos.x = caret.pos.x.saturating_sub(1);
+    fn caret_left(&self, buf: &mut dyn EditableScreen) {
+        if buf.caret().position.x > 0 {
+            buf.caret_mut().position.x = buf.caret().position.x.saturating_sub(1);
         } else {
-            caret.pos.x = buf.terminal_state.get_width() - 1;
-            Parser::caret_up(buf, caret);
+            buf.caret_mut().position.x = buf.terminal_state().get_width() - 1;
+            self.caret_up(buf);
         }
     }
 
-    fn interpret_char(&mut self, buf: &mut Buffer, caret: &mut Caret, ch: u8) -> CallbackAction {
+    fn interpret_char(&mut self, buf: &mut dyn EditableScreen, ch: u8) -> CallbackAction {
         if self.got_esc {
             match ch {
                 b'\\' => {
                     // Black Background
-                    caret.attribute.set_is_concealed(false);
-                    caret.attribute.set_background(0);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_concealed(false);
+                    buf.caret_mut().attribute.set_background(0);
+                    Parser::fill_to_eol(buf);
                 }
                 b']' => {
-                    caret.attribute.set_background(caret.attribute.get_foreground());
-                    Parser::fill_to_eol(buf, caret);
+                    let fg = buf.caret_mut().attribute.get_foreground();
+                    buf.caret_mut().attribute.set_background(fg);
+                    Parser::fill_to_eol(buf);
                 }
                 b'I' => {
-                    caret.attribute.set_is_blinking(false);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_blinking(false);
+                    Parser::fill_to_eol(buf);
                 }
                 b'L' => {
-                    caret.attribute.set_is_double_height(false);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_double_height(false);
+                    Parser::fill_to_eol(buf);
                 }
                 b'X' => {
                     if !self.is_in_graphic_mode {
-                        caret.attribute.set_is_concealed(true);
-                        Parser::fill_to_eol(buf, caret);
+                        buf.caret_mut().attribute.set_is_concealed(true);
+                        Parser::fill_to_eol(buf);
                     }
                 }
                 b'Y' => {
@@ -175,18 +176,18 @@ impl Parser {
             }
             self.held_graphics_character = print_ch as char;
         }
-        let ach = AttributedChar::new(print_ch as char, caret.attribute);
-        self.print_char(buf, caret, ach);
+        let ach = AttributedChar::new(print_ch as char, buf.caret().attribute);
+        self.print_char(buf, ach);
 
         if self.got_esc {
             match ch {
                 b'A'..=b'G' => {
                     // Alpha Red, Green, Yellow, Blue, Magenta, Cyan, White
                     self.is_in_graphic_mode = false;
-                    caret.attribute.set_is_concealed(false);
+                    buf.caret_mut().attribute.set_is_concealed(false);
                     self.held_graphics_character = ' ';
-                    caret.attribute.set_foreground(1 + (ch - b'A') as u32);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_foreground(1 + (ch - b'A') as u32);
+                    Parser::fill_to_eol(buf);
                 }
                 b'Q'..=b'W' => {
                     // Graphics Red, Green, Yellow, Blue, Magenta, Cyan, White
@@ -194,18 +195,18 @@ impl Parser {
                         self.is_in_graphic_mode = true;
                         self.held_graphics_character = ' ';
                     }
-                    caret.attribute.set_is_concealed(false);
-                    caret.attribute.set_foreground(1 + (ch - b'Q') as u32);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_concealed(false);
+                    buf.caret_mut().attribute.set_foreground(1 + (ch - b'Q') as u32);
+                    Parser::fill_to_eol(buf);
                 }
                 b'H' => {
-                    caret.attribute.set_is_blinking(true);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_blinking(true);
+                    Parser::fill_to_eol(buf);
                 }
 
                 b'M' => {
-                    caret.attribute.set_is_double_height(true);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_double_height(true);
+                    Parser::fill_to_eol(buf);
                 }
 
                 b'_' => {
@@ -243,7 +244,7 @@ impl UnicodeConverter for CharConverter {
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         let ch = ch as u8;
         match ch {
             // control codes 0
@@ -257,32 +258,32 @@ impl BufferParser for Parser {
             0b000_0111 => {}                                           // ignore
             0b000_1000 => {
                 // Caret left 0x08
-                self.caret_left(buf, caret);
+                self.caret_left(buf);
             }
             0b000_1001 => {
                 // Caret right 0x09
-                self.caret_right(buf, caret);
+                self.caret_right(buf);
             }
             0b000_1010 => {
                 // Caret down 0x0A
-                self.caret_down(buf, caret);
+                self.caret_down(buf);
             }
             0b000_1011 => {
                 // Caret up 0x0B
-                Parser::caret_up(buf, caret);
+                self.caret_up(buf);
             }
             0b000_1100 => {
                 // 12 / 0x0C
                 buf.reset_terminal();
-                buf.layers[current_layer].clear();
-                caret.pos = Position::default();
-                caret.reset_color_attribute();
+                buf.clear_screen();
+                buf.caret_mut().position = Position::default();
+                buf.caret_mut().reset_color_attribute();
 
                 self.reset_screen();
             }
             0b000_1101 => {
                 // 13 / 0x0D
-                caret.cr(buf);
+                buf.cr();
             }
             0b000_1110 => {
                 return Ok(CallbackAction::NoUpdate);
@@ -293,10 +294,10 @@ impl BufferParser for Parser {
 
             // control codes 1
             0b001_0000 => {} // ignore
-            0b001_0001 => caret.set_is_visible(true),
+            0b001_0001 => buf.caret_mut().set_is_visible(true),
             0b001_0010 => {} // ignore
             0b001_0011 => {} // ignore
-            0b001_0100 => caret.set_is_visible(false),
+            0b001_0100 => buf.caret_mut().set_is_visible(false),
             0b001_0101 => {} // NAK
             0b001_0110 => {} // ignore
             0b001_0111 => {} // ignore
@@ -315,11 +316,11 @@ impl BufferParser for Parser {
             } // TODO: SS3 - switch to G3 char set
             0b001_1110 => {
                 // 28 / 0x1E
-                caret.home(buf);
+                buf.home();
             }
             0b001_1111 => {} // ignore
             _ => {
-                return Ok(self.interpret_char(buf, caret, ch));
+                return Ok(self.interpret_char(buf, ch));
             }
         }
         self.got_esc = false;

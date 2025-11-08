@@ -1,6 +1,6 @@
 #![allow(clippy::match_same_arms)]
 use super::BufferParser;
-use crate::{AttributedChar, Buffer, CallbackAction, Caret, EngineResult, Position, TextPane, UnicodeConverter};
+use crate::{AttributedChar, CallbackAction, Caret, EditableScreen, EngineResult, Position, UnicodeConverter};
 
 mod constants;
 
@@ -52,23 +52,23 @@ impl Parser {
         self._alpha_bg = 0;
     }
 
-    fn fill_to_eol(buf: &mut Buffer, caret: &Caret) {
-        if caret.get_position().x <= 0 {
+    fn fill_to_eol(buf: &mut dyn EditableScreen) {
+        if buf.caret().get_position().x <= 0 {
             return;
         }
-        let sx = caret.get_position().x;
-        let sy = caret.get_position().y;
+        let sx = buf.caret().get_position().x;
+        let sy = buf.caret().get_position().y;
 
-        let attr = buf.get_char((sx, sy)).attribute;
+        let attr = buf.get_char((sx, sy).into()).attribute;
 
-        for x in sx..buf.terminal_state.get_width() {
+        for x in sx..buf.terminal_state().get_width() {
             let p = Position::new(x, sy);
             let mut ch = buf.get_char(p);
             if ch.attribute != attr {
                 break;
             }
-            ch.attribute = caret.attribute;
-            buf.layers[0].set_char(p, ch);
+            ch.attribute = buf.caret().attribute;
+            buf.set_char(p, ch);
         }
     }
 
@@ -77,49 +77,43 @@ impl Parser {
         caret.reset_color_attribute();
     }
 
-    fn print_char(&mut self, buf: &mut Buffer, caret: &mut Caret, ch: AttributedChar) {
-        buf.layers[0].set_char(caret.pos, ch);
-        self.caret_right(buf, caret);
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: AttributedChar) {
+        buf.set_char(buf.caret().position, ch);
+        self.caret_right(buf);
     }
 
-    fn caret_down(&mut self, buf: &mut Buffer, caret: &mut Caret) {
-        caret.index(buf, 0);
-
-        /*       caret.pos.y += 1;
-        if caret.pos.y >= buf.terminal_state.get_height() {
-            caret.pos.y = 0;
-        }
-        self.reset_on_row_change(caret);*/
+    fn caret_down(&mut self, buf: &mut dyn EditableScreen) {
+        buf.index();
     }
 
-    fn caret_up(buf: &Buffer, caret: &mut Caret) {
-        if caret.pos.y > 0 {
-            caret.pos.y = caret.pos.y.saturating_sub(1);
+    fn caret_up(buf: &mut dyn EditableScreen) {
+        if buf.caret().position.y > 0 {
+            buf.caret_mut().position.y = buf.caret().position.y.saturating_sub(1);
         } else {
-            caret.pos.y = buf.terminal_state.get_height() - 1;
+            buf.caret_mut().position.y = buf.terminal_state().get_height() - 1;
         }
     }
 
-    fn caret_right(&mut self, buf: &mut Buffer, caret: &mut Caret) {
-        caret.pos.x += 1;
-        if caret.pos.x >= buf.terminal_state.get_width() {
-            caret.pos.x = 0;
-            self.caret_down(buf, caret);
+    fn caret_right(&mut self, buf: &mut dyn EditableScreen) {
+        buf.caret_mut().position.x += 1;
+        if buf.caret().position.x >= buf.terminal_state().get_width() {
+            buf.caret_mut().position.x = 0;
+            buf.down(1);
         }
     } // 9PSYRNY2
     // ADGJ
 
     #[allow(clippy::unused_self)]
-    fn caret_left(&self, buf: &Buffer, caret: &mut Caret) {
-        if caret.pos.x > 0 {
-            caret.pos.x = caret.pos.x.saturating_sub(1);
+    fn caret_left(&self, buf: &mut dyn EditableScreen) {
+        if buf.caret().position.x > 0 {
+            buf.caret_mut().position.x = buf.caret().position.x.saturating_sub(1);
         } else {
-            caret.pos.x = buf.terminal_state.get_width() - 1;
-            Parser::caret_up(buf, caret);
+            buf.caret_mut().position.x = buf.terminal_state().get_width() - 1;
+            Parser::caret_up(buf);
         }
     }
 
-    fn interpret_char(&mut self, buf: &mut Buffer, caret: &mut Caret, ch: u8) -> CallbackAction {
+    fn interpret_char(&mut self, buf: &mut dyn EditableScreen, ch: u8) -> CallbackAction {
         if !self.hold_graphics {
             self.held_graphics_character = ' ';
         }
@@ -135,8 +129,8 @@ impl Parser {
                 print_ch = print_ch - 225 + 31 + offset;
             }
         }
-        let ach = AttributedChar::new(print_ch as char, caret.attribute);
-        self.print_char(buf, caret, ach);
+        let ach = AttributedChar::new(print_ch as char, buf.caret().attribute);
+        self.print_char(buf, ach);
 
         CallbackAction::Update
     }
@@ -165,7 +159,7 @@ impl UnicodeConverter for CharConverter {
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         let ch = ch as u8;
         match ch {
             0 => {
@@ -197,30 +191,28 @@ impl BufferParser for Parser {
             }
             // cursor backward
             8 => {
-                self.caret_left(buf, caret);
+                self.caret_left(buf);
             }
             // cursor forward
             9 => {
-                self.caret_right(buf, caret);
+                self.caret_right(buf);
             }
             // cursor down
             10 => {
-                self.caret_down(buf, caret);
+                self.caret_down(buf);
             }
             // cursor up
             11 => {
-                Parser::caret_up(buf, caret);
+                Parser::caret_up(buf);
             }
             // clear text window
             12 => {
                 buf.reset_terminal();
-                buf.layers[current_layer].clear();
-                caret.pos = Position::default();
-                caret.reset_color_attribute();
+                buf.clear_screen();
             }
             // return
             13 => {
-                caret.cr(buf);
+                buf.cr();
             }
             14 => {
                 // Enable the auto-paging mode.
@@ -272,50 +264,54 @@ impl BufferParser for Parser {
             }
             30 => {
                 // Home the text cursor to the top left of the screen.
-                caret.home(buf);
+                buf.home();
             }
             31 => {
                 // Home the graphics cursor to the top left of the screen.
             }
             127 => {
                 // Backspace and delete
-                caret.bs(buf, current_layer);
+                buf.bs();
             }
             129..=135 => {
                 // Alpha Red, Green, Yellow, Blue, Magenta, Cyan, White
                 self.is_in_graphic_mode = false;
-                caret.attribute.set_is_concealed(false);
+                buf.caret_mut().attribute.set_is_concealed(false);
                 self.held_graphics_character = ' ';
-                caret.attribute.set_foreground(1 + (ch - 129) as u32);
-                Parser::fill_to_eol(buf, caret);
-
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().set_foreground(1 + (ch - 129) as u32);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
             // Flash
             136 => {
-                caret.attribute.set_is_blinking(true);
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().attribute.set_is_blinking(true);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
             // Steady
             137 => {
-                caret.attribute.set_is_blinking(false);
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().attribute.set_is_blinking(false);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // normal height
             140 => {
-                caret.attribute.set_is_double_height(false);
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().attribute.set_is_double_height(false);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // double height
             141 => {
-                caret.attribute.set_is_double_height(true);
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().attribute.set_is_double_height(true);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             145..=151 => {
@@ -324,47 +320,54 @@ impl BufferParser for Parser {
                     self.is_in_graphic_mode = true;
                     self.held_graphics_character = ' ';
                 }
-                caret.attribute.set_is_concealed(false);
-                caret.attribute.set_foreground(1 + (ch - 145) as u32);
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().attribute.set_is_concealed(false);
+                buf.caret_mut().attribute.set_foreground(1 + (ch - 145) as u32);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // conceal
             152 => {
                 if !self.is_in_graphic_mode {
-                    caret.attribute.set_is_concealed(true);
-                    Parser::fill_to_eol(buf, caret);
+                    buf.caret_mut().attribute.set_is_concealed(true);
+                    Parser::fill_to_eol(buf);
                 }
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // Contiguous Graphics
             153 => {
                 self.is_contiguous = true;
                 self.is_in_graphic_mode = true;
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
             // Separated Graphics
             154 => {
                 self.is_contiguous = false;
                 self.is_in_graphic_mode = true;
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // Black Background
             156 => {
-                caret.attribute.set_is_concealed(false);
-                caret.attribute.set_background(0);
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                buf.caret_mut().attribute.set_is_concealed(false);
+                buf.caret_mut().attribute.set_background(0);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // New Background
             157 => {
-                caret.attribute.set_background(caret.attribute.get_foreground());
-                Parser::fill_to_eol(buf, caret);
-                self.print_char(buf, caret, AttributedChar::new(' ', caret.attribute));
+                let fg = buf.caret().attribute.get_foreground();
+                buf.caret_mut().attribute.set_background(fg);
+                Parser::fill_to_eol(buf);
+                let ch = AttributedChar::new(' ', buf.caret().attribute);
+                self.print_char(buf, ch);
             }
 
             // Hold Graphics
@@ -380,7 +383,7 @@ impl BufferParser for Parser {
             }
 
             _ => {
-                return Ok(self.interpret_char(buf, caret, ch));
+                return Ok(self.interpret_char(buf, ch));
             }
         }
         self.got_esc = false;

@@ -1,21 +1,6 @@
 use crate::{Buffer, HyperLink, Position, TextPane};
 
 impl Buffer {
-    pub fn get_string(&self, pos: impl Into<Position>, size: usize) -> String {
-        let pos = pos.into();
-        let mut result = String::new();
-        let mut pos = pos;
-        for _ in 0..size {
-            result.push(self.get_char(pos).ch);
-            pos.x += 1;
-            if pos.x >= self.get_width() {
-                pos.x = 0;
-                pos.y += 1;
-            }
-        }
-        result
-    }
-
     pub fn parse_hyperlinks(&self) -> Vec<HyperLink> {
         let mut result: Vec<HyperLink> = Vec::new();
 
@@ -55,28 +40,6 @@ impl Buffer {
             if pos.x >= self.get_width() {
                 pos.x = 0;
                 pos.y += 1;
-            }
-        }
-    }
-
-    pub fn is_position_in_range(&self, pos: impl Into<Position>, from: impl Into<Position>, size: i32) -> bool {
-        let pos = pos.into();
-        let from = from.into();
-
-        match pos.y.cmp(&from.y) {
-            std::cmp::Ordering::Less => false,
-            std::cmp::Ordering::Equal => from.x <= pos.x && pos.x < from.x + size,
-            std::cmp::Ordering::Greater => {
-                let remainder = size.saturating_sub(self.get_width() + from.x);
-                let lines = remainder / self.get_width();
-                let mut y = from.y + lines;
-                let x = if remainder > 0 {
-                    y += 1; // remainder > 1 wraps 1 extra line
-                    remainder - lines * self.get_width()
-                } else {
-                    remainder
-                };
-                pos.y < y || pos.y == y && pos.x < x
             }
         }
     }

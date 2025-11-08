@@ -39,7 +39,7 @@ impl SettingsDialog {
 
         for _ in 0..15 {
             let mut buffer = Buffer::new(Size::new(10, 1));
-            buffer.is_terminal_buffer = false;
+            buffer.terminal_state.is_terminal_buffer = false;
             let mut buffer_view = BufferView::from_buffer(gl, buffer);
             buffer_view.interactive = true;
             views.push(Arc::new(Mutex::new(buffer_view)));

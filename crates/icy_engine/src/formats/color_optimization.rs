@@ -38,7 +38,7 @@ impl ColorOptimizer {
             let mut cur_attr = TextAttribute::default();
             for y in 0..layer.get_height() {
                 for x in 0..layer.get_width() {
-                    let attr_ch = layer.get_char((x, y));
+                    let attr_ch = layer.get_char((x, y).into());
                     let map = self.shape_map.get(&attr_ch.get_font_page()).unwrap();
                     let mut ch = attr_ch.ch;
                     let mut attribute = attr_ch.attribute;
@@ -104,7 +104,7 @@ mod tests {
 
         let opt_buf = opt.optimize(&buffer);
         for x in 0..opt_buf.get_width() {
-            assert_eq!(opt_buf.layers[0].get_char((x, 0)).attribute.get_foreground(), 14, "x={x}");
+            assert_eq!(opt_buf.layers[0].get_char((x, 0).into()).attribute.get_foreground(), 14, "x={x}");
         }
     }
 
@@ -120,7 +120,7 @@ mod tests {
 
         let opt_buf = opt.optimize(&buffer);
         for x in 0..opt_buf.get_width() {
-            assert_eq!(opt_buf.layers[0].get_char((x, 0)).attribute.get_background(), 0, "x={x}");
+            assert_eq!(opt_buf.layers[0].get_char((x, 0).into()).attribute.get_background(), 0, "x={x}");
         }
     }
 
@@ -138,7 +138,7 @@ mod tests {
 
         let opt_buf = opt.optimize(&buffer);
         for x in 0..opt_buf.get_width() {
-            assert_eq!(opt_buf.layers[0].get_char((x, 0)).ch, ' ', "x={x}");
+            assert_eq!(opt_buf.layers[0].get_char((x, 0).into()).ch, ' ', "x={x}");
         }
     }
 }

@@ -32,7 +32,7 @@ impl LayerToolWindow {
         while self.view_cache.len() <= i {
             let mut buffer_view = BufferView::new(&self.gl);
             buffer_view.interactive = false;
-            buffer_view.get_buffer_mut().is_terminal_buffer = false;
+            buffer_view.get_buffer_mut().terminal_state.is_terminal_buffer = false;
             buffer_view.get_caret_mut().set_is_visible(false);
             self.view_cache.push(Arc::new(eframe::epaint::mutex::Mutex::new(buffer_view)));
         }

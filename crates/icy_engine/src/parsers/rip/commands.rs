@@ -2,7 +2,7 @@ use std::{fs, io::Cursor, path, time::UNIX_EPOCH, vec};
 
 use chrono::{DateTime, Datelike, Timelike};
 
-use crate::{Buffer, CallbackAction, Caret, EngineResult, Position, Size, rip::to_base_36};
+use crate::{CallbackAction, EditableScreen, EngineResult, Position, Size, rip::to_base_36};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::prelude::*;
 
@@ -57,7 +57,7 @@ impl Command for TextWindow {
         }
     }
 
-    fn run(&self, buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let (x, y) = match self.size {
             1 => (7, 8),
             2 => (8, 14),
@@ -68,7 +68,7 @@ impl Command for TextWindow {
         if self.x0 == 0 && self.y0 == 0 && self.x1 == 0 && self.y1 == 0 && self.size == 0 && !self.wrap {
             bgi.suspend_text = !bgi.suspend_text;
         }
-        buf.terminal_state.set_text_window(self.x0, self.y0, self.x1, self.y1);
+        buf.terminal_state_mut().set_text_window(self.x0, self.y0, self.x1, self.y1);
         bgi.set_text_window(self.x0 * x, self.y0 * y, self.x1 * x, self.y1 * y, self.wrap);
         Ok(CallbackAction::NoUpdate)
     }
@@ -124,7 +124,7 @@ impl Command for ViewPort {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_viewport(self.x0, self.y0, self.x1, self.y1);
         Ok(CallbackAction::NoUpdate)
     }
@@ -147,9 +147,9 @@ impl Command for ResetWindows {
     fn to_rip_string(&self) -> String {
         "|*".to_string()
     }
-    fn run(&self, buf: &mut Buffer, caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        buf.terminal_state.clear_text_window();
-        buf.clear_screen(0, caret);
+    fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+        buf.terminal_state_mut().clear_text_window();
+        buf.clear_screen();
         bgi.clear_text_window();
 
         bgi.graph_defaults();
@@ -165,7 +165,7 @@ impl Command for EraseWindow {
         "|e".to_string()
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.clear_text_window();
         Ok(CallbackAction::Update)
     }
@@ -179,7 +179,7 @@ impl Command for EraseView {
         "|E".to_string()
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.clear_viewport();
         Ok(CallbackAction::Update)
     }
@@ -211,7 +211,7 @@ impl Command for GotoXY {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.move_to(self.x, self.y);
         Ok(CallbackAction::NoUpdate)
     }
@@ -259,7 +259,7 @@ impl Command for Color {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_color(self.c as u8);
         Ok(CallbackAction::NoUpdate)
     }
@@ -286,7 +286,7 @@ impl Command for SetPalette {
         Ok(*state < 31)
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_palette(&self.palette);
         Ok(CallbackAction::Update)
     }
@@ -325,7 +325,7 @@ impl Command for OnePalette {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_palette_color(self.color, self.value as u8);
         Ok(CallbackAction::Update)
     }
@@ -355,7 +355,7 @@ impl Command for WriteMode {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_write_mode(super::bgi::WriteMode::from(self.mode as u8));
         Ok(CallbackAction::NoUpdate)
     }
@@ -390,7 +390,7 @@ impl Command for Move {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.move_to(self.x, self.y);
         Ok(CallbackAction::NoUpdate)
     }
@@ -411,7 +411,7 @@ impl Command for Text {
         Ok(true)
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.out_text(&self.str);
         Ok(CallbackAction::Update)
     }
@@ -445,7 +445,7 @@ impl Command for TextXY {
             }
         }
     }
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.out_text_xy(self.x, self.y, &self.str);
         Ok(CallbackAction::Update)
     }
@@ -493,7 +493,7 @@ impl Command for FontStyle {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_text_style(FontType::from(self.font as u8), Direction::from(self.direction as u8), self.size);
         Ok(CallbackAction::NoUpdate)
     }
@@ -534,7 +534,7 @@ impl Command for Pixel {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.put_pixel(self.x, self.y, bgi.get_color());
         Ok(CallbackAction::Update)
     }
@@ -582,7 +582,7 @@ impl Command for Line {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.line(self.x0, self.y0, self.x1, self.y1);
         Ok(CallbackAction::Update)
     }
@@ -636,7 +636,7 @@ impl Command for Rectangle {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.rectangle(self.x0, self.y0, self.x1, self.y1);
         Ok(CallbackAction::Update)
     }
@@ -690,7 +690,7 @@ impl Command for Bar {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let (left, right) = if self.x0 < self.x1 { (self.x0, self.x1) } else { (self.x1, self.x0) };
 
         let (top, bottom) = if self.y0 < self.y1 { (self.y0, self.y1) } else { (self.y1, self.y0) };
@@ -743,7 +743,7 @@ impl Command for Circle {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.circle(self.x_center, self.y_center, self.radius);
         Ok(CallbackAction::Update)
     }
@@ -809,7 +809,7 @@ impl Command for Oval {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.ellipse(self.x, self.y, self.st_ang, self.end_ang, self.x_rad, self.y_rad);
         Ok(CallbackAction::Update)
     }
@@ -865,7 +865,7 @@ impl Command for FilledOval {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.fill_ellipse(self.x_center, self.y_center, 0, 360, self.x_rad, self.y_rad);
         Ok(CallbackAction::Update)
     }
@@ -926,7 +926,7 @@ impl Command for Arc {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.arc(self.x, self.y, self.start_ang, self.end_ang, self.radius);
         Ok(CallbackAction::Update)
     }
@@ -994,7 +994,7 @@ impl Command for OvalArc {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.ellipse(self.x, self.y, self.start_ang, self.end_ang, self.x_rad, self.y_rad);
         Ok(CallbackAction::Update)
     }
@@ -1057,7 +1057,7 @@ impl Command for PieSlice {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.pie_slice(self.x, self.y, self.start_ang, self.end_ang, self.radius);
         Ok(CallbackAction::Update)
     }
@@ -1125,7 +1125,7 @@ impl Command for OvalPieSlice {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.sector(self.x, self.y, self.st_ang, self.end_ang, self.x_rad, self.y_rad);
         Ok(CallbackAction::Update)
     }
@@ -1212,7 +1212,7 @@ impl Command for Bezier {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.rip_bezier(self.x1, self.y1, self.x2, self.y2, self.x3, self.y3, self.x4, self.y4, self.cnt);
         /*
                 let points = vec![
@@ -1268,7 +1268,7 @@ impl Command for Polygon {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let mut points = Vec::new();
         for i in 0..self.points.len() / 2 {
             points.push(Position::new(self.points[i * 2], self.points[i * 2 + 1]));
@@ -1313,7 +1313,7 @@ impl Command for FilledPolygon {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let mut points = Vec::new();
         for i in 0..self.points.len() / 2 {
             points.push(Position::new(self.points[i * 2], self.points[i * 2 + 1]));
@@ -1358,7 +1358,7 @@ impl Command for PolyLine {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let mut points = Vec::new();
         for i in 0..self.points.len() / 2 {
             points.push(Position::new(self.points[i * 2], self.points[i * 2 + 1]));
@@ -1410,7 +1410,7 @@ impl Command for Fill {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.flood_fill(self.x, self.y, self.border as u8);
         Ok(CallbackAction::Update)
     }
@@ -1452,7 +1452,7 @@ impl Command for LineStyle {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_line_style(super::bgi::LineStyle::from(self.style as u8));
         //  If the <style> parameter is not 4, then the <user_pat> parameter is ignored.
         if self.style == 4 {
@@ -1492,7 +1492,7 @@ impl Command for FillStyle {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_fill_style(super::bgi::FillStyle::from(self.pattern as u8));
         bgi.set_fill_color(self.color as u8);
         Ok(CallbackAction::NoUpdate)
@@ -1572,7 +1572,7 @@ impl Command for FillPattern {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_user_fill_pattern(&[
             self.c1 as u8,
             self.c2 as u8,
@@ -1666,7 +1666,7 @@ impl Command for Mouse {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let host_command = parse_host_command(&self.text);
         let mut style = ButtonStyle2::default();
         style.flags |= 1024;
@@ -1693,7 +1693,7 @@ impl Command for Mouse {
 pub struct MouseFields {}
 
 impl Command for MouseFields {
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.clear_mouse_fields();
         Ok(CallbackAction::NoUpdate)
     }
@@ -1748,7 +1748,7 @@ impl Command for BeginText {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         // Nothing?
         Ok(CallbackAction::NoUpdate)
     }
@@ -1793,7 +1793,7 @@ impl Command for EndText {
     fn to_rip_string(&self) -> String {
         "|1E".to_string()
     }
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         // Nothing
         Ok(CallbackAction::NoUpdate)
     }
@@ -1839,7 +1839,7 @@ impl Command for GetImage {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.rip_image = Some(bgi.get_image(self.x0, self.y0, self.x1, self.y1));
         Ok(CallbackAction::NoUpdate)
     }
@@ -1890,7 +1890,7 @@ impl Command for PutImage {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.put_rip_image(self.x, self.y, super::bgi::WriteMode::from(self.mode as u8));
         Ok(CallbackAction::Update)
     }
@@ -1970,7 +1970,7 @@ impl Command for LoadIcon {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let file_name = lookup_cache_file(bgi, &self.file_name)?;
         if !file_name.exists() {
             log::error!("File not found: {}", self.file_name);
@@ -2139,7 +2139,7 @@ impl Command for ButtonStyle {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_button_style(ButtonStyle2 {
             size: Size::new(self.wid, self.hgt),
             orientation: LabelOrientation::from(self.orient as u8),
@@ -2236,7 +2236,7 @@ impl Command for Button {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let split: Vec<&str> = self.text.split("<>").collect();
 
         if split.len() == 4 {
@@ -2451,7 +2451,7 @@ impl Command for CopyRegion {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let image = bgi.get_image(self.x0, self.y0, self.x1, self.y1 + 1);
         bgi.put_image(self.x0, self.dest_line, &image, bgi.get_write_mode());
         Ok(CallbackAction::Update)
@@ -2515,7 +2515,7 @@ impl Command for FileQuery {
         }
     }
 
-    fn run(&self, _buf: &mut Buffer, _caret: &mut Caret, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let file_name = lookup_cache_file(bgi, &self.file_name)?;
         match self.mode {
             // Simply query the existence of the file.  If it exists, a "1" is

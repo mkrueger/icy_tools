@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, button, column, container, pick_list, row, text, text_input},
 };
-use icy_engine::{SaveOptions, editor::EditState};
+use icy_engine::{EditableScreen, SaveOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -112,7 +112,7 @@ impl ExportScreenDialogState {
         Path::new(&self.temp_directory).join(filename_with_ext)
     }
 
-    pub fn export_buffer(&self, edit_state: Arc<Mutex<EditState>>) -> Result<(), String> {
+    pub fn export_buffer(&self, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Result<(), String> {
         let full_path = self.get_full_path();
 
         // Create directory if it doesn't exist
@@ -121,14 +121,13 @@ impl ExportScreenDialogState {
         }
 
         // Get the buffer from edit state
-        let mut edit_state = edit_state.lock().map_err(|e| format!("Failed to lock edit state: {}", e))?;
-        let buffer = edit_state.get_buffer_mut();
+        let mut screen = edit_screen.lock().map_err(|e| format!("Failed to lock edit state: {}", e))?;
 
         // Get the file extension for format
         let ext = self.export_format.extension();
 
         // Convert buffer to bytes based on format
-        let content = buffer
+        let content = screen
             .to_bytes(ext, &SaveOptions::new())
             .map_err(|e| format!("Failed to convert buffer: {}", e))?;
 
@@ -138,7 +137,7 @@ impl ExportScreenDialogState {
         Ok(())
     }
 
-    pub fn update(&mut self, message: ExportScreenMsg, edit_state: Arc<Mutex<EditState>>) -> Option<crate::ui::Message> {
+    pub fn update(&mut self, message: ExportScreenMsg, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Option<crate::ui::Message> {
         match message {
             ExportScreenMsg::Export => {
                 // Update the actual values
@@ -147,7 +146,7 @@ impl ExportScreenDialogState {
                 self.export_format = self.temp_format;
 
                 // Perform the export
-                match self.export_buffer(edit_state) {
+                match self.export_buffer(edit_screen) {
                     Ok(_) => {
                         log::info!("Successfully exported to: {}", self.get_full_path().display());
                         // Close the dialog after successful export

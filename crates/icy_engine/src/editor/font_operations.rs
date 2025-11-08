@@ -233,7 +233,7 @@ impl EditState {
             }
             for y in 0..layer.get_height() {
                 for x in 0..layer.get_width() {
-                    let mut ch = layer.get_char((x, y));
+                    let mut ch = layer.get_char((x, y).into());
                     if ch.attribute.get_font_page() == from {
                         ch.attribute.set_font_page(to);
                         layer.set_char((x, y), ch);

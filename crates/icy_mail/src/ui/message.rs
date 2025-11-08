@@ -14,11 +14,11 @@ pub enum NavigateDirection {
 
 #[derive(Clone)]
 pub enum Message {
-    QuitIcyMail,
+    _QuitIcyMail,
     BufferUpdated,
     OpenPackage,
     PackageSelected(PathBuf),
-    LoadingProgress(f32, Option<String>),
+    _LoadingProgress(f32, Option<String>),
     PackageLoaded(Arc<QwkPackage>),
     PackageLoadError(String),
     SelectConference(u16),
@@ -40,11 +40,11 @@ pub enum Message {
 impl std::fmt::Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Message::QuitIcyMail => write!(f, "QuitIcyMail"),
+            Message::_QuitIcyMail => write!(f, "QuitIcyMail"),
             Message::BufferUpdated => write!(f, "BufferUpdated"),
             Message::OpenPackage => write!(f, "OpenPackage"),
             Message::PackageSelected(path) => write!(f, "PackageSelected({:?})", path),
-            Message::LoadingProgress(p, msg) => write!(f, "LoadingProgress({}, {:?})", p, msg),
+            Message::_LoadingProgress(p, msg) => write!(f, "LoadingProgress({}, {:?})", p, msg),
             Message::PackageLoaded(_) => write!(f, "PackageLoaded(<package>)"),
             Message::PackageLoadError(e) => write!(f, "PackageLoadError({})", e),
             Message::SelectConference(c) => write!(f, "SelectConference({})", c),

@@ -1,5 +1,3 @@
-use crate::TextPane;
-
 use super::{Position, TextAttribute};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -12,8 +10,8 @@ pub enum CaretShape {
 
 #[derive(Clone)]
 pub struct Caret {
-    pub(super) pos: Position,
-    pub(super) attribute: TextAttribute,
+    pub position: Position,
+    pub attribute: TextAttribute,
     pub insert_mode: bool,
     is_visible: bool,
     pub is_blinking: bool,
@@ -23,12 +21,15 @@ pub struct Caret {
 
 impl Caret {
     pub fn new(pos: Position) -> Self {
-        Self { pos, ..Default::default() }
+        Self {
+            position: pos,
+            ..Default::default()
+        }
     }
 
     pub fn new_xy(x: i32, y: i32) -> Self {
         Self {
-            pos: Position { x, y },
+            position: Position { x, y },
             ..Default::default()
         }
     }
@@ -47,23 +48,23 @@ impl Caret {
     }
 
     pub fn get_position(&self) -> Position {
-        self.pos
+        self.position
     }
 
     pub fn set_position(&mut self, pos: Position) {
-        self.pos = pos;
+        self.position = pos;
     }
 
     pub fn set_position_xy(&mut self, x: i32, y: i32) {
-        self.pos = Position::new(x, y);
+        self.position = Position::new(x, y);
     }
 
     pub fn set_x_position(&mut self, x: i32) {
-        self.pos.x = x;
+        self.position.x = x;
     }
 
     pub fn set_y_position(&mut self, y: i32) {
-        self.pos.y = y;
+        self.position.y = y;
     }
 
     pub fn set_attr(&mut self, attr: TextAttribute) {
@@ -79,7 +80,7 @@ impl Caret {
     }
 
     pub(crate) fn reset(&mut self) {
-        self.pos = Position::default();
+        self.position = Position::default();
         self.attribute = TextAttribute::default();
         self.insert_mode = false;
         self.is_visible = true;
@@ -117,11 +118,6 @@ impl Caret {
         self.is_visible = is_visible;
     }
 
-    pub fn tab_forward(&mut self, buf: &mut crate::Buffer) {
-        let x = ((self.pos.x / 8 + 1) * 8).min(buf.get_width() - 1);
-        self.set_x_position(x);
-    }
-
     pub fn shape(&self) -> CaretShape {
         self.shape
     }
@@ -134,7 +130,7 @@ impl Caret {
 impl std::fmt::Debug for Caret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cursor")
-            .field("pos", &self.pos)
+            .field("pos", &self.position)
             .field("attr", &self.attribute)
             .field("insert_mode", &self.insert_mode)
             .finish_non_exhaustive()
@@ -144,7 +140,7 @@ impl std::fmt::Debug for Caret {
 impl Default for Caret {
     fn default() -> Self {
         Self {
-            pos: Position::default(),
+            position: Position::default(),
             attribute: TextAttribute::default(),
             insert_mode: false,
             is_visible: true,
@@ -157,6 +153,6 @@ impl Default for Caret {
 
 impl PartialEq for Caret {
     fn eq(&self, other: &Caret) -> bool {
-        self.pos == other.pos && self.attribute == other.attribute
+        self.position == other.position && self.attribute == other.attribute
     }
 }

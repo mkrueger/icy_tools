@@ -38,9 +38,11 @@ mod icy_draw;
 mod renegade;
 mod seq;
 
+#[cfg(test)]
+use crate::Buffer;
 use crate::{
-    ANSI_FONTS, BitFont, Buffer, BufferFeatures, BufferParser, CallbackAction, Caret, EngineResult, IceMode, Layer, Role, SAUCE_FONT_NAMES, Size, TextPane,
-    ansi::MusicOption,
+    ANSI_FONTS, BitFont, BufferFeatures, BufferParser, CallbackAction, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane,
+    TextScreen, ansi::MusicOption,
 };
 
 use super::{Position, TextAttribute};
@@ -214,20 +216,18 @@ lazy_static::lazy_static! {
 /// # Errors
 ///
 /// This function will return an error if .
-pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser, text: &str, skip_errors: bool) -> EngineResult<()> {
-    result.layers[0].lines.clear();
-    let mut caret = Caret::default();
-    caret.set_ice_mode(result.ice_mode == IceMode::Ice);
+pub fn parse_with_parser(result: &mut TextScreen, interpreter: &mut dyn BufferParser, text: &str, skip_errors: bool) -> EngineResult<()> {
+    // result.layers[0].lines.clear();
 
     for ch in text.chars() {
         if ch == '\x1A' {
             break;
         }
-        let res = interpreter.print_char(result, 0, &mut caret, ch);
+        let res = interpreter.print_char(result, ch);
         match res {
             Ok(action) => match action {
                 CallbackAction::PlayMusic(ansi_music) => {
-                    result.ansi_music.push(ansi_music);
+                    result.buffer.ansi_music.push(ansi_music);
                 }
                 _ => {}
             },
@@ -240,17 +240,17 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
     }
 
     // transform sixels to layers for non terminal buffers (makes sense in icy_draw for example)
-    if !result.is_terminal_buffer {
-        while !result.sixel_threads.is_empty() {
+    if !result.terminal_state().is_terminal_buffer {
+        while !result.buffer.sixel_threads.is_empty() {
             thread::sleep(Duration::from_millis(50));
-            result.update_sixel_threads()?;
+            result.buffer.update_sixel_threads()?;
         }
 
         let mut num = 0;
-        while !result.layers[0].sixels.is_empty() {
-            if let Some(mut sixel) = result.layers[0].sixels.pop() {
+        while !result.buffer.layers[0].sixels.is_empty() {
+            if let Some(mut sixel) = result.buffer.layers[0].sixels.pop() {
                 let size = sixel.get_size();
-                let font_size = result.get_font_dimensions();
+                let font_size = result.buffer.get_font_dimensions();
                 let size = Size::new(
                     (size.width + font_size.width - 1) / font_size.width,
                     (size.height + font_size.height - 1) / font_size.height,
@@ -261,7 +261,7 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
                 layer.set_offset(sixel.position);
                 sixel.position = Position::default();
                 layer.sixels.push(sixel);
-                result.layers.push(layer);
+                result.buffer.layers.push(layer);
             }
         }
     }
@@ -270,20 +270,19 @@ pub fn parse_with_parser(result: &mut Buffer, interpreter: &mut dyn BufferParser
     // get_line_count() returns the real height without empty lines
     // a caret move may move up, to load correctly it need to be checked.
     // The initial height of 24 lines may be too large for the real content height.
-    let real_height = result.get_line_count().max(caret.get_position().y + 1);
-    result.set_height(real_height);
-    result.layers[0].set_height(real_height);
+    let real_height = result.buffer.get_line_count().max(result.caret.position.y + 1);
+    result.buffer.set_height(real_height);
 
     for y in 0..result.get_height() {
         for x in 0..result.get_width() {
-            let mut ch = result.get_char((x, y));
+            let mut ch = result.get_char((x, y).into());
             if ch.attribute.is_bold() {
                 let fg = ch.attribute.get_foreground();
                 if fg < 8 {
                     ch.attribute.set_foreground(fg + 8);
                 }
                 ch.attribute.set_is_bold(false);
-                result.layers[0].set_char((x, y), ch);
+                result.set_char((x, y).into(), ch);
             }
         }
     }
@@ -481,7 +480,7 @@ mod tests {
 }
 /*
 #[cfg(test)]
-fn crop2_loaded_file(result: &mut Buffer) {
+fn crop2_loaded_file(result: &mut dyn Screen) {
     for l in 0..result.layers.len() {
         if let Some(line) = result.layers[l].lines.last_mut() {
             while !line.chars.is_empty() && !line.chars.last().unwrap().is_visible() {
@@ -588,8 +587,8 @@ pub(crate) fn compare_buffers(buf_old: &Buffer, buf_new: &Buffer, compare_option
 
         for line in 0..buf_old.layers[layer].lines.len() {
             for i in 0..buf_old.layers[layer].get_width() as usize {
-                let mut ch = buf_old.layers[layer].get_char((line, i));
-                let mut ch2 = buf_new.layers[layer].get_char((line, i));
+                let mut ch = buf_old.layers[layer].get_char((line, i).into());
+                let mut ch2 = buf_new.layers[layer].get_char((line, i).into());
                 if compare_options.ignore_invisible_chars && (!ch.is_visible() || !ch2.is_visible()) {
                     continue;
                 }

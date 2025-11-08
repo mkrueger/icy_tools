@@ -19,7 +19,7 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, TextPane, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -118,10 +118,10 @@ impl MainWindow {
             .join("export.icy");
 
         let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
-        let edit_state = terminal_window.terminal.edit_state.clone();
+        let edit_screen = terminal_window.terminal.screen.clone();
 
         // Create terminal thread
-        let (terminal_tx, terminal_rx) = create_terminal_thread(edit_state.clone(), icy_net::telnet::TerminalEmulation::Ansi);
+        let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), icy_net::telnet::TerminalEmulation::Ansi);
 
         Self {
             id,
@@ -194,23 +194,18 @@ impl MainWindow {
                         log::error!("{}", error_msg);
 
                         // Display error message in terminal
-                        if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
-                            let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
-                            buffer.clear_screen(0, caret);
+                        if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                            screen.clear_screen();
 
                             // Write error message
                             for ch in error_msg.chars() {
-                                buffer.print_char(
-                                    0,
-                                    caret,
-                                    icy_engine::AttributedChar::new(
-                                        ch,
-                                        icy_engine::TextAttribute::from_color(4, 0), // Red on black
-                                    ),
-                                );
+                                screen.print_char(icy_engine::AttributedChar::new(
+                                    ch,
+                                    icy_engine::TextAttribute::from_color(4, 0), // Red on black
+                                ));
                             }
-                            caret.cr(buffer);
-                            caret.lf(buffer, 0);
+                            screen.cr();
+                            screen.lf();
                         }
 
                         self.state.mode = MainWindowMode::ShowTerminal;
@@ -249,15 +244,10 @@ impl MainWindow {
                 };
 
                 let screen_mode = address.get_screen_mode();
-                if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
-                    let (buffer, caret, _) = state.get_buffer_and_caret_mut();
-                    buffer.clear_screen(0, caret);
-                    unsafe {
-                        // Clear all sixel layers on connect
-                        buffer.layers.set_len(1);
-                    }
-                    caret.set_is_visible(true);
-                    screen_mode.apply_to_edit_state(&mut state);
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    screen.clear_screen();
+                    screen.caret_mut().set_is_visible(true);
+                    screen_mode.apply_to_edit_screen(&mut *screen);
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));
@@ -279,14 +269,14 @@ impl MainWindow {
             }
             Message::SendData(data) => {
                 self.clear_selection();
-                self.terminal_window.terminal.edit_state.lock().unwrap().set_scroll_position(0);
+                self.terminal_window.terminal.screen.lock().unwrap().set_scroll_position(0);
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
 
             Message::SendString(s) => {
                 self.clear_selection();
-                self.terminal_window.terminal.edit_state.lock().unwrap().set_scroll_position(0);
+                self.terminal_window.terminal.screen.lock().unwrap().set_scroll_position(0);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
                     let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
@@ -512,7 +502,10 @@ impl MainWindow {
                 Task::none()
             }
             Message::FindDialog(msg) => {
-                if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.terminal.edit_state.clone()) {
+                if let Some(close_msg) = self
+                    .find_dialog
+                    .update(msg, &*self.unicode_converter, self.terminal_window.terminal.screen.clone())
+                {
                     return self.update(close_msg);
                 }
 
@@ -524,7 +517,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::ExportDialog(msg) => {
-                if let Some(response) = self.export_dialog.update(msg, self.terminal_window.terminal.edit_state.clone()) {
+                if let Some(response) = self.export_dialog.update(msg, self.terminal_window.terminal.screen.clone()) {
                     match response {
                         Message::CloseDialog(mode) => {
                             self.state.mode = *mode;
@@ -542,8 +535,8 @@ impl MainWindow {
             Message::None => Task::none(),
 
             Message::ScrollRelative(lines) => {
-                let mut state = self.terminal_window.terminal.edit_state.lock().unwrap();
-                let current_offset = state.scrollback_offset as i32;
+                let mut state = self.terminal_window.terminal.screen.lock().unwrap();
+                let current_offset = state.scrollback_position() as i32;
                 let max_offset = state.get_max_scrollback_offset() as i32;
                 let new_offset = (current_offset - lines).clamp(0, max_offset) as usize;
                 state.set_scroll_position(new_offset);
@@ -570,19 +563,19 @@ impl MainWindow {
 
             Message::Copy => {
                 // Implement clipboard copy from selection
-                if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
+                if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
                     let mut vec = vec![];
-                    if let Some(text) = edit_state.get_copy_text() {
+                    if let Some(text) = edit_screen.get_copy_text() {
                         vec.push(ClipboardContent::Text(text.clone()));
                     } else {
                         return Task::none();
                     }
-                    if let Some(rich_text) = edit_state.get_copy_rich_text() {
+                    if let Some(rich_text) = edit_screen.get_copy_rich_text() {
                         vec.push(ClipboardContent::Rtf(rich_text));
                     }
 
-                    if let Some(selection) = edit_state.get_selection() {
-                        let (size, data) = edit_state.get_display_buffer().render_to_rgba(&RenderOptions {
+                    if let Some(selection) = edit_screen.get_selection() {
+                        let (size, data) = edit_screen.render_to_rgba(&RenderOptions {
                             rect: selection,
                             blink_on: true,
                             selection: None,
@@ -597,7 +590,7 @@ impl MainWindow {
                         vec.push(ClipboardContent::Image(img));
                     }
 
-                    if let Some(data) = edit_state.get_clipboard_data() {
+                    if let Some(data) = edit_screen.get_clipboard_data() {
                         vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
                     }
 
@@ -605,7 +598,7 @@ impl MainWindow {
                         log::error!("Failed to set clipboard content: {}", err);
                     }
                     // Clear selection after copy
-                    let _ = edit_state.clear_selection();
+                    let _ = edit_screen.clear_selection();
                     self.shift_pressed_during_selection = false;
                 }
                 Task::none()
@@ -669,11 +662,9 @@ impl MainWindow {
                 iced::exit()
             }
             Message::ClearScreen => {
-                if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
-                    edit_state.clear_scrollback_buffer();
-                    let (buffer, caret, _) = edit_state.get_buffer_and_caret_mut();
-                    buffer.clear_screen(0, caret);
-                    caret.set_position(Position::new(0, 0));
+                if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
+                    edit_screen.clear_scrollback();
+                    edit_screen.clear_screen();
                 }
                 Task::none()
             }
@@ -726,13 +717,12 @@ impl MainWindow {
                     }
                     McpCommand::CaptureScreen(format, response_tx) => {
                         // Capture the current screen in the requested format
-                        let data = if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
-                            let buffer = state.get_buffer_mut();
+                        let data = if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
                             let mut opt = icy_engine::SaveOptions::default();
                             opt.modern_terminal_output = true;
                             match format {
-                                ScreenCaptureFormat::Text => buffer.to_bytes("asc", &opt).unwrap_or_default(),
-                                ScreenCaptureFormat::Ansi => buffer.to_bytes("ans", &opt).unwrap_or_default(),
+                                ScreenCaptureFormat::Text => screen.to_bytes("asc", &opt).unwrap_or_default(),
+                                ScreenCaptureFormat::Ansi => screen.to_bytes("ans", &opt).unwrap_or_default(),
                             }
                         } else {
                             Vec::new()
@@ -742,48 +732,6 @@ impl MainWindow {
                         if let Ok(mut tx_guard) = response_tx.lock() {
                             if let Some(tx) = tx_guard.take() {
                                 let _ = tx.send(data);
-                            }
-                        }
-                    }
-                    McpCommand::SetTerminal { terminal_type, rows, columns } => {
-                        // Update terminal settings
-                        // Parse terminal type manually since FromStr is not implemented
-                        let emulation = match terminal_type.to_lowercase().as_str() {
-                            "ansi" | "ansi-bbs" => TerminalEmulation::Ansi,
-                            "petscii" | "c64" | "commodore" => TerminalEmulation::PETscii,
-                            "viewdata" => TerminalEmulation::ViewData,
-                            "mode7" => TerminalEmulation::Mode7,
-                            "atascii" | "atari" => TerminalEmulation::ATAscii,
-                            "atarist" | "atari-st" => TerminalEmulation::AtariST,
-                            _ => {
-                                log::warn!("Unknown terminal type: {}, defaulting to ANSI", terminal_type);
-                                TerminalEmulation::Ansi
-                            }
-                        };
-
-                        unsafe {
-                            TERM_EMULATION = emulation;
-                        }
-                        self.unicode_converter = get_unicode_converter(&emulation);
-                        // Note: SetTerminalType command may not exist, we should update terminal_type in ConnectionConfig instead
-                        // For now, just log it
-                        log::info!("Terminal type changed to: {:?}", emulation);
-
-                        if let (Some(rows), Some(cols)) = (rows, columns) {
-                            // Resize terminal buffer
-                            if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
-                                let new_size = icy_engine::Size::new(*cols as i32, *rows as i32);
-                                // Create a new buffer with the desired size
-                                let mut new_buffer = icy_engine::Buffer::new(new_size);
-                                // Copy content from old buffer if needed
-                                let old_buffer = state.get_buffer();
-                                for y in 0..new_size.height.min(old_buffer.get_size().height) {
-                                    for x in 0..new_size.width.min(old_buffer.get_size().width) {
-                                        let ch = old_buffer.get_char(icy_engine::Position::new(x, y));
-                                        new_buffer.layers[0].set_char(icy_engine::Position::new(x, y), ch);
-                                    }
-                                }
-                                *state.get_buffer_mut() = new_buffer;
                             }
                         }
                     }
@@ -828,36 +776,14 @@ impl MainWindow {
                     McpCommand::ClearScreen => {
                         return self.update(Message::ClearScreen);
                     }
-                    McpCommand::SaveSession(file_path) => {
-                        // Save the current terminal buffer to a file
-                        if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
-                            let buffer = state.get_buffer_mut();
-                            if let Ok(bytes) = buffer.to_bytes("icy", &icy_engine::SaveOptions::default()) {
-                                if let Err(e) = std::fs::write(file_path, bytes) {
-                                    log::error!("Failed to save session: {}", e);
-                                }
-                            }
-                        }
-                    }
-                    McpCommand::LoadSession(file_path) => {
-                        // Load a session from a file
-                        if let Ok(_bytes) = std::fs::read(file_path) {
-                            if let Ok(mut state) = self.terminal_window.terminal.edit_state.lock() {
-                                let path = PathBuf::from(file_path);
-                                if let Ok(buffer) = icy_engine::Buffer::load_buffer(&path, true, None) {
-                                    *state.get_buffer_mut() = buffer;
-                                }
-                            }
-                        }
-                    }
+
                     McpCommand::GetState(response_tx) => {
                         // Gather current terminal state
-                        let state = if let Ok(edit_state) = self.terminal_window.terminal.edit_state.lock() {
-                            let buffer = edit_state.get_display_buffer();
-                            let cursor = edit_state.get_caret().get_position();
+                        let state = if let Ok(screen) = self.terminal_window.terminal.screen.lock() {
+                            let cursor = screen.caret().position;
                             mcp::types::TerminalState {
                                 cursor_position: (cursor.x as usize, cursor.y as usize),
-                                screen_size: (buffer.get_size().width as usize, buffer.get_size().height as usize),
+                                screen_size: (screen.get_size().width as usize, screen.get_size().height as usize),
                                 current_buffer: String::new(),
                                 is_connected: self.is_connected,
                                 current_bbs: self.current_address.as_ref().map(|addr| addr.system_name.clone()),
@@ -1110,8 +1036,8 @@ impl MainWindow {
     }
 
     fn clear_selection(&mut self) {
-        if let Ok(mut edit_state) = self.terminal_window.terminal.edit_state.lock() {
-            let _ = edit_state.clear_selection();
+        if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
+            let _ = edit_screen.clear_selection();
             self.shift_pressed_during_selection = false;
         }
     }

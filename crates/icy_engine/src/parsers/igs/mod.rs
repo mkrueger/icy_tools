@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{Buffer, CallbackAction, Caret, EngineResult, Position, Size};
+use crate::{CallbackAction, EditableScreen, EngineResult, Position, Size};
 
 mod cmd;
 use cmd::IgsCommands;
@@ -85,17 +85,17 @@ impl Parser {
         }
     }
 
-    fn write_char(&mut self, _buf: &mut Buffer, _current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
-        let caret_pos = caret.get_position();
+    fn write_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
+        let caret_pos = buf.caret().get_position();
 
         let p = Position::new(caret_pos.x * 8, caret_pos.y * 8);
-        self.command_executor.fill_color = caret.attribute.background_color as u8;
+        self.command_executor.fill_color = buf.caret().attribute.background_color as u8;
         self.command_executor.fill_rect(p.x, p.y, p.x + 8, p.y + 8);
 
-        self.command_executor.text_color = caret.attribute.foreground_color as u8;
+        self.command_executor.text_color = buf.caret().attribute.foreground_color as u8;
         self.command_executor.write_text(p, &ch.to_string());
 
-        caret.set_x_position(caret_pos.x + 1);
+        buf.caret_mut().set_x_position(caret_pos.x + 1);
 
         Ok(CallbackAction::Update)
     }
@@ -110,9 +110,9 @@ impl Parser {
 }
 
 impl BufferParser for Parser {
-    fn get_next_action(&mut self, buffer: &mut Buffer, caret: &mut Caret, _current_layer: usize) -> Option<CallbackAction> {
+    fn get_next_action(&mut self, buffer: &mut dyn EditableScreen) -> Option<CallbackAction> {
         if let Some(l) = &mut self.cur_loop {
-            if let Some(x) = l.next_step(&mut self.command_executor, buffer, caret) {
+            if let Some(x) = l.next_step(&mut self.command_executor, buffer) {
                 if let Ok(act) = x {
                     return Some(act);
                 }
@@ -123,13 +123,13 @@ impl BufferParser for Parser {
         None
     }
 
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         match &self.state {
             State::ReadCommand(command) => {
                 if *command == IgsCommands::WriteText && self.parsed_numbers.len() >= 3 {
                     if ch == '@' {
                         let parameters: Vec<_> = self.parsed_numbers.drain(..).collect();
-                        let res = self.command_executor.execute_command(buf, caret, *command, &parameters, &self.parsed_string);
+                        let res = self.command_executor.execute_command(buf, *command, &parameters, &self.parsed_string);
                         self.state = State::ReadCommandStart;
                         self.parsed_string.clear();
                         return res;
@@ -205,7 +205,7 @@ impl BufferParser for Parser {
                                         self.loop_parameters.clone(),
                                     )?;
 
-                                    if let Some(x) = l.next_step(&mut self.command_executor, buf, caret) {
+                                    if let Some(x) = l.next_step(&mut self.command_executor, buf) {
                                         self.cur_loop = Some(l);
                                         return x;
                                     }
@@ -230,7 +230,7 @@ impl BufferParser for Parser {
                                         self.loop_parameters.clone(),
                                     )?;
 
-                                    if let Some(x) = l.next_step(&mut self.command_executor, buf, caret) {
+                                    if let Some(x) = l.next_step(&mut self.command_executor, buf) {
                                         self.cur_loop = Some(l);
                                         return x;
                                     }
@@ -299,7 +299,7 @@ impl BufferParser for Parser {
                         }
                         self.got_double_colon = true;
                         let parameters: Vec<_> = self.parsed_numbers.drain(..).collect();
-                        let res = self.command_executor.execute_command(buf, caret, *command, &parameters, &self.parsed_string);
+                        let res = self.command_executor.execute_command(buf, *command, &parameters, &self.parsed_string);
                         self.state = State::ReadCommandStart;
                         return res;
                     }
@@ -345,8 +345,8 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::NoUpdate);
                 }
                 self.state = State::Default;
-                let _ = self.write_char(buf, current_layer, caret, 'G');
-                self.write_char(buf, current_layer, caret, ch)
+                let _ = self.write_char(buf, 'G');
+                self.write_char(buf, ch)
             }
             State::SkipNewLine => {
                 self.state = State::Default;
@@ -357,7 +357,7 @@ impl BufferParser for Parser {
                     self.state = State::GotIgsStart;
                     return Ok(CallbackAction::NoUpdate);
                 }
-                self.write_char(buf, current_layer, caret, ch)
+                self.write_char(buf, ch)
             }
 
             State::VT52SetCursorPos(x_pos) => {
@@ -366,16 +366,16 @@ impl BufferParser for Parser {
                     State::VT52SetCursorPos(pos as i32);
                     return Ok(CallbackAction::NoUpdate);
                 }
-                caret.set_position_xy(*x_pos, pos as i32);
+                buf.caret_mut().set_position_xy(*x_pos, pos as i32);
                 self.state = State::Default;
                 Ok(CallbackAction::Update)
             }
             State::ReadColor(fg) => {
                 let color = ((ch as u8) - b'0') as u32;
                 if *fg {
-                    caret.attribute.set_foreground(color);
+                    buf.caret_mut().attribute.set_foreground(color);
                 } else {
-                    caret.attribute.set_background(color);
+                    buf.caret_mut().attribute.set_background(color);
                 }
                 self.state = State::Default;
                 Ok(CallbackAction::Update)
@@ -383,53 +383,53 @@ impl BufferParser for Parser {
             State::EscapeSequence => {
                 match ch {
                     'A' => {
-                        if caret.pos.y > 0 {
-                            caret.pos.y -= 1;
+                        if buf.caret().position.y > 0 {
+                            buf.caret_mut().position.y -= 1;
                         }
                     }
                     'B' => {
                         let size = self.command_executor.get_char_resolution();
-                        if caret.pos.y < size.height {
-                            caret.pos.y += 1;
+                        if buf.caret().position.y < size.height {
+                            buf.caret_mut().position.y += 1;
                         }
                     }
                     'C' => {
                         let size = self.command_executor.get_char_resolution();
-                        if caret.pos.x < size.width {
-                            caret.pos.x += 1;
+                        if buf.caret().position.x < size.width {
+                            buf.caret_mut().position.x += 1;
                         }
                     }
                     'D' => {
-                        if caret.pos.x > 0 {
-                            caret.pos.x -= 1;
+                        if buf.caret().position.x > 0 {
+                            buf.caret_mut().position.x -= 1;
                         }
                     }
                     'E' => {
-                        self.command_executor.clear(ClearCommand::ClearScreen, caret);
+                        self.command_executor.clear(ClearCommand::ClearScreen, buf.caret_mut());
                     }
                     'F' => { // Enter graphics mode
                     }
                     'G' => { // Leave graphics mode
                     }
                     'H' => {
-                        caret.set_position(Position::default());
+                        buf.caret_mut().set_position(Position::default());
                     }
                     'I' => {
-                        if caret.pos.y > 0 {
-                            caret.pos.y -= 1;
+                        if buf.caret().position.y > 0 {
+                            buf.caret_mut().position.y -= 1;
                         } else {
                             self.command_executor.scroll(-8);
                         }
                     }
                     'J' => {
                         // erase to end of screen
-                        self.command_executor.clear(ClearCommand::ClearFromCursorToBottom, caret);
+                        self.command_executor.clear(ClearCommand::ClearFromCursorToBottom, buf.caret_mut());
                     }
                     'K' => {
                         // erase to end of line
                         self.clear_line(
-                            caret.get_position().y,
-                            caret.get_position().x * 8,
+                            buf.caret().get_position().y,
+                            buf.caret().get_position().x * 8,
                             self.command_executor.get_resolution().width / 8,
                         );
                     }
@@ -459,32 +459,32 @@ impl BufferParser for Parser {
                     }
                     'd' => {
                         // Clear to start of screen
-                        self.command_executor.clear(ClearCommand::ClearFromHomeToCursor, caret);
+                        self.command_executor.clear(ClearCommand::ClearFromHomeToCursor, buf.caret_mut());
                     }
                     'e' => {
                         // Enable cursor
-                        caret.set_is_visible(true);
+                        buf.caret_mut().set_is_visible(true);
                     }
                     'f' => {
                         // Disable cursor
-                        caret.set_is_visible(false);
+                        buf.caret_mut().set_is_visible(false);
                     }
                     'j' => {
                         // Save cursor pos
-                        self.saved_caret_pos = caret.get_position();
+                        self.saved_caret_pos = buf.caret().get_position();
                     }
                     'k' => {
                         // Restore cursor pos
-                        caret.set_position(self.saved_caret_pos);
+                        buf.caret_mut().set_position(self.saved_caret_pos);
                     }
                     'l' => {
                         // Clear line
-                        self.clear_line(caret.get_position().y, 0, self.command_executor.get_resolution().width / 8);
-                        caret.set_x_position(0);
+                        self.clear_line(buf.caret().get_position().y, 0, self.command_executor.get_resolution().width / 8);
+                        buf.caret_mut().set_x_position(0);
                     }
                     'o' => {
                         // Clear to start of line
-                        self.clear_line(caret.get_position().y, 0, caret.get_position().x * 8);
+                        self.clear_line(buf.caret().get_position().y, 0, buf.caret().get_position().x * 8);
                     }
                     'p' => { // Reverse video
                     }
@@ -514,15 +514,17 @@ impl BufferParser for Parser {
                 0..=6 => Ok(CallbackAction::NoUpdate),
                 0x07 => Ok(CallbackAction::Beep),
                 0x0B | 0x0C => {
-                    caret.set_y_position(caret.get_position().y + 1);
-                    caret.set_x_position(0);
+                    let y = buf.caret().get_position().y;
+                    buf.caret_mut().set_y_position(y + 1);
+                    buf.caret_mut().set_x_position(0);
                     Ok(CallbackAction::NoUpdate)
                 }
                 0x0D => {
-                    caret.set_x_position(0);
+                    buf.caret_mut().set_x_position(0);
                     let size = self.command_executor.get_char_resolution();
-                    if caret.pos.y < size.height {
-                        caret.pos.y += 1;
+                    if buf.caret().get_position().y < size.height {
+                        let y = buf.caret().get_position().y;
+                        buf.caret_mut().set_y_position(y + 1);
                     } else {
                         self.command_executor.scroll(8);
                     }
@@ -534,7 +536,7 @@ impl BufferParser for Parser {
                     Ok(CallbackAction::NoUpdate)
                 }
                 0x1C..=0x1F => Ok(CallbackAction::NoUpdate),
-                _ => self.write_char(buf, current_layer, caret, ch),
+                _ => self.write_char(buf, ch),
             },
         }
     }

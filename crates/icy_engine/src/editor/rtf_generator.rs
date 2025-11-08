@@ -35,7 +35,7 @@ impl EditState {
             let end = selection.max();
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
-                    let ch = buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y).into());
                     add_color(palette.get_rgb(ch.attribute.get_foreground()));
                     let bg = ch.attribute.get_background();
                     if bg & (1 << 31) == 0 {
@@ -204,7 +204,7 @@ impl EditState {
             let end = selection.max();
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
-                    let ch = buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y).into());
                     let unicode_ch = self.unicode_converter.convert_to_unicode(ch.ch);
                     let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();

@@ -2,9 +2,8 @@ use std::thread;
 
 use base64::{Engine, engine::general_purpose};
 
-use crate::{BitFont, Buffer, CallbackAction, Caret, EngineResult, HEX_TABLE, ParserError, Sixel};
-
 use super::{Parser, parse_next_number};
+use crate::{BitFont, CallbackAction, EditableScreen, EngineResult, HEX_TABLE, ParserError, Sixel};
 
 #[derive(Debug, Clone, Copy)]
 enum HexMacroState {
@@ -14,7 +13,7 @@ enum HexMacroState {
 }
 
 impl Parser {
-    pub(super) fn execute_dcs(&mut self, buf: &mut Buffer, caret: &Caret) -> EngineResult<CallbackAction> {
+    pub(super) fn execute_dcs(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         if self.parse_string.starts_with("CTerm:Font:") {
             return self.load_custom_font(buf);
         }
@@ -54,15 +53,15 @@ impl Parser {
             let bg_color = if let Some(1) = self.parsed_numbers.get(1) {
                 [0, 0, 0, 0]
             } else {
-                let (r, g, b) = buf.palette.get_rgb(caret.attribute.get_background());
+                let (r, g, b) = buf.palette().get_rgb(buf.caret().get_attribute().get_background());
                 [0xff, r, g, b]
             };
 
-            let p = caret.get_position();
+            let p = buf.caret().get_position();
             let dcs_string = std::mem::take(&mut self.parse_string);
             let handle = thread::spawn(move || Sixel::parse_from(p, 1, vertical_scale, bg_color, &dcs_string[i + 1..]));
 
-            buf.sixel_threads.push_back(handle);
+            buf.push_sixel_thread(handle);
 
             return Ok(CallbackAction::NoUpdate);
         }
@@ -165,7 +164,7 @@ impl Parser {
         Ok(CallbackAction::NoUpdate)
     }
 
-    fn load_custom_font(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    fn load_custom_font(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         let start_index = "CTerm:Font:".len();
         if let Some(idx) = self.parse_string[start_index..].find(':') {
             let idx = idx + start_index;

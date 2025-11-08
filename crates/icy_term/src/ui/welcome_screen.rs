@@ -1,14 +1,13 @@
 use crate::{MCP_PORT, VERSION};
-use icy_engine::editor::EditState;
-use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane};
+use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane, TextScreen};
 use std::path::Path;
 
 const MAIN_SCREEN_ANSI1: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");
 const MAIN_SCREEN_ANSI2: &[u8] = include_bytes!("../../data/welcome_screen.2.icy");
 
-pub fn create_welcome_screen() -> EditState {
-    // Create a default EditState
-    let mut edit_state = EditState::default();
+pub fn create_welcome_screen() -> TextScreen {
+    // Create a default Box<dyn EditableScreen>
+    let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
     // Load the welcome screen from MAIN_SCREEN_ANSI
     let mut buffer = Buffer::from_bytes(
@@ -20,7 +19,7 @@ pub fn create_welcome_screen() -> EditState {
     )
     .unwrap();
     buffer.buffer_type = icy_engine::BufferType::CP437;
-    buffer.is_terminal_buffer = true;
+    buffer.terminal_state.is_terminal_buffer = true;
     buffer.terminal_state.fixed_size = true;
 
     // Find and replace special characters
@@ -29,7 +28,7 @@ pub fn create_welcome_screen() -> EditState {
     // Scan through the buffer to find and replace special characters
     for y in 0..buffer.get_height() {
         for x in 0..buffer.get_width() {
-            let ch = buffer.get_char((x, y));
+            let ch = buffer.get_char((x, y).into());
 
             if ch.ch == '@' {
                 // Build version string with colors
@@ -119,8 +118,8 @@ pub fn create_welcome_screen() -> EditState {
     caret_pos = Position::new(0, caret_pos.y + 1);
 
     buffer.update_hyperlinks();
-    edit_state.set_buffer(buffer);
+    screen.buffer = buffer;
+    screen.caret.position = caret_pos;
 
-    edit_state.get_caret_mut().set_position(caret_pos);
-    edit_state
+    screen
 }

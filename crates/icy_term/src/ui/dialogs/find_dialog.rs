@@ -6,7 +6,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     widget::{Id, button, column, container, row, text, text_input},
 };
-use icy_engine::{AttributedChar, Buffer, Position, Selection, TextPane, UnicodeConverter, editor::EditState};
+use icy_engine::{AttributedChar, EditableScreen, Position, Selection, UnicodeConverter};
 
 use crate::ui::{MainWindowMode, Message};
 
@@ -45,15 +45,15 @@ impl DialogState {
         }
     }
 
-    pub fn update(&mut self, msg: FindDialogMsg, edit_state: Arc<Mutex<EditState>>) -> Option<Message> {
+    pub fn update(&mut self, msg: FindDialogMsg, unicode_converter: &dyn UnicodeConverter, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Option<Message> {
         match msg {
             FindDialogMsg::ChangePattern(pattern) => {
                 self.pattern = pattern.clone();
 
                 // Clear selection if pattern is empty
                 if self.pattern.is_empty() {
-                    let mut edit_state = edit_state.lock().unwrap();
-                    let _ = edit_state.clear_selection();
+                    let mut edit_screen = edit_screen.lock().unwrap();
+                    let _ = edit_screen.clear_selection();
                     self.results.clear();
                     self.cur_sel = 0;
                     self.cur_pos = Position::default();
@@ -62,9 +62,9 @@ impl DialogState {
                 }
 
                 // Search for the new pattern
-                let edit_state_locked = edit_state.lock().unwrap();
-                self.search_pattern(&edit_state_locked.get_buffer(), edit_state_locked.get_unicode_converter());
-                drop(edit_state_locked);
+                let edit_screen_locked = edit_screen.lock().unwrap();
+                self.search_pattern(&*edit_screen_locked, unicode_converter);
+                drop(edit_screen_locked);
 
                 // Check if the current/last position still matches the new pattern
                 let should_keep_position = if let Some(last_pos) = self.last_selected_pos {
@@ -81,7 +81,7 @@ impl DialogState {
                     if let Some(index) = self.results.iter().position(|&p| p == pos) {
                         self.cur_sel = index;
                         self.cur_pos = pos;
-                        self.select_current(edit_state);
+                        self.select_current(edit_screen);
                     }
                 } else if !self.results.is_empty() {
                     // Pattern changed and doesn't match at current position
@@ -96,31 +96,31 @@ impl DialogState {
                         self.cur_sel = 0;
                         self.cur_pos = self.results[0];
                     }
-                    self.select_current(edit_state);
+                    self.select_current(edit_screen);
                 } else {
                     // No results found
-                    let mut edit_state = edit_state.lock().unwrap();
-                    let _ = edit_state.clear_selection();
+                    let mut edit_screen = edit_screen.lock().unwrap();
+                    let _ = edit_screen.clear_selection();
                     self.last_selected_pos = None;
                 }
                 None
             }
             FindDialogMsg::FindNext => {
                 if !self.results.is_empty() {
-                    self.find_next(edit_state);
+                    self.find_next(edit_screen);
                 }
                 None
             }
             FindDialogMsg::FindPrev => {
                 if !self.results.is_empty() {
-                    self.find_prev(edit_state);
+                    self.find_prev(edit_screen);
                 }
                 None
             }
             FindDialogMsg::CloseDialog => {
                 // Clear selection when closing
-                let mut edit_state = edit_state.lock().unwrap();
-                let _ = edit_state.clear_selection();
+                let mut edit_screen = edit_screen.lock().unwrap();
+                let _ = edit_screen.clear_selection();
                 self.last_selected_pos = None;
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
@@ -129,9 +129,9 @@ impl DialogState {
 
                 // Re-search with new case sensitivity setting
                 if !self.pattern.is_empty() {
-                    let edit_state_locked = edit_state.lock().unwrap();
-                    self.search_pattern(&edit_state_locked.get_buffer(), edit_state_locked.get_unicode_converter());
-                    drop(edit_state_locked);
+                    let screen_locked = edit_screen.lock().unwrap();
+                    self.search_pattern(&*screen_locked, unicode_converter);
+                    drop(screen_locked);
 
                     // Try to keep the same position if it still matches
                     if let Some(last_pos) = self.last_selected_pos {
@@ -140,19 +140,19 @@ impl DialogState {
                             if let Some(index) = self.results.iter().position(|&p| p == last_pos) {
                                 self.cur_sel = index;
                                 self.cur_pos = last_pos;
-                                self.select_current(edit_state);
+                                self.select_current(edit_screen);
                             }
                         } else if !self.results.is_empty() {
                             // Find closest match
                             let closest_idx = self.find_closest_match(last_pos);
                             self.cur_sel = closest_idx;
                             self.cur_pos = self.results[closest_idx];
-                            self.select_current(edit_state);
+                            self.select_current(edit_screen);
                         }
                     } else if !self.results.is_empty() {
                         self.cur_sel = 0;
                         self.cur_pos = self.results[0];
-                        self.select_current(edit_state);
+                        self.select_current(edit_screen);
                     }
                 }
                 None
@@ -181,7 +181,7 @@ impl DialogState {
         closest_idx
     }
 
-    pub fn search_pattern(&mut self, buf: &Buffer, converter: &dyn UnicodeConverter) {
+    pub fn search_pattern(&mut self, buf: &dyn EditableScreen, converter: &dyn UnicodeConverter) {
         let mut cur_len = 0;
         let mut start_pos = Position::default();
         self.results.clear();
@@ -201,7 +201,7 @@ impl DialogState {
 
         for y in 0..buf.get_line_count() {
             for x in 0..buf.get_width() {
-                let ch = buf.get_char((x, y));
+                let ch = buf.get_char((x, y).into());
                 if self.compare(converter, cur_len, ch) {
                     if cur_len == 0 {
                         start_pos = (x, y).into();
@@ -234,7 +234,7 @@ impl DialogState {
         }
     }
 
-    fn select_current(&mut self, edit_state: Arc<Mutex<EditState>>) {
+    fn select_current(&mut self, edit_screen: Arc<Mutex<dyn EditableScreen>>) {
         if self.cur_sel >= self.results.len() {
             return;
         }
@@ -243,15 +243,15 @@ impl DialogState {
         let mut sel = Selection::new(pos);
         sel.lead = Position::new(pos.x + self.pattern.len() as i32 - 1, pos.y);
 
-        let mut edit_state = edit_state.lock().unwrap();
-        let _ = edit_state.clear_selection();
-        let _ = edit_state.set_selection(sel);
+        let mut edit_screen = edit_screen.lock().unwrap();
+        let _ = edit_screen.clear_selection();
+        let _ = edit_screen.set_selection(sel);
 
         // Remember this position for next pattern change
         self.last_selected_pos = Some(pos);
     }
 
-    pub fn find_next(&mut self, edit_state: Arc<Mutex<EditState>>) {
+    pub fn find_next(&mut self, edit_screen: Arc<Mutex<dyn EditableScreen>>) {
         if self.results.is_empty() || self.pattern.is_empty() {
             return;
         }
@@ -259,10 +259,10 @@ impl DialogState {
         // Move to next result
         self.cur_sel = (self.cur_sel + 1) % self.results.len();
         self.cur_pos = self.results[self.cur_sel];
-        self.select_current(edit_state);
+        self.select_current(edit_screen);
     }
 
-    pub fn find_prev(&mut self, edit_state: Arc<Mutex<EditState>>) {
+    pub fn find_prev(&mut self, edit_screen: Arc<Mutex<dyn EditableScreen>>) {
         if self.results.is_empty() || self.pattern.is_empty() {
             return;
         }
@@ -274,7 +274,7 @@ impl DialogState {
             self.cur_sel -= 1;
         }
         self.cur_pos = self.results[self.cur_sel];
-        self.select_current(edit_state);
+        self.select_current(edit_screen);
     }
 
     pub fn view(&self) -> Element<'_, Message> {

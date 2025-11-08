@@ -1,4 +1,4 @@
-use crate::{Buffer, Color, Line, Position, Rectangle, Sixel, Size, TextPane, UnicodeConverter};
+use crate::{Color, Line, Position, Rectangle, Sixel, Size, TextPane, UnicodeConverter};
 
 use super::AttributedChar;
 
@@ -64,7 +64,7 @@ impl std::fmt::Display for Layer {
         for y in 0..self.get_line_count() {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
-                let ch = self.get_char((x, y));
+                let ch = self.get_char((x, y).into());
                 str.push(p.convert_to_unicode(ch.ch));
             }
             str.push('\n');
@@ -81,7 +81,7 @@ pub struct HyperLink {
 }
 
 impl HyperLink {
-    pub fn get_url(&self, buf: &Buffer) -> String {
+    pub fn get_url(&self, buf: &dyn TextPane) -> String {
         if let Some(ref url) = self.url {
             url.clone()
         } else {
@@ -91,8 +91,7 @@ impl HyperLink {
 }
 
 impl TextPane for Layer {
-    fn get_char(&self, pos: impl Into<Position>) -> AttributedChar {
-        let pos = pos.into();
+    fn get_char(&self, pos: Position) -> AttributedChar {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.get_width() || pos.y >= self.get_height() {
             return AttributedChar::invisible().with_font_page(self.default_font_page);
         }
@@ -300,7 +299,7 @@ impl Layer {
         for y in area.y_range() {
             for x in area.x_range() {
                 let pos = Position::new(x, y) - area.start;
-                result.set_char(pos, layer.get_char((x, y)));
+                result.set_char(pos, layer.get_char((x, y).into()).into());
             }
         }
         result
@@ -332,11 +331,11 @@ mod tests {
 
         layer.insert_line(0, line);
 
-        assert_eq!(AttributedChar::invisible(), layer.get_char((-1, -1)));
-        assert_eq!(AttributedChar::invisible(), layer.get_char((1000, 1000)));
-        assert_eq!('a', layer.get_char((10, 0)).ch);
-        assert_eq!(AttributedChar::invisible(), layer.get_char((9, 0)));
-        assert_eq!(AttributedChar::invisible(), layer.get_char((11, 0)));
+        assert_eq!(AttributedChar::invisible(), layer.get_char((-1, -1).into()));
+        assert_eq!(AttributedChar::invisible(), layer.get_char((1000, 1000).into()));
+        assert_eq!('a', layer.get_char((10, 0).into()).ch);
+        assert_eq!(AttributedChar::invisible(), layer.get_char((9, 0).into()));
+        assert_eq!(AttributedChar::invisible(), layer.get_char((11, 0).into()));
     }
 
     #[test]
@@ -349,11 +348,11 @@ mod tests {
 
         layer.insert_line(0, line);
 
-        assert_eq!(AttributedChar::invisible(), layer.get_char((-1, -1)));
-        assert_eq!(AttributedChar::invisible(), layer.get_char((1000, 1000)));
-        assert_eq!('a', layer.get_char((10, 0)).ch);
-        assert_eq!(AttributedChar::invisible(), layer.get_char((9, 0)));
-        assert_eq!(AttributedChar::invisible(), layer.get_char((11, 0)));
+        assert_eq!(AttributedChar::invisible(), layer.get_char((-1, -1).into()));
+        assert_eq!(AttributedChar::invisible(), layer.get_char((1000, 1000).into()));
+        assert_eq!('a', layer.get_char((10, 0).into()).ch);
+        assert_eq!(AttributedChar::invisible(), layer.get_char((9, 0).into()));
+        assert_eq!(AttributedChar::invisible(), layer.get_char((11, 0).into()));
     }
 
     #[test]
@@ -399,6 +398,6 @@ mod tests {
         assert_eq!(layer.properties.offset.x, 5);
         assert_eq!(layer.properties.offset.y, 6);
 
-        assert!(layer.get_char((0, 0)).ch == '5');
+        assert!(layer.get_char((0, 0).into()).ch == '5');
     }
 }

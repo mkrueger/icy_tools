@@ -210,7 +210,7 @@ impl OutputFormat for IcyDraw {
                     }
                     let real_length = get_invisible_line_length(layer, y);
                     for x in 0..real_length {
-                        let ch = layer.get_char((x, y));
+                        let ch = layer.get_char((x, y).into());
                         let mut attr = ch.attribute.attr;
 
                         let is_short = if ch.is_visible()
@@ -263,7 +263,7 @@ impl OutputFormat for IcyDraw {
                         let real_length = get_invisible_line_length(layer, y);
 
                         for x in 0..real_length {
-                            let ch = layer.get_char((x, y));
+                            let ch = layer.get_char((x, y).into());
                             let mut attr = ch.attribute.attr;
 
                             let is_short = if ch.is_visible()
@@ -391,7 +391,7 @@ impl OutputFormat for IcyDraw {
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
-        result.is_terminal_buffer = false;
+        result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         result.layers.clear();
 
@@ -840,7 +840,7 @@ impl OutputFormat for IcyDraw {
 
 fn get_invisible_line_length(layer: &Layer, y: i32) -> i32 {
     let mut length = layer.get_width();
-    while length > 0 && !layer.get_char((length - 1, y)).is_visible() {
+    while length > 0 && !layer.get_char((length - 1, y).into()).is_visible() {
         length -= 1;
     }
     length
@@ -861,7 +861,7 @@ const MAX_LINES: i32 = 80;
 impl Buffer {
     pub fn is_line_empty(&self, line: i32) -> bool {
         for i in 0..self.get_width() {
-            if !self.get_char((i, line)).is_transparent() {
+            if !self.get_char((i, line).into()).is_transparent() {
                 return false;
             }
         }
@@ -1216,7 +1216,7 @@ mod tests {
         buf.layers[1].properties.is_visible = false;
         buf.layers[1].properties.has_alpha_channel = true;
 
-        assert_eq!(AttributedChar::invisible(), buf.layers[1].get_char((1, 0)));
+        assert_eq!(AttributedChar::invisible(), buf.layers[1].get_char((1, 0).into()).into());
 
         let draw = IcyDraw::default();
         let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();

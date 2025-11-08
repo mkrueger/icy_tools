@@ -135,7 +135,7 @@ impl OutputFormat for XBin {
         } else {
             for y in 0..buf.get_height() {
                 for x in 0..buf.get_width() {
-                    let ch = buf.get_char((x, y));
+                    let ch = buf.get_char((x, y).into());
                     let attr = encode_attr(buf, ch, &fonts);
                     let ch = ch.ch as u32;
                     if ch > 255 {
@@ -155,7 +155,7 @@ impl OutputFormat for XBin {
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
-        result.is_terminal_buffer = false;
+        result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {
@@ -374,8 +374,8 @@ fn count_length(
 ) -> usize {
     let mut count = 0;
     while x < buffer.get_width() {
-        let cur = buffer.get_char((x, y));
-        let next = buffer.get_char((x + 1, y));
+        let cur = buffer.get_char((x, y).into());
+        let next = buffer.get_char((x + 1, y).into());
 
         if run_count > 0 {
             if end_run.is_none() {
@@ -387,7 +387,7 @@ fn count_length(
                             if x + 2 < buffer.get_width() && cur == next {
                                 end_run = Some(true);
                             } else if x + 2 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y));
+                                let next2 = buffer.get_char((x + 2, y).into());
                                 end_run = Some(cur.ch == next.ch && cur.ch == next2.ch || cur.attribute == next.attribute && cur.attribute == next2.attribute);
                             }
                         }
@@ -395,8 +395,8 @@ fn count_length(
                             if cur.ch != run_ch.ch {
                                 end_run = Some(true);
                             } else if x + 3 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y));
-                                let next3 = buffer.get_char((x + 3, y));
+                                let next2 = buffer.get_char((x + 2, y).into());
+                                let next3 = buffer.get_char((x + 3, y).into());
                                 end_run = Some(cur == next && cur == next2 && cur == next3);
                             }
                         }
@@ -404,8 +404,8 @@ fn count_length(
                             if cur.attribute != run_ch.attribute {
                                 end_run = Some(true);
                             } else if x + 3 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y));
-                                let next3 = buffer.get_char((x + 3, y));
+                                let next2 = buffer.get_char((x + 2, y).into());
+                                let next3 = buffer.get_char((x + 3, y).into());
                                 end_run = Some(cur == next && cur == next2 && cur == next3);
                             }
                         }
@@ -467,10 +467,10 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &Buffer, fonts: &[usize]
         let mut run_ch = AttributedChar::default();
 
         for x in 0..buffer.get_width() {
-            let cur = buffer.get_char((x, y));
+            let cur = buffer.get_char((x, y).into());
 
             let next = if x + 1 < buffer.get_width() {
-                buffer.get_char((x + 1, y))
+                buffer.get_char((x + 1, y).into())
             } else {
                 AttributedChar::default()
             };
@@ -492,7 +492,7 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &Buffer, fonts: &[usize]
                             if cur.ch != run_ch.ch || cur.get_font_page() != run_ch.get_font_page() {
                                 end_run = true;
                             } else if x + 4 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y));
+                                let next2 = buffer.get_char((x + 2, y).into());
                                 if cur.attribute == next.attribute && cur.attribute == next2.attribute {
                                     let l1 = count_length(run_mode, run_ch, Some(true), run_count, buffer, y, x);
                                     let l2 = count_length(run_mode, run_ch, Some(false), run_count, buffer, y, x);
@@ -504,7 +504,7 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &Buffer, fonts: &[usize]
                             if cur.attribute != run_ch.attribute || cur.get_font_page() != run_ch.get_font_page() {
                                 end_run = true;
                             } else if x + 3 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y));
+                                let next2 = buffer.get_char((x + 2, y).into());
                                 if cur.ch == next.ch && cur.ch == next2.ch {
                                     let l1 = count_length(run_mode, run_ch, Some(true), run_count, buffer, y, x);
                                     let l2 = count_length(run_mode, run_ch, Some(false), run_count, buffer, y, x);
@@ -596,7 +596,7 @@ mod tests {
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Blink)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1000_1000, crate::IceMode::Blink)));
         let res = test_xbin(&mut buffer);
-        let ch = res.layers[0].get_char((1, 0));
+        let ch = res.layers[0].get_char((1, 0).into());
 
         assert_eq!(ch.attribute.get_foreground(), 0b1000);
         assert_eq!(ch.attribute.get_background(), 0b0000);
@@ -610,7 +610,7 @@ mod tests {
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
         let res = test_xbin(&mut buffer);
-        let ch = res.layers[0].get_char((1, 0));
+        let ch = res.layers[0].get_char((1, 0).into());
 
         assert_eq!(ch.attribute.get_foreground(), 0b1111);
         assert_eq!(ch.attribute.get_background(), 0b1100);
@@ -637,7 +637,7 @@ mod tests {
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Ice)));
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, crate::IceMode::Ice)));
         let res = test_xbin(&mut buffer);
-        let ch = res.layers[0].get_char((1, 0));
+        let ch = res.layers[0].get_char((1, 0).into());
 
         assert_eq!(ch.attribute.get_foreground(), 0b1111);
         assert_eq!(ch.attribute.get_background(), 0b1100);
@@ -664,7 +664,7 @@ mod tests {
         buffer.layers[0].set_char((1, 0), AttributedChar::new('B', attr));
         let res = test_xbin(&mut buffer);
 
-        let ch = res.layers[0].get_char((1, 0));
+        let ch = res.layers[0].get_char((1, 0).into());
 
         assert_eq!(ch.attribute.get_foreground(), 0b0111);
         assert_eq!(ch.attribute.get_background(), 0b1111);
@@ -687,7 +687,7 @@ mod tests {
 
         let res = test_xbin(&mut buffer);
 
-        let ch = res.layers[0].get_char((1, 0));
+        let ch = res.layers[0].get_char((1, 0).into());
 
         assert_eq!(ch.attribute.get_foreground(), 0b0111);
         assert_eq!(ch.attribute.get_background(), 0b0111);

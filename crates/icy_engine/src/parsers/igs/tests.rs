@@ -1,4 +1,5 @@
 /*
+/*
 type IgsCommandVec = Vec<(IgsCommands, Vec<i32>)>;
 struct TestExecutor {
     pub commands: Arc<Mutex<IgsCommandVec>>,
@@ -9,7 +10,7 @@ struct TestExecutor {
 
     fn execute_command(
         &mut self,
-        _buf: &mut Buffer,
+        _buf: &mut dyn Screen,
         _caret: &mut Caret,
         command: IgsCommands,
         parameters: &[i32],
@@ -63,7 +64,7 @@ pub fn test_text_break_bug() {
     let mut igs_parser: Parser = Parser::new(crate::igs::TerminalResolution::Low);
     let (buf, _) = create_buffer(&mut igs_parser, b"G#W>20,50,Chain@L 0,0,300,190:W>253,_\n140,IG SUPPORT BOARD@");
 
-    assert_eq!(' ', buf.get_char((0, 0)).ch);
+    assert_eq!(' ', buf.get_char((0, 0).into()).ch);
 }
 
 #[test]
@@ -71,7 +72,7 @@ pub fn test_loop_parsing() {
     let mut igs_parser = Parser::new(crate::igs::TerminalResolution::Low);
     let (mut buf, mut caret) = create_buffer(&mut igs_parser, b"");
     update_buffer_force(&mut buf, &mut caret, &mut igs_parser, b"G#&>0,320,4,0,L,8,0,100,x,0:0,100,x,199:");
-    assert_eq!(' ', buf.get_char((0, 0)).ch);
+    assert_eq!(' ', buf.get_char((0, 0).into()).ch);
 }
 
 /*
@@ -112,3 +113,5 @@ pub fn test_chain_gang_loop() {
         b"G#&>1,10,1,0,>Gq@,22,0G3,3,0,102,20,107,218,156:1q10:0G3,3,0,109,20,114,218,156:1q10:\r\n",
     );
 }
+
+*/

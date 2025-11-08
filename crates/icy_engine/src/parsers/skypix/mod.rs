@@ -2,7 +2,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use super::{BufferParser, ansi};
 use crate::{
-    BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, Palette, Position, SKYPIX_PALETTE, Size, Spacing,
+    BitFont, CallbackAction, EditableScreen, EngineResult, Palette, Position, SKYPIX_PALETTE, Size, Spacing,
     ansi::EngineState,
     load_amiga_fonts,
     rip::bgi::{Bgi, Image, WriteMode},
@@ -109,7 +109,7 @@ impl Parser {
         }
     }
 
-    fn run_skypix_sequence(&mut self, cmd: i32, parameters: &[i32], buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
+    fn run_skypix_sequence(&mut self, cmd: i32, parameters: &[i32], buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.cmd_counter += 1;
         match cmd {
             1 => {
@@ -243,7 +243,7 @@ impl Parser {
 
             12 => {
                 // RESET_PALETTE
-                buf.palette = Palette::from_slice(&SKYPIX_PALETTE);
+                *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
                 return Ok(CallbackAction::NoUpdate);
             }
 
@@ -277,7 +277,7 @@ impl Parser {
                 }
                 let col = parameters[0] as u8;
                 self.bgi.set_color(col);
-                caret.set_foreground(col as u32);
+                buf.caret_mut().set_foreground(col as u32);
                 return Ok(CallbackAction::NoUpdate);
             }
 
@@ -317,7 +317,7 @@ impl Parser {
                 }
                 let col = parameters[0] as u8;
                 self.bgi.set_bk_color(col);
-                caret.set_background(col as u32);
+                buf.caret_mut().set_background(col as u32);
                 return Ok(CallbackAction::NoUpdate);
             }
 
@@ -329,7 +329,7 @@ impl Parser {
                 let x = (parameters[0] * 80) / SKYPIX_SCREEN_SIZE.width;
                 let y = (parameters[1] * 25) / SKYPIX_SCREEN_SIZE.height;
                 self.graphic_cursor = (parameters[0], parameters[1]).into();
-                caret.set_position_xy(x + 1, y + 1);
+                buf.caret_mut().set_position_xy(x + 1, y + 1);
                 return Ok(CallbackAction::NoUpdate);
             }
 
@@ -365,7 +365,7 @@ impl Parser {
                 self.font = None;
                 let x = (self.graphic_cursor.x * 80) / SKYPIX_SCREEN_SIZE.width;
                 let y = (self.graphic_cursor.y * 25) / SKYPIX_SCREEN_SIZE.height;
-                caret.set_position_xy(x + 1, y + 1);
+                buf.caret_mut().set_position_xy(x + 1, y + 1);
 
                 return Ok(CallbackAction::NoUpdate);
             }
@@ -422,10 +422,10 @@ impl BufferParser for Parser {
         self.cmd_counter == 0
     }
 
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
-        if buf.terminal_state.cleared_screen {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
+        if buf.terminal_state().cleared_screen {
             self.font = None;
-            buf.terminal_state.cleared_screen = false;
+            buf.terminal_state_mut().cleared_screen = false;
             self.bgi.graph_defaults();
             self.cmd_counter = 0;
             self.last_cmd_update = 0;
@@ -456,12 +456,12 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::NoUpdate);
                 }
 
-                match self.fallback_parser.print_char(buf, current_layer, caret, ch) {
+                match self.fallback_parser.print_char(buf, ch) {
                     Ok(CallbackAction::RunSkypixSequence(sequence)) => {
                         if sequence.len() == 0 {
                             return Err(anyhow::Error::msg("Empty sequence"));
                         }
-                        return self.run_skypix_sequence(sequence[0], &sequence[1..], buf, caret);
+                        return self.run_skypix_sequence(sequence[0], &sequence[1..], buf);
                     }
                     Ok(CallbackAction::ScrollDown(x)) => {
                         let lines = x * 8;

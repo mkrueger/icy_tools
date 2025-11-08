@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{Buffer, CallbackAction, Caret, EngineResult};
+use crate::{CallbackAction, EditableScreen, EngineResult};
 
 use super::{DrawExecutor, cmd::IgsCommands};
 
@@ -41,7 +41,7 @@ impl Loop {
         })
     }
 
-    pub fn next_step(&mut self, exe: &mut DrawExecutor, buf: &mut Buffer, caret: &mut Caret) -> Option<EngineResult<CallbackAction>> {
+    pub fn next_step(&mut self, exe: &mut DrawExecutor, buf: &mut dyn EditableScreen) -> Option<EngineResult<CallbackAction>> {
         let is_running = if self.from < self.to { self.i < self.to } else { self.i > self.to };
         if !is_running {
             return None;
@@ -91,7 +91,7 @@ impl Loop {
         }
 
         // println!("step: {:?} => {:?}", self.loop_parameters[cur_parameter], parameters);
-        let res = exe.execute_command(buf, caret, self.command[self.cur_cmd], &parameters, &self.parsed_string);
+        let res = exe.execute_command(buf, self.command[self.cur_cmd], &parameters, &self.parsed_string);
         // todo: correct delay?
         std::thread::sleep(Duration::from_millis(200 * self.delay as u64));
         self.cur_cmd += 1;

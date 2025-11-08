@@ -282,8 +282,6 @@ pub struct Buffer {
     pub palette_mode: PaletteMode,
     pub font_mode: FontMode,
 
-    pub is_terminal_buffer: bool,
-
     sauce_data: icy_sauce::MetaData,
 
     pub palette: Palette,
@@ -332,7 +330,7 @@ impl std::fmt::Display for Buffer {
         for y in 0..self.get_height() {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
-                let ch = self.get_char((x, y));
+                let ch = self.get_char((x, y).into());
                 str.push(p.convert_to_unicode(ch.ch));
             }
             str.push('\n');
@@ -353,7 +351,7 @@ impl Buffer {
             }
             for y in 0..layer.get_height() {
                 for x in 0..layer.get_width() {
-                    let ch = layer.get_char((x, y));
+                    let ch = layer.get_char((x, y).into());
 
                     if ch.attribute.get_foreground() != 7 || ch.attribute.get_background() != 0 {
                         result.use_colors = true;
@@ -440,7 +438,7 @@ impl Buffer {
         frame.ice_mode = self.ice_mode;
         frame.palette_mode = self.palette_mode;
         frame.font_mode = self.font_mode;
-        frame.is_terminal_buffer = self.is_terminal_buffer;
+        frame.terminal_state.is_terminal_buffer = self.terminal_state.is_terminal_buffer;
         frame.terminal_state = self.terminal_state.clone();
         frame.palette = self.palette.clone();
         frame.sauce_data = self.sauce_data.clone();
@@ -453,7 +451,7 @@ impl Buffer {
         } else {
             for y in 0..self.get_height() {
                 for x in 0..self.get_width() {
-                    let ch = self.get_char((x, y));
+                    let ch = self.get_char((x, y).into());
                     frame.layers[0].set_char((x, y), ch);
                 }
             }
@@ -566,13 +564,26 @@ impl Buffer {
     pub fn clear_scrollback(&mut self) {
         self.scrollback_lines.clear();
     }
+
+    pub fn get_max_scrollback_offset(&self) -> usize {
+        self.scrollback_lines.len()
+    }
+
+    pub fn scrollback_position(&self) -> usize {
+        // TODO
+        0
+    }
+
+    pub fn set_scroll_position(&self, _line: usize) {
+        // TODO
+    }
 }
 
 pub fn analyze_font_usage(buf: &Buffer) -> Vec<usize> {
     let mut hash_set = HashSet::new();
     for y in 0..buf.get_height() {
         for x in 0..buf.get_width() {
-            let ch = buf.get_char((x, y));
+            let ch = buf.get_char((x, y).into());
             hash_set.insert(ch.get_font_page());
         }
     }
@@ -641,7 +652,6 @@ impl Buffer {
             palette_mode: PaletteMode::Fixed16,
             font_mode: FontMode::Sauce,
 
-            is_terminal_buffer: false,
             palette: Palette::dos_default(),
 
             font_table,
@@ -788,7 +798,7 @@ impl Buffer {
     }
 
     pub fn reset_terminal(&mut self) {
-        if self.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer {
             let fixed = self.terminal_state.fixed_size;
             self.terminal_state.reset_terminal(self.original_size);
             self.size = self.original_size;
@@ -835,7 +845,7 @@ impl Buffer {
     /// this function gives back the first visible line.
     #[must_use]
     pub fn get_first_visible_line(&self) -> i32 {
-        if self.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer {
             max(0, self.size.height.saturating_sub(self.terminal_state.get_height()))
         } else {
             0
@@ -847,7 +857,7 @@ impl Buffer {
     }
 
     pub fn get_first_editable_line(&self) -> i32 {
-        if self.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer {
             if let Some((start, _)) = self.terminal_state.get_margins_top_bottom() {
                 return self.get_first_visible_line() + start;
             }
@@ -856,7 +866,7 @@ impl Buffer {
     }
 
     pub fn get_first_editable_column(&self) -> i32 {
-        if self.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer {
             if let Some((start, _)) = self.terminal_state.get_margins_left_right() {
                 return start;
             }
@@ -865,7 +875,7 @@ impl Buffer {
     }
 
     pub fn get_last_editable_column(&self) -> i32 {
-        if self.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer {
             if let Some((_, end)) = self.terminal_state.get_margins_left_right() {
                 return end;
             }
@@ -874,13 +884,8 @@ impl Buffer {
     }
 
     #[must_use]
-    pub fn needs_scrolling(&self) -> bool {
-        self.is_terminal_buffer && self.terminal_state.get_margins_top_bottom().is_some()
-    }
-
-    #[must_use]
     pub fn get_last_editable_line(&self) -> i32 {
-        if self.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer {
             if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
                 self.get_first_visible_line() + end
             } else {
@@ -888,20 +893,6 @@ impl Buffer {
             }
         } else {
             max(self.layers[0].lines.len() as i32, self.get_height().saturating_sub(1))
-        }
-    }
-
-    #[must_use]
-    pub fn upper_left_position(&self) -> Position {
-        match self.terminal_state.origin_mode {
-            crate::OriginMode::UpperLeftCorner => Position {
-                x: 0,
-                y: self.get_first_visible_line(),
-            },
-            crate::OriginMode::WithinMargins => Position {
-                x: 0,
-                y: self.get_first_editable_line(),
-            },
         }
     }
 
@@ -1112,7 +1103,7 @@ impl TextPane for Buffer {
         }
     }
 
-    fn get_char(&self, pos: impl Into<Position>) -> AttributedChar {
+    fn get_char(&self, pos: Position) -> AttributedChar {
         let pos = pos.into();
 
         if self.show_tags {
@@ -1213,7 +1204,7 @@ mod tests {
         new_layer.set_char((5, 5), AttributedChar::new('a', TextAttribute::default()));
         buf.layers.push(new_layer);
 
-        assert_eq!('a', buf.get_char((7, 7)).ch);
+        assert_eq!('a', buf.get_char((7, 7).into()).ch);
     }
 
     #[test]
@@ -1232,7 +1223,7 @@ mod tests {
         new_layer.set_char((5, 5), AttributedChar::new('b', TextAttribute::default()));
         buf.layers.push(new_layer);
 
-        assert_eq!('a', buf.get_char((3, 3)).ch);
-        assert_eq!('b', buf.get_char((7, 7)).ch);
+        assert_eq!('a', buf.get_char((3, 3).into()).ch);
+        assert_eq!('b', buf.get_char((7, 7).into()).ch);
     }
 }

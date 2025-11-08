@@ -4001,7 +4001,7 @@ pub const VIEWDATA_PALETTE: [Color; 16] = [
 
 macro_rules! amiga_color {
     ($r:expr, $g:expr, $b:expr) => {
-        Color {
+        crate::Color {
             name: None,
             r: (($r as usize * 255) / 15) as u8,
             g: (($g as usize * 255) / 15) as u8,

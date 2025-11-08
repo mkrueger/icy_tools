@@ -252,7 +252,7 @@ impl EditState {
             let mut new_layer = Layer::new("", (size.height, size.width));
             for y in 0..size.width {
                 for x in 0..size.height {
-                    let ch = layer.get_char((y, size.height - 1 - x));
+                    let ch = layer.get_char((y, size.height - 1 - x).into());
                     let ch = map_char_u8(ch, &ROTATE_TABLE);
                     new_layer.set_char((x, y), ch);
                 }
@@ -517,8 +517,8 @@ mod tests {
         state.merge_layer_down(2).unwrap();
         assert_eq!(2, state.buffer.layers.len());
 
-        assert_eq!('a', state.buffer.get_char((5, 5)).ch);
-        assert_eq!('b', state.buffer.get_char((6, 6)).ch);
+        assert_eq!('a', state.buffer.get_char((5, 5).into()).ch);
+        assert_eq!('b', state.buffer.get_char((6, 6).into()).ch);
         assert_eq!(Position::new(0, 0), state.buffer.layers[1].get_offset());
         assert_eq!(Size::new(10, 10), state.buffer.layers[1].get_size());
         state.undo().unwrap();
@@ -542,8 +542,8 @@ mod tests {
         state.merge_layer_down(2).unwrap();
         assert_eq!(2, state.buffer.layers.len());
 
-        assert_eq!('a', state.buffer.get_char((7, 7)).ch);
-        assert_eq!('b', state.buffer.get_char((6, 6)).ch);
+        assert_eq!('a', state.buffer.get_char((7, 7).into()).ch);
+        assert_eq!('b', state.buffer.get_char((6, 6).into()).ch);
         assert_eq!(Position::new(0, 0), state.buffer.layers[1].get_offset());
         assert_eq!(Size::new(12, 12), state.buffer.layers[1].get_size());
     }
@@ -569,7 +569,7 @@ mod tests {
         assert_eq!(Position::new(-1, -1), state.buffer.layers[1].get_offset());
         assert_eq!(Size::new(11, 11), state.buffer.layers[1].get_size());
 
-        assert_eq!('a', state.buffer.layers[1].get_char((5, 5)).ch);
-        assert_eq!('b', state.buffer.layers[1].get_char((7, 7)).ch);
+        assert_eq!('a', state.buffer.layers[1].get_char((5, 5).into()).ch);
+        assert_eq!('b', state.buffer.layers[1].get_char((7, 7).into()).ch);
     }
 }

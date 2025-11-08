@@ -86,6 +86,9 @@ use rust_embed::RustEmbed;
 pub mod screen;
 pub use screen::*;
 
+pub mod text_screen;
+pub use text_screen::*;
+
 #[derive(RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources
 struct Localizations;
@@ -373,11 +376,45 @@ impl SubAssign<Position> for Rectangle {
 }
 
 pub trait TextPane {
-    fn get_char(&self, pos: impl Into<Position>) -> AttributedChar;
+    fn get_char(&self, pos: Position) -> AttributedChar;
     fn get_line_count(&self) -> i32;
     fn get_width(&self) -> i32;
     fn get_height(&self) -> i32;
     fn get_size(&self) -> Size;
     fn get_line_length(&self, line: i32) -> i32;
     fn get_rectangle(&self) -> Rectangle;
+
+    fn get_string(&self, pos: Position, size: usize) -> String {
+        let pos = pos.into();
+        let mut result = String::new();
+        let mut pos = pos;
+        for _ in 0..size {
+            result.push(self.get_char(pos).ch);
+            pos.x += 1;
+            if pos.x >= self.get_width() {
+                pos.x = 0;
+                pos.y += 1;
+            }
+        }
+        result
+    }
+
+    fn is_position_in_range(&self, pos: Position, from: Position, size: i32) -> bool {
+        match pos.y.cmp(&from.y) {
+            std::cmp::Ordering::Less => false,
+            std::cmp::Ordering::Equal => from.x <= pos.x && pos.x < from.x + size,
+            std::cmp::Ordering::Greater => {
+                let remainder = size.saturating_sub(self.get_width() + from.x);
+                let lines = remainder / self.get_width();
+                let mut y = from.y + lines;
+                let x = if remainder > 0 {
+                    y += 1; // remainder > 1 wraps 1 extra line
+                    remainder - lines * self.get_width()
+                } else {
+                    remainder
+                };
+                pos.y < y || pos.y == y && pos.x < x
+            }
+        }
+    }
 }

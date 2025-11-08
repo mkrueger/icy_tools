@@ -365,7 +365,7 @@ impl UserData for LuaBuffer {
             }
             Ok(())
         });
-
+ 
         methods.add_method_mut("gotoxy", |_, this, (x, y): (i32, i32)| {
             this.caret.set_position(Position::new(x, y));
             Ok(())

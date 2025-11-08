@@ -194,7 +194,7 @@ impl<'a> MainWindow<'a> {
         let mut view = BufferView::new(gl);
         view.interactive = false;
 
-        view.get_buffer_mut().is_terminal_buffer = false;
+        view.get_buffer_mut().terminal_state.is_terminal_buffer = false;
         view.get_caret_mut().set_is_visible(false);
         if let Some(path) = &initial_path {
             if path.is_relative() {
@@ -695,7 +695,7 @@ impl<'a> MainWindow<'a> {
         let buf: rip::Parser = {
             let mut rip_parser = rip::Parser::new(Box::default(), PathBuf::new());
             let mut result: Buffer = Buffer::new((80, 25));
-            result.is_terminal_buffer = false;
+            result.terminal_state.is_terminal_buffer = false;
 
             let (text, is_unicode) = icy_engine::convert_ansi_to_utf8(&data);
             if is_unicode {

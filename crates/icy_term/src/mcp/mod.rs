@@ -23,29 +23,10 @@ pub enum McpCommand {
     GetState(SenderType<TerminalState>),
     ListAddresses(SenderType<Vec<Address>>),
     CaptureScreen(ScreenCaptureFormat, SenderType<Vec<u8>>),
-    SetTerminal {
-        terminal_type: String,
-        rows: Option<usize>,
-        columns: Option<usize>,
-    },
-    UploadFile {
-        protocol: String,
-        file_path: String,
-    },
-    DownloadFile {
-        protocol: String,
-        save_path: String,
-    },
-    RunMacro {
-        name: String,
-        commands: Vec<String>,
-    },
-    SearchBuffer {
-        pattern: String,
-        case_sensitive: bool,
-        regex: bool,
-    },
+
+    UploadFile { protocol: String, file_path: String },
+    DownloadFile { protocol: String, save_path: String },
+    RunMacro { name: String, commands: Vec<String> },
+    SearchBuffer { pattern: String, case_sensitive: bool, regex: bool },
     ClearScreen,
-    SaveSession(String),
-    LoadSession(String),
 }

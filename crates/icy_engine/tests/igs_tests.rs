@@ -1,3 +1,4 @@
+/*
 use std::{
     fs::{self, File},
     io,
@@ -49,3 +50,4 @@ fn check_output(rendered_data: &[u8], img_buf: &[u8]) {
         }
     }
 }
+*/

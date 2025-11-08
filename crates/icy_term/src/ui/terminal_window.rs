@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
-use icy_engine::{TextPane, ansi::BaudEmulation};
+use icy_engine::ansi::BaudEmulation;
 use icy_net::telnet::TerminalEmulation;
 use std::sync::{Arc, Mutex};
 // use iced_aw::{menu, menu_bar, menu_items};
@@ -31,10 +31,10 @@ pub struct TerminalWindow {
 
 impl TerminalWindow {
     pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
-        let edit_state = Arc::new(Mutex::new(super::welcome_screen::create_welcome_screen()));
+        let edit_screen = Arc::new(Mutex::new(super::welcome_screen::create_welcome_screen()));
 
         Self {
-            terminal: Terminal::new(edit_state),
+            terminal: Terminal::new(edit_screen),
             is_connected: false,
             is_capturing: false,
             current_address: None,
@@ -60,12 +60,11 @@ impl TerminalWindow {
             iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
         });
 
-        // Get scrollback info from EditState
-        let (has_scrollback, scroll_position, max_scroll) = if let Ok(edit_state) = self.terminal.edit_state.lock() {
-            let buffer = edit_state.get_buffer();
-            let has_scrollback = !buffer.scrollback_lines.is_empty();
-            let scroll_offset = edit_state.scrollback_offset as i32;
-            let max_scroll = buffer.scrollback_lines.len() as i32;
+        // Get scrollback info from Box<dyn EditableScreen>
+        let (has_scrollback, scroll_position, max_scroll) = if let Ok(screen) = self.terminal.screen.lock() {
+            let has_scrollback = screen.get_max_scrollback_offset() > 0;
+            let scroll_offset = screen.scrollback_position() as i32;
+            let max_scroll = screen.get_max_scrollback_offset() as i32;
             (has_scrollback, scroll_offset, max_scroll)
         } else {
             (false, 0, 0)
@@ -416,8 +415,8 @@ impl TerminalWindow {
             TerminalEmulation::AtariST => "Atari ST",
         };
 
-        let (buffer_width, buffer_height) = if let Ok(edit_state) = self.terminal.edit_state.lock() {
-            let size = edit_state.get_buffer().get_size();
+        let (buffer_width, buffer_height) = if let Ok(edit_screen) = self.terminal.screen.lock() {
+            let size = edit_screen.get_size();
             (size.width, size.height)
         } else {
             (80, 25)

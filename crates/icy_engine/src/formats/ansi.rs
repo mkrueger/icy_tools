@@ -3,12 +3,12 @@ use std::path::Path;
 
 use codepages::tables::UNICODE_TO_CP437;
 
-use crate::Color;
 use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
     ANSI_FONTS, AttributedChar, BitFont, Buffer, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextPane, XTERM_256_PALETTE,
     analyze_font_usage, parse_with_parser, parsers,
 };
+use crate::{Color, EditableScreen, TextScreen};
 
 use super::{LoadData, SaveOptions};
 
@@ -53,11 +53,12 @@ impl OutputFormat for Ansi {
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::Buffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
-        let mut result: Buffer = Buffer::new((width, 25));
-        result.is_terminal_buffer = false;
-        result.file_name = Some(file_name.into());
+        let mut result = TextScreen::new((width, 25));
+        result.terminal_state_mut().is_terminal_buffer = false;
+
+        result.buffer.file_name = Some(file_name.into());
         if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+            result.buffer.load_sauce(sauce);
         }
         let mut parser = parsers::ansi::Parser::default();
         if let Some(music) = load_data.ansi_music {
@@ -66,10 +67,10 @@ impl OutputFormat for Ansi {
         parser.bs_is_ctrl_char = false;
         let (text, is_unicode) = crate::convert_ansi_to_utf8(data);
         if is_unicode {
-            result.buffer_type = crate::BufferType::Unicode;
+            result.buffer.buffer_type = crate::BufferType::Unicode;
         }
         parse_with_parser(&mut result, &mut parser, &text, true)?;
-        Ok(result)
+        Ok(result.buffer)
     }
 }
 #[derive(Debug)]
@@ -350,10 +351,10 @@ impl StringGenerator {
 
             let mut len = if self.options.compress && !self.options.preserve_line_length {
                 let mut last = area.get_width() - 1;
-                let last_attr = layer.get_char((last, y)).attribute;
+                let last_attr = layer.get_char((last, y).into()).attribute;
                 if last_attr.background_color == 0 {
                     while last > area.left() {
-                        let c = layer.get_char((last, y));
+                        let c = layer.get_char((last, y).into());
 
                         if c.ch != ' ' && c.ch != 0xFF as char && c.ch != 0 as char {
                             break;
@@ -404,7 +405,7 @@ impl StringGenerator {
                     continue;
                 }
 
-                let ch = layer.get_char((x, y));
+                let ch = layer.get_char((x, y).into());
                 if ch.is_visible() {
                     let (new_state, sgr, sgr_tc) = self.get_color(buf, ch, state);
                     state = new_state;
@@ -819,7 +820,7 @@ mod tests {
 
                 /*
                 for x in 23..30 {
-                    let ch = buf2.layers[0].get_char((x, 0));
+                    let ch = buf2.layers[0].get_char((x, 0).into());
                     "{:?} {:?}", ch, buf2.palette.get_color(ch.attribute.get_foreground()));
                 }
                 */

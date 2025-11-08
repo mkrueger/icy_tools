@@ -1,10 +1,9 @@
 use crate::UnicodeGlyphCache;
-use icy_engine::{Position, TextPane};
+use icy_engine::{Position, Screen};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-pub struct RenderUnicodeOptions<'a> {
-    pub buffer: &'a icy_engine::Buffer,
+pub struct RenderUnicodeOptions {
     pub selection: Option<icy_engine::Selection>,
     pub selection_fg: Option<icy_engine::Color>,
     pub selection_bg: Option<icy_engine::Color>,
@@ -13,8 +12,7 @@ pub struct RenderUnicodeOptions<'a> {
     pub glyph_cache: Arc<Mutex<Option<UnicodeGlyphCache>>>, // Arc<Mutex> for interior mutability
 }
 
-pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::Size, Vec<u8>) {
-    let buf = opts.buffer;
+pub fn render_unicode_to_rgba(buf: &dyn Screen, opts: &RenderUnicodeOptions) -> (icy_engine::Size, Vec<u8>) {
     let width = buf.get_width();
     let height = buf.get_height();
 
@@ -38,8 +36,8 @@ pub fn render_unicode_to_rgba(opts: &RenderUnicodeOptions<'_>) -> (icy_engine::S
 
     // Palette cache
     let mut palette_cache = [(0u8, 0u8, 0u8); 256];
-    for i in 0..buf.palette.len() {
-        palette_cache[i] = buf.palette.get_rgb(i as u32);
+    for i in 0..buf.palette().len() {
+        palette_cache[i] = buf.palette().get_rgb(i as u32);
     }
 
     let explicit_sel = opts.selection_fg.as_ref().zip(opts.selection_bg.as_ref()).map(|(fg, bg)| {

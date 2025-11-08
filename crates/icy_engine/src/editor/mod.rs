@@ -136,7 +136,7 @@ impl EditState {
 
         // Copy buffer settings
         scroll_buffer.set_font_table(self.buffer.get_font_table());
-        scroll_buffer.is_terminal_buffer = self.buffer.is_terminal_buffer;
+        scroll_buffer.terminal_state.is_terminal_buffer = self.buffer.terminal_state.is_terminal_buffer;
         scroll_buffer.terminal_state = self.buffer.terminal_state.clone();
         scroll_buffer.buffer_type = self.buffer.buffer_type;
         scroll_buffer.palette = self.buffer.palette.clone();
@@ -327,7 +327,7 @@ impl EditState {
             let end = selection.max();
             for y in start.y..=end.y {
                 for x in start.x..=end.x {
-                    let ch = buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y).into());
                     res.push(self.unicode_converter.convert_to_unicode(ch.ch));
                 }
                 res.push('\n');

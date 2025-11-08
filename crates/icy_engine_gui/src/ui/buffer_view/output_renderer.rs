@@ -349,12 +349,16 @@ impl OutputRenderer {
 
             gl.uniform_1_f32(
                 gl.get_uniform_location(self.output_shader, "u_show_selection_rectangle").as_ref(),
-                if buffer_view.get_buffer().is_terminal_buffer { 0.0 } else { 1.0 },
+                if buffer_view.get_buffer().terminal_state.is_terminal_buffer {
+                    0.0
+                } else {
+                    1.0
+                },
             );
 
             match buffer_view.get_selection() {
                 Some(selection) => {
-                    if selection.is_empty() || buffer_view.get_buffer().is_terminal_buffer {
+                    if selection.is_empty() || buffer_view.get_buffer().terminal_state.is_terminal_buffer {
                         gl.uniform_4_f32(
                             gl.get_uniform_location(self.output_shader, "u_selection_rectangle").as_ref(),
                             0.0,

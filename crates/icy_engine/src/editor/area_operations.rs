@@ -31,7 +31,7 @@ impl EditState {
                 let mut removed_chars = 0;
                 let len = area.get_width();
                 while removed_chars < len {
-                    let ch = layer.get_char((area.left() + removed_chars, y));
+                    let ch = layer.get_char((area.left() + removed_chars, y).into());
                     if ch.is_visible() && !ch.is_transparent() {
                         break;
                     }
@@ -42,7 +42,7 @@ impl EditState {
                 }
                 for x in area.x_range() {
                     let ch = if x + removed_chars < area.right() {
-                        layer.get_char((x + removed_chars, y))
+                        layer.get_char((x + removed_chars, y).into())
                     } else {
                         AttributedChar::invisible()
                     };
@@ -69,7 +69,7 @@ impl EditState {
                 let mut removed_chars = 0;
                 let len = area.get_width();
                 while removed_chars < len {
-                    let ch = layer.get_char((area.right() - removed_chars - 1, y));
+                    let ch = layer.get_char((area.right() - removed_chars - 1, y).into());
                     if ch.is_visible() && !ch.is_transparent() {
                         break;
                     }
@@ -81,7 +81,7 @@ impl EditState {
                 let removed_chars = removed_chars / 2;
                 for x in area.x_range().rev() {
                     let ch = if x - removed_chars >= area.left() {
-                        layer.get_char((x - removed_chars, y))
+                        layer.get_char((x - removed_chars, y).into())
                     } else {
                         AttributedChar::invisible()
                     };
@@ -108,7 +108,7 @@ impl EditState {
                 let mut removed_chars = 0;
                 let len = area.get_width();
                 while removed_chars < len {
-                    let ch = layer.get_char((area.right() - removed_chars - 1, y));
+                    let ch = layer.get_char((area.right() - removed_chars - 1, y).into());
                     if ch.is_visible() && !ch.is_transparent() {
                         break;
                     }
@@ -119,7 +119,7 @@ impl EditState {
                 }
                 for x in area.x_range().rev() {
                     let ch = if x - removed_chars >= area.left() {
-                        layer.get_char((x - removed_chars, y))
+                        layer.get_char((x - removed_chars, y).into())
                     } else {
                         AttributedChar::invisible()
                     };
@@ -235,7 +235,7 @@ impl EditState {
 
             for y in 0..new_rectangle.get_height() {
                 for x in 0..new_rectangle.get_width() {
-                    let ch = old_layer.get_char((x + new_rectangle.left(), y + new_rectangle.top()));
+                    let ch = old_layer.get_char((x + new_rectangle.left(), y + new_rectangle.top()).into());
                     new_layer.set_char((x, y), ch);
                 }
             }
@@ -817,14 +817,14 @@ mod tests {
         state.flip_x().unwrap();
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
 
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 if x == 9 && y == 9 || x == 6 && y == 5 {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -836,7 +836,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
 
                 if x == 3 && y == 5 || x == 0 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -866,14 +866,14 @@ mod tests {
         state.flip_y().unwrap();
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
 
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 if x == 9 && y == 0 || x == 3 && y == 6 {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -885,7 +885,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
 
                 if x == 3 && y == 3 || x == 9 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -916,14 +916,14 @@ mod tests {
 
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
 
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 if x == 9 && (y == 5 || y == 9) {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -935,7 +935,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
 
                 if x == 5 && y == 5 || x == 0 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -966,13 +966,13 @@ mod tests {
 
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 if x == 4 && (y == 5 || y == 9) {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -983,7 +983,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
 
                 if x == 0 && y == 5 || x == 9 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -1014,13 +1014,13 @@ mod tests {
 
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
                 if x == 0 && (y == 5 || y == 9) {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -1032,7 +1032,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y));
+                let ch = state.get_buffer().get_char((x, y).into());
 
                 if x == 5 && y == 5 || x == 9 && y == 9 {
                     assert_eq!(ch.ch, '#');

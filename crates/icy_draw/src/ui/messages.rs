@@ -579,7 +579,7 @@ impl<'a> MainWindow<'a> {
             Message::PasteAsNewImage => {
                 if let Ok(data) = CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
                     let mut buf = icy_engine::Buffer::new((80, 24));
-                    buf.is_terminal_buffer = false;
+                    buf.terminal_state.is_terminal_buffer = false;
                     let editor = AnsiEditor::new(&self.gl, buf);
 
                     {

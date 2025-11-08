@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, avatar::AVT_MOVE_CURSOR, parse_with_parser, parsers,
+    Buffer, BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen, avatar::AVT_MOVE_CURSOR,
+    parse_with_parser, parsers,
 };
 
 use super::{LoadData, SaveOptions};
@@ -161,19 +162,19 @@ impl OutputFormat for Avatar {
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
-        let mut result: Buffer = Buffer::new((width, 25));
+        let mut result = TextScreen::new((width, 25));
+        result.terminal_state_mut().is_terminal_buffer = false;
 
-        result.is_terminal_buffer = false;
-        result.file_name = Some(file_name.into());
+        result.buffer.file_name = Some(file_name.into());
         if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+            result.buffer.load_sauce(sauce);
         }
         let (text, is_unicode) = crate::convert_ansi_to_utf8(data);
         if is_unicode {
-            result.buffer_type = crate::BufferType::Unicode;
+            result.buffer.buffer_type = crate::BufferType::Unicode;
         }
         parse_with_parser(&mut result, &mut parsers::avatar::Parser::default(), &text, true)?;
-        Ok(result)
+        Ok(result.buffer)
     }
 }
 
@@ -205,11 +206,11 @@ mod tests {
         let buf = Buffer::from_bytes(&std::path::PathBuf::from("test.avt"), false, &[b'X', 25, b'b', 3, b'X'], None, None).unwrap();
         assert_eq!(1, buf.get_line_count());
         assert_eq!(5, buf.get_real_buffer_width());
-        assert_eq!(b'X', buf.get_char((0, 0)).ch as u8);
-        assert_eq!(b'b', buf.get_char((1, 0)).ch as u8);
-        assert_eq!(b'b', buf.get_char((2, 0)).ch as u8);
-        assert_eq!(b'b', buf.get_char((3, 0)).ch as u8);
-        assert_eq!(b'X', buf.get_char((4, 0)).ch as u8);
+        assert_eq!(b'X', buf.get_char((0, 0).into()).ch as u8);
+        assert_eq!(b'b', buf.get_char((1, 0).into()).ch as u8);
+        assert_eq!(b'b', buf.get_char((2, 0).into()).ch as u8);
+        assert_eq!(b'b', buf.get_char((3, 0).into()).ch as u8);
+        assert_eq!(b'X', buf.get_char((4, 0).into()).ch as u8);
     }
 
     #[test]

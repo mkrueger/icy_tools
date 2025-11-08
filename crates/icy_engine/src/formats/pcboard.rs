@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use crate::{Buffer, BufferFeatures, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, parse_with_parser, parsers};
+use crate::{
+    Buffer, BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen, parse_with_parser, parsers,
+};
 
 use super::{LoadData, SaveOptions};
 
@@ -126,12 +128,12 @@ impl OutputFormat for PCBoard {
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
-        let mut result: Buffer = Buffer::new((width, 25));
+        let mut result = TextScreen::new((width, 25));
 
-        result.is_terminal_buffer = false;
-        result.file_name = Some(file_name.into());
+        result.terminal_state_mut().is_terminal_buffer = false;
+        result.buffer.file_name = Some(file_name.into());
         if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+            result.buffer.load_sauce(sauce);
         }
 
         /*
@@ -145,10 +147,10 @@ impl OutputFormat for PCBoard {
          */
         let (text, is_unicode) = crate::convert_ansi_to_utf8(data);
         if is_unicode {
-            result.buffer_type = crate::BufferType::Unicode;
+            result.buffer.buffer_type = crate::BufferType::Unicode;
         }
         parse_with_parser(&mut result, &mut parsers::pcboard::Parser::default(), &text, true)?;
-        Ok(result)
+        Ok(result.buffer)
     }
 }
 

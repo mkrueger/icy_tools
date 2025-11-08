@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, Buffer, BufferFeatures, BufferParser, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, Caret, EngineResult, OutputFormat, Palette,
-    TextPane, petscii,
+    AttributedChar, BitFont, BufferFeatures, BufferParser, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, EngineResult, OutputFormat,
+    Palette, TextPane, TextScreen, petscii,
 };
 
 #[derive(Default)]
@@ -31,35 +31,35 @@ impl OutputFormat for Seq {
     }
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result = Buffer::new((40, 25));
-        result.clear_font_table();
-        result.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
-        result.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
+        let mut result = TextScreen::new((40, 25));
+
+        result.buffer.clear_font_table();
+        result.buffer.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
+        result.buffer.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
 
         for y in 0..result.get_height() {
             for x in 0..result.get_width() {
                 let mut ch = AttributedChar::default();
                 ch.attribute.set_foreground(14);
                 ch.attribute.set_background(6);
-                result.layers[0].set_char((x, y), ch);
+                result.set_char((x, y).into(), ch);
             }
         }
-        result.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
-        result.buffer_type = crate::BufferType::Petscii;
-        result.is_terminal_buffer = false;
-        result.file_name = Some(file_name.into());
+        result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
+        result.buffer.buffer_type = crate::BufferType::Petscii;
+        result.buffer.terminal_state.is_terminal_buffer = false;
+        result.buffer.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+            result.buffer.load_sauce(sauce);
         }
 
         let mut p = petscii::Parser::default();
-        let mut caret = Caret::default();
-        caret.set_foreground(14);
-        caret.set_background(6);
+        result.caret.set_foreground(14);
+        result.caret.set_background(6);
         for ch in data {
-            let _ = p.print_char(&mut result, 0, &mut caret, *ch as char);
+            let _ = p.print_char(&mut result, *ch as char);
         }
-        Ok(result)
+        Ok(result.buffer)
     }
 }

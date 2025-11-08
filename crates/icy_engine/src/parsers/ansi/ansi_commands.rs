@@ -1,6 +1,9 @@
 #![allow(clippy::unnecessary_wraps)]
+
 use super::{BaudEmulation, EngineState, Parser, constants::COLOR_OFFSETS, set_font_selection_success};
-use crate::{AttributedChar, BitFont, Buffer, CallbackAction, Caret, EngineResult, FontSelectionState, ParserError, TextPane, XTERM_256_PALETTE, update_crc16};
+use crate::{
+    AttributedChar, BitFont, CallbackAction, Caret, EditableScreen, EngineResult, FontSelectionState, ParserError, TextPane, XTERM_256_PALETTE, update_crc16,
+};
 
 impl Parser {
     /// Sequence: `CSI Ps ... m`</p>
@@ -174,66 +177,69 @@ impl Parser {
     /// Source: `UnixWare 7 display(7)`
     /// Source: `OpenServer 5.0.6 screen(HW)`
     /// Status: `standard; Linux, iBCS2, aixterm extensions`
-    pub(crate) fn select_graphic_rendition(&mut self, caret: &mut Caret, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn select_graphic_rendition(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if self.parsed_numbers.is_empty() {
-            caret.reset_color_attribute(); // Reset or normal
+            buf.caret_mut().reset_color_attribute(); // Reset or normal
         }
         let mut i = 0;
         while i < self.parsed_numbers.len() {
             let n = self.parsed_numbers[i];
             match n {
-                0 => caret.reset_color_attribute(), // Reset or normal
-                1 => caret.attribute.set_is_bold(true),
+                0 => buf.caret_mut().reset_color_attribute(), // Reset or normal
+                1 => buf.caret_mut().attribute.set_is_bold(true),
                 2 => {
-                    caret.attribute.set_is_faint(true);
+                    buf.caret_mut().attribute.set_is_faint(true);
                 }
                 3 => {
-                    caret.attribute.set_is_italic(true);
+                    buf.caret_mut().attribute.set_is_italic(true);
                 }
-                4 => caret.attribute.set_is_underlined(true),
+                4 => buf.caret_mut().attribute.set_is_underlined(true),
                 5 | 6 => {
-                    caret.attribute.set_is_blinking(true);
+                    buf.caret_mut().attribute.set_is_blinking(true);
                 }
                 7 => {
-                    let fg = caret.attribute.get_foreground();
-                    caret.attribute.set_foreground(caret.attribute.get_background());
-                    caret.attribute.set_background(fg);
+                    let fg = buf.caret().attribute.get_foreground();
+                    let bg = buf.caret().attribute.get_background();
+                    buf.caret_mut().attribute.set_foreground(bg);
+                    buf.caret_mut().attribute.set_background(fg);
                 }
                 8 => {
-                    caret.attribute.set_is_concealed(true);
+                    buf.caret_mut().attribute.set_is_concealed(true);
                 }
-                9 => caret.attribute.set_is_crossed_out(true),
-                10 => caret.set_font_page(0),                       // Primary (default) font
+                9 => buf.caret_mut().attribute.set_is_crossed_out(true),
+                10 => buf.caret_mut().set_font_page(0),             // Primary (default) font
                 11..=20 => { /* ignore alternate fonts for now */ } //return Err(ParserError::UnsupportedEscapeSequence(self.current_sequence.clone()).into()),
-                21 => caret.attribute.set_is_double_underlined(true),
+                21 => buf.caret_mut().attribute.set_is_double_underlined(true),
                 22 => {
-                    caret.attribute.set_is_bold(false);
-                    caret.attribute.set_is_faint(false);
+                    buf.caret_mut().attribute.set_is_bold(false);
+                    buf.caret_mut().attribute.set_is_faint(false);
                 }
-                23 => caret.attribute.set_is_italic(false),
-                24 => caret.attribute.set_is_underlined(false),
-                25 => caret.attribute.set_is_blinking(false),
+                23 => buf.caret_mut().attribute.set_is_italic(false),
+                24 => buf.caret_mut().attribute.set_is_underlined(false),
+                25 => buf.caret_mut().attribute.set_is_blinking(false),
                 27 => {
                     // 27  positive image ?
                     return Err(ParserError::UnsupportedEscapeSequence.into());
                 }
-                28 => caret.attribute.set_is_concealed(false),
-                29 => caret.attribute.set_is_crossed_out(false),
+                28 => buf.caret_mut().attribute.set_is_concealed(false),
+                29 => buf.caret_mut().attribute.set_is_crossed_out(false),
                 // set foreaground color
-                30..=37 => caret.attribute.set_foreground(COLOR_OFFSETS[n as usize - 30] as u32),
+                30..=37 => buf.caret_mut().attribute.set_foreground(COLOR_OFFSETS[n as usize - 30] as u32),
                 38 => {
-                    caret.attribute.set_foreground(self.parse_extended_colors(buf, &mut i)?);
+                    let fg = self.parse_extended_colors(buf, &mut i)?;
+                    buf.caret_mut().attribute.set_foreground(fg);
                     continue;
                 }
-                39 => caret.attribute.set_foreground(7), // Set foreground color to default, ECMA-48 3rd
+                39 => buf.caret_mut().attribute.set_foreground(7), // Set foreground color to default, ECMA-48 3rd
                 // set background color
-                40..=47 => caret.attribute.set_background(COLOR_OFFSETS[n as usize - 40] as u32),
+                40..=47 => buf.caret_mut().attribute.set_background(COLOR_OFFSETS[n as usize - 40] as u32),
                 48 => {
-                    caret.attribute.set_background(self.parse_extended_colors(buf, &mut i)?);
+                    let bg = self.parse_extended_colors(buf, &mut i)?;
+                    buf.caret_mut().attribute.set_background(bg);
                     continue;
                 }
-                49 => caret.attribute.set_background(0), // Set background color to default, ECMA-48 3rd
+                49 => buf.caret_mut().attribute.set_background(0), // Set background color to default, ECMA-48 3rd
                 /*
                 50  (reserved for cancelling the effect of the rendering aspect
                     established by parameter value 26)
@@ -243,11 +249,11 @@ impl Parser {
                 52  encircled
                 54  not framed, not encircled
                 */
-                53 => caret.attribute.set_is_overlined(true),
-                55 => caret.attribute.set_is_overlined(false),
+                53 => buf.caret_mut().attribute.set_is_overlined(true),
+                55 => buf.caret_mut().attribute.set_is_overlined(false),
                 // high intensity colors
-                90..=97 => caret.attribute.set_foreground(8 + COLOR_OFFSETS[n as usize - 90] as u32),
-                100..=107 => caret.attribute.set_background(8 + COLOR_OFFSETS[n as usize - 100] as u32),
+                90..=97 => buf.caret_mut().attribute.set_foreground(8 + COLOR_OFFSETS[n as usize - 90] as u32),
+                100..=107 => buf.caret_mut().attribute.set_background(8 + COLOR_OFFSETS[n as usize - 100] as u32),
 
                 _ => {
                     return Err(ParserError::UnsupportedEscapeSequence.into());
@@ -259,7 +265,7 @@ impl Parser {
         Ok(CallbackAction::Update)
     }
 
-    fn parse_extended_colors(&mut self, buf: &mut Buffer, i: &mut usize) -> EngineResult<u32> {
+    fn parse_extended_colors(&mut self, buf: &mut dyn EditableScreen, i: &mut usize) -> EngineResult<u32> {
         if *i + 1 >= self.parsed_numbers.len() {
             return Err(ParserError::UnsupportedEscapeSequence.into());
         }
@@ -272,7 +278,7 @@ impl Parser {
                 let color = self.parsed_numbers[*i + 2];
                 *i += 3;
                 if (0..=255).contains(&color) {
-                    let color = buf.palette.insert_color(XTERM_256_PALETTE[color as usize].1.clone());
+                    let color = buf.palette_mut().insert_color(XTERM_256_PALETTE[color as usize].1.clone());
                     Ok(color)
                 } else {
                     Err(ParserError::UnsupportedEscapeSequence.into())
@@ -288,7 +294,7 @@ impl Parser {
                 let b = self.parsed_numbers[*i + 4];
                 *i += 5;
                 if (0..=255).contains(&r) && (0..=255).contains(&g) && (0..=255).contains(&b) {
-                    let color = buf.palette.insert_color_rgb(r as u8, g as u8, b as u8);
+                    let color = buf.palette_mut().insert_color_rgb(r as u8, g as u8, b as u8);
                     Ok(color)
                 } else {
                     Err(ParserError::UnsupportedEscapeSequence.into())
@@ -313,9 +319,9 @@ impl Parser {
     ///
     /// Source: ECMA-48 5th Ed. 8.3.121
     /// Status: standard
-    pub(crate) fn scroll_left(&mut self, buf: &mut Buffer, layer: usize) {
+    pub(crate) fn scroll_left(&mut self, buf: &mut dyn EditableScreen) {
         let num = if let Some(number) = self.parsed_numbers.first() { *number } else { 1 };
-        (0..num).for_each(|_| buf.scroll_left(layer));
+        (0..num).for_each(|_| buf.scroll_left());
     }
 
     /// Sequence: `CSI Pn SP A`</p>
@@ -334,9 +340,9 @@ impl Parser {
     ///
     /// Source: ECMA-48 5th Ed. 8.3.135
     /// Status: standard
-    pub(crate) fn scroll_right(&mut self, buf: &mut Buffer, layer: usize) {
+    pub(crate) fn scroll_right(&mut self, buf: &mut dyn EditableScreen) {
         let num = if let Some(number) = self.parsed_numbers.first() { *number } else { 1 };
-        (0..num).for_each(|_| buf.scroll_right(layer));
+        (0..num).for_each(|_| buf.scroll_right());
     }
 
     /// Sequence: `CSI Pt ; Pb r`</p>
@@ -351,12 +357,12 @@ impl Parser {
     ///
     /// Source: <URL:http://www.cs.utk.edu/~shuford/terminal/vt100_reference_card.txt>
     /// Status: DEC private; VT100
-    pub(crate) fn set_top_and_bottom_margins(&mut self, buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
+    pub(crate) fn set_top_and_bottom_margins(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         let (top, bottom) = match self.parsed_numbers.len() {
             2 => (self.parsed_numbers[0] - 1, self.parsed_numbers[1] - 1),
             1 => (0, self.parsed_numbers[0] - 1),
-            0 => (0, buf.terminal_state.get_height()),
+            0 => (0, buf.terminal_state().get_height()),
             _ => {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
             }
@@ -364,8 +370,8 @@ impl Parser {
         // CSI Pt ; Pb r
         // DECSTBM - Set Top and Bottom Margins
 
-        buf.terminal_state.set_margins_top_bottom(top, bottom);
-        caret.pos = buf.upper_left_position();
+        buf.terminal_state_mut().set_margins_top_bottom(top, bottom);
+        buf.caret_mut().position = buf.upper_left_position();
         Ok(CallbackAction::NoUpdate)
     }
 
@@ -377,18 +383,18 @@ impl Parser {
     ///
     /// Source: DEC Terminals and Printers Handbook 1985 EB 26291-56 pE10
     /// Status: DEC private; VT400, printers
-    pub(crate) fn set_left_and_right_margins(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn set_left_and_right_margins(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         let (left, right) = match self.parsed_numbers.len() {
             2 => (self.parsed_numbers[0] - 1, self.parsed_numbers[1] - 1),
             1 => (0, self.parsed_numbers[0] - 1),
-            0 => (0, buf.terminal_state.get_height()),
+            0 => (0, buf.terminal_state().get_height()),
             _ => {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         };
         // Set Left and Right Margins
-        buf.terminal_state.set_margins_left_right(left, right);
+        buf.terminal_state_mut().set_margins_left_right(left, right);
 
         Ok(CallbackAction::NoUpdate)
     }
@@ -410,14 +416,14 @@ impl Parser {
     /// cursor is moved to the top left hand corner of the newly-created
     /// region. The new region will now define the bounds of all scroll and
     /// cursor motion operations.
-    pub(crate) fn change_scrolling_region(&mut self, buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
+    pub(crate) fn change_scrolling_region(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         let (top, bottom, left, right) = match self.parsed_numbers.len() {
             3 => (
                 self.parsed_numbers[0] - 1,
                 self.parsed_numbers[1] - 1,
                 self.parsed_numbers[2] - 1,
-                buf.terminal_state.get_width(),
+                buf.terminal_state().get_width(),
             ),
             4 => (
                 self.parsed_numbers[0] - 1,
@@ -430,9 +436,9 @@ impl Parser {
             }
         };
 
-        caret.pos = buf.upper_left_position();
-        buf.terminal_state.set_margins_top_bottom(top, bottom);
-        buf.terminal_state.set_margins_left_right(left, right);
+        buf.caret_mut().position = buf.upper_left_position();
+        buf.terminal_state_mut().set_margins_top_bottom(top, bottom);
+        buf.terminal_state_mut().set_margins_left_right(left, right);
 
         Ok(CallbackAction::NoUpdate)
     }
@@ -450,42 +456,42 @@ impl Parser {
     ///  then the scrolling region is set to the size specified.  If either of
     ///  the left or right margins are not at the screen boundary then the
     ///  scrolling region is bound by the current margins.
-    pub(crate) fn set_specific_margin(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn set_specific_margin(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         let n = self.parsed_numbers[1] - 1;
 
         match self.parsed_numbers.first() {
             Some(0) => {
-                let top = if let Some((t, _)) = buf.terminal_state.get_margins_top_bottom() {
+                let top = if let Some((t, _)) = buf.terminal_state().get_margins_top_bottom() {
                     t
                 } else {
                     0
                 };
-                buf.terminal_state.set_margins_top_bottom(top, n);
+                buf.terminal_state_mut().set_margins_top_bottom(top, n);
             }
             Some(1) => {
-                let bottom = if let Some((_, b)) = buf.terminal_state.get_margins_top_bottom() {
+                let bottom = if let Some((_, b)) = buf.terminal_state().get_margins_top_bottom() {
                     b
                 } else {
-                    buf.terminal_state.get_height() - 1
+                    buf.terminal_state().get_height() - 1
                 };
-                buf.terminal_state.set_margins_top_bottom(n, bottom);
+                buf.terminal_state_mut().set_margins_top_bottom(n, bottom);
             }
             Some(2) => {
-                let left = if let Some((l, _)) = buf.terminal_state.get_margins_left_right() {
+                let left = if let Some((l, _)) = buf.terminal_state().get_margins_left_right() {
                     l
                 } else {
                     0
                 };
-                buf.terminal_state.set_margins_left_right(left, n);
+                buf.terminal_state_mut().set_margins_left_right(left, n);
             }
             Some(3) => {
-                let right = if let Some((_, r)) = buf.terminal_state.get_margins_left_right() {
+                let right = if let Some((_, r)) = buf.terminal_state().get_margins_left_right() {
                     r
                 } else {
-                    buf.terminal_state.get_width() - 1
+                    buf.terminal_state().get_width() - 1
                 };
-                buf.terminal_state.set_margins_left_right(n, right);
+                buf.terminal_state_mut().set_margins_left_right(n, right);
             }
             Some(_n) => {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
@@ -508,10 +514,10 @@ impl Parser {
     ///
     /// Source: `OpenServer 5.0.6 screen(HW)`
     /// Status: SCO private
-    pub(crate) fn reset_margins(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn reset_margins(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
-        buf.terminal_state.clear_margins_left_right();
-        buf.terminal_state.clear_margins_top_bottom();
+        buf.terminal_state_mut().clear_margins_left_right();
+        buf.terminal_state_mut().clear_margins_top_bottom();
         Ok(CallbackAction::NoUpdate)
     }
 
@@ -526,7 +532,7 @@ impl Parser {
     /// Status: SCO private
     pub(crate) fn save_cursor_position(&mut self, caret: &Caret) {
         self.state = EngineState::Default;
-        self.saved_pos = caret.pos;
+        self.saved_pos = caret.position;
     }
 
     /// Sequence: `CSI u`</p>
@@ -542,7 +548,7 @@ impl Parser {
         // CSI u
         // RCP - Restore Cursor Position
         self.state = EngineState::Default;
-        caret.pos = self.saved_pos;
+        caret.position = self.saved_pos;
     }
 
     /// Sequence: `CSI Pn X`</p>
@@ -567,14 +573,16 @@ impl Parser {
     ///
     /// Source: ECMA-48 5th Ed. 8.3.38
     /// Status: standard
-    pub(crate) fn erase_character(&mut self, caret: &mut Caret, buf: &mut Buffer, current_layer: usize) -> EngineResult<CallbackAction> {
+    pub(crate) fn erase_character(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         // ECH - Erase character
 
         if let Some(number) = self.parsed_numbers.first() {
-            caret.erase_charcter(buf, current_layer, *number);
+            for _ in 0..*number {
+                buf.del();
+            }
         } else {
-            caret.erase_charcter(buf, current_layer, 1);
+            buf.del();
             if self.parsed_numbers.len() != 1 {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
             }
@@ -610,7 +618,7 @@ impl Parser {
     /// Source: ECMA-48 5th Ed. 8.3.53
     /// Status: standard
     ///
-    pub(crate) fn font_selection(&mut self, buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
+    pub(crate) fn font_selection(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if self.parsed_numbers.len() != 2 {
             return Err(ParserError::UnsupportedEscapeSequence.into());
@@ -620,16 +628,16 @@ impl Parser {
         if let Some(nr) = self.parsed_numbers.get(1) {
             let nr = *nr as usize;
             if buf.get_font(nr).is_some() {
-                set_font_selection_success(buf, caret, nr);
+                set_font_selection_success(buf, nr);
                 return Ok(CallbackAction::NoUpdate);
             }
             match BitFont::from_ansi_font_page(nr) {
                 Ok(font) => {
-                    set_font_selection_success(buf, caret, nr);
+                    set_font_selection_success(buf, nr);
                     buf.set_font(nr, font);
                 }
                 Err(err) => {
-                    buf.terminal_state.font_selection_state = FontSelectionState::Failure;
+                    buf.terminal_state_mut().font_selection_state = FontSelectionState::Failure;
                     return Err(err);
                 }
             }
@@ -651,13 +659,13 @@ impl Parser {
     ///
     /// Source: ECMA-48 5th Ed. 8.3.156
     /// Status: standard
-    pub(crate) fn tabulation_stop_remove(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn tabulation_stop_remove(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         if self.parsed_numbers.len() != 1 {
             return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         // tab stop remove
         if let Some(num) = self.parsed_numbers.first() {
-            buf.terminal_state.remove_tab_stop(*num - 1);
+            buf.terminal_state_mut().remove_tab_stop(*num - 1);
         }
         Ok(CallbackAction::NoUpdate)
     }
@@ -675,10 +683,10 @@ impl Parser {
     ///
     /// Source: <URL:http://www.cs.utk.edu/~shuford/terminal/msvibm_vt.txt>
     /// Status: DEC private; VT220
-    pub(crate) fn soft_terminal_reset(&mut self, buf: &mut Buffer, caret: &mut Caret) {
+    pub(crate) fn soft_terminal_reset(&mut self, buf: &mut dyn EditableScreen) {
         self.state = EngineState::Default;
         buf.reset_terminal();
-        caret.reset();
+        buf.caret_mut().reset();
     }
 
     /// Sequence: `CSI Ps1 ; Ps2 * r`</p>
@@ -716,7 +724,7 @@ impl Parser {
     /// Printer             4800
     /// Modem Hi            Ignore
     /// Modem Lo            Ignore
-    pub(crate) fn select_communication_speed(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn select_communication_speed(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         let ps1 = self.parsed_numbers.first().unwrap_or(&0);
         if *ps1 != 0 && *ps1 != 1 {
@@ -732,7 +740,7 @@ impl Parser {
         let ps2 = self.parsed_numbers.get(1).unwrap_or(&0);
         let baud_option = *BaudEmulation::OPTIONS.get(*ps2 as usize).unwrap_or(&BaudEmulation::Off);
 
-        buf.terminal_state.set_baud_rate(baud_option);
+        buf.terminal_state_mut().set_baud_rate(baud_option);
         Ok(CallbackAction::ChangeBaudEmulation(baud_option))
         // DECSCS—Select Communication Speed https://vt100.net/docs/vt510-rm/DECSCS.html
     }
@@ -768,7 +776,7 @@ impl Parser {
     ///
     /// Source: Reflection TRM (VT) Version 7.0
     /// Status: DEC private; VT400
-    pub(crate) fn request_checksum_of_rectangular_area(&mut self, buf: &Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn request_checksum_of_rectangular_area(&mut self, buf: &dyn TextPane) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if self.parsed_numbers.len() != 6 {
             return Err(ParserError::UnsupportedEscapeSequence.into());
@@ -777,13 +785,13 @@ impl Parser {
         let pl = self.parsed_numbers[3];
         let pb = self.parsed_numbers[4];
         let pr = self.parsed_numbers[5];
-        if pt > pb || pl > pr || pr > buf.terminal_state.get_width() || pb > buf.terminal_state.get_height() || pl < 0 || pt < 0 {
+        if pt > pb || pl > pr || pr > buf.get_width() || pb > buf.get_height() || pl < 0 || pt < 0 {
             return Err(ParserError::UnsupportedEscapeSequence.into());
         }
         let mut crc16 = 0;
         for y in pt..pb {
             for x in pl..pr {
-                let ch = buf.get_char((x, y));
+                let ch = buf.get_char((x, y).into());
                 if ch.is_visible() {
                     crc16 = update_crc16(crc16, ch.ch as u8);
                     for b in ch.attribute.attr.to_be_bytes() {
@@ -814,10 +822,10 @@ impl Parser {
     ///
     /// Source: Reflection TRM (VT) Version 7.0
     /// Status: DEC private; VT400
-    pub(crate) fn invoke_macro(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret) -> EngineResult<CallbackAction> {
+    pub(crate) fn invoke_macro(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         if let Some(id) = self.parsed_numbers.first() {
-            self.invoke_macro_by_id(buf, current_layer, caret, *id);
+            self.invoke_macro_by_id(buf, *id);
         }
         Ok(CallbackAction::Update)
     }
@@ -916,17 +924,17 @@ impl Parser {
     ///
     /// Source: CTerm.txt
     /// Status: NON-STANDARD EXTENSION
-    pub(crate) fn select_24bit_color(&mut self, buf: &mut Buffer, caret: &mut Caret) -> EngineResult<CallbackAction> {
+    pub(crate) fn select_24bit_color(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         let r = self.parsed_numbers[1];
         let g = self.parsed_numbers[2];
         let b = self.parsed_numbers[3];
-        let color = buf.palette.insert_color_rgb(r as u8, g as u8, b as u8);
+        let color = buf.palette_mut().insert_color_rgb(r as u8, g as u8, b as u8);
         match self.parsed_numbers.first() {
             Some(0) => {
-                caret.attribute.set_background(color);
+                buf.caret_mut().attribute.set_background(color);
             }
             Some(1) => {
-                caret.attribute.set_foreground(color);
+                buf.caret_mut().attribute.set_foreground(color);
             }
             _ => {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
@@ -981,7 +989,7 @@ impl Parser {
     ///  Ps is 2 3  ;  2  -> Restore xterm window title from stack.
     ///  Ps >= 2 4  -> Resize to Ps lines (DECSLPP).    /// Source: XTerm-Control-Sequences.txt
     /// Status: NON-STANDARD EXTENSION
-    pub(crate) fn window_manipulation(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn window_manipulation(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         match self.parsed_numbers.first() {
             Some(8) => {
                 if self.parsed_numbers.len() != 3 {
@@ -989,8 +997,8 @@ impl Parser {
                 }
                 let width = self.parsed_numbers[2].min(132).max(1);
                 let height = self.parsed_numbers[1].min(60).max(1);
-                buf.terminal_state.set_width(width);
-                buf.terminal_state.set_height(height);
+                buf.terminal_state_mut().set_width(width);
+                buf.terminal_state_mut().set_height(height);
                 Ok(CallbackAction::ResizeTerminal(width, height))
             }
             _ => Err(ParserError::UnsupportedEscapeSequence.into()),
@@ -1016,7 +1024,7 @@ impl Parser {
     ///
     /// Source: Reflection TRM (VT) Version 7.0
     /// Status: DEC private; VT400
-    pub(crate) fn fill_rectangular_area(&mut self, buf: &mut Buffer, caret: &Caret) -> EngineResult<CallbackAction> {
+    pub(crate) fn fill_rectangular_area(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
 
         if self.parsed_numbers.len() != 5 {
@@ -1027,25 +1035,25 @@ impl Parser {
         let (top_line, left_column, bottom_line, right_column) = self.get_rect_area(buf, 1);
         for y in top_line..=bottom_line {
             for x in left_column..=right_column {
-                buf.layers[0].set_char((x, y), AttributedChar::new(ch, caret.attribute));
+                buf.set_char((x, y).into(), AttributedChar::new(ch, buf.caret().attribute));
             }
         }
 
         Ok(CallbackAction::Update)
     }
 
-    fn get_rect_area(&self, buf: &Buffer, offset: usize) -> (i32, i32, i32, i32) {
+    fn get_rect_area(&self, buf: &dyn EditableScreen, offset: usize) -> (i32, i32, i32, i32) {
         let top_line: i32 = self.parsed_numbers[offset]
             .max(1)
-            .min(buf.get_line_count().max(buf.terminal_state.get_height()))
+            .min(buf.get_line_count().max(buf.terminal_state().get_height()))
             - 1;
-        let left_column = self.parsed_numbers[offset + 1].max(1).min(buf.terminal_state.get_width()) - 1;
+        let left_column = self.parsed_numbers[offset + 1].max(1).min(buf.terminal_state().get_width()) - 1;
 
         let bottom_line = self.parsed_numbers[offset + 2]
             .max(1)
-            .min(buf.get_line_count().max(buf.terminal_state.get_height()))
+            .min(buf.get_line_count().max(buf.terminal_state().get_height()))
             - 1;
-        let right_column = self.parsed_numbers[offset + 3].max(1).min(buf.terminal_state.get_width()) - 1;
+        let right_column = self.parsed_numbers[offset + 3].max(1).min(buf.terminal_state().get_width()) - 1;
 
         (top_line, left_column, bottom_line, right_column)
     }
@@ -1066,7 +1074,7 @@ impl Parser {
     ///
     /// Source: Reflection TRM (VT) Version 7.0
     /// Status: DEC private; VT400
-    pub(crate) fn erase_rectangular_area(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn erase_rectangular_area(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
 
         if self.parsed_numbers.len() != 4 {
@@ -1077,7 +1085,7 @@ impl Parser {
 
         for y in top_line..=bottom_line {
             for x in left_column..=right_column {
-                buf.layers[0].set_char((x, y), AttributedChar::default());
+                buf.set_char((x, y).into(), AttributedChar::default());
             }
         }
 
@@ -1104,7 +1112,7 @@ impl Parser {
     ///
     /// Source: Reflection TRM (VT) Version 7.0
     /// Status: DEC private; VT400
-    pub(crate) fn selective_erase_rectangular_area(&mut self, buf: &mut Buffer) -> EngineResult<CallbackAction> {
+    pub(crate) fn selective_erase_rectangular_area(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
 
         if self.parsed_numbers.len() != 4 {
@@ -1115,8 +1123,8 @@ impl Parser {
 
         for y in top_line..=bottom_line {
             for x in left_column..=right_column {
-                let ch = buf.get_char((x, y));
-                buf.layers[0].set_char((x, y), AttributedChar::new(' ', ch.attribute));
+                let ch = buf.get_char((x, y).into());
+                buf.set_char((x, y).into(), AttributedChar::new(' ', ch.attribute));
             }
         }
 

@@ -87,7 +87,7 @@ pub struct BufferView {
 impl BufferView {
     pub fn new(gl: &glow::Context) -> Self {
         let mut buf = Buffer::create((80, 25));
-        buf.is_terminal_buffer = true;
+        buf.terminal_state.is_terminal_buffer = true;
 
         BufferView::from_buffer(gl, buf)
     }

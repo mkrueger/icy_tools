@@ -6,7 +6,7 @@ use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, RenderUnicodeOpti
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
-use icy_engine::{MouseState, Position, Selection, TextPane};
+use icy_engine::{MouseState, Position, Selection};
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
@@ -83,47 +83,45 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         let mut size = (640, 400); // fallback
         let mut font_w = 0usize;
         let mut font_h = 0usize;
-        let mut no_scrollback = true;
 
-        if let Ok(edit_state) = self.term.edit_state.try_lock() {
-            no_scrollback = edit_state.scrollback_offset == 0;
-            let buffer = edit_state.get_display_buffer();
-
-            if let Some(font) = buffer.get_font(0) {
+        if let Ok(screen) = self.term.screen.try_lock() {
+            if let Some(font) = screen.get_font(0) {
                 font_w = font.size.width as usize;
                 font_h = font.size.height as usize;
             }
 
-            let (fg_sel, bg_sel) = edit_state.get_buffer().buffer_type.get_selection_colors();
+            let (fg_sel, bg_sel) = screen.buffer_type().get_selection_colors();
 
             if let Some((s, data)) = &self.term.picture_data {
                 // Use cached rendering if available
                 size = (s.width as u32, s.height as u32);
                 rgba_data = data.clone();
             } else {
-                if matches!(edit_state.get_buffer().buffer_type, icy_engine::BufferType::Unicode) {
+                if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
                     // Unicode path - use cached glyph cache with Arc<Mutex<>>
-                    let (img_size, data) = render_unicode_to_rgba(&RenderUnicodeOptions {
-                        buffer,
-                        selection: edit_state.get_selection(),
-                        selection_fg: Some(fg_sel),
-                        selection_bg: Some(bg_sel),
-                        blink_on: state.character_blink.is_on(),
-                        font_px_size: Some(font_h as f32),
-                        glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
-                    });
+                    let (img_size, data) = render_unicode_to_rgba(
+                        &*screen,
+                        &RenderUnicodeOptions {
+                            selection: screen.get_selection(),
+                            selection_fg: Some(fg_sel),
+                            selection_bg: Some(bg_sel),
+                            blink_on: state.character_blink.is_on(),
+                            font_px_size: Some(font_h as f32),
+                            glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
+                        },
+                    );
                     size = (img_size.width as u32, img_size.height as u32);
                     rgba_data = data;
                 } else {
                     // Existing ANSI path
                     let rect = icy_engine::Rectangle {
                         start: icy_engine::Position::new(0, 0),
-                        size: icy_engine::Size::new(buffer.get_width(), buffer.get_height()),
+                        size: icy_engine::Size::new(screen.get_width(), screen.get_height()),
                     };
-                    let (img_size, data) = buffer.render_to_rgba(&icy_engine::RenderOptions {
+                    let (img_size, data) = screen.render_to_rgba(&icy_engine::RenderOptions {
                         rect: rect.into(),
                         blink_on: state.character_blink.is_on(),
-                        selection: edit_state.get_selection(),
+                        selection: screen.get_selection(),
                         selection_fg: Some(fg_sel),
                         selection_bg: Some(bg_sel),
                     });
@@ -134,10 +132,8 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         }
 
         // Caret overlay (shared)
-        if no_scrollback {
-            if let Ok(edit_state) = self.term.edit_state.try_lock() {
-                self.draw_caret(&edit_state.get_caret(), state, &mut rgba_data, size, font_w, font_h);
-            }
+        if let Ok(edit_state) = self.term.screen.try_lock() {
+            self.draw_caret(&edit_state.caret(), state, &mut rgba_data, size, font_w, font_h);
         }
 
         TerminalShader {
@@ -162,12 +158,11 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
         // Track the actual rendered size to detect real changes
         // Only update if we successfully get the lock
-        if let Ok(edit_state) = self.term.edit_state.try_lock() {
-            let buffer = edit_state.get_display_buffer();
-            if let Some(font) = buffer.get_font(0) {
+        if let Ok(screen) = self.term.screen.try_lock() {
+            if let Some(font) = screen.get_font(0) {
                 let font_w = font.size.width as u32;
                 let font_h = font.size.height as u32;
-                let current_size = (buffer.get_width() as u32 * font_w, buffer.get_height() as u32 * font_h);
+                let current_size = (screen.get_width() as u32 * font_w, screen.get_height() as u32 * font_h);
 
                 // Only trigger redraw if size actually changed
                 if state.last_rendered_size != Some(current_size) {
@@ -193,8 +188,8 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         // Handle mouse events
         if let iced::Event::Mouse(mouse_event) = event {
             // Check if mouse tracking is enabled
-            let mouse_state = if let Ok(edit_state) = self.term.edit_state.lock() {
-                edit_state.get_buffer().terminal_state.mouse_state.clone()
+            let mouse_state = if let Ok(screen) = self.term.screen.lock() {
+                screen.terminal_state().mouse_state.clone()
             } else {
                 MouseState::default()
             };
@@ -212,12 +207,11 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                         if use_rip {
                             // Convert cell position to RIP coordinates (640x350)
                             if let Some(cell) = cell_pos {
-                                if let Ok(edit_state) = self.term.edit_state.try_lock() {
-                                    let buffer = edit_state.get_display_buffer();
+                                if let Ok(screen) = self.term.screen.try_lock() {
                                     // Convert cell position to RIP pixel coordinates
                                     // RIP uses 640x350 coordinate system
-                                    let cells_x = buffer.get_width() as f32;
-                                    let cells_y = buffer.get_height() as f32;
+                                    let cells_x = screen.get_width() as f32;
+                                    let cells_y = screen.get_height() as f32;
 
                                     let rip_x = ((cell.x as f32 / cells_x) * 640.0) as i32;
                                     let rip_y = ((cell.y as f32 / cells_y) * 350.0) as i32;
@@ -294,7 +288,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                             if let Some(cell) = cell_pos {
                                 if state.last_drag_position != Some(cell) {
                                     state.last_drag_position = Some(cell);
-                                    if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                    if let Ok(mut edit_state) = self.term.screen.try_lock() {
                                         // Update selection
                                         if let Some(mut sel) = edit_state.get_selection().clone() {
                                             if !sel.locked {
@@ -314,14 +308,12 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                         } else {
                             // Check hyperlinks only when not dragging
                             if let Some(cell) = cell_pos {
-                                if let Ok(edit_state) = self.term.edit_state.try_lock() {
-                                    let buffer = edit_state.get_display_buffer();
-
+                                if let Ok(screen) = self.term.screen.try_lock() {
                                     // Check hyperlinks
-                                    let mut found_link = None;
-                                    for hyperlink in buffer.layers[0].hyperlinks() {
-                                        if buffer.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
-                                            found_link = Some(hyperlink.get_url(buffer));
+                                    let mut found_link: Option<String> = None;
+                                    for hyperlink in screen.hyperlinks() {
+                                        if screen.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
+                                            found_link = Some(hyperlink.get_url(&*screen));
                                             break;
                                         }
                                     }
@@ -355,20 +347,21 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                             if let Some(mouse_field_idx) = state.hovered_rip_field {
                                 if let Some(mouse_field) = &self.term.mouse_fields.get(mouse_field_idx) {
                                     if let Some(cmd) = &mouse_field.host_command {
-                                        // Handle screen reset if needed
                                         let clear_rip_screen = mouse_field.style.reset_screen_after_click();
+                                        // Handle screen reset if
+                                        /* TODO
                                         if clear_rip_screen {
                                             if let Ok(mut edit_state) = self.term.edit_state.lock() {
-                                                let mut caret = edit_state.get_caret().clone();
+                                                let mut caret = edit_state.caret().clone();
                                                 {
                                                     let buffer = edit_state.get_buffer_mut();
                                                     buffer.terminal_state.clear_margins_left_right();
                                                     buffer.terminal_state.clear_margins_top_bottom();
-                                                    buffer.clear_screen(0, &mut caret);
+                                                    buffer.clear_screen();
                                                 }
                                                 *edit_state.get_caret_mut() = caret;
                                             }
-                                        }
+                                        }*/
 
                                         // Send the RIP command
                                         return Some(iced::widget::Action::publish(Message::RipCommand(clear_rip_screen, cmd.clone())));
@@ -405,10 +398,10 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                     return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
                                 } else {
                                     // Start selection
-                                    if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
+                                    if let Ok(mut screen) = self.term.screen.try_lock() {
                                         // Clear existing selection unless shift is held
                                         if !state.shift_pressed {
-                                            let _ = edit_state.clear_selection();
+                                            let _ = screen.clear_selection();
                                         }
 
                                         // Create new selection
@@ -419,7 +412,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                             icy_engine::Shape::Lines
                                         };
                                         sel.locked = false;
-                                        let _ = edit_state.set_selection(sel);
+                                        let _ = screen.set_selection(sel);
 
                                         state.dragging = true;
                                         state.drag_anchor = Some(cell);
@@ -429,8 +422,8 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                 }
                             } else if matches!(button, mouse::Button::Middle) {
                                 // Middle click: copy if selection exists, paste if no selection
-                                if let Ok(edit_state) = self.term.edit_state.try_lock() {
-                                    if edit_state.get_selection().is_some() {
+                                if let Ok(screen) = self.term.screen.try_lock() {
+                                    if screen.get_selection().is_some() {
                                         // Has selection - copy it
                                         return Some(iced::widget::Action::publish(Message::Copy));
                                     } else {
@@ -442,8 +435,8 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                             // Note: Removed middle click paste since Message::Paste doesn't exist
                         } else {
                             // Clicked outside terminal area - clear selection
-                            if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
-                                let _ = edit_state.clear_selection();
+                            if let Ok(mut screen) = self.term.screen.try_lock() {
+                                let _ = screen.clear_selection();
                                 needs_redraw = true;
                             }
                         }
@@ -491,10 +484,10 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                         state.shift_pressed_during_selection = state.shift_pressed;
 
                         // Lock the selection
-                        if let Ok(mut edit_state) = self.term.edit_state.try_lock() {
-                            if let Some(mut sel) = edit_state.get_selection().clone() {
+                        if let Ok(mut screen) = self.term.screen.try_lock() {
+                            if let Some(mut sel) = screen.get_selection().clone() {
                                 sel.locked = true;
-                                let _ = edit_state.set_selection(sel);
+                                let _ = screen.set_selection(sel);
                             }
                         }
 
@@ -603,9 +596,8 @@ fn map_mouse_to_cell(
     my: f32, // mouse y in logical space
 ) -> Option<Position> {
     // 3. Lock edit state & obtain font + buffer size (already in pixel units)
-    let edit = term.edit_state.try_lock().ok()?;
-    let buffer = edit.get_display_buffer();
-    let font = buffer.get_font(0)?;
+    let screen = term.screen.try_lock().ok()?;
+    let font = screen.get_font(0)?;
     let font_w = font.size.width as f32;
     let font_h = font.size.height as f32;
 
@@ -617,8 +609,8 @@ fn map_mouse_to_cell(
         return None;
     }
 
-    let term_px_w = buffer.get_width() as f32 * font_w;
-    let term_px_h = buffer.get_height() as f32 * font_h;
+    let term_px_w = screen.get_width() as f32 * font_w;
+    let term_px_h = screen.get_height() as f32 * font_h;
     if term_px_w <= 0.0 || term_px_h <= 0.0 {
         return None;
     }
@@ -658,7 +650,7 @@ fn map_mouse_to_cell(
     let cx = (local_px_x / font_w).floor() as i32;
     let cy = (local_px_y / font_h).floor() as i32;
 
-    if cx < 0 || cy < 0 || cx >= buffer.get_width() as i32 || cy >= buffer.get_height() as i32 {
+    if cx < 0 || cy < 0 || cx >= screen.get_width() as i32 || cy >= screen.get_height() as i32 {
         return None;
     }
 

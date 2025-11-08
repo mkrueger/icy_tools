@@ -949,13 +949,13 @@ impl UndoOperation for ReverseCaretPosition {
     }
 
     fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        self.old_pos = edit_state.caret.pos;
-        edit_state.caret.pos = self.pos;
+        self.old_pos = edit_state.caret.position;
+        edit_state.caret.position = self.pos;
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.caret.pos = self.old_pos;
+        edit_state.caret.position = self.old_pos;
         Ok(())
     }
 }

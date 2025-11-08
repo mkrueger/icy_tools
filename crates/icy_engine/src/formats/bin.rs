@@ -24,7 +24,7 @@ impl OutputFormat for Bin {
 
         for y in 0..buf.get_height() {
             for x in 0..buf.get_width() {
-                let ch = buf.get_char((x, y));
+                let ch = buf.get_char((x, y).into());
                 result.push(ch.ch as u8);
                 result.push(ch.attribute.as_u8(buf.ice_mode));
             }
@@ -37,7 +37,7 @@ impl OutputFormat for Bin {
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((160, 25));
-        result.is_terminal_buffer = false;
+        result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {

@@ -25,7 +25,7 @@ pub enum WindowManagerMessage {
     WindowClosed(window::Id),
     WindowMessage(window::Id, crate::ui::Message),
     Event(window::Id, iced::Event),
-    UpdateBuffers,
+    _UpdateBuffers,
 }
 
 impl WindowManager {
@@ -114,7 +114,7 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::UpdateBuffers => {
+            WindowManagerMessage::_UpdateBuffers => {
                 let mut tasks = vec![];
                 for (id, _window) in self.windows.iter() {
                     let id = id.clone();

@@ -84,10 +84,10 @@ fn test_tdf_render_block_multiline_cr() {
     assert_eq!(sz.height, 2);
 
     let b = edit.get_buffer();
-    assert_eq!(b.get_char((0, 0)).ch, 'X');
-    assert_eq!(b.get_char((1, 0)).ch, 'Y');
-    assert_eq!(b.get_char((0, 1)).ch, 'Z');
-    assert_eq!(b.get_char((1, 1)).ch, 'W');
+    assert_eq!(b.get_char((0, 0).into()).ch, 'X');
+    assert_eq!(b.get_char((1, 0).into()).ch, 'Y');
+    assert_eq!(b.get_char((0, 1).into()).ch, 'Z');
+    assert_eq!(b.get_char((1, 1).into()).ch, 'W');
 }
 
 #[test]
@@ -106,9 +106,9 @@ fn test_tdf_render_block_ampersand_edit_mode_visible() {
     assert_eq!(sz.height, 1);
     assert_eq!(sz.width, 3);
     let b = edit.get_buffer();
-    assert_eq!(b.get_char((0, 0)).ch, 'A');
-    assert_eq!(b.get_char((1, 0)).ch, 'B');
-    assert_eq!(b.get_char((2, 0)).ch, '&');
+    assert_eq!(b.get_char((0, 0).into()).ch, 'A');
+    assert_eq!(b.get_char((1, 0).into()).ch, 'B');
+    assert_eq!(b.get_char((2, 0).into()).ch, '&');
 }
 
 #[test]
@@ -140,9 +140,9 @@ fn test_tdf_render_color_font_attribute_consumption() {
 
     let b = edit.get_buffer();
     // A with attribute (foreground should match lower nibble if IceMode mapping)
-    let a = b.get_char((0, 0));
-    let bch = b.get_char((0, 1));
-    let cch = b.get_char((0, 2));
+    let a = b.get_char((0, 0).into());
+    let bch = b.get_char((0, 1).into());
+    let cch = b.get_char((0, 2).into());
     assert_eq!(a.ch, 'A');
     assert_eq!(bch.ch, 'B');
     assert_eq!(cch.ch, 'C');
@@ -167,8 +167,8 @@ fn test_tdf_render_color_font_truncated_attribute_safe() {
     assert!(sz.width >= 2);
 
     let b = edit.get_buffer();
-    assert_eq!(b.get_char((0, 0)).ch, 'A');
-    assert_eq!(b.get_char((1, 0)).ch, 'B');
+    assert_eq!(b.get_char((0, 0).into()).ch, 'A');
+    assert_eq!(b.get_char((1, 0).into()).ch, 'B');
 }
 
 #[test]
@@ -258,9 +258,9 @@ fn test_tdf_render_next_trait_drives_caret() {
     assert_eq!(pos_after.x, 3);
     assert_eq!(pos_after.y, 0);
     let b = edit.get_buffer();
-    assert_eq!(b.get_char((0, 0)).ch, 'A');
-    assert_eq!(b.get_char((1, 0)).ch, 'B');
-    assert_eq!(b.get_char((2, 0)).ch, 'C');
+    assert_eq!(b.get_char((0, 0).into()).ch, 'A');
+    assert_eq!(b.get_char((1, 0).into()).ch, 'B');
+    assert_eq!(b.get_char((2, 0).into()).ch, 'C');
 }
 
 #[test]

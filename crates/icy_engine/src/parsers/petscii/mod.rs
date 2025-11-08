@@ -1,5 +1,5 @@
-use super::{Buffer, BufferParser};
-use crate::{AttributedChar, CallbackAction, Caret, EngineResult, ParserError, TextPane, UnicodeConverter};
+use super::BufferParser;
+use crate::{AttributedChar, CallbackAction, Caret, EditableScreen, EngineResult, ParserError, UnicodeConverter};
 
 #[derive(Default)]
 pub struct Parser {
@@ -47,20 +47,20 @@ impl Parser {
     }
 
     /// Handle C128-specific ESC sequences (currently mostly placeholders).
-    pub fn handle_c128_escapes(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: u8) -> EngineResult<CallbackAction> {
+    pub fn handle_c128_escapes(&mut self, buf: &mut dyn EditableScreen, ch: u8) -> EngineResult<CallbackAction> {
         self.got_esc = false;
 
         match ch {
             b'O' => {} // Cancel quote/insert (NYI)
-            b'Q' => buf.clear_line_end(current_layer, caret),
-            b'P' => buf.clear_line_start(current_layer, caret),
-            b'@' => buf.clear_buffer_down(current_layer, caret),
-            b'J' => caret.cr(buf),
-            b'K' => caret.eol(buf),
+            b'Q' => buf.clear_line_end(),
+            b'P' => buf.clear_line_start(),
+            b'@' => buf.clear_buffer_down(),
+            b'J' => buf.cr(),
+            b'K' => buf.eol(),
             b'A' => log::error!("Auto-insert mode unsupported."),
             b'C' => log::error!("Disable auto-insert mode unsupported."),
-            b'D' => buf.remove_terminal_line(current_layer, caret.pos.y),
-            b'I' => buf.insert_terminal_line(current_layer, caret.pos.y),
+            b'D' => buf.remove_terminal_line(buf.caret().position.y),
+            b'I' => buf.insert_terminal_line(buf.caret().position.y),
             b'Y' => log::error!("Set default tab stops unsupported."),
             b'Z' => log::error!("Clear all tab stops unsupported."),
             b'L' => log::error!("Enable scrolling unsupported."),
@@ -83,7 +83,7 @@ impl Parser {
         Ok(CallbackAction::NoUpdate)
     }
 
-    pub fn update_shift_mode(&mut self, buf: &mut Buffer, current_layer: usize, shift_mode: bool) {
+    pub fn update_shift_mode(&mut self, buf: &mut dyn EditableScreen, shift_mode: bool) {
         if self.shift_mode == shift_mode {
             return;
         }
@@ -91,9 +91,9 @@ impl Parser {
         // Update font page for all existing characters.
         for y in 0..buf.get_height() {
             for x in 0..buf.get_width() {
-                let mut ch = buf.get_char((x, y));
+                let mut ch = buf.get_char((x, y).into());
                 ch.set_font_page(usize::from(shift_mode));
-                buf.layers[current_layer].set_char((x, y), ch);
+                buf.set_char((x, y).into(), ch);
             }
         }
     }
@@ -138,10 +138,11 @@ impl UnicodeConverter for CharConverter {
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
+        let caret: &mut Caret = buf.caret_mut();
         let byte = ch as u8;
         if self.got_esc {
-            return self.handle_c128_escapes(buf, current_layer, caret, byte);
+            return self.handle_c128_escapes(buf, byte);
         }
 
         match byte {
@@ -157,29 +158,29 @@ impl BufferParser for Parser {
             0x07 => return Ok(CallbackAction::Beep),
             0x08 => self.c_shift = false,
             0x09 => self.c_shift = true,
-            0x0A => caret.cr(buf),
+            0x0A => buf.cr(),
             0x0D | 0x8D => {
-                caret.lf(buf, current_layer);
+                buf.lf();
                 self.reverse_mode = false;
             }
-            0x0E => self.update_shift_mode(buf, current_layer, false),
-            0x0F => self.update_shift_mode(buf, current_layer, true), // Some sources use 0x0F as SHIFT IN
-            0x11 => caret.down(buf, current_layer, 1),
+            0x0E => self.update_shift_mode(buf, false),
+            0x0F => self.update_shift_mode(buf, true), // Some sources use 0x0F as SHIFT IN
+            0x11 => buf.down(1),
             0x12 => self.reverse_mode = true,
-            0x13 => caret.home(buf),
-            0x14 => caret.bs(buf, current_layer),
+            0x13 => buf.home(),
+            0x14 => buf.bs(),
             0x1B => self.got_esc = true,
             0x1C => caret.set_foreground(RED),
-            0x1D => caret.right(buf, 1),
+            0x1D => buf.right(1),
             0x1E => caret.set_foreground(GREEN),
             0x1F => caret.set_foreground(BLUE),
             0x81 => caret.set_foreground(ORANGE),
-            0x8E => self.update_shift_mode(buf, current_layer, true), // SHIFT IN
+            0x8E => self.update_shift_mode(buf, true), // SHIFT IN
             0x90 => caret.set_foreground(BLACK),
-            0x91 => caret.up(buf, current_layer, 1),
+            0x91 => buf.up(1),
             0x92 => self.reverse_mode = false,
             0x93 => {
-                buf.clear_screen(current_layer, caret);
+                buf.reset_terminal();
             }
             0x95 => caret.set_foreground(BROWN),
             0x96 => caret.set_foreground(PINK),
@@ -189,10 +190,10 @@ impl BufferParser for Parser {
             0x9A => caret.set_foreground(LIGHT_BLUE),
             0x9B => caret.set_foreground(GREY3),
             0x9C => caret.set_foreground(PURPLE),
-            0x9D => caret.left(buf, 1),
+            0x9D => buf.left(1),
             0x9E => caret.set_foreground(YELLOW),
             0x9F => caret.set_foreground(CYAN),
-            0xFF => buf.print_value(current_layer, caret, 94), // PI character
+            0xFF => buf.print_value(94), // PI character
             _ => {
                 let tch = self.petscii_to_internal(byte)?;
                 let mut ch = AttributedChar::new(self.apply_reverse(tch) as char, caret.attribute);
@@ -202,7 +203,7 @@ impl BufferParser for Parser {
                     a.set_is_underlined(true);
                     ch.attribute = a;
                 }
-                buf.print_char(current_layer, caret, ch);
+                buf.print_char(ch);
             }
         }
         Ok(CallbackAction::Update)

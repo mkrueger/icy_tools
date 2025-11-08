@@ -687,7 +687,11 @@ impl TerminalRenderer {
 
             gl.uniform_1_f32(
                 gl.get_uniform_location(self.terminal_shader, "u_selection_attr").as_ref(),
-                if buffer_view.get_buffer().is_terminal_buffer { 1.0 } else { 0.0 },
+                if buffer_view.get_buffer().terminal_state.is_terminal_buffer {
+                    1.0
+                } else {
+                    0.0
+                },
             );
 
             crate::check_gl_error!(gl, "run_shader");

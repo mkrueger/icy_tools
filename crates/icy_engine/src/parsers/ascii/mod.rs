@@ -1,7 +1,7 @@
 use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
 
 use super::{BufferParser, TAB};
-use crate::{BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, FF, LF, UnicodeConverter};
+use crate::{BEL, BS, CR, CallbackAction, EditableScreen, EngineResult, FF, LF, UnicodeConverter};
 #[derive(Default)]
 pub struct Parser {}
 
@@ -38,21 +38,21 @@ impl UnicodeConverter for IdentityConverter {
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         match ch {
             '\x00' | '\u{00FF}' => {
-                caret.reset_color_attribute();
+                buf.caret_mut().reset_color_attribute();
             }
             BEL => {
                 return Ok(CallbackAction::Beep);
             }
-            LF => return Ok(caret.lf(buf, current_layer)),
-            FF => caret.ff(buf, current_layer),
-            CR => caret.cr(buf),
-            BS => caret.bs(buf, current_layer),
-            TAB => caret.tab_forward(buf),
-            '\x7F' => caret.del(buf, current_layer),
-            _ => buf.print_value(current_layer, caret, ch as u16),
+            LF => return Ok(buf.lf()),
+            FF => buf.ff(),
+            CR => buf.cr(),
+            BS => buf.bs(),
+            TAB => buf.tab_forward(),
+            '\x7F' => buf.del(),
+            _ => buf.print_value(ch as u16),
         }
         Ok(CallbackAction::NoUpdate)
     }

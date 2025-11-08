@@ -32,6 +32,8 @@ use log4rs::{
 };
 use semver::Version;
 
+use crate::ui::window_manager::WindowManager;
+
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 lazy_static! {
@@ -52,7 +54,7 @@ lazy_static::lazy_static! {
         VERSION.clone()
     };
 }
-
+/*
 #[derive(rust_embed::RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources
 struct Localizations;
@@ -66,7 +68,7 @@ static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::n
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
     let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
     loader
-});
+});*/
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

@@ -5,6 +5,5 @@ pub mod message;
 pub use message::*;
 
 pub mod window_manager;
-pub use window_manager::*;
 
 pub mod mail_reader;

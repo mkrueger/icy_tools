@@ -135,7 +135,7 @@ impl FontGlyph {
         fn get_actual_line_length(buffer: &Buffer, y: i32) -> i32 {
             let mut len = 0;
             for x in 0..buffer.get_width() {
-                let ch = buffer.get_char((x, y));
+                let ch = buffer.get_char((x, y).into());
                 if !ch.is_transparent() || ch.attribute.get_background() != TextAttribute::TRANSPARENT_COLOR && ch.attribute.get_background() > 0 {
                     len = x + 1;
                 }
@@ -152,7 +152,7 @@ impl FontGlyph {
                 // Check for & terminator to get actual width
                 let mut actual_line_length = 0;
                 for x in 0..line_length {
-                    let ch = buffer.get_char((x, y));
+                    let ch = buffer.get_char((x, y).into());
                     actual_line_length = x + 1;
                     if ch.ch == '&' {
                         break; // Stop at &
@@ -182,7 +182,7 @@ impl FontGlyph {
                     let mut line_data = Vec::new();
 
                     for x in 0..line_length {
-                        let ch = buffer.get_char((x, y));
+                        let ch = buffer.get_char((x, y).into());
 
                         // Check for end-of-line marker
                         if ch.ch == '&' {
@@ -209,7 +209,7 @@ impl FontGlyph {
                     let line_length = get_actual_line_length(buffer, y);
 
                     for x in 0..line_length {
-                        let ch = buffer.get_char((x, y));
+                        let ch = buffer.get_char((x, y).into());
 
                         // Include character
                         data.push(ch.ch as u8);
@@ -231,7 +231,7 @@ impl FontGlyph {
                     let line_length = get_actual_line_length(buffer, y);
 
                     for x in 0..line_length {
-                        let ch = buffer.get_char((x, y));
+                        let ch = buffer.get_char((x, y).into());
 
                         // Check for end-of-line marker
                         if ch.ch == '&' {
@@ -257,7 +257,7 @@ impl FontGlyph {
 
                     let line_length = get_actual_line_length(buffer, y);
                     for x in 0..line_length {
-                        let ch = buffer.get_char((x, y));
+                        let ch = buffer.get_char((x, y).into());
                         data.push(ch.ch as u8);
                     }
                 }

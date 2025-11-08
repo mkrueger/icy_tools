@@ -1,5 +1,5 @@
 use super::{BufferParser, ansi};
-use crate::{Buffer, CallbackAction, Caret, EngineResult};
+use crate::{CallbackAction, EditableScreen, EngineResult};
 
 #[derive(Default, Clone, Copy, PartialEq)]
 enum State {
@@ -27,14 +27,15 @@ impl Default for Parser {
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
+        let caret = buf.caret_mut();
         match self.state {
             State::Normal => match ch {
                 '|' => {
                     self.state = State::ParseFirstColor;
                     Ok(CallbackAction::NoUpdate)
                 }
-                _ => self.ansi_parser.print_char(buf, current_layer, caret, ch),
+                _ => self.ansi_parser.print_char(buf, ch),
             },
             State::ParseFirstColor => {
                 let code = ch as u8;

@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{Buffer, CallbackAction, Caret, EngineResult, ParserError, TextAttribute};
+use crate::{CallbackAction, EditableScreen, EngineResult, ParserError, TextAttribute};
 use std::cmp::{max, min};
 
 #[derive(Debug)]
@@ -44,17 +44,17 @@ impl Default for Parser {
 }
 
 impl Parser {
-    fn print_fallback(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
-        self.ansi_parser.print_char(buf, current_layer, caret, ch)
+    fn print_fallback(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
+        self.ansi_parser.print_char(buf, ch)
     }
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         match self.avt_state {
             AvtReadState::Chars => {
                 match ch {
-                    AVT_CLR => caret.ff(buf, current_layer), // clear & reset attributes
+                    AVT_CLR => buf.ff(), // clear & reset attributes
                     AVT_REP => {
                         self.avt_state = AvtReadState::RepeatChars;
                         self.avatar_state = 1;
@@ -62,7 +62,7 @@ impl BufferParser for Parser {
                     AVT_CMD => {
                         self.avt_state = AvtReadState::ReadCommand;
                     }
-                    _ => return self.print_fallback(buf, current_layer, caret, ch),
+                    _ => return self.print_fallback(buf, ch),
                 }
                 Ok(CallbackAction::NoUpdate)
             }
@@ -73,20 +73,20 @@ impl BufferParser for Parser {
                         return Ok(CallbackAction::NoUpdate);
                     }
                     2 => {
-                        caret.attribute.set_is_blinking(true);
+                        buf.caret_mut().attribute.set_is_blinking(true);
                     }
                     3 => {
-                        caret.pos.y = max(0, caret.pos.y - 1);
+                        buf.caret_mut().position.y = max(0, buf.caret_mut().position.y - 1);
                     }
                     4 => {
-                        caret.pos.y += 1;
+                        buf.caret_mut().position.y += 1;
                     }
 
                     5 => {
-                        caret.pos.x = max(0, caret.pos.x - 1);
+                        buf.caret_mut().position.x = max(0, buf.caret_mut().position.x - 1);
                     }
                     6 => {
-                        caret.pos.x = min(79, caret.pos.x + 1);
+                        buf.caret_mut().position.x = min(79, buf.caret_mut().position.x + 1);
                     }
                     AVT_MOVE_CLREOL => {
                         return Err(ParserError::Description("todo: avt cleareol").into());
@@ -115,7 +115,7 @@ impl BufferParser for Parser {
                     self.avatar_state = 3;
                     let repeat_count = ch as usize;
                     for _ in 0..repeat_count {
-                        self.ansi_parser.print_char(buf, current_layer, caret, self.avt_repeat_char)?;
+                        self.ansi_parser.print_char(buf, self.avt_repeat_char)?;
                     }
                     self.avt_state = AvtReadState::Chars;
                     Ok(CallbackAction::NoUpdate)
@@ -126,7 +126,8 @@ impl BufferParser for Parser {
                 }
             },
             AvtReadState::ReadColor => {
-                caret.attribute = TextAttribute::from_u8(ch as u8, buf.ice_mode);
+                let ice = buf.ice_mode();
+                buf.caret_mut().attribute = TextAttribute::from_u8(ch as u8, ice);
                 self.avt_state = AvtReadState::Chars;
                 Ok(CallbackAction::NoUpdate)
             }
@@ -137,8 +138,8 @@ impl BufferParser for Parser {
                     Ok(CallbackAction::NoUpdate)
                 }
                 2 => {
-                    caret.pos.x = self.avt_repeat_char as i32;
-                    caret.pos.y = ch as i32;
+                    buf.caret_mut().position.x = self.avt_repeat_char as i32;
+                    buf.caret_mut().position.y = ch as i32;
 
                     self.avt_state = AvtReadState::Chars;
                     Ok(CallbackAction::NoUpdate)

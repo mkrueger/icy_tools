@@ -7,7 +7,7 @@ use super::{
     vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
 };
 use crate::{
-    BitFont, Buffer, CallbackAction, Caret, Color, EngineResult, IGS_PALETTE, IGS_SYSTEM_PALETTE, Position, Size,
+    BitFont, CallbackAction, Caret, Color, EditableScreen, EngineResult, IGS_PALETTE, IGS_SYSTEM_PALETTE, Position, Size,
     igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN, vdi::blit_px},
     load_atari_fonts,
 };
@@ -250,8 +250,8 @@ impl DrawExecutor {
         // self.screen = vec![1; (res.width * res.height) as usize];
     }
 
-    pub fn init_resolution(&mut self, buf: &mut Buffer, caret: &mut Caret) {
-        buf.clear_screen(0, caret);
+    pub fn init_resolution(&mut self, buf: &mut dyn EditableScreen) {
+        buf.clear_screen();
         let res = self.get_resolution();
         self.screen = vec![1; (res.width * res.height) as usize];
     }
@@ -1003,8 +1003,7 @@ impl DrawExecutor {
 
     pub fn execute_command(
         &mut self,
-        buf: &mut Buffer,
-        caret: &mut Caret,
+        buf: &mut dyn EditableScreen,
         command: IgsCommands,
         parameters: &[i32],
         string_parameter: &str,
@@ -1016,19 +1015,19 @@ impl DrawExecutor {
                 }
                 match parameters[0] {
                     0 => {
-                        self.init_resolution(buf, caret);
+                        self.init_resolution(buf);
                         self.pen_colors = IGS_SYSTEM_PALETTE.to_vec();
                         self.reset_attributes();
                     }
                     1 => {
-                        self.init_resolution(buf, caret);
+                        self.init_resolution(buf);
                         self.pen_colors = IGS_SYSTEM_PALETTE.to_vec();
                     }
                     2 => {
                         self.reset_attributes();
                     }
                     3 => {
-                        self.init_resolution(buf, caret);
+                        self.init_resolution(buf);
                         self.pen_colors = IGS_PALETTE.to_vec();
                     }
                     x => return Err(anyhow::anyhow!("Initialize unknown/unsupported argument: {x}")),
@@ -1045,7 +1044,7 @@ impl DrawExecutor {
                     5 => ClearCommand::ClearScreen,
                     _ => return Err(anyhow::anyhow!("ScreenClear unknown/unsupported argument: {}", parameters[0])),
                 };
-                self.clear(cmd, caret);
+                self.clear(cmd, buf.caret_mut());
                 Ok(CallbackAction::Update)
             }
             IgsCommands::AskIG => {
@@ -1063,8 +1062,8 @@ impl DrawExecutor {
                     return Err(anyhow::anyhow!("Cursor command requires 1 argument"));
                 }
                 match parameters[0] {
-                    0 => caret.set_is_visible(false),
-                    1 => caret.set_is_visible(true),
+                    0 => buf.caret_mut().set_is_visible(false),
+                    1 => buf.caret_mut().set_is_visible(true),
                     2 | 3 => {
                         log::warn!("Backspace options not supported.");
                     }
@@ -1593,9 +1592,11 @@ impl DrawExecutor {
                     let color = self.pen_colors[*pen].clone();
 
                     if parameters[0] == 0 {
-                        caret.set_background(buf.palette.insert_color(color));
+                        let c = buf.palette_mut().insert_color(color);
+                        buf.caret_mut().set_background(c);
                     } else if parameters[0] == 1 {
-                        caret.set_foreground(buf.palette.insert_color(color));
+                        let c = buf.palette_mut().insert_color(color);
+                        buf.caret_mut().set_foreground(c);
                     } else {
                         return Err(anyhow::anyhow!("VTColor unknown/unsupported color mode: {}", parameters[0]));
                     }
@@ -1608,7 +1609,7 @@ impl DrawExecutor {
                 if parameters.len() < 2 {
                     return Err(anyhow::anyhow!("VTPosition command requires 2 argument"));
                 }
-                caret.set_position(Position::new(parameters[0], parameters[1]));
+                buf.caret_mut().set_position(Position::new(parameters[0], parameters[1]));
                 Ok(CallbackAction::NoUpdate)
             }
             IgsCommands::BellsAndWhistles => {

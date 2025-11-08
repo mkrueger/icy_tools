@@ -12,8 +12,8 @@ use self::sound::{AnsiMusic, MusicState};
 
 use super::{BufferParser, TAB};
 use crate::{
-    AttributedChar, AutoWrapMode, BEL, BS, Buffer, CR, CallbackAction, Caret, EngineResult, ExtMouseMode, FF, FontSelectionState, HyperLink, IceMode, LF,
-    MouseMode, OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
+    AttributedChar, AutoWrapMode, BEL, BS, CR, CallbackAction, Caret, EditableScreen, EngineResult, ExtMouseMode, FF, FontSelectionState, HyperLink, IceMode,
+    LF, MouseMode, OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
 };
 
 mod ansi_commands;
@@ -180,7 +180,7 @@ impl Default for Parser {
 
 impl BufferParser for Parser {
     #[allow(clippy::single_match)]
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         match &self.state {
             EngineState::ParseAnsiMusic(_) => {
                 return self.parse_ansi_music(ch);
@@ -204,32 +204,32 @@ impl BufferParser for Parser {
                         '7' => {
                             // DECSC - Save Cursor
                             self.saved_cursor_state = Some(SavedCursorState {
-                                caret: caret.clone(),
-                                origin_mode: buf.terminal_state.origin_mode,
-                                auto_wrap_mode: buf.terminal_state.auto_wrap_mode,
+                                caret: buf.caret().clone(),
+                                origin_mode: buf.terminal_state().origin_mode,
+                                auto_wrap_mode: buf.terminal_state().auto_wrap_mode,
                             });
                             Ok(CallbackAction::NoUpdate)
                         }
                         '8' => {
                             // DECRC - Restore Cursor
                             if let Some(saved_state) = &self.saved_cursor_state {
-                                *caret = saved_state.caret.clone();
-                                buf.terminal_state.origin_mode = saved_state.origin_mode;
-                                buf.terminal_state.auto_wrap_mode = saved_state.auto_wrap_mode;
+                                *buf.caret_mut() = saved_state.caret.clone();
+                                buf.terminal_state_mut().origin_mode = saved_state.origin_mode;
+                                buf.terminal_state_mut().auto_wrap_mode = saved_state.auto_wrap_mode;
                             } else {
                                 // If no saved state, reset to defaults per VT100 spec
-                                caret.reset();
-                                caret.pos = Position::default();
-                                buf.terminal_state.origin_mode = OriginMode::UpperLeftCorner;
-                                buf.terminal_state.auto_wrap_mode = AutoWrapMode::AutoWrap;
+                                buf.caret_mut().reset();
+                                buf.caret_mut().position = Position::default();
+                                buf.terminal_state_mut().origin_mode = OriginMode::UpperLeftCorner;
+                                buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
                             }
                             Ok(CallbackAction::Update)
                         }
 
                         'c' => {
                             // RIS—Reset to Initial State see https://vt100.net/docs/vt510-rm/RIS.html
-                            buf.clear_screen(current_layer, caret);
-                            caret.reset();
+                            buf.clear_screen();
+                            buf.caret_mut().reset();
                             buf.reset_terminal();
                             self.macros.clear();
                             self.saved_cursor_state = None;
@@ -239,18 +239,18 @@ impl BufferParser for Parser {
 
                         'D' => {
                             // Index
-                            caret.index(buf, current_layer);
+                            buf.index();
                             Ok(CallbackAction::Update)
                         }
                         'M' => {
                             // Reverse Index
-                            caret.reverse_index(buf, current_layer);
+                            buf.reverse_index();
                             Ok(CallbackAction::Update)
                         }
 
                         'E' => {
                             // Next Line
-                            caret.next_line(buf, current_layer);
+                            buf.next_line();
                             Ok(CallbackAction::Update)
                         }
 
@@ -264,7 +264,8 @@ impl BufferParser for Parser {
                         'H' => {
                             // set tab at current column
                             self.state = EngineState::Default;
-                            buf.terminal_state.set_tab_at(caret.get_position().x);
+                            let x = buf.caret().position.x;
+                            buf.terminal_state_mut().set_tab_at(x);
                             Ok(CallbackAction::NoUpdate)
                         }
 
@@ -283,8 +284,8 @@ impl BufferParser for Parser {
                         FF | BEL | BS | '\x09' | '\x7F' | '\x1B' | '\n' | '\r' => {
                             // non standard extension to print esc chars ESC ESC -> ESC
                             self.last_char = ch;
-                            let ch = AttributedChar::new(self.last_char, caret.get_attribute());
-                            buf.print_char(current_layer, caret, ch);
+                            let ch = AttributedChar::new(self.last_char, buf.caret().get_attribute());
+                            buf.print_char(ch);
                             Ok(CallbackAction::Update)
                         }
                         _ => {
@@ -304,7 +305,7 @@ impl BufferParser for Parser {
             EngineState::ReadAPSEscape => {
                 if ch == '\\' {
                     self.state = EngineState::Default;
-                    self.execute_aps_command(buf, caret);
+                    self.execute_aps_command(buf);
                     return Ok(CallbackAction::NoUpdate);
                 }
                 self.state = EngineState::ReadAPS;
@@ -358,7 +359,7 @@ impl BufferParser for Parser {
                         return Err(ParserError::UnsupportedDCSSequence(format!("Macro hasn't one number defined got '{}'", self.parsed_numbers.len())).into());
                     }
                     self.state = EngineState::RecordDCS;
-                    self.invoke_macro_by_id(buf, current_layer, caret, *self.parsed_numbers.first().unwrap());
+                    self.invoke_macro_by_id(buf, *self.parsed_numbers.first().unwrap());
                     return Ok(CallbackAction::NoUpdate);
                 }
                 self.parse_string.push('\x1b');
@@ -381,7 +382,7 @@ impl BufferParser for Parser {
             EngineState::RecordDCSEscape => {
                 if ch == '\\' {
                     self.state = EngineState::Default;
-                    return self.execute_dcs(buf, caret);
+                    return self.execute_dcs(buf);
                 }
                 if ch == '[' {
                     self.state = EngineState::ReadPossibleMacroInDCS(1);
@@ -401,7 +402,7 @@ impl BufferParser for Parser {
                 }
                 if ch == '\x07' {
                     self.state = EngineState::Default;
-                    return self.parse_osc(buf, caret);
+                    return self.parse_osc(buf);
                 }
                 self.parse_string.push(ch);
                 return Ok(CallbackAction::NoUpdate);
@@ -409,7 +410,7 @@ impl BufferParser for Parser {
             EngineState::ReadOSCSequenceEscape => {
                 if ch == '\\' {
                     self.state = EngineState::Default;
-                    return self.parse_osc(buf, caret);
+                    return self.parse_osc(buf);
                 }
                 self.state = EngineState::ReadOSCSequence;
                 self.parse_string.push('\x1B');
@@ -425,54 +426,54 @@ impl BufferParser for Parser {
                             return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
-                            Some(4) => buf.terminal_state.scroll_state = TerminalScrolling::Fast,
+                            Some(4) => buf.terminal_state_mut().scroll_state = TerminalScrolling::Fast,
                             Some(6) => {
-                                //  buf.terminal_state.origin_mode = OriginMode::WithinMargins;
+                                //  buf.terminal_state().origin_mode = OriginMode::WithinMargins;
                             }
-                            Some(7) => buf.terminal_state.auto_wrap_mode = AutoWrapMode::NoWrap,
-                            Some(25) => caret.set_is_visible(false),
-                            Some(33) => caret.set_ice_mode(false),
-                            Some(35) => caret.is_blinking = true,
+                            Some(7) => buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::NoWrap,
+                            Some(25) => buf.caret_mut().set_is_visible(false),
+                            Some(33) => buf.caret_mut().set_ice_mode(false),
+                            Some(35) => buf.caret_mut().is_blinking = true,
 
                             Some(69) => {
-                                buf.terminal_state.dec_margin_mode_left_right = false;
-                                buf.terminal_state.clear_margins_left_right();
+                                buf.terminal_state_mut().dec_margin_mode_left_right = false;
+                                buf.terminal_state_mut().clear_margins_left_right();
                             }
 
                             // Mouse tracking modes - turn off
                             Some(9 | 1000 | 1001 | 1002 | 1003) => {
-                                buf.terminal_state.reset_mouse_mode();
+                                buf.terminal_state_mut().reset_mouse_mode();
                             }
                             Some(1004) => {
                                 // Turn off focus event reporting
-                                buf.terminal_state.mouse_state.focus_out_event_enabled = false;
+                                buf.terminal_state_mut().mouse_state.focus_out_event_enabled = false;
                             }
                             Some(1007) => {
                                 // Turn off alternate scroll mode
-                                buf.terminal_state.mouse_state.alternate_scroll_enabled = false;
+                                buf.terminal_state_mut().mouse_state.alternate_scroll_enabled = false;
                             }
                             Some(1005) => {
                                 // Turn off UTF-8 extended mouse mode
-                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::Extended) {
-                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                if matches!(buf.terminal_state_mut().mouse_state.extended_mode, ExtMouseMode::Extended) {
+                                    buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::None;
                                 }
                             }
                             Some(1006) => {
                                 // Turn off SGR extended mouse mode
-                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::SGR) {
-                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                if matches!(buf.terminal_state_mut().mouse_state.extended_mode, ExtMouseMode::SGR) {
+                                    buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::None;
                                 }
                             }
                             Some(1015) => {
                                 // Turn off URXVT extended mouse mode
-                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::URXVT) {
-                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                if matches!(buf.terminal_state_mut().mouse_state.extended_mode, ExtMouseMode::URXVT) {
+                                    buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::None;
                                 }
                             }
                             Some(1016) => {
                                 // Turn off pixel position mode
-                                if matches!(buf.terminal_state.mouse_state.extended_mode, ExtMouseMode::PixelPosition) {
-                                    buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::None;
+                                if matches!(buf.terminal_state_mut().mouse_state.extended_mode, ExtMouseMode::PixelPosition) {
+                                    buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::None;
                                 }
                             }
                             _ => {
@@ -486,40 +487,40 @@ impl BufferParser for Parser {
                             return self.unsupported_escape_error();
                         }
                         match self.parsed_numbers.first() {
-                            Some(4) => buf.terminal_state.scroll_state = TerminalScrolling::Smooth,
-                            Some(6) => buf.terminal_state.origin_mode = OriginMode::UpperLeftCorner,
-                            Some(7) => buf.terminal_state.auto_wrap_mode = AutoWrapMode::AutoWrap,
-                            Some(25) => caret.set_is_visible(true),
+                            Some(4) => buf.terminal_state_mut().scroll_state = TerminalScrolling::Smooth,
+                            Some(6) => buf.terminal_state_mut().origin_mode = OriginMode::UpperLeftCorner,
+                            Some(7) => buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap,
+                            Some(25) => buf.caret_mut().set_is_visible(true),
                             Some(33) => {
-                                buf.ice_mode = IceMode::Ice;
-                                caret.set_ice_mode(true);
+                                *buf.ice_mode_mut() = IceMode::Ice;
+                                buf.caret_mut().set_ice_mode(true);
                             }
-                            Some(35) => caret.is_blinking = false,
+                            Some(35) => buf.caret_mut().is_blinking = false,
 
-                            Some(69) => buf.terminal_state.dec_margin_mode_left_right = true,
+                            Some(69) => buf.terminal_state_mut().dec_margin_mode_left_right = true,
 
                             // Mouse tracking see https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Normal-tracking-mode
-                            Some(9) => buf.terminal_state.set_mouse_mode(MouseMode::X10),
-                            Some(1000) => buf.terminal_state.set_mouse_mode(MouseMode::VT200),
+                            Some(9) => buf.terminal_state_mut().set_mouse_mode(MouseMode::X10),
+                            Some(1000) => buf.terminal_state_mut().set_mouse_mode(MouseMode::VT200),
                             Some(1001) => {
-                                buf.terminal_state.set_mouse_mode(MouseMode::VT200_Highlight);
+                                buf.terminal_state_mut().set_mouse_mode(MouseMode::VT200_Highlight);
                             }
-                            Some(1002) => buf.terminal_state.set_mouse_mode(MouseMode::ButtonEvents),
-                            Some(1003) => buf.terminal_state.set_mouse_mode(MouseMode::AnyEvents),
+                            Some(1002) => buf.terminal_state_mut().set_mouse_mode(MouseMode::ButtonEvents),
+                            Some(1003) => buf.terminal_state_mut().set_mouse_mode(MouseMode::AnyEvents),
 
-                            Some(1004) => buf.terminal_state.mouse_state.focus_out_event_enabled = true,
+                            Some(1004) => buf.terminal_state_mut().mouse_state.focus_out_event_enabled = true,
                             Some(1007) => {
-                                buf.terminal_state.mouse_state.alternate_scroll_enabled = true;
+                                buf.terminal_state_mut().mouse_state.alternate_scroll_enabled = true;
                             }
-                            Some(1005) => buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::Extended,
+                            Some(1005) => buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::Extended,
                             Some(1006) => {
-                                buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::SGR;
+                                buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::SGR;
                             }
                             Some(1015) => {
-                                buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::URXVT;
+                                buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::URXVT;
                             }
                             Some(1016) => {
-                                buf.terminal_state.mouse_state.extended_mode = ExtMouseMode::PixelPosition;
+                                buf.terminal_state_mut().mouse_state.extended_mode = ExtMouseMode::PixelPosition;
                             }
 
                             Some(cmd) => {
@@ -586,7 +587,7 @@ impl BufferParser for Parser {
                         match self.parsed_numbers.first() {
                             Some(1) => {
                                 // font state report
-                                let font_selection_result = match buf.terminal_state.font_selection_state {
+                                let font_selection_result = match buf.terminal_state().font_selection_state {
                                     FontSelectionState::NoRequest => 99,
                                     FontSelectionState::Success => 0,
                                     FontSelectionState::Failure => 1,
@@ -594,32 +595,32 @@ impl BufferParser for Parser {
 
                                 return Ok(CallbackAction::SendString(format!(
                                     "\x1B[=1;{font_selection_result};{};{};{};{}n",
-                                    buf.terminal_state.normal_attribute_font_slot,
-                                    buf.terminal_state.high_intensity_attribute_font_slot,
-                                    buf.terminal_state.blink_attribute_font_slot,
-                                    buf.terminal_state.high_intensity_blink_attribute_font_slot
+                                    buf.terminal_state().normal_attribute_font_slot,
+                                    buf.terminal_state().high_intensity_attribute_font_slot,
+                                    buf.terminal_state().blink_attribute_font_slot,
+                                    buf.terminal_state().high_intensity_blink_attribute_font_slot
                                 )));
                             }
                             Some(2) => {
                                 // font mode report
                                 let mut params = Vec::new();
-                                if buf.terminal_state.origin_mode == OriginMode::WithinMargins {
+                                if buf.terminal_state().origin_mode == OriginMode::WithinMargins {
                                     params.push("6");
                                 }
-                                if buf.terminal_state.auto_wrap_mode == AutoWrapMode::AutoWrap {
+                                if buf.terminal_state().auto_wrap_mode == AutoWrapMode::AutoWrap {
                                     params.push("7");
                                 }
-                                if caret.is_visible() {
+                                if buf.caret().is_visible() {
                                     params.push("25");
                                 }
-                                if caret.ice_mode() {
+                                if buf.caret().ice_mode() {
                                     params.push("33");
                                 }
-                                if caret.is_blinking {
+                                if buf.caret().is_blinking {
                                     params.push("35");
                                 }
 
-                                match buf.terminal_state.mouse_mode() {
+                                match buf.terminal_state().mouse_mode() {
                                     MouseMode::OFF => {}
                                     MouseMode::X10 => params.push("9"),
                                     MouseMode::VT200 => params.push("1000"),
@@ -628,16 +629,16 @@ impl BufferParser for Parser {
                                     MouseMode::AnyEvents => params.push("1003"),
                                 }
 
-                                if buf.terminal_state.mouse_state.focus_out_event_enabled {
+                                if buf.terminal_state().mouse_state.focus_out_event_enabled {
                                     params.push("1004");
                                 }
 
-                                if buf.terminal_state.mouse_state.alternate_scroll_enabled {
+                                if buf.terminal_state().mouse_state.alternate_scroll_enabled {
                                     params.push("1007");
                                 }
 
                                 // Report the extended encoding mode
-                                match buf.terminal_state.mouse_state.extended_mode {
+                                match buf.terminal_state().mouse_state.extended_mode {
                                     ExtMouseMode::None => {}
                                     ExtMouseMode::Extended => params.push("1005"),
                                     ExtMouseMode::SGR => params.push("1006"),
@@ -690,12 +691,12 @@ impl BufferParser for Parser {
 
             EngineState::ReadRIPSupportRequest => {
                 if let 'p' = ch {
-                    self.soft_terminal_reset(buf, caret);
+                    self.soft_terminal_reset(buf);
                 } else {
                     // potential rip support request
                     // ignore that for now and continue parsing
                     self.state = EngineState::Default;
-                    return self.print_char(buf, current_layer, caret, ch);
+                    return self.print_char(buf, ch);
                 }
             }
 
@@ -754,7 +755,7 @@ impl BufferParser for Parser {
                 }
 
                 '*' => match ch {
-                    'z' => return self.invoke_macro(buf, current_layer, caret),
+                    'z' => return self.invoke_macro(buf),
                     'r' => return self.select_communication_speed(buf),
                     'y' => return self.request_checksum_of_rectangular_area(buf),
                     _ => {}
@@ -765,10 +766,10 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         if let Some(2) = self.parsed_numbers.first() {
                             let mut str = "\x1BP2$u".to_string();
-                            (0..buf.terminal_state.tab_count()).for_each(|i| {
-                                let tab = buf.terminal_state.get_tabs()[i];
+                            (0..buf.terminal_state().tab_count()).for_each(|i| {
+                                let tab = buf.terminal_state().get_tabs()[i];
                                 str.push_str(&(tab + 1).to_string());
-                                if i < buf.terminal_state.tab_count().saturating_sub(1) {
+                                if i < buf.terminal_state().tab_count().saturating_sub(1) {
                                     str.push('/');
                                 }
                             });
@@ -776,7 +777,7 @@ impl BufferParser for Parser {
                             return Ok(CallbackAction::SendString(str));
                         }
                     }
-                    'x' => return self.fill_rectangular_area(buf, caret),
+                    'x' => return self.fill_rectangular_area(buf),
                     'z' => return self.erase_rectangular_area(buf),
                     '{' => return self.selective_erase_rectangular_area(buf),
 
@@ -787,9 +788,9 @@ impl BufferParser for Parser {
                     self.state = EngineState::Default;
 
                     match ch {
-                        'D' => return self.font_selection(buf, caret),
-                        'A' => self.scroll_right(buf, current_layer),
-                        '@' => self.scroll_left(buf, current_layer),
+                        'D' => return self.font_selection(buf),
+                        'A' => self.scroll_right(buf),
+                        '@' => self.scroll_left(buf),
                         'd' => return self.tabulation_stop_remove(buf),
                         'q' => {
                             // DECSCUSR—Set Cursor Style
@@ -811,33 +812,33 @@ impl BufferParser for Parser {
                             match style {
                                 0 | 1 => {
                                     // Blinking block (default)
-                                    caret.is_blinking = true;
-                                    caret.set_shape(crate::CaretShape::Block);
+                                    buf.caret_mut().is_blinking = true;
+                                    buf.caret_mut().set_shape(crate::CaretShape::Block);
                                 }
                                 2 => {
                                     // Steady block
-                                    caret.is_blinking = false;
-                                    caret.set_shape(crate::CaretShape::Block);
+                                    buf.caret_mut().is_blinking = false;
+                                    buf.caret_mut().set_shape(crate::CaretShape::Block);
                                 }
                                 3 => {
                                     // Blinking underline
-                                    caret.is_blinking = true;
-                                    caret.set_shape(crate::CaretShape::Underline);
+                                    buf.caret_mut().is_blinking = true;
+                                    buf.caret_mut().set_shape(crate::CaretShape::Underline);
                                 }
                                 4 => {
                                     // Steady underline
-                                    caret.is_blinking = false;
-                                    caret.set_shape(crate::CaretShape::Underline);
+                                    buf.caret_mut().is_blinking = false;
+                                    buf.caret_mut().set_shape(crate::CaretShape::Underline);
                                 }
                                 5 => {
                                     // Blinking bar
-                                    caret.is_blinking = true;
-                                    caret.set_shape(crate::CaretShape::Bar);
+                                    buf.caret_mut().is_blinking = true;
+                                    buf.caret_mut().set_shape(crate::CaretShape::Bar);
                                 }
                                 6 => {
                                     // Steady bar
-                                    caret.is_blinking = false;
-                                    caret.set_shape(crate::CaretShape::Bar);
+                                    buf.caret_mut().is_blinking = false;
+                                    buf.caret_mut().set_shape(crate::CaretShape::Bar);
                                 }
                                 _ => {
                                     // Invalid cursor style, ignore
@@ -858,33 +859,33 @@ impl BufferParser for Parser {
             },
             EngineState::ReadCSISequence(is_start) => {
                 match ch {
-                    'm' => return self.select_graphic_rendition(caret, buf),
+                    'm' => return self.select_graphic_rendition(buf),
                     'H' |    // Cursor Position
                     'f' // CSI Pn1 ; Pn2 f 
                         // HVP - Character and line position
                     => {
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            caret.pos = buf.upper_left_position();
+                            buf.caret_mut().position = buf.upper_left_position();
                         } else {
                             let row = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
-                            caret.pos.y = buf.get_first_visible_line() + row;
+                            buf.caret_mut().position.y = buf.get_first_visible_line() + row;
                             if self.parsed_numbers.len() > 1 {
                                 if self.parsed_numbers[1] >= 0 {
-                                    caret.pos.x = max(0, self.parsed_numbers[1] - 1);
+                                    buf.caret_mut().position.x = max(0, self.parsed_numbers[1] - 1);
                                 }
                             } else {
-                                caret.pos.x = 0;
+                                buf.caret_mut().position.x = 0;
                             }
                         }
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
                     'C' => {
                         // Cursor Forward
                         self.state = EngineState::Default;
                         let amount = self.parsed_numbers.first().copied().unwrap_or(1);
-                        caret.right(buf, amount);
+                        buf.right(amount);
                         return Ok(CallbackAction::Update);
                     }
                     'j' | // CSI Pn j
@@ -893,7 +894,8 @@ impl BufferParser for Parser {
                         // Cursor Back
                         self.state = EngineState::Default;
                         let amount = self.parsed_numbers.first().copied().unwrap_or(1);
-                        caret.left(buf, amount);                        return Ok(CallbackAction::Update);
+                        buf.left(amount);
+                        return Ok(CallbackAction::Update);
                     }
                     'k' | // CSI Pn k
                           // VPB - Line position backward
@@ -901,32 +903,32 @@ impl BufferParser for Parser {
                         // Cursor Up
                         self.state = EngineState::Default;
                         let amount = self.parsed_numbers.first().copied().unwrap_or(1);
-                        caret.up(buf, current_layer, amount);
+                        buf.up(amount);
                         return Ok(CallbackAction::Update);
                     }
                     'B' => {
                         // Cursor Down
                         self.state = EngineState::Default;
                         let amount = self.parsed_numbers.first().copied().unwrap_or(1);
-                        caret.down(buf, current_layer, amount);
+                        buf.down(amount);
                         return Ok(CallbackAction::Update);
                     }
                     's' => {
-                        if buf.terminal_state.dec_margin_mode_left_right {
+                        if buf.terminal_state().dec_margin_mode_left_right {
                             return self.set_left_and_right_margins(buf);
                         }
-                        self.save_cursor_position(caret);
+                        self.save_cursor_position(buf.caret());
                         return Ok(CallbackAction::NoUpdate);
                     }
-                    'u' => self.restore_cursor_position(caret),
+                    'u' => self.restore_cursor_position(buf.caret_mut()),
                     'd' => {
                         // CSI Pn d
                         // VPA - Line position absolute
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
 
-                        caret.pos.y = buf.get_first_visible_line() + num;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.y = buf.get_first_visible_line() + num;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
                     'e' => {
@@ -935,8 +937,8 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
 
-                        caret.pos.y = buf.get_first_visible_line() + caret.pos.y + num;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.y = buf.get_first_visible_line() + buf.caret().position.y + num;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
                     '\'' => {
@@ -944,8 +946,8 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
 
-                        caret.pos.x = num;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.x = num;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
                     'a' => {
@@ -954,8 +956,8 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
 
-                        caret.pos.x += num;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.x += num;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
 
@@ -964,8 +966,8 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1).saturating_sub(1);
 
-                        caret.pos.x = num;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.x = num;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
                     'E' => {
@@ -973,9 +975,9 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
 
-                        caret.pos.y = buf.get_first_visible_line() + caret.pos.y + num;
-                        caret.pos.x = 0;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.y = buf.get_first_visible_line() + buf.caret().position.y + num;
+                        buf.caret_mut().position.x = 0;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
                     'F' => {
@@ -983,9 +985,9 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
 
-                        caret.pos.y = buf.get_first_visible_line() + caret.pos.y - num;
-                        caret.pos.x = 0;
-                        buf.terminal_state.limit_caret_pos(buf, caret);
+                        buf.caret_mut().position.y = buf.get_first_visible_line() + buf.caret().position.y - num;
+                        buf.caret_mut().position.x = 0;
+                        buf.limit_caret_pos();
                         return Ok(CallbackAction::Update);
                     }
 
@@ -1008,8 +1010,8 @@ impl BufferParser for Parser {
                                 // Get cursor position
                                 let s = format!(
                                     "\x1b[{};{}R",
-                                    min(buf.terminal_state.get_height(), caret.pos.y + 1),
-                                    min(buf.terminal_state.get_width(), caret.pos.x + 1)
+                                    min(buf.terminal_state().get_height(), buf.caret().position.y + 1),
+                                    min(buf.terminal_state().get_width(), buf.caret().position.x + 1)
                                 );
                                 return Ok(CallbackAction::SendString(s));
                             }
@@ -1017,7 +1019,7 @@ impl BufferParser for Parser {
                                 // Current screen size
                                 let s = format!(
                                     "\x1b[{};{}R",
-                                    buf.terminal_state.get_height(), buf.terminal_state.get_width()
+                                    buf.terminal_state().get_height(), buf.terminal_state().get_width()
                                 );
                                 return Ok(CallbackAction::SendString(s));
                             }
@@ -1031,17 +1033,17 @@ impl BufferParser for Parser {
                         Insert Column 	  CSI Pn ' }
                         Delete Column 	  CSI Pn ' ~
                     */
-                    'X' => return self.erase_character(caret, buf, current_layer),
+                    'X' => return self.erase_character(buf),
                     '@' => {
                         // Insert character
                         self.state = EngineState::Default;
 
                         if let Some(number) = self.parsed_numbers.first() {
                             for _ in 0..*number {
-                                caret.ins(buf, current_layer);
+                                buf.ins();
                             }
                         } else {
-                            caret.ins(buf, current_layer);
+                            buf.ins();
                             if self.parsed_numbers.len() != 1 {
                                 return self.unsupported_escape_error();
                             }
@@ -1058,12 +1060,8 @@ impl BufferParser for Parser {
                             self.dotted_note = false;
                             self.state = EngineState::ParseAnsiMusic(MusicState::ParseMusicStyle);
                         } else if self.parsed_numbers.is_empty() {
-                            if let Some(layer) = buf.layers.first() {
-                                if caret.pos.y < layer.lines.len() as i32 {
-                                    buf.remove_terminal_line(current_layer, caret.pos.y);
-                                }
-                            } else {
-                                return Err(ParserError::InvalidBuffer.into());
+                            if buf.caret().position.y < buf.line_count() as i32 {
+                                buf.remove_terminal_line(buf.caret().position.y);
                             }
                         } else {
                             if self.parsed_numbers.len() != 1 {
@@ -1071,13 +1069,9 @@ impl BufferParser for Parser {
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 let mut number = *number;
-                                if let Some(layer) = buf.layers.first() {
-                                    number = min(number, layer.lines.len() as i32 - caret.pos.y);
-                                } else {
-                                    return Err(ParserError::InvalidBuffer.into());
-                                }
+                                number = min(number, buf.line_count() as i32 - buf.caret().position.y);
                                 for _ in 0..number {
-                                    buf.remove_terminal_line(current_layer, caret.pos.y);
+                                    buf.remove_terminal_line(buf.caret().position.y);
                                 }
                             } else {
                                 return self.unsupported_escape_error();
@@ -1109,14 +1103,14 @@ impl BufferParser for Parser {
                         // Delete character
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            caret.del(buf, current_layer);
+                            buf.del();
                         } else {
                             if self.parsed_numbers.len() != 1 {
                                 return self.unsupported_escape_error();
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 for _ in 0..*number {
-                                    caret.del(buf,current_layer);
+                                    buf.del();
                                 }
                             } else {
                                 return self.unsupported_escape_error();
@@ -1129,14 +1123,14 @@ impl BufferParser for Parser {
                         // Insert line
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            buf.insert_terminal_line( current_layer, caret.pos.y);
+                            buf.insert_terminal_line(buf.caret().position.y);
                         } else {
                             if self.parsed_numbers.len() != 1 {
                                 return self.unsupported_escape_error();
                             }
                             if let Some(number) = self.parsed_numbers.first() {
                                 for _ in 0..*number {
-                                    buf.insert_terminal_line(current_layer,caret.pos.y);
+                                    buf.insert_terminal_line(buf.caret().position.y);
                                 }
                             } else {
                                 return self.unsupported_escape_error();
@@ -1149,22 +1143,22 @@ impl BufferParser for Parser {
                         // Erase in Display
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            buf.clear_buffer_down(current_layer,caret);
+                            buf.clear_buffer_down();
                         } else if let Some(number) = self.parsed_numbers.first() {
                             match *number {
                                 0 => {
-                                    buf.clear_buffer_down(current_layer,caret);
+                                    buf.clear_buffer_down();
                                 }
                                 1 => {
-                                    buf.clear_buffer_up(current_layer,caret);
+                                    buf.clear_buffer_up();
                                 }
                                 2 |  // clear entire screen
                                 3 => {
-                                    buf.clear_screen(current_layer,caret);
+                                    buf.clear_screen();
                                     buf.clear_scrollback();
                                 }
                                 _ => {
-                                    buf.clear_buffer_down(current_layer,caret);
+                                    buf.clear_buffer_down();
                                     return self.unsupported_escape_error();
                                 }
                             }
@@ -1225,17 +1219,17 @@ impl BufferParser for Parser {
                         // Erase in line
                         self.state = EngineState::Default;
                         if self.parsed_numbers.is_empty() {
-                            buf.clear_line_end(current_layer,caret);
+                            buf.clear_line_end();
                         } else {
                             match self.parsed_numbers.first() {
                                 Some(0) => {
-                                    buf.clear_line_end(current_layer,caret);
+                                    buf.clear_line_end();
                                 }
                                 Some(1) => {
-                                    buf.clear_line_start(current_layer,caret);
+                                    buf.clear_line_start();
                                 }
                                 Some(2) => {
-                                    buf.clear_line(current_layer,caret);
+                                    buf.clear_line();
                                 }
                                 _ => {
                                     return self.unsupported_escape_error();
@@ -1249,9 +1243,9 @@ impl BufferParser for Parser {
                         return self.device_attributes();
                     }
                     'r' => return if self.parsed_numbers.len() > 2 {
-                        self.change_scrolling_region(buf, caret)
+                        self.change_scrolling_region(buf)
                     } else {
-                        self.set_top_and_bottom_margins(buf, caret)
+                        self.set_top_and_bottom_margins(buf)
                     },
                     'h' => {
                         self.state = EngineState::Default;
@@ -1260,7 +1254,7 @@ impl BufferParser for Parser {
                         }
                         match self.parsed_numbers.first() {
                             Some(4) => {
-                                caret.insert_mode = true;
+                                buf.caret_mut().insert_mode = true;
                             }
                             _ => {
                                 return self.unsupported_escape_error();
@@ -1276,7 +1270,7 @@ impl BufferParser for Parser {
                         }
                         match self.parsed_numbers.first() {
                             Some(4) => {
-                                caret.insert_mode = false;
+                                buf.caret_mut().insert_mode = false;
                             }
                             _ => {
                                 return self.unsupported_escape_error();
@@ -1291,24 +1285,24 @@ impl BufferParser for Parser {
                         }
                         match self.parsed_numbers.first() {
                             Some(1) => {
-                                caret.pos.x = 0;
+                                buf.caret_mut().position.x = 0;
                             } // home
                             Some(2) => {
-                                caret.ins(buf, current_layer);
+                                buf.ins();
                             } // home
                             Some(3) => {
-                                caret.del(buf, current_layer);
+                                buf.del();
                             }
                             Some(4) => {
-                                caret.eol(buf);
+                                buf.eol();
                             }
                             Some(5) => {  // Page Up
-                                let lines = buf.terminal_state.get_height() - 1;
-                                (0..lines).for_each(|_| buf.scroll_down(current_layer));
+                                let lines = buf.terminal_state().get_height() - 1;
+                                (0..lines).for_each(|_| buf.scroll_down());
                             }
                             Some(6) => {  // Page Down
-                                let lines = buf.terminal_state.get_height() - 1;
-                                (0..lines).for_each(|_| buf.scroll_up(current_layer));
+                                let lines = buf.terminal_state().get_height() - 1;
+                                (0..lines).for_each(|_| buf.scroll_up());
                             }
                             _ => {
                                 return self.unsupported_escape_error();
@@ -1321,7 +1315,7 @@ impl BufferParser for Parser {
                         self.state = EngineState::Default;
                         return match self.parsed_numbers.len() {
                             3 => self.window_manipulation(buf),
-                            4 => self.select_24bit_color(buf, caret),
+                            4 => self.select_24bit_color(buf),
                             _ => self.unsupported_escape_error()
                         };
                     }
@@ -1329,14 +1323,14 @@ impl BufferParser for Parser {
                         // Scroll Up
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-                        (0..num).for_each(|_| buf.scroll_up(current_layer));
+                        (0..num).for_each(|_| buf.scroll_up());
                         return Ok(CallbackAction::Update);
                     }
                     'T' => {
                         // Scroll Down
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-                        (0..num).for_each(|_| buf.scroll_down(current_layer));
+                        (0..num).for_each(|_| buf.scroll_down());
                         return Ok(CallbackAction::Update);
                     }
                     'b' => {
@@ -1344,8 +1338,8 @@ impl BufferParser for Parser {
                         // REP - Repeat the preceding graphic character Pn times (REP).
                         self.state = EngineState::Default;
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-                        let ch = AttributedChar::new(self.last_char, caret.get_attribute());
-                        (0..num).for_each(|_| buf.print_char(current_layer, caret, ch));
+                        let ch = AttributedChar::new(self.last_char, buf.caret().get_attribute());
+                        (0..num).for_each(|_| buf.print_char(ch));
                         return Ok(CallbackAction::Update);
                     }
                     'g' => {
@@ -1358,9 +1352,12 @@ impl BufferParser for Parser {
 
                         let num = self.parsed_numbers.first().copied().unwrap_or(0);
                         match num {
-                            0 => { buf.terminal_state.remove_tab_stop(caret.get_position().x) }
+                            0 => {
+                                let x = buf.caret().get_position().x;
+                                buf.terminal_state_mut().remove_tab_stop(x);
+                            }
                             3 | 5 => {
-                                buf.terminal_state.clear_tab_stops();
+                                buf.terminal_state_mut().clear_tab_stops();
                             }
                             _ => {
                                 return Err(ParserError::UnsupportedEscapeSequence.into());
@@ -1376,7 +1373,10 @@ impl BufferParser for Parser {
                         }
 
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-                        (0..num).for_each(|_| caret.set_x_position(buf.terminal_state.next_tab_stop(caret.get_position().x)));
+                        (0..num).for_each(|_| {
+                            let x = buf.terminal_state().next_tab_stop(buf.caret().get_position().x);
+                            buf.caret_mut().set_x_position(x);
+                        });
                         return Ok(CallbackAction::Update);
                     }
                     'Z' => {
@@ -1387,7 +1387,10 @@ impl BufferParser for Parser {
                         }
 
                         let num = self.parsed_numbers.first().copied().unwrap_or(1);
-                        (0..num).for_each(|_| caret.set_x_position(buf.terminal_state.prev_tab_stop(caret.get_position().x)));
+                        (0..num).for_each(|_| {
+                            let x = buf.terminal_state().prev_tab_stop(buf.caret().get_position().x);
+                            buf.caret_mut().set_x_position(x);
+                        });
                         return Ok(CallbackAction::Update);
                     }
                     _ => {
@@ -1423,31 +1426,31 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::NoUpdate);
                 }
                 LF => {
-                    return Ok(caret.lf(buf, current_layer));
+                    return Ok(buf.lf());
                 }
                 FF => {
-                    caret.ff(buf, current_layer);
+                    buf.ff();
                     return Ok(CallbackAction::Update);
                 }
                 CR => {
-                    caret.cr(buf);
+                    buf.cr();
                     return Ok(CallbackAction::Update);
                 }
                 BEL => return Ok(CallbackAction::Beep),
-                TAB => caret.tab_forward(buf),
+                TAB => buf.tab_forward(),
                 '\x7F' => {
-                    caret.del(buf, current_layer);
+                    buf.del();
                     return Ok(CallbackAction::Update);
                 }
                 _ => {
                     if ch == crate::BS && self.bs_is_ctrl_char {
-                        caret.bs(buf, current_layer);
+                        buf.bs();
                     } else if (ch == '\x00' || ch == '\u{00FF}') && self.bs_is_ctrl_char {
-                        caret.reset_color_attribute();
+                        buf.caret_mut().reset_color_attribute();
                     } else {
                         self.last_char = ch;
-                        let ch = AttributedChar::new(self.last_char, caret.get_attribute());
-                        buf.print_char(current_layer, caret, ch);
+                        let ch = AttributedChar::new(self.last_char, buf.caret().get_attribute());
+                        buf.print_char(ch);
                     }
                     return Ok(CallbackAction::Update);
                 }
@@ -1459,21 +1462,21 @@ impl BufferParser for Parser {
 }
 
 impl Parser {
-    fn invoke_macro_by_id(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, id: i32) {
+    fn invoke_macro_by_id(&mut self, buf: &mut dyn EditableScreen, id: i32) {
         let m = if let Some(m) = self.macros.get(&(id as usize)) {
             m.clone()
         } else {
             return;
         };
         for ch in m.chars() {
-            if let Err(err) = self.print_char(buf, current_layer, caret, ch) {
+            if let Err(err) = self.print_char(buf, ch) {
                 self.state = EngineState::Default;
                 log::error!("Error during macro invocation: {}", err);
             }
         }
     }
 
-    fn execute_aps_command(&self, _buf: &mut Buffer, _caret: &mut Caret) {
+    fn execute_aps_command(&self, _buf: &mut dyn EditableScreen) {
         log::warn!("TODO execute APS command: {}", fmt_error_string(&self.parse_string));
     }
 
@@ -1482,18 +1485,18 @@ impl Parser {
     }
 }
 
-fn set_font_selection_success(buf: &mut Buffer, caret: &mut Caret, slot: usize) {
-    buf.terminal_state.font_selection_state = FontSelectionState::Success;
-    caret.set_font_page(slot);
+fn set_font_selection_success(buf: &mut dyn EditableScreen, slot: usize) {
+    buf.terminal_state_mut().font_selection_state = FontSelectionState::Success;
+    buf.caret_mut().set_font_page(slot);
 
-    if caret.attribute.is_blinking() && caret.attribute.is_bold() {
-        buf.terminal_state.high_intensity_blink_attribute_font_slot = slot;
-    } else if caret.attribute.is_blinking() {
-        buf.terminal_state.blink_attribute_font_slot = slot;
-    } else if caret.attribute.is_bold() {
-        buf.terminal_state.high_intensity_attribute_font_slot = slot;
+    if buf.caret().attribute.is_blinking() && buf.caret().attribute.is_bold() {
+        buf.terminal_state_mut().high_intensity_blink_attribute_font_slot = slot;
+    } else if buf.caret().attribute.is_blinking() {
+        buf.terminal_state_mut().blink_attribute_font_slot = slot;
+    } else if buf.caret().attribute.is_bold() {
+        buf.terminal_state_mut().high_intensity_attribute_font_slot = slot;
     } else {
-        buf.terminal_state.normal_attribute_font_slot = slot;
+        buf.terminal_state_mut().normal_attribute_font_slot = slot;
     }
 }
 

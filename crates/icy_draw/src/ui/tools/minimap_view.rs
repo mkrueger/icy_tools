@@ -146,7 +146,7 @@ impl MinimapToolWindow {
     pub(crate) fn new(gl: Arc<glow::Context>) -> Self {
         let mut buffer_view = BufferView::new(&gl);
         buffer_view.interactive = false;
-        buffer_view.get_buffer_mut().is_terminal_buffer = false;
+        buffer_view.get_buffer_mut().terminal_state.is_terminal_buffer = false;
         buffer_view.get_caret_mut().set_is_visible(false);
         Self {
             id: 0,

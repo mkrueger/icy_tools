@@ -39,7 +39,7 @@ pub fn start_encoding_thread(
     }
     let (tx, rx) = std::sync::mpsc::channel();
     let mut buffer = Buffer::new((80, 25));
-    buffer.is_terminal_buffer = false;
+    buffer.terminal_state.is_terminal_buffer = false;
     let mut buffer_view = BufferView::from_buffer(&gl, buffer);
     buffer_view.interactive = false;
     let buffer_view = Arc::new(eframe::epaint::mutex::Mutex::new(buffer_view));

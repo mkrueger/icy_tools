@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    ATARI, ATARI_DEFAULT_PALETTE, BitFont, Buffer, BufferFeatures, BufferParser, Caret, EngineResult, OutputFormat, Palette, Position, TextPane, atascii,
+    ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, BufferParser, EngineResult, OutputFormat, Palette, Position, TextPane, TextScreen, atascii,
 };
 
 #[derive(Default)]
@@ -61,26 +61,26 @@ impl OutputFormat for Atascii {
     }
 
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
-        let mut result: Buffer = Buffer::new((40, 24));
-        result.clear_font_table();
+        let mut result = TextScreen::new((40, 24));
+
+        result.buffer.clear_font_table();
         let mut font = BitFont::from_bytes("", ATARI).unwrap();
         font.length = 128;
-        result.set_font(0, font);
-        result.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
+        result.buffer.set_font(0, font);
+        result.buffer.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
 
-        result.buffer_type = crate::BufferType::Atascii;
-        result.is_terminal_buffer = false;
-        result.file_name = Some(file_name.into());
+        result.buffer.buffer_type = crate::BufferType::Atascii;
+        result.buffer.terminal_state.is_terminal_buffer = false;
+        result.buffer.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+            result.buffer.load_sauce(sauce);
         }
 
         let mut p = atascii::Parser::default();
-        let mut caret = Caret::default();
         for ch in data {
-            let _ = p.print_char(&mut result, 0, &mut caret, *ch as char);
+            let _ = p.print_char(&mut result, *ch as char);
         }
-        Ok(result)
+        Ok(result.buffer)
     }
 }

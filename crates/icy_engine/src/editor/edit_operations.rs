@@ -4,7 +4,7 @@ use std::mem;
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, Buffer, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, parse_with_parser, parsers};
+use crate::{AttributedChar, EditableScreen, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, parse_with_parser, parsers};
 
 use super::{
     EditState, OperationType, UndoOperation,
@@ -88,8 +88,8 @@ impl EditState {
         let y = self.caret.get_position().y;
 
         let width = self.get_buffer().get_size().width - x;
-        let mut result = Buffer::new((width, 25));
-        result.is_terminal_buffer = false;
+        let mut result = crate::TextScreen::new((width, 25));
+        result.terminal_state_mut().is_terminal_buffer = false;
 
         let mut parser = parsers::ansi::Parser::default();
         parser.bs_is_ctrl_char = false;
@@ -100,7 +100,7 @@ impl EditState {
             .collect::<String>();
         parse_with_parser(&mut result, &mut parser, &text, true)?;
 
-        let mut layer = result.layers.remove(0);
+        let mut layer: Layer = result.buffer.layers.remove(0);
         layer.properties.has_alpha_channel = true;
         layer.role = Role::PastePreview;
         layer.set_offset((x, y));
@@ -144,7 +144,7 @@ impl EditState {
 
                 for y in 0..new_rectangle.get_height() {
                     for x in 0..new_rectangle.get_width() {
-                        let ch = old_layer.get_char((x + new_rectangle.left(), y + new_rectangle.top()));
+                        let ch = old_layer.get_char((x + new_rectangle.left(), y + new_rectangle.top()).into());
                         new_layer.set_char((x, y), ch);
                     }
                 }

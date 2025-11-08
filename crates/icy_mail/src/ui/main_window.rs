@@ -25,7 +25,7 @@ pub struct MainWindow {
     pub selected_message: Option<usize>,
     pub message_list_scroll: iced::widget::Id,
     pub message_content: text_editor::Content,
-    pub panes: pane_grid::State<PaneContent>,
+    pub _panes: pane_grid::State<PaneContent>,
     pub show_threads: bool,
     pub conference_list_focused: bool,
     pub message_list_focused: bool,
@@ -36,7 +36,7 @@ pub enum PaneContent {
     ConferenceList,
     MessageList,
     MessageContent,
-    ThreadView,
+    _ThreadView,
 }
 
 impl MainWindow {
@@ -64,7 +64,7 @@ impl MainWindow {
             selected_message: None,
             message_list_scroll: iced::widget::Id::unique(),
             message_content: text_editor::Content::new(),
-            panes,
+            _panes: panes,
             show_threads: false,
             conference_list_focused: false,
             message_list_focused: false,
@@ -73,7 +73,7 @@ impl MainWindow {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::QuitIcyMail => iced::exit(),
+            Message::_QuitIcyMail => iced::exit(),
 
             Message::OpenPackage => Task::perform(
                 async {

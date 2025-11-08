@@ -66,11 +66,11 @@ impl OutputFormat for IceDraw {
         for y in 0..buf.get_height() {
             let mut x = 0;
             while x < buf.get_width() {
-                let ch = buf.get_char((x, y));
+                let ch = buf.get_char((x, y).into());
                 let mut rle_count = 1;
                 if options.compress {
                     while x + rle_count < buf.get_width() && rle_count < (u16::MAX) as i32 {
-                        if ch != buf.get_char((x + rle_count, y)) {
+                        if ch != buf.get_char((x + rle_count, y).into()) {
                             break;
                         }
                         rle_count += 1;
@@ -123,7 +123,7 @@ impl OutputFormat for IceDraw {
     fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::Buffer> {
         let mut result = Buffer::new((80, 25));
         result.ice_mode = IceMode::Ice;
-        result.is_terminal_buffer = false;
+        result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
 
         if data.len() < HEADER_SIZE + FONT_SIZE + PALETTE_SIZE {

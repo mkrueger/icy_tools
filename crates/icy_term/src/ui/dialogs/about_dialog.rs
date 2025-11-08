@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, text},
 };
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
-use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane, ansi::MusicOption, editor::EditState};
+use icy_engine::{AttributedChar, Buffer, Position, TextAttribute, TextPane, TextScreen, ansi::MusicOption};
 use std::sync::{Arc, Mutex};
 
 use crate::{
@@ -22,7 +22,7 @@ pub struct AboutDialog {
 impl AboutDialog {
     pub fn new(ansi: &[u8]) -> Self {
         // Create an edit state and load the help ANSI
-        let mut edit_state = EditState::default();
+        let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
         // Load the help ANSI file
         match Buffer::from_bytes(std::path::Path::new("a.icy"), true, ansi, Some(MusicOption::Off), None) {
@@ -31,7 +31,7 @@ impl AboutDialog {
 
                 for y in 0..buffer.get_height() {
                     for x in 0..buffer.get_width() {
-                        let ch = buffer.get_char((x, y));
+                        let ch = buffer.get_char((x, y).into());
 
                         if ch.ch == '@' {
                             // Build version string with colors
@@ -50,16 +50,16 @@ impl AboutDialog {
                 }
                 buffer.update_hyperlinks();
 
-                edit_state.set_buffer(buffer);
+                screen.buffer = buffer;
             }
             Err(e) => {
                 panic!("Failed to load help ANSI: {}", e);
             }
         }
-        edit_state.get_caret_mut().set_is_visible(false);
+        screen.caret.set_is_visible(false);
 
-        let edit_state = Arc::new(Mutex::new(edit_state));
-        let terminal = Terminal::new(edit_state.clone());
+        let edit_screen = Arc::new(Mutex::new(screen));
+        let terminal = Terminal::new(edit_screen.clone());
 
         Self { terminal }
     }
@@ -140,7 +140,7 @@ impl AboutDialog {
 fn highlight_version(buffer: &mut Buffer) {
     for y in 0..buffer.get_height() {
         for x in 0..buffer.get_width() {
-            let ch = buffer.get_char((x, y));
+            let ch = buffer.get_char((x, y).into());
 
             if ch.ch == '@' {
                 // Build version string with colors

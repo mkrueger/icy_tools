@@ -208,7 +208,7 @@ pub fn show_terminal_area(ui: &mut egui::Ui, buffer_view: Arc<eframe::epaint::mu
     let mut forced_height = buffer_view.lock().get_buffer().get_height();
     let mut forced_width = buffer_view.lock().get_buffer().get_width();
 
-    if buffer_view.lock().get_buffer().is_terminal_buffer {
+    if buffer_view.lock().get_buffer().terminal_state.is_terminal_buffer {
         forced_width = buffer_view.lock().get_buffer().terminal_state.get_width();
         forced_height = buffer_view.lock().get_buffer().terminal_state.get_height();
     }

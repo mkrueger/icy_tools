@@ -1,5 +1,5 @@
 use super::{BufferParser, ansi};
-use crate::{Buffer, CallbackAction, Caret, EngineResult, TextAttribute};
+use crate::{CallbackAction, EditableScreen, EngineResult, TextAttribute};
 
 pub struct Parser {
     ansi_parser: ansi::Parser,
@@ -30,7 +30,7 @@ impl Default for Parser {
 }
 
 impl BufferParser for Parser {
-    fn print_char(&mut self, buf: &mut Buffer, current_layer: usize, caret: &mut Caret, ch: char) -> EngineResult<CallbackAction> {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         if self.pcb_color {
             self.pcb_pos += 1;
             if self.pcb_pos < 3 {
@@ -41,7 +41,7 @@ impl BufferParser for Parser {
                     }
                     2 => {
                         self.pcb_value = (self.pcb_value << 4) + conv_ch(ch);
-                        caret.attribute = TextAttribute::from_u8(self.pcb_value, buf.ice_mode);
+                        buf.caret_mut().attribute = TextAttribute::from_u8(self.pcb_value, buf.ice_mode());
                     }
                     _ => {}
                 }
@@ -56,11 +56,11 @@ impl BufferParser for Parser {
                 '@' => {
                     self.pcb_code = false;
                     if !self.pcb_string.is_empty() {
-                        self.ansi_parser.print_char(buf, current_layer, caret, '@')?;
+                        self.ansi_parser.print_char(buf, '@')?;
                         for c in self.pcb_string.chars() {
-                            self.ansi_parser.print_char(buf, current_layer, caret, c)?;
+                            self.ansi_parser.print_char(buf, c)?;
                         }
-                        self.ansi_parser.print_char(buf, current_layer, caret, '@')?;
+                        self.ansi_parser.print_char(buf, '@')?;
                     }
                 }
                 'X' => {
@@ -79,7 +79,7 @@ impl BufferParser for Parser {
                 self.pcb_string.clear();
                 Ok(CallbackAction::NoUpdate)
             }
-            _ => self.ansi_parser.print_char(buf, current_layer, caret, ch),
+            _ => self.ansi_parser.print_char(buf, ch),
         }
     }
 }
