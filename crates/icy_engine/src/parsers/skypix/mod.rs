@@ -58,7 +58,7 @@ impl Parser {
         }
     }
 
-    fn print_char(&mut self, ch: char) {
+    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) {
         if let Some(font) = &self.font {
             let Some(glyph) = font.get_glyph(ch) else {
                 return;
@@ -72,6 +72,7 @@ impl Parser {
                 for j in 0..glyph.width {
                     if (glyph.data[i] & (1 << (glyph.width - j - 1))) != 0 {
                         self.bgi.put_pixel(
+                            buf,
                             lb - glyph.shift_left - font.shift_left + x + j as i32,
                             glyph.top_bearing - glyph.shift_up - font.shift_up + y + i as i32,
                             self.bgi.get_color(),
@@ -102,7 +103,7 @@ impl Parser {
                 self.graphic_cursor.y += h;
 
                 if self.graphic_cursor.y > SKYPIX_SCREEN_SIZE.height {
-                    self.scroll_down(self.graphic_cursor.y - SKYPIX_SCREEN_SIZE.height);
+                    self.scroll_down(buf, self.graphic_cursor.y - SKYPIX_SCREEN_SIZE.height);
                     self.graphic_cursor.y = SKYPIX_SCREEN_SIZE.height;
                 }
             }
@@ -119,7 +120,7 @@ impl Parser {
                 }
                 let x = parameters[0];
                 let y = parameters[1];
-                self.bgi.put_pixel(x, y, self.bgi.get_color());
+                self.bgi.put_pixel(buf, x, y, self.bgi.get_color());
                 return Ok(CallbackAction::NoUpdate);
             }
             2 => {
@@ -129,7 +130,7 @@ impl Parser {
                 }
                 let x = parameters[0];
                 let y = parameters[1];
-                self.bgi.line_to(x, y);
+                self.bgi.line_to(buf, x, y);
                 return Ok(CallbackAction::NoUpdate);
             }
             3 => {
@@ -141,7 +142,7 @@ impl Parser {
                 let _mode = parameters[0];
                 let x = parameters[1];
                 let y = parameters[2];
-                self.bgi.flood_fill(x, y, self.bgi.get_color());
+                self.bgi.flood_fill(buf, x, y, self.bgi.get_color());
                 return Ok(CallbackAction::NoUpdate);
             }
             4 => {
@@ -153,7 +154,7 @@ impl Parser {
                 let y1 = parameters[1];
                 let x2 = parameters[2];
                 let y2 = parameters[3];
-                self.bgi.bar(x1, y1, x2, y2);
+                self.bgi.bar(buf, x1, y1, x2, y2);
                 return Ok(CallbackAction::NoUpdate);
             }
             5 => {
@@ -165,7 +166,7 @@ impl Parser {
                 let y1 = parameters[1];
                 let a = parameters[2];
                 let b = parameters[3];
-                self.bgi.ellipse(x1, y1, 0, 360, a, b);
+                self.bgi.ellipse(buf, x1, y1, 0, 360, a, b);
                 return Ok(CallbackAction::NoUpdate);
             }
             6 => {
@@ -177,7 +178,7 @@ impl Parser {
                 let y1 = parameters[1];
                 let x2 = parameters[2];
                 let y2 = parameters[3];
-                self.brush = self.bgi.get_image(x1, y1, x2, y2);
+                self.brush = self.bgi.get_image(buf, x1, y1, x2, y2);
                 return Ok(CallbackAction::NoUpdate);
             }
             7 => {
@@ -193,7 +194,8 @@ impl Parser {
                 let height = parameters[5];
                 let _minterm = parameters[6];
                 let _mask = parameters[7];
-                self.bgi.put_image2(src_x, src_y, width, height, dst_x, dst_y, &self.brush, WriteMode::Copy);
+                self.bgi
+                    .put_image2(buf, src_x, src_y, width, height, dst_x, dst_y, &self.brush, WriteMode::Copy);
                 return Ok(CallbackAction::NoUpdate);
             }
             8 => {
@@ -256,7 +258,7 @@ impl Parser {
                 let y1 = parameters[1];
                 let a = parameters[2];
                 let b = parameters[3];
-                self.bgi.fill_ellipse(x1, y1, 0, 360, a, b);
+                self.bgi.fill_ellipse(buf, x1, y1, 0, 360, a, b);
                 return Ok(CallbackAction::NoUpdate);
             }
 
@@ -403,10 +405,10 @@ impl Parser {
         }
     }
 
-    fn scroll_down(&mut self, lines: i32) {
-        let img = self.bgi.get_image(0, lines, SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height - lines);
-        self.bgi.clear_viewport();
-        self.bgi.put_image(0, 0, &img, WriteMode::Copy);
+    fn scroll_down(&mut self, buf: &mut dyn EditableScreen, lines: i32) {
+        let img = self.bgi.get_image(buf, 0, lines, SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height - lines);
+        self.bgi.clear_viewport(buf);
+        self.bgi.put_image(buf, 0, 0, &img, WriteMode::Copy);
         self.cmd_counter += 1;
     }
 }
@@ -418,7 +420,7 @@ impl BufferParser for Parser {
         if buf.terminal_state().cleared_screen {
             self.font = None;
             buf.terminal_state_mut().cleared_screen = false;
-            self.bgi.graph_defaults();
+            self.bgi.graph_defaults(buf);
             self.cmd_counter = 0;
             self.last_cmd_update = 0;
         }
@@ -444,7 +446,7 @@ impl BufferParser for Parser {
             }
             _ => {
                 if self.font.is_some() && self.fallback_parser.state == EngineState::Default && ch >= ' ' && ch <= '~' {
-                    self.print_char(ch);
+                    self.print_char(buf, ch);
                     return Ok(CallbackAction::NoUpdate);
                 }
 
@@ -457,7 +459,7 @@ impl BufferParser for Parser {
                     }
                     Ok(CallbackAction::ScrollDown(x)) => {
                         let lines = x * 8;
-                        self.scroll_down(lines);
+                        self.scroll_down(buf, lines);
 
                         return Ok(CallbackAction::Update);
                     }

@@ -3,8 +3,7 @@ use std::io;
 use std::io::Cursor;
 use std::io::prelude::*;
 
-use crate::EngineResult;
-use crate::Size;
+use crate::{EditableScreen, EngineResult, Size};
 
 use super::Bgi;
 use super::Direction;
@@ -170,18 +169,18 @@ impl Font {
 
     pub fn from_file(file: &str) -> EngineResult<Self> {
         let mut file = std::fs::File::open(file)?;
-        let mut buf = Vec::new();
+        let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf)?;
         Self::load(&buf)
     }
 
-    pub fn draw_character(&self, bgi: &mut Bgi, x: i32, y: i32, dir: Direction, size: i32, character: u8) -> f32 {
+    pub fn draw_character(&self, bgi: &mut Bgi, buf: &mut dyn EditableScreen, x: i32, y: i32, dir: Direction, size: i32, character: u8) -> f32 {
         if character as usize >= self.characters.len() {
             return 0.0;
         }
 
         if let Some(ch) = &self.characters[character as usize] {
-            ch.draw(bgi, self, x, y, dir, size);
+            ch.draw(bgi, buf, self, x, y, dir, size);
             ch.get_width(size)
         } else {
             0.0

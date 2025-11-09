@@ -170,7 +170,7 @@ impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         if buf.terminal_state().cleared_screen {
             buf.terminal_state_mut().cleared_screen = false;
-            self.bgi.graph_defaults();
+            self.bgi.graph_defaults(buf);
             self.rip_counter = 0;
             self.last_rip_update = 0;
         }

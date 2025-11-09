@@ -19,7 +19,7 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine::{PaletteScreenBuffer, Position, RenderOptions, TextScreen, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE, rip};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -189,6 +189,13 @@ impl MainWindow {
                         let error_msg = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "connect-error-no-modem-configured");
                         log::error!("{}", error_msg);
 
+                        if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                            if address.terminal_type == TerminalEmulation::Rip {
+                                *screen = PaletteScreenBuffer::new(640, 350, rip::bgi::DEFAULT_BITFONT.clone()) as dyn icy_engine::EditableScreen;
+                            } else {
+                                *screen = TextScreen::new((80, 25)) as dyn icy_engine::EditableScreen;
+                            }
+                        }
                         // Display error message in terminal
                         if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
                             screen.clear_screen();

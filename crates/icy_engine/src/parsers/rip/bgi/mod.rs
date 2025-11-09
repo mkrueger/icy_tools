@@ -1,6 +1,6 @@
 use std::{f64::consts, path::PathBuf};
 
-use crate::{BitFont, EGA_PALETTE, Palette, Position, Rectangle, Size, rip::bgi::font::Font};
+use crate::{BitFont, EGA_PALETTE, EditableScreen, Position, Rectangle, Size, rip::bgi::font::Font};
 
 mod character;
 mod font;
@@ -218,7 +218,7 @@ impl FontType {
 }
 
 lazy_static::lazy_static! {
-    static ref DEFAULT_BITFONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
+    pub static ref DEFAULT_BITFONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
 
     static ref FONTS: Vec<Font> = vec![
         Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
@@ -412,7 +412,6 @@ pub struct Bgi {
     font: FontType,
     pub window: Size,
     viewport: Rectangle,
-    palette: Palette,
     line_thickness: i32,
     line_pattern: Vec<bool>,
     current_pos: Position,
@@ -531,7 +530,6 @@ impl Bgi {
             font: FontType::Default,
             window: screen_size,
             viewport: Rectangle::from(0, 0, screen_size.width, screen_size.height),
-            palette: Palette::dos_default(),
             line_thickness: 1,
             current_pos: Position::new(0, 0),
             char_size: 4,
@@ -612,21 +610,16 @@ impl Bgi {
         self.line_pattern = res;
     }
 
-    pub fn get_palette(&self) -> &Palette {
-        &self.palette
-    }
-
-    pub fn set_palette(&mut self, colors: &[i32]) {
-        let mut pal = Palette::new();
+    // Palette delegation helpers (Option A: use external buffer palette only)
+    pub fn set_palette(&mut self, buf: &mut dyn EditableScreen, colors: &[i32]) {
+        let pal = buf.palette_mut();
         pal.clear();
         for c in colors {
             pal.push(EGA_PALETTE[*c as usize].clone());
         }
-        self.palette = pal;
     }
-
-    pub fn set_palette_color(&mut self, index: i32, color: u8) {
-        self.palette.set_color(index as u32, EGA_PALETTE[color as usize].clone());
+    pub fn set_palette_color(&mut self, buf: &mut dyn EditableScreen, index: i32, color: u8) {
+        buf.palette_mut().set_color(index as u32, EGA_PALETTE[color as usize].clone());
     }
 
     pub fn get_font_type(&self) -> FontType {
@@ -647,9 +640,26 @@ impl Bgi {
         self.char_size = char_size.clamp(1, 10);
     }
 
-    pub fn get_pixel(&self, x: i32, y: i32) -> u8 {
-        let o = (y * self.window.width + x) as usize;
-        if o < self.screen.len() { self.screen[o] } else { 0 }
+    pub fn get_pixel(&self, buf: &mut dyn EditableScreen, x: i32, y: i32) -> u8 {
+        if x < 0 || y < 0 || x >= self.window.width || y >= self.window.height {
+            return 0;
+        }
+        let off = ((y * self.window.width + x) * 4) as usize;
+        let scr = buf.screen_mut(); // mutable access (read-only usage here)
+        if off + 3 >= scr.len() {
+            return 0;
+        }
+        let r = scr[off];
+        let g = scr[off + 1];
+        let b = scr[off + 2];
+        let pal = buf.palette();
+        for i in 0..pal.len() {
+            let (pr, pg, pb) = pal.get_rgb(i as u32);
+            if pr == r && pg == g && pb == b {
+                return i as u8;
+            }
+        }
+        0
     }
 
     pub fn get_fill_pattern(&self) -> &Vec<u8> {
@@ -660,31 +670,37 @@ impl Bgi {
         self.button_style = style;
     }
 
-    pub fn put_pixel(&mut self, x: i32, y: i32, color: u8) {
+    pub fn put_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, color: u8) {
         if !self.viewport.contains(x, y) {
             return;
         }
-        let pos = (y * self.window.width + x) as usize;
-        if pos >= self.screen.len() {
+        if x < 0 || y < 0 || x >= self.window.width || y >= self.window.height {
             return;
         }
-        match self.write_mode {
-            WriteMode::Copy => {
-                self.screen[pos] = color;
-            }
-            WriteMode::Xor => {
-                self.screen[pos] ^= color;
-            }
-            WriteMode::Or => {
-                self.screen[pos] |= color;
-            }
-            WriteMode::And => {
-                self.screen[pos] &= color;
-            }
-            WriteMode::Not => {
-                self.screen[pos] = !color % 16;
-            }
+        let mut new_index = color % 16;
+        if !matches!(self.write_mode, WriteMode::Copy) {
+            let cur = self.get_pixel(buf, x, y);
+            new_index = match self.write_mode {
+                WriteMode::Copy => color % 16,
+                WriteMode::Xor => cur ^ color,
+                WriteMode::Or => cur | color,
+                WriteMode::And => cur & color,
+                WriteMode::Not => (!color) & 0x0F,
+            } % 16;
         }
+        let (r, g, b) = {
+            let pal = buf.palette();
+            pal.get_rgb(new_index as u32)
+        };
+        let off = ((y * self.window.width + x) * 4) as usize;
+        let scr = buf.screen_mut();
+        if off + 3 >= scr.len() {
+            return;
+        }
+        scr[off] = r;
+        scr[off + 1] = g;
+        scr[off + 2] = b;
+        scr[off + 3] = 255;
     }
 
     pub fn get_write_mode(&self) -> WriteMode {
@@ -697,7 +713,7 @@ impl Bgi {
         old
     }
 
-    fn fill_x(&mut self, y: i32, startx: i32, count: i32, offset: &mut i32) {
+    fn fill_x(&mut self, buf: &mut dyn EditableScreen, y: i32, startx: i32, count: i32, offset: &mut i32) {
         let mut start_y = y - self.line_thickness / 2;
         let mut end_y = start_y + self.line_thickness - 1;
         let mut end_x = startx + count;
@@ -733,7 +749,7 @@ impl Bgi {
         for x in startx..=end_x {
             if self.line_pattern[*offset as usize % self.line_pattern.len()] {
                 for cy in start_y..=end_y {
-                    self.put_pixel(x, cy, self.color);
+                    self.put_pixel(buf, x, cy, self.color);
                 }
             }
             *offset += inc;
@@ -743,7 +759,7 @@ impl Bgi {
         }
     }
 
-    pub fn fill_y(&mut self, x: i32, start_y: i32, count: i32, offset: &mut i32) {
+    pub fn fill_y(&mut self, buf: &mut dyn EditableScreen, x: i32, start_y: i32, count: i32, offset: &mut i32) {
         let mut start_x = x - self.line_thickness / 2;
         let mut end_x = start_x + self.line_thickness - 1;
         let mut end_y = start_y + count;
@@ -777,7 +793,7 @@ impl Bgi {
         for y in start_y..=end_y {
             if self.line_pattern[*offset as usize % self.line_pattern.len()] {
                 for cx in start_x..=end_x {
-                    self.put_pixel(cx, y, self.color);
+                    self.put_pixel(buf, cx, y, self.color);
                 }
             }
             *offset += 1;
@@ -787,14 +803,14 @@ impl Bgi {
         }
     }
 
-    pub fn line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+    pub fn line(&mut self, buf: &mut dyn EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
         let ly_delta = (y2 - y1).abs();
         let lx_delta2 = (x2 - x1).abs();
         let mut offset = 0;
         if lx_delta2 == 0 {
-            self.fill_y(x1, y1.min(y2), ly_delta + 1, &mut offset);
+            self.fill_y(buf, x1, y1.min(y2), ly_delta + 1, &mut offset);
         } else if ly_delta == 0 {
-            self.fill_x(y1, x1.min(x2), lx_delta2 + 1, &mut offset);
+            self.fill_x(buf, y1, x1.min(x2), lx_delta2 + 1, &mut offset);
         } else if lx_delta2 >= ly_delta {
             let l_advance = 1;
             let (mut pos, l_step) = if y1 < y2 {
@@ -819,7 +835,7 @@ impl Bgi {
                 l_error += ly_delta;
             }
 
-            self.fill_x(pos.y, pos.x, l_start_length, &mut offset);
+            self.fill_x(buf, pos.y, pos.x, l_start_length, &mut offset);
             pos.x += l_start_length;
             pos.y += l_advance;
             for _ in 0..(ly_delta - 1) {
@@ -829,11 +845,11 @@ impl Bgi {
                     l_run_length += l_step;
                     l_error -= l_adj_down;
                 }
-                self.fill_x(pos.y, pos.x, l_run_length, &mut offset);
+                self.fill_x(buf, pos.y, pos.x, l_run_length, &mut offset);
                 pos.x += l_run_length;
                 pos.y += l_advance;
             }
-            self.fill_x(pos.y, pos.x, l_end_length, &mut offset);
+            self.fill_x(buf, pos.y, pos.x, l_end_length, &mut offset);
         } else if lx_delta2 < ly_delta {
             let (mut pos, l_advance) = if y1 < y2 {
                 (Position::new(x1, y1), if x1 > x2 { -1 } else { 1 })
@@ -855,7 +871,7 @@ impl Bgi {
                 l_error += lx_delta2;
             }
 
-            self.fill_y(pos.x, pos.y, l_start_length, &mut offset);
+            self.fill_y(buf, pos.x, pos.y, l_start_length, &mut offset);
             pos.y += l_start_length;
             pos.x += l_advance;
 
@@ -866,15 +882,15 @@ impl Bgi {
                     l_run_length += 1;
                     l_error -= l_adj_down;
                 }
-                self.fill_y(pos.x, pos.y, l_run_length, &mut offset);
+                self.fill_y(buf, pos.x, pos.y, l_run_length, &mut offset);
                 pos.y += l_run_length;
                 pos.x += l_advance;
             }
-            self.fill_y(pos.x, pos.y, l_end_length, &mut offset);
+            self.fill_y(buf, pos.x, pos.y, l_end_length, &mut offset);
         }
     }
 
-    fn draw_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: u8) {
+    fn draw_line(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32, color: u8) {
         let dx = (x0 - x1).abs();
         let dy = (y0 - y1).abs();
 
@@ -885,7 +901,7 @@ impl Bgi {
         let mut x = x0;
         let mut y = y0;
         loop {
-            self.put_pixel(x, y, color);
+            self.put_pixel(buf, x, y, color);
 
             if x == x1 && y == y1 {
                 break;
@@ -907,25 +923,23 @@ impl Bgi {
         self.current_pos = Position::new(x, y);
     }
 
-    pub fn line_to(&mut self, x: i32, y: i32) {
-        self.line(self.current_pos.x, self.current_pos.y, x, y);
+    pub fn line_to(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32) {
+        self.line(buf, self.current_pos.x, self.current_pos.y, x, y);
         self.move_to(x, y);
     }
 
-    pub fn line_rel(&mut self, dx: i32, dy: i32) {
+    pub fn line_rel(&mut self, buf: &mut dyn EditableScreen, dx: i32, dy: i32) {
         let x = self.current_pos.x + dx;
         let y = self.current_pos.y + dy;
-        self.line(self.current_pos.x, self.current_pos.y, x, y);
+        self.line(buf, self.current_pos.x, self.current_pos.y, x, y);
         self.move_to(x, y);
     }
 
-    fn find_line(&self, x: i32, y: i32, border: u8) -> Option<LineInfo> {
+    fn find_line(&self, x: i32, y: i32, border: u8, buf: &mut dyn EditableScreen) -> Option<LineInfo> {
         // find end pixel
         let mut endx = self.viewport.get_width();
-        let mut pos = y * self.window.width + x;
         for ex in x..self.viewport.get_width() {
-            let col = self.screen[pos as usize];
-            pos += 1;
+            let col = self.get_pixel(buf, ex, y);
             if col == border {
                 endx = ex;
                 break;
@@ -934,11 +948,9 @@ impl Bgi {
         endx -= 1;
 
         // find beginning pixel
-        let mut pos = y * self.window.width + x - 1;
         let mut startx = -1;
         for sx in (0..x).rev() {
-            let col = self.screen[pos as usize];
-            pos -= 1;
+            let col = self.get_pixel(buf, sx, y);
             if col == border {
                 startx = sx;
                 break;
@@ -954,22 +966,22 @@ impl Bgi {
         Some(LineInfo { x1: startx, x2: endx, y })
     }
 
-    pub fn rectangle(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
-        self.line(left, top, right, top);
-        self.line(left, bottom, right, bottom);
-        self.line(right, top, right, bottom);
-        self.line(left, top, left, bottom);
+    pub fn rectangle(&mut self, buf: &mut dyn EditableScreen, left: i32, top: i32, right: i32, bottom: i32) {
+        self.line(buf, left, top, right, top);
+        self.line(buf, left, bottom, right, bottom);
+        self.line(buf, right, top, right, bottom);
+        self.line(buf, left, top, left, bottom);
     }
 
-    pub fn flood_fill(&mut self, x: i32, y: i32, border: u8) {
+    pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, border: u8) {
         if !self.viewport.contains(x, y) {
             return;
         }
         let mut fill_lines = vec![Vec::new(); self.viewport.get_height() as usize];
         let mut point_stack = Vec::new();
 
-        if self.screen[(y * self.window.width + x) as usize] != border {
-            let li = self.find_line(x, y, border);
+        if self.get_pixel(buf, x, y) != border {
+            let li = self.find_line(x, y, border, buf);
             if let Some(li) = li {
                 point_stack.push(FillLineInfo::new(&li, 1));
                 point_stack.push(FillLineInfo::new(&li, -1));
@@ -979,10 +991,9 @@ impl Bgi {
                 while let Some(fli) = point_stack.pop() {
                     let cury = fli.y + fli.dir;
                     if cury < self.viewport.bottom() && cury >= self.viewport.top() {
-                        let y_offset = cury * self.window.width;
                         let mut cx = fli.x1;
                         while cx <= fli.x2 {
-                            let cur_px = self.screen[(y_offset + cx) as usize];
+                            let cur_px = self.get_pixel(buf, cx, cury);
                             if cur_px == border || cur_px == self.fill_color && matches!(self.fill_style, FillStyle::Solid) {
                                 cx += 1;
                                 continue; // it's a border color, so don't scan any more this direction
@@ -993,7 +1004,7 @@ impl Bgi {
                                 continue; // already been here
                             }
 
-                            let li = self.find_line(cx, cury, border); // find the borders on this line
+                            let li = self.find_line(cx, cury, border, buf); // find the borders on this line
                             if let Some(li) = li {
                                 cx = li.x2;
                                 point_stack.push(FillLineInfo::new(&li, fli.dir));
@@ -1018,60 +1029,50 @@ impl Bgi {
         }
         for fill_line in &fill_lines {
             for li in fill_line {
-                self.bar(li.x1, li.y, li.x2, li.y);
+                self.bar(buf, li.x1, li.y, li.x2, li.y);
             }
         }
     }
 
-    pub fn bar(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
-        self.bar_rect(Rectangle::from(left, top, right - left + 1, bottom - top + 1));
+    pub fn bar(&mut self, buf: &mut dyn EditableScreen, left: i32, top: i32, right: i32, bottom: i32) {
+        self.bar_rect(buf, Rectangle::from(left, top, right - left + 1, bottom - top + 1));
     }
 
-    pub fn bar_rect(&mut self, rect: Rectangle) {
+    pub fn bar_rect(&mut self, buf: &mut dyn EditableScreen, rect: Rectangle) {
         let rect = rect.intersect(&self.viewport);
         if rect.get_width() == 0 || rect.get_height() == 0 {
             return;
         }
         let right = rect.right();
         let bottom = rect.bottom();
-        let mut ystart = rect.top() * self.window.width + rect.left();
         if matches!(self.fill_style, FillStyle::Solid) {
-            for _ in rect.top()..bottom {
-                let mut x_start = ystart;
-                for _ in rect.left()..right {
-                    if x_start as usize >= self.screen.len() {
-                        break;
-                    }
-                    self.screen[x_start as usize] = self.fill_color;
-                    x_start += 1;
+            for y in rect.top()..bottom {
+                for x in rect.left()..right {
+                    self.put_pixel(buf, x, y, self.fill_color);
                 }
-                ystart += self.window.width;
             }
         } else {
-            let pattern = self.fill_style.get_fill_pattern(&self.fill_user_pattern);
+            // Avoid borrowing self.fill_user_pattern immutably across the pixel writes by cloning first
+            let user_pattern = self.fill_user_pattern.clone();
+            let pattern = self.fill_style.get_fill_pattern(&user_pattern);
             let mut ypat = rect.top() % 8;
-            for _ in rect.top()..bottom {
-                let mut x_start = ystart as usize;
+            for y in rect.top()..bottom {
                 let mut xpatmask = (128 >> (rect.left() % 8)) as u8;
-                let pattern = pattern[ypat as usize];
-                for _ in rect.left()..right {
-                    if x_start >= self.screen.len() {
-                        break;
-                    }
-                    self.screen[x_start] = if (pattern & xpatmask) != 0 { self.fill_color } else { self.bkcolor };
-                    x_start += 1;
+                let pattern_row = pattern[ypat as usize];
+                for x in rect.left()..right {
+                    let col = if (pattern_row & xpatmask) != 0 { self.fill_color } else { self.bkcolor };
+                    self.put_pixel(buf, x, y, col);
                     xpatmask >>= 1;
                     if xpatmask == 0 {
                         xpatmask = 128;
                     }
                 }
                 ypat = (ypat + 1) % 8;
-                ystart += self.window.width;
             }
         }
     }
 
-    pub fn rip_bezier(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32, x4: i32, y4: i32, cnt: i32) {
+    pub fn rip_bezier(&mut self, buf: &mut dyn EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32, x4: i32, y4: i32, cnt: i32) {
         let mut targets = Vec::new();
         targets.push(x1);
         targets.push(y1);
@@ -1095,12 +1096,12 @@ impl Bgi {
 
         let mut j = 2;
         while j < targets.len() {
-            self.line(targets[j - 2], targets[j - 1], targets[j], targets[j + 1]);
+            self.line(buf, targets[j - 2], targets[j - 1], targets[j], targets[j + 1]);
             j += 2;
         }
     }
 
-    pub fn draw_bezier(&mut self, count: i32, points: &[Position], segments: i32) {
+    pub fn draw_bezier(&mut self, buf: &mut dyn EditableScreen, count: i32, points: &[Position], segments: i32) {
         let mut x1 = points[0].x;
         let mut y1 = points[0].y;
         let mut v = 1;
@@ -1115,7 +1116,7 @@ impl Bgi {
             }
             let x2 = (x3).round() as i32;
             let y2 = (y3).round() as i32;
-            self.line(x1, y1, x2, y2);
+            self.line(buf, x1, y1, x2, y2);
             x1 = x2;
             y1 = y2;
             v += 1;
@@ -1124,27 +1125,27 @@ impl Bgi {
             }
         }
 
-        self.line(x1, y1, points[count as usize - 1].x, points[count as usize - 1].y);
+        self.line(buf, x1, y1, points[count as usize - 1].x, points[count as usize - 1].y);
     }
 
-    pub fn draw_poly(&mut self, points: &[Position]) {
+    pub fn draw_poly(&mut self, buf: &mut dyn EditableScreen, points: &[Position]) {
         let mut last_point = points[0];
         for point in points {
-            self.line(last_point.x, last_point.y, point.x, point.y);
+            self.line(buf, last_point.x, last_point.y, point.x, point.y);
             last_point = *point;
         }
-        self.line(last_point.x, last_point.y, points[0].x, points[0].y);
+        self.line(buf, last_point.x, last_point.y, points[0].x, points[0].y);
     }
 
-    pub fn draw_poly_line(&mut self, points: &[Position]) {
+    pub fn draw_poly_line(&mut self, buf: &mut dyn EditableScreen, points: &[Position]) {
         let mut last_point = points[0];
         for point in points {
-            self.line(last_point.x, last_point.y, point.x, point.y);
+            self.line(buf, last_point.x, last_point.y, point.x, point.y);
             last_point = *point;
         }
     }
 
-    pub fn fill_poly(&mut self, points: &[Position]) {
+    pub fn fill_poly(&mut self, buf: &mut dyn EditableScreen, points: &[Position]) {
         if points.len() <= 1 {
             return;
         }
@@ -1171,7 +1172,7 @@ impl Bgi {
                     let mut lastx = -1;
                     for curx in row {
                         if on {
-                            self.bar(lastx, y, *curx, y);
+                            self.bar(buf, lastx, y, *curx, y);
                         }
                         on = !on;
                         lastx = *curx;
@@ -1180,12 +1181,19 @@ impl Bgi {
             }
         }
         if self.color != 0 {
-            self.draw_poly(points);
+            for i in 1..rows.len() as i32 {
+                let row = &mut rows[i as usize];
+                if row.len() >= 2 {
+                    row.sort_unstable();
+                    let y = i - 1;
+                    self.line(buf, row[0], y, row[row.len() - 1], y);
+                }
+            }
         }
     }
 
-    pub fn arc(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
-        self.ellipse(x, y, start_angle, end_angle, radius, (radius as f64 * ASPECT).round() as i32);
+    pub fn arc(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
+        self.ellipse(buf, x, y, start_angle, end_angle, radius, (radius as f64 * ASPECT).round() as i32);
     }
 
     fn symmetry_scan(
@@ -1327,17 +1335,17 @@ impl Bgi {
         }
     }
 
-    pub fn fill_scan(&mut self, rows: &mut Vec<Vec<i32>>) {
+    pub fn fill_scan(&mut self, buf: &mut dyn EditableScreen, rows: &mut Vec<Vec<i32>>) {
         for y in 0..rows.len() - 2 {
             let row = &mut rows[y + 1];
             if !row.is_empty() {
                 row.sort_unstable();
-                self.bar(row[0], y as i32, row[row.len() - 1], y as i32);
+                self.bar(buf, row[0], y as i32, row[row.len() - 1], y as i32);
             }
         }
     }
 
-    pub fn draw_scan(&mut self, rows: &mut Vec<Vec<i32>>) {
+    pub fn draw_scan(&mut self, buf: &mut dyn EditableScreen, rows: &mut Vec<Vec<i32>>) {
         for i in 0..rows.len() as i32 {
             let row = &mut rows[i as usize];
             if row.is_empty() {
@@ -1346,12 +1354,12 @@ impl Bgi {
             let y = i - 1;
             row.dedup();
             for x in row {
-                self.put_pixel(*x, y, self.color);
+                self.put_pixel(buf, *x, y, self.color);
             }
         }
     }
 
-    pub fn outline_scan(&mut self, rows: &mut Vec<Vec<i32>>) {
+    pub fn outline_scan(&mut self, buf: &mut dyn EditableScreen, rows: &mut Vec<Vec<i32>>) {
         let old_line_style = self.get_line_style();
         if !matches!(old_line_style, LineStyle::Solid) {
             self.set_line_style(LineStyle::Solid);
@@ -1389,38 +1397,38 @@ impl Bgi {
                 if first {
                     if hasnext {
                         if nextmaxx > nextminx {
-                            self.line(nextminx + 1, y as i32, nextmaxx - 1, y as i32);
+                            self.line(buf, nextminx + 1, y as i32, nextmaxx - 1, y as i32);
                         } else {
-                            self.line(nextminx, y as i32, nextmaxx, y as i32);
+                            self.line(buf, nextminx, y as i32, nextmaxx, y as i32);
                         }
                     }
                     first = false;
                 } else if last {
                     if lastmaxx > lastminx {
-                        self.line(lastminx + 1, y as i32, lastmaxx - 1, y as i32);
+                        self.line(buf, lastminx + 1, y as i32, lastmaxx - 1, y as i32);
                     } else {
-                        self.line(lastminx, y as i32, lastmaxx, y as i32);
+                        self.line(buf, lastminx, y as i32, lastmaxx, y as i32);
                     }
                 } else {
                     if minx >= lastminx {
                         let mn_x = if minx > lastminx { lastminx + 1 } else { lastminx };
-                        self.line(mn_x, y as i32, minx, y as i32);
+                        self.line(buf, mn_x, y as i32, minx, y as i32);
                     }
 
                     if rows[i].len() > 1 && maxx <= lastmaxx {
                         let mx_x = if maxx < lastmaxx { lastmaxx - 1 } else { lastmaxx };
-                        self.line(mx_x, y as i32, maxx, y as i32);
+                        self.line(buf, mx_x, y as i32, maxx, y as i32);
                     }
                 }
                 if hasnext {
                     if minx < lastminx && minx >= nextminx {
                         let mn_x = if minx > nextminx { nextminx + 1 } else { nextminx };
-                        self.line(mn_x, y as i32, minx, y as i32);
+                        self.line(buf, mn_x, y as i32, minx, y as i32);
                     }
 
                     if rows[i].len() > 1 && hasnext && rows[i + 1].len() > 1 && maxx > lastmaxx && maxx <= nextmaxx {
                         let mx_x = if maxx < nextmaxx { nextmaxx - 1 } else { nextmaxx };
-                        self.line(mx_x, y as i32, maxx, y as i32);
+                        self.line(buf, mx_x, y as i32, maxx, y as i32);
                     }
                 }
                 lastminx = minx;
@@ -1433,37 +1441,38 @@ impl Bgi {
         }
     }
 
-    pub fn symmetry_fill(&mut self, x: i32, y: i32, xoffset: i32, yoffset: i32) {
-        self.bar(x - xoffset, y - yoffset, x + xoffset, y - yoffset);
-        self.bar(x - xoffset, y + yoffset, x + xoffset, y + yoffset);
+    pub fn symmetry_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, xoffset: i32, yoffset: i32) {
+        self.bar(buf, x - xoffset, y - yoffset, x + xoffset, y - yoffset);
+        self.bar(buf, x - xoffset, y + yoffset, x + xoffset, y + yoffset);
     }
 
-    pub fn circle(&mut self, x: i32, y: i32, radius: i32) {
+    pub fn circle(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, radius: i32) {
         let ry = (radius as f64 * ASPECT) as i32;
         let rx = radius;
-        self.ellipse(x, y, 0, 360, rx, ry);
+        self.ellipse(buf, x, y, 0, 360, rx, ry);
     }
 
-    pub fn ellipse(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
+    pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
         if start_angle == end_angle {
             return;
         }
 
         if start_angle > end_angle {
-            self._ellipse(x, y, 0, end_angle, radius_x, radius_y);
-            self._ellipse(x, y, start_angle, 360, radius_x, radius_y);
+            self._ellipse(buf, x, y, 0, end_angle, radius_x, radius_y);
+            self._ellipse(buf, x, y, start_angle, 360, radius_x, radius_y);
         } else {
-            self._ellipse(x, y, start_angle, end_angle, radius_x, radius_y);
+            self._ellipse(buf, x, y, start_angle, end_angle, radius_x, radius_y);
         }
     }
 
-    fn _ellipse(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
+    fn _ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
         let xradius = radius_x as f64;
         let y_radius = radius_y as f64;
 
         for angle in start_angle..=end_angle {
             let angle = angle as f64;
             self.draw_line(
+                buf,
                 x + (xradius * (angle * DEG2RAD).cos()).round() as i32,
                 y - (y_radius * (angle * DEG2RAD).sin()).round() as i32,
                 x + (xradius * ((angle + 1.0) * DEG2RAD).cos()).round() as i32,
@@ -1473,19 +1482,19 @@ impl Bgi {
         }
     }
 
-    pub fn fill_ellipse(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
+    pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
         let mut rows = create_scan_rows();
         self.scan_ellipse(x, y, start_angle, end_angle, radius_x, radius_y, &mut rows);
-        self.fill_scan(&mut rows);
-        self.draw_scan(&mut rows);
+        self.fill_scan(buf, &mut rows);
+        self.draw_scan(buf, &mut rows);
     }
 
-    pub fn clear_device(&mut self) {
-        self.bar(0, 0, self.window.width, self.window.height);
+    pub fn clear_device(&mut self, buf: &mut dyn EditableScreen) {
+        self.bar(buf, 0, 0, self.window.width, self.window.height);
         self.move_to(0, 0);
     }
 
-    pub fn sector(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radiusx: i32, radius_y: i32) {
+    pub fn sector(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radiusx: i32, radius_y: i32) {
         let center = Position::new(x, y);
         let mut rows = create_scan_rows();
         let start_point = center + get_angle_size(start_angle, radiusx, radius_y);
@@ -1502,29 +1511,33 @@ impl Bgi {
         scan_line(center, end_point, &mut rows, true);
 
         if !matches!(self.fill_style, FillStyle::Empty) {
-            self.fill_scan(&mut rows);
+            self.fill_scan(buf, &mut rows);
         }
 
         if matches!(self.line_style, LineStyle::Solid) {
             rows = create_scan_rows(); // ugh, twice, really?!
             self.scan_ellipse(x, y, start_angle, end_angle, radiusx, radius_y, &mut rows);
-            self.draw_scan(&mut rows);
+            self.draw_scan(buf, &mut rows);
         }
 
         if !matches!(self.line_style, LineStyle::Solid) {
             self.set_line_thickness(oldthickness);
         }
 
-        self.line(center.x, center.y, start_point.x, start_point.y);
-        self.line(center.x, center.y, end_point.x, end_point.y);
+        self.line(buf, center.x, center.y, start_point.x, start_point.y);
+        self.line(buf, center.x, center.y, end_point.x, end_point.y);
     }
 
-    pub fn pie_slice(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
-        self.sector(x, y, start_angle, end_angle, radius, (radius as f64 * ASPECT) as i32);
+    pub fn pie_slice(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
+        self.sector(buf, x, y, start_angle, end_angle, radius, (radius as f64 * ASPECT) as i32);
     }
 
-    pub fn graph_defaults(&mut self) {
-        self.palette = Palette::dos_default();
+    pub fn graph_defaults(&mut self, buf: &mut dyn EditableScreen) {
+        let pal = buf.palette_mut();
+        pal.clear();
+        for c in 0..16 {
+            pal.push(EGA_PALETTE[c as usize].clone());
+        }
         self.viewport = Rectangle::from(0, 0, self.window.width, self.window.height);
         self.set_color(7);
         self.set_bk_color(0);
@@ -1532,7 +1545,7 @@ impl Bgi {
         self.set_user_fill_pattern(&DEFAULT_USER_PATTERN);
         self.set_fill_style(FillStyle::Solid);
         self.set_fill_color(0);
-        self.clear_device();
+        self.clear_device(buf);
         self.char_size = 4;
         self.font = FontType::Small;
         self.clear_mouse_fields();
@@ -1596,11 +1609,11 @@ impl Bgi {
             UpdateRegion(drawUpdates);
     }*/
 
-    pub fn out_text(&mut self, str: &str) {
-        self.current_pos = self.out_text_xy(self.current_pos.x, self.current_pos.y, str);
+    pub fn out_text(&mut self, buf: &mut dyn EditableScreen, str: &str) {
+        self.current_pos = self.out_text_xy(buf, self.current_pos.x, self.current_pos.y, str);
     }
 
-    pub fn out_text_xy(&mut self, x: i32, y: i32, str: &str) -> Position {
+    pub fn out_text_xy(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, str: &str) -> Position {
         if str.is_empty() {
             return self.current_pos;
         }
@@ -1612,13 +1625,11 @@ impl Bgi {
         if matches!(font, FontType::Default) {
             for c in str.chars() {
                 if let Some(glyph) = DEFAULT_BITFONT.get_glyph(c) {
-                    for y in 0..8 {
-                        let mut pos = ((yf + y) * self.window.width + xf) as usize;
-                        for x in 0..8 {
-                            if glyph.data[y as usize] & (1 << (7 - x)) != 0 {
-                                self.screen[pos] = self.color;
+                    for gy in 0..8 {
+                        for gx in 0..8 {
+                            if glyph.data[gy as usize] & (1 << (7 - gx)) != 0 {
+                                self.put_pixel(buf, xf + gx, yf + gy, self.color);
                             }
-                            pos += 1;
                         }
                     }
                     xf += 8;
@@ -1639,7 +1650,7 @@ impl Bgi {
             yf += text_size.height;
         }
         for c in str.chars() {
-            let width = loaded_font.draw_character(self, xf, yf, self.direction, self.char_size, c as u8);
+            let width = loaded_font.draw_character(self, buf, xf, yf, self.direction, self.char_size, c as u8);
             if matches!(self.direction, Direction::Horizontal) {
                 xf += width as i32;
             } else {
@@ -1666,11 +1677,11 @@ impl Bgi {
         loaded_font.get_text_size(str, self.direction, self.char_size)
     }
 
-    pub fn get_image(&self, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
+    pub fn get_image(&self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
         let mut image = Vec::new();
         for y in y0..y1 {
             for x in x0..x1 {
-                image.push(self.get_pixel(x, y));
+                image.push(self.get_pixel(buf, x, y));
             }
         }
         Image {
@@ -1680,14 +1691,14 @@ impl Bgi {
         }
     }
 
-    pub fn put_rip_image(&mut self, x: i32, y: i32, op: WriteMode) {
+    pub fn put_rip_image(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, op: WriteMode) {
         if let Some(rip_image) = self.rip_image.take() {
-            self.put_image(x, y, &rip_image, op);
+            self.put_image(buf, x, y, &rip_image, op);
             self.rip_image = Some(rip_image);
         }
     }
 
-    pub fn put_image(&mut self, x: i32, y: i32, image: &Image, op: WriteMode) {
+    pub fn put_image(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, image: &Image, op: WriteMode) {
         let old_wm = self.get_write_mode();
         self.set_write_mode(op);
 
@@ -1702,13 +1713,13 @@ impl Bgi {
                 if !self.viewport.contains(x, y) {
                     continue;
                 }
-                self.put_pixel(x, y, col);
+                self.put_pixel(buf, x, y, col);
             }
         }
 
         self.set_write_mode(old_wm);
     }
-    pub fn put_image2(&mut self, src_x: i32, src_y: i32, width: i32, height: i32, x: i32, y: i32, image: &Image, op: WriteMode) {
+    pub fn put_image2(&mut self, buf: &mut dyn EditableScreen, src_x: i32, src_y: i32, width: i32, height: i32, x: i32, y: i32, image: &Image, op: WriteMode) {
         let old_wm = self.get_write_mode();
         self.set_write_mode(op);
 
@@ -1728,7 +1739,7 @@ impl Bgi {
                 if !self.viewport.contains(x, y) {
                     continue;
                 }
-                self.put_pixel(x, y, col);
+                self.put_pixel(buf, x, y, col);
             }
         }
 
@@ -1740,17 +1751,17 @@ impl Bgi {
         self.text_window_wrap = wrap;
     }
 
-    pub fn clear_text_window(&mut self) {
+    pub fn clear_text_window(&mut self, buf: &mut dyn EditableScreen) {
         if let Some(text_window) = self.text_window {
-            self.bar_rect(text_window);
+            self.bar_rect(buf, text_window);
         }
     }
 
     pub fn set_viewport(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         self.viewport = Rectangle::from(x0, y0, x1 - x0, y1 - y0);
     }
-    pub fn clear_viewport(&mut self) {
-        self.bar_rect(self.viewport);
+    pub fn clear_viewport(&mut self, buf: &mut dyn EditableScreen) {
+        self.bar_rect(buf, self.viewport);
     }
 
     pub fn clear_mouse_fields(&mut self) {
@@ -1767,6 +1778,7 @@ impl Bgi {
 
     pub fn add_button(
         &mut self,
+        buf: &mut dyn EditableScreen,
         x1: i32,
         y1: i32,
         mut x2: i32,
@@ -1816,68 +1828,68 @@ impl Bgi {
         }
 
         if self.button_style.display_recessed() && !pressed {
-            self.draw_line(ox, oy, ox + width - 2, oy, cs);
-            self.draw_line(ox, oy, ox, oy + height - 2, cs);
-            self.draw_line(ox + width - 2, oy, ox + width - 2, oy + height - 2, ch);
-            self.draw_line(ox, oy + height - 2, ox + width - 2, oy + height - 2, ch);
+            self.draw_line(buf, ox, oy, ox + width - 2, oy, cs);
+            self.draw_line(buf, ox, oy, ox, oy + height - 2, cs);
+            self.draw_line(buf, ox + width - 2, oy, ox + width - 2, oy + height - 2, ch);
+            self.draw_line(buf, ox, oy + height - 2, ox + width - 2, oy + height - 2, ch);
 
-            self.put_pixel(ox, oy, cc);
-            self.put_pixel(ox + width - 2, oy, cc);
-            self.put_pixel(ox, oy + height - 2, cc);
-            self.put_pixel(ox + width - 2, oy + height - 2, cc);
+            self.put_pixel(buf, ox, oy, cc);
+            self.put_pixel(buf, ox + width - 2, oy, cc);
+            self.put_pixel(buf, ox, oy + height - 2, cc);
+            self.put_pixel(buf, ox + width - 2, oy + height - 2, cc);
 
             let ox = ox + 1;
             let oy = oy + 1;
             let width = width - 2;
             let height = height - 2;
-            self.draw_line(ox, oy, ox + width - 2, oy, bg);
-            self.draw_line(ox, oy, ox, oy + height - 2, bg);
-            self.draw_line(ox + width - 2, oy, ox + width - 2, oy + height - 2, bg);
-            self.draw_line(ox, oy + height - 2, ox + width - 2, oy + height - 2, bg);
+            self.draw_line(buf, ox, oy, ox + width - 2, oy, bg);
+            self.draw_line(buf, ox, oy, ox, oy + height - 2, bg);
+            self.draw_line(buf, ox + width - 2, oy, ox + width - 2, oy + height - 2, bg);
+            self.draw_line(buf, ox, oy + height - 2, ox + width - 2, oy + height - 2, bg);
         }
 
         if self.button_style.display_bevel_special_effect() {
             for i in 1..=self.button_style.bevel_size {
-                self.draw_line(x1 - i, y1 - i, x2 - 1 + i, y1 - i, ch);
-                self.draw_line(x1 - i, y1 - i, x1 - i, y2 - 1 + i, ch);
-                self.draw_line(x2 - 1 + i, y2 - 1 + i, x2 - 1 + i, y1 - i, cs);
-                self.draw_line(x2 - 1 + i, y2 - 1 + i, x1 - i, y2 - 1 + i, cs);
-                self.put_pixel(x1 - i, y1 - i, cc);
-                self.put_pixel(x2 - 1 + i, y1 - i, cc);
-                self.put_pixel(x1 - i, y2 - 1 + i, cc);
-                self.put_pixel(x2 - 1 + i, y2 - 1 + i, cc);
+                self.draw_line(buf, x1 - i, y1 - i, x2 - 1 + i, y1 - i, ch);
+                self.draw_line(buf, x1 - i, y1 - i, x1 - i, y2 - 1 + i, ch);
+                self.draw_line(buf, x2 - 1 + i, y2 - 1 + i, x2 - 1 + i, y1 - i, cs);
+                self.draw_line(buf, x2 - 1 + i, y2 - 1 + i, x1 - i, y2 - 1 + i, cs);
+                self.put_pixel(buf, x1 - i, y1 - i, cc);
+                self.put_pixel(buf, x2 - 1 + i, y1 - i, cc);
+                self.put_pixel(buf, x1 - i, y2 - 1 + i, cc);
+                self.put_pixel(buf, x2 - 1 + i, y2 - 1 + i, cc);
             }
         }
 
         for y in y1..y2 {
             for x in x1..x2 {
-                self.put_pixel(x, y, su);
+                self.put_pixel(buf, x, y, su);
             }
         }
 
         if self.button_style.display_sunken_effect() {
-            self.draw_line(x1, y1, x2, y1, cs);
-            self.draw_line(x1, y1, x1, y2, cs);
-            self.draw_line(x2, y2, x2, y1, ch);
-            self.draw_line(x2, y2, x1, y2, ch);
-            self.put_pixel(x1, y1, cc);
-            self.put_pixel(x2, y1, cc);
-            self.put_pixel(x2, y2, cc);
-            self.put_pixel(x1, y2, cc);
+            self.draw_line(buf, x1, y1, x2, y1, cs);
+            self.draw_line(buf, x1, y1, x1, y2, cs);
+            self.draw_line(buf, x2, y2, x2, y1, ch);
+            self.draw_line(buf, x2, y2, x1, y2, ch);
+            self.put_pixel(buf, x1, y1, cc);
+            self.put_pixel(buf, x2, y1, cc);
+            self.put_pixel(buf, x2, y2, cc);
+            self.put_pixel(buf, x1, y2, cc);
         }
 
         if self.button_style.display_chisel() {
             let (xinset, yinset) = chisel_inset(y2 - y1 + 1);
-            self.draw_line(x1 + xinset, y1 + yinset, x2 - xinset - 1, y1 + yinset, cs);
-            self.draw_line(x1 + xinset, y1 + yinset, x1 + xinset, y2 - yinset - 1, cs);
+            self.draw_line(buf, x1 + xinset, y1 + yinset, x2 - xinset - 1, y1 + yinset, cs);
+            self.draw_line(buf, x1 + xinset, y1 + yinset, x1 + xinset, y2 - yinset - 1, cs);
 
-            self.draw_line(x1 + xinset + 1, y1 + yinset + 1, x2 - xinset - 1, y1 + yinset + 1, ch);
-            self.draw_line(x2 - xinset - 1, y1 + yinset + 1, x2 - xinset - 1, y2 - yinset - 1, ch);
-            self.draw_line(x2 - xinset - 1, y2 - yinset - 1, x1 + xinset + 1, y2 - yinset - 1, ch);
-            self.draw_line(x1 + xinset + 1, y2 - yinset - 1, x1 + xinset + 1, y1 + yinset + 1, ch);
+            self.draw_line(buf, x1 + xinset + 1, y1 + yinset + 1, x2 - xinset - 1, y1 + yinset + 1, ch);
+            self.draw_line(buf, x2 - xinset - 1, y1 + yinset + 1, x2 - xinset - 1, y2 - yinset - 1, ch);
+            self.draw_line(buf, x2 - xinset - 1, y2 - yinset - 1, x1 + xinset + 1, y2 - yinset - 1, ch);
+            self.draw_line(buf, x1 + xinset + 1, y2 - yinset - 1, x1 + xinset + 1, y1 + yinset + 1, ch);
 
-            self.draw_line(x1 + xinset + 2, y2 - 2 - yinset, x2 - xinset - 2, y2 - 2 - yinset, cs);
-            self.draw_line(x2 - xinset - 2, y2 - 2 - yinset, x2 - xinset - 2, y1 + yinset + 2, cs);
+            self.draw_line(buf, x1 + xinset + 2, y2 - 2 - yinset, x2 - xinset - 2, y2 - 2 - yinset, cs);
+            self.draw_line(buf, x2 - xinset - 2, y2 - 2 - yinset, x2 - xinset - 2, y1 + yinset + 2, cs);
         }
 
         // TODO: Handle icons
@@ -1925,11 +1937,11 @@ impl Bgi {
 
                     if self.button_style.display_dropshadow() {
                         self.set_color(cs);
-                        self.out_text_xy(tx + 1, ty + 1, &text);
+                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
                     }
 
                     self.set_color(ch);
-                    self.out_text_xy(tx, ty, &text);
+                    self.out_text_xy(buf, tx, ty, &text);
                     // print hotkey
                     if hotkey != 0 && hotkey != 255 {
                         let hk_ch = (hotkey as char).to_ascii_uppercase();
@@ -1938,13 +1950,14 @@ impl Bgi {
                                 let prefix_size: Size = self.get_text_size(&text[0..i]);
                                 if self.button_style.highlight_hotkey() {
                                     self.set_color(ul);
-                                    self.out_text_xy(tx + prefix_size.width, ty, &ch.to_string());
+                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
                                 }
 
                                 if self.button_style.underline_hotkey() {
                                     let hotkey_size = self.get_text_size(&text[i..=i]);
                                     if self.button_style.display_dropshadow() {
                                         self.draw_line(
+                                            buf,
                                             tx + prefix_size.width + 1,
                                             ty + hotkey_size.height + 2,
                                             tx + prefix_size.width + hotkey_size.width,
@@ -1953,6 +1966,7 @@ impl Bgi {
                                         );
                                     }
                                     self.draw_line(
+                                        buf,
                                         tx + prefix_size.width,
                                         ty + hotkey_size.height + 1,
                                         tx + prefix_size.width + hotkey_size.width - 1,

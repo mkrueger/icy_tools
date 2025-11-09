@@ -4,6 +4,7 @@ use std::io::Cursor;
 use crate::EngineResult;
 
 use super::font::Font;
+use crate::EditableScreen;
 
 pub enum StrokeType {
     End,
@@ -66,7 +67,7 @@ impl Character {
         (self.width * SCALE_UP[scale_factor as usize]) as f32 / SCALE_DOWN[scale_factor as usize] as f32
     }
 
-    pub fn draw(&self, bgi: &mut super::Bgi, font: &Font, x: i32, y: i32, dir: super::Direction, size: i32) {
+    pub fn draw(&self, bgi: &mut super::Bgi, buf: &mut dyn EditableScreen, font: &Font, x: i32, y: i32, dir: super::Direction, size: i32) {
         let size = size as usize;
         let height = font.get_height() * SCALE_UP[size] / SCALE_DOWN[size];
         if matches!(dir, super::Direction::Horizontal) {
@@ -77,7 +78,7 @@ impl Character {
                 if matches!(stroke.stype, StrokeType::MoveTo) {
                     bgi.move_to(curx, cur_y);
                 } else if matches!(stroke.stype, StrokeType::LineTo) {
-                    bgi.line_to(curx, cur_y);
+                    bgi.line_to(buf, curx, cur_y);
                 }
             }
         } else {
@@ -88,7 +89,7 @@ impl Character {
                 if matches!(stroke.stype, StrokeType::MoveTo) {
                     bgi.move_to(curx, cur_y);
                 } else if matches!(stroke.stype, StrokeType::LineTo) {
-                    bgi.line_to(curx, cur_y);
+                    bgi.line_to(buf, curx, cur_y);
                 }
             }
         }
