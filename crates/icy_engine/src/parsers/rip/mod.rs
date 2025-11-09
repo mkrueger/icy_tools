@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use self::bgi::{Bgi, MouseField};
+use self::bgi::Bgi;
 
 use super::{BufferParser, ansi};
 use crate::{CallbackAction, EditableScreen, EngineResult, ParserError, Rectangle, Size, ansi::EngineState};
@@ -167,14 +167,6 @@ impl Parser {
 }
 
 impl BufferParser for Parser {
-    fn has_renederer(&self) -> bool {
-        true
-    }
-
-    fn picture_is_empty(&self) -> bool {
-        self.rip_counter == 0
-    }
-
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         if buf.terminal_state().cleared_screen {
             buf.terminal_state_mut().cleared_screen = false;
@@ -394,11 +386,7 @@ impl BufferParser for Parser {
         }
         self.fallback_parser.print_char(buf, ch)
     }
-
-    fn get_mouse_fields(&self) -> Vec<MouseField> {
-        self.bgi.get_mouse_fields()
-    }
-
+    /*
     fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
         if self.last_rip_update == self.rip_counter {
             return None;
@@ -421,7 +409,7 @@ impl BufferParser for Parser {
             pixels.push(255);
         }
         Some((self.bgi.window, pixels))
-    }
+    }*/
 }
 
 pub fn to_base_36(len: usize, number: i32) -> String {

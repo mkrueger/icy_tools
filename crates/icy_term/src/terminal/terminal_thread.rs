@@ -59,8 +59,6 @@ pub enum TerminalEvent {
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
-    ClearPictureData,
-    UpdatePictureData(icy_engine::Size, Vec<u8>, Vec<icy_engine::rip::bgi::MouseField>),
 }
 
 #[derive(Debug, Clone)]
@@ -234,14 +232,7 @@ impl TerminalThread {
                             poll_interval += 1;
                         }
 
-                        let data = self.read_connection(&mut read_buffer).await;
-                        if data > 0 && self.buffer_parser.has_renederer() {
-                            if self.buffer_parser.picture_is_empty() {
-                                let _ = self.event_tx.send(TerminalEvent::ClearPictureData);
-                            } else if let Some((size, data)) = self.buffer_parser.get_picture_data() {
-                                let _ = self.event_tx.send(TerminalEvent::UpdatePictureData(size, data, self.buffer_parser.get_mouse_fields()));
-                            }
-                        }
+                        let _ = self.read_connection(&mut read_buffer).await;
                     }
                 }
             }

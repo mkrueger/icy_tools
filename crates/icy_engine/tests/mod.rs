@@ -2,7 +2,6 @@ use icy_engine::{
     TextBuffer,
     editor::{EditState, UndoState},
 };
-pub mod tdf;
 
 #[test]
 fn test_set_aspect_ratio() {

@@ -1,11 +1,11 @@
 #[cfg(test)]
 use crate::TextScreen;
 use crate::{
-    EditableScreen, EngineResult, Size,
+    EditableScreen, EngineResult,
     ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType},
 };
 
-use self::{ansi::sound::AnsiMusic, rip::bgi::MouseField};
+use self::ansi::sound::AnsiMusic;
 
 use super::Position;
 
@@ -52,8 +52,6 @@ pub enum CallbackAction {
     SendMouseEvent(MouseEventType, Position, MouseButton, KeyModifiers),
 }
 
-const EMPTY_MOUSE_FIELD: Vec<MouseField> = Vec::new();
-
 pub trait BufferParser: Send {
     fn get_next_action(&mut self, _buffer: &mut dyn EditableScreen) -> Option<CallbackAction> {
         None
@@ -65,22 +63,6 @@ pub trait BufferParser: Send {
     ///
     /// This function will return an error if .
     fn print_char(&mut self, buffer: &mut dyn EditableScreen, c: char) -> EngineResult<CallbackAction>;
-
-    fn get_mouse_fields(&self) -> Vec<MouseField> {
-        EMPTY_MOUSE_FIELD
-    }
-
-    fn has_renederer(&self) -> bool {
-        false
-    }
-
-    fn picture_is_empty(&self) -> bool {
-        true
-    }
-
-    fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
-        None
-    }
 }
 
 #[cfg(test)]

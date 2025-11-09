@@ -28,6 +28,9 @@ pub use position::*;
 mod text_buffer;
 pub use text_buffer::*;
 
+mod palette_screen_buffer;
+pub use palette_screen_buffer::*;
+
 #[macro_use]
 mod palette_handling;
 pub use palette_handling::*;
@@ -43,9 +46,6 @@ pub use caret::*;
 
 pub mod formats;
 pub use formats::*;
-
-mod ansi_font;
-pub use ansi_font::*;
 
 mod crc;
 pub use crc::*;

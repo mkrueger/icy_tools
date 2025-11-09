@@ -35,14 +35,4 @@ impl Terminal {
         let (r, g, b) = color.get_rgb_f32();
         Color::from_rgb(r, g, b)
     }
-
-    pub fn update_picture(&mut self, size: icy_engine::Size, data: Vec<u8>, mouse_fields: Vec<icy_engine::rip::bgi::MouseField>) {
-        self.picture_data = Some((size, data));
-        self.mouse_fields = mouse_fields;
-    }
-
-    pub fn clear_picture_data(&mut self) {
-        self.picture_data = None;
-        self.mouse_fields.clear();
-    }
 }

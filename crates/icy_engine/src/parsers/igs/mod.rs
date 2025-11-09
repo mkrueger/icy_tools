@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{CallbackAction, EditableScreen, EngineResult, Position, Size};
+use crate::{CallbackAction, EditableScreen, EngineResult, Position};
 
 mod cmd;
 use cmd::IgsCommands;
@@ -542,18 +542,6 @@ impl BufferParser for Parser {
                 _ => self.write_char(buf, ch),
             },
         }
-    }
-
-    fn has_renederer(&self) -> bool {
-        true
-    }
-
-    fn picture_is_empty(&self) -> bool {
-        false
-    }
-
-    fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
-        self.command_executor.get_picture_data()
     }
 }
 

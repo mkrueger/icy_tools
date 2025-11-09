@@ -414,14 +414,6 @@ impl Parser {
 impl Parser {}
 
 impl BufferParser for Parser {
-    fn has_renederer(&self) -> bool {
-        true
-    }
-
-    fn picture_is_empty(&self) -> bool {
-        self.cmd_counter == 0
-    }
-
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         if buf.terminal_state().cleared_screen {
             self.font = None;
@@ -474,7 +466,7 @@ impl BufferParser for Parser {
             }
         }
     }
-
+    /*
     fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
         if self.last_cmd_update == self.cmd_counter {
             return None;
@@ -497,5 +489,5 @@ impl BufferParser for Parser {
             pixels.push(255);
         }
         Some((self.bgi.window, pixels))
-    }
+    }*/
 }

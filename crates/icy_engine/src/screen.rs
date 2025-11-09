@@ -70,7 +70,12 @@ pub trait Screen: TextPane + Send {
     fn get_clipboard_data(&self) -> Option<Vec<u8>>;
 }
 
-pub trait EditableScreen: Screen {
+pub trait RgbaScreen: Screen {
+    fn get_resolution(&self) -> Size;
+    fn screen_mut(&mut self) -> &mut [u8];
+}
+
+pub trait EditableScreen: RgbaScreen {
     fn ice_mode_mut(&mut self) -> &mut IceMode;
 
     fn caret_mut(&mut self) -> &mut caret::Caret;

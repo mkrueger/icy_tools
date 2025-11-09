@@ -282,10 +282,11 @@ impl MainWindow {
                 Task::none()
             }
             Message::RipCommand(clear_screen, cmd) => {
+                let lock = &mut self.terminal_window.terminal.screen.lock().unwrap();
                 if clear_screen {
-                    self.terminal_window.terminal.clear_picture_data();
+                    lock.clear_screen();
                 }
-                let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
+                let buffer_type = lock.buffer_type();
                 // Send the RIP command
                 let mut data: Vec<u8> = Vec::new();
                 for ch in cmd.chars() {
@@ -962,14 +963,6 @@ impl MainWindow {
             }
             TerminalEvent::EmsiLogin(isi) => {
                 self.terminal_window.iemsi_info = Some(*isi);
-                Task::none()
-            }
-            TerminalEvent::ClearPictureData => {
-                self.terminal_window.terminal.clear_picture_data();
-                Task::none()
-            }
-            TerminalEvent::UpdatePictureData(size, data, mouse_fields) => {
-                self.terminal_window.terminal.update_picture(size, data, mouse_fields);
                 Task::none()
             }
         }

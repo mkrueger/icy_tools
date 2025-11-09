@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Screen, Selection,
-    SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions, Screen,
+    Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard,
 };
 
 pub struct TextScreen {
@@ -166,6 +166,20 @@ impl Screen for TextScreen {
 
     fn get_clipboard_data(&self) -> Option<Vec<u8>> {
         clipboard::get_clipboard_data(&self.buffer, self.current_layer, &self.selection_mask, &self.selection_opt)
+    }
+}
+
+impl RgbaScreen for TextScreen {
+    fn get_resolution(&self) -> Size {
+        let font_size = self.get_font(0).unwrap().size;
+        let rect = self.get_size();
+        let px_width = rect.width * font_size.width;
+        let px_height = rect.height * font_size.height;
+        Size::new(px_width, px_height)
+    }
+
+    fn screen_mut(&mut self) -> &mut [u8] {
+        panic!("Not implemented for TextScreen");
     }
 }
 
