@@ -230,6 +230,11 @@ impl Command for Home {
     fn to_rip_string(&self) -> String {
         "|H".to_string()
     }
+
+    fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+        buf.home();
+        Ok(CallbackAction::NoUpdate)
+    }
 }
 
 #[derive(Default, Clone)]
@@ -238,6 +243,11 @@ pub struct EraseEOL {}
 impl Command for EraseEOL {
     fn to_rip_string(&self) -> String {
         "|>".to_string()
+    }
+
+    fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+        buf.clear_line_end();
+        Ok(CallbackAction::NoUpdate)
     }
 }
 
@@ -1254,17 +1264,17 @@ impl Command for Polygon {
         match state {
             0 | 1 => {
                 parse_base_36(&mut self.npoints, ch)?;
-                Ok(true)
+                return Ok(true);
             }
             _ => {
                 if *state % 2 == 0 {
                     self.points.push(0);
                 }
-                let mut p = self.points.pop().unwrap();
+                let mut p = self.points.pop().ok_or_else(|| anyhow::anyhow!("Polygon point stack underflow"))?;
                 parse_base_36(&mut p, ch)?;
                 self.points.push(p);
-
-                Ok(*state < (self.npoints + 1) * 4)
+                let last_state = 2 + self.npoints * 4 - 1;
+                return Ok(*state < last_state);
             }
         }
     }
@@ -1309,7 +1319,8 @@ impl Command for FilledPolygon {
                 parse_base_36(&mut p, ch)?;
                 self.points.push(p);
 
-                Ok(*state < (self.npoints + 1) * 4)
+                let last_state = 2 + self.npoints * 4 - 1;
+                Ok(*state < last_state)
             }
         }
     }
@@ -1354,7 +1365,8 @@ impl Command for PolyLine {
                 parse_base_36(&mut p, ch)?;
                 self.points.push(p);
 
-                Ok(*state < (self.npoints + 1) * 4)
+                let last_state = 2 + self.npoints * 4 - 1;
+                Ok(*state < last_state)
             }
         }
     }
@@ -2017,10 +2029,11 @@ impl Command for LoadIcon {
                 if self.x + x as i32 >= res.width {
                     break;
                 }
-                let mut color = (planes[(row * 3) + (x / 8)] >> (7 - (x & 7))) & 1;
-                color |= ((planes[(row * 2) + (x / 8)] >> (7 - (x & 7))) & 1) << 1;
-                color |= ((planes[row + (x / 8)] >> (7 - (x & 7))) & 1) << 2;
-                color |= ((planes[x / 8] >> (7 - (x & 7))) & 1) << 3;
+                let bit = 7 - (x & 7);
+                let mut color = (planes[x / 8] >> bit) & 1;
+                color |= ((planes[row + (x / 8)] >> bit) & 1) << 1;
+                color |= ((planes[(row * 2) + (x / 8)] >> bit) & 1) << 2;
+                color |= ((planes[(row * 3) + (x / 8)] >> bit) & 1) << 3;
                 bgi.put_pixel(buf, self.x + x as i32, self.y + y, color);
             }
         }
@@ -2338,9 +2351,9 @@ fn parse_host_command(split: &str) -> String {
                 // Escape character
                 '[' => res.push('\x1B'),
                 // Pause data transmission
-                'S' => res.push('1'),
+                'S' => res.push('\x13'), // XOFF
                 // Resume data transmission
-                'Q' => res.push('2'),
+                'Q' => res.push('\x11'), // XON
                 _ => {
                     log::error!("Invalid character after ^ in button command: {}", c);
                 }
@@ -2469,7 +2482,7 @@ impl Command for CopyRegion {
     }
 
     fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        let image = bgi.get_image(buf, self.x0, self.y0, self.x1, self.y1 + 1);
+        let image = bgi.get_image(buf, self.x0, self.y0, self.x1 + 1, self.y1 + 1);
         bgi.put_image(buf, self.x0, self.dest_line, &image, bgi.get_write_mode());
         Ok(CallbackAction::Update)
     }

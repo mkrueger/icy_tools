@@ -96,6 +96,8 @@ impl Parser {
 
     fn record_rip_command(&mut self, buf: &mut dyn EditableScreen, cmd: Box<dyn Command>) -> EngineResult<CallbackAction> {
         self.rip_counter = self.rip_counter.wrapping_add(1);
+        println!("{}", cmd.to_rip_string());
+
         let result = cmd.run(buf, &mut self.bgi);
         if !self.record_rip_commands {
             return result;

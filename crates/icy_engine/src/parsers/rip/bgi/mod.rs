@@ -553,7 +553,7 @@ impl Bgi {
     }
 
     pub fn set_bk_color(&mut self, c: u8) -> u8 {
-        let old = self.color;
+        let old = self.bkcolor;
         self.bkcolor = c % 16;
         old
     }
@@ -1154,14 +1154,7 @@ impl Bgi {
             }
         }
         if self.color != 0 {
-            for i in 1..rows.len() as i32 {
-                let row = &mut rows[i as usize];
-                if row.len() >= 2 {
-                    row.sort_unstable();
-                    let y = i - 1;
-                    self.line(buf, row[0], y, row[row.len() - 1], y);
-                }
-            }
+            self.draw_poly(buf, points);
         }
     }
 
