@@ -1,3 +1,4 @@
+use std::result;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Mutex, atomic::AtomicU64};
@@ -6,6 +7,7 @@ use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, RenderUnicodeOpti
 use iced::widget::shader;
 use iced::{Element, Rectangle, mouse};
 use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
+use icy_engine::rip::bgi::MouseField;
 use icy_engine::{MouseState, Position, Selection};
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -30,7 +32,7 @@ pub struct CRTShaderState {
     hovered_cell: Option<Position>,
     hovered_link: Option<String>,
     /// Track which RIP field is hovered (by index)
-    hovered_rip_field: Option<usize>,
+    hovered_rip_field: Option<MouseField>,
 
     last_rendered_size: Option<(u32, u32)>,
     instance_id: u64,
@@ -84,7 +86,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         let mut font_w = 0usize;
         let mut font_h = 0usize;
 
-        if let Ok(screen) = self.term.screen.try_lock() {
+        if let Ok(screen) = self.term.screen.lock() {
             if let Some(font) = screen.get_font(0) {
                 font_w = font.size.width as usize;
                 font_h = font.size.height as usize;
@@ -92,48 +94,52 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
             let (fg_sel, bg_sel) = screen.buffer_type().get_selection_colors();
 
-            if let Some((s, data)) = &self.term.picture_data {
-                // Use cached rendering if available
-                size = (s.width as u32, s.height as u32);
-                rgba_data = data.clone();
-            } else {
-                if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
-                    // Unicode path - use cached glyph cache with Arc<Mutex<>>
-                    let (img_size, data) = render_unicode_to_rgba(
-                        &*screen,
-                        &RenderUnicodeOptions {
-                            selection: screen.get_selection(),
-                            selection_fg: Some(fg_sel),
-                            selection_bg: Some(bg_sel),
-                            blink_on: state.character_blink.is_on(),
-                            font_px_size: Some(font_h as f32),
-                            glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
-                        },
-                    );
-                    size = (img_size.width as u32, img_size.height as u32);
-                    rgba_data = data;
-                } else {
-                    // Existing ANSI path
-                    let rect = icy_engine::Rectangle {
-                        start: icy_engine::Position::new(0, 0),
-                        size: icy_engine::Size::new(screen.get_width(), screen.get_height()),
-                    };
-                    let (img_size, data) = screen.render_to_rgba(&icy_engine::RenderOptions {
-                        rect: rect.into(),
-                        blink_on: state.character_blink.is_on(),
+            if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
+                // Unicode path - use cached glyph cache with Arc<Mutex<>>
+                let (img_size, data) = render_unicode_to_rgba(
+                    &**screen,
+                    &RenderUnicodeOptions {
                         selection: screen.get_selection(),
                         selection_fg: Some(fg_sel),
                         selection_bg: Some(bg_sel),
-                    });
-                    size = (img_size.width as u32, img_size.height as u32);
-                    rgba_data = data;
-                }
+                        blink_on: state.character_blink.is_on(),
+                        font_px_size: Some(font_h as f32),
+                        glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
+                    },
+                );
+                size = (img_size.width as u32, img_size.height as u32);
+                rgba_data = data;
+            } else {
+                // Existing ANSI path
+                let rect = icy_engine::Rectangle {
+                    start: icy_engine::Position::new(0, 0),
+                    size: icy_engine::Size::new(screen.get_width(), screen.get_height()),
+                };
+                let (img_size, data) = screen.render_to_rgba(&icy_engine::RenderOptions {
+                    rect: rect.into(),
+                    blink_on: state.character_blink.is_on(),
+                    selection: screen.get_selection(),
+                    selection_fg: Some(fg_sel),
+                    selection_bg: Some(bg_sel),
+                });
+                size = (img_size.width as u32, img_size.height as u32);
+                rgba_data = data;
             }
         }
 
         // Caret overlay (shared)
         if let Ok(edit_state) = self.term.screen.try_lock() {
             self.draw_caret(&edit_state.caret(), state, &mut rgba_data, size, font_w, font_h);
+        }
+
+        if rgba_data.len() != (size.0 as usize * size.1 as usize * 4) {
+            panic!(
+                "RGBA data size mismatch: expected {}, got {}, resolution was {}x{}",
+                size.0 as usize * size.1 as usize * 4,
+                rgba_data.len(),
+                size.0,
+                size.1
+            );
         }
 
         TerminalShader {
@@ -194,58 +200,51 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                 MouseState::default()
             };
 
-            let use_rip = !self.term.mouse_fields.is_empty();
-
             let mouse_tracking_enabled = mouse_state.tracking_enabled();
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = cursor.position() {
                         let cell_pos = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y);
+                        let xy_pos = map_mouse_to_xy(self.term, &self.monitor_settings, bounds, position.x, position.y);
                         state.hovered_cell = cell_pos;
 
                         // Handle RIP field hovering
-                        if use_rip {
-                            // Convert cell position to RIP coordinates (640x350)
-                            if let Some(cell) = cell_pos {
-                                if let Ok(screen) = self.term.screen.try_lock() {
-                                    // Convert cell position to RIP pixel coordinates
-                                    // RIP uses 640x350 coordinate system
-                                    let cells_x = screen.get_width() as f32;
-                                    let cells_y = screen.get_height() as f32;
+                        // Convert cell position to RIP coordinates (640x350)
+                        if let Some(rip_pos) = xy_pos {
+                            if let Ok(screen) = self.term.screen.try_lock() {
+                                // Convert cell position to RIP pixel coordinates
+                                // RIP uses 640x350 coordinate system
 
-                                    let rip_x = ((cell.x as f32 / cells_x) * 640.0) as i32;
-                                    let rip_y = ((cell.y as f32 / cells_y) * 350.0) as i32;
-
-                                    // Check if we're hovering over a RIP field
-                                    let mut found_field = None;
-                                    for (idx, mouse_field) in self.term.mouse_fields.iter().enumerate() {
-                                        if !mouse_field.style.is_mouse_button() {
-                                            continue;
-                                        }
-
-                                        if mouse_field.contains(rip_x, rip_y) {
-                                            // Check if this field contains a previously found field
-                                            // (handle nested fields by preferring innermost)
-                                            if let Some(found_idx) = found_field {
-                                                if mouse_field.contains_field(&self.term.mouse_fields[found_idx]) {
-                                                    continue;
-                                                }
-                                            }
-                                            found_field = Some(idx);
-                                        }
+                                // Check if we're hovering over a RIP field
+                                let mut found_field = None;
+                                for mouse_field in screen.mouse_fields() {
+                                    if !mouse_field.style.is_mouse_button() {
+                                        continue;
                                     }
-
-                                    if state.hovered_rip_field != found_field {
-                                        state.hovered_rip_field = found_field;
-                                        needs_redraw = true;
+                                    if mouse_field.contains(rip_pos.x, rip_pos.y) {
+                                        // Check if this field contains a previously found field
+                                        // (handle nested fields by preferring innermost)
+                                        if let Some(old_field) = &found_field {
+                                            if mouse_field.contains_field(old_field) {
+                                                found_field = Some(mouse_field.clone());
+                                            }
+                                        } else {
+                                            // First matching field found
+                                            found_field = Some(mouse_field.clone());
+                                        }
                                     }
                                 }
-                            } else {
-                                // Not hovering over terminal
-                                if state.hovered_rip_field.is_some() {
-                                    state.hovered_rip_field = None;
+
+                                if state.hovered_rip_field != found_field {
+                                    state.hovered_rip_field = found_field;
                                     needs_redraw = true;
                                 }
+                            }
+                        } else {
+                            // Not hovering over terminal
+                            if state.hovered_rip_field.is_some() {
+                                state.hovered_rip_field = None;
+                                needs_redraw = true;
                             }
                         }
 
@@ -313,7 +312,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                     let mut found_link: Option<String> = None;
                                     for hyperlink in screen.hyperlinks() {
                                         if screen.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
-                                            found_link = Some(hyperlink.get_url(&*screen));
+                                            found_link = Some(hyperlink.get_url(&**screen));
                                             break;
                                         }
                                     }
@@ -344,28 +343,10 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                 _ => return None,
                             };
 
-                            if let Some(mouse_field_idx) = state.hovered_rip_field {
-                                if let Some(mouse_field) = &self.term.mouse_fields.get(mouse_field_idx) {
-                                    if let Some(cmd) = &mouse_field.host_command {
-                                        let clear_rip_screen = mouse_field.style.reset_screen_after_click();
-                                        // Handle screen reset if
-                                        /* TODO
-                                        if clear_rip_screen {
-                                            if let Ok(mut edit_state) = self.term.edit_state.lock() {
-                                                let mut caret = edit_state.caret().clone();
-                                                {
-                                                    let buffer = edit_state.get_buffer_mut();
-                                                    buffer.terminal_state.clear_margins_left_right();
-                                                    buffer.terminal_state.clear_margins_top_bottom();
-                                                    buffer.clear_screen();
-                                                }
-                                                *edit_state.get_caret_mut() = caret;
-                                            }
-                                        }*/
-
-                                        // Send the RIP command
-                                        return Some(iced::widget::Action::publish(Message::RipCommand(clear_rip_screen, cmd.clone())));
-                                    }
+                            if let Some(mouse_field) = &state.hovered_rip_field {
+                                if let Some(cmd) = &mouse_field.host_command {
+                                    let clear_rip_screen = mouse_field.style.reset_screen_after_click();
+                                    return Some(iced::widget::Action::publish(Message::RipCommand(clear_rip_screen, cmd.clone())));
                                 }
                             }
 
@@ -586,6 +567,64 @@ pub fn set_scale_factor(sf: f32) {
 #[inline]
 fn get_scale_factor() -> f32 {
     f32::from_bits(SCALE_FACTOR_BITS.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn map_mouse_to_xy(
+    term: &Terminal,
+    monitor: &MonitorSettings,
+    bounds: Rectangle,
+    mx: f32, // mouse x in logical space
+    my: f32, // mouse y in logical space
+) -> Option<Position> {
+    // 3. Lock edit state & obtain font + buffer size (already in pixel units)
+    let screen = term.screen.try_lock().ok()?;
+    let font = screen.get_font(0)?;
+    let font_w = font.size.width as f32;
+    let font_h = font.size.height as f32;
+
+    let scale_factor = get_scale_factor();
+    let bounds = bounds * scale_factor;
+    let mx = mx * scale_factor;
+    let my = my * scale_factor;
+    if font_w <= 0.0 || font_h <= 0.0 {
+        return None;
+    }
+
+    let resolution = screen.get_resolution();
+    let resolution_x = resolution.width as f32;
+    let resolution_y = resolution.height as f32;
+    // 4. Aspect-fit scale in PHYSICAL space (match render())
+    let avail_w = bounds.width.max(1.0);
+    let avail_h = bounds.height.max(1.0);
+    let uniform_scale = (avail_w / resolution_x).min(avail_h / resolution_y);
+
+    let use_pp = monitor.use_pixel_perfect_scaling;
+    let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
+
+    let scaled_w = resolution_x * display_scale;
+    let scaled_h = resolution_y * display_scale;
+
+    // 5. Center terminal inside physical bounds (same as render())
+    let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
+    let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
+
+    // 6. Pixel-perfect rounding (only position & size used for viewport clipping)
+    let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
+        (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
+    } else {
+        (offset_x, offset_y, scaled_w, scaled_h)
+    };
+
+    // 7. Hit test in physical viewport
+    if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
+        return None;
+    }
+
+    // 8. Undo scaling using display_scale, not viewport width ratios
+    let local_px_x = (mx - vp_x) / display_scale;
+    let local_px_y = (my - vp_y) / display_scale;
+
+    Some(Position::new(local_px_x as i32, local_px_y as i32))
 }
 
 fn map_mouse_to_cell(

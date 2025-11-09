@@ -104,7 +104,7 @@ pub struct ModemConfig {
 
 pub struct TerminalThread {
     // Shared state with UI
-    edit_screen: Arc<Mutex<dyn EditableScreen>>,
+    edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
 
     // Thread-local state
     connection: Option<Box<dyn Connection>>,
@@ -130,7 +130,7 @@ pub struct TerminalThread {
 
 impl TerminalThread {
     pub fn spawn(
-        edit_screen: Arc<Mutex<dyn EditableScreen>>,
+        edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
         buffer_parser: Box<dyn BufferParser>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -596,7 +596,7 @@ impl TerminalThread {
                             self.auto_login = None;
                         }
 
-                        match self.buffer_parser.print_char(&mut *screen, ch) {
+                        match self.buffer_parser.print_char(&mut **screen, ch) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
                         }
@@ -626,7 +626,7 @@ impl TerminalThread {
                             self.auto_login = None;
                         }
 
-                        match self.buffer_parser.print_char(&mut *screen, byte as char) {
+                        match self.buffer_parser.print_char(&mut **screen, byte as char) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
                         }
@@ -784,7 +784,7 @@ impl TerminalThread {
 
 // Helper function to create a terminal thread for the UI
 pub fn create_terminal_thread(
-    edit_screen: Arc<Mutex<dyn EditableScreen>>,
+    edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
     terminal_type: TerminalEmulation,
 ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
     use icy_engine::ansi::MusicOption;

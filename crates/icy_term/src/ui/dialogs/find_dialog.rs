@@ -45,7 +45,7 @@ impl DialogState {
         }
     }
 
-    pub fn update(&mut self, msg: FindDialogMsg, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Option<Message> {
+    pub fn update(&mut self, msg: FindDialogMsg, edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>) -> Option<Message> {
         match msg {
             FindDialogMsg::ChangePattern(pattern) => {
                 self.pattern = pattern.clone();
@@ -63,7 +63,7 @@ impl DialogState {
 
                 // Search for the new pattern
                 let edit_screen_locked = edit_screen.lock().unwrap();
-                self.search_pattern(&*edit_screen_locked);
+                self.search_pattern(&**edit_screen_locked);
                 drop(edit_screen_locked);
 
                 // Check if the current/last position still matches the new pattern
@@ -130,7 +130,7 @@ impl DialogState {
                 // Re-search with new case sensitivity setting
                 if !self.pattern.is_empty() {
                     let screen_locked = edit_screen.lock().unwrap();
-                    self.search_pattern(&*screen_locked);
+                    self.search_pattern(&**screen_locked);
                     drop(screen_locked);
 
                     // Try to keep the same position if it still matches
@@ -234,7 +234,7 @@ impl DialogState {
         }
     }
 
-    fn select_current(&mut self, edit_screen: Arc<Mutex<dyn EditableScreen>>) {
+    fn select_current(&mut self, edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>) {
         if self.cur_sel >= self.results.len() {
             return;
         }
@@ -251,7 +251,7 @@ impl DialogState {
         self.last_selected_pos = Some(pos);
     }
 
-    pub fn find_next(&mut self, edit_screen: Arc<Mutex<dyn EditableScreen>>) {
+    pub fn find_next(&mut self, edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>) {
         if self.results.is_empty() || self.pattern.is_empty() {
             return;
         }
@@ -262,7 +262,7 @@ impl DialogState {
         self.select_current(edit_screen);
     }
 
-    pub fn find_prev(&mut self, edit_screen: Arc<Mutex<dyn EditableScreen>>) {
+    pub fn find_prev(&mut self, edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>) {
         if self.results.is_empty() || self.pattern.is_empty() {
             return;
         }

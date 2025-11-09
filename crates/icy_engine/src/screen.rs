@@ -2,7 +2,7 @@ use std::cmp::max;
 
 use crate::{
     AttributedChar, BitFont, CallbackAction, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
-    TerminalState, TextAttribute, TextPane, caret,
+    TerminalState, TextAttribute, TextPane, caret, rip::bgi::MouseField,
 };
 
 pub trait Screen: TextPane + Send {
@@ -68,6 +68,8 @@ pub trait Screen: TextPane + Send {
     fn get_copy_text(&self) -> Option<String>;
     fn get_copy_rich_text(&self) -> Option<String>;
     fn get_clipboard_data(&self) -> Option<Vec<u8>>;
+
+    fn mouse_fields(&self) -> &Vec<MouseField>;
 }
 
 pub trait RgbaScreen: Screen {
@@ -76,6 +78,9 @@ pub trait RgbaScreen: Screen {
 }
 
 pub trait EditableScreen: RgbaScreen {
+    fn clear_mouse_fields(&mut self);
+    fn add_mouse_field(&mut self, mouse_field: MouseField);
+
     fn ice_mode_mut(&mut self) -> &mut IceMode;
 
     fn caret_mut(&mut self) -> &mut caret::Caret;

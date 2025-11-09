@@ -266,7 +266,7 @@ pub struct Image {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub enum LabelOrientation {
     Above,
     Left,
@@ -289,7 +289,7 @@ impl LabelOrientation {
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct ButtonStyle2 {
     pub size: Size,
     pub orientation: LabelOrientation,
@@ -422,7 +422,6 @@ pub struct Bgi {
     text_window: Option<Rectangle>,
     text_window_wrap: bool,
 
-    mouse_fields: Vec<MouseField>,
     pub file_path: PathBuf,
 }
 
@@ -484,7 +483,7 @@ impl FillLineInfo {
         Self { dir, x1, x2, y }
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MouseField {
     pub x1: i32,
     pub y1: i32,
@@ -537,7 +536,6 @@ impl Bgi {
             text_window: None,
             text_window_wrap: false,
             button_style: ButtonStyle2::default(),
-            mouse_fields: Vec::new(),
             suspend_text: false,
             file_path,
         }
@@ -618,6 +616,7 @@ impl Bgi {
             pal.push(EGA_PALETTE[*c as usize].clone());
         }
     }
+
     pub fn set_palette_color(&mut self, buf: &mut dyn EditableScreen, index: i32, color: u8) {
         buf.palette_mut().set_color(index as u32, EGA_PALETTE[color as usize].clone());
     }
@@ -644,22 +643,9 @@ impl Bgi {
         if x < 0 || y < 0 || x >= self.window.width || y >= self.window.height {
             return 0;
         }
-        let off = ((y * self.window.width + x) * 4) as usize;
+        let off = (y * self.window.width + x) as usize;
         let scr = buf.screen_mut(); // mutable access (read-only usage here)
-        if off + 3 >= scr.len() {
-            return 0;
-        }
-        let r = scr[off];
-        let g = scr[off + 1];
-        let b = scr[off + 2];
-        let pal = buf.palette();
-        for i in 0..pal.len() {
-            let (pr, pg, pb) = pal.get_rgb(i as u32);
-            if pr == r && pg == g && pb == b {
-                return i as u8;
-            }
-        }
-        0
+        scr[off]
     }
 
     pub fn get_fill_pattern(&self) -> &Vec<u8> {
@@ -688,19 +674,9 @@ impl Bgi {
                 WriteMode::Not => (!color) & 0x0F,
             } % 16;
         }
-        let (r, g, b) = {
-            let pal = buf.palette();
-            pal.get_rgb(new_index as u32)
-        };
-        let off = ((y * self.window.width + x) * 4) as usize;
+        let off = (y * self.window.width + x) as usize;
         let scr = buf.screen_mut();
-        if off + 3 >= scr.len() {
-            return;
-        }
-        scr[off] = r;
-        scr[off + 1] = g;
-        scr[off + 2] = b;
-        scr[off + 3] = 255;
+        scr[off] = new_index;
     }
 
     pub fn get_write_mode(&self) -> WriteMode {
@@ -1548,7 +1524,7 @@ impl Bgi {
         self.clear_device(buf);
         self.char_size = 4;
         self.font = FontType::Small;
-        self.clear_mouse_fields();
+        buf.clear_mouse_fields();
         self.suspend_text = false;
     }
 
@@ -1764,18 +1740,6 @@ impl Bgi {
         self.bar_rect(buf, self.viewport);
     }
 
-    pub fn clear_mouse_fields(&mut self) {
-        self.mouse_fields.clear();
-    }
-
-    pub fn get_mouse_fields(&self) -> Vec<MouseField> {
-        self.mouse_fields.clone()
-    }
-
-    pub fn add_mouse_field(&mut self, mouse_field: MouseField) {
-        self.mouse_fields.push(mouse_field);
-    }
-
     pub fn add_button(
         &mut self,
         buf: &mut dyn EditableScreen,
@@ -1809,7 +1773,7 @@ impl Bgi {
             y2 = y1 + height;
         }
 
-        self.add_mouse_field(MouseField::new(x1, y1, x2, y2, host_command, self.button_style.clone()));
+        buf.add_mouse_field(MouseField::new(x1, y1, x2, y2, host_command, self.button_style.clone()));
         let mut ox = x1;
         let mut oy = y1;
 

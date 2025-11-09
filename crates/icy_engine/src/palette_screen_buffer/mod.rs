@@ -1,12 +1,13 @@
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    Rectangle, RenderOptions, RgbaScreen, SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane, rip::bgi::MouseField,
 };
 use std::thread::JoinHandle;
 
 pub struct PaletteScreenBuffer {
-    pub resolution: Size,
+    pub pixel_size: Size,
     pub screen: Vec<u8>,
+    pub char_screen_size: Size,
 
     // Text layer for char storage and compatibility
     layer: Layer,
@@ -24,40 +25,45 @@ pub struct PaletteScreenBuffer {
     // Font dimensions in pixels
     char_width: usize,
     char_height: usize,
+    mouse_fields: Vec<MouseField>,
 }
 
 impl PaletteScreenBuffer {
+    /// Creates a new PaletteScreenBuffer with pixel dimensions
+    /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(px_width: i32, px_height: i32, font: BitFont) -> Self {
-        let screen_size = Size::new(px_width, px_height);
-        let char_width = 8; // Default DOS font width
-        let char_height = 16; // Default DOS font height
+        let char_width = font.size.width as usize;
+        let char_height = font.size.height as usize;
 
-        // Calculate pixel dimensions
-        let pixel_width = px_width as usize * char_width;
-        let pixel_height = px_height as usize * char_height;
-        let screen = vec![0u8; pixel_width * pixel_height];
+        // Calculate character grid dimensions from pixel size
+        let char_cols = px_width / font.size.width;
+        let char_rows = px_height / font.size.height;
 
-        // Create text layer
-        let mut layer = Layer::new("", screen_size);
+        // Allocate RGBA pixel buffer (4 bytes per pixel)
+        let screen = vec![0u8; px_width as usize * px_height as usize];
+
+        // Create text layer with character dimensions
+        let mut layer = Layer::new("", Size::new(char_cols, char_rows));
         layer.lines.clear();
-        for _ in 0..px_height {
+        for _ in 0..char_rows {
             layer.lines.push(Line::new());
         }
-        let font_size = font.size;
         Self {
-            resolution: screen_size,
+            pixel_size: Size::new(px_width, px_height),        // Store character dimensions
+            char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
             screen,
             layer,
             font,
             palette: Palette::from_slice(&DOS_DEFAULT_PALETTE),
             caret: Caret::default(),
             ice_mode: IceMode::Unlimited,
-            terminal_state: TerminalState::from((px_width / font_size.width, px_height / font_size.height)),
+            terminal_state: TerminalState::from(Size::new(char_cols, char_rows)),
             buffer_type: BufferType::CP437,
             hyperlinks: Vec::new(),
             selection_mask: SelectionMask::default(),
             char_width,
             char_height,
+            mouse_fields: Vec::new(),
         }
     }
 
@@ -66,10 +72,11 @@ impl PaletteScreenBuffer {
         self.char_width = self.font.size.width as usize;
         self.char_height = self.font.size.height as usize;
 
-        // Resize pixel buffer
-        let pixel_width = self.resolution.width as usize * self.char_width;
-        let pixel_height = self.resolution.height as usize * self.char_height;
-        self.screen = vec![0u8; pixel_width * pixel_height * 4];
+        self.char_screen_size = Size::new(
+            self.char_screen_size.width / self.font.size.width,
+            self.char_screen_size.height / self.font.size.height,
+        );
+        self.layer.set_size(self.char_screen_size);
 
         self
     }
@@ -81,7 +88,7 @@ impl PaletteScreenBuffer {
 
     /// Render a character directly to the RGBA buffer
     fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) {
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.resolution.width || pos.y >= self.resolution.height {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
             return;
         }
 
@@ -89,11 +96,8 @@ impl PaletteScreenBuffer {
         let y = pos.y as usize;
 
         // Get colors from palette
-        let fg_idx = ch.attribute.get_foreground() as u32;
-        let bg_idx = ch.attribute.get_background() as u32;
-
-        let fg_color = self.palette.get_color(fg_idx);
-        let bg_color = self.palette.get_color(bg_idx);
+        let fg_color = ch.attribute.get_foreground() as u32;
+        let bg_color = ch.attribute.get_background() as u32;
 
         // Calculate pixel position
         let pixel_x = x * self.char_width;
@@ -102,7 +106,7 @@ impl PaletteScreenBuffer {
         // Get glyph data from font
         let glyph = self.font.get_glyph(ch.ch);
 
-        let pixel_width = self.resolution.width as usize * self.char_width;
+        let pixel_width = self.pixel_size.width as usize; // Use pixel dimensions from size field
 
         // Render the character
         for row in 0..self.char_height {
@@ -110,7 +114,7 @@ impl PaletteScreenBuffer {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
-                if px >= pixel_width || py >= (self.resolution.height as usize * self.char_height) {
+                if px >= self.pixel_size.width as usize || py >= self.pixel_size.height as usize {
                     continue;
                 }
 
@@ -133,40 +137,23 @@ impl PaletteScreenBuffer {
                 };
 
                 // Clone colors to avoid move in loop
-                let color = if is_foreground { fg_color.clone() } else { bg_color.clone() };
+                let color = if is_foreground { fg_color } else { bg_color };
 
                 // Write to RGBA buffer
-                let offset = (py * pixel_width + px) * 4;
-                if offset + 3 < self.screen.len() {
-                    self.screen[offset] = color.r;
-                    self.screen[offset + 1] = color.g;
-                    self.screen[offset + 2] = color.b;
-                    self.screen[offset + 3] = 255; // Full opacity
-                }
+                let offset = py * pixel_width + px;
+                self.screen[offset] = color as u8;
             }
         }
     }
 
-    pub fn clear(&mut self) {
-        // Clear text layer
-        for line in &mut self.layer.lines {
-            line.chars.clear();
-        }
-
-        // Clear pixel buffer
-        self.screen.fill(0);
-    }
-
     pub fn get_pixel_dimensions(&self) -> (usize, usize) {
-        let width = self.resolution.width as usize * self.char_width;
-        let height = self.resolution.height as usize * self.char_height;
-        (width, height)
+        (self.char_screen_size.width as usize, self.char_screen_size.height as usize)
     }
 }
 
 impl TextPane for PaletteScreenBuffer {
     fn get_char(&self, pos: Position) -> AttributedChar {
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.resolution.width || pos.y >= self.resolution.height {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
             return AttributedChar::default();
         }
 
@@ -184,11 +171,8 @@ impl TextPane for PaletteScreenBuffer {
     }
 
     fn get_size(&self) -> Size {
-        let w = self.resolution.width;
-        let h = self.resolution.height;
-        let font = self.get_font_dimensions();
-
-        Size::new(w / font.width, h / font.height)
+        // Return character dimensions (resolution already stores char cols/rows)
+        self.char_screen_size
     }
 
     fn get_line_count(&self) -> i32 {
@@ -196,19 +180,15 @@ impl TextPane for PaletteScreenBuffer {
     }
 
     fn get_width(&self) -> i32 {
-        let w = self.resolution.width;
-        let font = self.get_font_dimensions();
-        w / font.width
+        self.char_screen_size.width
     }
 
     fn get_height(&self) -> i32 {
-        let h = self.resolution.height;
-        let font = self.get_font_dimensions();
-        h / font.height
+        self.char_screen_size.height
     }
 
     fn get_line_length(&self, line: i32) -> i32 {
-        if line < 0 || line >= self.resolution.height {
+        if line < 0 || line >= self.char_screen_size.height {
             return 0;
         }
 
@@ -235,23 +215,17 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
-        let mut pixels = Vec::new();
+        // Screen is already in RGBA format, return a
+        let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * self.pixel_size.height as usize * 4);
         let pal = self.palette().clone();
         for i in &self.screen {
-            if *i == 0 {
-                pixels.push(0);
-                pixels.push(0);
-                pixels.push(0);
-                pixels.push(0);
-                continue;
-            }
             let (r, g, b) = pal.get_rgb(*i as u32);
             pixels.push(r);
             pixels.push(g);
             pixels.push(b);
             pixels.push(255);
         }
-        (self.get_size(), pixels)
+        (self.pixel_size, pixels)
     }
 
     fn get_first_visible_line(&self) -> i32 {
@@ -259,7 +233,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_last_visible_line(&self) -> i32 {
-        self.resolution.height - 1
+        self.char_screen_size.height - 1
     }
 
     fn get_first_editable_line(&self) -> i32 {
@@ -267,7 +241,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_last_editable_line(&self) -> i32 {
-        self.resolution.height - 1
+        self.char_screen_size.height - 1
     }
 
     fn get_first_editable_column(&self) -> i32 {
@@ -275,7 +249,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_last_editable_column(&self) -> i32 {
-        self.resolution.width - 1
+        self.char_screen_size.width - 1
     }
 
     fn get_font_dimensions(&self) -> Size {
@@ -346,11 +320,14 @@ impl Screen for PaletteScreenBuffer {
     fn get_clipboard_data(&self) -> Option<Vec<u8>> {
         None
     }
+    fn mouse_fields(&self) -> &Vec<MouseField> {
+        &self.mouse_fields
+    }
 }
 
 impl RgbaScreen for PaletteScreenBuffer {
     fn get_resolution(&self) -> Size {
-        self.resolution
+        self.pixel_size
     }
 
     fn screen_mut(&mut self) -> &mut [u8] {
@@ -359,6 +336,14 @@ impl RgbaScreen for PaletteScreenBuffer {
 }
 
 impl EditableScreen for PaletteScreenBuffer {
+    fn clear_mouse_fields(&mut self) {
+        self.mouse_fields.clear();
+    }
+
+    fn add_mouse_field(&mut self, mouse_field: MouseField) {
+        self.mouse_fields.push(mouse_field);
+    }
+
     fn ice_mode_mut(&mut self) -> &mut IceMode {
         &mut self.ice_mode
     }
@@ -393,6 +378,11 @@ impl EditableScreen for PaletteScreenBuffer {
         self.font = font;
         self.char_width = self.font.size.width as usize;
         self.char_height = self.font.size.height as usize;
+
+        // Recalculate pixel dimensions and resize buffer
+        let pixel_width = self.char_screen_size.width as usize * self.char_width;
+        let pixel_height = self.char_screen_size.height as usize * self.char_height;
+        self.char_screen_size = Size::new(pixel_width as i32, pixel_height as i32);
     }
 
     fn remove_font(&mut self, _font_idx: usize) -> Option<BitFont> {
@@ -404,13 +394,8 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_size(&mut self, size: Size) {
-        self.resolution = size;
-
-        // Resize pixel buffer
-        let pixel_width = size.width as usize * self.char_width;
-        let pixel_height = size.height as usize * self.char_height;
-        self.screen.resize(pixel_width * pixel_height * 4, 0);
-
+        // size parameter is in character dimensions
+        self.char_screen_size = size;
         // Resize text layer
         self.layer.lines.resize_with(size.height as usize, Line::new);
     }
@@ -460,7 +445,18 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_screen(&mut self) {
-        self.clear();
+        self.caret_mut().set_position(Position::default());
+        self.stop_sixel_threads();
+        self.layer.clear();
+        self.terminal_state_mut().cleared_screen = true;
+
+        // Clear text layer
+        for line in &mut self.layer.lines {
+            line.chars.clear();
+        }
+
+        // Clear pixel buffer
+        self.screen.fill(0);
     }
 
     fn clear_scrollback(&mut self) {
@@ -492,7 +488,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.resolution.width || pos.y >= self.resolution.height {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
             return;
         }
 
@@ -518,21 +514,6 @@ impl EditableScreen for PaletteScreenBuffer {
         self.render_char_to_buffer(pos, ch);
     }
 
-    fn print_char(&mut self, ch: AttributedChar) {
-        let pos = Position::new(self.caret.x, self.caret.y);
-
-        self.set_char(pos, ch);
-
-        // Advance caret
-        self.caret.x = self.caret.x + 1;
-
-        // Handle line wrap
-        if self.caret.x >= self.resolution.width {
-            self.caret.x = 0;
-            self.caret.y = self.caret.y + 1;
-        }
-    }
-
     fn set_height(&mut self, height: i32) {
         let height = height.max(1);
 
@@ -540,12 +521,7 @@ impl EditableScreen for PaletteScreenBuffer {
         self.layer.lines.resize_with(height as usize, Line::new);
 
         // Update screen size
-        self.resolution.height = height;
-
-        // Resize RGBA buffer
-        let pixel_width = self.resolution.width as usize * self.char_width;
-        let pixel_height = height as usize * self.char_height;
-        self.screen.resize(pixel_width * pixel_height * 4, 0);
+        self.char_screen_size.height = height;
     }
 
     fn add_hyperlink(&mut self, hyperlink: HyperLink) {

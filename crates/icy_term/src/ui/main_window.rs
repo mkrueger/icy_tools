@@ -19,7 +19,7 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{PaletteScreenBuffer, Position, RenderOptions, TextScreen, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE, rip};
+use icy_engine::{EGA_PALETTE, Palette, PaletteScreenBuffer, Position, RenderOptions, TextScreen, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE, rip};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -168,6 +168,16 @@ impl MainWindow {
         match message {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
             Message::Connect(address) => {
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    if address.terminal_type == TerminalEmulation::Rip {
+                        let buf = PaletteScreenBuffer::new(640, 350, rip::bgi::DEFAULT_BITFONT.clone());
+                        let buf = buf.with_palette(Palette::from_slice(&EGA_PALETTE));
+                        *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
+                    } else {
+                        *screen = Box::new(TextScreen::new((80, 25))) as Box<dyn icy_engine::EditableScreen>;
+                    }
+                }
+
                 let modem = if matches!(address.protocol, ConnectionType::Modem) {
                     let options = &self.settings_dialog.original_options.lock().unwrap();
                     // Find the modem in options that matches the address
@@ -189,13 +199,6 @@ impl MainWindow {
                         let error_msg = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "connect-error-no-modem-configured");
                         log::error!("{}", error_msg);
 
-                        if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
-                            if address.terminal_type == TerminalEmulation::Rip {
-                                *screen = PaletteScreenBuffer::new(640, 350, rip::bgi::DEFAULT_BITFONT.clone()) as dyn icy_engine::EditableScreen;
-                            } else {
-                                *screen = TextScreen::new((80, 25)) as dyn icy_engine::EditableScreen;
-                            }
-                        }
                         // Display error message in terminal
                         if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
                             screen.clear_screen();
@@ -249,7 +252,7 @@ impl MainWindow {
                 if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
                     screen.clear_screen();
                     screen.caret_mut().visible = true;
-                    screen_mode.apply_to_edit_screen(&mut *screen);
+                    screen_mode.apply_to_edit_screen(&mut **screen);
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
                 self.terminal_window.connect(Some(address.clone()));

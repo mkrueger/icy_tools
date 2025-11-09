@@ -386,30 +386,6 @@ impl BufferParser for Parser {
         }
         self.fallback_parser.print_char(buf, ch)
     }
-    /*
-    fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
-        if self.last_rip_update == self.rip_counter {
-            return None;
-        }
-        self.last_rip_update = self.rip_counter;
-        let mut pixels = Vec::new();
-        let pal = self.bgi.get_palette().clone();
-        for i in &self.bgi.screen {
-            if *i == 0 {
-                pixels.push(0);
-                pixels.push(0);
-                pixels.push(0);
-                pixels.push(255);
-                continue;
-            }
-            let (r, g, b) = pal.get_rgb(*i as u32);
-            pixels.push(r);
-            pixels.push(g);
-            pixels.push(b);
-            pixels.push(255);
-        }
-        Some((self.bgi.window, pixels))
-    }*/
 }
 
 pub fn to_base_36(len: usize, number: i32) -> String {

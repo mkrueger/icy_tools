@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
-use icy_engine::ansi::BaudEmulation;
+use icy_engine::{EditableScreen, ansi::BaudEmulation};
 use icy_net::telnet::TerminalEmulation;
 use std::sync::{Arc, Mutex};
 // use iced_aw::{menu, menu_bar, menu_items};
@@ -31,7 +31,7 @@ pub struct TerminalWindow {
 
 impl TerminalWindow {
     pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
-        let edit_screen = Arc::new(Mutex::new(super::welcome_screen::create_welcome_screen()));
+        let edit_screen: Arc<Mutex<Box<dyn EditableScreen>>> = Arc::new(Mutex::new(Box::new(super::welcome_screen::create_welcome_screen())));
 
         Self {
             terminal: Terminal::new(edit_screen),

@@ -1,6 +1,6 @@
 use crate::{
     AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions, Screen,
-    Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard,
+    Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard, rip::bgi::MouseField,
 };
 
 pub struct TextScreen {
@@ -11,6 +11,7 @@ pub struct TextScreen {
 
     pub selection_opt: Option<Selection>,
     pub selection_mask: SelectionMask,
+    pub mouse_fields: Vec<MouseField>,
 }
 
 impl TextScreen {
@@ -21,6 +22,7 @@ impl TextScreen {
             current_layer: 0,
             selection_opt: None,
             selection_mask: SelectionMask::default(),
+            mouse_fields: Vec::new(),
         }
     }
 }
@@ -167,6 +169,23 @@ impl Screen for TextScreen {
     fn get_clipboard_data(&self) -> Option<Vec<u8>> {
         clipboard::get_clipboard_data(&self.buffer, self.current_layer, &self.selection_mask, &self.selection_opt)
     }
+
+    fn mouse_fields(&self) -> &Vec<MouseField> {
+        &self.mouse_fields
+    }
+
+    fn upper_left_position(&self) -> Position {
+        match self.terminal_state().origin_mode {
+            crate::OriginMode::UpperLeftCorner => Position {
+                x: 0,
+                y: self.get_first_visible_line(),
+            },
+            crate::OriginMode::WithinMargins => Position {
+                x: 0,
+                y: self.get_first_editable_line(),
+            },
+        }
+    }
 }
 
 impl RgbaScreen for TextScreen {
@@ -184,6 +203,14 @@ impl RgbaScreen for TextScreen {
 }
 
 impl EditableScreen for TextScreen {
+    fn clear_mouse_fields(&mut self) {
+        self.mouse_fields.clear();
+    }
+
+    fn add_mouse_field(&mut self, mouse_field: MouseField) {
+        self.mouse_fields.push(mouse_field);
+    }
+
     fn ice_mode_mut(&mut self) -> &mut IceMode {
         &mut self.buffer.ice_mode
     }

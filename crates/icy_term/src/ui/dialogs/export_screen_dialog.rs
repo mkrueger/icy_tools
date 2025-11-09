@@ -112,7 +112,7 @@ impl ExportScreenDialogState {
         Path::new(&self.temp_directory).join(filename_with_ext)
     }
 
-    pub fn export_buffer(&self, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Result<(), String> {
+    pub fn export_buffer(&self, edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>) -> Result<(), String> {
         let full_path = self.get_full_path();
 
         // Create directory if it doesn't exist
@@ -137,7 +137,7 @@ impl ExportScreenDialogState {
         Ok(())
     }
 
-    pub fn update(&mut self, message: ExportScreenMsg, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Option<crate::ui::Message> {
+    pub fn update(&mut self, message: ExportScreenMsg, edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>) -> Option<crate::ui::Message> {
         match message {
             ExportScreenMsg::Export => {
                 // Update the actual values

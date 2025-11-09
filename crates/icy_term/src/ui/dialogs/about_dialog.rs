@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, text},
 };
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
-use icy_engine::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane, TextScreen, ansi::MusicOption};
+use icy_engine::{AttributedChar, EditableScreen, Position, TextAttribute, TextBuffer, TextPane, TextScreen, ansi::MusicOption};
 use std::sync::{Arc, Mutex};
 
 use crate::{
@@ -58,7 +58,7 @@ impl AboutDialog {
         }
         screen.caret.visible = false;
 
-        let edit_screen = Arc::new(Mutex::new(screen));
+        let edit_screen: Arc<Mutex<Box<dyn EditableScreen>>> = Arc::new(Mutex::new(Box::new(screen)));
         let terminal = Terminal::new(edit_screen.clone());
 
         Self { terminal }

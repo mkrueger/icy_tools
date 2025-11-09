@@ -1664,13 +1664,14 @@ impl Command for Mouse {
         }
     }
 
-    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+    fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         let host_command = parse_host_command(&self.text);
         let mut style = ButtonStyle2::default();
         style.flags |= 1024;
-        bgi.add_mouse_field(MouseField::new(self.x0, self.y0, self.x1, self.y1, Some(host_command), style));
+        buf.add_mouse_field(MouseField::new(self.x0, self.y0, self.x1, self.y1, Some(host_command), style));
         Ok(CallbackAction::NoUpdate)
     }
+
     fn to_rip_string(&self) -> String {
         format!(
             "|1M{}{}{}{}{}{}{}{}{}",
@@ -1691,8 +1692,8 @@ impl Command for Mouse {
 pub struct MouseFields {}
 
 impl Command for MouseFields {
-    fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        bgi.clear_mouse_fields();
+    fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+        buf.clear_mouse_fields();
         Ok(CallbackAction::NoUpdate)
     }
 

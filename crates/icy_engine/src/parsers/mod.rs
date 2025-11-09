@@ -75,6 +75,7 @@ fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> TextScreen {
         current_layer: 0,
         selection_opt: None,
         selection_mask: SelectionMask::default(),
+        mouse_fields: Vec::new(),
     };
 
     buf.terminal_state_mut().is_terminal_buffer = true;
