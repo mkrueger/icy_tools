@@ -1,6 +1,6 @@
 use crate::{
     AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Screen, Selection,
-    Sixel, Size, TerminalState, TextBuffer, TextPane,
+    SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard,
 };
 
 pub struct TextScreen {
@@ -10,6 +10,7 @@ pub struct TextScreen {
     pub current_layer: usize,
 
     pub selection_opt: Option<Selection>,
+    pub selection_mask: SelectionMask,
 }
 
 impl TextScreen {
@@ -19,6 +20,7 @@ impl TextScreen {
             buffer: TextBuffer::new(size),
             current_layer: 0,
             selection_opt: None,
+            selection_mask: SelectionMask::default(),
         }
     }
 }
@@ -122,6 +124,10 @@ impl Screen for TextScreen {
         self.selection_opt
     }
 
+    fn selection_mask(&self) -> &crate::SelectionMask {
+        &self.selection_mask
+    }
+
     fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
         self.selection_opt = Some(sel);
         Ok(())
@@ -145,13 +151,21 @@ impl Screen for TextScreen {
     }
 
     fn get_copy_text(&self) -> Option<String> {
-        None
+        let Some(selection) = &self.selection_opt else {
+            return None;
+        };
+        clipboard::get_text(&self.buffer, self.buffer.buffer_type, selection)
     }
+
     fn get_copy_rich_text(&self) -> Option<String> {
-        None
+        let Some(selection) = &self.selection_opt else {
+            return None;
+        };
+        clipboard::get_rich_text(&self.buffer, selection)
     }
+
     fn get_clipboard_data(&self) -> Option<Vec<u8>> {
-        None
+        clipboard::get_clipboard_data(&self.buffer, self.current_layer, &self.selection_mask, &self.selection_opt)
     }
 }
 

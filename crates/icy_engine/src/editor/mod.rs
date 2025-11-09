@@ -14,13 +14,10 @@ mod area_operations;
 mod edit_operations;
 pub use area_operations::*;
 mod font_operations;
-pub mod icy_clipboard_generator;
-mod rtf_generator;
 mod selection_operations;
 mod tag_operations;
-pub use icy_clipboard_generator::*;
 
-use crate::{Caret, EngineResult, Layer, Position, Selection, SelectionMask, Shape, TextBuffer, TextPane, UnicodeConverter, ascii, overlay_mask::OverlayMask};
+use crate::{Caret, EngineResult, Layer, Selection, SelectionMask, TextBuffer, TextPane, clipboard, overlay_mask::OverlayMask};
 
 pub struct EditState {
     buffer: TextBuffer,
@@ -28,7 +25,6 @@ pub struct EditState {
     selection_opt: Option<Selection>,
     selection_mask: SelectionMask,
     tool_overlay_mask: OverlayMask,
-    unicode_converter: Box<dyn UnicodeConverter>,
 
     current_layer: usize,
     current_tag: usize,
@@ -99,7 +95,6 @@ impl Default for EditState {
         tool_overlay_mask.set_size(buffer.get_size());
 
         Self {
-            unicode_converter: Box::<ascii::CP437Converter>::default(),
             buffer,
             caret: Caret::default(),
             selection_opt: None,
@@ -225,14 +220,6 @@ impl EditState {
         }
     }
 
-    pub fn set_unicode_converter(&mut self, parser: Box<dyn UnicodeConverter>) {
-        self.unicode_converter = parser;
-    }
-
-    pub fn get_unicode_converter(&self) -> &dyn UnicodeConverter {
-        &*self.unicode_converter
-    }
-
     pub fn set_buffer(&mut self, buffer: TextBuffer) {
         self.buffer = buffer;
         self.set_mask_size();
@@ -311,58 +298,15 @@ impl EditState {
         &mut self.caret
     }
 
-    pub fn get_buffer_and_caret_mut(&mut self) -> (&mut TextBuffer, &mut Caret, &mut Box<dyn UnicodeConverter>) {
-        (&mut self.buffer, &mut self.caret, &mut self.unicode_converter)
+    pub fn get_buffer_and_caret_mut(&mut self) -> (&mut TextBuffer, &mut Caret) {
+        (&mut self.buffer, &mut self.caret)
     }
 
     pub fn get_copy_text(&self) -> Option<String> {
         let Some(selection) = &self.selection_opt else {
             return None;
         };
-
-        let buffer = self.get_display_buffer();
-        let mut res = String::new();
-        if matches!(selection.shape, Shape::Rectangle) {
-            let start = selection.min();
-            let end = selection.max();
-            for y in start.y..=end.y {
-                for x in start.x..=end.x {
-                    let ch = buffer.get_char((x, y).into());
-                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
-                }
-                res.push('\n');
-            }
-        } else {
-            let (start, end) = if selection.anchor < selection.lead {
-                (selection.anchor, selection.lead)
-            } else {
-                (selection.lead, selection.anchor)
-            };
-            if start.y == end.y {
-                for x in start.x..=end.x {
-                    let ch = buffer.get_char(Position::new(x, start.y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
-                }
-            } else {
-                for x in start.x..(buffer.get_line_length(start.y)) {
-                    let ch = buffer.get_char(Position::new(x, start.y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
-                }
-                res.push('\n');
-                for y in start.y + 1..end.y {
-                    for x in 0..(buffer.get_line_length(y)) {
-                        let ch = buffer.get_char(Position::new(x, y));
-                        res.push(self.unicode_converter.convert_to_unicode(ch.ch));
-                    }
-                    res.push('\n');
-                }
-                for x in 0..=end.x {
-                    let ch = buffer.get_char(Position::new(x, end.y));
-                    res.push(self.unicode_converter.convert_to_unicode(ch.ch));
-                }
-            }
-        }
-        Some(res)
+        clipboard::get_text(&self.buffer, self.buffer.buffer_type, selection)
     }
 
     pub fn get_overlay_layer(&mut self, cur_layer: usize) -> &mut Layer {

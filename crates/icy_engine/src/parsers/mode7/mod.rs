@@ -144,7 +144,7 @@ impl Parser {
 pub struct CharConverter {}
 
 impl UnicodeConverter for CharConverter {
-    fn convert_from_unicode(&self, ch: char, _font_page: usize) -> char {
+    fn convert_from_unicode(&self, ch: char) -> char {
         if ch == ' ' {
             return ' ';
         }

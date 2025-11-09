@@ -12,7 +12,7 @@ mod tests;
 pub struct CP437Converter {}
 
 impl UnicodeConverter for CP437Converter {
-    fn convert_from_unicode(&self, ch: char, _font_page: usize) -> char {
+    fn convert_from_unicode(&self, ch: char) -> char {
         if let Some(tch) = UNICODE_TO_CP437.get(&ch) { *tch as char } else { ch }
     }
 
@@ -28,7 +28,7 @@ impl UnicodeConverter for CP437Converter {
 pub struct IdentityConverter {}
 
 impl UnicodeConverter for IdentityConverter {
-    fn convert_from_unicode(&self, ch: char, _font_page: usize) -> char {
+    fn convert_from_unicode(&self, ch: char) -> char {
         ch
     }
 

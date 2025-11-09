@@ -19,7 +19,7 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, editor::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -276,10 +276,11 @@ impl MainWindow {
 
             Message::SendString(s) => {
                 self.clear_selection();
+                let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
                 self.terminal_window.terminal.screen.lock().unwrap().set_scroll_position(0);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
-                    let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                    let converted_byte = buffer_type.convert_from_unicode(ch);
                     data.push(converted_byte as u8);
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
@@ -289,10 +290,11 @@ impl MainWindow {
                 if clear_screen {
                     self.terminal_window.terminal.clear_picture_data();
                 }
+                let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
                 // Send the RIP command
                 let mut data: Vec<u8> = Vec::new();
                 for ch in cmd.chars() {
-                    let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                    let converted_byte = buffer_type.convert_from_unicode(ch);
                     data.push(converted_byte as u8);
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
@@ -610,8 +612,9 @@ impl MainWindow {
                     Ok(text) => {
                         // Convert text to bytes using the current unicode converter
                         let mut data: Vec<u8> = Vec::new();
+                        let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
                         for ch in text.chars() {
-                            let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                            let converted_byte = buffer_type.convert_from_unicode(ch);
                             data.push(converted_byte as u8);
                         }
 
@@ -678,10 +681,11 @@ impl MainWindow {
             Message::SendMouseEvent(evt) => {
                 let escape_sequence = evt.generate_mouse_report();
                 // Send the escape sequence to the terminal if one was generated
+                let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
                 if let Some(seq) = escape_sequence {
                     let mut data: Vec<u8> = Vec::new();
                     for ch in seq.chars() {
-                        let converted_byte = self.unicode_converter.convert_from_unicode(ch, 0);
+                        let converted_byte = buffer_type.convert_from_unicode(ch);
                         data.push(converted_byte as u8);
                     }
                     let _ = self.terminal_tx.send(TerminalCommand::SendData(data));

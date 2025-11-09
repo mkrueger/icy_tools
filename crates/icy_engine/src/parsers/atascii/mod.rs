@@ -10,7 +10,7 @@ pub struct Parser {
 pub struct CharConverter {}
 
 impl UnicodeConverter for CharConverter {
-    fn convert_from_unicode(&self, ch: char, _font_page: usize) -> char {
+    fn convert_from_unicode(&self, ch: char) -> char {
         match UNICODE_TO_ATARI.get(&ch) {
             Some(out_ch) => *out_ch,
             _ => ch,

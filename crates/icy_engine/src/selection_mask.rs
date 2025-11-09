@@ -1,4 +1,4 @@
-use crate::{Position, Rectangle, Selection, Size, overlay_mask::OverlayMask};
+use crate::{AddType, Position, Rectangle, Selection, Size, overlay_mask::OverlayMask};
 
 #[derive(Default, Clone, PartialEq)]
 pub struct SelectionMask {
@@ -82,5 +82,27 @@ impl SelectionMask {
                 }
             }
         }
+    }
+
+    pub fn get_selected_rectangle(&self, selection_opt: &Option<Selection>) -> Rectangle {
+        let mut rect = self.get_rectangle();
+        if let Some(sel) = selection_opt {
+            if rect.is_empty() {
+                return sel.as_rectangle();
+            }
+            rect = rect.union(&sel.as_rectangle());
+        }
+        rect
+    }
+
+    pub fn selected_in_selection(&self, pos: impl Into<Position>, selection_opt: &Option<Selection>) -> bool {
+        let pos = pos.into();
+        if let Some(sel) = selection_opt {
+            if sel.is_inside(pos) {
+                return !matches!(sel.add_type, AddType::Subtract);
+            }
+        }
+
+        self.get_is_selected(pos)
     }
 }

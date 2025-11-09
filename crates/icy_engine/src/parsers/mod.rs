@@ -53,7 +53,7 @@ pub enum CallbackAction {
 }
 
 pub trait UnicodeConverter: Send + Sync {
-    fn convert_from_unicode(&self, ch: char, font_page: usize) -> char;
+    fn convert_from_unicode(&self, ch: char) -> char;
     fn convert_to_unicode(&self, ch: char) -> char;
 }
 
@@ -90,13 +90,14 @@ pub trait BufferParser: Send {
 
 #[cfg(test)]
 fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> TextScreen {
-    use crate::{Caret, TextBuffer, TextScreen};
+    use crate::{Caret, SelectionMask, TextBuffer, TextScreen};
 
     let mut buf = TextScreen {
         buffer: TextBuffer::create((80, 25)),
         caret: Caret::default(),
         current_layer: 0,
         selection_opt: None,
+        selection_mask: SelectionMask::default(),
     };
 
     buf.terminal_state_mut().is_terminal_buffer = true;

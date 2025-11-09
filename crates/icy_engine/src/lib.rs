@@ -79,6 +79,8 @@ use rust_embed::RustEmbed;
 pub mod screen;
 pub use screen::*;
 
+pub mod clipboard;
+
 #[derive(RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources
 struct Localizations;

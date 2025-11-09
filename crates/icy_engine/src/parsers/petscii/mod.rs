@@ -120,7 +120,7 @@ const GREY3: u32 = 0x0f;
 pub struct CharConverter {}
 
 impl UnicodeConverter for CharConverter {
-    fn convert_from_unicode(&self, ch: char, _font_page: usize) -> char {
+    fn convert_from_unicode(&self, ch: char) -> char {
         if let Some(tch) = UNICODE_TO_PETSCII.get(&(ch as u8)) {
             *tch as char
         } else {

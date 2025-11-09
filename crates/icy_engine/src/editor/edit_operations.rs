@@ -4,7 +4,9 @@ use std::mem;
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, EditableScreen, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, parse_with_parser, parsers};
+use crate::{
+    AttributedChar, EditableScreen, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, clipboard, parse_with_parser, parsers,
+};
 
 use super::{
     EditState, OperationType, UndoOperation,
@@ -55,7 +57,7 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn paste_clipboard_data(&mut self, data: &[u8]) -> EngineResult<()> {
-        if let Some(layer) = self.from_clipboard_data(data) {
+        if let Some(layer) = clipboard::from_clipboard_data(self.get_buffer().buffer_type, data) {
             let op = Paste::new(self.get_current_layer()?, layer);
             self.push_undo_action(Box::new(op))?;
         }
@@ -94,10 +96,7 @@ impl EditState {
         let mut parser = parsers::ansi::Parser::default();
         parser.bs_is_ctrl_char = false;
 
-        let text = text
-            .chars()
-            .map(|ch| self.unicode_converter.convert_from_unicode(ch, self.caret.font_page()))
-            .collect::<String>();
+        let text = text.chars().map(|ch| self.buffer.buffer_type.convert_from_unicode(ch)).collect::<String>();
         parse_with_parser(&mut result, &mut parser, &text, true)?;
 
         let mut layer: Layer = result.buffer.layers.remove(0);

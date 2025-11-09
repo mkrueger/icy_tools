@@ -53,6 +53,8 @@ pub trait Screen: TextPane + Send {
 
     fn get_selection(&self) -> Option<Selection>;
 
+    fn selection_mask(&self) -> &crate::SelectionMask;
+
     fn set_selection(&mut self, sel: Selection) -> EngineResult<()>;
 
     fn clear_selection(&mut self) -> EngineResult<()>;

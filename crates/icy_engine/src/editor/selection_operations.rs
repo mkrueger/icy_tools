@@ -67,14 +67,7 @@ impl EditState {
     }
 
     pub fn get_selected_rectangle(&self) -> Rectangle {
-        let mut rect = self.selection_mask.get_rectangle();
-        if let Some(sel) = self.selection_opt {
-            if rect.is_empty() {
-                return sel.as_rectangle();
-            }
-            rect = rect.union(&sel.as_rectangle());
-        }
-        rect
+        self.selection_mask.get_selected_rectangle(&self.selection_opt)
     }
 
     /// Returns the inverse selection of this [`EditState`].
