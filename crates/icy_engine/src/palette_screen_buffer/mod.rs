@@ -23,8 +23,6 @@ pub struct PaletteScreenBuffer {
     selection_mask: SelectionMask,
 
     // Font dimensions in pixels
-    char_width: usize,
-    char_height: usize,
     mouse_fields: Vec<MouseField>,
 }
 
@@ -32,9 +30,6 @@ impl PaletteScreenBuffer {
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(px_width: i32, px_height: i32, font: BitFont) -> Self {
-        let char_width = font.size.width as usize;
-        let char_height = font.size.height as usize;
-
         // Calculate character grid dimensions from pixel size
         let char_cols = px_width / font.size.width;
         let char_rows = px_height / font.size.height;
@@ -61,16 +56,12 @@ impl PaletteScreenBuffer {
             buffer_type: BufferType::CP437,
             hyperlinks: Vec::new(),
             selection_mask: SelectionMask::default(),
-            char_width,
-            char_height,
             mouse_fields: Vec::new(),
         }
     }
 
     pub fn with_font(mut self, font: BitFont) -> Self {
         self.font = font;
-        self.char_width = self.font.size.width as usize;
-        self.char_height = self.font.size.height as usize;
 
         self.char_screen_size = Size::new(
             self.char_screen_size.width / self.font.size.width,
@@ -92,37 +83,35 @@ impl PaletteScreenBuffer {
             return;
         }
 
-        let x = pos.x as usize;
-        let y = pos.y as usize;
+        let x = pos.x;
+        let y = pos.y;
 
         // Get colors from palette
         let fg_color = ch.attribute.get_foreground() as u32;
         let bg_color = ch.attribute.get_background() as u32;
 
         // Calculate pixel position
-        let pixel_x = x * self.char_width;
-        let pixel_y = y * self.char_height;
+        let pixel_x = x * self.font.size.width;
+        let pixel_y = y * self.font.size.height;
 
         // Get glyph data from font
         let glyph = self.font.get_glyph(ch.ch);
 
-        let pixel_width = self.pixel_size.width as usize; // Use pixel dimensions from size field
-
         // Render the character
-        for row in 0..self.char_height {
-            for col in 0..self.char_width {
+        for row in 0..self.font.size.width {
+            for col in 0..self.font.size.height {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
-                if px >= self.pixel_size.width as usize || py >= self.pixel_size.height as usize {
+                if px >= self.pixel_size.width || py >= self.pixel_size.height {
                     continue;
                 }
 
                 // Check if pixel is set in font glyph
                 let is_foreground = if let Some(g) = glyph {
-                    if row < g.data.len() * 8 / self.char_width {
-                        let byte_idx = (row * self.char_width + col) / 8;
-                        let bit_idx = 7 - ((row * self.char_width + col) % 8);
+                    if row < (g.data.len() as i32) * 8 / self.font.size.width {
+                        let byte_idx = ((row * self.font.size.width + col) / 8) as usize;
+                        let bit_idx = 7 - ((row * self.font.size.width + col) % 8);
 
                         if byte_idx < g.data.len() {
                             (g.data[byte_idx] >> bit_idx) & 1 == 1
@@ -140,8 +129,8 @@ impl PaletteScreenBuffer {
                 let color = if is_foreground { fg_color } else { bg_color };
 
                 // Write to RGBA buffer
-                let offset = py * pixel_width + px;
-                self.screen[offset] = color as u8;
+                let offset = py * self.pixel_size.width + px;
+                self.screen[offset as usize] = color as u8;
             }
         }
     }
@@ -253,7 +242,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_font_dimensions(&self) -> Size {
-        Size::new(self.char_width as i32, self.char_height as i32)
+        self.font.size
     }
 
     fn get_font(&self, _font_idx: usize) -> Option<&BitFont> {
@@ -376,13 +365,11 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn set_font(&mut self, _font_idx: usize, font: BitFont) {
         self.font = font;
-        self.char_width = self.font.size.width as usize;
-        self.char_height = self.font.size.height as usize;
 
         // Recalculate pixel dimensions and resize buffer
-        let pixel_width = self.char_screen_size.width as usize * self.char_width;
-        let pixel_height = self.char_screen_size.height as usize * self.char_height;
-        self.char_screen_size = Size::new(pixel_width as i32, pixel_height as i32);
+        let pixel_width = self.pixel_size.width / self.font.size.width;
+        let pixel_height = self.pixel_size.height / self.font.size.height;
+        self.char_screen_size = Size::new(pixel_width, pixel_height);
     }
 
     fn remove_font(&mut self, _font_idx: usize) -> Option<BitFont> {
@@ -394,6 +381,10 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_size(&mut self, size: Size) {
+        if size == self.char_screen_size {
+            return;
+        }
+        log::error!("error: setting char screen size to {:?}", size);
         // size parameter is in character dimensions
         self.char_screen_size = size;
         // Resize text layer
@@ -515,6 +506,11 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_height(&mut self, height: i32) {
+        if height == self.char_screen_size.height {
+            return;
+        }
+        log::error!("error: setting height to {:?}", height);
+
         let height = height.max(1);
 
         // Resize text layer

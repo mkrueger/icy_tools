@@ -196,18 +196,6 @@ impl ScreenMode {
     }
 
     pub fn apply_to_edit_screen(&self, screen: &mut dyn EditableScreen) {
-        // Clear the first layer and stop any sixel threads
-        screen.stop_sixel_threads();
-        screen.clear_screen();
-
-        let window_size = self.get_window_size();
-
-        // Set buffer sizes
-        screen.set_size(window_size);
-        screen.terminal_state_mut().set_size(window_size);
-        screen.terminal_state_mut().fixed_size = true;
-        screen.terminal_state_mut().is_terminal_buffer = true;
-
         // Ensure we have at least one layer and set its size
         match self {
             ScreenMode::Vga(_x, y) => {
@@ -253,14 +241,12 @@ impl ScreenMode {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
                 *screen.palette_mut() = Palette::from_slice(&EGA_PALETTE);
-                screen.terminal_state_mut().is_terminal_buffer = true;
                 *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
             }
             ScreenMode::SkyPix => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
-                screen.terminal_state_mut().is_terminal_buffer = true;
                 screen.terminal_state_mut().fixed_size = true;
                 *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
             }

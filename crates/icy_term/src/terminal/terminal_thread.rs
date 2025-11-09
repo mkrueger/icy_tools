@@ -4,7 +4,7 @@ use crate::features::{AutoFileTransfer, AutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
-use icy_engine::{BufferParser, CallbackAction, EditableScreen};
+use icy_engine::{BufferParser, CallbackAction, EGA_PALETTE, EditableScreen, Palette, PaletteScreenBuffer, TextScreen, rip};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -402,6 +402,21 @@ impl TerminalThread {
 
         self.connection = Some(connection);
         self.connection_time = Some(Instant::now());
+        if let Ok(mut screen) = self.edit_screen.lock() {
+            let screen_mode = config.screen_mode;
+
+            if config.terminal_type == TerminalEmulation::Rip {
+                let buf = PaletteScreenBuffer::new(640, 350, rip::bgi::DEFAULT_BITFONT.clone());
+                let buf = buf.with_palette(Palette::from_slice(&EGA_PALETTE));
+                *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
+            } else {
+                *screen = Box::new(TextScreen::new(screen_mode.get_window_size())) as Box<dyn icy_engine::EditableScreen>;
+            }
+            screen.terminal_state_mut().is_terminal_buffer = true;
+            screen.terminal_state_mut().fixed_size = true;
+
+            screen_mode.apply_to_edit_screen(&mut **screen);
+        }
         self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();

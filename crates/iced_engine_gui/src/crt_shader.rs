@@ -1,4 +1,3 @@
-use std::result;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Mutex, atomic::AtomicU64};
