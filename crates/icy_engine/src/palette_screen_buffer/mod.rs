@@ -62,13 +62,6 @@ impl PaletteScreenBuffer {
 
     pub fn with_font(mut self, font: BitFont) -> Self {
         self.font = font;
-
-        self.char_screen_size = Size::new(
-            self.char_screen_size.width / self.font.size.width,
-            self.char_screen_size.height / self.font.size.height,
-        );
-        self.layer.set_size(self.char_screen_size);
-
         self
     }
 
@@ -87,7 +80,11 @@ impl PaletteScreenBuffer {
         let y = pos.y;
 
         // Get colors from palette
-        let fg_color = ch.attribute.get_foreground() as u32;
+        let mut fg_color = ch.attribute.get_foreground() as u32;
+        if ch.attribute.is_bold() && fg_color < 8 {
+            fg_color += 8;
+        }
+
         let bg_color = ch.attribute.get_background() as u32;
 
         // Calculate pixel position
@@ -226,18 +223,40 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_first_editable_line(&self) -> i32 {
+        if self.terminal_state.is_terminal_buffer {
+            if let Some((start, _)) = self.terminal_state.get_margins_top_bottom() {
+                println!("first editable line: {}", start);
+                return start;
+            }
+        }
+        println!("first editable default!");
         0
     }
 
     fn get_last_editable_line(&self) -> i32 {
+        if self.terminal_state.is_terminal_buffer {
+            if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+                return end;
+            }
+        }
         self.char_screen_size.height - 1
     }
 
     fn get_first_editable_column(&self) -> i32 {
+        if self.terminal_state.is_terminal_buffer {
+            if let Some((start, _)) = self.terminal_state.get_margins_left_right() {
+                return start;
+            }
+        }
         0
     }
 
     fn get_last_editable_column(&self) -> i32 {
+        if self.terminal_state.is_terminal_buffer {
+            if let Some((_, end)) = self.terminal_state.get_margins_left_right() {
+                return end;
+            }
+        }
         self.char_screen_size.width - 1
     }
 
@@ -381,13 +400,8 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_size(&mut self, size: Size) {
-        if size == self.char_screen_size {
-            return;
-        }
-        log::error!("error: setting char screen size to {:?}", size);
-        // size parameter is in character dimensions
         self.char_screen_size = size;
-        // Resize text layer
+        self.layer.set_size(size);
         self.layer.lines.resize_with(size.height as usize, Line::new);
     }
 

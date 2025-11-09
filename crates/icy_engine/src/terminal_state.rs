@@ -1,4 +1,4 @@
-use crate::{Rectangle, Size, ansi::BaudEmulation};
+use crate::{Size, ansi::BaudEmulation};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalScrolling {
@@ -62,7 +62,6 @@ pub struct TerminalState {
     pub cleared_screen: bool,
     tab_stops: Vec<i32>,
     baud_rate: BaudEmulation,
-    pub text_window: Option<Rectangle>,
     pub fixed_size: bool,
 }
 
@@ -113,7 +112,6 @@ impl TerminalState {
             blink_attribute_font_slot: 0,
             high_intensity_blink_attribute_font_slot: 0,
             cleared_screen: false,
-            text_window: None,
             fixed_size: false,
         };
         ret.reset_tabs();
@@ -242,13 +240,14 @@ impl TerminalState {
     }
 
     pub fn set_text_window(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
-        self.text_window = Some(Rectangle::from_coords(x0, y0, x1, y1));
-        self.set_margins_top_bottom(0, y1 - y0);
-        self.set_margins_left_right(0, x1 - x0);
+        self.origin_mode = OriginMode::WithinMargins;
+        self.set_margins_top_bottom(y0, y1);
+        self.set_margins_left_right(x0, x1);
     }
 
     pub fn clear_text_window(&mut self) {
-        self.text_window = None;
+        self.origin_mode = OriginMode::UpperLeftCorner;
+
         self.clear_margins_top_bottom();
         self.clear_margins_left_right();
     }
@@ -267,7 +266,6 @@ impl TerminalState {
         // Margins & text window
         self.margins_top_bottom = None;
         self.margins_left_right = None;
-        self.text_window = None;
         self.dec_margin_mode_left_right = false;
 
         // Mouse state remains...

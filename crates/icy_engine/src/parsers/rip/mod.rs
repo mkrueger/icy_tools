@@ -69,7 +69,7 @@ pub struct Parser {
     pub bgi: Bgi,
     pub record_rip_commands: bool,
 }
-const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
+pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
 
 impl Parser {
     pub fn new(fallback_parser: Box<ansi::Parser>, file_path: PathBuf) -> Self {
@@ -83,7 +83,7 @@ impl Parser {
             _current_write_mode: WriteMode::Normal,
             rip_commands: Vec::new(),
             command: None,
-            bgi: Bgi::new(RIP_SCREEN_SIZE, file_path),
+            bgi: Bgi::new(file_path),
             last_rip_update: 0,
             record_rip_commands: false,
             rip_counter: 0,

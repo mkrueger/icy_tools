@@ -1,8 +1,8 @@
 use std::fmt::{self, Display};
 
 use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, EGA_PALETTE, EditableScreen, IBM_VGA50_SAUCE, Palette,
-    SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
+    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, EditableScreen, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE,
+    Size, VIEWDATA, VIEWDATA_PALETTE,
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -201,7 +201,6 @@ impl ScreenMode {
             ScreenMode::Vga(_x, y) => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
-                *screen.palette_mut() = Palette::dos_default();
                 *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
             }
             ScreenMode::Unicode(_x, _y) => {
@@ -209,13 +208,11 @@ impl ScreenMode {
                 let mut font = BitFont::default();
                 font.size = Size::new(32, 64);
                 screen.set_font(0, font);
-                *screen.palette_mut() = Palette::dos_default();
                 *screen.buffer_type_mut() = icy_engine::BufferType::Unicode;
             }
             ScreenMode::Default => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_bytes("", CP437).unwrap());
-                *screen.palette_mut() = Palette::dos_default();
                 *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
             }
             ScreenMode::Vic => {
@@ -238,10 +235,7 @@ impl ScreenMode {
                 *screen.buffer_type_mut() = icy_engine::BufferType::Viewdata;
             }
             ScreenMode::Rip => {
-                screen.clear_font_table();
-                screen.set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
-                *screen.palette_mut() = Palette::from_slice(&EGA_PALETTE);
-                *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
+                // Done by creation
             }
             ScreenMode::SkyPix => {
                 screen.clear_font_table();

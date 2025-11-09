@@ -41,7 +41,7 @@ impl Parser {
         let fonts = load_amiga_fonts();
         Self {
             fallback_parser,
-            bgi: Bgi::new(SKYPIX_SCREEN_SIZE, file_path),
+            bgi: Bgi::new(file_path),
             display_mode: DisplayMode::BitPlanes4,
             parse_mode: SkypixParseMode::Default,
             parameter: String::new(),

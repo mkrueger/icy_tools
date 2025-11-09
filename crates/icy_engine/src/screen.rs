@@ -448,7 +448,7 @@ pub trait EditableScreen: RgbaScreen {
                     let first = self.get_first_visible_line();
                     self.caret_mut().y = self.caret().y.clamp(first, first + self.get_height() - 1);
                 }
-                let x = self.caret().x.clamp(0, (self.get_width() - 1).max(0));
+                let x: i32 = self.caret().x.clamp(0, (self.get_width() - 1).max(0));
                 self.caret_mut().x = x;
             }
             crate::OriginMode::WithinMargins => {

@@ -1,6 +1,6 @@
 use std::{f64::consts, path::PathBuf};
 
-use crate::{BitFont, EGA_PALETTE, EditableScreen, Position, Rectangle, Size, rip::bgi::font::Font};
+use crate::{BitFont, EGA_PALETTE, EditableScreen, Palette, Position, Rectangle, Size, rip::bgi::font::Font};
 
 mod character;
 mod font;
@@ -219,7 +219,6 @@ impl FontType {
 
 lazy_static::lazy_static! {
     pub static ref DEFAULT_BITFONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
-
     static ref FONTS: Vec<Font> = vec![
         Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
         Font::load(include_bytes!("fonts/TRIP.CHR")).unwrap(),
@@ -410,7 +409,6 @@ pub struct Bgi {
     fill_color: u8,
     direction: Direction,
     font: FontType,
-    pub window: Size,
     viewport: Rectangle,
     line_thickness: i32,
     line_pattern: Vec<bool>,
@@ -515,7 +513,7 @@ impl MouseField {
 }
 
 impl Bgi {
-    pub fn new(screen_size: Size, file_path: PathBuf) -> Bgi {
+    pub fn new(file_path: PathBuf) -> Bgi {
         Bgi {
             color: 7,
             bkcolor: 0,
@@ -527,8 +525,7 @@ impl Bgi {
             fill_color: 0,
             direction: Direction::Horizontal,
             font: FontType::Default,
-            window: screen_size,
-            viewport: Rectangle::from(0, 0, screen_size.width, screen_size.height),
+            viewport: Rectangle::from(0, 0, i32::MAX, i32::MAX),
             line_thickness: 1,
             current_pos: Position::new(0, 0),
             char_size: 4,
@@ -640,10 +637,10 @@ impl Bgi {
     }
 
     pub fn get_pixel(&self, buf: &mut dyn EditableScreen, x: i32, y: i32) -> u8 {
-        if x < 0 || y < 0 || x >= self.window.width || y >= self.window.height {
+        if x < 0 || y < 0 || x >= buf.get_resolution().width || y >= buf.get_resolution().height {
             return 0;
         }
-        let off = (y * self.window.width + x) as usize;
+        let off = (y * buf.get_resolution().width + x) as usize;
         let scr = buf.screen_mut(); // mutable access (read-only usage here)
         scr[off]
     }
@@ -660,7 +657,7 @@ impl Bgi {
         if !self.viewport.contains(x, y) {
             return;
         }
-        if x < 0 || y < 0 || x >= self.window.width || y >= self.window.height {
+        if x < 0 || y < 0 || x >= buf.get_resolution().width || y >= buf.get_resolution().height {
             return;
         }
         let mut new_index = color % 16;
@@ -674,7 +671,7 @@ impl Bgi {
                 WriteMode::Not => (!color) & 0x0F,
             } % 16;
         }
-        let off = (y * self.window.width + x) as usize;
+        let off = (y * buf.get_resolution().width + x) as usize;
         let scr = buf.screen_mut();
         scr[off] = new_index;
     }
@@ -935,7 +932,7 @@ impl Bgi {
         startx += 1;
 
         // a weird condition for solid fills and the sides of the screen
-        if (startx == 0 || endx == self.window.width - 1) && (endx == startx) {
+        if (startx == 0 || endx == buf.get_resolution().width - 1) && (endx == startx) {
             return None;
         }
 
@@ -1466,7 +1463,8 @@ impl Bgi {
     }
 
     pub fn clear_device(&mut self, buf: &mut dyn EditableScreen) {
-        self.bar(buf, 0, 0, self.window.width, self.window.height);
+        let res = buf.get_resolution();
+        self.bar(buf, 0, 0, res.width, res.height);
         self.move_to(0, 0);
     }
 
@@ -1509,12 +1507,8 @@ impl Bgi {
     }
 
     pub fn graph_defaults(&mut self, buf: &mut dyn EditableScreen) {
-        let pal = buf.palette_mut();
-        pal.clear();
-        for c in 0..16 {
-            pal.push(EGA_PALETTE[c as usize].clone());
-        }
-        self.viewport = Rectangle::from(0, 0, self.window.width, self.window.height);
+        *buf.palette_mut() = Palette::dos_default();
+        self.viewport = Rectangle::from(0, 0, buf.get_resolution().width, buf.get_resolution().height);
         self.set_color(7);
         self.set_bk_color(0);
         self.set_line_style(LineStyle::Solid);

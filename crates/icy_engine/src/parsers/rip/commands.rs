@@ -70,6 +70,9 @@ impl Command for TextWindow {
         }
         buf.terminal_state_mut().set_text_window(self.x0, self.y0, self.x1, self.y1);
         bgi.set_text_window(self.x0 * x, self.y0 * y, self.x1 * x, self.y1 * y, self.wrap);
+        buf.limit_caret_pos();
+
+        println!("caret pos after limit:{}", buf.caret().position());
         Ok(CallbackAction::NoUpdate)
     }
 
@@ -2000,8 +2003,10 @@ impl Command for LoadIcon {
             4 => bgi.set_write_mode(super::bgi::WriteMode::Not),
             _ => bgi.set_write_mode(super::bgi::WriteMode::Copy),
         };
+        let res = buf.get_resolution();
+
         for y in 0..height {
-            if self.y + y >= bgi.window.height {
+            if self.y + y >= res.height {
                 break;
             }
             let row = (width / 8 + i32::from((width & 7) != 0)) as usize;
@@ -2009,7 +2014,7 @@ impl Command for LoadIcon {
             br.read_exact(&mut planes)?;
 
             for x in 0..width as usize {
-                if self.x + x as i32 >= bgi.window.width {
+                if self.x + x as i32 >= res.width {
                     break;
                 }
                 let mut color = (planes[(row * 3) + (x / 8)] >> (7 - (x & 7))) & 1;
