@@ -1,8 +1,8 @@
 #![allow(clippy::match_same_arms)]
 use super::BufferParser;
-use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, Position, UnicodeConverter};
+use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, Position};
 
-mod constants;
+pub(crate) mod constants;
 
 #[cfg(test)]
 mod tests;
@@ -223,28 +223,6 @@ impl Parser {
             self.got_esc = false;
         }
         CallbackAction::Update
-    }
-}
-
-#[derive(Default)]
-pub struct CharConverter {}
-
-impl UnicodeConverter for CharConverter {
-    fn convert_from_unicode(&self, ch: char) -> char {
-        if ch == ' ' {
-            return ' ';
-        }
-        match constants::UNICODE_TO_VIEWDATA.get(&ch) {
-            Some(out_ch) => *out_ch,
-            _ => ch,
-        }
-    }
-
-    fn convert_to_unicode(&self, ch: char) -> char {
-        match constants::VIEWDATA_TO_UNICODE.get(ch as usize) {
-            Some(out_ch) => *out_ch,
-            _ => ch,
-        }
     }
 }
 

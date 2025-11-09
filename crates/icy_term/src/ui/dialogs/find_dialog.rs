@@ -6,7 +6,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     widget::{Id, button, column, container, row, text, text_input},
 };
-use icy_engine::{AttributedChar, EditableScreen, Position, Selection, UnicodeConverter};
+use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Selection};
 
 use crate::ui::{MainWindowMode, Message};
 
@@ -45,7 +45,7 @@ impl DialogState {
         }
     }
 
-    pub fn update(&mut self, msg: FindDialogMsg, unicode_converter: &dyn UnicodeConverter, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Option<Message> {
+    pub fn update(&mut self, msg: FindDialogMsg, edit_screen: Arc<Mutex<dyn EditableScreen>>) -> Option<Message> {
         match msg {
             FindDialogMsg::ChangePattern(pattern) => {
                 self.pattern = pattern.clone();
@@ -63,7 +63,7 @@ impl DialogState {
 
                 // Search for the new pattern
                 let edit_screen_locked = edit_screen.lock().unwrap();
-                self.search_pattern(&*edit_screen_locked, unicode_converter);
+                self.search_pattern(&*edit_screen_locked);
                 drop(edit_screen_locked);
 
                 // Check if the current/last position still matches the new pattern
@@ -130,7 +130,7 @@ impl DialogState {
                 // Re-search with new case sensitivity setting
                 if !self.pattern.is_empty() {
                     let screen_locked = edit_screen.lock().unwrap();
-                    self.search_pattern(&*screen_locked, unicode_converter);
+                    self.search_pattern(&*screen_locked);
                     drop(screen_locked);
 
                     // Try to keep the same position if it still matches
@@ -181,7 +181,7 @@ impl DialogState {
         closest_idx
     }
 
-    pub fn search_pattern(&mut self, buf: &dyn EditableScreen, converter: &dyn UnicodeConverter) {
+    pub fn search_pattern(&mut self, buf: &dyn EditableScreen) {
         let mut cur_len = 0;
         let mut start_pos = Position::default();
         self.results.clear();
@@ -202,7 +202,7 @@ impl DialogState {
         for y in 0..buf.get_line_count() {
             for x in 0..buf.get_width() {
                 let ch = buf.get_char((x, y).into());
-                if self.compare(converter, cur_len, ch) {
+                if self.compare(buf.buffer_type(), cur_len, ch) {
                     if cur_len == 0 {
                         start_pos = (x, y).into();
                     }
@@ -211,7 +211,7 @@ impl DialogState {
                         self.results.push(start_pos);
                         cur_len = 0;
                     }
-                } else if self.compare(converter, 0, ch) {
+                } else if self.compare(buf.buffer_type(), 0, ch) {
                     start_pos = (x, y).into();
                     cur_len = 1;
                 } else {
@@ -221,12 +221,12 @@ impl DialogState {
         }
     }
 
-    fn compare(&self, converter: &dyn UnicodeConverter, cur_len: usize, attributed_char: AttributedChar) -> bool {
+    fn compare(&self, buffer_type: BufferType, cur_len: usize, attributed_char: AttributedChar) -> bool {
         if cur_len >= self.conv_pattern.len() {
             return false;
         }
 
-        let ch = converter.convert_to_unicode(attributed_char.ch);
+        let ch = buffer_type.convert_to_unicode(attributed_char.ch);
         if self.case_sensitive {
             self.conv_pattern[cur_len] == ch
         } else {

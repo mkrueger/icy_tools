@@ -1,41 +1,10 @@
-use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
-
 use super::{BufferParser, TAB};
-use crate::{BEL, BS, CR, CallbackAction, EditableScreen, EngineResult, FF, LF, UnicodeConverter};
+use crate::{BEL, BS, CR, CallbackAction, EditableScreen, EngineResult, FF, LF};
 #[derive(Default)]
 pub struct Parser {}
 
 #[cfg(test)]
 mod tests;
-
-#[derive(Default)]
-pub struct CP437Converter {}
-
-impl UnicodeConverter for CP437Converter {
-    fn convert_from_unicode(&self, ch: char) -> char {
-        if let Some(tch) = UNICODE_TO_CP437.get(&ch) { *tch as char } else { ch }
-    }
-
-    fn convert_to_unicode(&self, ch: char) -> char {
-        match CP437_TO_UNICODE.get(ch as usize) {
-            Some(out_ch) => *out_ch,
-            _ => ch,
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct IdentityConverter {}
-
-impl UnicodeConverter for IdentityConverter {
-    fn convert_from_unicode(&self, ch: char) -> char {
-        ch
-    }
-
-    fn convert_to_unicode(&self, ch: char) -> char {
-        ch
-    }
-}
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {

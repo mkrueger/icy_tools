@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{AttributedChar, CallbackAction, Caret, EditableScreen, EngineResult, ParserError, UnicodeConverter};
+use crate::{AttributedChar, CallbackAction, Caret, EditableScreen, EngineResult, ParserError};
 
 #[derive(Default)]
 pub struct Parser {
@@ -115,27 +115,6 @@ const GREY2: u32 = 0x0c;
 const LIGHT_GREEN: u32 = 0x0d;
 const LIGHT_BLUE: u32 = 0x0e;
 const GREY3: u32 = 0x0f;
-
-#[derive(Default)]
-pub struct CharConverter {}
-
-impl UnicodeConverter for CharConverter {
-    fn convert_from_unicode(&self, ch: char) -> char {
-        if let Some(tch) = UNICODE_TO_PETSCII.get(&(ch as u8)) {
-            *tch as char
-        } else {
-            ch
-        }
-    }
-
-    fn convert_to_unicode(&self, ch: char) -> char {
-        if let Some(tch) = PETSCII_TO_UNICODE.get(&(ch as u8)) {
-            *tch as char
-        } else {
-            ch
-        }
-    }
-}
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
@@ -306,6 +285,6 @@ const CHAR_TABLE: [(u8, u8); 92] = [
 ];
 
 lazy_static::lazy_static! {
-    static ref UNICODE_TO_PETSCII: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().collect();
-    static ref PETSCII_TO_UNICODE: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().map(|(k, v)| (v, k)).collect();
+    pub(crate) static ref UNICODE_TO_PETSCII: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().collect();
+    pub(crate) static ref PETSCII_TO_UNICODE: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().map(|(k, v)| (v, k)).collect();
 }

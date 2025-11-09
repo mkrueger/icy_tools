@@ -1,3 +1,4 @@
+/*
 lazy_static::lazy_static! {
     pub(super) static ref UNICODE_TO_VIEWDATA: std::collections::HashMap<char,char> = {
         let mut res = std::collections::HashMap::new();
@@ -268,3 +269,4 @@ pub(super) const VIEWDATA_TO_UNICODE: [char; 256] = [
     '\u{1fb3b}',
     '█',
 ];
+*/

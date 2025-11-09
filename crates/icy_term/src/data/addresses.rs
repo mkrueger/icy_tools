@@ -2,7 +2,7 @@ use crate::{ConnectionInformation, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_engine::{BufferParser, UnicodeConverter, ansi, ascii, atascii, avatar, mode7, petscii, rip, skypix, viewdata};
+use icy_engine::{BufferParser, ansi, ascii, atascii, avatar, mode7, petscii, rip, skypix, viewdata};
 use icy_net::ConnectionType;
 use icy_net::telnet::TerminalEmulation;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
@@ -87,20 +87,6 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, scr
 
             Box::new(icy_engine::igs::Parser::new(res))
         }
-    }
-}
-
-#[must_use]
-pub fn get_unicode_converter(emulator: &TerminalEmulation) -> Box<dyn UnicodeConverter> {
-    match emulator {
-        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii | TerminalEmulation::Rip | TerminalEmulation::Skypix => {
-            Box::<ascii::CP437Converter>::default()
-        }
-        TerminalEmulation::PETscii => Box::<petscii::CharConverter>::default(),
-        TerminalEmulation::ATAscii | TerminalEmulation::AtariST => Box::<atascii::CharConverter>::default(),
-        TerminalEmulation::ViewData => Box::<viewdata::CharConverter>::default(),
-        TerminalEmulation::Mode7 => Box::<mode7::CharConverter>::default(),
-        TerminalEmulation::Utf8Ansi => Box::<ascii::IdentityConverter>::default(),
     }
 }
 

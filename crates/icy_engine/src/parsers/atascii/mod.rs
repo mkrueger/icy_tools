@@ -1,28 +1,9 @@
 use super::BufferParser;
-use crate::{CallbackAction, EditableScreen, EngineResult, UnicodeConverter};
+use crate::{CallbackAction, EditableScreen, EngineResult};
 
 #[derive(Default)]
 pub struct Parser {
     got_escape: bool,
-}
-
-#[derive(Default)]
-pub struct CharConverter {}
-
-impl UnicodeConverter for CharConverter {
-    fn convert_from_unicode(&self, ch: char) -> char {
-        match UNICODE_TO_ATARI.get(&ch) {
-            Some(out_ch) => *out_ch,
-            _ => ch,
-        }
-    }
-
-    fn convert_to_unicode(&self, ch: char) -> char {
-        match ATARI_TO_UNICODE.get(ch as usize) {
-            Some(out_ch) => *out_ch,
-            _ => ch,
-        }
-    }
 }
 
 impl BufferParser for Parser {
@@ -68,7 +49,7 @@ impl BufferParser for Parser {
 }
 
 lazy_static::lazy_static! {
-    static ref UNICODE_TO_ATARI: std::collections::HashMap<char, char> = {
+    pub(crate) static ref UNICODE_TO_ATARI: std::collections::HashMap<char, char> = {
         let mut res = std::collections::HashMap::new();
         (0..128).for_each(|a: u8| {
             res.insert(ATARI_TO_UNICODE[a as usize], a as char);
@@ -77,7 +58,7 @@ lazy_static::lazy_static! {
     };
 }
 
-pub const ATARI_TO_UNICODE: [char; 256] = [
+pub(crate) const ATARI_TO_UNICODE: [char; 256] = [
     '♥', '├', '🮇', '┘', '┤', '┐', '╱', '╲', '◢', '▗', '◣', '▝', '▘', '🮂', '▂', '▖', '♣', '┌', '─', '┼', '•', '▄', '▎', '┬', '┴', '▌', '└', '␛', '↑', '↓', '←',
     '→', ' ', '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '=',
     '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '[', '\\',

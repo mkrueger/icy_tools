@@ -1,4 +1,4 @@
-use crate::{Color, Line, Position, Rectangle, Sixel, Size, TextPane, UnicodeConverter};
+use crate::{BufferType, Color, Line, Position, Rectangle, Sixel, Size, TextPane};
 
 use super::AttributedChar;
 
@@ -59,13 +59,12 @@ pub struct Layer {
 impl std::fmt::Display for Layer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut str = String::new();
-        let p = crate::parsers::ascii::CP437Converter::default();
 
         for y in 0..self.get_line_count() {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
                 let ch = self.get_char((x, y).into());
-                str.push(p.convert_to_unicode(ch.ch));
+                str.push(BufferType::CP437.convert_to_unicode(ch.ch));
             }
             str.push('\n');
         }

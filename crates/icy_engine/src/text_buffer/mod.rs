@@ -21,134 +21,17 @@ pub use text_screen::*;
 pub mod layer;
 pub use layer::*;
 
+mod buffer_type;
+pub use buffer_type::*;
+
 use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
 use crate::paint::HalfBlock;
 use crate::{
-    Color, EngineResult, FORMATS, Glyph, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
-    UnicodeConverter, attribute, parsers,
+    Color, EngineResult, FORMATS, Glyph, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane, attribute,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum BufferType {
-    Unicode,
-    CP437,
-    Petscii,
-    Atascii,
-    Viewdata,
-}
-
-impl BufferType {
-    pub fn from_byte(b: u8) -> Self {
-        match b {
-            // 0 => BufferType::Unicode,
-            1 => BufferType::CP437,
-            2 => BufferType::Petscii,
-            3 => BufferType::Atascii,
-            4 => BufferType::Viewdata,
-            _ => BufferType::Unicode,
-        }
-    }
-
-    pub fn to_byte(self) -> u8 {
-        match self {
-            BufferType::Unicode => 0,
-            BufferType::CP437 => 1,
-            BufferType::Petscii => 2,
-            BufferType::Atascii => 3,
-            BufferType::Viewdata => 4,
-        }
-    }
-
-    pub fn get_selection_colors(&self) -> (Color, Color) {
-        match self {
-            // CP437 and Unicode use VGA-style magenta on gray selection
-            BufferType::CP437 | BufferType::Unicode => (
-                Color::new(0xAA, 0x00, 0xAA), // Magenta foreground
-                Color::new(0xAA, 0xAA, 0xAA), // Gray background
-            ),
-            // Petscii uses Commodore VIC colors
-            BufferType::Petscii => (
-                Color::new(0x37, 0x39, 0xC4), // VIC blue foreground
-                Color::new(0xB0, 0x3F, 0xB6), // VIC purple background
-            ),
-            // Atascii uses Atari ANTIC colors
-            BufferType::Atascii => (
-                Color::new(0x09, 0x51, 0x83), // ANTIC blue foreground
-                Color::new(0xFF, 0xFF, 0xFF), // White background
-            ),
-            // Viewdata uses black on white like Videotex/Mode7
-            BufferType::Viewdata => (
-                Color::new(0x00, 0x00, 0x00), // Black foreground
-                Color::new(0xFF, 0xFF, 0xFF), // White background
-            ),
-        }
-    }
-
-    pub fn convert_to_unicode(&self, ch: char) -> char {
-        match self {
-            BufferType::Unicode => ch, // Already Unicode, no conversion needed
-
-            BufferType::CP437 => {
-                // Use the CP437 converter for DOS/ANSI characters
-                parsers::ascii::CP437Converter::default().convert_to_unicode(ch)
-            }
-
-            BufferType::Petscii => {
-                // Use the PETSCII converter for Commodore characters
-                parsers::petscii::CharConverter::default().convert_to_unicode(ch)
-            }
-
-            BufferType::Atascii => {
-                // Use the ATASCII converter for Atari characters
-                parsers::atascii::CharConverter::default().convert_to_unicode(ch)
-            }
-
-            BufferType::Viewdata => {
-                // Viewdata/Teletext uses mostly ASCII with some special graphics
-                // For now, pass through ASCII chars and replace control chars with space
-                if ch.is_ascii_graphic() || ch == ' ' {
-                    ch
-                } else {
-                    ' ' // Replace non-printable with space for Viewdata
-                }
-            }
-        }
-    }
-
-    pub fn convert_from_unicode(&self, ch: char) -> char {
-        match self {
-            BufferType::Unicode => ch, // Already Unicode, no conversion needed
-
-            BufferType::CP437 => {
-                // Use the CP437 converter for DOS/ANSI characters
-                parsers::ascii::CP437Converter::default().convert_from_unicode(ch)
-            }
-
-            BufferType::Petscii => {
-                // Use the PETSCII converter for Commodore characters
-                parsers::petscii::CharConverter::default().convert_to_unicode(ch)
-            }
-
-            BufferType::Atascii => {
-                // Use the ATASCII converter for Atari characters
-                parsers::atascii::CharConverter::default().convert_to_unicode(ch)
-            }
-
-            BufferType::Viewdata => {
-                // Viewdata/Teletext uses mostly ASCII with some special graphics
-                // For now, pass through ASCII chars and replace control chars with space
-                if ch.is_ascii_graphic() || ch == ' ' {
-                    ch
-                } else {
-                    ' ' // Replace non-printable with space for Viewdata
-                }
-            }
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IceMode {
@@ -367,13 +250,12 @@ impl std::fmt::Debug for TextBuffer {
 impl std::fmt::Display for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut str = String::new();
-        let p = parsers::ascii::CP437Converter::default();
 
         for y in 0..self.get_height() {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
                 let ch = self.get_char((x, y).into());
-                str.push(p.convert_to_unicode(ch.ch));
+                str.push(self.buffer_type.convert_to_unicode(ch.ch));
             }
             str.push('\n');
         }

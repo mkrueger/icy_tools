@@ -52,11 +52,6 @@ pub enum CallbackAction {
     SendMouseEvent(MouseEventType, Position, MouseButton, KeyModifiers),
 }
 
-pub trait UnicodeConverter: Send + Sync {
-    fn convert_from_unicode(&self, ch: char) -> char;
-    fn convert_to_unicode(&self, ch: char) -> char;
-}
-
 const EMPTY_MOUSE_FIELD: Vec<MouseField> = Vec::new();
 
 pub trait BufferParser: Send {

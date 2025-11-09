@@ -1,5 +1,5 @@
 lazy_static::lazy_static! {
-    pub(super) static ref UNICODE_TO_VIEWDATA: std::collections::HashMap<char,char> = {
+    pub(crate) static ref UNICODE_TO_VIEWDATA: std::collections::HashMap<char,char> = {
         let mut res = std::collections::HashMap::new();
         (0..=255).for_each(|a: u8| {
             res.insert(VIEWDATA_TO_UNICODE[a as usize], a as char);
@@ -8,7 +8,7 @@ lazy_static::lazy_static! {
     };
 }
 
-pub(super) const VIEWDATA_TO_UNICODE: [char; 256] = [
+pub(crate) const VIEWDATA_TO_UNICODE: [char; 256] = [
     ' ',
     ' ',
     ' ',

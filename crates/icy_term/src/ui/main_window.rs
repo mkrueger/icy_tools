@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    McpHandler, get_unicode_converter,
+    McpHandler,
     mcp::{self, McpCommand, types::ScreenCaptureFormat},
     ui::{
         Message,
@@ -19,7 +19,7 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, UnicodeConverter, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use image::DynamicImage;
 use tokio::sync::mpsc;
@@ -76,8 +76,6 @@ pub struct MainWindow {
     connection_time: Option<Instant>,
     current_address: Option<Address>,
     last_address: Option<Address>,
-
-    unicode_converter: Box<dyn UnicodeConverter>,
 
     // Capture state
     capture_file: Option<PathBuf>,
@@ -154,8 +152,6 @@ impl MainWindow {
             capture_file: None,
             captured_data: Vec::new(),
 
-            unicode_converter: get_unicode_converter(&icy_net::telnet::TerminalEmulation::Ansi),
-
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
             shift_pressed_during_selection: false,
@@ -219,7 +215,6 @@ impl MainWindow {
                 unsafe {
                     TERM_EMULATION = address.terminal_type;
                 }
-                self.unicode_converter = get_unicode_converter(&address.terminal_type);
 
                 // Send connect command to terminal thread
                 let config = ConnectionConfig {
@@ -504,10 +499,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::FindDialog(msg) => {
-                if let Some(close_msg) = self
-                    .find_dialog
-                    .update(msg, &*self.unicode_converter, self.terminal_window.terminal.screen.clone())
-                {
+                if let Some(close_msg) = self.find_dialog.update(msg, self.terminal_window.terminal.screen.clone()) {
                     return self.update(close_msg);
                 }
 

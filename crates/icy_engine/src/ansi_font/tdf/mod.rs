@@ -1,4 +1,4 @@
-use crate::{AttributedChar, Size, TextAttribute, TextBuffer, TextPane, UnicodeConverter, editor::EditState};
+use crate::{AttributedChar, BufferType, Size, TextAttribute, TextBuffer, TextPane, editor::EditState};
 use i18n_embed_fl::fl;
 
 pub mod font;
@@ -28,7 +28,6 @@ impl FontGlyph {
         let mut cur = caret_pos;
         let mut char_offset = 0;
         let mut leading_space = true;
-        let converter = crate::ascii::CP437Converter::default();
 
         // Track the actual rendered dimensions
         let mut max_width = 0i32;
@@ -108,7 +107,7 @@ impl FontGlyph {
                     }
                 };
                 if editor.get_buffer().buffer_type == crate::BufferType::Unicode {
-                    attributed_char.ch = converter.convert_to_unicode(attributed_char.ch);
+                    attributed_char.ch = BufferType::CP437.convert_to_unicode(attributed_char.ch);
                 }
                 editor.set_char(cur, attributed_char).unwrap();
 
