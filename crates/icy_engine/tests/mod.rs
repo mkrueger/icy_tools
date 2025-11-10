@@ -131,18 +131,3 @@ pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
     }
     println!("Test passed for: {}", filename);
 }
-
-fn compare_images(rendered_data: &[u8], img_buf: &[u8], width: usize, height: usize) -> Option<(usize, usize, Color, Color)> {
-    for y in 0..height {
-        for x in 0..width {
-            let idx = (y * width + x) * 4;
-            let col1 = Color::new(rendered_data[idx], rendered_data[idx + 1], rendered_data[idx + 2]);
-            let col2 = Color::new(img_buf[idx], img_buf[idx + 1], img_buf[idx + 2]);
-
-            if col1 != col2 {
-                return Some((x, y, col2, col1));
-            }
-        }
-    }
-    None
-}

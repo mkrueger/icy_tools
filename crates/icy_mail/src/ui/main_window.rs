@@ -145,7 +145,7 @@ impl MainWindow {
                 Task::none()
             }
 
-            Message::PackageLoadError(error) => {
+            Message::PackageLoadError(_error) => {
                 self.mode = MainWindowMode::ShowWelcomeScreen;
                 self.loading_progress = 0.0;
                 self.loading_message.clear();
