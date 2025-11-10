@@ -47,7 +47,7 @@ pub trait Command: Send {
     ///
     /// This function will return an error if .
     fn run(&self, _buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        println!("not implemented RIP: {:?}", self.to_rip_string());
+        eprintln!("not implemented RIP: {:?}", self.to_rip_string());
         Ok(CallbackAction::NoUpdate)
     }
 }

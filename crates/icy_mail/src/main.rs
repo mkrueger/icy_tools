@@ -16,7 +16,7 @@ mod ui;
 
 use std::path::PathBuf;
 
-use clap::{Parser, arg, command};
+use clap::Parser;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use web_time::Instant;

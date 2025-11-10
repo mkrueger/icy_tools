@@ -327,7 +327,7 @@ impl TextBuffer {
             })) => {
                 // check limits, some files have wrong sauce data, even if 0 is specified
                 // some files specify the pixel size there and don't have line breaks in the file
-                let size = Size::new(columns.clamp(1, 1000) as i32, lines as i32);
+                let size: Size = Size::new(columns.clamp(1, 1000) as i32, lines as i32);
                 self.set_size(size);
                 self.terminal_state.set_size(size);
 
@@ -723,10 +723,8 @@ impl TextBuffer {
 
     pub fn reset_terminal(&mut self) {
         if self.terminal_state.is_terminal_buffer {
-            let fixed = self.terminal_state.fixed_size;
             self.terminal_state.reset_terminal(self.original_size);
             self.size = self.original_size;
-            self.terminal_state.fixed_size = fixed;
         } else {
             self.terminal_state.reset_terminal(self.size);
         }

@@ -440,7 +440,6 @@ impl TerminalThread {
             }
 
             screen.terminal_state_mut().is_terminal_buffer = true;
-            screen.terminal_state_mut().fixed_size = true;
 
             screen_mode.apply_to_edit_screen(&mut **screen);
         }

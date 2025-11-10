@@ -1,6 +1,9 @@
 use super::BufferParser;
-use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, ParserError};
+use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, ParserError, Size};
 
+lazy_static::lazy_static! {
+    pub static ref C64_SCREEN_SIZE: Size = Size::new(40, 25);
+}
 #[derive(Default)]
 pub struct Parser {
     underline_mode: bool,
@@ -97,6 +100,81 @@ impl Parser {
             }
         }
     }
+
+    /*
+    /// Produce a human-readable description of a PETSCII byte including its role
+    /// (control, color change, shift toggle, printable mapping, etc.) and current parser modes.
+    pub fn debug_description(&self, byte: u8) -> String {
+        let mode = format!(
+            "[shift={} c_shift={} reverse={} underline={}]",
+            if self.shift_mode { "on" } else { "off" },
+            if self.c_shift { "on" } else { "off" },
+            if self.reverse_mode { "on" } else { "off" },
+            if self.underline_mode { "on" } else { "off" },
+        );
+
+        let desc = match byte {
+            0x02 => "Enable underline",
+            0x03 => "Disable underline",
+            0x05 => "Set foreground WHITE",
+            0x07 => "Bell (BEEP)",
+            0x08 => "Capital shift OFF",
+            0x09 => "Capital shift ON",
+            0x0A => "CR (Carriage Return)",
+            0x0D | 0x8D => "LF (Line Feed) + reset reverse",
+            0x0E => "Shift mode: UNshifted (upper+graphics)",
+            0x0F => "Shift mode: SHIFTED (upper+lowercase)",
+            0x11 => "Cursor DOWN",
+            0x12 => "Reverse ON",
+            0x13 => "Home cursor",
+            0x14 => "Backspace",
+            0x1B => "ESC (C128 escape sequence follows)",
+            0x1C => "Set foreground RED",
+            0x1D => "Cursor RIGHT",
+            0x1E => "Set foreground GREEN",
+            0x1F => "Set foreground BLUE",
+            0x81 => "Set foreground ORANGE",
+            0x8E => "SHIFT IN (shifted mode)",
+            0x90 => "Set foreground BLACK",
+            0x91 => "Cursor UP",
+            0x92 => "Reverse OFF",
+            0x93 => "Clear screen",
+            0x95 => "Set foreground BROWN",
+            0x96 => "Set foreground PINK",
+            0x97 => "Set foreground GREY1",
+            0x98 => "Set foreground GREY2",
+            0x99 => "Set foreground LIGHT_GREEN",
+            0x9A => "Set foreground LIGHT_BLUE",
+            0x9B => "Set foreground GREY3",
+            0x9C => "Set foreground PURPLE",
+            0x9D => "Cursor LEFT",
+            0x9E => "Set foreground YELLOW",
+            0x9F => "Set foreground CYAN",
+            0xFF => "Printable PI character",
+            b if matches!(b, 0x20..=0x7F | 0xA0..=0xBF | 0xC0..=0xFE) => {
+                // Attempt mapping to internal code to show transformed character
+                match self.petscii_to_internal(byte) {
+                    Ok(mapped) => {
+                        // Show resulting code with potential reverse application
+                        let rev_mapped = self.apply_reverse(mapped);
+                        let display = if rev_mapped.is_ascii_graphic() {
+                            rev_mapped as char
+                        } else {
+                            '·'
+                        };
+                        return format!(
+                            "Printable PETSCII '{}' (0x{:02X}) -> internal 0x{:02X} '{}' {}",
+                            byte as char, byte, mapped, display, mode
+                        );
+                    }
+                    Err(_) => return format!("Printable PETSCII '{}' (0x{:02X}) [mapping error] {}", byte as char, byte, mode),
+                }
+            }
+            _ => "Unknown / Unsupported control",
+        };
+
+        format!("{} (0x{:02X}) {}", desc, byte, mode)
+    }*/
 }
 
 const BLACK: u32 = 0x00;
@@ -122,7 +200,7 @@ impl BufferParser for Parser {
         if self.got_esc {
             return self.handle_c128_escapes(buf, byte);
         }
-
+        //        println!("{}", self.debug_description(byte));
         match byte {
             0x02 => {
                 // Enable underline (C128 specific)
@@ -137,7 +215,7 @@ impl BufferParser for Parser {
             0x08 => self.c_shift = false,
             0x09 => self.c_shift = true,
             0x0A => buf.cr(),
-            0x0D | 0x8D => {
+            0x0D => {
                 buf.lf();
                 self.reverse_mode = false;
             }
@@ -146,19 +224,26 @@ impl BufferParser for Parser {
             0x11 => buf.down(1),
             0x12 => self.reverse_mode = true,
             0x13 => buf.home(),
-            0x14 => buf.bs(),
+            0x14 => buf.wrapping_bs(),
             0x1B => self.got_esc = true,
             0x1C => buf.caret_mut().set_foreground(RED),
-            0x1D => buf.right(1),
+            0x1D => buf.wrapping_right(),
             0x1E => buf.caret_mut().set_foreground(GREEN),
             0x1F => buf.caret_mut().set_foreground(BLUE),
             0x81 => buf.caret_mut().set_foreground(ORANGE),
-            0x8E => self.update_shift_mode(buf, true), // SHIFT IN
+            0x8D => {
+                buf.lf();
+            }
+            0x8E => self.update_shift_mode(buf, true), // SHIFT
             0x90 => buf.caret_mut().set_foreground(BLACK),
             0x91 => buf.up(1),
             0x92 => self.reverse_mode = false,
             0x93 => {
                 buf.clear_screen();
+                buf.caret_mut().set_position_xy(0, 0);
+            }
+            0x94 => {
+                buf.ins();
             }
             0x95 => buf.caret_mut().set_foreground(BROWN),
             0x96 => buf.caret_mut().set_foreground(PINK),
@@ -168,7 +253,7 @@ impl BufferParser for Parser {
             0x9A => buf.caret_mut().set_foreground(LIGHT_BLUE),
             0x9B => buf.caret_mut().set_foreground(GREY3),
             0x9C => buf.caret_mut().set_foreground(PURPLE),
-            0x9D => buf.left(1),
+            0x9D => buf.wrapping_left(),
             0x9E => buf.caret_mut().set_foreground(YELLOW),
             0x9F => buf.caret_mut().set_foreground(CYAN),
             0xFF => buf.print_value(94), // PI character

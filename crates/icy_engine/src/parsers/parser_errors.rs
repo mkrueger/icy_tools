@@ -42,7 +42,7 @@ impl std::fmt::Display for ParserError {
             }
             ParserError::Description(str) => write!(f, "{str}"),
             ParserError::UnsupportedControlCode(code) => {
-                write!(f, "unsupported control code {}", *code)
+                write!(f, "unsupported control code 0x{:02X}", *code)
             }
             ParserError::UnsupportedCustomCommand(code) => {
                 write!(f, "unsupported custom ansi command: {}", *code)

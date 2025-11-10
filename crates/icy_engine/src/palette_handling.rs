@@ -800,6 +800,106 @@ pub const DOS_DEFAULT_PALETTE: [Color; 16] = [
     }, // white
 ];
 
+//  New palette from Petmate 9
+pub const C64_DEFAULT_PALETTE: [Color; 16] = [
+    Color {
+        name: None,
+        r: 0x00,
+        g: 0x00,
+        b: 0x00,
+    }, // black
+    Color {
+        name: None,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+    }, // white
+    Color {
+        name: None,
+        r: 0x92,
+        g: 0x4a,
+        b: 0x40,
+    }, // red
+    Color {
+        name: None,
+        r: 0x84,
+        g: 0xc5,
+        b: 0xCC,
+    }, // cyan
+    Color {
+        name: None,
+        r: 0x93,
+        g: 0x51,
+        b: 0xb6,
+    }, // violett
+    Color {
+        name: None,
+        r: 0x72,
+        g: 0xB1,
+        b: 0x4b,
+    }, // green
+    Color {
+        name: None,
+        r: 0x48,
+        g: 0x3A,
+        b: 0xA4,
+    }, // blue
+    Color {
+        name: None,
+        r: 0xD5,
+        g: 0xDF,
+        b: 0x7C,
+    }, // yellow
+    Color {
+        name: None,
+        r: 0x99,
+        g: 0x69,
+        b: 0x2D,
+    }, // orange
+    Color {
+        name: None,
+        r: 0x67,
+        g: 0x52,
+        b: 0x01,
+    }, // brown
+    Color {
+        name: None,
+        r: 0xC0,
+        g: 0x81,
+        b: 0x78,
+    }, // lightred
+    Color {
+        name: None,
+        r: 0x60,
+        g: 0x60,
+        b: 0x60,
+    }, // gray1
+    Color {
+        name: None,
+        r: 0x8A,
+        g: 0x8A,
+        b: 0x8A,
+    }, // gray2
+    Color {
+        name: None,
+        r: 0xB2,
+        g: 0xEC,
+        b: 0x91,
+    }, // lightgreen
+    Color {
+        name: None,
+        r: 0x86,
+        g: 0x7A,
+        b: 0xDE,
+    }, // lightblue
+    Color {
+        name: None,
+        r: 0xAE,
+        g: 0xAE,
+        b: 0xAE,
+    }, // gray3
+];
+/*
 // colors taken from "C64 Community Colors V1.2a" palette, see
 // https://p1x3l.net/36/c64-community-colors-theor/
 pub const C64_DEFAULT_PALETTE: [Color; 16] = [
@@ -899,7 +999,7 @@ pub const C64_DEFAULT_PALETTE: [Color; 16] = [
         g: 0xB6,
         b: 0xB5,
     }, // gray3
-];
+];*/
 
 pub const ATARI_DEFAULT_PALETTE: [Color; 16] = [
     Color {

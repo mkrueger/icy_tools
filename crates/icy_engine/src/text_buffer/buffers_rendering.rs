@@ -30,9 +30,13 @@ impl TextBuffer {
     ) {
         // Bail out early if buffer mismatched
         if pixels.len() != (px_width * px_height * 4) as usize {
+            log::error!(
+                "render_to_rgba_into: pixel buffer size mismatch (expected {}, got {})",
+                px_width * px_height * 4,
+                pixels.len()
+            );
             return;
         }
-
         // Palette cache
         let mut palette_cache = [(0u8, 0u8, 0u8); 256];
         for i in 0..self.palette.len() {

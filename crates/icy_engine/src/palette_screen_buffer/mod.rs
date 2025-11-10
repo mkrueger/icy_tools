@@ -228,7 +228,6 @@ impl Screen for PaletteScreenBuffer {
                 return start;
             }
         }
-        println!("first editable default!");
         0
     }
 

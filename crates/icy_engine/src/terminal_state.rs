@@ -62,7 +62,6 @@ pub struct TerminalState {
     pub cleared_screen: bool,
     tab_stops: Vec<i32>,
     baud_rate: BaudEmulation,
-    pub fixed_size: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -112,7 +111,6 @@ impl TerminalState {
             blink_attribute_font_slot: 0,
             high_intensity_blink_attribute_font_slot: 0,
             cleared_screen: false,
-            fixed_size: false,
         };
         ret.reset_tabs();
         ret

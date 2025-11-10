@@ -146,7 +146,6 @@ impl MainWindow {
             }
 
             Message::PackageLoadError(error) => {
-                println!("Error loading package: {}", error);
                 self.mode = MainWindowMode::ShowWelcomeScreen;
                 self.loading_progress = 0.0;
                 self.loading_message.clear();

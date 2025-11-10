@@ -66,7 +66,7 @@ pub trait BufferParser: Send {
 }
 
 #[cfg(test)]
-fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> TextScreen {
+fn _create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> TextScreen {
     use crate::{Caret, SelectionMask, TextBuffer, TextScreen};
 
     let mut buf = TextScreen {
