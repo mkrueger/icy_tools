@@ -7,7 +7,7 @@ use crate::{
     load_amiga_fonts,
     rip::bgi::{Bgi, Image, WriteMode},
 };
-const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
+pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
 pub enum SkypixParseMode {
     Default,
@@ -468,28 +468,4 @@ impl BufferParser for Parser {
             }
         }
     }
-    /*
-    fn get_picture_data(&mut self) -> Option<(Size, Vec<u8>)> {
-        if self.last_cmd_update == self.cmd_counter {
-            return None;
-        }
-        self.last_cmd_update = self.cmd_counter;
-        let mut pixels = Vec::new();
-        let pal = self.bgi.get_palette().clone();
-        for i in &self.bgi.screen {
-            if *i == 0 {
-                pixels.push(0);
-                pixels.push(0);
-                pixels.push(0);
-                pixels.push(0);
-                continue;
-            }
-            let (r, g, b) = pal.get_rgb(*i as u32);
-            pixels.push(r);
-            pixels.push(g);
-            pixels.push(b);
-            pixels.push(255);
-        }
-        Some((self.bgi.window, pixels))
-    }*/
 }

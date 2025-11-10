@@ -338,6 +338,12 @@ impl RgbaScreen for PaletteScreenBuffer {
         self.pixel_size
     }
 
+    fn set_resolution(&mut self, size: Size) {
+        self.pixel_size = size;
+        self.char_screen_size = Size::new(size.width / self.font.size.width, size.height / self.font.size.height);
+        self.screen.resize((size.width as usize) * (size.height as usize), 0);
+    }
+
     fn screen_mut(&mut self) -> &mut [u8] {
         &mut self.screen
     }

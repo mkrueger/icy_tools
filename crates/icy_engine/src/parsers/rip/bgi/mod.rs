@@ -219,6 +219,7 @@ impl FontType {
 
 lazy_static::lazy_static! {
     pub static ref DEFAULT_BITFONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
+
     static ref FONTS: Vec<Font> = vec![
         Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
         Font::load(include_bytes!("fonts/TRIP.CHR")).unwrap(),

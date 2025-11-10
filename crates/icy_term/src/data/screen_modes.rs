@@ -238,15 +238,9 @@ impl ScreenMode {
                 // Done by creation
             }
             ScreenMode::SkyPix => {
-                screen.clear_font_table();
-                screen.set_font(0, BitFont::from_sauce_name("IBM VGA50").unwrap());
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
-                screen.terminal_state_mut().fixed_size = true;
-                *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
             }
             ScreenMode::AtariST(_x) => {
-                screen.clear_font_table();
-                screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
             }

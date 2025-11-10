@@ -198,7 +198,11 @@ impl RgbaScreen for TextScreen {
     }
 
     fn screen_mut(&mut self) -> &mut [u8] {
-        panic!("Not implemented for TextScreen");
+        panic!("Not supported for TextScreen");
+    }
+
+    fn set_resolution(&mut self, _size: Size) {
+        panic!("Not supported for TextScreen");
     }
 }
 
