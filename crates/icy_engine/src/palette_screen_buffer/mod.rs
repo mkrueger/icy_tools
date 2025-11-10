@@ -225,7 +225,6 @@ impl Screen for PaletteScreenBuffer {
     fn get_first_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
             if let Some((start, _)) = self.terminal_state.get_margins_top_bottom() {
-                println!("first editable line: {}", start);
                 return start;
             }
         }

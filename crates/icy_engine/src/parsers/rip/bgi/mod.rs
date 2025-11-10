@@ -1884,10 +1884,220 @@ impl Bgi {
             }
 
             match self.button_style.orientation {
-                LabelOrientation::Above => todo!(),
-                LabelOrientation::Left => todo!(),
-                LabelOrientation::Right => todo!(),
-                LabelOrientation::Below => todo!(),
+                LabelOrientation::Above => {
+                    let old_col = self.get_color();
+                    let text_size = self.get_text_size(&text);
+
+                    // Horizontal alignment
+                    let tx = if self.button_style.left_justify_label() {
+                        ox
+                    } else if self.button_style.right_justify_label() {
+                        ox + width - text_size.width
+                    } else {
+                        ox + (width - text_size.width) / 2
+                    };
+
+                    // Place above with a small gap
+                    let ty = oy - text_size.height - 2;
+
+                    if self.button_style.display_dropshadow() {
+                        self.set_color(cs);
+                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
+                    }
+                    self.set_color(ch);
+                    self.out_text_xy(buf, tx, ty, &text);
+
+                    // Hotkey rendering
+                    if hotkey != 0 && hotkey != 255 {
+                        let hk_ch = (hotkey as char).to_ascii_uppercase();
+                        for (i, ch) in text.chars().enumerate() {
+                            if ch.to_ascii_uppercase() == hk_ch {
+                                let prefix_size = self.get_text_size(&text[0..i]);
+                                if self.button_style.highlight_hotkey() {
+                                    self.set_color(ul);
+                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
+                                }
+                                if self.button_style.underline_hotkey() {
+                                    let hotkey_size = self.get_text_size(&text[i..=i]);
+                                    if self.button_style.display_dropshadow() {
+                                        self.draw_line(
+                                            buf,
+                                            tx + prefix_size.width + 1,
+                                            ty + hotkey_size.height + 2,
+                                            tx + prefix_size.width + hotkey_size.width,
+                                            ty + hotkey_size.height + 2,
+                                            cs,
+                                        );
+                                    }
+                                    self.draw_line(
+                                        buf,
+                                        tx + prefix_size.width,
+                                        ty + hotkey_size.height + 1,
+                                        tx + prefix_size.width + hotkey_size.width - 1,
+                                        ty + hotkey_size.height + 1,
+                                        ul,
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    self.set_color(old_col);
+                }
+                LabelOrientation::Left => {
+                    let old_col = self.get_color();
+                    let text_size = self.get_text_size(&text);
+                    let ty = oy + (height - text_size.height) / 2;
+                    let tx = ox - text_size.width - 2; // gap to the left
+
+                    if self.button_style.display_dropshadow() {
+                        self.set_color(cs);
+                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
+                    }
+                    self.set_color(ch);
+                    self.out_text_xy(buf, tx, ty, &text);
+
+                    if hotkey != 0 && hotkey != 255 {
+                        let hk_ch = (hotkey as char).to_ascii_uppercase();
+                        for (i, ch) in text.chars().enumerate() {
+                            if ch.to_ascii_uppercase() == hk_ch {
+                                let prefix_size = self.get_text_size(&text[0..i]);
+                                if self.button_style.highlight_hotkey() {
+                                    self.set_color(ul);
+                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
+                                }
+                                if self.button_style.underline_hotkey() {
+                                    let hotkey_size = self.get_text_size(&text[i..=i]);
+                                    if self.button_style.display_dropshadow() {
+                                        self.draw_line(
+                                            buf,
+                                            tx + prefix_size.width + 1,
+                                            ty + hotkey_size.height + 2,
+                                            tx + prefix_size.width + hotkey_size.width,
+                                            ty + hotkey_size.height + 2,
+                                            cs,
+                                        );
+                                    }
+                                    self.draw_line(
+                                        buf,
+                                        tx + prefix_size.width,
+                                        ty + hotkey_size.height + 1,
+                                        tx + prefix_size.width + hotkey_size.width - 1,
+                                        ty + hotkey_size.height + 1,
+                                        ul,
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    self.set_color(old_col);
+                }
+                LabelOrientation::Right => {
+                    let old_col = self.get_color();
+                    let text_size = self.get_text_size(&text);
+                    let ty = oy + (height - text_size.height) / 2;
+                    let tx = ox + width + 2; // gap to the right
+
+                    if self.button_style.display_dropshadow() {
+                        self.set_color(cs);
+                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
+                    }
+                    self.set_color(ch);
+                    self.out_text_xy(buf, tx, ty, &text);
+
+                    if hotkey != 0 && hotkey != 255 {
+                        let hk_ch = (hotkey as char).to_ascii_uppercase();
+                        for (i, ch) in text.chars().enumerate() {
+                            if ch.to_ascii_uppercase() == hk_ch {
+                                let prefix_size = self.get_text_size(&text[0..i]);
+                                if self.button_style.highlight_hotkey() {
+                                    self.set_color(ul);
+                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
+                                }
+                                if self.button_style.underline_hotkey() {
+                                    let hotkey_size = self.get_text_size(&text[i..=i]);
+                                    if self.button_style.display_dropshadow() {
+                                        self.draw_line(
+                                            buf,
+                                            tx + prefix_size.width + 1,
+                                            ty + hotkey_size.height + 2,
+                                            tx + prefix_size.width + hotkey_size.width,
+                                            ty + hotkey_size.height + 2,
+                                            cs,
+                                        );
+                                    }
+                                    self.draw_line(
+                                        buf,
+                                        tx + prefix_size.width,
+                                        ty + hotkey_size.height + 1,
+                                        tx + prefix_size.width + hotkey_size.width - 1,
+                                        ty + hotkey_size.height + 1,
+                                        ul,
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    self.set_color(old_col);
+                }
+                LabelOrientation::Below => {
+                    let old_col = self.get_color();
+                    let text_size = self.get_text_size(&text);
+
+                    let tx = if self.button_style.left_justify_label() {
+                        ox
+                    } else if self.button_style.right_justify_label() {
+                        ox + width - text_size.width
+                    } else {
+                        ox + (width - text_size.width) / 2
+                    };
+                    let ty = oy + height + 2; // gap below
+
+                    if self.button_style.display_dropshadow() {
+                        self.set_color(cs);
+                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
+                    }
+                    self.set_color(ch);
+                    self.out_text_xy(buf, tx, ty, &text);
+
+                    if hotkey != 0 && hotkey != 255 {
+                        let hk_ch = (hotkey as char).to_ascii_uppercase();
+                        for (i, ch) in text.chars().enumerate() {
+                            if ch.to_ascii_uppercase() == hk_ch {
+                                let prefix_size = self.get_text_size(&text[0..i]);
+                                if self.button_style.highlight_hotkey() {
+                                    self.set_color(ul);
+                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
+                                }
+                                if self.button_style.underline_hotkey() {
+                                    let hotkey_size = self.get_text_size(&text[i..=i]);
+                                    if self.button_style.display_dropshadow() {
+                                        self.draw_line(
+                                            buf,
+                                            tx + prefix_size.width + 1,
+                                            ty + hotkey_size.height + 2,
+                                            tx + prefix_size.width + hotkey_size.width,
+                                            ty + hotkey_size.height + 2,
+                                            cs,
+                                        );
+                                    }
+                                    self.draw_line(
+                                        buf,
+                                        tx + prefix_size.width,
+                                        ty + hotkey_size.height + 1,
+                                        tx + prefix_size.width + hotkey_size.width - 1,
+                                        ty + hotkey_size.height + 1,
+                                        ul,
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    self.set_color(old_col);
+                }
 
                 LabelOrientation::Center => {
                     let old_col = self.get_color();

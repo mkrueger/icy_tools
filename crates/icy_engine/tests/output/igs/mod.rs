@@ -1,5 +1,5 @@
-use std::fs::{self};
 use icy_engine::{ATARI, BitFont, BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
+use std::fs::{self};
 
 use crate::compare_output;
 

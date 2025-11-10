@@ -1,7 +1,12 @@
-use std::{fs::File, io::{BufReader, BufWriter}, path::Path};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
+    path::Path,
+};
 
 use icy_engine::{
-    Color, RenderOptions, Screen, Size, TextBuffer, editor::{EditState, UndoState}
+    Color, RenderOptions, Screen, Size, TextBuffer,
+    editor::{EditState, UndoState},
 };
 
 mod output;
@@ -34,7 +39,6 @@ fn test_set_letter_spacing() {
     assert!(edit_state.get_buffer().use_letter_spacing());
 }
 
-
 pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
     let (rendered_size, rendered_data) = screen.render_to_rgba(&RenderOptions::default());
 
@@ -52,7 +56,7 @@ pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
         let info = reader.info();
         (info.width as usize, info.height as usize, info.color_type)
     };
-    
+
     // Check resolution
     if width != rendered_size.width as usize || height != rendered_size.height as usize {
         panic!(
@@ -73,7 +77,7 @@ pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
             rgba_buf.push(chunk[0]); // R
             rgba_buf.push(chunk[1]); // G
             rgba_buf.push(chunk[2]); // B
-            rgba_buf.push(255);       // A
+            rgba_buf.push(255); // A
         }
         rgba_buf
     } else {
@@ -85,10 +89,7 @@ pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
     for y in 0..height {
         for x in 0..width {
             let idx = (y * width + x) * 4;
-            if img_buf[idx] != rendered_data[idx]
-                || img_buf[idx + 1] != rendered_data[idx + 1]
-                || img_buf[idx + 2] != rendered_data[idx + 2]
-            {
+            if img_buf[idx] != rendered_data[idx] || img_buf[idx + 1] != rendered_data[idx + 1] || img_buf[idx + 2] != rendered_data[idx + 2] {
                 let expected = Color::new(img_buf[idx], img_buf[idx + 1], img_buf[idx + 2]);
                 let got = Color::new(rendered_data[idx], rendered_data[idx + 1], rendered_data[idx + 2]);
                 mismatch = Some((x, y, expected, got));

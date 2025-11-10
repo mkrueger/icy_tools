@@ -1,5 +1,8 @@
+use icy_engine::{
+    BufferParser, PaletteScreenBuffer, ansi,
+    rip::{self, RIP_SCREEN_SIZE},
+};
 use std::fs::{self};
-use icy_engine::{BufferParser, PaletteScreenBuffer, ansi, rip::{self, RIP_SCREEN_SIZE}};
 
 use crate::compare_output;
 
@@ -11,11 +14,10 @@ pub fn test_rip() {
             continue;
         }
 
-        let data = fs::read(&cur_entry)
-            .unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         let data = String::from_utf8_lossy(&data);
-        
+
         let mut buffer = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
         let mut ansi_parser = ansi::Parser::default();
         ansi_parser.bs_is_ctrl_char = true;
