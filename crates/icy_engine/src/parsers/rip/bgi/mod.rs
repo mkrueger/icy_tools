@@ -637,13 +637,16 @@ impl Bgi {
         self.char_size = char_size.clamp(1, 10);
     }
 
+    #[inline(always)]
     pub fn get_pixel(&self, buf: &mut dyn EditableScreen, x: i32, y: i32) -> u8 {
         if x < 0 || y < 0 || x >= buf.get_resolution().width || y >= buf.get_resolution().height {
             return 0;
         }
         let off = (y * buf.get_resolution().width + x) as usize;
-        let scr = buf.screen_mut(); // mutable access (read-only usage here)
-        scr[off]
+        unsafe {
+            // Use unsafe for bounds-checked access we've already validated
+            *buf.screen().get_unchecked(off)
+        }
     }
 
     pub fn get_fill_pattern(&self) -> &Vec<u8> {
@@ -654,6 +657,7 @@ impl Bgi {
         self.button_style = style;
     }
 
+    #[inline(always)]
     pub fn put_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, color: u8) {
         if !self.viewport.contains(x, y) {
             return;
@@ -673,8 +677,9 @@ impl Bgi {
             } % 16;
         }
         let off = (y * buf.get_resolution().width + x) as usize;
-        let scr = buf.screen_mut();
-        scr[off] = new_index;
+        unsafe {
+            *buf.screen_mut().get_unchecked_mut(off) = new_index;
+        }
     }
 
     pub fn get_write_mode(&self) -> WriteMode {
@@ -1020,10 +1025,13 @@ impl Bgi {
         let right = rect.right();
         let bottom = rect.bottom();
         if matches!(self.fill_style, FillStyle::Solid) {
-            for y in rect.top()..bottom {
-                for x in rect.left()..right {
-                    self.put_pixel(buf, x, y, self.fill_color);
-                }
+            let width = buf.get_resolution().width;
+            let screen = buf.screen_mut();
+            let color = self.fill_color;
+            for y in rect.top()..rect.bottom() {
+                let start = (y * width as i32 + rect.left()) as usize;
+                let end = start + rect.get_width() as usize;
+                screen[start..end].fill(color);
             }
         } else {
             // Avoid borrowing self.fill_user_pattern immutably across the pixel writes by cloning first
