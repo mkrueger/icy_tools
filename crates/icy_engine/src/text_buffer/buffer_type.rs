@@ -3,7 +3,6 @@ use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
 use crate::{
     Color,
     atascii::{ATARI_TO_UNICODE, UNICODE_TO_ATARI},
-    petscii::{PETSCII_TO_UNICODE, UNICODE_TO_PETSCII},
     viewdata::constants::{UNICODE_TO_VIEWDATA, VIEWDATA_TO_UNICODE},
 };
 
@@ -73,7 +72,7 @@ impl BufferType {
             },
 
             BufferType::Petscii => {
-                if let Some(tch) = PETSCII_TO_UNICODE.get(&(ch as u8)) {
+                if let Some(tch) = crate::petscii::PETSCII_TO_UNICODE.get(&(ch as u8)) {
                     *tch as char
                 } else {
                     ch
@@ -108,7 +107,7 @@ impl BufferType {
             }
 
             BufferType::Petscii => {
-                if let Some(tch) = UNICODE_TO_PETSCII.get(&(ch as u8)) {
+                if let Some(tch) = crate::petscii::UNICODE_TO_PETSCII.get(&(ch as u8)) {
                     *tch as char
                 } else {
                     ch

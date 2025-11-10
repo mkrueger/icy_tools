@@ -1,5 +1,5 @@
 use super::BufferParser;
-use crate::{AttributedChar, CallbackAction, Caret, EditableScreen, EngineResult, ParserError};
+use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, ParserError};
 
 #[derive(Default)]
 pub struct Parser {
@@ -118,7 +118,6 @@ const GREY3: u32 = 0x0f;
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
-        let caret: &mut Caret = buf.caret_mut();
         let byte = ch as u8;
         if self.got_esc {
             return self.handle_c128_escapes(buf, byte);
@@ -133,7 +132,7 @@ impl BufferParser for Parser {
                 // Disable underline (avoid permanent underline)
                 self.underline_mode = false;
             }
-            0x05 => caret.set_foreground(WHITE),
+            0x05 => buf.caret_mut().set_foreground(WHITE),
             0x07 => return Ok(CallbackAction::Beep),
             0x08 => self.c_shift = false,
             0x09 => self.c_shift = true,
@@ -149,33 +148,33 @@ impl BufferParser for Parser {
             0x13 => buf.home(),
             0x14 => buf.bs(),
             0x1B => self.got_esc = true,
-            0x1C => caret.set_foreground(RED),
+            0x1C => buf.caret_mut().set_foreground(RED),
             0x1D => buf.right(1),
-            0x1E => caret.set_foreground(GREEN),
-            0x1F => caret.set_foreground(BLUE),
-            0x81 => caret.set_foreground(ORANGE),
+            0x1E => buf.caret_mut().set_foreground(GREEN),
+            0x1F => buf.caret_mut().set_foreground(BLUE),
+            0x81 => buf.caret_mut().set_foreground(ORANGE),
             0x8E => self.update_shift_mode(buf, true), // SHIFT IN
-            0x90 => caret.set_foreground(BLACK),
+            0x90 => buf.caret_mut().set_foreground(BLACK),
             0x91 => buf.up(1),
             0x92 => self.reverse_mode = false,
             0x93 => {
-                buf.reset_terminal();
+                buf.clear_screen();
             }
-            0x95 => caret.set_foreground(BROWN),
-            0x96 => caret.set_foreground(PINK),
-            0x97 => caret.set_foreground(GREY1),
-            0x98 => caret.set_foreground(GREY2),
-            0x99 => caret.set_foreground(LIGHT_GREEN),
-            0x9A => caret.set_foreground(LIGHT_BLUE),
-            0x9B => caret.set_foreground(GREY3),
-            0x9C => caret.set_foreground(PURPLE),
+            0x95 => buf.caret_mut().set_foreground(BROWN),
+            0x96 => buf.caret_mut().set_foreground(PINK),
+            0x97 => buf.caret_mut().set_foreground(GREY1),
+            0x98 => buf.caret_mut().set_foreground(GREY2),
+            0x99 => buf.caret_mut().set_foreground(LIGHT_GREEN),
+            0x9A => buf.caret_mut().set_foreground(LIGHT_BLUE),
+            0x9B => buf.caret_mut().set_foreground(GREY3),
+            0x9C => buf.caret_mut().set_foreground(PURPLE),
             0x9D => buf.left(1),
-            0x9E => caret.set_foreground(YELLOW),
-            0x9F => caret.set_foreground(CYAN),
+            0x9E => buf.caret_mut().set_foreground(YELLOW),
+            0x9F => buf.caret_mut().set_foreground(CYAN),
             0xFF => buf.print_value(94), // PI character
             _ => {
                 let tch = self.petscii_to_internal(byte)?;
-                let mut ch = AttributedChar::new(self.apply_reverse(tch) as char, caret.attribute);
+                let mut ch = AttributedChar::new(self.apply_reverse(tch) as char, buf.caret().attribute);
                 ch.set_font_page(usize::from(self.shift_mode));
                 if self.underline_mode {
                     let mut a = ch.attribute;
@@ -285,6 +284,6 @@ const CHAR_TABLE: [(u8, u8); 92] = [
 ];
 
 lazy_static::lazy_static! {
-    pub(crate) static ref UNICODE_TO_PETSCII: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().collect();
-    pub(crate) static ref PETSCII_TO_UNICODE: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().map(|(k, v)| (v, k)).collect();
+    pub static ref UNICODE_TO_PETSCII: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().collect();
+    pub static ref PETSCII_TO_UNICODE: std::collections::HashMap<u8,u8> = CHAR_TABLE.into_iter().map(|(k, v)| (v, k)).collect();
 }
