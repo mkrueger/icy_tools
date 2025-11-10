@@ -344,7 +344,11 @@ impl RgbaScreen for PaletteScreenBuffer {
         self.screen.resize((size.width as usize) * (size.height as usize), 0);
     }
 
-    fn screen_mut(&mut self) -> &mut [u8] {
+    fn screen(&self) -> &[u8] {
+        &self.screen
+    }
+
+    fn screen_mut(&mut self) -> &mut Vec<u8> {
         &mut self.screen
     }
 }

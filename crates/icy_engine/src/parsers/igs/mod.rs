@@ -90,22 +90,14 @@ impl Parser {
 
         let p = Position::new(caret_pos.x * 8, caret_pos.y * 8);
         self.command_executor.fill_color = buf.caret().attribute.background_color as u8;
-        self.command_executor.fill_rect(p.x, p.y, p.x + 8, p.y + 8);
+        self.command_executor.fill_rect(buf, p.x, p.y, p.x + 8, p.y + 8);
 
         self.command_executor.text_color = buf.caret().attribute.foreground_color as u8;
-        self.command_executor.write_text(p, &ch.to_string());
+        self.command_executor.write_text(buf, p, &ch.to_string());
 
         buf.caret_mut().x = caret_pos.x + 1;
 
         Ok(CallbackAction::Update)
-    }
-
-    fn clear_line(&mut self, y: i32, x0: i32, x1: i32) {
-        let y = y * 8;
-        let x0 = x0 * 8;
-        let x1 = x1 * 8;
-        self.command_executor.fill_color = 1;
-        self.command_executor.fill_rect(x0, y, x1, y + 8);
     }
 }
 
@@ -388,14 +380,14 @@ impl BufferParser for Parser {
                         }
                     }
                     'B' => {
-                        let size = self.command_executor.get_char_resolution();
+                        let size = buf.get_size();
                         if buf.caret().y < size.height {
                             let y = buf.caret().y;
                             buf.caret_mut().y = y + 1;
                         }
                     }
                     'C' => {
-                        let size = self.command_executor.get_char_resolution();
+                        let size = buf.get_size();
                         if buf.caret().x < size.width {
                             let x = buf.caret_mut().x;
                             buf.caret_mut().x = x + 1;
@@ -408,7 +400,7 @@ impl BufferParser for Parser {
                         }
                     }
                     'E' => {
-                        self.command_executor.clear(ClearCommand::ClearScreen, buf.caret_mut());
+                        buf.clear_screen();
                     }
                     'F' => { // Enter graphics mode
                     }
@@ -421,20 +413,16 @@ impl BufferParser for Parser {
                         if buf.caret().y > 0 {
                             buf.caret_mut().y -= 1;
                         } else {
-                            self.command_executor.scroll(-8);
+                            self.command_executor.scroll(buf, -8);
                         }
                     }
                     'J' => {
                         // erase to end of screen
-                        self.command_executor.clear(ClearCommand::ClearFromCursorToBottom, buf.caret_mut());
+                        buf.clear_buffer_down();
                     }
                     'K' => {
                         // erase to end of line
-                        self.clear_line(
-                            buf.caret().position().y,
-                            buf.caret().position().x * 8,
-                            self.command_executor.get_resolution().width / 8,
-                        );
+                        buf.clear_line_end();
                     }
                     'Y' => {
                         self.state = State::VT52SetCursorPos(-1);
@@ -462,7 +450,7 @@ impl BufferParser for Parser {
                     }
                     'd' => {
                         // Clear to start of screen
-                        self.command_executor.clear(ClearCommand::ClearFromHomeToCursor, buf.caret_mut());
+                        buf.clear_line_start();
                     }
                     'e' => {
                         // Enable cursor
@@ -482,12 +470,12 @@ impl BufferParser for Parser {
                     }
                     'l' => {
                         // Clear line
-                        self.clear_line(buf.caret().position().y, 0, self.command_executor.get_resolution().width / 8);
+                        buf.clear_line();
                         buf.caret_mut().x = 0;
                     }
                     'o' => {
                         // Clear to start of line
-                        self.clear_line(buf.caret().position().y, 0, buf.caret().position().x * 8);
+                        buf.clear_line_start();
                     }
                     'p' => { // Reverse video
                     }
@@ -517,20 +505,11 @@ impl BufferParser for Parser {
                 0..=6 => Ok(CallbackAction::NoUpdate),
                 0x07 => Ok(CallbackAction::Beep),
                 0x0B | 0x0C => {
-                    let y = buf.caret().position().y;
-                    buf.caret_mut().y = y + 1;
-                    buf.caret_mut().x = 0;
+                    buf.bs();
                     Ok(CallbackAction::NoUpdate)
                 }
                 0x0D => {
-                    buf.caret_mut().x = 0;
-                    let size = self.command_executor.get_char_resolution();
-                    if buf.caret().position().y < size.height {
-                        let y = buf.caret().position().y;
-                        buf.caret_mut().y = y + 1;
-                    } else {
-                        self.command_executor.scroll(8);
-                    }
+                    buf.lf();
                     Ok(CallbackAction::NoUpdate)
                 }
                 0x0E..=0x1A => Ok(CallbackAction::NoUpdate),

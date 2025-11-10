@@ -197,7 +197,11 @@ impl RgbaScreen for TextScreen {
         Size::new(px_width, px_height)
     }
 
-    fn screen_mut(&mut self) -> &mut [u8] {
+    fn screen(&self) -> &[u8] {
+        panic!("Not supported for TextScreen");
+    }
+
+    fn screen_mut(&mut self) -> &mut Vec<u8> {
         panic!("Not supported for TextScreen");
     }
 

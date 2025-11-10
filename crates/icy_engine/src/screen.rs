@@ -75,7 +75,9 @@ pub trait Screen: TextPane + Send {
 pub trait RgbaScreen: Screen {
     fn get_resolution(&self) -> Size;
     fn set_resolution(&mut self, size: Size);
-    fn screen_mut(&mut self) -> &mut [u8];
+
+    fn screen(&self) -> &[u8];
+    fn screen_mut(&mut self) -> &mut Vec<u8>;
 }
 
 pub trait EditableScreen: RgbaScreen {

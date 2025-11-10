@@ -445,9 +445,9 @@ impl TerminalThread {
             screen_mode.apply_to_edit_screen(&mut **screen);
         }
         self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
-/* 
+        /*
         if config.terminal_type == TerminalEmulation::AtariST {
-            let data = include_bytes!("../../../../../BBS/IGNITE01/AC-ROBOT.IG");
+            let data = include_bytes!("../../../../../BBS/IGNITE01/KM-1FED.IG");
             if let Ok(mut screen) = self.edit_screen.lock() {
                 for c in data {
                     /*     if *c == 27 {
@@ -459,6 +459,9 @@ impl TerminalThread {
                 }
                 //                println!("-------------------");
             }
+            self.connection = None;
+            let _ = self.event_tx.send(TerminalEvent::Disconnected(None));
+            return Ok(());
         }*/
 
         // Reset auto-transfer state
