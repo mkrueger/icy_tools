@@ -66,7 +66,6 @@ impl OutputFormat for IcyDraw {
         let mut encoder: png::Encoder<'_, &mut Vec<u8>> = png::Encoder::new(&mut result, width as u32, height as u32); // Width is 2 pixels and height is 1.
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
-        encoder.set_compression(png::Compression::Best);
 
         {
             let mut result = vec![constants::ICD_VERSION as u8, (constants::ICD_VERSION >> 8) as u8];
@@ -400,7 +399,7 @@ impl OutputFormat for IcyDraw {
         let mut last_info = 0;
         let mut is_running = true;
         while is_running {
-            match decoder.update(&data[len..], &mut Vec::new()) {
+            match decoder.update(&data[len..], None) {
                 Ok((b, _)) => {
                     len += b;
                     if data.len() <= len {

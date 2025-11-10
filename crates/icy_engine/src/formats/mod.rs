@@ -383,7 +383,7 @@ mod tests {
         let converted: Vec<u8> = super::Ansi::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
         // more gentle output.
         let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
-        let converted = String::from_utf8_lossy(b.as_slice());
+        let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
 
         let b: Vec<u8> = data.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
         let expected = String::from_utf8_lossy(b.as_slice());
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_ice() {
-        let data = b"\x1B[?33h\x1B[5;40m   test\x1B[?33l";
+        let data = b"\x1B[?33h\x1B[5m   test\x1B[?33l";
         test_ansi(data);
     }
 

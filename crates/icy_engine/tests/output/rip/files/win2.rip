@@ -1,0 +1,13 @@
+!|*|1K|c01|=00000003|R1D09GA38|R174JGK8A|c0F|@6B3LText Window - 7x14 Font
+!|@6A8LText Window - 16x14 Font|Y01010400|@0004Text Window Demo 2|c0C
+!|Y00000100|@3995If you don't see anything in the text windows hit F2
+!|@399Gand set Text Window to Yes.
+!|w08012A0703
+This is how text in 7x14 font is displayed
+This is line two.
+This is line three.
+!|w030C100K14
+This is how text in 16x14 font is displayed.
+This is line three.
+This is line four.
+!|#|#|#

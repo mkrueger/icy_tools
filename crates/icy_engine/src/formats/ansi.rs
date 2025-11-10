@@ -525,7 +525,11 @@ impl StringGenerator {
             }
         }
         let font_map = StringGenerator::generate_ansi_font_map(buf);
-        let (state, cells) = self.generate_cells(buf, layer, layer.get_rectangle(), &font_map);
+        let mut area = layer.get_rectangle();
+        let line_count = layer.get_line_count();
+        area.size.height = line_count.min(area.size.height);
+
+        let (state, cells) = self.generate_cells(buf, layer, area, &font_map);
         let mut cur_font_page = 0;
 
         let mut is_first_output_line = true;

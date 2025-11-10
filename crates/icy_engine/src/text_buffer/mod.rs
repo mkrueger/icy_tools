@@ -1020,7 +1020,7 @@ impl TextPane for TextBuffer {
     }
 
     fn get_line_count(&self) -> i32 {
-        if let Some(len) = self.layers.iter().map(|l| l.lines.len()).max() {
+        if let Some(len) = self.layers.iter().map(|l| l.get_line_count()).max() {
             len as i32
         } else {
             self.size.height

@@ -72,7 +72,6 @@ impl Command for TextWindow {
         bgi.set_text_window(self.x0 * x, self.y0 * y, self.x1 * x, self.y1 * y, self.wrap);
         buf.limit_caret_pos();
 
-        println!("caret pos after limit:{}", buf.caret().position());
         Ok(CallbackAction::NoUpdate)
     }
 

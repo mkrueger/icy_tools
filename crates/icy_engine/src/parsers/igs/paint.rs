@@ -373,7 +373,6 @@ impl DrawExecutor {
             swap(&mut y0, &mut y1);
         }
         let mut line_mask = LINE_STYLE[mask];
-        line_mask = line_mask.rotate_left((y0 & 0x0f) as u32);
         for y in y0..=y1 {
             line_mask = line_mask.rotate_left(1);
             if 1 & line_mask != 0 {
@@ -853,7 +852,7 @@ impl DrawExecutor {
         }
     }
 
-    fn round_rect(&mut self, buf: &mut dyn EditableScreen, mut x1: i32, mut y1: i32, mut x2: i32, mut y2: i32, parameters: i32) {
+    fn round_rect(&mut self, buf: &mut dyn EditableScreen, mut x1: i32, mut y1: i32, mut x2: i32, mut y2: i32, filled: bool) {
         let mut points = Vec::new();
         if x1 > x2 {
             swap(&mut x1, &mut x2);
@@ -862,7 +861,7 @@ impl DrawExecutor {
             swap(&mut y1, &mut y2);
         }
 
-        let x_radius = (buf.get_resolution().width >> 6).min((x2 - x1) / 2);
+        let x_radius = (buf.get_resolution().width >> 6).min((x2 - x1) / 2) - 1;
         let y_radius = self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2);
 
         const ISIN225: i32 = 12539;
@@ -919,7 +918,7 @@ impl DrawExecutor {
         points.push(points[0]);
         points.push(points[1]);
 
-        if parameters == 1 {
+        if filled {
             self.fill_poly(buf, &points);
         } else {
             self.draw_poly(buf, &points, self.line_color, false);
@@ -1165,13 +1164,13 @@ impl DrawExecutor {
                 }
 
                 if round_corners {
-                    self.round_rect(buf, x0, y0, x1, y1, 1);
+                    self.round_rect(buf, x0, y0, x1, y1, true);
                 } else {
                     self.fill_rect(buf, x0, y0, x1, y1);
                 }
                 if self.draw_border {
                     if round_corners {
-                        self.round_rect(buf, x0, y0, x1, y1, 0);
+                        self.round_rect(buf, x0, y0, x1, y1, false);
                     } else {
                         let color = self.fill_color;
                         self.draw_line(buf, x0, y0, x0, y1, color, 0);
@@ -1191,8 +1190,8 @@ impl DrawExecutor {
                 let y0 = parameters[1];
                 let x1 = parameters[2];
                 let y1 = parameters[3];
-
-                self.round_rect(buf, x0, y0, x1, y1, parameters[4]);
+                let filled = parameters[4] == 1;
+                self.round_rect(buf, x0, y0, x1, y1, filled);
                 Ok(CallbackAction::Update)
             }
 

@@ -129,7 +129,7 @@ pub trait EditableScreen: RgbaScreen {
         let y = self.caret_mut().y;
         self.caret_mut().y = y + 1;
 
-        while self.caret().y >= self.line_count() as i32 {
+        while self.caret().y >= self.get_height() {
             if self.terminal_state().fixed_size && self.caret().y >= self.terminal_state().get_height() {
                 line_inserted += 1;
                 if self.line_count() > 0 {
@@ -138,9 +138,6 @@ pub trait EditableScreen: RgbaScreen {
                 self.caret_mut().y -= 1;
                 continue;
             }
-            let len = self.line_count();
-            let buffer_width = self.terminal_state_mut().get_width();
-            self.insert_line(len, Line::with_capacity(buffer_width));
         }
 
         if !self.terminal_state().is_terminal_buffer {
@@ -326,17 +323,13 @@ pub trait EditableScreen: RgbaScreen {
         if self.caret().insert_mode {
             self.ins();
         }
-        if self.caret().y + 1 > self.get_height() {
-            self.set_height(self.caret().y + 1);
-        }
-        if self.terminal_state().is_terminal_buffer && self.caret().y + 1 > self.get_height() {
-            self.set_height(self.caret().y + 1);
-        }
 
+        if !self.terminal_state().is_terminal_buffer && self.caret().y + 1 > self.get_height() {
+            self.set_height(self.caret().y + 1);
+        }
         self.set_char(self.caret().position(), ch);
         let x = self.caret().x;
         self.caret_mut().x = x + 1;
-
         let real_width = if self.terminal_state().is_terminal_buffer {
             self.terminal_state().get_width()
         } else {

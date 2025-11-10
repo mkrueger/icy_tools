@@ -63,7 +63,7 @@ impl std::fmt::Display for Layer {
         for y in 0..self.get_line_count() {
             str.extend(format!("{y:3}: ").chars());
             for x in 0..self.get_width() {
-                let ch = self.get_char((x, y).into());
+                let ch: AttributedChar = self.get_char((x, y).into());
                 str.push(BufferType::CP437.convert_to_unicode(ch.ch));
             }
             str.push('\n');
@@ -105,7 +105,13 @@ impl TextPane for Layer {
     }
 
     fn get_line_count(&self) -> i32 {
-        self.lines.len() as i32
+        // Find the last line with content (length > 0)
+        for i in (0..self.lines.len()).rev() {
+            if !self.lines[i].is_effective_empty() {
+                return (i + 1) as i32;
+            }
+        }
+        0
     }
 
     fn get_line_length(&self, line: i32) -> i32 {

@@ -2,3 +2,4 @@ debug/
 target/
 .vscode/
 Cargo.lock
+crates/icy_engine/tests/output/rip/files/*.output.png

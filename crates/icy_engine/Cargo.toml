@@ -16,7 +16,7 @@ base64 = "0.22.0"
 log = { workspace = true }
 rfind_url = "0.4.4"
 chrono = { workspace = true }
-png = "0.17.10"
+png = "0.18.0"
 regex = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }

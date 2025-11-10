@@ -514,7 +514,7 @@ impl MouseField {
 }
 
 impl Bgi {
-    pub fn new(file_path: PathBuf) -> Bgi {
+    pub fn new(file_path: PathBuf, resolution: Size) -> Bgi {
         Bgi {
             color: 7,
             bkcolor: 0,
@@ -526,7 +526,7 @@ impl Bgi {
             fill_color: 0,
             direction: Direction::Horizontal,
             font: FontType::Default,
-            viewport: Rectangle::from(0, 0, i32::MAX, i32::MAX),
+            viewport: resolution.into(),
             line_thickness: 1,
             current_pos: Position::new(0, 0),
             char_size: 4,

@@ -1,5 +1,6 @@
 use super::*;
-use crate::parsers::create_buffer;
+#[cfg(test)]
+use crate::PaletteScreenBuffer;
 
 #[test]
 fn test_rip_text_window() {
@@ -258,11 +259,23 @@ fn test_enter_block_mode() {
 }
 
 fn test_roundtrip(arg: &str) {
-    let mut parser = Parser::new(Box::default(), PathBuf::new());
+    let mut parser = Parser::new(Box::default(), PathBuf::new(), RIP_SCREEN_SIZE);
     parser.record_rip_commands = true;
-    create_buffer(&mut parser, ("!".to_string() + arg + "|").as_bytes());
+    create_rip_buffer(&mut parser, ("!".to_string() + arg + "|").as_bytes());
 
     assert!(parser.command.is_none());
     assert_eq!(parser.rip_commands.len(), 1);
     assert_eq!(parser.rip_commands[0].to_rip_string(), arg);
+}
+
+#[cfg(test)]
+fn create_rip_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> PaletteScreenBuffer {
+    use crate::{parsers::update_buffer, rip};
+
+    let mut buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+
+    update_buffer(&mut buf, parser, input);
+    while parser.get_next_action(&mut buf).is_some() {}
+
+    buf
 }

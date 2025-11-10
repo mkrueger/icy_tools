@@ -107,7 +107,7 @@ impl Screen for TextScreen {
     }
 
     fn line_count(&self) -> usize {
-        self.buffer.layers[self.current_layer].lines.len()
+        self.buffer.get_line_count() as usize
     }
 
     fn get_font(&self, font_number: usize) -> Option<&BitFont> {
@@ -490,7 +490,7 @@ impl EditableScreen for TextScreen {
 
     fn insert_terminal_line(&mut self, line: i32) {
         if let Some((_, end)) = self.terminal_state_mut().get_margins_top_bottom() {
-            if end < self.buffer.layers[self.current_layer].get_line_count() {
+            if end < self.buffer.layers[self.current_layer].lines.len() as i32 {
                 self.buffer.layers[self.current_layer].lines.remove(end as usize);
             }
         }

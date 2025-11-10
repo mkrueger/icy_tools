@@ -43,6 +43,18 @@ impl Line {
         }
         self.chars[index as usize] = char;
     }
+
+    pub(crate) fn is_effective_empty(&self) -> bool {
+        if self.chars.is_empty() {
+            return true;
+        }
+        for ch in &self.chars {
+            if !ch.is_transparent() {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 #[cfg(test)]

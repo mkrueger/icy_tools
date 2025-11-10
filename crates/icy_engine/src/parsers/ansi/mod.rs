@@ -431,7 +431,12 @@ impl BufferParser for Parser {
                             }
                             Some(7) => buf.terminal_state_mut().auto_wrap_mode = AutoWrapMode::NoWrap,
                             Some(25) => buf.caret_mut().visible = false,
-                            Some(33) => *buf.ice_mode_mut() = IceMode::Blink,
+                            Some(33) => {
+                                // only turn off ice mode for terminals. While loading it stays on.
+                                if buf.terminal_state().is_terminal_buffer {
+                                    *buf.ice_mode_mut() = IceMode::Blink
+                                }
+                            }
                             Some(35) => buf.caret_mut().blinking = true,
 
                             Some(69) => {

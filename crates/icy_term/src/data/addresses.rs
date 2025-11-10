@@ -2,6 +2,8 @@ use crate::{ConnectionInformation, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
+use icy_engine::rip::RIP_SCREEN_SIZE;
+use icy_engine::skypix::SKYPIX_SCREEN_SIZE;
 use icy_engine::{BufferParser, ansi, ascii, atascii, avatar, mode7, petscii, rip, skypix, viewdata};
 use icy_net::ConnectionType;
 use icy_net::telnet::TerminalEmulation;
@@ -64,14 +66,14 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, scr
             let mut parser = ansi::Parser::default();
             parser.ansi_music = use_ansi_music;
             parser.bs_is_ctrl_char = true;
-            let parser = rip::Parser::new(Box::new(parser), cache_directory);
+            let parser = rip::Parser::new(Box::new(parser), cache_directory, RIP_SCREEN_SIZE);
             Box::new(parser)
         }
         TerminalEmulation::Skypix => {
             let mut parser = ansi::Parser::default();
             parser.ansi_music = use_ansi_music;
             parser.bs_is_ctrl_char = true;
-            let parser = skypix::Parser::new(Box::new(parser), cache_directory);
+            let parser = skypix::Parser::new(Box::new(parser), cache_directory, SKYPIX_SCREEN_SIZE);
             Box::new(parser)
         }
         TerminalEmulation::AtariST => {

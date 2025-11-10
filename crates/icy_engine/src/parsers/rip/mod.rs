@@ -72,7 +72,7 @@ pub struct Parser {
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
 
 impl Parser {
-    pub fn new(fallback_parser: Box<ansi::Parser>, file_path: PathBuf) -> Self {
+    pub fn new(fallback_parser: Box<ansi::Parser>, file_path: PathBuf, resolution: Size) -> Self {
         Self {
             fallback_parser,
             enable_rip: true,
@@ -83,7 +83,7 @@ impl Parser {
             _current_write_mode: WriteMode::Normal,
             rip_commands: Vec::new(),
             command: None,
-            bgi: Bgi::new(file_path),
+            bgi: Bgi::new(file_path, resolution),
             last_rip_update: 0,
             record_rip_commands: false,
             rip_counter: 0,
@@ -96,7 +96,6 @@ impl Parser {
 
     fn record_rip_command(&mut self, buf: &mut dyn EditableScreen, cmd: Box<dyn Command>) -> EngineResult<CallbackAction> {
         self.rip_counter = self.rip_counter.wrapping_add(1);
-        println!("{}", cmd.to_rip_string());
 
         let result = cmd.run(buf, &mut self.bgi);
         if !self.record_rip_commands {

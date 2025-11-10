@@ -333,6 +333,15 @@ impl Rectangle {
     }
 }
 
+impl From<Size> for Rectangle {
+    fn from(value: Size) -> Self {
+        Rectangle {
+            start: Position::default(),
+            size: value,
+        }
+    }
+}
+
 impl Add<Position> for Rectangle {
     type Output = Rectangle;
 

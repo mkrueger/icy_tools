@@ -37,11 +37,11 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(fallback_parser: Box<ansi::Parser>, file_path: PathBuf) -> Self {
+    pub fn new(fallback_parser: Box<ansi::Parser>, file_path: PathBuf, resolution: Size) -> Self {
         let fonts = load_amiga_fonts();
         Self {
             fallback_parser,
-            bgi: Bgi::new(file_path),
+            bgi: Bgi::new(file_path, resolution),
             display_mode: DisplayMode::BitPlanes4,
             parse_mode: SkypixParseMode::Default,
             parameter: String::new(),
