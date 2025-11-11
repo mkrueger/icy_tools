@@ -6,6 +6,7 @@ use std::{
 use iced::{
     Element, Event, Size, Subscription, Task, Theme, Vector,
     advanced::graphics::core::keyboard,
+    keyboard::key::Named,
     widget::{operation, space},
     window,
 };
@@ -284,6 +285,15 @@ impl WindowManager {
                                     },
                                     _ => {}
                                 }
+                            }
+                        }
+
+                        if !modifiers.alt() {
+                            match &key {
+                                keyboard::Key::Named(Named::F11) => {
+                                    return Some(WindowManagerMessage::WindowMessage(window_id, Message::ToggleFullscreen));
+                                }
+                                _ => {}
                             }
                         }
                     }
