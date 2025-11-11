@@ -114,6 +114,7 @@ dialing_directory-no_modem_configured = Nessun modem configurato
 dialing_directory-select-modem = Seleziona Modem
 dialing_directory-login-settings = Impostazioni di accesso
 dialing_directory-notes = Note
+dialing_directory-xep80-module = Modulo XEP80
 
 terminal-upload = Carica
 terminal-download = Scarica

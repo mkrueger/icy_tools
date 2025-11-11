@@ -114,6 +114,7 @@ dialing_directory-no_modem_configured = Není nakonfigurován žádný modem
 dialing_directory-select-modem = Vybrat modem
 dialing_directory-login-settings = Nastavení přihlášení
 dialing_directory-notes = Poznámky
+dialing_directory-xep80-module = Modul XEP80
 
 terminal-upload = Nahrát
 terminal-download = Stáhnout

@@ -115,6 +115,7 @@ dialing_directory-no_modem_configured = No hi ha cap mòdem configurat
 dialing_directory-select-modem = Selecciona Mòdem
 dialing_directory-login-settings = Configuració d'inici de sessió
 dialing_directory-notes = Notes
+dialing_directory-xep80-module = Mòdul XEP80
 
 
 terminal-upload = Pujar

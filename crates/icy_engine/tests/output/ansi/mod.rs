@@ -1,4 +1,4 @@
-use icy_engine::{BitFont, BufferParser, EditableScreen, Size, TextScreen, ansi};
+use icy_engine::{BufferParser, EditableScreen, TextScreen, ansi};
 use std::{
     fs::{self},
     thread,

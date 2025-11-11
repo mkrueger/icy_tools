@@ -350,7 +350,11 @@ impl super::DialingDirectoryState {
                     })
                     .text_size(14);
 
-                server_content = server_content.push(row![left_label("XEP80 Module".to_string()), toggle].spacing(12).align_y(Alignment::Center));
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-xep80-module")), toggle]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
             }
 
             // Music option row (only for ANSI/UTF8ANSI)
