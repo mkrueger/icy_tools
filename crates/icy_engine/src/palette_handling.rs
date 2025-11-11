@@ -591,6 +591,7 @@ impl Palette {
     pub fn set_color_rgb(&mut self, color: u32, r: u8, g: u8, b: u8) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
+            self.palette_cache.resize(color as usize + 1, (0, 0, 0));
         }
         self.colors[color as usize] = Color { name: None, r, g, b };
         self.palette_cache[color as usize] = (r, g, b);
@@ -599,6 +600,7 @@ impl Palette {
     pub fn set_color_hsl(&mut self, color: u32, h: f32, s: f32, l: f32) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
+            self.palette_cache.resize(color as usize + 1, (0, 0, 0));
         }
 
         let (r, g, b) = if l == 0.0 {
@@ -617,6 +619,7 @@ impl Palette {
         };
 
         self.colors[color as usize] = Color { name: None, r, g, b };
+        self.palette_cache[color as usize] = (r, g, b);
     }
 
     pub fn insert_color(&mut self, color: Color) -> u32 {
@@ -626,6 +629,7 @@ impl Palette {
                 return i as u32;
             }
         }
+        self.palette_cache.push(color.get_rgb());
         self.colors.push(color);
         (self.colors.len() - 1) as u32
     }
@@ -1070,6 +1074,105 @@ pub const ATARI_DEFAULT_PALETTE: [Color; 16] = [
         r: 0x65,
         g: 0xB7,
         b: 0xE9,
+    }, // foreground
+    Color {
+        name: None,
+        r: 0x55,
+        g: 0x55,
+        b: 0x55,
+    }, // unused
+    Color {
+        name: None,
+        r: 0x55,
+        g: 0x55,
+        b: 0xFF,
+    }, // unused
+    Color {
+        name: None,
+        r: 0x55,
+        g: 0xFF,
+        b: 0x55,
+    }, // unused
+    Color {
+        name: None,
+        r: 0x55,
+        g: 0xFF,
+        b: 0xFF,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xFF,
+        g: 0x55,
+        b: 0x55,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xFF,
+        g: 0x55,
+        b: 0xFF,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0x55,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+    }, // unused
+];
+
+pub const ATARI_XEP80_PALETTE: [Color; 16] = [
+    Color {
+        name: None,
+        r: 0x00,
+        g: 0x00,
+        b: 0x00,
+    }, // background
+    Color {
+        name: None,
+        r: 0x00,
+        g: 0x00,
+        b: 0xAA,
+    }, // unused
+    Color {
+        name: None,
+        r: 0x00,
+        g: 0xAA,
+        b: 0x00,
+    }, // unused
+    Color {
+        name: None,
+        r: 0x00,
+        g: 0xAA,
+        b: 0xAA,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xAA,
+        g: 0x00,
+        b: 0x00,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xAA,
+        g: 0x00,
+        b: 0xAA,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xAA,
+        g: 0x55,
+        b: 0x00,
+    }, // unused
+    Color {
+        name: None,
+        r: 0xFB,
+        g: 0xF0,
+        b: 0xF6,
     }, // foreground
     Color {
         name: None,

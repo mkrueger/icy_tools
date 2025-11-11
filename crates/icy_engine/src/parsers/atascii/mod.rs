@@ -1,5 +1,9 @@
 use super::BufferParser;
-use crate::{CallbackAction, EditableScreen, EngineResult};
+use crate::{CallbackAction, EditableScreen, EngineResult, Size};
+
+pub const ATASCII_SCREEN_SIZE: Size = Size { width: 40, height: 24 };
+pub const ATASCII_PAL_SCREEN_SIZE: Size = Size { width: 40, height: 25 };
+pub const ATASCII_XEP80_SCREEN_SIZE: Size = Size { width: 80, height: 25 };
 
 #[derive(Default)]
 pub struct Parser {

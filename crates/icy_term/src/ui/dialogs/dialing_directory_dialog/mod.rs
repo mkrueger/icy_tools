@@ -234,7 +234,7 @@ impl DialingDirectoryState {
                             | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
                             TerminalEmulation::AtariST => ScreenMode::AtariST(40),
                             TerminalEmulation::PETscii => ScreenMode::Vic,
-                            TerminalEmulation::ATAscii => ScreenMode::Antic,
+                            TerminalEmulation::ATAscii => ScreenMode::Atascii(40),
                             TerminalEmulation::ViewData | TerminalEmulation::Mode7 => ScreenMode::Videotex,
                             TerminalEmulation::Skypix => ScreenMode::SkyPix,
                         };

@@ -1,8 +1,9 @@
 use std::fmt::{self, Display};
 
 use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE,
-    Palette, SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
+    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437,
+    EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE, Palette, SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
+    atascii::{ATASCII_SCREEN_SIZE, ATASCII_XEP80_SCREEN_SIZE},
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -19,7 +20,7 @@ pub enum ScreenMode {
     Vga(i32, i32),
     Unicode(i32, i32),
     Vic,
-    Antic,
+    Atascii(i32),
     Videotex,
     Mode7,
     Rip,
@@ -56,7 +57,13 @@ impl Serialize for ScreenMode {
             ScreenMode::Vga(w, h) => format!("Vga({}, {})", w, h),
             ScreenMode::Unicode(w, h) => format!("Unicode({}, {})", w, h),
             ScreenMode::Vic => "Vic".to_string(),
-            ScreenMode::Antic => "Antic".to_string(),
+            ScreenMode::Atascii(i) => {
+                if *i == 80 {
+                    "XEP80".to_string()
+                } else {
+                    "Antic".to_string()
+                }
+            }
             ScreenMode::Videotex => "Videotex".to_string(),
             ScreenMode::Mode7 => "Mode7".to_string(),
             ScreenMode::Rip => "Rip".to_string(),
@@ -122,7 +129,8 @@ impl<'de> Deserialize<'de> for ScreenMode {
                     match value {
                         "Default" => Ok(ScreenMode::Default),
                         "Vic" => Ok(ScreenMode::Vic),
-                        "Antic" => Ok(ScreenMode::Antic),
+                        "Antic" => Ok(ScreenMode::Atascii(40)),
+                        "XEP80" => Ok(ScreenMode::Atascii(80)),
                         "Videotex" => Ok(ScreenMode::Videotex),
                         "Mode7" => Ok(ScreenMode::Mode7),
                         "Rip" => Ok(ScreenMode::Rip),
@@ -164,7 +172,13 @@ impl Display for ScreenMode {
             // ScreenMode::Ega(w, h) => write!(f, "EGA {w}x{h}"),
             // ScreenMode::Cga(w, h) => write!(f, "CGA {w}x{h}"),
             ScreenMode::Vic => write!(f, "VIC-II"),
-            ScreenMode::Antic => write!(f, "ANTIC"),
+            ScreenMode::Atascii(x) => {
+                if *x == 80 {
+                    write!(f, "XEP80")
+                } else {
+                    write!(f, "ANTIC")
+                }
+            }
             ScreenMode::Videotex => write!(f, "VIDEOTEX"),
             ScreenMode::Default => write!(f, "Default"),
             ScreenMode::Rip => write!(f, "RIPscrip"),
@@ -188,7 +202,14 @@ impl ScreenMode {
             ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => Size::new(*w, *h),
             ScreenMode::Vic | ScreenMode::Mode7 => Size::new(40, 25),
             ScreenMode::AtariST(cols) => Size::new(*cols, 25),
-            ScreenMode::Antic | ScreenMode::Videotex => Size::new(40, 24),
+            ScreenMode::Atascii(i) => {
+                if *i == 80 {
+                    ATASCII_XEP80_SCREEN_SIZE
+                } else {
+                    ATASCII_SCREEN_SIZE
+                }
+            }
+            ScreenMode::Videotex => Size::new(40, 24),
             ScreenMode::Default => Size::new(80, 25),
             ScreenMode::Rip => Size::new(80, 44),
             ScreenMode::SkyPix => Size::new(80, 25),
@@ -222,10 +243,16 @@ impl ScreenMode {
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = icy_engine::BufferType::Petscii;
             }
-            ScreenMode::Antic => {
+            ScreenMode::Atascii(i) => {
                 screen.clear_font_table();
-                screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
-                *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
+                if *i == 40 {
+                    screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
+                    *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
+                } else {
+                    screen.set_font(0, BitFont::from_bytes("", ATARI_XEP80).unwrap());
+                    screen.set_font(1, BitFont::from_bytes("", ATARI_XEP80_INT).unwrap());
+                    *screen.palette_mut() = Palette::from_slice(&ATARI_XEP80_PALETTE);
+                }
                 *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
             }
             ScreenMode::Videotex | ScreenMode::Mode7 => {

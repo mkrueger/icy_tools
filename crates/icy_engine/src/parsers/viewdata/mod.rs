@@ -7,9 +7,7 @@ pub(crate) mod constants;
 #[cfg(test)]
 mod tests;
 
-lazy_static::lazy_static! {
-    pub static ref VIEWDATA_SCREEN_SIZE: Size = Size::new(40, 24);
-}
+pub const VIEWDATA_SCREEN_SIZE: Size = Size { width: 40, height: 24 };
 
 /// <https://www.blunham.com/Radar/Teletext/PDFs/Viewdata1976Spec.pdf>
 pub struct Parser {

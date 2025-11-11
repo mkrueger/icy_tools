@@ -22,9 +22,6 @@ mod dcs;
 pub mod mouse_event;
 mod osc;
 pub mod sound;
-
-#[cfg(test)]
-mod sixel_tests;
 #[cfg(test)]
 mod tests;
 

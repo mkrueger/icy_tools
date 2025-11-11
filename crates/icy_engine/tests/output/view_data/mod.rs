@@ -18,7 +18,7 @@ pub fn test_viewdata() {
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         let data = String::from_utf8_lossy(&data);
 
-        let mut buffer = TextScreen::new(*VIEWDATA_SCREEN_SIZE);
+        let mut buffer = TextScreen::new(VIEWDATA_SCREEN_SIZE);
         buffer.terminal_state_mut().is_terminal_buffer = true;
         buffer.clear_font_table();
         buffer.set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());

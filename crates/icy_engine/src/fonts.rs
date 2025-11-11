@@ -154,7 +154,18 @@ impl BitFont {
         let mut result = Vec::new();
         for ch in 0..self.length {
             if let Some(glyph) = self.get_glyph(unsafe { char::from_u32_unchecked(ch as u32) }) {
-                result.extend_from_slice(&glyph.data.iter().map(|d| *d as u8).collect::<Vec<u8>>());
+                // Normalize glyph row count to current font height. A font may have been
+                // resized (e.g. converted / loaded from a different size) leaving some glyph
+                // vectors shorter or longer than `self.size.height`. We must always emit
+                // exactly `self.size.height` bytes per glyph.
+                let mut rows: Vec<u8> = glyph.data.iter().map(|d| *d as u8).collect();
+                let target = self.size.height as usize;
+                if rows.len() > target {
+                    rows.truncate(target);
+                } else if rows.len() < target {
+                    rows.resize(target, 0);
+                }
+                result.extend_from_slice(&rows);
             } else {
                 log::error!("Glyph not found for char: {}", ch);
                 result.extend_from_slice(vec![0; self.size.height as usize].as_slice());
@@ -336,15 +347,15 @@ impl BitFont {
 
         // glyphs
         for i in 0..self.length {
-            data.extend(
-                &self
-                    .get_glyph(unsafe { char::from_u32_unchecked(i as u32) })
-                    .unwrap()
-                    .data
-                    .iter()
-                    .map(|d| *d as u8)
-                    .collect::<Vec<u8>>(),
-            );
+            let glyph = self.get_glyph(unsafe { char::from_u32_unchecked(i as u32) }).unwrap();
+            let mut rows: Vec<u8> = glyph.data.iter().map(|d| *d as u8).collect();
+            let target = self.size.height as usize;
+            if rows.len() > target {
+                rows.truncate(target);
+            } else if rows.len() < target {
+                rows.resize(target, 0);
+            }
+            data.extend(rows);
         }
 
         Ok(data)
@@ -862,6 +873,8 @@ fonts![
     (C128_UPPER, "Commodore/Commodore_128_UPPER_8x16.f16", "Commodore 128 (UPPER)", 8, 8, 34),
     (C128_LOWER, "Commodore/Commodore_128_Lower_8x16.f16", "Commodore 128 (Lower)", 8, 8, 35),
     (ATARI, "Atari/Atari_ATASCII.psf", "Atari", 8, 8, 36),
+    (ATARI_XEP80, "Atari/xep80.psf", "Atari XEP80", 7, 10, 36),
+    (ATARI_XEP80_INT, "Atari/xep80_int.psf", "Atari XEP80 INT", 7, 10, 36),
     (AMIGA_P0T_NOODLE, "Amiga/P0T-NOoDLE.psf", "P0T NOoDLE (Amiga)", 8, 16, 37),
     (AMIGA_MOSOUL, "Amiga/mOsOul.psf", "mO'sOul (Amiga)", 8, 16, 38),
     (AMIGA_MICROKNIGHTP, "Amiga/MicroKnight+.psf", "MicroKnight Plus (Amiga)", 8, 16, 39),
@@ -1077,6 +1090,26 @@ u+0020:
         let glyph = font.get_glyph(' ').unwrap();
         assert_eq!(glyph.width, 2);
         assert_eq!(glyph.data, vec![2, 1, 2]);
+    }
+
+    #[test]
+    fn test_glyph_row_normalization_truncate() {
+        // Build a font with height 3 and ensure all 256 glyph slots exist (3 * 256 zero bytes).
+        let mut font = BitFont::create_8("truncate", 8, 3, &vec![0u8; 3 * 256]);
+        let g = font.glyphs.get_mut(&'\u{0}').unwrap();
+        g.data = vec![10, 11, 12, 13, 14]; // 5 rows, should truncate to 3.
+        let bytes = font.convert_to_u8_data();
+        assert_eq!(&bytes[0..3], &[10, 11, 12]);
+    }
+
+    #[test]
+    fn test_glyph_row_normalization_pad() {
+        // Build a font with height 5 and ensure full glyph table present (5 * 256 zero bytes).
+        let mut font = BitFont::create_8("pad", 8, 5, &vec![0u8; 5 * 256]);
+        let g = font.glyphs.get_mut(&'\u{0}').unwrap();
+        g.data = vec![7, 8, 9]; // 3 rows, should pad to 5.
+        let bytes = font.convert_to_u8_data();
+        assert_eq!(&bytes[0..5], &[7, 8, 9, 0, 0]);
     }
 
     #[test]

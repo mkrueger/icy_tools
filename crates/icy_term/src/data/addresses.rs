@@ -492,7 +492,7 @@ impl Address {
                 _ => ScreenMode::Unicode(80, 25),
             },
             TerminalEmulation::PETscii => ScreenMode::Vic,
-            TerminalEmulation::ATAscii => ScreenMode::Antic,
+            TerminalEmulation::ATAscii => self.screen_mode.clone(),
             TerminalEmulation::ViewData => ScreenMode::Videotex,
             TerminalEmulation::Mode7 => ScreenMode::Mode7,
             TerminalEmulation::Rip => ScreenMode::Rip,
