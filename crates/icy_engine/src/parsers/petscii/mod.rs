@@ -83,7 +83,7 @@ impl Parser {
             b'N' => log::error!("Screen normal video unsupported."),
             _ => log::error!("Unknown C128 escape code: 0x{:02X}/'{}'", ch, ch as char),
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     pub fn update_shift_mode(&mut self, buf: &mut dyn EditableScreen, shift_mode: bool) {

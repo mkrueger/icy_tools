@@ -373,7 +373,7 @@ impl Parser {
         buf.terminal_state_mut().set_margins_top_bottom(top, bottom);
         let pos = buf.upper_left_position();
         buf.caret_mut().set_position(pos);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI Pn1 ; Pn2 s`</p>
@@ -397,7 +397,7 @@ impl Parser {
         // Set Left and Right Margins
         buf.terminal_state_mut().set_margins_left_right(left, right);
 
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI Pn1 ; Pn2 ; Pn3 ; Pn4 r`</p>
@@ -442,7 +442,7 @@ impl Parser {
         buf.terminal_state_mut().set_margins_top_bottom(top, bottom);
         buf.terminal_state_mut().set_margins_left_right(left, right);
 
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: CSI = Ps ; Pn m
@@ -502,7 +502,7 @@ impl Parser {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI = r`</p>
@@ -520,7 +520,7 @@ impl Parser {
         self.state = EngineState::Default;
         buf.terminal_state_mut().clear_margins_left_right();
         buf.terminal_state_mut().clear_margins_top_bottom();
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI s`</p>
@@ -589,7 +589,7 @@ impl Parser {
                 return Err(ParserError::UnsupportedEscapeSequence.into());
             }
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI Ps1 ; Ps2 SP D`</p>
@@ -631,7 +631,7 @@ impl Parser {
             let nr = *nr as usize;
             if buf.get_font(nr).is_some() {
                 set_font_selection_success(buf, nr);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             match BitFont::from_ansi_font_page(nr) {
                 Ok(font) => {
@@ -644,7 +644,7 @@ impl Parser {
                 }
             }
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI Pn SP d`</p>
@@ -669,7 +669,7 @@ impl Parser {
         if let Some(num) = self.parsed_numbers.first() {
             buf.terminal_state_mut().remove_tab_stop(*num - 1);
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// Sequence: `CSI ! p`</p>
@@ -735,7 +735,7 @@ impl Parser {
             // 3 	Printer
             // 4 	Modem Hi
             // 5 	Modem Lo
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
 
         // no ps2 or 0 are equiv in disabling baud emulation

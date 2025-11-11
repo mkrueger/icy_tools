@@ -130,9 +130,9 @@ impl BufferParser for Parser {
                     if ch == '\n' {
                         self.parsed_string.clear();
                         self.state = State::ReadCommandStart;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if *command == IgsCommands::LoopCommand && self.parsed_numbers.len() >= 4 {
                     match self.loop_state {
@@ -244,7 +244,7 @@ impl BufferParser for Parser {
                                         if self.loop_parameters.len() > 1 || !self.loop_parameters.last().unwrap().is_empty() {
                                             self.loop_parameters.push(vec![String::new()]);
                                         }
-                                        return Ok(CallbackAction::NoUpdate);
+                                        return Ok(CallbackAction::None);
                                     }
                                 }
                                 if let Some(p) = self.loop_parameters.last_mut() {
@@ -257,7 +257,7 @@ impl BufferParser for Parser {
                             }
                         },
                     }
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 match ch {
                     ' ' | '>' | '\r' => { /* ignore */ }
@@ -287,7 +287,7 @@ impl BufferParser for Parser {
                         if *command == IgsCommands::PolyLine && self.parsed_numbers.len() == 1 {
                             self.got_double_colon = false;
                             self.parsed_numbers.push(0);
-                            return Ok(CallbackAction::NoUpdate);
+                            return Ok(CallbackAction::None);
                         }
                         self.got_double_colon = true;
                         let parameters: Vec<_> = self.parsed_numbers.drain(..).collect();
@@ -300,15 +300,15 @@ impl BufferParser for Parser {
                         self.state = State::Default;
                     }
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             State::ReadCommandStart => {
                 self.parsed_numbers.clear();
                 match ch {
-                    '\r' => Ok(CallbackAction::NoUpdate),
+                    '\r' => Ok(CallbackAction::None),
                     '\n' => {
                         self.state = State::SkipNewLine;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
 
                     '&' => {
@@ -316,13 +316,13 @@ impl BufferParser for Parser {
                         self.loop_parameter_count = 0;
                         self.chain_gang.clear();
                         self.loop_state = LoopState::Start;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
 
                     _ => match IgsCommands::from_char(ch) {
                         Ok(cmd) => {
                             self.state = State::ReadCommand(cmd);
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                         Err(err) => {
                             self.state = State::Default;
@@ -334,7 +334,7 @@ impl BufferParser for Parser {
             State::GotIgsStart => {
                 if ch == '#' {
                     self.state = State::ReadCommandStart;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.state = State::Default;
                 let _ = self.write_char(buf, 'G');
@@ -343,11 +343,11 @@ impl BufferParser for Parser {
             State::SkipNewLine => {
                 self.state = State::Default;
                 if ch == '\r' {
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == 'G' {
                     self.state = State::GotIgsStart;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.write_char(buf, ch)
             }
@@ -356,7 +356,7 @@ impl BufferParser for Parser {
                 let pos = (ch as u8) - b' ';
                 if *x_pos < 0 {
                     State::VT52SetCursorPos(pos as i32);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 buf.caret_mut().set_position_xy(*x_pos, pos as i32);
                 self.state = State::Default;
@@ -426,7 +426,7 @@ impl BufferParser for Parser {
                     }
                     'Y' => {
                         self.state = State::VT52SetCursorPos(-1);
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     'Z' => { // Identify terminal
                     }
@@ -441,12 +441,12 @@ impl BufferParser for Parser {
                     'b' => {
                         // FG Color mode
                         self.state = State::ReadColor(true);
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     'c' => {
                         // BG Color mode
                         self.state = State::ReadColor(false);
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     'd' => {
                         // Clear to start of screen
@@ -500,24 +500,24 @@ impl BufferParser for Parser {
             State::Default => match ch as u8 {
                 b'G' => {
                     self.state = State::GotIgsStart;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
-                0..=6 => Ok(CallbackAction::NoUpdate),
+                0..=6 => Ok(CallbackAction::None),
                 0x07 => Ok(CallbackAction::Beep),
                 0x0B | 0x0C => {
                     buf.bs();
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
                 0x0D => {
                     buf.lf();
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
-                0x0E..=0x1A => Ok(CallbackAction::NoUpdate),
+                0x0E..=0x1A => Ok(CallbackAction::None),
                 0x1B => {
                     self.state = State::EscapeSequence;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
-                0x1C..=0x1F => Ok(CallbackAction::NoUpdate),
+                0x1C..=0x1F => Ok(CallbackAction::None),
                 _ => self.write_char(buf, ch),
             },
         }

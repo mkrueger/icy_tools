@@ -72,7 +72,7 @@ impl Command for TextWindow {
         bgi.set_text_window(self.x0 * x, self.y0 * y, self.x1 * x, self.y1 * y, self.wrap);
         buf.limit_caret_pos();
 
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -128,7 +128,7 @@ impl Command for ViewPort {
 
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_viewport(self.x0, self.y0, self.x1, self.y1);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -154,7 +154,7 @@ impl Command for ResetWindows {
         buf.clear_screen();
         bgi.clear_text_window(buf);
         bgi.graph_defaults(buf);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }
 
@@ -214,7 +214,7 @@ impl Command for GotoXY {
 
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.move_to(self.x, self.y);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -232,7 +232,7 @@ impl Command for Home {
 
     fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         buf.home();
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }
 
@@ -246,7 +246,7 @@ impl Command for EraseEOL {
 
     fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         buf.clear_line_end();
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }
 
@@ -272,7 +272,7 @@ impl Command for Color {
 
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_color(self.c as u8);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -368,7 +368,7 @@ impl Command for WriteMode {
 
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_write_mode(super::bgi::WriteMode::from(self.mode as u8));
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -403,7 +403,7 @@ impl Command for Move {
 
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.move_to(self.x, self.y);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -506,7 +506,7 @@ impl Command for FontStyle {
 
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_text_style(FontType::from(self.font as u8), Direction::from(self.direction as u8), self.size);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1471,7 +1471,7 @@ impl Command for LineStyle {
             bgi.set_line_pattern(self.user_pat);
         }
         bgi.set_line_thickness(self.thick);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1507,7 +1507,7 @@ impl Command for FillStyle {
     fn run(&self, _buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.set_fill_style(super::bgi::FillStyle::from(self.pattern as u8));
         bgi.set_fill_color(self.color as u8);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1597,7 +1597,7 @@ impl Command for FillPattern {
         ]);
         bgi.set_fill_style(super::bgi::FillStyle::User);
         bgi.set_fill_color(self.col as u8);
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1683,7 +1683,7 @@ impl Command for Mouse {
         let mut style = ButtonStyle2::default();
         style.flags |= 1024;
         buf.add_mouse_field(MouseField::new(self.x0, self.y0, self.x1, self.y1, Some(host_command), style));
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1708,7 +1708,7 @@ pub struct MouseFields {}
 impl Command for MouseFields {
     fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         buf.clear_mouse_fields();
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1762,7 +1762,7 @@ impl Command for BeginText {
     }
 
     fn run(&self, _buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1806,7 +1806,7 @@ impl Command for EndText {
         "|1E".to_string()
     }
     fn run(&self, _buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }
 
@@ -1852,7 +1852,7 @@ impl Command for GetImage {
 
     fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         bgi.rip_image = Some(bgi.get_image(buf, self.x0, self.y0, self.x1, self.y1));
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -1985,7 +1985,7 @@ impl Command for LoadIcon {
         let file_name = lookup_cache_file(bgi, &self.file_name)?;
         if !file_name.exists() {
             log::error!("File not found: {}", self.file_name);
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
         let mut file = std::fs::File::open(file_name)?;
         let mut file_buf = Vec::new();
@@ -2169,7 +2169,7 @@ impl Command for ButtonStyle {
             underline_color: self.uline_col,
             corner_color: self.corner_col,
         });
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {
@@ -2630,7 +2630,7 @@ impl Command for FileQuery {
                 log::error!("Invalid mode for FileQuery: {}", self.mode);
             }
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn to_rip_string(&self) -> String {

@@ -48,7 +48,7 @@ pub trait Command: Send {
     /// This function will return an error if .
     fn run(&self, _buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         eprintln!("not implemented RIP: {:?}", self.to_rip_string());
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }
 
@@ -108,24 +108,24 @@ impl Parser {
     fn parse_parameter(&mut self, buf: &mut dyn EditableScreen, ch: char) -> Option<Result<CallbackAction, anyhow::Error>> {
         if ch == '\\' {
             self.state = State::SkipEOL;
-            return Some(Ok(CallbackAction::NoUpdate));
+            return Some(Ok(CallbackAction::None));
         }
         if ch == '\r' {
-            return Some(Ok(CallbackAction::NoUpdate));
+            return Some(Ok(CallbackAction::None));
         }
         if ch == '\n' {
             self.state = State::Default;
             if let Some(t) = self.command.take() {
                 return Some(self.record_rip_command(buf, t));
             }
-            return Some(Ok(CallbackAction::NoUpdate));
+            return Some(Ok(CallbackAction::None));
         }
         if ch == '|' {
             self.state = State::ReadCommand(0);
             if let Some(t) = self.command.take() {
                 return Some(self.record_rip_command(buf, t));
             }
-            return Some(Ok(CallbackAction::NoUpdate));
+            return Some(Ok(CallbackAction::None));
         }
         match self.command.as_mut().unwrap().parse(&mut self.parameter_state, ch) {
             Ok(true) => {
@@ -140,7 +140,7 @@ impl Parser {
             Err(e) => {
                 log::error!("Error in RipScript: {}", e);
                 self.state = State::Default;
-                return Some(Ok(CallbackAction::NoUpdate));
+                return Some(Ok(CallbackAction::None));
             }
         }
         None
@@ -181,44 +181,44 @@ impl BufferParser for Parser {
                 if let Some(value) = self.parse_parameter(buf, ch) {
                     return value;
                 }
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             State::SkipEOL => {
                 if ch == '\r' {
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == '\n' {
                     self.state = State::ReadParams;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if let Some(value) = self.parse_parameter(buf, ch) {
                     return value;
                 }
                 self.state = State::ReadParams;
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             State::EndRip => {
                 if ch == '\r' {
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == '\n' {
                     self.state = State::Default;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
 
                 if ch == '|' {
                     self.state = State::ReadCommand(0);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
 
                 self.state = State::Default;
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             State::ReadCommand(level) => {
                 if ch == '!' {
                     self.state = State::GotRipStart;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
 
                 if level == 1 {
@@ -243,10 +243,10 @@ impl BufferParser for Parser {
                         _ => {
                             log::error!("Error in RipScript: Unknown level 1 command: {}", ch);
                             self.state = State::Default;
-                            return Ok(CallbackAction::NoUpdate);
+                            return Ok(CallbackAction::None);
                         }
                     }
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if level == 9 {
                     if let '\x1B' = ch {
@@ -254,9 +254,9 @@ impl BufferParser for Parser {
                     } else {
                         log::error!("Error in RipScript: Unknown level 1 command: {}", ch);
                         self.state = State::Default;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
 
                 match ch {
@@ -297,34 +297,34 @@ impl BufferParser for Parser {
                     's' => self.start_command(Box::<commands::FillPattern>::default()),
                     '1' => {
                         self.state = State::ReadCommand(1);
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     '9' => {
                         self.state = State::ReadCommand(9);
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     '$' => self.start_command(Box::<commands::TextVariable>::default()),
                     '#' => {
                         // RIP_NO_MORE
                         self.state = State::EndRip;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     _ => {
                         self.state = State::Default;
                         if self.bgi.suspend_text {
-                            return Ok(CallbackAction::NoUpdate);
+                            return Ok(CallbackAction::None);
                         }
                         self.fallback_parser.print_char(buf, '!')?;
                         self.fallback_parser.print_char(buf, '|')?;
                         return self.fallback_parser.print_char(buf, ch);
                     }
                 }
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             State::GotRipStart => {
                 // got !
                 if ch == '!' {
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == '\n' || ch == '\r' {
                     return Ok(CallbackAction::Update);
@@ -332,14 +332,14 @@ impl BufferParser for Parser {
                 if ch != '|' {
                     self.state = State::Default;
                     if self.bgi.suspend_text {
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
 
                     self.fallback_parser.print_char(buf, '!')?;
                     return self.fallback_parser.print_char(buf, ch);
                 }
                 self.state = State::ReadCommand(0);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             State::Default => {
                 match self.fallback_parser.state {
@@ -365,7 +365,7 @@ impl BufferParser for Parser {
                                     return Err(ParserError::InvalidRipAnsiQuery(self.fallback_parser.parsed_numbers[0]).into());
                                 }
                             }
-                            return Ok(CallbackAction::NoUpdate);
+                            return Ok(CallbackAction::None);
                         }
                     }
                     EngineState::Default => {
@@ -375,7 +375,7 @@ impl BufferParser for Parser {
 
                         if let '!' = ch {
                             self.state = State::GotRipStart;
-                            return Ok(CallbackAction::NoUpdate);
+                            return Ok(CallbackAction::None);
                         }
                     }
                     _ => {}
@@ -383,7 +383,7 @@ impl BufferParser for Parser {
             }
         }
         if self.bgi.suspend_text {
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
         self.fallback_parser.print_char(buf, ch)
     }

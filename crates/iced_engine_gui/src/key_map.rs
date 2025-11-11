@@ -238,10 +238,11 @@ pub static VIDEOTERM_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key(keyboard::key::Named::Backspace), &[0x7F]),
     (named_key(keyboard::key::Named::Delete), &[0x7F]),
     (named_key(keyboard::key::Named::Escape), &[0x1B]),
-    (named_key(keyboard::key::Named::F2), &[0b101_1111]),
+    (named_key(keyboard::key::Named::F2), &[b'_']), // F2 duplicates Enter (Send) – confirm
+    (named_key(keyboard::key::Named::F7), &[0x1B]), // F7 acts as ESC (Commstar)
+    (key_code_key(keyboard::key::Code::NumpadEnter), &[b'_']), // Numpad Enter same as Enter
     (key_code_key(keyboard::key::Code::Backquote), &[b'*']),
     (key_code_key(keyboard::key::Code::NumpadMultiply), &[b'*']),
-    (key_code_key(keyboard::key::Code::NumpadEnter), &[0b101_1111]),
     (named_key(keyboard::key::Named::ArrowUp), &[0x0B]),
     (named_key(keyboard::key::Named::ArrowDown), &[b'\n']),
     (named_key(keyboard::key::Named::ArrowRight), &[b'\t']),
@@ -250,6 +251,58 @@ pub static VIDEOTERM_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key_shift(keyboard::key::Named::ArrowDown), &[b'\n']),
     (named_key_shift(keyboard::key::Named::ArrowRight), &[b'\t']),
     (named_key_shift(keyboard::key::Named::ArrowLeft), &[0x08]),
+    (named_key_shift(keyboard::key::Named::Enter), &[13]), // Shift+Enter sends CR
+];
+
+pub static MODE7_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
+    // Basic controls
+    (named_key(keyboard::key::Named::Escape), &[0x1B]),   // ESC
+    (named_key(keyboard::key::Named::Home), &[0x1F]),     // HOME -> 0x1F (TAB to x,y / Unit Separator in spec usage)
+    (named_key(keyboard::key::Named::Backspace), &[127]), // Destructive backspace
+    (named_key(keyboard::key::Named::Delete), &[127]),    // Treat Delete same as destructive backspace
+    (named_key(keyboard::key::Named::Tab), &[9]),         // TAB
+    (named_key(keyboard::key::Named::Enter), &[13]),      // Enter -> CR
+    // Arrow keys (unmodified)
+    (named_key(keyboard::key::Named::ArrowLeft), &[140]),
+    (named_key(keyboard::key::Named::ArrowRight), &[141]),
+    (named_key(keyboard::key::Named::ArrowDown), &[142]),
+    (named_key(keyboard::key::Named::ArrowUp), &[143]),
+    // Shift + Function keys (F0 = Shift+F10)
+    (named_key_shift(keyboard::key::Named::F10), &[144]), // F0 (Shift F10)
+    (named_key_shift(keyboard::key::Named::F1), &[145]),
+    (named_key_shift(keyboard::key::Named::F2), &[146]),
+    (named_key_shift(keyboard::key::Named::F3), &[147]),
+    (named_key_shift(keyboard::key::Named::F4), &[148]),
+    (named_key_shift(keyboard::key::Named::F5), &[149]),
+    (named_key_shift(keyboard::key::Named::F6), &[150]),
+    (named_key_shift(keyboard::key::Named::F7), &[151]),
+    (named_key_shift(keyboard::key::Named::F8), &[152]),
+    (named_key_shift(keyboard::key::Named::F9), &[153]),
+    // Shift + navigation / edit
+    (named_key_shift(keyboard::key::Named::End), &[155]), // Copy
+    (named_key_shift(keyboard::key::Named::ArrowLeft), &[156]),
+    (named_key_shift(keyboard::key::Named::ArrowRight), &[157]),
+    (named_key_shift(keyboard::key::Named::ArrowDown), &[158]),
+    (named_key_shift(keyboard::key::Named::ArrowUp), &[159]),
+    // Ctrl + Function keys (Ctrl F10 first)
+    (named_key_ctrl(keyboard::key::Named::F10), &[160]),
+    (named_key_ctrl(keyboard::key::Named::F1), &[161]),
+    (named_key_ctrl(keyboard::key::Named::F2), &[162]),
+    (named_key_ctrl(keyboard::key::Named::F3), &[163]),
+    (named_key_ctrl(keyboard::key::Named::F4), &[164]),
+    (named_key_ctrl(keyboard::key::Named::F5), &[165]),
+    (named_key_ctrl(keyboard::key::Named::F6), &[166]),
+    (named_key_ctrl(keyboard::key::Named::F7), &[167]),
+    (named_key_ctrl(keyboard::key::Named::F8), &[168]),
+    (named_key_ctrl(keyboard::key::Named::F9), &[169]),
+    // Ctrl + navigation / edit
+    (named_key_ctrl(keyboard::key::Named::End), &[171]),
+    (named_key_ctrl(keyboard::key::Named::ArrowLeft), &[172]),
+    (named_key_ctrl(keyboard::key::Named::ArrowRight), &[173]),
+    (named_key_ctrl(keyboard::key::Named::ArrowDown), &[174]),
+    (named_key_ctrl(keyboard::key::Named::ArrowUp), &[175]),
+    // Special: F7 (unmodified) maps to ESC per Commstar (another ESC)
+    (named_key(keyboard::key::Named::F7), &[27]),
 ];
 
 pub fn lookup_key(

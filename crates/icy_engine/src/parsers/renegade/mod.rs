@@ -33,7 +33,7 @@ impl BufferParser for Parser {
             State::Normal => match ch {
                 '|' => {
                     self.state = State::ParseFirstColor;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
                 _ => self.ansi_parser.print_char(buf, ch),
             },
@@ -44,7 +44,7 @@ impl BufferParser for Parser {
                     return Err(anyhow::anyhow!("Invalid color code: {}", ch));
                 }
                 self.state = State::ParseSecondColor((code - b'0') * 10);
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             State::ParseSecondColor(first) => {
                 self.state = State::Normal;
@@ -59,7 +59,7 @@ impl BufferParser for Parser {
                 } else {
                     caret.attribute.set_background((color - 16) as u32);
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
         }
     }

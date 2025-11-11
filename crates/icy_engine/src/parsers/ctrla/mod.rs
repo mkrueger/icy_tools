@@ -60,27 +60,27 @@ impl BufferParser for Parser {
                 _ => {
                     if let Some(fg) = FG.iter().position(|c| *c == ch as u8) {
                         buf.caret_mut().set_foreground(fg as u32 + if self.is_bold { 8 } else { 0 });
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     if let Some(bg) = BG.iter().position(|c| *c == ch as u8) {
                         buf.caret_mut().set_background(bg as u32 + if self.high_bg { 8 } else { 0 });
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
 
                     let c = ch as i32;
                     if (128..=255).contains(&c) {
                         buf.right(c - 127);
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     log::error!("Unsupported CtrlA sequence :'{ch}'.");
                 }
             }
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
         match ch {
             CTRL_A => {
                 self.ctrl_a = true;
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             _ => self.ascii_parser.print_char(buf, ch),
         }

@@ -45,7 +45,7 @@ impl Parser {
 
         if i == 3 && *self.parsed_numbers.first().unwrap() == 8 {
             self.handle_osc_hyperlinks(buf, self.parse_string[3..].to_string());
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
 
         Err(ParserError::UnsupportedOSCSequence(fmt_error_string(&self.parse_string)).into())

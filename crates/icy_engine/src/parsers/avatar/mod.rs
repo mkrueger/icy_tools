@@ -64,13 +64,13 @@ impl BufferParser for Parser {
                     }
                     _ => return self.print_fallback(buf, ch),
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             AvtReadState::ReadCommand => {
                 match ch as u8 {
                     1 => {
                         self.avt_state = AvtReadState::ReadColor;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     2 => {
                         buf.caret_mut().attribute.set_is_blinking(true);
@@ -98,7 +98,7 @@ impl BufferParser for Parser {
                     AVT_MOVE_CURSOR => {
                         self.avt_state = AvtReadState::MoveCursor;
                         self.avatar_state = 1;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     // TODO implement commands from FSC0025.txt & FSC0037.txt
                     _ => {
@@ -107,13 +107,13 @@ impl BufferParser for Parser {
                     }
                 }
                 self.avt_state = AvtReadState::Chars;
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             AvtReadState::RepeatChars => match self.avatar_state {
                 1 => {
                     self.avt_repeat_char = ch;
                     self.avatar_state = 2;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
                 2 => {
                     self.avatar_state = 3;
@@ -122,7 +122,7 @@ impl BufferParser for Parser {
                         self.ansi_parser.print_char(buf, self.avt_repeat_char)?;
                     }
                     self.avt_state = AvtReadState::Chars;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
                 _ => {
                     self.avt_state = AvtReadState::Chars;
@@ -133,19 +133,19 @@ impl BufferParser for Parser {
                 let ice = buf.ice_mode();
                 buf.caret_mut().attribute = TextAttribute::from_u8(ch as u8, ice);
                 self.avt_state = AvtReadState::Chars;
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             AvtReadState::MoveCursor => match self.avatar_state {
                 1 => {
                     self.avt_repeat_char = ch;
                     self.avatar_state = 2;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
                 2 => {
                     buf.caret_mut().set_position(Position::new(self.avt_repeat_char as i32, ch as i32));
 
                     self.avt_state = AvtReadState::Chars;
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 }
                 _ => Err(ParserError::Description("error in reading avt avt_gotoxy").into()),
             },

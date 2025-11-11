@@ -1062,7 +1062,7 @@ impl DrawExecutor {
                     3 => self.text_color = parameters[1] as u8,
                     x => return Err(anyhow::anyhow!("ColorSet unknown/unsupported argument: {x}")),
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
 
             IgsCommands::SetPenColor => {
@@ -1204,7 +1204,7 @@ impl DrawExecutor {
                     1 => self.hollow_set = true,
                     x => return Err(anyhow::anyhow!("HollowSet unknown/unsupported argument: {x}")),
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             IgsCommands::Pieslice => {
                 if parameters.len() < 5 {
@@ -1288,23 +1288,23 @@ impl DrawExecutor {
                 match parameters[0] {
                     9995 => {
                         self.double_step = 4.0;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
                     9996 => {
                         self.double_step = 3.0;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
                     9997 => {
                         self.double_step = 2.0;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
                     9998 => {
                         self.double_step = 1.0;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
                     9999 => {
                         self.double_step = -1.0;
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
                     p => {
                         if p < 180 {
@@ -1366,7 +1366,7 @@ impl DrawExecutor {
                     1 => self.draw_border = true,
                     _ => return Err(anyhow::anyhow!("AttributeForFills unknown/unsupported argument: {}", parameters[2])),
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             IgsCommands::FilledRectangle => {
                 if parameters.len() < 4 {
@@ -1453,7 +1453,7 @@ impl DrawExecutor {
                 } else {
                     return Err(anyhow::anyhow!("LineMarkerTypes unknown/unsupported argument: {}", parameters[0]));
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
 
             IgsCommands::DrawingMode => {
@@ -1467,7 +1467,7 @@ impl DrawExecutor {
                     4 => self.drawing_mode = DrawingMode::ReverseTransparent,
                     _ => return Err(anyhow::anyhow!("DrawingMode unknown/unsupported argument: {}", parameters[0])),
                 }
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
 
             IgsCommands::SetResolution => {
@@ -1494,7 +1494,7 @@ impl DrawExecutor {
                     _ => return Err(anyhow::anyhow!("SetResolution unknown/unsupported argument: {}", parameters[1])),
                 }
 
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
 
             IgsCommands::WriteText => {
@@ -1588,7 +1588,7 @@ impl DrawExecutor {
                     } else {
                         return Err(anyhow::anyhow!("VTColor unknown/unsupported color mode: {}", parameters[0]));
                     }
-                    Ok(CallbackAction::NoUpdate)
+                    Ok(CallbackAction::None)
                 } else {
                     Err(anyhow::anyhow!("VTColor unknown/unsupported color selector: {}", parameters[1]))
                 }
@@ -1598,7 +1598,7 @@ impl DrawExecutor {
                     return Err(anyhow::anyhow!("VTPosition command requires 2 argument"));
                 }
                 buf.caret_mut().set_position(Position::new(parameters[0], parameters[1]));
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             IgsCommands::BellsAndWhistles => {
                 let effect = parameters[0] as usize;
@@ -1623,12 +1623,12 @@ impl DrawExecutor {
                         if play_flag != 0 {
                             Ok(CallbackAction::PlayGISTSound(SOUND_DATA[snd_num as usize].to_vec()))
                         } else {
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                     },
                     21 => {
                         //STOP sound
-                        Ok(CallbackAction::NoUpdate)
+                        Ok(CallbackAction::None)
                     }
                     22 => unsafe {
                         // b 22, snd_num
@@ -1684,11 +1684,11 @@ impl DrawExecutor {
                     }
                 }
 
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             IgsCommands::InputCommand => {
                 log::warn!("InputCommand not implemented - parameters: {:?}", parameters);
-                Ok(CallbackAction::NoUpdate)
+                Ok(CallbackAction::None)
             }
             _ => Err(anyhow::anyhow!("Unimplemented IGS command: {command:?}")),
         }

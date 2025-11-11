@@ -121,7 +121,7 @@ impl Parser {
                 let x = parameters[0];
                 let y = parameters[1];
                 self.bgi.put_pixel(buf, x, y, self.bgi.get_color());
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             2 => {
                 // DRAW_LINE
@@ -131,7 +131,7 @@ impl Parser {
                 let x = parameters[0];
                 let y = parameters[1];
                 self.bgi.line_to(buf, x, y);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             3 => {
                 // AREA_FILL
@@ -143,7 +143,7 @@ impl Parser {
                 let x = parameters[1];
                 let y = parameters[2];
                 self.bgi.flood_fill(buf, x, y, self.bgi.get_color());
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             4 => {
                 // RECTANGLE_FILL
@@ -155,7 +155,7 @@ impl Parser {
                 let x2 = parameters[2];
                 let y2 = parameters[3];
                 self.bgi.bar(buf, x1, y1, x2, y2);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             5 => {
                 // ELLIPSE
@@ -167,7 +167,7 @@ impl Parser {
                 let a = parameters[2];
                 let b = parameters[3];
                 self.bgi.ellipse(buf, x1, y1, 0, 360, a, b);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             6 => {
                 // GRAB_BRUSH
@@ -179,7 +179,7 @@ impl Parser {
                 let x2 = parameters[2];
                 let y2 = parameters[3];
                 self.brush = self.bgi.get_image(buf, x1, y1, x2, y2);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             7 => {
                 // USE_BRUSH
@@ -196,7 +196,7 @@ impl Parser {
                 let _mask = parameters[7];
                 self.bgi
                     .put_image2(buf, src_x, src_y, width, height, dst_x, dst_y, &self.brush, WriteMode::Copy);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             8 => {
                 // MOVE_PEN
@@ -206,7 +206,7 @@ impl Parser {
                 let x = parameters[0];
                 let y = parameters[1];
                 self.bgi.move_to(x, y);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             9 => {
                 // PLAY_SAMPLE
@@ -215,7 +215,7 @@ impl Parser {
                 }
                 // not implemented originally, so we just ignore it
                 log::info!("todo: SKYPIX_PLAY_SAMPLE");
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             10 => {
                 // SET_FONT
@@ -225,7 +225,7 @@ impl Parser {
                 let size = parameters[0];
                 self.parameter.clear();
                 self.parse_mode = SkypixParseMode::ParseFont(size);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             11 => {
                 // NEW_PALETTE
@@ -240,13 +240,13 @@ impl Parser {
 
                     palette.set_color(i as u32, amiga_color!(r, g, b));
                 }
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             12 => {
                 // RESET_PALETTE
                 *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             13 => {
@@ -259,7 +259,7 @@ impl Parser {
                 let a = parameters[2];
                 let b = parameters[3];
                 self.bgi.fill_ellipse(buf, x1, y1, 0, 360, a, b);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             14 => {
@@ -269,7 +269,7 @@ impl Parser {
                 }
                 let t = parameters[0];
                 std::thread::sleep(std::time::Duration::from_millis((1000 * t as u64) / 60));
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             15 => {
@@ -280,7 +280,7 @@ impl Parser {
                 let col = parameters[0] as u8;
                 self.bgi.set_color(col);
                 buf.caret_mut().set_foreground(col as u32);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             16 => {
@@ -293,7 +293,7 @@ impl Parser {
                 let b = parameters[2];
                 self.parameter.clear();
                 self.parse_mode = SkypixParseMode::ParseXModemTransfer(m, a, b);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             17 => {
@@ -309,7 +309,7 @@ impl Parser {
                         log::warn!("Unknown display mode: {}", m);
                     }
                 }
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             18 => {
@@ -320,7 +320,7 @@ impl Parser {
                 let col = parameters[0] as u8;
                 self.bgi.set_bk_color(col);
                 buf.caret_mut().set_background(col as u32);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             19 => {
@@ -332,7 +332,7 @@ impl Parser {
                 let y = (parameters[1] * 25) / SKYPIX_SCREEN_SIZE.height;
                 self.graphic_cursor = (parameters[0], parameters[1]).into();
                 buf.caret_mut().set_position_xy(x + 1, y + 1);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             21 => {
@@ -344,7 +344,7 @@ impl Parser {
                 let _x = parameters[1];
                 let _y = parameters[2];
                 log::warn!("todo: CONTROLLER RETURN");
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             22 => {
@@ -359,7 +359,7 @@ impl Parser {
                 let _x2 = parameters[4];
                 let _y2 = parameters[5];
                 log::warn!("todo: SKYPIX GADGET");
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             99 => {
@@ -369,7 +369,7 @@ impl Parser {
                 let y = (self.graphic_cursor.y * 25) / SKYPIX_SCREEN_SIZE.height;
                 buf.caret_mut().set_position_xy(x + 1, y + 1);
 
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             _ => {
                 return Err(anyhow::Error::msg(format!("unknown skypix command {cmd}")));
@@ -430,10 +430,10 @@ impl BufferParser for Parser {
                 if ch == '!' || self.parameter.len() > 32 {
                     self.parse_mode = SkypixParseMode::Default;
                     self.load_font(&self.parameter.clone(), size);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.parameter.push(ch);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             SkypixParseMode::ParseXModemTransfer(m, a, b) => {
                 if ch == '!' || self.parameter.len() > 32 {
@@ -442,12 +442,12 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::XModemTransfer(self.parameter.clone()));
                 }
                 self.parameter.push(ch);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             _ => {
                 if self.font.is_some() && self.fallback_parser.state == EngineState::Default && ch >= ' ' && ch <= '~' {
                     self.print_char(buf, ch);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
 
                 match self.fallback_parser.print_char(buf, ch) {

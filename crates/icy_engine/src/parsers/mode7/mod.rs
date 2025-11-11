@@ -1,6 +1,6 @@
 #![allow(clippy::match_same_arms)]
 use super::BufferParser;
-use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, Position};
+use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult};
 
 mod constants;
 
@@ -12,129 +12,233 @@ mod tests;
 /// <https://central.kaserver5.org/Kasoft/Typeset/BBC/Ch28.html>
 /// <https://www.bbcbasic.co.uk/bbcwin/manual/bbcwinh.html>
 pub struct Parser {
+    // Escape sequence handling
     got_esc: bool,
+    vdu_queue: Vec<u8>,
+    vdu_expected: usize,
 
+    // Graphics mode state
     hold_graphics: bool,
-    held_graphics_character: char,
-
+    held_graphics_character: u8,
     is_contiguous: bool,
-
     is_in_graphic_mode: bool,
 
-    _graphics_bg: u32,
-    _alpha_bg: u32,
+    // Double height state
+    double_height_top_row: Option<i32>,
+    double_height_bottom_row: Option<i32>,
+
+    // VDU mode states
+    vdu_disabled: bool,
+    graphics_cursor_mode: bool,
+
+    // Current colors
+    current_fg: u32,
+    current_bg: u32,
 }
 
 impl Default for Parser {
     fn default() -> Self {
         Self {
             got_esc: false,
+            vdu_queue: Vec::new(),
+            vdu_expected: 0,
             hold_graphics: false,
-            held_graphics_character: ' ',
+            held_graphics_character: b' ',
             is_contiguous: true,
             is_in_graphic_mode: false,
-            _graphics_bg: 0,
-            _alpha_bg: 0,
+            double_height_top_row: None,
+            double_height_bottom_row: None,
+            vdu_disabled: false,
+            graphics_cursor_mode: false,
+            current_fg: 7,
+            current_bg: 0,
         }
     }
 }
 
 impl Parser {
-    fn _reset_screen(&mut self) {
-        self.got_esc = false;
-
-        self.hold_graphics = false;
-        self.held_graphics_character = ' ';
-
-        self.is_contiguous = true;
-        self.is_in_graphic_mode = false;
-        self._graphics_bg = 0;
-        self._alpha_bg = 0;
+    #[inline]
+    fn ascii_cycle_remap(ch: u8) -> u8 {
+        // Prestel/BBC Mode 7 remap cycle for '#', '_', '`' characters.
+        // Some services rotate these three to access mosaic variants.
+        // Cycle: '#' (35) -> '_' (95) -> '`' (96) -> '#' (35)
+        match ch {
+            b'#' => b'_',
+            b'_' => b'`',
+            b'`' => b'#',
+            _ => ch,
+        }
     }
 
-    fn fill_to_eol(buf: &mut dyn EditableScreen) {
-        if buf.caret().position().x <= 0 {
-            return;
-        }
-        let sx = buf.caret().position().x;
-        let sy = buf.caret().position().y;
-
-        let attr = buf.get_char((sx, sy).into()).attribute;
-
-        for x in sx..buf.terminal_state().get_width() {
-            let p = Position::new(x, sy);
-            let mut ch = buf.get_char(p);
-            if ch.attribute != attr {
-                break;
+    #[inline]
+    fn mosaic_upgrade(&self, ch: u8) -> u8 {
+        // When in graphic (mosaic) mode some hosts "upgrade" ASCII ranges
+        // into the mosaic block set by setting bit7. Rough heuristic applied
+        // to ranges 32..=63 and 96..=127 (space/punct + lowercase) if in graphics.
+        // This is a best-effort implementation; separated/contiguous differences
+        // are still handled later in display_graphics_char.
+        if self.is_in_graphic_mode {
+            if (32..=63).contains(&ch) || (96..=127).contains(&ch) {
+                return ch | 0x80; // set bit7 to enter 128+ range
             }
-            ch.attribute = buf.caret().attribute;
-            buf.set_char(p, ch);
         }
+        ch
     }
 
-    fn _reset_on_row_change(&mut self, buf: &mut dyn EditableScreen) {
-        self._reset_screen();
-        buf.caret_default_colors();
+    fn destructive_backspace(&mut self, buf: &mut dyn EditableScreen) {
+        // Teletext destructive backspace semantics: BS, write space, BS again.
+        self.caret_left(buf); // move left
+        let ach = AttributedChar::new(' ', buf.caret().attribute);
+        buf.set_char(buf.caret().position(), ach); // erase previous cell
+        self.caret_left(buf); // position caret on erased cell ready for overwrite
     }
-
-    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: AttributedChar) {
-        buf.set_char(buf.caret().position(), ch);
-        self.caret_right(buf);
+    fn reset_line_state(&mut self) {
+        // Reset per-line state when moving to a new line
+        self.is_in_graphic_mode = false;
+        self.hold_graphics = false;
+        self.held_graphics_character = b' ';
+        self.is_contiguous = true;
+        self.current_fg = 7;
+        self.current_bg = 0;
     }
 
     fn caret_down(&mut self, buf: &mut dyn EditableScreen) {
+        let old_y = buf.caret().y;
         buf.index();
+        if buf.caret().y != old_y {
+            self.reset_line_state();
+            buf.caret_mut().attribute.set_foreground(self.current_fg);
+            buf.caret_mut().attribute.set_background(self.current_bg);
+        }
     }
 
-    fn caret_up(buf: &mut dyn EditableScreen) {
-        let y = if buf.caret().y > 0 {
-            buf.caret().y.saturating_sub(1)
+    fn caret_up(&mut self, buf: &mut dyn EditableScreen) {
+        let old_y = buf.caret().y;
+        if buf.caret().y > 0 {
+            buf.caret_mut().y = buf.caret().y - 1;
         } else {
-            buf.terminal_state().get_height() - 1
-        };
-        buf.caret_mut().y = y;
+            buf.caret_mut().y = buf.terminal_state().get_height() - 1;
+        }
+        if buf.caret().y != old_y {
+            self.reset_line_state();
+            buf.caret_mut().attribute.set_foreground(self.current_fg);
+            buf.caret_mut().attribute.set_background(self.current_bg);
+        }
     }
 
     fn caret_right(&mut self, buf: &mut dyn EditableScreen) {
-        let x = buf.caret().x;
-        buf.caret_mut().x = x + 1;
+        buf.caret_mut().x = buf.caret().x + 1;
         if buf.caret().x >= buf.terminal_state().get_width() {
             buf.caret_mut().x = 0;
-            buf.down(1);
-        }
-    } // 9PSYRNY2
-    // ADGJ
-
-    #[allow(clippy::unused_self)]
-    fn caret_left(&self, buf: &mut dyn EditableScreen) {
-        if buf.caret().x > 0 {
-            let x = buf.caret().x.saturating_sub(1);
-            buf.caret_mut().x = x;
-        } else {
-            let x = buf.terminal_state().get_width().saturating_sub(1);
-            buf.caret_mut().x = x;
-            Parser::caret_up(buf);
+            self.caret_down(buf);
         }
     }
 
-    fn interpret_char(&mut self, buf: &mut dyn EditableScreen, ch: u8) -> CallbackAction {
-        if !self.hold_graphics {
-            self.held_graphics_character = ' ';
+    fn caret_left(&mut self, buf: &mut dyn EditableScreen) {
+        if buf.caret().x > 0 {
+            buf.caret_mut().x = buf.caret().x - 1;
+        } else {
+            buf.caret_mut().x = buf.terminal_state().get_width() - 1;
+            self.caret_up(buf);
         }
+    }
 
-        let mut print_ch = ch;
-        //if self.is_in_graphic_mode
-        {
-            let offset = if self.is_contiguous { 128 } else { 192 };
-            if (160..=191).contains(&print_ch) {
-                print_ch = print_ch - 160 + offset;
+    fn set_at_attributes(&mut self, buf: &mut dyn EditableScreen) {
+        // Mode 7 "set-at" behavior: attributes take effect from next char position
+        buf.caret_mut().attribute.set_foreground(self.current_fg);
+        buf.caret_mut().attribute.set_background(self.current_bg);
+    }
+
+    fn display_control_char(&mut self, buf: &mut dyn EditableScreen) {
+        // Display space or held graphics for control positions
+        let display_ch = if self.hold_graphics && self.is_in_graphic_mode {
+            self.held_graphics_character
+        } else {
+            b' '
+        };
+
+        let ach = AttributedChar::new(display_ch as char, buf.caret().attribute);
+        buf.set_char(buf.caret().position(), ach);
+        self.caret_right(buf);
+    }
+
+    fn display_graphics_char(&mut self, buf: &mut dyn EditableScreen, ch: u8) {
+        if !self.is_in_graphic_mode {
+            // In alpha mode, graphics chars display as spaces
+            let ach = AttributedChar::new(' ', buf.caret().attribute);
+            buf.set_char(buf.caret().position(), ach);
+        } else {
+            // Store as held graphics if in range
+            if (160..=191).contains(&ch) || (224..=255).contains(&ch) {
+                self.held_graphics_character = ch;
             }
-            if (225..=255).contains(&print_ch) {
-                print_ch = print_ch - 225 + 31 + offset;
-            }
+
+            // Map to block graphics character
+            let mapped_ch = if self.is_contiguous {
+                // Contiguous graphics mapping
+                if (160..=191).contains(&ch) {
+                    ch - 32 // Map to 128-159
+                } else if (224..=255).contains(&ch) {
+                    ch - 64 // Map to 160-191
+                } else {
+                    ch
+                }
+            } else {
+                // Separated graphics mapping
+                if (160..=191).contains(&ch) {
+                    ch + 32 // Map to 192-223
+                } else if (224..=255).contains(&ch) {
+                    ch // Already in 224-255
+                } else {
+                    ch
+                }
+            };
+
+            let ach = AttributedChar::new(mapped_ch as char, buf.caret().attribute);
+            buf.set_char(buf.caret().position(), ach);
         }
-        let ach = AttributedChar::new(print_ch as char, buf.caret().attribute);
-        self.print_char(buf, ach);
+        self.caret_right(buf);
+    }
+
+    fn handle_vdu_sequence(&mut self, buf: &mut dyn EditableScreen, ch: u8) -> CallbackAction {
+        self.vdu_queue.push(ch);
+
+        if self.vdu_queue.len() >= self.vdu_expected {
+            // Process complete VDU sequence
+            match self.vdu_queue[0] {
+                17 if self.vdu_queue.len() >= 2 => {
+                    // VDU 17,n - COLOUR n
+                    let color = self.vdu_queue[1];
+                    if color < 128 {
+                        // Foreground
+                        self.current_fg = (color & 15) as u32;
+                    } else {
+                        // Background
+                        self.current_bg = ((color - 128) & 15) as u32;
+                    }
+                    self.set_at_attributes(buf);
+                }
+                22 if self.vdu_queue.len() >= 2 => {
+                    // VDU 22,n - MODE n
+                    // Reset parser state for new mode
+                    *self = Self::default();
+                    buf.reset_terminal();
+                }
+                31 if self.vdu_queue.len() >= 3 => {
+                    // VDU 31,x,y - TAB(x,y)
+                    let x = self.vdu_queue[1] as i32;
+                    let y = self.vdu_queue[2] as i32;
+                    if x < buf.terminal_state().get_width() && y < buf.terminal_state().get_height() {
+                        buf.caret_mut().x = x;
+                        buf.caret_mut().y = y;
+                    }
+                }
+                _ => {}
+            }
+
+            self.vdu_queue.clear();
+            self.vdu_expected = 0;
+        }
 
         CallbackAction::Update
     }
@@ -143,232 +247,275 @@ impl Parser {
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {
         let ch = ch as u8;
+
+        // Handle VDU disabled state
+        if self.vdu_disabled && ch != 6 {
+            return Ok(CallbackAction::None);
+        }
+
+        // Handle escape sequences
+        if self.got_esc {
+            self.got_esc = false;
+            // VDU 27 - next character goes directly to screen
+            let ach = AttributedChar::new(ch as char, buf.caret().attribute);
+            buf.set_char(buf.caret().position(), ach);
+            self.caret_right(buf);
+            return Ok(CallbackAction::Update);
+        }
+
+        // Handle multi-byte VDU sequences
+        if self.vdu_expected > 0 {
+            return Ok(self.handle_vdu_sequence(buf, ch));
+        }
+
         match ch {
-            0 => {
-                // Does nothing
-            }
-            1 => {
-                // Send the next character to the printer ONLY.
-                // TODO?
-            }
-            2 => {
-                // Enable the printer.
-            }
-            3 => {
-                // Disable the printer.
-            }
+            0 => {} // Null - does nothing
+
+            1 => {} // Send next to printer only - not implemented
+            2 => {} // Enable printer - not implemented
+            3 => {} // Disable printer - not implemented
+
             4 => {
-                // Write text at the text cursor position.
+                // Write text at text cursor
+                self.graphics_cursor_mode = false;
             }
             5 => {
-                // Write text at the graphics cursor position.
-                // Note: Does nothing in Mode 7
+                // Write text at graphics cursor (does nothing in Mode 7)
+                self.graphics_cursor_mode = true;
             }
             6 => {
-                // Enable output to the screen.
+                // Enable screen output
+                self.vdu_disabled = false;
             }
             7 => {
                 // Bell
                 return Ok(CallbackAction::Beep);
             }
-            // cursor backward
             8 => {
+                // Cursor left
                 self.caret_left(buf);
             }
-            // cursor forward
             9 => {
+                // Cursor right
                 self.caret_right(buf);
             }
-            // cursor down
             10 => {
+                // Cursor down
                 self.caret_down(buf);
             }
-            // cursor up
             11 => {
-                Parser::caret_up(buf);
+                // Cursor up
+                self.caret_up(buf);
             }
-            // clear text window
             12 => {
-                buf.reset_terminal();
+                // Clear screen (CLS)
                 buf.clear_screen();
+                buf.home();
+                self.reset_line_state();
             }
-            // return
             13 => {
+                // Carriage return
                 buf.cr();
+                self.reset_line_state();
             }
-            14 => {
-                // Enable the auto-paging mode.
-            }
-            15 => {
-                // Disable the auto-paging mode.
-            }
-            16 => {
-                // Clear the graphics area
-            }
+            14 => {} // Enable auto-paging - not implemented
+            15 => {} // Disable auto-paging - not implemented
+            16 => {} // Clear graphics area (CLG) - does nothing in Mode 7
+
             17 => {
-                // Define a text colour
+                // COLOUR n - expect 1 more byte
+                self.vdu_expected = 2;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             18 => {
-                // Define a graphics colour
+                // GCOL mode,colour - expect 2 more bytes (ignored in Mode 7)
+                self.vdu_expected = 3;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             19 => {
-                // Modify the colour palette
+                // VDU 19 - palette - expect 5 more bytes
+                self.vdu_expected = 6;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             20 => {
-                // Restore the default logical colours.
+                // Restore default colors
+                self.current_fg = 7;
+                self.current_bg = 0;
+                self.set_at_attributes(buf);
             }
             21 => {
-                // Disable output to the screen
+                // Disable screen output
+                self.vdu_disabled = true;
             }
             22 => {
-                // Select the screen mode - identical to
+                // MODE - expect 1 more byte
+                self.vdu_expected = 2;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             23 => {
-                // Create user-defined characters and screen modes
+                // Various - expect 9 more bytes
+                self.vdu_expected = 10;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             24 => {
-                // Define a graphics viewport
+                // Graphics viewport - expect 8 more bytes (ignored in Mode 7)
+                self.vdu_expected = 9;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             25 => {
-                // Identical to PLOT.
+                // PLOT - expect 4 more bytes (ignored in Mode 7)
+                self.vdu_expected = 5;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             26 => {
-                // Restore the default text and graphics viewports.
+                // Reset viewports
+                buf.home();
+                self.reset_line_state();
             }
             27 => {
-                // Send the next character to the screen.
+                // Next char to screen
+                self.got_esc = true;
             }
             28 => {
-                // Define a text viewport
+                // Text viewport - expect 4 more bytes
+                self.vdu_expected = 5;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             29 => {
-                // Set the graphics origin - identical to ORIGIN.
+                // Graphics origin - expect 4 more bytes (ignored in Mode 7)
+                self.vdu_expected = 5;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             30 => {
-                // Home the text cursor to the top left of the screen.
+                // Home cursor
                 buf.home();
+                self.reset_line_state();
             }
             31 => {
-                // Home the graphics cursor to the top left of the screen.
+                // TAB(x,y) - expect 2 more bytes
+                self.vdu_expected = 3;
+                self.vdu_queue.clear();
+                self.vdu_queue.push(ch);
             }
             127 => {
-                // Backspace and delete
-                buf.bs();
+                // Destructive backspace (erase and stay on erased cell)
+                self.destructive_backspace(buf);
             }
+
+            // Mode 7 control codes
             129..=135 => {
-                // Alpha Red, Green, Yellow, Blue, Magenta, Cyan, White
+                // Alpha colors: Red, Green, Yellow, Blue, Magenta, Cyan, White
                 self.is_in_graphic_mode = false;
+                self.current_fg = 1 + (ch - 129) as u32;
+                self.set_at_attributes(buf);
                 buf.caret_mut().attribute.set_is_concealed(false);
-                self.held_graphics_character = ' ';
-                buf.caret_mut().set_foreground(1 + (ch - 129) as u32);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.display_control_char(buf);
             }
-            // Flash
             136 => {
+                // Flash
                 buf.caret_mut().attribute.set_is_blinking(true);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.display_control_char(buf);
             }
-            // Steady
             137 => {
+                // Steady
                 buf.caret_mut().attribute.set_is_blinking(false);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.display_control_char(buf);
             }
-
-            // normal height
             140 => {
+                // Normal height
                 buf.caret_mut().attribute.set_is_double_height(false);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.double_height_top_row = None;
+                self.double_height_bottom_row = None;
+                self.display_control_char(buf);
             }
-
-            // double height
             141 => {
+                // Double height
                 buf.caret_mut().attribute.set_is_double_height(true);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                let y = buf.caret().y;
+                if self.double_height_top_row.is_none() {
+                    self.double_height_top_row = Some(y);
+                    self.double_height_bottom_row = Some(y + 1);
+                }
+                self.display_control_char(buf);
             }
-
             145..=151 => {
-                // Graphics Red, Green, Yellow, Blue, Magenta, Cyan, White
-                if !self.is_in_graphic_mode {
-                    self.is_in_graphic_mode = true;
-                    self.held_graphics_character = ' ';
-                }
+                // Graphics colors: Red, Green, Yellow, Blue, Magenta, Cyan, White
+                self.is_in_graphic_mode = true;
+                self.current_fg = 1 + (ch - 145) as u32;
+                self.set_at_attributes(buf);
                 buf.caret_mut().attribute.set_is_concealed(false);
-                buf.caret_mut().attribute.set_foreground(1 + (ch - 145) as u32);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.display_control_char(buf);
             }
-
-            // conceal
             152 => {
-                if !self.is_in_graphic_mode {
-                    buf.caret_mut().attribute.set_is_concealed(true);
-                    Parser::fill_to_eol(buf);
-                }
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                // Conceal display
+                buf.caret_mut().attribute.set_is_concealed(true);
+                self.display_control_char(buf);
             }
-
-            // Contiguous Graphics
             153 => {
+                // Contiguous graphics
                 self.is_contiguous = true;
-                self.is_in_graphic_mode = true;
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.display_control_char(buf);
             }
-            // Separated Graphics
             154 => {
+                // Separated graphics
                 self.is_contiguous = false;
-                self.is_in_graphic_mode = true;
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                self.display_control_char(buf);
             }
-
-            // Black Background
             156 => {
-                buf.caret_mut().attribute.set_is_concealed(false);
-                buf.caret_mut().attribute.set_background(0);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                // Black background
+                self.current_bg = 0;
+                self.set_at_attributes(buf);
+                self.display_control_char(buf);
             }
-
-            // New Background
             157 => {
-                let fg = buf.caret().attribute.get_foreground();
-                buf.caret_mut().attribute.set_background(fg);
-                Parser::fill_to_eol(buf);
-                let ch = AttributedChar::new(' ', buf.caret().attribute);
-                self.print_char(buf, ch);
+                // New background (use current foreground color)
+                self.current_bg = self.current_fg;
+                self.set_at_attributes(buf);
+                self.display_control_char(buf);
             }
-
-            // Hold Graphics
             158 => {
+                // Hold graphics
                 self.hold_graphics = true;
-                self.is_in_graphic_mode = true;
+                self.display_control_char(buf);
+            }
+            159 => {
+                // Release graphics
+                self.hold_graphics = false;
+                self.display_control_char(buf);
             }
 
-            // Release Graphics
-            159 => {
-                self.hold_graphics = false;
-                self.is_in_graphic_mode = false;
+            // Printable characters and graphics
+            32..=126 => {
+                // Normal ASCII printable with optional remap & mosaic upgrade
+                let mut mapped = Self::ascii_cycle_remap(ch);
+                mapped = self.mosaic_upgrade(mapped);
+                let ach = AttributedChar::new(mapped as char, buf.caret().attribute);
+                buf.set_char(buf.caret().position(), ach);
+                self.caret_right(buf);
+            }
+            160..=255 => {
+                // Graphics characters
+                self.display_graphics_char(buf, ch);
             }
 
             _ => {
-                return Ok(self.interpret_char(buf, ch));
+                // Raw C1 (0x80..0x9F) or other values: forward as-is for now.
+                // Future: hook into dedicated escape/VDU handler for Prestel specifics.
+                let ach = AttributedChar::new(ch as char, buf.caret().attribute);
+                buf.set_char(buf.caret().position(), ach);
+                self.caret_right(buf);
             }
         }
-        self.got_esc = false;
+
         Ok(CallbackAction::Update)
     }
 }

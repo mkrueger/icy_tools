@@ -972,7 +972,8 @@ impl MainWindow {
     ) -> Option<Vec<u8>> {
         let key_map = match terminal_type {
             icy_net::telnet::TerminalEmulation::PETscii => iced_engine_gui::key_map::C64_KEY_MAP,
-            icy_net::telnet::TerminalEmulation::ViewData | icy_net::telnet::TerminalEmulation::Mode7 => iced_engine_gui::key_map::VIDEOTERM_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::ViewData => iced_engine_gui::key_map::VIDEOTERM_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::Mode7 => iced_engine_gui::key_map::MODE7_KEY_MAP,
             icy_net::telnet::TerminalEmulation::AtariST | icy_net::telnet::TerminalEmulation::ATAscii => iced_engine_gui::key_map::ATASCII_KEY_MAP,
             _ => iced_engine_gui::key_map::ANSI_KEY_MAP,
         };

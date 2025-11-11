@@ -23,6 +23,6 @@ impl BufferParser for Parser {
             '\x7F' => buf.del(),
             _ => buf.print_value(ch as u16),
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }

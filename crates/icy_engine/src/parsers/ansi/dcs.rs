@@ -63,7 +63,7 @@ impl Parser {
 
             buf.push_sixel_thread(handle);
 
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
 
         Err(ParserError::UnsupportedDCSSequence(self.parse_string.clone()).into())
@@ -93,7 +93,7 @@ impl Parser {
                     .into());
                 }
             };
-            return Ok(CallbackAction::NoUpdate);
+            return Ok(CallbackAction::None);
         }
         Err(ParserError::UnsupportedDCSSequence(format!("encountered unsupported macro definition: '{}'", self.parse_string)).into())
     }
@@ -161,7 +161,7 @@ impl Parser {
 
         self.macros.insert(id, marco_rec);
 
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     fn load_custom_font(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
@@ -175,7 +175,7 @@ impl Parser {
                         Ok(font) => {
                             log::info!("loaded custom font {num}", num = num);
                             buf.set_font(num, font);
-                            return Ok(CallbackAction::NoUpdate);
+                            return Ok(CallbackAction::None);
                         }
                         Err(err) => {
                             return Err(ParserError::UnsupportedDCSSequence(format!("Can't load bit font from dcs: {err}")).into());

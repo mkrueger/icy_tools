@@ -36,8 +36,9 @@ pub const TAB: char = '\t';
 
 #[derive(Debug, PartialEq)]
 pub enum CallbackAction {
+    None,
+
     Update,
-    NoUpdate,
     Beep,
     RunSkypixSequence(Vec<i32>),
     SendString(String),

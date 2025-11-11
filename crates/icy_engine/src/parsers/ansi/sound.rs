@@ -222,7 +222,7 @@ impl Parser {
                 }
             }
         }
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 
     /// .
@@ -268,6 +268,6 @@ impl Parser {
             }
             _ => {}
         }
-        CallbackAction::NoUpdate
+        CallbackAction::None
     }
 }

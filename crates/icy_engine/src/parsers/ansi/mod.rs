@@ -190,13 +190,13 @@ impl BufferParser for Parser {
                         '[' => {
                             self.state = EngineState::ReadCSISequence(true);
                             self.parsed_numbers.clear();
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                         ']' => {
                             self.state = EngineState::ReadOSCSequence;
                             self.parsed_numbers.clear();
                             self.parse_string.clear();
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                         '7' => {
                             // DECSC - Save Cursor
@@ -205,7 +205,7 @@ impl BufferParser for Parser {
                                 origin_mode: buf.terminal_state().origin_mode,
                                 auto_wrap_mode: buf.terminal_state().auto_wrap_mode,
                             });
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                         '8' => {
                             // DECRC - Restore Cursor
@@ -255,27 +255,27 @@ impl BufferParser for Parser {
                             self.state = EngineState::RecordDCS;
                             self.parse_string.clear();
                             self.parsed_numbers.clear();
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                         'H' => {
                             // set tab at current column
                             self.state = EngineState::Default;
                             let x = buf.caret().x;
                             buf.terminal_state_mut().set_tab_at(x);
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
 
                         '_' => {
                             // Application Program String
                             self.state = EngineState::ReadAPS;
                             self.parse_string.clear();
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
 
                         '0'..='~' => {
                             // Silently drop unsupported sequences
                             self.state = EngineState::Default;
-                            Ok(CallbackAction::NoUpdate)
+                            Ok(CallbackAction::None)
                         }
                         FF | BEL | BS | '\x09' | '\x7F' | '\x1B' | '\n' | '\r' => {
                             // non standard extension to print esc chars ESC ESC -> ESC
@@ -294,7 +294,7 @@ impl BufferParser for Parser {
             EngineState::ReadAPS => {
                 if ch == '\x1B' {
                     self.state = EngineState::ReadAPSEscape;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.parse_string.push(ch);
             }
@@ -302,7 +302,7 @@ impl BufferParser for Parser {
                 if ch == '\\' {
                     self.state = EngineState::Default;
                     self.execute_aps_command(buf);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.state = EngineState::ReadAPS;
                 self.parse_string.push('\x1B');
@@ -327,7 +327,7 @@ impl BufferParser for Parser {
                         _ => 0,
                     };
                     self.parsed_numbers.push(parse_next_number(d, ch as u8));
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == '[' {
                     if *i != 0 {
@@ -335,7 +335,7 @@ impl BufferParser for Parser {
                         return Err(ParserError::UnsupportedDCSSequence(format!("Error in macro inside dcs, expected '[' got '{ch}'")).into());
                     }
                     self.state = EngineState::ReadPossibleMacroInDCS(1);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == '*' {
                     if *i != 1 {
@@ -343,7 +343,7 @@ impl BufferParser for Parser {
                         return Err(ParserError::UnsupportedDCSSequence(format!("Error in macro inside dcs, expected '*' got '{ch}'")).into());
                     }
                     self.state = EngineState::ReadPossibleMacroInDCS(2);
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == 'z' {
                     if *i != 2 {
@@ -356,13 +356,13 @@ impl BufferParser for Parser {
                     }
                     self.state = EngineState::RecordDCS;
                     self.invoke_macro_by_id(buf, *self.parsed_numbers.first().unwrap());
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.parse_string.push('\x1b');
                 self.parse_string.push('[');
                 self.parse_string.push_str(&self.macro_dcs);
                 self.state = EngineState::RecordDCS;
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             EngineState::RecordDCS => {
                 match ch {
@@ -373,7 +373,7 @@ impl BufferParser for Parser {
                         self.parse_string.push(ch);
                     }
                 }
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             EngineState::RecordDCSEscape => {
                 if ch == '\\' {
@@ -383,25 +383,25 @@ impl BufferParser for Parser {
                 if ch == '[' {
                     self.state = EngineState::ReadPossibleMacroInDCS(1);
                     self.macro_dcs.clear();
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 self.parse_string.push('\x1b');
                 self.parse_string.push(ch);
                 self.state = EngineState::RecordDCS;
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             EngineState::ReadOSCSequence => {
                 if ch == '\x1B' {
                     self.state = EngineState::ReadOSCSequenceEscape;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 if ch == '\x07' {
                     self.state = EngineState::Default;
                     return self.parse_osc(buf);
                 }
                 self.parse_string.push(ch);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
             EngineState::ReadOSCSequenceEscape => {
                 if ch == '\\' {
@@ -411,7 +411,7 @@ impl BufferParser for Parser {
                 self.state = EngineState::ReadOSCSequence;
                 self.parse_string.push('\x1B');
                 self.parse_string.push(ch);
-                return Ok(CallbackAction::NoUpdate);
+                return Ok(CallbackAction::None);
             }
 
             EngineState::ReadCSICommand => {
@@ -840,7 +840,7 @@ impl BufferParser for Parser {
                                 }
                                 _ => {
                                     // Invalid cursor style, ignore
-                                    return Ok(CallbackAction::NoUpdate);
+                                    return Ok(CallbackAction::None);
                                 }
                             }
                             return Ok(CallbackAction::Update);
@@ -918,7 +918,7 @@ impl BufferParser for Parser {
                             return self.set_left_and_right_margins(buf);
                         }
                         self.save_cursor_position(buf.caret());
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     'u' => self.restore_cursor_position(buf.caret_mut()),
                     'd' => {
@@ -1092,7 +1092,7 @@ impl BufferParser for Parser {
                             self.dotted_note = false;
                             self.state = EngineState::ParseAnsiMusic(MusicState::ParseMusicStyle);
                         }
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
 
                     '|' => {
@@ -1101,7 +1101,7 @@ impl BufferParser for Parser {
                             self.dotted_note = false;
                             self.state = EngineState::ParseAnsiMusic(MusicState::ParseMusicStyle);
                         }
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
 
                     'P' => {
@@ -1180,7 +1180,7 @@ impl BufferParser for Parser {
                         }
                         // read custom command
                         self.state = EngineState::ReadCSICommand;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     '=' => {
                         if !is_start {
@@ -1189,7 +1189,7 @@ impl BufferParser for Parser {
                         }
                         // read custom command
                         self.state = EngineState::ReadCSIRequest;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     '!' => {
                         if !is_start {
@@ -1198,7 +1198,7 @@ impl BufferParser for Parser {
                         }
                         // read custom command
                         self.state = EngineState::ReadRIPSupportRequest;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     '<' => {
                         if !is_start {
@@ -1207,7 +1207,7 @@ impl BufferParser for Parser {
                         }
                         // read custom command
                         self.state = EngineState::ReadDeviceAttrs;
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
 
                     '*' => {
@@ -1368,7 +1368,7 @@ impl BufferParser for Parser {
                                 return Err(ParserError::UnsupportedEscapeSequence.into());
                             }
                         }
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                     'Y' => {
                         // CVT - Cursor line tabulation
@@ -1419,7 +1419,7 @@ impl BufferParser for Parser {
                             // error in control sequence, terminate reading
                             return self.unsupported_escape_error();
                         }
-                        return Ok(CallbackAction::NoUpdate);
+                        return Ok(CallbackAction::None);
                     }
                 }
             }
@@ -1428,7 +1428,7 @@ impl BufferParser for Parser {
                 '\x1B' => {
                     self.state = EngineState::Default;
                     self.state = EngineState::ReadEscapeSequence;
-                    return Ok(CallbackAction::NoUpdate);
+                    return Ok(CallbackAction::None);
                 }
                 LF => {
                     return Ok(buf.lf());
@@ -1462,7 +1462,7 @@ impl BufferParser for Parser {
             },
         }
 
-        Ok(CallbackAction::NoUpdate)
+        Ok(CallbackAction::None)
     }
 }
 
