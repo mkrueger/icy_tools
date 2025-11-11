@@ -238,8 +238,8 @@ pub static VIDEOTERM_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key(keyboard::key::Named::Backspace), &[0x7F]),
     (named_key(keyboard::key::Named::Delete), &[0x7F]),
     (named_key(keyboard::key::Named::Escape), &[0x1B]),
-    (named_key(keyboard::key::Named::F2), &[b'_']), // F2 duplicates Enter (Send) – confirm
-    (named_key(keyboard::key::Named::F7), &[0x1B]), // F7 acts as ESC (Commstar)
+    (named_key(keyboard::key::Named::F2), &[b'_']),            // F2 duplicates Enter (Send) – confirm
+    (named_key(keyboard::key::Named::F7), &[0x1B]),            // F7 acts as ESC (Commstar)
     (key_code_key(keyboard::key::Code::NumpadEnter), &[b'_']), // Numpad Enter same as Enter
     (key_code_key(keyboard::key::Code::Backquote), &[b'*']),
     (key_code_key(keyboard::key::Code::NumpadMultiply), &[b'*']),

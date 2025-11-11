@@ -1228,88 +1228,7 @@ impl Bgi {
         }
     }
 
-    pub fn scan_ellipse(&mut self, x: i32, y: i32, mut start_angle: i32, mut end_angle: i32, radiusx: i32, radius_y: i32, rows: &mut Vec<Vec<i32>>) {
-        // check if valid angles
-        if start_angle > end_angle {
-            std::mem::swap(&mut start_angle, &mut end_angle);
-        }
-
-        let end_angle = end_angle + 3;
-
-        let radiusx = radiusx.max(1);
-        let radius_y = radius_y.max(1);
-
-        let diameterx = radiusx * 2;
-        let diameter_y = radius_y * 2;
-        let b1 = diameter_y & 1;
-        let mut stopx = 4 * (1 - diameterx as i64) * diameter_y as i64 * diameter_y as i64;
-        let mut stop_y = 4 * (b1 as i64 + 1) * diameterx as i64 * diameterx as i64; // error increment
-        let mut err = stopx + stop_y + b1 as i64 * diameterx as i64 * diameterx as i64; // error of 1 step
-
-        let mut xoffset = radiusx;
-        let mut yoffset = 0;
-        let incx = 8 * diameterx * diameterx;
-        let inc_y = 8 * diameter_y * diameter_y;
-
-        let aspect = radiusx as f64 / radius_y as f64;
-
-        // calculate horizontal fill angle
-        let horizontal_angle = if radiusx < radius_y { 90.0 - (45.0 * aspect) } else { 45.0 / aspect };
-
-        loop {
-            let e2 = 2 * err;
-            let angle = (yoffset as f64 * aspect / xoffset as f64).atan() * RAD2DEG;
-
-            self.symmetry_scan(x, y, start_angle, end_angle, xoffset, yoffset, angle as i32, angle <= horizontal_angle, rows);
-            if (angle - horizontal_angle).abs() <= 1.0 {
-                self.symmetry_scan(x, y, start_angle, end_angle, xoffset, yoffset, angle as i32, angle > horizontal_angle, rows);
-            }
-
-            if e2 <= stop_y {
-                yoffset += 1;
-                stop_y += incx as i64;
-                err += stop_y;
-            }
-            if e2 >= stopx {
-                xoffset -= 1;
-                stopx += inc_y as i64;
-                err += stopx;
-            }
-            if xoffset < 0 {
-                break;
-            }
-        }
-        xoffset += 1;
-        while yoffset < radius_y {
-            let angle = (yoffset as f64 * aspect / xoffset as f64).atan() * RAD2DEG;
-            self.symmetry_scan(
-                x,
-                y,
-                start_angle,
-                end_angle,
-                xoffset,
-                yoffset,
-                angle.round() as i32,
-                angle <= horizontal_angle,
-                rows,
-            );
-            if (angle - horizontal_angle).abs() <= f64::EPSILON {
-                self.symmetry_scan(
-                    x,
-                    y,
-                    start_angle,
-                    end_angle,
-                    xoffset,
-                    yoffset,
-                    angle.round() as i32,
-                    angle > horizontal_angle,
-                    rows,
-                );
-            }
-            yoffset += 1;
-        }
-    }
-
+   
     pub fn fill_scan(&mut self, buf: &mut dyn EditableScreen, rows: &mut Vec<Vec<i32>>) {
         for y in 0..rows.len() - 2 {
             let row = &mut rows[y + 1];
@@ -1427,35 +1346,243 @@ impl Bgi {
         self.ellipse(buf, x, y, 0, 360, rx, ry);
     }
 
-    pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
-        if start_angle == end_angle {
-            return;
+     pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
+        // Handle degenerate cases
+        let mut radius_x = radius_x;
+        let mut radius_y = radius_y;
+        
+        if radius_y == 0 {
+            radius_y = 1;
+            radius_x -= 1;
+        }
+        if radius_x <= 0 {
+            radius_x = 1;
         }
 
-        if start_angle > end_angle {
-            self._ellipse(buf, x, y, 0, end_angle, radius_x, radius_y);
-            self._ellipse(buf, x, y, start_angle, 360, radius_x, radius_y);
-        } else {
-            self._ellipse(buf, x, y, start_angle, end_angle, radius_x, radius_y);
+        // Initialize variables using McIlroy's algorithm
+        let mut ex = 0;
+        let mut ey = radius_y;
+        let a2 = (radius_x as i64) * (radius_x as i64);
+        let b2 = (radius_y as i64) * (radius_y as i64);
+        let crit1 = -(a2 / 4 + (radius_x % 2) as i64 + b2);
+        let crit2 = -(b2 / 4 + (radius_y % 2) as i64 + a2);
+        let crit3 = -(b2 / 4 + (radius_y % 2) as i64);
+        let mut t = -(a2 * ey as i64); // t = e(x+1/2,y-1/2) - (a²+b²)/4
+        let mut dxt = 2 * b2 * ex as i64;
+        let mut dyt = -2 * a2 * ey as i64;
+        let d2xt = 2 * b2;
+        let d2yt = 2 * a2;
+        
+        let inv = end_angle < start_angle;
+        let mut skip = false;
+        
+        // Helper closure to check if angle is in range
+        let in_range = |angle: i32| -> bool {
+            if inv {
+                angle <= end_angle || angle >= start_angle
+            } else {
+                angle >= start_angle && angle <= end_angle
+            }
+        };
+        
+        while ey >= 0 && ex <= radius_x {
+            // Calculate angle for current position
+            let angle = if ey == 0 {
+                90
+            } else {
+                let angle_rad = (ex as f64 / ey as f64).atan();
+                let angle_deg = angle_rad * RAD2DEG;
+                (90.0 - angle_deg).round() as i32
+            };
+            
+            if !skip {
+                if ex != 0 || ey != 0 {
+                    // Top-left quadrant (180 - angle)
+                    let qangle = 180 - angle;
+                    if in_range(qangle) {
+                        self.put_pixel(buf, x - ex, y - ey, self.color);
+                    }
+                }
+                
+                if ex != 0 && ey != 0 {
+                    // Top-right quadrant (angle)
+                    if in_range(angle) {
+                        self.put_pixel(buf, x + ex, y - ey, self.color);
+                    }
+                    
+                    // Bottom-left quadrant (180 + angle)
+                    let qangle = 180 + angle;
+                    if in_range(qangle) {
+                        self.put_pixel(buf, x - ex, y + ey, self.color);
+                    }
+                }
+                
+                // Bottom-right quadrant (360 - angle)
+                let qangle = 360 - angle;
+                if in_range(qangle) {
+                    self.put_pixel(buf, x + ex, y + ey, self.color);
+                }
+            }
+            
+            skip = false;
+            
+            // Determine next pixel position using decision variables
+            if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
+                // Move in x direction
+                ex += 1;
+                dxt += d2xt;
+                t += dxt;
+                
+                // Check if this is an angle move (skip next)
+                if !((t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3)) && (t - a2 * ey as i64 > crit2) {
+                    skip = true;
+                }
+            } else if t - a2 * ey as i64 > crit2 {
+                // Move in y direction
+                ey -= 1;
+                dyt += d2yt;
+                t += dyt;
+                
+                // Check if this is an angle move (skip next)
+                if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
+                    skip = true;
+                }
+            } else {
+                // Move diagonally
+                ex += 1;
+                dxt += d2xt;
+                t += dxt;
+                ey -= 1;
+                dyt += d2yt;
+                t += dyt;
+            }
+        }
+        
+        // Handle thick lines (line_thickness == 3)
+        if self.line_thickness == 3 {
+            let old_thickness = self.line_thickness;
+            self.line_thickness = 1;
+            
+            // Draw inner ellipse
+            if radius_x > 1 && radius_y > 1 {
+                self.ellipse(buf, x, y, start_angle, end_angle, radius_x - 1, radius_y - 1);
+            }
+            
+            // Draw outer ellipse
+            self.ellipse(buf, x, y, start_angle, end_angle, radius_x + 1, radius_y + 1);
+            
+            self.line_thickness = old_thickness;
         }
     }
 
-    fn _ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
-        let xradius = radius_x as f64;
-        let y_radius = radius_y as f64;
+    pub fn scan_ellipse(&mut self, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32, rows: &mut Vec<Vec<i32>>) {
+        // Handle degenerate cases
+        let mut radius_x = radius_x;
+        let mut radius_y = radius_y;
+        
+        if radius_y == 0 {
+            radius_y = 1;
+            radius_x -= 1;
+        }
+        if radius_x <= 0 {
+            radius_x = 1;
+        }
 
-        for angle in start_angle..=end_angle {
-            let angle = angle as f64;
-            self.draw_line(
-                buf,
-                x + (xradius * (angle * DEG2RAD).cos()).round() as i32,
-                y - (y_radius * (angle * DEG2RAD).sin()).round() as i32,
-                x + (xradius * ((angle + 1.0) * DEG2RAD).cos()).round() as i32,
-                y - (y_radius * ((angle + 1.0) * DEG2RAD).sin()).round() as i32,
-                self.color,
-            );
+        // Initialize variables using McIlroy's algorithm
+        let mut ex = 0;
+        let mut ey = radius_y;
+        let a2 = (radius_x as i64) * (radius_x as i64);
+        let b2 = (radius_y as i64) * (radius_y as i64);
+        let crit1 = -(a2 / 4 + (radius_x % 2) as i64 + b2);
+        let crit2 = -(b2 / 4 + (radius_y % 2) as i64 + a2);
+        let crit3 = -(b2 / 4 + (radius_y % 2) as i64);
+        let mut t = -(a2 * ey as i64);
+        let mut dxt = 2 * b2 * ex as i64;
+        let mut dyt = -2 * a2 * ey as i64;
+        let d2xt = 2 * b2;
+        let d2yt = 2 * a2;
+        
+        let inv = end_angle < start_angle;
+        let mut skip = false;
+        
+        // Helper closure to check if angle is in range
+        let in_range = |angle: i32| -> bool {
+            if inv {
+                angle <= end_angle || angle >= start_angle
+            } else {
+                angle >= start_angle && angle <= end_angle
+            }
+        };
+        
+        while ey >= 0 && ex <= radius_x {
+            // Calculate angle for current position
+            let angle = if ey == 0 {
+                90
+            } else {
+                let angle_rad = (ex as f64 / ey as f64).atan();
+                let angle_deg = angle_rad * RAD2DEG;
+                (90.0 - angle_deg).round() as i32
+            };
+            
+            if !skip {
+                if ex != 0 || ey != 0 {
+                    // Top-left quadrant
+                    let qangle = 180 - angle;
+                    if in_range(qangle) {
+                        add_scan_row(rows, x - ex, y - ey);
+                    }
+                }
+                
+                if ex != 0 && ey != 0 {
+                    // Top-right quadrant
+                    if in_range(angle) {
+                        add_scan_row(rows, x + ex, y - ey);
+                    }
+                    
+                    // Bottom-left quadrant
+                    let qangle = 180 + angle;
+                    if in_range(qangle) {
+                        add_scan_row(rows, x - ex, y + ey);
+                    }
+                }
+                
+                // Bottom-right quadrant
+                let qangle = 360 - angle;
+                if in_range(qangle) {
+                    add_scan_row(rows, x + ex, y + ey);
+                }
+            }
+            
+            skip = false;
+            
+            // Determine next pixel position
+            if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
+                ex += 1;
+                dxt += d2xt;
+                t += dxt;
+                
+                if !((t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3)) && (t - a2 * ey as i64 > crit2) {
+                    skip = true;
+                }
+            } else if t - a2 * ey as i64 > crit2 {
+                ey -= 1;
+                dyt += d2yt;
+                t += dyt;
+                
+                if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
+                    skip = true;
+                }
+            } else {
+                ex += 1;
+                dxt += d2xt;
+                t += dxt;
+                ey -= 1;
+                dyt += d2yt;
+                t += dyt;
+            }
         }
     }
+
 
     pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
         let mut rows = create_scan_rows();
