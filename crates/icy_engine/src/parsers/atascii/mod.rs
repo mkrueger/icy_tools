@@ -1,13 +1,24 @@
 use super::BufferParser;
-use crate::{CallbackAction, EditableScreen, EngineResult, Size};
+use crate::{CallbackAction, EditableScreen, EngineResult, Position, Size};
 
 pub const ATASCII_SCREEN_SIZE: Size = Size { width: 40, height: 24 };
 pub const ATASCII_PAL_SCREEN_SIZE: Size = Size { width: 40, height: 25 };
 pub const ATASCII_XEP80_SCREEN_SIZE: Size = Size { width: 80, height: 25 };
 
-#[derive(Default)]
 pub struct Parser {
     got_escape: bool,
+    tab_stops: [bool; 256],
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        let mut tab_stops = [false; 256];
+        // Set default tab stops every 8 columns (standard terminal behavior)
+        for i in (0..256).step_by(8) {
+            tab_stops[i] = true;
+        }
+        Self { got_escape: false, tab_stops }
+    }
 }
 
 impl BufferParser for Parser {
@@ -26,12 +37,42 @@ impl BufferParser for Parser {
             '\x1F' => buf.right(1),
             '\x7D' => buf.clear_screen(),
             '\x7E' => buf.bs(),
-            '\x7F' | '\u{009E}' | '\u{009F}' => { /* TAB TODO */ }
+            '\x7F' => {
+                // Tab (127) - move to next tab stop
+                let pos = buf.caret();
+                let width = buf.get_width();
+
+                // Find next tab stop
+                let mut new_x = pos.x + 1;
+                while new_x < width && !self.tab_stops[new_x as usize] {
+                    new_x += 1;
+                }
+
+                if new_x >= width {
+                    // Wrap to next line
+                    buf.set_caret_position(Position::new(0, pos.y + 1));
+                    return Ok(buf.lf());
+                } else {
+                    buf.set_caret_position(Position::new(new_x, pos.y));
+                }
+            }
             '\u{009B}' => return Ok(buf.lf()),
             '\u{009C}' => buf.remove_terminal_line(buf.caret().y),
             '\u{009D}' => buf.insert_terminal_line(buf.caret().y),
-            //   '\u{009E}' => { /* clear TAB stops TODO */ }
-            //   '\u{009F}' => { /* set TAB stops TODO */ }
+            '\u{009E}' => {
+                // Clear Tab (158)
+                let x = buf.caret().x;
+                if (x as usize) < self.tab_stops.len() {
+                    self.tab_stops[x as usize] = false;
+                }
+            }
+            '\u{009F}' => {
+                // Set Tab (159)
+                let x = buf.caret().x;
+                if (x as usize) < self.tab_stops.len() {
+                    self.tab_stops[x as usize] = true;
+                }
+            }
             '\u{00FD}' => return Ok(CallbackAction::Beep),
             '\u{00FE}' => buf.del(),
             '\u{00FF}' => buf.ins(),

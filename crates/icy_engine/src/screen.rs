@@ -423,6 +423,11 @@ pub trait EditableScreen: RgbaScreen {
 
     fn clear_screen(&mut self);
 
+    fn set_caret_position(&mut self, pos: Position) {
+        self.caret_mut().set_position(pos);
+        self.limit_caret_pos();
+    }
+
     fn clear_scrollback(&mut self);
     fn get_max_scrollback_offset(&self) -> usize;
     fn scrollback_position(&self) -> usize;
