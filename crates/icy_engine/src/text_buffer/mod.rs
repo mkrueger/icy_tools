@@ -233,6 +233,12 @@ pub struct TextBuffer {
 
     /// Maximum number of lines to keep in scrollback (0 = unlimited)
     pub max_scrollback_lines: usize,
+
+    /// Dirty flag: set when buffer content changes, cleared when rendered
+    buffer_dirty: std::sync::atomic::AtomicBool,
+
+    /// Generation counter: incremented on every buffer change for cache invalidation
+    buffer_version: std::sync::atomic::AtomicU64,
 }
 
 impl std::fmt::Debug for TextBuffer {
@@ -592,7 +598,33 @@ impl TextBuffer {
 
             scrollback_lines: VecDeque::new(),
             max_scrollback_lines: 10000, // Reasonable default
+
+            buffer_dirty: std::sync::atomic::AtomicBool::new(true),
+            buffer_version: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// Mark the buffer as dirty (content changed). This increments the version counter.
+    /// Should be called by any method that modifies buffer content.
+    pub fn mark_dirty(&self) {
+        self.buffer_dirty.store(true, std::sync::atomic::Ordering::Release);
+        self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Check if the buffer is dirty (needs re-rendering)
+    pub fn is_dirty(&self) -> bool {
+        self.buffer_dirty.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Clear the dirty flag (called after rendering)
+    pub fn clear_dirty(&self) {
+        self.buffer_dirty.store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Get the current buffer version (increments on each modification)
+    /// Used for cache invalidation
+    pub fn get_version(&self) -> u64 {
+        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Returns the update sixel threads of this [`Buffer`].

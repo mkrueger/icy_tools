@@ -1,178 +1,45 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
-use std::sync::{Mutex, atomic::AtomicU64};
-
-use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalShader, UnicodeGlyphCache, render_unicode_to_rgba};
+use crate::{CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalShader, render_unicode_to_rgba};
 use iced::widget::shader;
-use iced::{Element, Rectangle, mouse};
+use iced::{Rectangle, mouse};
 use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
-use icy_engine::rip::bgi::MouseField;
-use icy_engine::{MouseState, Position, Selection};
+use icy_engine::{Caret, CaretShape, MouseState, Position};
 
-pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
-pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
-
-pub struct CRTShaderState {
-    pub caret_blink: crate::Blink,
-    pub character_blink: crate::Blink,
-
-    // Mouse/selection tracking
-    dragging: bool,
-    drag_anchor: Option<Position>,
-    last_drag_position: Option<Position>,
-    shift_pressed_during_selection: bool,
-
-    // Modifier tracking
-    alt_pressed: bool,
-    shift_pressed: bool,
-    ctrl_pressed: bool,
-
-    // Hover tracking
-    hovered_cell: Option<Position>,
-    hovered_link: Option<String>,
-    /// Track which RIP field is hovered (by index)
-    hovered_rip_field: Option<MouseField>,
-
-    last_rendered_size: Option<(u32, u32)>,
-    instance_id: u64,
-
-    unicode_glyph_cache: Arc<parking_lot::Mutex<Option<UnicodeGlyphCache>>>,
+// Program wrapper that renders the terminal and creates the shader
+pub struct CRTShaderProgram<'a> {
+    pub term: &'a Terminal,
+    pub monitor_settings: MonitorSettings,
 }
 
-impl CRTShaderState {
-    pub fn reset_caret(&mut self) {
-        self.caret_blink.reset();
-    }
-}
-
-impl Drop for CRTShaderState {
-    fn drop(&mut self) {
-        if let Ok(mut v) = PENDING_INSTANCE_REMOVALS.lock() {
-            v.push(self.instance_id);
-        }
-    }
-}
-
-impl Default for CRTShaderState {
-    fn default() -> Self {
-        Self {
-            caret_blink: Blink::new((1000.0 / 1.875) as u128 / 2),
-            character_blink: Blink::new((1000.0 / 1.8) as u128),
-            dragging: false,
-            drag_anchor: None,
-            last_drag_position: None,
-            shift_pressed_during_selection: false,
-            alt_pressed: false,
-            shift_pressed: false,
-            ctrl_pressed: false,
-            hovered_cell: None,
-            hovered_link: None,
-            hovered_rip_field: None,
-            last_rendered_size: None,
-            instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
-        }
-    }
-}
-
-impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
-    type State = CRTShaderState;
-    type Primitive = TerminalShader;
-
-    fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
-        let mut rgba_data = Vec::new();
-        let mut size = (640, 400); // fallback
-        let mut font_w = 0usize;
-        let mut font_h = 0usize;
-
-        if let Ok(screen) = self.term.screen.lock() {
-            if let Some(font) = screen.get_font(0) {
-                font_w = font.size.width as usize;
-                font_h = font.size.height as usize;
-            }
-
-            let (fg_sel, bg_sel) = screen.buffer_type().get_selection_colors();
-
-            if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
-                // Unicode path - use cached glyph cache with Arc<Mutex<>>
-                let (img_size, data) = render_unicode_to_rgba(
-                    &**screen,
-                    &RenderUnicodeOptions {
-                        selection: screen.get_selection(),
-                        selection_fg: Some(fg_sel),
-                        selection_bg: Some(bg_sel),
-                        blink_on: state.character_blink.is_on(),
-                        font_px_size: Some(font_h as f32),
-                        glyph_cache: state.unicode_glyph_cache.clone(), // Pass Arc clone
-                    },
-                );
-                size = (img_size.width as u32, img_size.height as u32);
-                rgba_data = data;
-            } else {
-                // Existing ANSI path
-                let rect = icy_engine::Rectangle {
-                    start: icy_engine::Position::new(0, 0),
-                    size: icy_engine::Size::new(screen.get_width(), screen.get_height()),
-                };
-                let (img_size, data) = screen.render_to_rgba(&icy_engine::RenderOptions {
-                    rect: rect.into(),
-                    blink_on: state.character_blink.is_on(),
-                    selection: screen.get_selection(),
-                    selection_fg: Some(fg_sel),
-                    selection_bg: Some(bg_sel),
-                });
-                size = (img_size.width as u32, img_size.height as u32);
-                rgba_data = data;
-            }
-        }
-
-        // Caret overlay (shared)
-        if let Ok(edit_state) = self.term.screen.try_lock() {
-            self.draw_caret(&edit_state.caret(), state, &mut rgba_data, size, font_w, font_h);
-        }
-
-        if rgba_data.len() != (size.0 as usize * size.1 as usize * 4) {
-            panic!(
-                "RGBA data size mismatch: expected {}, got {}, resolution was {}x{}",
-                size.0 as usize * size.1 as usize * 4,
-                rgba_data.len(),
-                size.0,
-                size.1
-            );
-        }
-
-        TerminalShader {
-            terminal_rgba: rgba_data,
-            terminal_size: size,
-            monitor_settings: self.monitor_settings.clone(),
-            instance_id: state.instance_id,
-        }
+impl<'a> CRTShaderProgram<'a> {
+    pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
+        Self { term, monitor_settings }
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
-        let mut needs_redraw = false;
+    fn mark_content_dirty(state: &CRTShaderState) {
+        *state.content_dirty.lock() = true;
+    }
+
+    pub fn internal_update(
+        &self,
+        state: &mut CRTShaderState,
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<iced::widget::Action<Message>> {
         let now = crate::Blink::now_ms();
 
-        // Update blink timers
-        if state.caret_blink.update(now) {
-            needs_redraw = true;
-        }
-        if state.character_blink.update(now) {
-            needs_redraw = true;
-        }
+        state.caret_blink.update(now);
+        state.character_blink.update(now);
 
-        // Track the actual rendered size to detect real changes
-        // Only update if we successfully get the lock
+        // Size change triggers full content redraw
         if let Ok(screen) = self.term.screen.try_lock() {
             if let Some(font) = screen.get_font(0) {
                 let font_w = font.size.width as u32;
                 let font_h = font.size.height as u32;
                 let current_size = (screen.get_width() as u32 * font_w, screen.get_height() as u32 * font_h);
-
-                // Only trigger redraw if size actually changed
                 if state.last_rendered_size != Some(current_size) {
                     state.last_rendered_size = Some(current_size);
-                    needs_redraw = true;
+                    Self::mark_content_dirty(state);
                 }
             }
         }
@@ -236,14 +103,12 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
                                 if state.hovered_rip_field != found_field {
                                     state.hovered_rip_field = found_field;
-                                    needs_redraw = true;
                                 }
                             }
                         } else {
                             // Not hovering over terminal
                             if state.hovered_rip_field.is_some() {
                                 state.hovered_rip_field = None;
-                                needs_redraw = true;
                             }
                         }
 
@@ -269,7 +134,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
                                     let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
                                         mouse_state: mouse_state.clone(),
-                                        event_type: MouseEventType::Motion,
+                                        event_type: icy_engine::ansi::mouse_event::MouseEventType::Motion,
                                         position: cell,
                                         button,
                                         modifiers,
@@ -300,7 +165,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                             }
                                         }
                                     }
-                                    needs_redraw = true;
                                 }
                             }
                         } else {
@@ -318,13 +182,11 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
                                     if state.hovered_link != found_link {
                                         state.hovered_link = found_link;
-                                        needs_redraw = true;
                                     }
                                 }
                             } else {
                                 if state.hovered_link.is_some() {
                                     state.hovered_link = None;
-                                    needs_redraw = true;
                                 }
                             }
                         }
@@ -385,7 +247,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                         }
 
                                         // Create new selection
-                                        let mut sel = Selection::new(cell);
+                                        let mut sel = icy_engine::Selection::new(cell);
                                         sel.shape = if state.alt_pressed {
                                             icy_engine::Shape::Rectangle
                                         } else {
@@ -397,7 +259,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                                         state.dragging = true;
                                         state.drag_anchor = Some(cell);
                                         state.last_drag_position = Some(cell);
-                                        needs_redraw = true;
                                     }
                                 }
                             } else if matches!(button, mouse::Button::Middle) {
@@ -417,7 +278,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                             // Clicked outside terminal area - clear selection
                             if let Ok(mut screen) = self.term.screen.try_lock() {
                                 let _ = screen.clear_selection();
-                                needs_redraw = true;
                             }
                         }
                     }
@@ -473,7 +333,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
 
                         state.drag_anchor = None;
                         state.last_drag_position = None;
-                        needs_redraw = true;
                     }
                 }
 
@@ -529,8 +388,245 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
                 _ => {}
             }
         }
+        None
+    }
 
-        if needs_redraw { Some(iced::widget::Action::request_redraw()) } else { None }
+    fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, _bounds: Rectangle) -> TerminalShader {
+        // Fast path: reuse cached buffer if content not dirty; only reapply caret/blink overlays.
+        let mut rgba_data: Vec<u8>;
+        let size: (u32, u32);
+        let mut font_w = 0usize;
+        let mut font_h = 0usize;
+
+        // Check if we need to re-render based on buffer version and blink state
+        let mut needs_full_render = false;
+
+        if let Ok(screen) = self.term.screen.lock() {
+            if let Some(font) = screen.get_font(0) {
+                font_w = font.size.width as usize;
+                font_h = font.size.height as usize;
+            }
+
+            let current_buffer_version = screen.get_version();
+            let blink_on = state.character_blink.is_on();
+
+            // Check if buffer version changed (content modified)
+            let last_version = *state.last_buffer_version.lock();
+            if current_buffer_version != last_version {
+                needs_full_render = true;
+                *state.last_buffer_version.lock() = current_buffer_version;
+            }
+
+            // Check if selection changed (affects highlighting)
+            let selection = screen.get_selection();
+            let sel_anchor = selection.as_ref().map(|s| s.anchor);
+            let sel_lead = selection.as_ref().map(|s| s.lead);
+            let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
+            {
+                let mut last_sel = state.last_selection_state.lock();
+                if last_sel.0 != sel_anchor || last_sel.1 != sel_lead || last_sel.2 != sel_locked {
+                    needs_full_render = true;
+                    *last_sel = (sel_anchor, sel_lead, sel_locked);
+                }
+            }
+
+            let mut cached_size_guard = state.cached_size.lock();
+            let mut cached_font_guard = state.cached_font_wh.lock();
+
+            if needs_full_render {
+                // Full re-render - generate both blink on and blink off versions
+                let (fg_sel, bg_sel) = screen.buffer_type().get_selection_colors();
+
+                // Render both versions
+                let (render_blink_on, render_blink_off) = if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
+                    let render_on = render_unicode_to_rgba(
+                        &**screen,
+                        &RenderUnicodeOptions {
+                            selection,
+                            selection_fg: Some(fg_sel.clone()),
+                            selection_bg: Some(bg_sel.clone()),
+                            blink_on: true,
+                            font_px_size: Some(font_h as f32),
+                            glyph_cache: state.unicode_glyph_cache.clone(),
+                        },
+                    );
+                    let render_off = render_unicode_to_rgba(
+                        &**screen,
+                        &RenderUnicodeOptions {
+                            selection,
+                            selection_fg: Some(fg_sel.clone()),
+                            selection_bg: Some(bg_sel.clone()),
+                            blink_on: false,
+                            font_px_size: Some(font_h as f32),
+                            glyph_cache: state.unicode_glyph_cache.clone(),
+                        },
+                    );
+                    (render_on, render_off)
+                } else {
+                    let rect = icy_engine::Rectangle {
+                        start: icy_engine::Position::new(0, 0),
+                        size: icy_engine::Size::new(screen.get_width(), screen.get_height()),
+                    };
+                    let render_on = screen.render_to_rgba(&icy_engine::RenderOptions {
+                        rect: rect.into(),
+                        blink_on: true,
+                        selection,
+                        selection_fg: Some(fg_sel.clone()),
+                        selection_bg: Some(bg_sel.clone()),
+                    });
+                    let render_off = screen.render_to_rgba(&icy_engine::RenderOptions {
+                        rect: rect.into(),
+                        blink_on: false,
+                        selection,
+                        selection_fg: Some(fg_sel.clone()),
+                        selection_bg: Some(bg_sel.clone()),
+                    });
+                    (render_on, render_off)
+                };
+
+                size = (render_blink_on.0.width as u32, render_blink_on.0.height as u32);
+
+                // Use the appropriate version based on current blink state
+                rgba_data = if blink_on { render_blink_on.1.clone() } else { render_blink_off.1.clone() };
+
+                // Cache both versions
+                {
+                    let mut cached_on = state.cached_rgba_blink_on.lock();
+                    if cached_on.len() != render_blink_on.1.len() {
+                        cached_on.clear();
+                        cached_on.reserve(render_blink_on.1.len());
+                    }
+                    cached_on.clone_from(&render_blink_on.1);
+
+                    let mut cached_off = state.cached_rgba_blink_off.lock();
+                    if cached_off.len() != render_blink_off.1.len() {
+                        cached_off.clear();
+                        cached_off.reserve(render_blink_off.1.len());
+                    }
+                    cached_off.clone_from(&render_blink_off.1);
+                }
+                *cached_size_guard = size;
+                *cached_font_guard = (font_w, font_h);
+
+                // Clear buffer dirty flag after rendering
+                screen.clear_dirty();
+            } else {
+                // Reuse cached images - just pick the right one based on blink state
+                size = *cached_size_guard;
+                let (cfw, cfh) = *cached_font_guard;
+                if cfw != 0 && cfh != 0 {
+                    font_w = cfw;
+                    font_h = cfh;
+                }
+                rgba_data = if blink_on {
+                    state.cached_rgba_blink_on.lock().clone()
+                } else {
+                    state.cached_rgba_blink_off.lock().clone()
+                };
+            }
+
+            // Always overlay the caret if visible and blinking is on
+            // Caret is just an inversion overlay, no need to track changes
+            if state.caret_blink.is_on() {
+                self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h);
+            }
+        } else {
+            // Fallback minimal buffer
+            size = (640, 400);
+            rgba_data = vec![0; size.0 as usize * size.1 as usize * 4];
+        }
+
+        if rgba_data.len() != (size.0 as usize * size.1 as usize * 4) {
+            panic!(
+                "RGBA data size mismatch (expected {}, got {})",
+                size.0 as usize * size.1 as usize * 4,
+                rgba_data.len()
+            );
+        }
+
+        TerminalShader {
+            terminal_rgba: rgba_data,
+            terminal_size: size,
+            monitor_settings: self.monitor_settings.clone(),
+            instance_id: state.instance_id,
+        }
+    }
+
+    pub fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize) {
+        // Check both the caret's is_blinking property and the blink timer state
+        let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
+
+        if should_draw && self.term.has_focus {
+            let caret_pos = caret.position();
+            if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
+                let line_bytes = (size.0 as usize) * 4;
+                let cell_x = caret_pos.x;
+                let cell_y = caret_pos.y;
+                if cell_x >= 0 && cell_y >= 0 {
+                    let px_x = (cell_x as usize) * font_w;
+                    let px_y = (cell_y as usize) * font_h;
+                    if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
+                        match caret.shape {
+                            CaretShape::Bar => {
+                                // Draw a vertical bar on the left edge of the character cell
+                                let bar_width = 2.min(font_w); // 2 pixels wide or font width if smaller
+                                for row in 0..font_h {
+                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                    let slice = &mut rgba_data[row_offset..row_offset + bar_width * 4];
+                                    for p in slice.chunks_exact_mut(4) {
+                                        p[0] = 255 - p[0];
+                                        p[1] = 255 - p[1];
+                                        p[2] = 255 - p[2];
+                                    }
+                                }
+                            }
+                            CaretShape::Block => {
+                                for row in 0..font_h {
+                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+                                    for p in slice.chunks_exact_mut(4) {
+                                        p[0] = 255 - p[0];
+                                        p[1] = 255 - p[1];
+                                        p[2] = 255 - p[2];
+                                    }
+                                }
+                            }
+                            CaretShape::Underline => {
+                                let start_row = font_h - 2;
+                                for row in start_row..font_h {
+                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
+                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+                                    for p in slice.chunks_exact_mut(4) {
+                                        p[0] = 255 - p[0];
+                                        p[1] = 255 - p[1];
+                                        p[2] = 255 - p[2];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
+    type State = CRTShaderState;
+    type Primitive = TerminalShader;
+
+    fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
+        //let start = std::time::Instant::now();
+        let res = self.internal_draw(state, _cursor, _bounds);
+        //println!("CRTShaderProgram::draw took {:?}", start.elapsed());
+        res
+    }
+
+    fn update(&self, state: &mut CRTShaderState, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+        // let start = std::time::Instant::now();
+        let res = self.internal_update(state, event, bounds, cursor);
+        // println!("CRTShaderProgram::update took {:?} ({:?})", start.elapsed(), res);
+        res
     }
 
     fn mouse_interaction(&self, state: &Self::State, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
@@ -546,28 +642,6 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     }
 }
 
-// Helper function to create shader with terminal and monitor settings
-pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: MonitorSettings) -> Element<'a, Message> {
-    // Let the parent wrapper decide sizing; shader can just be Fill.
-    shader(CRTShaderProgram::new(term, monitor_settings))
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
-        .into()
-}
-
-static SCALE_FACTOR_BITS: AtomicU32 = AtomicU32::new(f32::to_bits(1.0));
-
-#[inline]
-pub fn set_scale_factor(sf: f32) {
-    // You can clamp or sanity-check here if desired
-    SCALE_FACTOR_BITS.store(sf.to_bits(), std::sync::atomic::Ordering::Relaxed);
-}
-
-#[inline]
-fn get_scale_factor() -> f32 {
-    f32::from_bits(SCALE_FACTOR_BITS.load(std::sync::atomic::Ordering::Relaxed))
-}
-
 fn map_mouse_to_xy(
     term: &Terminal,
     monitor: &MonitorSettings,
@@ -581,7 +655,7 @@ fn map_mouse_to_xy(
     let font_w = font.size.width as f32;
     let font_h = font.size.height as f32;
 
-    let scale_factor = get_scale_factor();
+    let scale_factor = crate::get_scale_factor();
     let bounds = bounds * scale_factor;
     let mx = mx * scale_factor;
     let my = my * scale_factor;
@@ -639,7 +713,7 @@ fn map_mouse_to_cell(
     let font_w = font.size.width as f32;
     let font_h = font.size.height as f32;
 
-    let scale_factor = get_scale_factor();
+    let scale_factor = crate::get_scale_factor();
     let bounds = bounds * scale_factor;
     let mx = mx * scale_factor;
     let my = my * scale_factor;

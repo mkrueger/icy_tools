@@ -13,7 +13,6 @@ use iced::{
 
 use crate::{
     AddressBook, McpHandler, Options, load_window_icon,
-    terminal_thread::TerminalEvent,
     ui::{MainWindow, MainWindowMode, Message},
     util::SoundThread,
 };
@@ -201,12 +200,19 @@ impl WindowManager {
 
             WindowManagerMessage::UpdateBuffers => {
                 let mut tasks = vec![];
-                for (id, _window) in self.windows.iter() {
-                    let id = id.clone();
-                    tasks.push(Task::done(WindowManagerMessage::WindowMessage(
-                        id,
-                        Message::TerminalEvent(TerminalEvent::BufferUpdated),
-                    )));
+                for (id, window) in self.windows.iter_mut() {
+                    let mcp_commands = window.get_mcp_commands();
+                    for cmd in mcp_commands {
+                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::McpCommand(Arc::new(cmd)))));
+                    }
+
+                    let terminal_events = window.get_terminal_commands();
+                    for cmd in terminal_events {
+                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::TerminalEvent(cmd))));
+                    }
+                }
+                if tasks.is_empty() {
+                    return Task::none();
                 }
                 Task::batch(tasks)
             }
@@ -302,7 +308,7 @@ impl WindowManager {
 
                 Some(WindowManagerMessage::Event(window_id, event))
             }),
-            iced::time::every(std::time::Duration::from_millis(60)).map(|_| WindowManagerMessage::UpdateBuffers),
+            iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
         iced::Subscription::batch(subs)
     }

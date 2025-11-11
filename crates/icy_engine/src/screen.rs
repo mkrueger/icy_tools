@@ -122,6 +122,12 @@ pub trait EditableScreen: RgbaScreen {
 
     fn update_sixel_threads(&mut self) -> EngineResult<bool>;
 
+    // Dirty tracking for rendering optimization
+    fn get_version(&self) -> u64;
+    fn is_dirty(&self) -> bool;
+    fn clear_dirty(&self);
+    fn mark_dirty(&self);
+
     fn lf(&mut self) -> CallbackAction {
         let was_ooe = self.caret().y > self.get_last_editable_line();
         let mut line_inserted = 0;

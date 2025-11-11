@@ -24,6 +24,10 @@ pub struct PaletteScreenBuffer {
 
     // Font dimensions in pixels
     mouse_fields: Vec<MouseField>,
+
+    // Dirty tracking for rendering optimization
+    buffer_dirty: std::sync::atomic::AtomicBool,
+    buffer_version: std::sync::atomic::AtomicU64,
 }
 
 impl PaletteScreenBuffer {
@@ -57,6 +61,8 @@ impl PaletteScreenBuffer {
             hyperlinks: Vec::new(),
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
+            buffer_dirty: std::sync::atomic::AtomicBool::new(true),
+            buffer_version: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -525,6 +531,9 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Render directly to RGBA buffer
         self.render_char_to_buffer(pos, ch);
+
+        // Mark buffer as dirty
+        self.mark_dirty();
     }
 
     fn set_height(&mut self, height: i32) {
@@ -544,5 +553,22 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn add_hyperlink(&mut self, hyperlink: HyperLink) {
         self.hyperlinks.push(hyperlink);
+    }
+
+    fn get_version(&self) -> u64 {
+        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.buffer_dirty.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn clear_dirty(&self) {
+        self.buffer_dirty.store(false, std::sync::atomic::Ordering::Release)
+    }
+
+    fn mark_dirty(&self) {
+        self.buffer_dirty.store(true, std::sync::atomic::Ordering::Release);
+        self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }

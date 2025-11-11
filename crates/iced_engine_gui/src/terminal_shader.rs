@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{CRTShaderState, MonitorSettings, PENDING_INSTANCE_REMOVALS, Terminal, now_ms, set_scale_factor};
+use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, now_ms, set_scale_factor};
 use iced::Rectangle;
 use iced::widget::shader;
-use icy_engine::{Caret, CaretShape};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -561,75 +560,5 @@ impl shader::Primitive for TerminalShader {
 
         drop(render_pass);
         encoder.pop_debug_group();
-    }
-}
-
-// Program wrapper that renders the terminal and creates the shader
-pub struct CRTShaderProgram<'a> {
-    pub term: &'a Terminal,
-    pub monitor_settings: MonitorSettings,
-}
-
-impl<'a> CRTShaderProgram<'a> {
-    pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
-        Self { term, monitor_settings }
-    }
-
-    pub fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize) {
-        // Check both the caret's is_blinking property and the blink timer state
-        let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
-
-        if should_draw && self.term.has_focus {
-            let caret_pos = caret.position();
-            if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
-                let line_bytes = (size.0 as usize) * 4;
-                let cell_x = caret_pos.x;
-                let cell_y = caret_pos.y;
-                if cell_x >= 0 && cell_y >= 0 {
-                    let px_x = (cell_x as usize) * font_w;
-                    let px_y = (cell_y as usize) * font_h;
-                    if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
-                        match caret.shape {
-                            CaretShape::Bar => {
-                                // Draw a vertical bar on the left edge of the character cell
-                                let bar_width = 2.min(font_w); // 2 pixels wide or font width if smaller
-                                for row in 0..font_h {
-                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                    let slice = &mut rgba_data[row_offset..row_offset + bar_width * 4];
-                                    for p in slice.chunks_exact_mut(4) {
-                                        p[0] = 255 - p[0];
-                                        p[1] = 255 - p[1];
-                                        p[2] = 255 - p[2];
-                                    }
-                                }
-                            }
-                            CaretShape::Block => {
-                                for row in 0..font_h {
-                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
-                                    for p in slice.chunks_exact_mut(4) {
-                                        p[0] = 255 - p[0];
-                                        p[1] = 255 - p[1];
-                                        p[2] = 255 - p[2];
-                                    }
-                                }
-                            }
-                            CaretShape::Underline => {
-                                let start_row = font_h - 2;
-                                for row in start_row..font_h {
-                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
-                                    for p in slice.chunks_exact_mut(4) {
-                                        p[0] = 255 - p[0];
-                                        p[1] = 255 - p[1];
-                                        p[2] = 255 - p[2];
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }

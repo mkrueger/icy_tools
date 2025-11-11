@@ -22,7 +22,6 @@ use icy_net::{
 use log::error;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
 
@@ -189,7 +188,7 @@ impl TerminalThread {
                         let data = self.baud_emulator.emulate(&[]);
                         if !data.is_empty() {
                             self.process_data(&data).await;
-                            let _ = self.event_tx.send(TerminalEvent::DataReceived(data));
+                            self.send_event(TerminalEvent::DataReceived(data));
                         }
                     }
 
@@ -199,7 +198,7 @@ impl TerminalThread {
                             self.start_download(protocol, filename).await;
                         } else {
                             // For uploads, we'd need file selection - just notify UI
-                            let _ = self.event_tx.send(TerminalEvent::AutoTransferTriggered(protocol, is_download, filename));
+                            self.send_event(TerminalEvent::AutoTransferTriggered(protocol, is_download, filename));
                         }
                     }
 
@@ -246,7 +245,7 @@ impl TerminalThread {
             state.set_size(icy_engine::Size::new(width as i32, height as i32));
         }
         // Optionally notify UI so layout can adjust
-        let _ = self.event_tx.send(TerminalEvent::BufferUpdated);
+        self.send_event(TerminalEvent::BufferUpdated);
     }
 
     async fn handle_command(&mut self, command: TerminalCommand) {
@@ -254,11 +253,7 @@ impl TerminalThread {
             TerminalCommand::Connect(config) => {
                 if let Err(e) = self.connect(config).await {
                     self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
-
-                    if let Err(err) = self.event_tx.send(TerminalEvent::Disconnected(Some(e.to_string()))) {
-                        log::error!("Failed to send disconnect event: {}", err);
-                        self.process_data(format!("{}", err).as_bytes()).await;
-                    }
+                    self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                 }
             }
             TerminalCommand::Disconnect => {
@@ -279,21 +274,21 @@ impl TerminalThread {
                             self.process_data(&output).await;
                         }
                         ModemCommand::PlayLineSound => {
-                            let _ = self.event_tx.send(TerminalEvent::OpenLineSound);
+                            self.send_event(TerminalEvent::OpenLineSound);
                         }
                         ModemCommand::PlayDialSound(tone_dial, phone_number) => {
-                            let _ = self.event_tx.send(TerminalEvent::OpenDialSound(tone_dial, phone_number));
+                            self.send_event(TerminalEvent::OpenDialSound(tone_dial, phone_number));
                         }
                         ModemCommand::StopSound => {
-                            let _ = self.event_tx.send(TerminalEvent::StopSound);
+                            self.send_event(TerminalEvent::StopSound);
                         }
                         ModemCommand::Reconnect => {
                             self.process_data(b"\r\nRECONNECT...\r\n").await;
-                            let _ = self.event_tx.send(TerminalEvent::Reconnect);
+                            self.send_event(TerminalEvent::Reconnect);
                         }
                         ModemCommand::Connect(address) => {
                             self.process_data(format!("\r\nCALLING...\r\n").as_bytes()).await;
-                            let _ = self.event_tx.send(TerminalEvent::Connect(address));
+                            self.send_event(TerminalEvent::Connect(address));
                         }
                     }
                 }
@@ -448,7 +443,7 @@ impl TerminalThread {
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
 
-        let _ = self.event_tx.send(TerminalEvent::Connected);
+        self.send_event(TerminalEvent::Connected);
         Ok(())
     }
 
@@ -511,7 +506,7 @@ impl TerminalThread {
         self.utf8_buffer.clear();
         self.auto_login = None;
         self.auto_file_transfer = AutoFileTransfer::default();
-        let _ = self.event_tx.send(TerminalEvent::Disconnected(None));
+        self.send_event(TerminalEvent::Disconnected(None));
     }
 
     async fn send_login(&mut self) {
@@ -538,7 +533,7 @@ impl TerminalThread {
 
                     if !data.is_empty() {
                         self.process_data(&data).await;
-                        let _ = self.event_tx.send(TerminalEvent::DataReceived(data));
+                        self.send_event(TerminalEvent::DataReceived(data));
                     }
                     size
                 }
@@ -628,7 +623,7 @@ impl TerminalThread {
                                 if let Some(conn) = &mut self.connection {
                                     let _ = conn.send(&login_data).await;
                                 }
-                                if let Some(isi) = &autologin.iemsi.isi {
+                                if let Some(isi) = autologin.iemsi.isi.clone() {
                                     let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
                                 }
                             }
@@ -667,7 +662,6 @@ impl TerminalThread {
                         if logged_in {
                             self.auto_login = None;
                         }
-
                         match self.buffer_parser.print_char(&mut **screen, byte as char) {
                             Ok(action) => actions.push(action),
                             Err(e) => error!("Parser error: {e}"),
@@ -679,16 +673,14 @@ impl TerminalThread {
             }
 
             while screen.sixel_threads_runnning() {
-                thread::sleep(Duration::from_millis(50));
                 let _ = screen.update_sixel_threads();
+                tokio::task::yield_now().await;
             }
         }
 
         for action in actions {
             self.handle_parser_action(action).await;
         }
-
-        let _ = self.event_tx.send(TerminalEvent::BufferUpdated);
     }
 
     async fn handle_parser_action(&mut self, action: CallbackAction) {
@@ -702,10 +694,10 @@ impl TerminalThread {
                 }
             }
             CallbackAction::PlayMusic(music) => {
-                let _ = self.event_tx.send(TerminalEvent::PlayMusic(music));
+                self.send_event(TerminalEvent::PlayMusic(music));
             }
             CallbackAction::Beep => {
-                let _ = self.event_tx.send(TerminalEvent::Beep);
+                self.send_event(TerminalEvent::Beep);
             }
             CallbackAction::ResizeTerminal(width, height) => {
                 // Avoid async recursion by calling sync helper
@@ -725,15 +717,15 @@ impl TerminalThread {
             match prot.initiate_send(&mut **conn, &files).await {
                 Ok(state) => {
                     self.current_transfer = Some(state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone(), false));
+                    self.send_event(TerminalEvent::TransferStarted(state.clone(), false));
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
-                        let _ = self.event_tx.send(TerminalEvent::Error(format!("Transfer failed: {}", e)));
+                        self.send_event(TerminalEvent::Error(format!("Transfer failed: {}", e)));
                     }
                 }
                 Err(e) => {
-                    let _ = self.event_tx.send(TerminalEvent::Error(format!("Failed to start upload: {}", e)));
+                    self.send_event(TerminalEvent::Error(format!("Failed to start upload: {}", e)));
                 }
             }
         }
@@ -748,15 +740,15 @@ impl TerminalThread {
                         state.recieve_state.file_name = name;
                     }
                     self.current_transfer = Some(state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferStarted(state.clone(), true));
+                    self.send_event(TerminalEvent::TransferStarted(state.clone(), true));
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
-                        let _ = self.event_tx.send(TerminalEvent::Error(format!("Transfer failed: {}", e)));
+                        self.send_event(TerminalEvent::Error(format!("Transfer failed: {}", e)));
                     }
                 }
                 Err(e) => {
-                    let _ = self.event_tx.send(TerminalEvent::Error(format!("Failed to start download: {}", e)));
+                    self.send_event(TerminalEvent::Error(format!("Failed to start download: {}", e)));
                 }
             }
         }
@@ -807,7 +799,7 @@ impl TerminalThread {
                 // Send progress updates every 500ms
                 if last_progress_update.elapsed() > Duration::from_millis(500) {
                     self.current_transfer = Some(transfer_state.clone());
-                    let _ = self.event_tx.send(TerminalEvent::TransferProgress(transfer_state.clone()));
+                    self.send_event(TerminalEvent::TransferProgress(transfer_state.clone()));
                     last_progress_update = Instant::now();
                 }
             }
@@ -817,10 +809,16 @@ impl TerminalThread {
         copy_downloaded_files(&mut transfer_state)?;
 
         self.current_transfer = Some(transfer_state.clone());
-        let _ = self.event_tx.send(TerminalEvent::TransferCompleted(transfer_state));
+        self.send_event(TerminalEvent::TransferCompleted(transfer_state));
         self.current_transfer = None;
 
         Ok(())
+    }
+
+    fn send_event(&mut self, evt: TerminalEvent) {
+        if let Err(err) = self.event_tx.send(evt) {
+            log::error!("Failed to send terminal event: {}", err);
+        }
     }
 }
 

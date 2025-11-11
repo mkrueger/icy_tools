@@ -172,6 +172,7 @@ pub struct Palette {
 
     old_checksum: usize,
     checksum: u32,
+    palette_cache: Vec<(u8, u8, u8)>,
 }
 
 impl Palette {
@@ -183,6 +184,7 @@ impl Palette {
             colors: colors.to_vec(),
             old_checksum: 0,
             checksum: 0,
+            palette_cache: colors.iter().map(|c| (c.r, c.g, c.b)).collect(),
         }
     }
 
@@ -236,7 +238,10 @@ impl Palette {
     pub fn set_color(&mut self, color: u32, color_struct: Color) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
+            self.palette_cache.resize(color as usize + 1, (0, 0, 0));
         }
+
+        self.palette_cache[color as usize] = (color_struct.r, color_struct.g, color_struct.b);
         self.colors[color as usize] = color_struct;
     }
 
@@ -411,6 +416,7 @@ impl Palette {
             },
             PaletteFormat::Ase => todo!(),
         }
+        let palette_cache = colors.iter().map(|c| (c.r, c.g, c.b)).collect();
         Ok(Self {
             title,
             description,
@@ -418,6 +424,7 @@ impl Palette {
             colors,
             old_checksum: 0,
             checksum: 0,
+            palette_cache,
         })
     }
 
@@ -528,6 +535,7 @@ impl Palette {
             colors: vec![],
             old_checksum: 0,
             checksum: 0,
+            palette_cache: Vec::new(),
         }
     }
 
@@ -539,6 +547,7 @@ impl Palette {
             colors: DOS_DEFAULT_PALETTE.to_vec(),
             old_checksum: 0,
             checksum: 0,
+            palette_cache: DOS_DEFAULT_PALETTE.iter().map(|c| (c.r, c.g, c.b)).collect(),
         }
     }
 
@@ -575,11 +584,16 @@ impl Palette {
         true
     }
 
+    pub fn get_palette_cache(&self) -> &[(u8, u8, u8)] {
+        &self.palette_cache
+    }
+
     pub fn set_color_rgb(&mut self, color: u32, r: u8, g: u8, b: u8) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
         }
         self.colors[color as usize] = Color { name: None, r, g, b };
+        self.palette_cache[color as usize] = (r, g, b);
     }
 
     pub fn set_color_hsl(&mut self, color: u32, h: f32, s: f32, l: f32) {
@@ -622,6 +636,7 @@ impl Palette {
 
     pub fn from(pal: &[u8]) -> Self {
         let mut colors = Vec::new();
+        let mut palette_cache = Vec::new();
         let mut o = 0;
         while o < pal.len() {
             colors.push(Color {
@@ -630,6 +645,7 @@ impl Palette {
                 g: pal[o + 1],
                 b: pal[o + 2],
             });
+            palette_cache.push((pal[o], pal[o + 1], pal[o + 2]));
             o += 3;
         }
 
@@ -640,6 +656,7 @@ impl Palette {
             colors,
             old_checksum: 0,
             checksum: 0,
+            palette_cache,
         }
     }
 
@@ -655,6 +672,7 @@ impl Palette {
 
     pub fn from_63(pal: &[u8]) -> Self {
         let mut colors = Vec::new();
+        let mut palette_cache = Vec::new();
         let mut o = 0;
         while o < pal.len() {
             let r = pal[o];
@@ -666,6 +684,8 @@ impl Palette {
                 g: g << 2 | g >> 4,
                 b: b << 2 | b >> 4,
             });
+            palette_cache.push((r << 2 | r >> 4, g << 2 | g >> 4, b << 2 | b >> 4));
+
             o += 3;
         }
 
@@ -676,6 +696,7 @@ impl Palette {
             colors,
             old_checksum: 0,
             checksum: 0,
+            palette_cache,
         }
     }
 
@@ -4170,6 +4191,12 @@ fn convert_vector(temp2: f32, temp1: f32, mut x: f32) -> u8 {
 
 impl Default for Palette {
     fn default() -> Self {
+        let mut palette_cache = Vec::new();
+
+        for c in DOS_DEFAULT_PALETTE.iter() {
+            palette_cache.push(c.get_rgb());
+        }
+
         Palette {
             title: String::new(),
             description: String::new(),
@@ -4177,6 +4204,7 @@ impl Default for Palette {
             colors: DOS_DEFAULT_PALETTE.to_vec(),
             old_checksum: 0,
             checksum: 0,
+            palette_cache,
         }
     }
 }

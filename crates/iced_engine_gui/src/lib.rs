@@ -23,8 +23,11 @@ pub use render_unicode::*;
 pub mod unicode_glyph_cache;
 pub use unicode_glyph_cache::*;
 
-pub mod crt_shader;
-pub use crt_shader::*;
+pub mod crt_shader_state;
+pub use crt_shader_state::*;
+
+pub mod crt_shader_program;
+pub use crt_shader_program::*;
 
 //pub mod terminal_shader_widget;
 

@@ -1,4 +1,6 @@
+use core::panic;
 use std::{
+    io::Write,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -76,10 +78,10 @@ pub struct MainWindow {
     connection_time: Option<Instant>,
     current_address: Option<Address>,
     last_address: Option<Address>,
+    terminal_emulation: TerminalEmulation,
 
     // Capture state
-    capture_file: Option<PathBuf>,
-    captured_data: Vec<u8>,
+    capture_writer: Option<std::fs::File>,
 
     _is_fullscreen_mode: bool,
     _last_pos: Position,
@@ -93,8 +95,6 @@ pub struct MainWindow {
     pub mcp_rx: McpHandler,
     pub title: String,
 }
-
-static mut TERM_EMULATION: TerminalEmulation = TerminalEmulation::Ansi;
 
 impl MainWindow {
     pub fn new(
@@ -149,8 +149,7 @@ impl MainWindow {
             current_address: None,
             last_address: None,
 
-            capture_file: None,
-            captured_data: Vec::new(),
+            capture_writer: None,
 
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
@@ -161,6 +160,7 @@ impl MainWindow {
             show_disconnect: false,
             sound_thread,
             mcp_rx: None,
+            terminal_emulation: TerminalEmulation::Ansi,
         }
     }
 
@@ -212,9 +212,7 @@ impl MainWindow {
                 };
                 let options = &self.settings_dialog.original_options.lock().unwrap();
 
-                unsafe {
-                    TERM_EMULATION = address.terminal_type;
-                }
+                self.terminal_emulation = address.terminal_type;
 
                 // Send connect command to terminal thread
                 let config = ConnectionConfig {
@@ -264,15 +262,18 @@ impl MainWindow {
             }
 
             Message::SendString(s) => {
-                self.clear_selection();
-                let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
-                self.terminal_window.terminal.screen.lock().unwrap().set_scroll_position(0);
+                let mut screen = self.terminal_window.terminal.screen.lock().unwrap();
+                let _ = screen.clear_selection();
+                let buffer_type = screen.buffer_type();
+                screen.set_scroll_position(0);
+                drop(screen);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
                     let converted_byte = buffer_type.convert_from_unicode(ch);
                     data.push(converted_byte as u8);
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+
                 Task::none()
             }
             Message::RipCommand(clear_screen, cmd) => {
@@ -353,47 +354,27 @@ impl MainWindow {
                 self.clear_selection();
                 if self.is_connected {
                     if let Some(address) = &self.current_address {
-                        // Check if we have username and password
-                        if !address.user_name.is_empty() || !address.password.is_empty() {
-                            let mut data_to_send = Vec::new();
+                        if !address.user_name.is_empty() && login {
+                            let username_data = address.user_name.as_bytes().to_vec();
+                            let mut username_with_cr = username_data;
+                            username_with_cr.push(b'\r');
+                            let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
 
-                            // Send username if available
-                            if !address.user_name.is_empty() {
-                                data_to_send.extend_from_slice(address.user_name.as_bytes());
-                                data_to_send.push(b'\r'); // Send carriage return after username
-                            }
-
-                            // Small delay between username and password (some BBSs need this)
-                            // We'll handle this by sending them as separate commands
-                            if !address.user_name.is_empty() && !address.password.is_empty() {
-                                if login {
-                                    let username_data = address.user_name.as_bytes().to_vec();
-                                    let mut username_with_cr = username_data;
-                                    username_with_cr.push(b'\r');
-                                    let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
-                                    if pw {
-                                        // Send password after a small delay
-                                        // Note: In a real implementation, you might want to add a proper delay mechanism
-                                        // For now, we'll send it immediately and rely on the terminal's buffering
-                                        std::thread::sleep(std::time::Duration::from_millis(500));
-                                    }
-                                }
-
-                                if pw {
-                                    let password_data = address.password.as_bytes().to_vec();
-                                    let mut password_with_cr = password_data;
+                            if pw && !address.password.is_empty() {
+                                // Schedule password send after delay instead of blocking
+                                let password = address.password.clone();
+                                let tx = self.terminal_tx.clone();
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                    let mut password_with_cr = password.as_bytes().to_vec();
                                     password_with_cr.push(b'\r');
-                                    let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
-                                }
-                            } else if !address.user_name.is_empty() && login {
-                                // Only username
-                                let _ = self.terminal_tx.send(TerminalCommand::SendData(data_to_send));
-                            } else if !address.password.is_empty() {
-                                // Only password (unusual but possible)
-                                data_to_send.extend_from_slice(address.password.as_bytes());
-                                data_to_send.push(b'\r');
-                                let _ = self.terminal_tx.send(TerminalCommand::SendData(data_to_send));
+                                    let _ = tx.send(TerminalCommand::SendData(password_with_cr));
+                                });
                             }
+                        } else if pw && !address.password.is_empty() {
+                            let mut password_with_cr = address.password.as_bytes().to_vec();
+                            password_with_cr.push(b'\r');
+                            let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
                         }
                     }
                 }
@@ -448,25 +429,13 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 self.capture_dialog.capture_session = true;
                 self.terminal_window.is_capturing = true;
-                self.capture_file = Some(PathBuf::from(file_name));
-                self.captured_data.clear();
+                self.capture_writer = std::fs::File::create(&file_name).ok();
                 Task::none()
             }
             Message::StopCapture => {
                 self.capture_dialog.capture_session = false;
                 self.terminal_window.is_capturing = false;
-
-                // Save captured data to file if we have any
-                if let Some(capture_file) = &self.capture_file {
-                    if !self.captured_data.is_empty() {
-                        if let Err(e) = std::fs::write(capture_file, &self.captured_data) {
-                            log::error!("Failed to save capture file: {}", e);
-                        }
-                    }
-                }
-
-                self.capture_file = None;
-                self.captured_data.clear();
+                self.capture_writer.take();
                 Task::none()
             }
             Message::ShowFindDialog => {
@@ -551,44 +520,40 @@ impl MainWindow {
             }
 
             Message::Copy => {
-                // Implement clipboard copy from selection
-                if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
-                    let mut vec = vec![];
-                    if let Some(text) = edit_screen.get_copy_text() {
-                        vec.push(ClipboardContent::Text(text.clone()));
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    let mut contents = Vec::with_capacity(4);
+                    if let Some(text) = screen.get_copy_text() {
+                        contents.push(ClipboardContent::Text(text.clone()));
                     } else {
                         return Task::none();
                     }
-                    if let Some(rich_text) = edit_screen.get_copy_rich_text() {
-                        vec.push(ClipboardContent::Rtf(rich_text));
+                    if let Some(rich_text) = screen.get_copy_rich_text() {
+                        contents.push(ClipboardContent::Rtf(rich_text));
                     }
-
-                    if let Some(selection) = edit_screen.get_selection() {
-                        let (size, data) = edit_screen.render_to_rgba(&RenderOptions {
+                    if let Some(selection) = screen.get_selection() {
+                        let (size, data) = screen.render_to_rgba(&RenderOptions {
                             rect: selection,
                             blink_on: true,
                             selection: None,
                             selection_fg: None,
                             selection_bg: None,
                         });
-
-                        let dynamic_image = DynamicImage::ImageRgba8(
-                            image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("Failed to create image buffer from raw data"),
-                        );
+                        // Avoid DynamicImage hop if API allows raw RGBA; if not, keep as-is.
+                        let dynamic_image =
+                            DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("rgba create"));
                         let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
-                        vec.push(ClipboardContent::Image(img));
+                        contents.push(ClipboardContent::Image(img));
                     }
-
-                    if let Some(data) = edit_screen.get_clipboard_data() {
-                        vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+                    if let Some(data) = screen.get_clipboard_data() {
+                        contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
                     }
-
-                    if let Err(err) = crate::CLIPBOARD_CONTEXT.set(vec) {
-                        log::error!("Failed to set clipboard content: {}", err);
-                    }
-                    // Clear selection after copy
-                    let _ = edit_screen.clear_selection();
+                    let _ = screen.clear_selection();
                     self.shift_pressed_during_selection = false;
+                    drop(screen);
+
+                    if let Err(err) = crate::CLIPBOARD_CONTEXT.set(contents) {
+                        log::error!("Failed to set clipboard: {err}");
+                    }
                 }
                 Task::none()
             }
@@ -636,15 +601,7 @@ impl MainWindow {
                 if self.terminal_window.is_capturing {
                     self.capture_dialog.capture_session = false;
                     self.terminal_window.is_capturing = false;
-
-                    // Save captured data to file if we have any
-                    if let Some(capture_file) = &self.capture_file {
-                        if !self.captured_data.is_empty() {
-                            if let Err(e) = std::fs::write(capture_file, &self.captured_data) {
-                                log::error!("Failed to save capture file: {}", e);
-                            }
-                        }
-                    }
+                    self.capture_writer.take();
                 }
                 // Stop sound thread
                 self.sound_thread.lock().unwrap().clear();
@@ -855,7 +812,9 @@ impl MainWindow {
             TerminalEvent::DataReceived(data) => {
                 // Handle capture
                 if self.terminal_window.is_capturing {
-                    self.captured_data.extend_from_slice(&data);
+                    if let Some(w) = self.capture_writer.as_mut() {
+                        let _ = w.write_all(&data);
+                    }
                 }
                 Task::none()
             }
@@ -867,32 +826,9 @@ impl MainWindow {
                     return self.update(Message::Connect(e.into()));
                 }
                 Task::none()
-            } // 20forbeers.com:1337
-            TerminalEvent::BufferUpdated => {
-                let mut events = Vec::new();
-                if let Some(rx) = &mut self.terminal_rx {
-                    while let Ok(event) = rx.try_recv() {
-                        events.push(event);
-                    }
-                }
-
-                for event in events {
-                    let _ = self.handle_terminal_event(event);
-                }
-
-                let mut mcp_commands = Vec::new();
-                if let Some(rx) = &mut self.mcp_rx {
-                    while let Ok(cmd) = rx.try_recv() {
-                        mcp_commands.push(cmd);
-                    }
-                }
-
-                for cmd in mcp_commands {
-                    let _ = self.update(Message::McpCommand(Arc::new(cmd)));
-                }
-
-                Task::none()
             }
+
+            TerminalEvent::BufferUpdated => Task::none(),
             TerminalEvent::TransferStarted(_state, is_download) => {
                 self.state.mode = MainWindowMode::FileTransfer(is_download);
                 self.file_transfer_dialog.transfer_state = Some(_state);
@@ -962,6 +898,26 @@ impl MainWindow {
         }
     }
 
+    pub fn get_mcp_commands(&mut self) -> Vec<McpCommand> {
+        let mut mcp_commands = Vec::new();
+        if let Some(rx) = &mut self.mcp_rx {
+            while let Ok(cmd) = rx.try_recv() {
+                mcp_commands.push(cmd);
+            }
+        }
+        mcp_commands
+    }
+
+    pub fn get_terminal_commands(&mut self) -> Vec<TerminalEvent> {
+        let mut events = Vec::new();
+        if let Some(rx) = &mut self.terminal_rx {
+            while let Ok(event) = rx.try_recv() {
+                events.push(event);
+            }
+        }
+        events
+    }
+
     pub fn theme(&self) -> Theme {
         if self.get_mode() == MainWindowMode::ShowSettings {
             self.settings_dialog.temp_options.lock().unwrap().monitor_settings.get_theme()
@@ -971,6 +927,12 @@ impl MainWindow {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        match &self.state.mode {
+            MainWindowMode::ShowDialingDirectory => return self.dialing_directory.view(&self.settings_dialog.original_options.lock().unwrap()),
+            MainWindowMode::ShowAboutDialog => return self.about_dialog.view(),
+            _ => {}
+        }
+
         let terminal_view = {
             let settings = if self.get_mode() == MainWindowMode::ShowSettings {
                 &self.settings_dialog.temp_options.lock().unwrap()
@@ -982,7 +944,6 @@ impl MainWindow {
 
         match &self.state.mode {
             MainWindowMode::ShowTerminal => terminal_view,
-            MainWindowMode::ShowDialingDirectory => self.dialing_directory.view(&self.settings_dialog.original_options.lock().unwrap()),
             MainWindowMode::ShowSettings => self.settings_dialog.view(terminal_view),
             MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, terminal_view),
             MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, terminal_view),
@@ -992,8 +953,10 @@ impl MainWindow {
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
             MainWindowMode::ShowHelpDialog => self.help_dialog.view(terminal_view),
-            MainWindowMode::ShowAboutDialog => self.about_dialog.view(),
             MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => error_dialog::view(terminal_view, title, secondary_msg, error_message),
+            _ => {
+                panic!("Unhandled main window mode in view()")
+            }
         }
     }
 
@@ -1150,7 +1113,7 @@ impl MainWindow {
                         }
 
                         // Try to map the key with modifiers using the key map
-                        if let Some(bytes) = Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, &physical_key, *modifiers) {
+                        if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, &key, &physical_key, *modifiers) {
                             return Some(Message::SendData(bytes));
                         }
 
@@ -1271,6 +1234,6 @@ impl MainWindow {
 
         let physical = keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
 
-        Self::map_key_event_to_bytes(unsafe { TERM_EMULATION }, &key, &physical, modifiers)
+        Self::map_key_event_to_bytes(self.terminal_emulation, &key, &physical, modifiers)
     }
 }

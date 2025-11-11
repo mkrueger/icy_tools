@@ -245,10 +245,12 @@ impl EditableScreen for TextScreen {
 
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
         self.buffer.layers[self.current_layer].set_char(pos, ch);
+        self.buffer.mark_dirty();
     }
 
     fn set_size(&mut self, size: Size) {
         self.buffer.set_size(size);
+        self.buffer.mark_dirty();
     }
 
     fn scroll_up(&mut self) {
@@ -265,14 +267,19 @@ impl EditableScreen for TextScreen {
         let start_column = self.get_first_editable_column();
         let end_column = self.get_last_editable_column();
 
-        let layer_ref = &mut self.buffer.layers[self.current_layer];
-        for x in start_column..=end_column {
-            (start_line..end_line).for_each(|y| {
-                let ch = layer_ref.get_char((x, y + 1).into());
-                layer_ref.set_char((x, y), ch);
-            });
-            layer_ref.set_char((x, end_line), AttributedChar::default());
+        {
+            let layer_ref = &mut self.buffer.layers[self.current_layer];
+            for x in start_column..=end_column {
+                (start_line..end_line).for_each(|y| {
+                    let ch = layer_ref.get_char((x, y + 1).into());
+                    layer_ref.set_char((x, y), ch);
+                });
+                layer_ref.set_char((x, end_line), AttributedChar::default());
+            }
         }
+        self.buffer.mark_dirty();
+
+        let layer_ref = &mut self.buffer.layers[self.current_layer];
 
         let mut remove_indices: Vec<usize> = Vec::new();
         for (i, sixel) in layer_ref.sixels.iter_mut().enumerate() {
@@ -507,5 +514,22 @@ impl EditableScreen for TextScreen {
         if self.terminal_state().is_terminal_buffer {
             self.buffer.set_size(self.terminal_state().get_size());
         }
+        self.buffer.mark_dirty();
+    }
+
+    fn get_version(&self) -> u64 {
+        self.buffer.get_version()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
+
+    fn clear_dirty(&self) {
+        self.buffer.clear_dirty()
+    }
+
+    fn mark_dirty(&self) {
+        self.buffer.mark_dirty()
     }
 }

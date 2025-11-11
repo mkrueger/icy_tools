@@ -1,5 +1,9 @@
 use icy_engine::{BufferParser, EditableScreen, TextScreen, ansi};
-use std::fs::{self};
+use std::{
+    fs::{self},
+    thread,
+    time::Duration,
+};
 
 use crate::compare_output;
 
@@ -24,6 +28,11 @@ pub fn test_ansi() {
                 eprintln!("Error parsing char '{}' ({:02X}): {}", c, c, err);
             }
         }
+        while !screen.buffer.sixel_threads.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+            let _ = screen.buffer.update_sixel_threads();
+        }
+
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);
     }
