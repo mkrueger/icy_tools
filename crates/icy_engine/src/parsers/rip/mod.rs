@@ -175,7 +175,8 @@ impl BufferParser for Parser {
             self.rip_counter = 0;
             self.last_rip_update = 0;
         }
-
+        // Debug output (can be toggled via env if needed):
+        // println!("RIP PARSER: State {:?}, Char {:?}", self.state, ch);
         match self.state {
             State::ReadParams => {
                 if let Some(value) = self.parse_parameter(buf, ch) {
@@ -188,7 +189,12 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::None);
                 }
                 if ch == '\n' {
-                    self.state = State::ReadParams;
+                    // If no active command (we just finished one), resume GotRipStart so a leading '|' starts next command.
+                    if self.command.is_none() {
+                        self.state = State::GotRipStart;
+                    } else {
+                        self.state = State::ReadParams;
+                    }
                     return Ok(CallbackAction::None);
                 }
                 if let Some(value) = self.parse_parameter(buf, ch) {
@@ -324,6 +330,11 @@ impl BufferParser for Parser {
             State::GotRipStart => {
                 // got !
                 if ch == '!' {
+                    return Ok(CallbackAction::None);
+                }
+                // Allow line continuation right after a command: a trailing '\\' means skip newline and stay in RIP mode.
+                if ch == '\\' {
+                    self.state = State::SkipEOL;
                     return Ok(CallbackAction::None);
                 }
                 if ch == '\n' || ch == '\r' {
