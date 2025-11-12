@@ -1,0 +1,256 @@
+
+#[cfg(test)]
+mod tests {
+    use crate::{Color, OutputFormat, SaveOptions, TextBuffer};
+    use std::path::PathBuf;
+
+    fn test_ansi(data: &[u8]) {
+        let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
+        let converted: Vec<u8> = super::Ansi::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+        // more gentle output.
+        let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
+        let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
+
+        let b: Vec<u8> = data.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
+        let expected = String::from_utf8_lossy(b.as_slice());
+
+        assert_eq!(expected, converted);
+    }
+
+    #[test]
+    fn test_space_compression() {
+        let data = b"A A  A   A    A\x1B[5CA\x1B[6CA\x1B[8CA";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_fg_color_change() {
+        let data = b"a\x1B[32ma\x1B[33ma\x1B[1ma\x1B[35ma\x1B[0;35ma\x1B[1;32ma\x1B[0;36ma\x1B[32mA";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_bg_color_change() {
+        let data = b"A\x1B[44mA\x1B[45mA\x1B[31;40mA\x1B[42mA\x1B[40mA\x1B[1;46mA\x1B[0mA\x1B[1;47mA\x1B[0;47mA";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_blink_change() {
+        let data = b"A\x1B[5mA\x1B[0mA\x1B[1;5;42mA\x1B[0;1;42mA\x1B[0;5mA\x1B[0;36mA\x1B[5;33mA\x1B[0;1mA";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_eol_skip() {
+        let data = b"\x1B[79C\x1B[1mdd";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_23bit() {
+        let data = b"\x1B[1;24;12;200t#";
+        test_ansi(data);
+        let data = b"\x1B[0;44;2;120t#";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_extended_color() {
+        let data = b"\x1B[38;5;42m#";
+        test_ansi(data);
+        let data = b"\x1B[48;5;100m#";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_first_char_color() {
+        let data = b"\x1B[1;36mA";
+        test_ansi(data);
+        let data = b"\x1B[31mA";
+        test_ansi(data);
+        let data = b"\x1B[33;45mA\x1B[40m ";
+        test_ansi(data);
+        let data = b"\x1B[1;33;45mA";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_ice() {
+        let data = b"\x1B[?33h\x1B[5m   test\x1B[?33l";
+        test_ansi(data);
+    }
+
+    #[test]
+    fn test_palette_color_bug() {
+        let mut buf = TextBuffer::new((3, 1));
+        buf.palette.set_color(25, Color::new(0xD3, 0xD3, 0xD3));
+        buf.layers[0].set_char(
+            (1, 0),
+            crate::AttributedChar {
+                ch: 'A',
+                attribute: crate::TextAttribute {
+                    font_page: 0,
+                    foreground_color: 25,
+                    background_color: 0,
+                    attr: 0,
+                },
+            },
+        );
+
+        let bytes = buf.to_bytes("ans", &SaveOptions::default()).unwrap();
+        let str = String::from_utf8_lossy(&bytes).to_string();
+
+        assert_eq!(" \u{1b}[1;211;211;211tA ", str);
+    }
+}
+/*
+#[cfg(test)]
+fn crop2_loaded_file(result: &mut dyn Screen) {
+    for l in 0..result.layers.len() {
+        if let Some(line) = result.layers[l].lines.last_mut() {
+            while !line.chars.is_empty() && !line.chars.last().unwrap().is_visible() {
+                line.chars.pop();
+            }
+        }
+
+        if !result.layers[l].lines.is_empty()
+            && result.layers[l].lines.last().unwrap().chars.is_empty()
+        {
+            result.layers[l].lines.pop();
+            crop2_loaded_file(result);
+        }
+    }
+}*/
+
+#[cfg(test)]
+#[derive(Clone, Copy)]
+pub struct CompareOptions {
+    pub compare_palette: bool,
+    pub compare_fonts: bool,
+    pub ignore_invisible_chars: bool,
+}
+
+#[cfg(test)]
+impl CompareOptions {
+    pub const ALL: CompareOptions = CompareOptions {
+        compare_palette: true,
+        compare_fonts: true,
+        ignore_invisible_chars: false,
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compare_options: CompareOptions) {
+    assert_eq!(buf_old.layers.len(), buf_new.layers.len());
+    assert_eq!(
+        buf_old.get_size(),
+        buf_new.get_size(),
+        "size differs: {} != {}",
+        buf_old.get_size(),
+        buf_new.get_size()
+    );
+
+    //crop2_loaded_file(buf_old);
+    //crop2_loaded_file(buf_new);
+    /*assert_eq!(
+        buf_old.ice_mode, buf_new.ice_mode,
+        "ice_mode differs: {:?} != {:?}",
+        buf_old.ice_mode, buf_new.ice_mode,
+    );*/
+
+    if compare_options.compare_palette {
+        assert_eq!(buf_old.palette.len(), buf_new.palette.len(), "palette color count differs");
+        for i in 0..buf_old.palette.len() {
+            assert_eq!(
+                buf_old.palette.get_color(i as u32),
+                buf_new.palette.get_color(i as u32),
+                "palette color {} differs: {} <> {}",
+                i,
+                buf_old.palette.get_color(i as u32),
+                buf_new.palette.get_color(i as u32),
+            );
+        }
+    }
+
+    if compare_options.compare_fonts {
+        assert_eq!(buf_old.font_count(), buf_new.font_count());
+
+        for (i, old_fnt) in buf_old.font_iter() {
+            let new_fnt = buf_new.get_font(*i).unwrap();
+
+            // Compare the yaff_font glyphs directly
+            assert_eq!(
+                old_fnt.yaff_font.glyphs.len(),
+                new_fnt.yaff_font.glyphs.len(),
+                "glyph count differs for font {i}"
+            );
+            /*
+            for (old_glyph, new_glyph) in old_fnt.yaff_font.glyphs.iter().zip(new_fnt.yaff_font.glyphs.iter()) {
+                assert_eq!(old_glyph, new_glyph, "glyphs differ font: {i}");
+            }*/
+        }
+    }
+    for layer in 0..buf_old.layers.len() {
+        /*      assert_eq!(
+            buf_old.layers[layer].lines.len(),
+            buf_new.layers[layer].lines.len(),
+            "layer {layer} line count differs"
+        );*/
+        assert_eq!(
+            buf_old.layers[layer].get_offset(),
+            buf_new.layers[layer].get_offset(),
+            "layer {layer} offset differs"
+        );
+        assert_eq!(buf_old.layers[layer].get_size(), buf_new.layers[layer].get_size(), "layer {layer} size differs");
+        assert_eq!(
+            buf_old.layers[layer].properties.is_visible, buf_new.layers[layer].properties.is_visible,
+            "layer {layer} is_visible differs"
+        );
+        assert_eq!(
+            buf_old.layers[layer].properties.has_alpha_channel, buf_new.layers[layer].properties.has_alpha_channel,
+            "layer {layer} has_alpha_channel differs"
+        );
+
+        assert_eq!(
+            buf_old.layers[layer].default_font_page, buf_new.layers[layer].default_font_page,
+            "layer {layer} default_font_page differs"
+        );
+
+        for line in 0..buf_old.layers[layer].lines.len() {
+            for i in 0..buf_old.layers[layer].get_width() as usize {
+                let mut ch = buf_old.layers[layer].get_char((line, i).into());
+                let mut ch2 = buf_new.layers[layer].get_char((line, i).into());
+                if compare_options.ignore_invisible_chars && (!ch.is_visible() || !ch2.is_visible()) {
+                    continue;
+                }
+
+                assert_eq!(
+                    buf_old.palette.get_color(ch.attribute.get_foreground()),
+                    buf_new.palette.get_color(ch2.attribute.get_foreground()),
+                    "fg differs at layer: {layer}, line: {line}, char: {i} (old:{}={}, new:{}={})",
+                    ch.attribute.get_foreground(),
+                    buf_old.palette.get_color(ch.attribute.get_foreground()),
+                    ch2.attribute.get_foreground(),
+                    buf_new.palette.get_color(ch2.attribute.get_foreground())
+                );
+                assert_eq!(
+                    buf_old.palette.get_color(ch.attribute.get_background()),
+                    buf_new.palette.get_color(ch2.attribute.get_background()),
+                    "bg differs at layer: {layer}, line: {line}, char: {i} (old:{}={}, new:{}={})",
+                    ch.attribute.get_background(),
+                    buf_old.palette.get_color(ch.attribute.get_background()),
+                    ch2.attribute.get_background(),
+                    buf_new.palette.get_color(ch2.attribute.get_background())
+                );
+
+                ch.attribute.set_foreground(0);
+                ch.attribute.set_background(0);
+
+                ch2.attribute.set_foreground(0);
+                ch2.attribute.set_background(0);
+                assert_eq!(ch, ch2, "layer: {layer}, line: {line}, char: {i}");
+            }
+        }
+    }
+}

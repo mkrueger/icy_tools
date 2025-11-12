@@ -202,12 +202,15 @@ impl BitFont {
     pub fn from_bytes(name: impl Into<String>, data: &[u8]) -> EngineResult<Self> {
         // Try to parse as YaffFont first (handles PSF1, PSF2)
         match YaffFont::from_bytes(data) {
-            Ok(yaff_font) => Ok(Self {
-                path_opt: None,
-                font_type: BitFontType::BuiltIn,
-                yaff_font,
-                glyph_cache: Mutex::new(HashMap::new()),
-            }),
+            Ok(mut yaff_font) => {
+                yaff_font.name = Some(name.into());
+                Ok(Self {
+                    path_opt: None,
+                    font_type: BitFontType::BuiltIn,
+                    yaff_font,
+                    glyph_cache: Mutex::new(HashMap::new()),
+                })
+            }
             Err(_) => {
                 // Try as raw font data
                 if data.len() % 256 != 0 {

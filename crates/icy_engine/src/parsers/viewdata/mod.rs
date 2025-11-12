@@ -255,8 +255,11 @@ impl BufferParser for Parser {
                 self.caret_up(buf);
             }
             0b000_1100 => {
-                // 12 / 0x0C
+                // 12 / 0x0C - Form feed/clear screen
+                // Preserve caret visibility (e.g., if hidden by 0x14)
+                let was_visible = buf.caret().visible;
                 buf.reset_terminal();
+                buf.caret_mut().visible = was_visible;
                 buf.clear_screen();
                 buf.caret_default_colors();
 

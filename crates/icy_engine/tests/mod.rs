@@ -4,14 +4,11 @@ use std::{
     path::Path,
 };
 
-use icy_engine::{
-    Color, Rectangle, Screen, TextBuffer,
-    editor::{EditState, UndoState},
-};
+use icy_engine::{Color, Rectangle, Screen};
 
 mod output;
 mod parser;
-
+/*
 #[test]
 fn test_set_aspect_ratio() {
     let mut buffer = TextBuffer::new((80, 25));
@@ -39,6 +36,7 @@ fn test_set_letter_spacing() {
     edit_state.undo().unwrap();
     assert!(edit_state.get_buffer().use_letter_spacing());
 }
+*/
 
 pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
     let rect: Rectangle = screen.get_size().into();

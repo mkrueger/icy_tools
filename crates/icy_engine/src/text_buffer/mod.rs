@@ -7,7 +7,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use i18n_embed_fl::fl;
 use icy_sauce::prelude::*;
 
 pub mod buffers_rendering;
@@ -26,9 +25,9 @@ pub use buffer_type::*;
 
 use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
-use crate::paint::HalfBlock;
 use crate::{
-    Color, EngineResult, FORMATS, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane, attribute,
+    Color, EngineResult, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
+    attribute,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
@@ -588,7 +587,7 @@ impl TextBuffer {
             is_font_table_dirty: false,
             overlay_index: 0,
             overlay_layer: None,
-            layers: vec![Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-background-name"), size)],
+            layers: vec![Layer::new("Background", size)],
             sixel_threads: VecDeque::new(), // file_name_changed: Box::new(|| {}),
             use_letter_spacing: false,
             use_aspect_ratio: false,

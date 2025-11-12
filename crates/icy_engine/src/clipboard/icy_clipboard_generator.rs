@@ -1,7 +1,4 @@
-use i18n_embed_fl::fl;
-
 use crate::{AttributedChar, BufferType, Layer, Position, Role, Selection, SelectionMask, TextAttribute, TextBuffer, TextPane};
-
 pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 
 pub fn get_clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &SelectionMask, selection: &Option<Selection>) -> Option<Vec<u8>> {
@@ -49,7 +46,7 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
     let height = u32::from_le_bytes(data[13..17].try_into().unwrap()) as usize;
     let mut data = &data[17..];
 
-    let mut layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-pasted-name"), (width, height));
+    let mut layer = Layer::new(format!("New Layer"), (width, height));
     layer.properties.has_alpha_channel = true;
     layer.role = Role::PastePreview;
     layer.set_offset((x, y));

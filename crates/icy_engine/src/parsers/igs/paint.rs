@@ -1,4 +1,4 @@
-use std::{mem::swap, str::FromStr};
+use std::mem::swap;
 
 use super::{
     IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
@@ -186,9 +186,9 @@ impl Default for DrawExecutor {
 impl DrawExecutor {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
         let fonts = load_atari_fonts();
-        let font_7px = BitFont::from_str(fonts[0].2).unwrap();
-        let font_9px = BitFont::from_str(fonts[1].2).unwrap();
-        let font_16px = BitFont::from_str(fonts[2].2).unwrap();
+        let font_7px = BitFont::from_bytes(fonts[0].0.as_str(), fonts[0].2.as_bytes()).unwrap();
+        let font_9px = BitFont::from_bytes(fonts[1].0.as_str(), fonts[1].2.as_bytes()).unwrap();
+        let font_16px = BitFont::from_bytes(fonts[2].0.as_str(), fonts[2].2.as_bytes()).unwrap();
         Self {
             terminal_resolution,
             polymarker_color: 1,

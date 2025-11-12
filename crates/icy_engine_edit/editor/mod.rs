@@ -19,6 +19,18 @@ mod tag_operations;
 
 use crate::{Caret, EngineResult, Layer, Selection, SelectionMask, TextBuffer, TextPane, clipboard, overlay_mask::OverlayMask};
 
+#[derive(RustEmbed)]
+#[folder = "i18n"] // path to the compiled localization resources
+struct Localizations;
+
+use once_cell::sync::Lazy;
+static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
+    let loader = fluent_language_loader!();
+    let requested_languages = DesktopLanguageRequester::requested_languages();
+    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
+    loader
+});
+
 pub struct EditState {
     buffer: TextBuffer,
     caret: Caret,

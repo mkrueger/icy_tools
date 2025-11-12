@@ -38,7 +38,7 @@ impl SelectionMask {
         self.overlay_mask.get_rectangle()
     }
 
-    pub(crate) fn add_selection(&mut self, selection: Selection) {
+    pub fn add_selection(&mut self, selection: Selection) {
         match selection.shape {
             crate::Shape::Rectangle => {
                 self.add_rectangle(selection.as_rectangle());
@@ -61,7 +61,7 @@ impl SelectionMask {
         }
     }
 
-    pub(crate) fn remove_selection(&mut self, selection: Selection) {
+    pub fn remove_selection(&mut self, selection: Selection) {
         match selection.shape {
             crate::Shape::Rectangle => {
                 self.remove_rectangle(selection.as_rectangle());

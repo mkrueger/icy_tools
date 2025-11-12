@@ -65,33 +65,15 @@ pub use selection_mask::*;
 
 pub type EngineResult<T> = anyhow::Result<T>;
 
-pub mod editor;
-
 pub mod overlay_mask;
-pub mod paint;
-
-use i18n_embed::{
-    DesktopLanguageRequester,
-    fluent::{FluentLanguageLoader, fluent_language_loader},
-};
-use rust_embed::RustEmbed;
 
 pub mod screen;
 pub use screen::*;
 
 pub mod clipboard;
 
-#[derive(RustEmbed)]
-#[folder = "i18n"] // path to the compiled localization resources
-struct Localizations;
-
-use once_cell::sync::Lazy;
-static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
-    let loader = fluent_language_loader!();
-    let requested_languages = DesktopLanguageRequester::requested_languages();
-    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
-    loader
-});
+pub mod paint;
+pub use paint::*;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Size {
