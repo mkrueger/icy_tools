@@ -159,7 +159,8 @@ impl BitFont {
 
     /// Create a font from raw 8-bit data
     pub fn create_8(name: impl Into<String>, width: u8, height: u8, data: &[u8]) -> Self {
-        let yaff_font = yaff_from_u8_data(name, width, height, data);
+        let mut yaff_font = YaffFont::from_raw_bytes(data, width as u32, height as u32).unwrap();
+        yaff_font.name = Some(name.into());
         Self {
             path_opt: None,
             font_type: BitFontType::Custom,
@@ -190,59 +191,6 @@ impl BitFont {
     pub fn to_psf2_bytes(&self) -> EngineResult<Vec<u8>> {
         // Use libyaff to convert to PSF2 format
         Ok(libyaff::psf::to_psf2_bytes(&self.yaff_font)?)
-    }
-}
-
-/// Helper to convert raw u8 font data to YaffFont format
-fn yaff_from_u8_data(name: impl Into<String>, width: u8, height: u8, data: &[u8]) -> YaffFont {
-    let mut glyphs = Vec::new();
-    let mut ch = 0;
-    let mut offset = 0;
-
-    while offset < data.len() && ch < 256 {
-        let glyph_data = &data[offset..offset + height as usize];
-
-        // Convert u8 rows to 2D bitmap (Vec<Vec<bool>>)
-        let mut pixels = Vec::new();
-        for byte in glyph_data {
-            let mut row = Vec::new();
-            for bit in 0..width {
-                row.push((byte & (1 << (7 - bit))) != 0);
-            }
-            pixels.push(row);
-        }
-
-        // Create a simple label for this character
-        let glyph = GlyphDefinition {
-            labels: Vec::new(), // Will be populated if needed
-            bitmap: libyaff::Bitmap {
-                pixels,
-                width: width as usize,
-                height: height as usize,
-            },
-            left_bearing: None,
-            right_bearing: None,
-            top_bearing: None,
-            bottom_bearing: None,
-            shift_up: None,
-            shift_left: None,
-            right_kerning: None,
-            left_kerning: None,
-            scalable_width: None,
-        };
-
-        glyphs.push(glyph);
-        offset += height as usize;
-        ch += 1;
-    }
-
-    YaffFont {
-        name: Some(name.into()),
-        bounding_box: Some((width as u32, height as u32)),
-        raster_size: Some((width as u32, height as u32)),
-        cell_size: Some((width as u32, height as u32)),
-        glyphs,
-        ..Default::default()
     }
 }
 

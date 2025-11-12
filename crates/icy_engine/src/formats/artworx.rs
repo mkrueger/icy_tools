@@ -229,6 +229,7 @@ mod tests {
         buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, crate::IceMode::Blink)));
         test_artworx(&mut buffer);
     }
+
     fn create_buffer() -> TextBuffer {
         let mut buffer = TextBuffer::new((80, 25));
         for y in 0..buffer.get_height() {

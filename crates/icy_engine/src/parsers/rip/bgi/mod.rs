@@ -2085,10 +2085,10 @@ impl Bgi {
         buf.add_mouse_field(MouseField::new(x1, y1, x2, y2, host_command, self.button_style.clone()));
 
         // Calculate the button surface coordinates
-        let mut surface_x1 = x1;
-        let mut surface_y1 = y1;
-        let mut surface_x2 = x2;
-        let mut surface_y2 = y2;
+        let surface_x1 = x1;
+        let surface_y1 = y1;
+        let surface_x2 = x2;
+        let surface_y2 = y2;
 
         // Draw recessed frame if needed
         if self.button_style.display_recessed() && !pressed {
