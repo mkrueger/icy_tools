@@ -1,7 +1,9 @@
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane, rip::bgi::MouseField,
+    Rectangle, RenderOptions, RgbaScreen, SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    rip::bgi::{DEFAULT_BITFONT, MouseField},
 };
+use std::collections::HashMap;
 use std::thread::JoinHandle;
 
 pub struct PaletteScreenBuffer {
@@ -13,7 +15,7 @@ pub struct PaletteScreenBuffer {
     layer: Layer,
 
     // Rendering properties
-    font: BitFont,
+    font_table: HashMap<usize, BitFont>,
     palette: Palette,
     caret: Caret,
     ice_mode: IceMode,
@@ -35,8 +37,8 @@ impl PaletteScreenBuffer {
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(px_width: i32, px_height: i32, font: BitFont) -> Self {
         // Calculate character grid dimensions from pixel size
-        let char_cols = px_width / font.size.width;
-        let char_rows = px_height / font.size.height;
+        let char_cols = px_width / font.size().width;
+        let char_rows = px_height / font.size().height;
 
         // Allocate RGBA pixel buffer (4 bytes per pixel)
         let screen = vec![0u8; px_width as usize * px_height as usize];
@@ -47,12 +49,16 @@ impl PaletteScreenBuffer {
         for _ in 0..char_rows {
             layer.lines.push(Line::new());
         }
+
+        let mut font_table = HashMap::new();
+        font_table.insert(0, font);
+
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
             char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
             screen,
             layer,
-            font,
+            font_table,
             palette: Palette::from_slice(&DOS_DEFAULT_PALETTE),
             caret: Caret::default(),
             ice_mode: IceMode::Unlimited,
@@ -64,11 +70,6 @@ impl PaletteScreenBuffer {
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
         }
-    }
-
-    pub fn with_font(mut self, font: BitFont) -> Self {
-        self.font = font;
-        self
     }
 
     pub fn with_palette(mut self, palette: Palette) -> Self {
@@ -93,16 +94,26 @@ impl PaletteScreenBuffer {
 
         let bg_color = ch.attribute.get_background() as u32;
 
+        let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+            font
+        } else if let Some(font) = self.get_font(0) {
+            font
+        } else {
+            &DEFAULT_BITFONT
+        };
+
         // Calculate pixel position
-        let pixel_x = x * self.font.size.width;
-        let pixel_y = y * self.font.size.height;
+        let pixel_x = x * font.size().width;
+        let pixel_y = y * font.size().height;
 
         // Get glyph data from font
-        let glyph = self.font.get_glyph(ch.ch);
+        let glyph = font.get_glyph(ch.ch);
 
         // Render the character
-        for row in 0..self.font.size.width {
-            for col in 0..self.font.size.height {
+        let font_size = font.size();
+        // let glyph_size = self.font.size();
+        for row in 0..font_size.height {
+            for col in 0..font_size.width {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
@@ -111,16 +122,10 @@ impl PaletteScreenBuffer {
                 }
 
                 // Check if pixel is set in font glyph
-                let is_foreground = if let Some(g) = glyph {
-                    if row < (g.data.len() as i32) * 8 / self.font.size.width {
-                        let byte_idx = ((row * self.font.size.width + col) / 8) as usize;
-                        let bit_idx = 7 - ((row * self.font.size.width + col) % 8);
-
-                        if byte_idx < g.data.len() {
-                            (g.data[byte_idx] >> bit_idx) & 1 == 1
-                        } else {
-                            false
-                        }
+                let is_foreground = if let Some(g) = &glyph {
+                    // Use bitmap.pixels[row][col] if in bounds
+                    if row < g.bitmap.pixels.len() as i32 && col < g.bitmap.pixels[row as usize].len() as i32 {
+                        g.bitmap.pixels[row as usize][col as usize]
                     } else {
                         false
                     }
@@ -265,15 +270,15 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_font_dimensions(&self) -> Size {
-        self.font.size
+        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
     }
 
-    fn get_font(&self, _font_idx: usize) -> Option<&BitFont> {
-        Some(&self.font)
+    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
+        self.font_table.get(&font_number)
     }
 
     fn font_count(&self) -> usize {
-        1
+        self.font_table.len()
     }
 
     fn line_count(&self) -> usize {
@@ -344,7 +349,8 @@ impl RgbaScreen for PaletteScreenBuffer {
 
     fn set_resolution(&mut self, size: Size) {
         self.pixel_size = size;
-        self.char_screen_size = Size::new(size.width / self.font.size.width, size.height / self.font.size.height);
+        let size = self.get_font(0).unwrap().size();
+        self.char_screen_size = Size::new(size.width / size.width, size.height / size.height);
         self.screen.resize((size.width as usize) * (size.height as usize), 0);
     }
 
@@ -387,7 +393,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn reset_terminal(&mut self) {
-        self.terminal_state = TerminalState::from(self.get_size());
+        self.terminal_state.reset_terminal(self.terminal_state.get_size());
     }
 
     fn insert_line(&mut self, line: usize, new_line: Line) {
@@ -396,21 +402,16 @@ impl EditableScreen for PaletteScreenBuffer {
         }
     }
 
-    fn set_font(&mut self, _font_idx: usize, font: BitFont) {
-        self.font = font;
-
-        // Recalculate pixel dimensions and resize buffer
-        let pixel_width = self.pixel_size.width / self.font.size.width;
-        let pixel_height = self.pixel_size.height / self.font.size.height;
-        self.char_screen_size = Size::new(pixel_width, pixel_height);
+    fn set_font(&mut self, font_number: usize, font: BitFont) {
+        self.font_table.insert(font_number, font);
     }
 
-    fn remove_font(&mut self, _font_idx: usize) -> Option<BitFont> {
-        None // Only one font supported
+    fn remove_font(&mut self, font_number: usize) -> Option<BitFont> {
+        self.font_table.remove(&font_number)
     }
 
     fn clear_font_table(&mut self) {
-        // No-op, only one font supported
+        self.font_table.clear();
     }
 
     fn set_size(&mut self, size: Size) {
@@ -476,6 +477,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Clear pixel buffer
         self.screen.fill(0);
+        self.mark_dirty();
     }
 
     fn clear_scrollback(&mut self) {
@@ -510,7 +512,6 @@ impl EditableScreen for PaletteScreenBuffer {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
             return;
         }
-
         let y = pos.y as usize;
         let x = pos.x as usize;
 

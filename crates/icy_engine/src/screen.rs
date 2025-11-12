@@ -129,7 +129,7 @@ pub trait EditableScreen: RgbaScreen {
     fn mark_dirty(&self);
 
     fn lf(&mut self) -> CallbackAction {
-        let was_ooe = self.caret().y > self.get_last_editable_line();
+        let _was_ooe = self.caret().y > self.get_last_editable_line();
         let mut line_inserted = 0;
         self.caret_mut().x = 0;
         let y = self.caret_mut().y;
@@ -152,11 +152,8 @@ pub trait EditableScreen: RgbaScreen {
             return CallbackAction::Update;
         }
 
-        if was_ooe {
-            self.limit_caret_pos();
-        } else {
-            self.check_scrolling_on_caret_down(false);
-        }
+        self.check_scrolling_on_caret_down(false);
+        self.limit_caret_pos();
         if line_inserted > 0 {
             return CallbackAction::ScrollDown(line_inserted);
         }
@@ -526,7 +523,11 @@ pub trait EditableScreen: RgbaScreen {
                 let height = self.get_last_editable_line() - first;
                 let n = self.caret().y.clamp(first, (first + height - 1).max(first));
                 self.caret_mut().y = n;
-                let x = self.caret().x.clamp(0, (self.get_width() - 1).max(0));
+                // Respect left/right margins when origin is within margins
+                let left = self.get_first_editable_column().max(0);
+                let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
+                let x = self.caret().x.clamp(left, right);
+                println!("limit caret pos");
                 self.caret_mut().x = x;
             }
         }

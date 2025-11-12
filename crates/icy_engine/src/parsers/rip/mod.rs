@@ -11,14 +11,14 @@ mod commands;
 #[cfg(test)]
 mod tests;
 
-#[derive(Default, Debug)]
+#[derive(Default, Clone, Debug)]
 enum State {
     #[default]
     Default,
     GotRipStart,
     ReadCommand(usize),
     ReadParams,
-    SkipEOL,
+    SkipEOL(Box<State>),
     EndRip,
 }
 
@@ -96,7 +96,7 @@ impl Parser {
 
     fn record_rip_command(&mut self, buf: &mut dyn EditableScreen, cmd: Box<dyn Command>) -> EngineResult<CallbackAction> {
         self.rip_counter = self.rip_counter.wrapping_add(1);
-
+        buf.mark_dirty();
         let result = cmd.run(buf, &mut self.bgi);
         if !self.record_rip_commands {
             return result;
@@ -107,7 +107,7 @@ impl Parser {
 
     fn parse_parameter(&mut self, buf: &mut dyn EditableScreen, ch: char) -> Option<Result<CallbackAction, anyhow::Error>> {
         if ch == '\\' {
-            self.state = State::SkipEOL;
+            self.state = State::SkipEOL(Box::new(State::ReadParams));
             return Some(Ok(CallbackAction::None));
         }
         if ch == '\r' {
@@ -177,30 +177,25 @@ impl BufferParser for Parser {
         }
         // Debug output (can be toggled via env if needed):
         // println!("RIP PARSER: State {:?}, Char {:?}", self.state, ch);
-        match self.state {
+        match &self.state {
             State::ReadParams => {
                 if let Some(value) = self.parse_parameter(buf, ch) {
                     return value;
                 }
                 return Ok(CallbackAction::None);
             }
-            State::SkipEOL => {
+            State::SkipEOL(old_state) => {
                 if ch == '\r' {
                     return Ok(CallbackAction::None);
                 }
                 if ch == '\n' {
-                    // If no active command (we just finished one), resume GotRipStart so a leading '|' starts next command.
-                    if self.command.is_none() {
-                        self.state = State::GotRipStart;
-                    } else {
-                        self.state = State::ReadParams;
-                    }
+                    self.state = *old_state.clone();
+                    return Ok(CallbackAction::None);
+                } else if char::is_whitespace(ch) {
+                    // Ignore other whitespace characters
                     return Ok(CallbackAction::None);
                 }
-                if let Some(value) = self.parse_parameter(buf, ch) {
-                    return value;
-                }
-                self.state = State::ReadParams;
+                self.state = *old_state.clone();
                 return Ok(CallbackAction::None);
             }
             State::EndRip => {
@@ -227,7 +222,13 @@ impl BufferParser for Parser {
                     return Ok(CallbackAction::None);
                 }
 
-                if level == 1 {
+                // Handle line continuation in ReadCommand state
+                if ch == '\\' {
+                    self.state = State::SkipEOL(Box::new(State::ReadCommand(*level)));
+                    return Ok(CallbackAction::None);
+                }
+
+                if *level == 1 {
                     match ch {
                         'M' => self.start_command(Box::<commands::Mouse>::default()),
                         'K' => return self.push_command(buf, Box::<commands::MouseFields>::default()),
@@ -254,7 +255,7 @@ impl BufferParser for Parser {
                     }
                     return Ok(CallbackAction::None);
                 }
-                if level == 9 {
+                if *level == 9 {
                     if let '\x1B' = ch {
                         self.start_command(Box::<commands::EnterBlockMode>::default());
                     } else {
@@ -334,7 +335,7 @@ impl BufferParser for Parser {
                 }
                 // Allow line continuation right after a command: a trailing '\\' means skip newline and stay in RIP mode.
                 if ch == '\\' {
-                    self.state = State::SkipEOL;
+                    self.state = State::SkipEOL(Box::new(State::GotRipStart));
                     return Ok(CallbackAction::None);
                 }
                 if ch == '\n' || ch == '\r' {
@@ -420,4 +421,12 @@ pub fn parse_base_36(number: &mut i32, ch: char) -> EngineResult<()> {
     } else {
         Err(anyhow::Error::msg("Invalid base 36 digit"))
     }
+}
+
+pub fn setup_rip_text_fonts(buffer: &mut dyn EditableScreen) {
+    buffer.set_font(0, bgi::DEFAULT_BITFONT.clone());
+    buffer.set_font(1, crate::EGA_7x8.clone());
+    buffer.set_font(2, crate::VGA_8x14.clone());
+    buffer.set_font(3, crate::VGA_7x14.clone());
+    buffer.set_font(4, crate::VGA_16x14.clone());
 }

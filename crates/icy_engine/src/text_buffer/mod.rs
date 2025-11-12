@@ -28,7 +28,7 @@ use crate::ansi::MusicOption;
 use crate::ansi::sound::AnsiMusic;
 use crate::paint::HalfBlock;
 use crate::{
-    Color, EngineResult, FORMATS, Glyph, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane, attribute,
+    Color, EngineResult, FORMATS, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane, attribute,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
@@ -694,7 +694,7 @@ impl TextBuffer {
     pub fn search_font_by_name(&self, name: impl Into<String>) -> Option<usize> {
         let name = name.into();
         for (i, font) in &self.font_table {
-            if font.name == name {
+            if font.name() == name {
                 return Some(*i);
             }
         }
@@ -874,7 +874,7 @@ impl TextBuffer {
     }
 
     #[must_use]
-    pub fn get_glyph(&self, ch: &AttributedChar) -> Option<&Glyph> {
+    pub fn get_glyph(&self, ch: &AttributedChar) -> Option<libyaff::GlyphDefinition> {
         if let Some(ext) = &self.get_font(ch.get_font_page()) {
             return ext.get_glyph(ch.ch);
         }
@@ -883,7 +883,7 @@ impl TextBuffer {
 
     #[must_use]
     pub fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(0) { font.size } else { Size::new(8, 16) }
+        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
     }
 
     /// .

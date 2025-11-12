@@ -103,7 +103,7 @@ impl OutputFormat for IcyDraw {
 
         for (k, v) in buf.font_iter() {
             let mut font_data: Vec<u8> = Vec::new();
-            write_utf8_encoded_string(&mut font_data, &v.name);
+            write_utf8_encoded_string(&mut font_data, &v.name());
             font_data.extend(v.to_psf2_bytes().unwrap());
 
             if let Err(err) = encoder.add_ztxt_chunk(format!("FONT_{k}"), general_purpose::STANDARD.encode(&font_data)) {

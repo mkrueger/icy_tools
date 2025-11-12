@@ -11,6 +11,29 @@ use crate::{AttributedChar, EngineResult, Layer, Position, Rectangle, Selection,
 
 use super::{EditState, EditorError};
 
+// Helper structure to work with glyphs in the old format for manipulation
+#[derive(Debug, Clone)]
+struct GlyphData {
+    data: Vec<u32>, // Each u32 is a row represented as a bitmask (8 bits)
+}
+
+impl GlyphData {
+    // Convert from libyaff GlyphDefinition to our internal format
+    fn from_glyph_def(glyph: &libyaff::GlyphDefinition) -> Self {
+        let mut data = Vec::new();
+        for row in &glyph.bitmap.pixels {
+            let mut packed: u32 = 0;
+            for (i, &pixel) in row.iter().take(8).enumerate() {
+                if pixel {
+                    packed |= 1 << (7 - i);
+                }
+            }
+            data.push(packed);
+        }
+        Self { data }
+    }
+}
+
 fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
     if let Some(selection) = sel {
         let rect = selection.as_rectangle();
@@ -415,36 +438,55 @@ fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     // These are symmetrical characters or ones that produce false matches
     let excluded_chars = [46 as char]; // . (period)
 
-    let mut sorted_keys: Vec<_> = font.glyphs.keys().copied().collect();
+    // Collect all characters from the font glyphs
+    let mut sorted_keys: Vec<char> = Vec::new();
+    for glyph_def in &font.yaff_font.glyphs {
+        for label in &glyph_def.labels {
+            let label_str = format!("{:?}", label);
+            // Try to parse character code from label
+            if let Some(hex_str) = label_str.strip_prefix("0x") {
+                if let Ok(code) = u32::from_str_radix(hex_str, 16) {
+                    if let Some(ch) = char::from_u32(code) {
+                        sorted_keys.push(ch);
+                    }
+                }
+            }
+        }
+    }
     sorted_keys.sort();
+    sorted_keys.dedup();
 
     for ch in &sorted_keys {
         if excluded_chars.contains(ch) {
             continue;
         }
 
-        let cur_glyph = &font.glyphs[ch];
-        let flipped_glyhps = generate_flipy_variants(cur_glyph);
-        let Some(flipped_glyhps) = flipped_glyhps else {
-            continue;
-        };
-        let neg_glyphs = negate_glyphs(&flipped_glyhps);
-
-        'outer: for ch2 in &sorted_keys {
-            if ch == ch2 || excluded_chars.contains(ch2) {
+        if let Some(cur_glyph_def) = font.get_glyph(*ch) {
+            let cur_glyph = GlyphData::from_glyph_def(&cur_glyph_def);
+            let flipped_glyhps = generate_flipy_variants(&cur_glyph);
+            let Some(flipped_glyhps) = flipped_glyhps else {
                 continue;
-            }
-            let cmp_glyph = &font.glyphs[ch2];
-            let cmp_glyphs = generate_y_variants(cmp_glyph);
-            for cmp_glyph in cmp_glyphs {
-                for i in 0..flipped_glyhps.len() {
-                    if flipped_glyhps[i].data == cmp_glyph.data {
-                        flip_table.insert(*ch, (false, *ch2));
-                        break 'outer;
-                    }
-                    if neg_glyphs[i].data == cmp_glyph.data {
-                        flip_table.insert(*ch, (true, *ch2));
-                        break 'outer;
+            };
+            let neg_glyphs = negate_glyphs(&flipped_glyhps);
+
+            'outer: for ch2 in &sorted_keys {
+                if ch == ch2 || excluded_chars.contains(ch2) {
+                    continue;
+                }
+                if let Some(cmp_glyph_def) = font.get_glyph(*ch2) {
+                    let cmp_glyph = GlyphData::from_glyph_def(&cmp_glyph_def);
+                    let cmp_glyphs = generate_y_variants(&cmp_glyph);
+                    for cmp_glyph in cmp_glyphs {
+                        for i in 0..flipped_glyhps.len() {
+                            if flipped_glyhps[i].data == cmp_glyph.data {
+                                flip_table.insert(*ch, (false, *ch2));
+                                break 'outer;
+                            }
+                            if neg_glyphs[i].data == cmp_glyph.data {
+                                flip_table.insert(*ch, (true, *ch2));
+                                break 'outer;
+                            }
+                        }
                     }
                 }
             }
@@ -457,8 +499,26 @@ fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
 fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     let mut flip_table = BTreeMap::new();
 
+    // Collect all characters from the font glyphs
+    let mut sorted_keys: Vec<char> = Vec::new();
+    for glyph_def in &font.yaff_font.glyphs {
+        for label in &glyph_def.labels {
+            let label_str = format!("{:?}", label);
+            // Try to parse character code from label
+            if let Some(hex_str) = label_str.strip_prefix("0x") {
+                if let Ok(code) = u32::from_str_radix(hex_str, 16) {
+                    if let Some(ch) = char::from_u32(code) {
+                        sorted_keys.push(ch);
+                    }
+                }
+            }
+        }
+    }
+    sorted_keys.sort();
+    sorted_keys.dedup();
+
     // Only add hardcoded mappings if both characters exist in the font
-    if font.glyphs.contains_key(&'\\') && font.glyphs.contains_key(&'/') {
+    if sorted_keys.contains(&'\\') && sorted_keys.contains(&'/') {
         flip_table.insert('\\', (false, '/'));
         flip_table.insert('/', (false, '\\'));
     }
@@ -467,48 +527,51 @@ fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     // These are symmetrical characters or ones that produce false matches
     let excluded_chars = [45 as char, 186 as char, 61 as char]; // -, ║, =
 
-    let mut sorted_keys: Vec<_> = font.glyphs.keys().copied().collect();
-    sorted_keys.sort();
+    let size = font.size();
 
     for ch in &sorted_keys {
         if excluded_chars.contains(ch) {
             continue;
         }
 
-        let cur_glyph = &font.glyphs[ch];
-        let flipped_glyhps: Option<Vec<crate::Glyph>> = generate_flipx_variants(cur_glyph, font.size.width);
-        let Some(flipped_glyhps) = flipped_glyhps else {
-            continue;
-        };
-        let neg_glyphs = negate_glyphs(&flipped_glyhps);
-
-        'outer: for ch2 in &sorted_keys {
-            if ch == ch2 || excluded_chars.contains(ch2) {
+        if let Some(cur_glyph_def) = font.get_glyph(*ch) {
+            let cur_glyph = GlyphData::from_glyph_def(&cur_glyph_def);
+            let flipped_glyhps = generate_flipx_variants(&cur_glyph, size.width);
+            let Some(flipped_glyhps) = flipped_glyhps else {
                 continue;
-            }
-            let cmp_glyph = &font.glyphs[ch2];
+            };
+            let neg_glyphs = negate_glyphs(&flipped_glyhps);
 
-            // Skip if ch2 is character 186 and ch is not one of the expected mappings
-            if *ch2 == 186 as char && *ch != 186 as char {
-                continue;
-            }
+            'outer: for ch2 in &sorted_keys {
+                if ch == ch2 || excluded_chars.contains(ch2) {
+                    continue;
+                }
 
-            let cmp_glyphs = generate_x_variants(cmp_glyph, font.size.width);
+                // Skip if ch2 is character 186 and ch is not one of the expected mappings
+                if *ch2 == 186 as char && *ch != 186 as char {
+                    continue;
+                }
 
-            for (idx, cmp_glyph) in cmp_glyphs.iter().enumerate() {
-                for i in 0..flipped_glyhps.len() {
-                    // Only accept exact flips (index 0), not shifted variants for problematic characters
-                    if (*ch == 186 as char || *ch2 == 186 as char) && (i != 0 || idx != 0) {
-                        continue;
-                    }
+                if let Some(cmp_glyph_def) = font.get_glyph(*ch2) {
+                    let cmp_glyph = GlyphData::from_glyph_def(&cmp_glyph_def);
+                    let cmp_glyphs = generate_x_variants(&cmp_glyph, size.width);
 
-                    if flipped_glyhps[i].data == cmp_glyph.data {
-                        flip_table.insert(*ch, (false, *ch2));
-                        break 'outer;
-                    }
-                    if neg_glyphs[i].data == cmp_glyph.data {
-                        flip_table.insert(*ch, (true, *ch2));
-                        break 'outer;
+                    for (idx, cmp_glyph) in cmp_glyphs.iter().enumerate() {
+                        for i in 0..flipped_glyhps.len() {
+                            // Only accept exact flips (index 0), not shifted variants for problematic characters
+                            if (*ch == 186 as char || *ch2 == 186 as char) && (i != 0 || idx != 0) {
+                                continue;
+                            }
+
+                            if flipped_glyhps[i].data == cmp_glyph.data {
+                                flip_table.insert(*ch, (false, *ch2));
+                                break 'outer;
+                            }
+                            if neg_glyphs[i].data == cmp_glyph.data {
+                                flip_table.insert(*ch, (true, *ch2));
+                                break 'outer;
+                            }
+                        }
                     }
                 }
             }
@@ -551,7 +614,7 @@ pub fn map_char(mut ch: AttributedChar, table: &BTreeMap<char, (bool, char)>) ->
     ch
 }
 
-fn negate_glyphs(flipped_glyhps: &Vec<crate::Glyph>) -> Vec<crate::Glyph> {
+fn negate_glyphs(flipped_glyhps: &Vec<GlyphData>) -> Vec<GlyphData> {
     let mut neg_glyhps = Vec::new();
     for flipped_glyph in flipped_glyhps {
         let mut neg_glyph = flipped_glyph.clone();
@@ -563,7 +626,7 @@ fn negate_glyphs(flipped_glyhps: &Vec<crate::Glyph>) -> Vec<crate::Glyph> {
     neg_glyhps
 }
 
-fn generate_flipx_variants(cur_glyph: &crate::Glyph, font_width: i32) -> Option<Vec<crate::Glyph>> {
+fn generate_flipx_variants(cur_glyph: &GlyphData, font_width: i32) -> Option<Vec<GlyphData>> {
     let mut flipped_glyph = cur_glyph.clone();
     let w = 8 - font_width;
 
@@ -576,7 +639,7 @@ fn generate_flipx_variants(cur_glyph: &crate::Glyph, font_width: i32) -> Option<
     Some(generate_x_variants(&flipped_glyph, font_width))
 }
 
-fn generate_x_variants(flipped_glyph: &crate::Glyph, _font_width: i32) -> Vec<crate::Glyph> {
+fn generate_x_variants(flipped_glyph: &GlyphData, _font_width: i32) -> Vec<GlyphData> {
     let mut cmp_glyhps = vec![flipped_glyph.clone()];
 
     let mut left_glyph = cmp_glyhps[0].clone();
@@ -608,7 +671,7 @@ fn generate_x_variants(flipped_glyph: &crate::Glyph, _font_width: i32) -> Vec<cr
     cmp_glyhps
 }
 
-fn generate_flipy_variants(cur_glyph: &crate::Glyph) -> Option<Vec<crate::Glyph>> {
+fn generate_flipy_variants(cur_glyph: &GlyphData) -> Option<Vec<GlyphData>> {
     let mut flipped_glyph = cur_glyph.clone();
     flipped_glyph.data = cur_glyph.data.iter().rev().copied().collect();
     if cur_glyph.data == flipped_glyph.data {
@@ -617,7 +680,7 @@ fn generate_flipy_variants(cur_glyph: &crate::Glyph) -> Option<Vec<crate::Glyph>
     Some(generate_y_variants(&flipped_glyph))
 }
 
-fn generate_y_variants(flipped_glyph: &crate::Glyph) -> Vec<crate::Glyph> {
+fn generate_y_variants(flipped_glyph: &GlyphData) -> Vec<GlyphData> {
     let mut cmp_glyhps = vec![flipped_glyph.clone()];
 
     let mut up_glyph = cmp_glyhps[0].clone();

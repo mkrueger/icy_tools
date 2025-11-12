@@ -25,7 +25,7 @@ pub enum Color {
     White,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum WriteMode {
     Copy,
     Xor,
@@ -418,9 +418,6 @@ pub struct Bgi {
     pub suspend_text: bool,
     pub rip_image: Option<Image>,
 
-    text_window: Option<Rectangle>,
-    text_window_wrap: bool,
-
     pub file_path: PathBuf,
 }
 
@@ -531,8 +528,6 @@ impl Bgi {
             current_pos: Position::new(0, 0),
             char_size: 4,
             rip_image: None,
-            text_window: None,
-            text_window_wrap: false,
             button_style: ButtonStyle2::default(),
             suspend_text: false,
             file_path,
@@ -666,6 +661,7 @@ impl Bgi {
             return;
         }
         let mut new_index = color % 16;
+
         if !matches!(self.write_mode, WriteMode::Copy) {
             let cur = self.get_pixel(buf, x, y);
             new_index = match self.write_mode {
@@ -952,7 +948,173 @@ impl Bgi {
         self.line(buf, left, top, left, bottom);
     }
 
-    pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, border: u8) {
+    pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, start_x: i32, start_y: i32, edge: u8) {
+        // Early bounds / trivial exit
+        if !self.viewport.contains(start_x, start_y) {
+            return;
+        }
+
+        // If starting pixel is already edge, nothing to do.
+        if self.get_pixel(buf, start_x, start_y) == edge {
+            return;
+        }
+
+        // Retrieve pattern (clone user pattern first to avoid borrow issues during pixel writes)
+        let user_pattern = self.fill_user_pattern.clone();
+        let pattern = self.fill_style.get_fill_pattern(&user_pattern);
+
+        let vp_left = self.viewport.left();
+        let vp_top = self.viewport.top();
+        let vp_right = self.viewport.right();
+        let vp_bottom = self.viewport.bottom();
+
+        let width = self.viewport.get_width();
+        let height = self.viewport.get_height();
+
+        // Visited bitmap so we don’t revisit horizontal spans
+        let mut visited = vec![false; (width * height) as usize];
+
+        // SavedPoint replicates original C struct (x,y,oy)
+        #[derive(Clone, Copy)]
+        struct SavedPoint {
+            x: i32,
+            y: i32,
+            oy: i32,
+        }
+
+        // Stack of SavedPoint (LIFO)
+        let mut stack: Vec<SavedPoint> = Vec::new();
+        stack.push(SavedPoint {
+            x: start_x,
+            y: start_y,
+            oy: start_y,
+        });
+
+        // Helper to map absolute coords into visited index
+        let idx = |x: i32, y: i32| -> Option<usize> {
+            if x < vp_left || x >= vp_right || y < vp_top || y >= vp_bottom {
+                return None;
+            }
+            Some(((y - vp_top) * width + (x - vp_left)) as usize)
+        };
+
+        while let Some(SavedPoint { x, y, oy }) = stack.pop() {
+            // Bounds & skip checks
+            if !self.viewport.contains(x, y) {
+                continue;
+            }
+
+            // Skip if pixel is edge or already visited
+            if self.get_pixel(buf, x, y) == edge {
+                continue;
+            }
+            if let Some(i) = idx(x, y) {
+                if visited[i] {
+                    continue;
+                }
+            }
+
+            // Move left until edge (or viewport boundary)
+            let mut scan_x = x;
+            while scan_x > vp_left {
+                let nx = scan_x - 1;
+                let px = self.get_pixel(buf, nx, y);
+                if px == edge {
+                    break;
+                }
+                if let Some(i) = idx(nx, y) {
+                    if visited[i] {
+                        break;
+                    }
+                }
+                scan_x -= 1;
+            }
+
+            // Initialize pattern bit positions
+            let mut vx = (vp_left + scan_x) & 0x07;
+            let vy = (vp_top + y) & 0x07;
+
+            // Pre-calc offsets for previous & next line visitation
+            let prev_y = y - 1;
+            let next_y = y + 1;
+
+            // iszero condition (copy of C logic: skip vertical adjacency if current pattern row is all zero)
+            let pattern_row = pattern[vy as usize];
+            let iszero = pattern_row == 0;
+
+            let mut prevline_active = false;
+            let mut nextline_active = false;
+
+            let mut cur_x = scan_x;
+            while cur_x < vp_right {
+                // Stop if edge encountered
+                let col = self.get_pixel(buf, cur_x, y);
+                if col == edge {
+                    break;
+                }
+
+                // Stop if already filled
+                let already = idx(cur_x, y).map(|i| visited[i]).unwrap_or(true);
+                if already {
+                    break;
+                }
+
+                // Determine fill foreground/background based on pattern bit
+                let cur_pattern_row = pattern[vy as usize];
+                let bit_mask = 0x80u8 >> vx;
+                let use_fg = (cur_pattern_row & bit_mask) != 0;
+                let write_color = if use_fg { self.fill_color } else { self.bkcolor };
+                self.put_pixel(buf, cur_x, y, write_color);
+
+                // Mark visited
+                if let Some(i) = idx(cur_x, y) {
+                    visited[i] = true;
+                }
+
+                // Only consider spawning vertical segments when:
+                //  - pattern row is zero OR pattern bit set (matches C: (row==0) || (row & mask))
+                if cur_pattern_row == 0 || use_fg {
+                    // Previous line logic
+                    if prev_y >= vp_top && !iszero && !(iszero && oy == prev_y) {
+                        let prev_pixel = self.get_pixel(buf, cur_x, prev_y);
+                        let prev_visited = idx(cur_x, prev_y).map(|i| visited[i]).unwrap_or(true);
+                        if prevline_active {
+                            if prev_pixel == edge {
+                                prevline_active = false;
+                            }
+                        } else {
+                            if cur_x > vp_left && cur_x < vp_right - 1 && prev_pixel != edge && !prev_visited {
+                                prevline_active = true;
+                                stack.push(SavedPoint { x: cur_x, y: prev_y, oy: y });
+                            }
+                        }
+                    }
+
+                    // Next line logic
+                    if next_y < vp_bottom && !iszero && !(iszero && oy == next_y) {
+                        let next_pixel = self.get_pixel(buf, cur_x, next_y);
+                        let next_visited = idx(cur_x, next_y).map(|i| visited[i]).unwrap_or(true);
+                        if nextline_active {
+                            if next_pixel == edge {
+                                nextline_active = false;
+                            }
+                        } else {
+                            if cur_x > vp_left && cur_x < vp_right - 1 && next_pixel != edge && !next_visited {
+                                nextline_active = true;
+                                stack.push(SavedPoint { x: cur_x, y: next_y, oy: y });
+                            }
+                        }
+                    }
+                }
+
+                // Advance pattern x position
+                vx = (vx + 1) & 0x07;
+                cur_x += 1;
+            }
+        }
+    }
+
+    pub fn flood_fill2(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, border: u8) {
         if !self.viewport.contains(x, y) {
             return;
         }
@@ -1171,64 +1333,6 @@ impl Bgi {
         self.ellipse(buf, x, y, start_angle, end_angle, radius, (radius as f64 * ASPECT).round() as i32);
     }
 
-    fn symmetry_scan(
-        &mut self,
-        x: i32,
-        y: i32,
-        start_angle: i32,
-        end_angle: i32,
-        xoffset: i32,
-        yoffset: i32,
-        angle: i32,
-        horizontal: bool,
-        rows: &mut Vec<Vec<i32>>,
-    ) {
-        if self.line_thickness == 1 {
-            if in_angle(angle, start_angle, end_angle) {
-                add_scan_row(rows, x + xoffset, y - yoffset);
-            }
-            if in_angle(180 - angle, start_angle, end_angle) {
-                add_scan_row(rows, x - xoffset, y - yoffset);
-            }
-            if in_angle(180 + angle, start_angle, end_angle) {
-                add_scan_row(rows, x - xoffset, y + yoffset);
-            }
-            if in_angle(360 - angle, start_angle, end_angle) {
-                add_scan_row(rows, x + xoffset, y + yoffset);
-            }
-        } else {
-            let offset = self.line_thickness / 2;
-            if horizontal {
-                if in_angle(angle, start_angle, end_angle) {
-                    add_scan_horizontal(rows, x + xoffset - offset, y - yoffset, self.line_thickness);
-                }
-                if in_angle(180 - angle, start_angle, end_angle) {
-                    add_scan_horizontal(rows, x - xoffset - offset, y - yoffset, self.line_thickness);
-                }
-                if in_angle(180 + angle, start_angle, end_angle) {
-                    add_scan_horizontal(rows, x - xoffset - offset, y + yoffset, self.line_thickness);
-                }
-                if in_angle(360 - angle, start_angle, end_angle) {
-                    add_scan_horizontal(rows, x + xoffset - offset, y + yoffset, self.line_thickness);
-                }
-            } else {
-                if in_angle(angle, start_angle, end_angle) {
-                    add_scan_vertical(rows, x + xoffset, y - yoffset - offset, self.line_thickness);
-                }
-                if in_angle(180 - angle, start_angle, end_angle) {
-                    add_scan_vertical(rows, x - xoffset, y - yoffset - offset, self.line_thickness);
-                }
-                if in_angle(180 + angle, start_angle, end_angle) {
-                    add_scan_vertical(rows, x - xoffset, y + yoffset - offset, self.line_thickness);
-                }
-                if in_angle(360 - angle, start_angle, end_angle) {
-                    add_scan_vertical(rows, x + xoffset, y + yoffset - offset, self.line_thickness);
-                }
-            }
-        }
-    }
-
-   
     pub fn fill_scan(&mut self, buf: &mut dyn EditableScreen, rows: &mut Vec<Vec<i32>>) {
         for y in 0..rows.len() - 2 {
             let row = &mut rows[y + 1];
@@ -1346,11 +1450,11 @@ impl Bgi {
         self.ellipse(buf, x, y, 0, 360, rx, ry);
     }
 
-     pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
+    pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
         // Handle degenerate cases
         let mut radius_x = radius_x;
         let mut radius_y = radius_y;
-        
+
         if radius_y == 0 {
             radius_y = 1;
             radius_x -= 1;
@@ -1372,10 +1476,10 @@ impl Bgi {
         let mut dyt = -2 * a2 * ey as i64;
         let d2xt = 2 * b2;
         let d2yt = 2 * a2;
-        
+
         let inv = end_angle < start_angle;
         let mut skip = false;
-        
+
         // Helper closure to check if angle is in range
         let in_range = |angle: i32| -> bool {
             if inv {
@@ -1384,7 +1488,7 @@ impl Bgi {
                 angle >= start_angle && angle <= end_angle
             }
         };
-        
+
         while ey >= 0 && ex <= radius_x {
             // Calculate angle for current position
             let angle = if ey == 0 {
@@ -1394,7 +1498,7 @@ impl Bgi {
                 let angle_deg = angle_rad * RAD2DEG;
                 (90.0 - angle_deg).round() as i32
             };
-            
+
             if !skip {
                 if ex != 0 || ey != 0 {
                     // Top-left quadrant (180 - angle)
@@ -1403,36 +1507,36 @@ impl Bgi {
                         self.put_pixel(buf, x - ex, y - ey, self.color);
                     }
                 }
-                
+
                 if ex != 0 && ey != 0 {
                     // Top-right quadrant (angle)
                     if in_range(angle) {
                         self.put_pixel(buf, x + ex, y - ey, self.color);
                     }
-                    
+
                     // Bottom-left quadrant (180 + angle)
                     let qangle = 180 + angle;
                     if in_range(qangle) {
                         self.put_pixel(buf, x - ex, y + ey, self.color);
                     }
                 }
-                
+
                 // Bottom-right quadrant (360 - angle)
                 let qangle = 360 - angle;
                 if in_range(qangle) {
                     self.put_pixel(buf, x + ex, y + ey, self.color);
                 }
             }
-            
+
             skip = false;
-            
+
             // Determine next pixel position using decision variables
             if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
                 // Move in x direction
                 ex += 1;
                 dxt += d2xt;
                 t += dxt;
-                
+
                 // Check if this is an angle move (skip next)
                 if !((t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3)) && (t - a2 * ey as i64 > crit2) {
                     skip = true;
@@ -1442,7 +1546,7 @@ impl Bgi {
                 ey -= 1;
                 dyt += d2yt;
                 t += dyt;
-                
+
                 // Check if this is an angle move (skip next)
                 if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
                     skip = true;
@@ -1457,20 +1561,20 @@ impl Bgi {
                 t += dyt;
             }
         }
-        
+
         // Handle thick lines (line_thickness == 3)
         if self.line_thickness == 3 {
             let old_thickness = self.line_thickness;
             self.line_thickness = 1;
-            
+
             // Draw inner ellipse
             if radius_x > 1 && radius_y > 1 {
                 self.ellipse(buf, x, y, start_angle, end_angle, radius_x - 1, radius_y - 1);
             }
-            
+
             // Draw outer ellipse
             self.ellipse(buf, x, y, start_angle, end_angle, radius_x + 1, radius_y + 1);
-            
+
             self.line_thickness = old_thickness;
         }
     }
@@ -1479,7 +1583,7 @@ impl Bgi {
         // Handle degenerate cases
         let mut radius_x = radius_x;
         let mut radius_y = radius_y;
-        
+
         if radius_y == 0 {
             radius_y = 1;
             radius_x -= 1;
@@ -1501,10 +1605,10 @@ impl Bgi {
         let mut dyt = -2 * a2 * ey as i64;
         let d2xt = 2 * b2;
         let d2yt = 2 * a2;
-        
+
         let inv = end_angle < start_angle;
         let mut skip = false;
-        
+
         // Helper closure to check if angle is in range
         let in_range = |angle: i32| -> bool {
             if inv {
@@ -1513,7 +1617,7 @@ impl Bgi {
                 angle >= start_angle && angle <= end_angle
             }
         };
-        
+
         while ey >= 0 && ex <= radius_x {
             // Calculate angle for current position
             let angle = if ey == 0 {
@@ -1523,7 +1627,7 @@ impl Bgi {
                 let angle_deg = angle_rad * RAD2DEG;
                 (90.0 - angle_deg).round() as i32
             };
-            
+
             if !skip {
                 if ex != 0 || ey != 0 {
                     // Top-left quadrant
@@ -1532,35 +1636,35 @@ impl Bgi {
                         add_scan_row(rows, x - ex, y - ey);
                     }
                 }
-                
+
                 if ex != 0 && ey != 0 {
                     // Top-right quadrant
                     if in_range(angle) {
                         add_scan_row(rows, x + ex, y - ey);
                     }
-                    
+
                     // Bottom-left quadrant
                     let qangle = 180 + angle;
                     if in_range(qangle) {
                         add_scan_row(rows, x - ex, y + ey);
                     }
                 }
-                
+
                 // Bottom-right quadrant
                 let qangle = 360 - angle;
                 if in_range(qangle) {
                     add_scan_row(rows, x + ex, y + ey);
                 }
             }
-            
+
             skip = false;
-            
+
             // Determine next pixel position
             if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
                 ex += 1;
                 dxt += d2xt;
                 t += dxt;
-                
+
                 if !((t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3)) && (t - a2 * ey as i64 > crit2) {
                     skip = true;
                 }
@@ -1568,7 +1672,7 @@ impl Bgi {
                 ey -= 1;
                 dyt += d2yt;
                 t += dyt;
-                
+
                 if (t + b2 * ex as i64 <= crit1) || (t + a2 * ey as i64 <= crit3) {
                     skip = true;
                 }
@@ -1582,7 +1686,6 @@ impl Bgi {
             }
         }
     }
-
 
     pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius_x: i32, radius_y: i32) {
         let mut rows = create_scan_rows();
@@ -1722,27 +1825,54 @@ impl Bgi {
         let mut yf = y;
 
         if matches!(font, FontType::Default) {
+            // Handle bitmap font with magnification
+            let mag = self.char_size; // char_size is the magnification factor
+
+            // For vertical text with bitmap font, adjust starting position
+            if matches!(self.direction, Direction::Vertical) {
+                yf += self.get_text_size(str).height;
+            }
+
             for c in str.chars() {
                 if let Some(glyph) = DEFAULT_BITFONT.get_glyph(c) {
+                    let char_x = if matches!(self.direction, Direction::Vertical) { xf } else { xf };
+                    let char_y = if matches!(self.direction, Direction::Vertical) { yf - 8 * mag } else { yf };
+
                     for gy in 0..8 {
                         for gx in 0..8 {
-                            if glyph.data[gy as usize] & (1 << (7 - gx)) != 0 {
-                                self.put_pixel(buf, xf + gx, yf + gy, self.color);
+                            // Check pixel in bitmap.pixels[row][col]
+                            let pixel_set = if gy < glyph.bitmap.pixels.len() as i32 && gx < glyph.bitmap.pixels[gy as usize].len() as i32 {
+                                glyph.bitmap.pixels[gy as usize][gx as usize]
+                            } else {
+                                false
+                            };
+                            if pixel_set {
+                                // Draw magnified pixel
+                                for my in 0..mag {
+                                    for mx in 0..mag {
+                                        self.put_pixel(buf, char_x + gx * mag + mx, char_y + gy * mag + my, self.color);
+                                    }
+                                }
                             }
                         }
                     }
-                    xf += 8;
+
+                    if matches!(self.direction, Direction::Horizontal) {
+                        xf += 8 * mag;
+                    } else {
+                        yf -= 8 * mag;
+                    }
                 }
             }
             return Position::new(xf, yf);
         }
 
+        // Vector font handling - this was already correct
         let old_thickness = self.line_thickness;
         self.line_thickness = 1;
         let oldline = self.get_line_style();
         self.set_line_style(LineStyle::Solid);
 
-        //  if (loadedFont != null)
         let loaded_font = font.get_font();
         let text_size = loaded_font.get_text_size(str, self.direction, self.char_size);
         if matches!(self.direction, Direction::Vertical) {
@@ -1769,11 +1899,21 @@ impl Bgi {
 
         let font = self.font;
         if matches!(font, FontType::Default) {
-            return Size::new(str.len() as i32 * 8, 8);
+            // Apply magnification to bitmap font
+            let mag = self.char_size;
+            if matches!(self.direction, Direction::Horizontal) {
+                return Size::new(str.len() as i32 * 8 * mag, 8 * mag);
+            } else {
+                return Size::new(8 * mag, str.len() as i32 * 8 * mag);
+            }
         }
 
         let loaded_font = font.get_font();
         loaded_font.get_text_size(str, self.direction, self.char_size)
+    }
+
+    pub fn get_text_settings(&self) -> (FontType, Direction, i32) {
+        (self.font, self.direction, self.char_size)
     }
 
     pub fn get_image(&self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
@@ -1845,22 +1985,67 @@ impl Bgi {
         self.set_write_mode(old_wm);
     }
 
-    pub fn set_text_window(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, wrap: bool) {
-        self.text_window = Some(Rectangle::from(x1, y1, x2 - x1, y2 - y1));
-        self.text_window_wrap = wrap;
-    }
-
-    pub fn clear_text_window(&mut self, buf: &mut dyn EditableScreen) {
-        if let Some(text_window) = self.text_window {
-            self.bar_rect(buf, text_window);
-        }
-    }
-
     pub fn set_viewport(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         self.viewport = Rectangle::from(x0, y0, x1 - x0, y1 - y0);
     }
     pub fn clear_viewport(&mut self, buf: &mut dyn EditableScreen) {
         self.bar_rect(buf, self.viewport);
+    }
+
+    fn render_button_label(&mut self, buf: &mut dyn EditableScreen, text: &str, tx: i32, ty: i32, hotkey: u8, ch: u8, cs: u8, ul: u8) {
+        // Draw drop shadow if enabled
+        if self.button_style.display_dropshadow() {
+            self.set_color(cs);
+            self.out_text_xy(buf, tx + 1, ty + 1, text);
+        }
+
+        // Draw main text
+        self.set_color(ch);
+        self.out_text_xy(buf, tx, ty, text);
+
+        // Handle hotkey highlighting and underlining
+        if hotkey != 0 && hotkey != 255 {
+            let hk_ch = (hotkey as char).to_ascii_uppercase();
+            for (i, character) in text.chars().enumerate() {
+                if character.to_ascii_uppercase() == hk_ch {
+                    let prefix_size = self.get_text_size(&text[0..i]);
+
+                    // Highlight hotkey character
+                    if self.button_style.highlight_hotkey() {
+                        self.set_color(ul);
+                        self.out_text_xy(buf, tx + prefix_size.width, ty, &character.to_string());
+                    }
+
+                    // Underline hotkey character
+                    if self.button_style.underline_hotkey() {
+                        let hotkey_size = self.get_text_size(&character.to_string());
+
+                        // Draw drop shadow for underline
+                        if self.button_style.display_dropshadow() {
+                            self.draw_line(
+                                buf,
+                                tx + prefix_size.width + 1,
+                                ty + hotkey_size.height + 2,
+                                tx + prefix_size.width + hotkey_size.width,
+                                ty + hotkey_size.height + 2,
+                                cs,
+                            );
+                        }
+
+                        // Draw main underline
+                        self.draw_line(
+                            buf,
+                            tx + prefix_size.width,
+                            ty + hotkey_size.height + 1,
+                            tx + prefix_size.width + hotkey_size.width - 1,
+                            ty + hotkey_size.height + 1,
+                            ul,
+                        );
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     pub fn add_button(
@@ -1883,123 +2068,117 @@ impl Bgi {
         let su = self.button_style.surface_color as u8;
         let ul = self.button_style.underline_color as u8;
         let cc = self.button_style.corner_color as u8;
+        let br = self.button_style.bright as u8;
 
         let mut width = x2 - x1 + 1;
         let mut height = y2 - y1 + 1;
 
         if x2 == 0 {
             width = self.button_style.size.width;
-            x2 = x1 + width;
+            x2 = x1 + width - 1;
         }
         if y2 == 0 {
             height = self.button_style.size.height;
-            y2 = y1 + height;
+            y2 = y1 + height - 1;
         }
 
         buf.add_mouse_field(MouseField::new(x1, y1, x2, y2, host_command, self.button_style.clone()));
-        let mut ox = x1;
-        let mut oy = y1;
 
+        // Calculate the button surface coordinates
+        let mut surface_x1 = x1;
+        let mut surface_y1 = y1;
+        let mut surface_x2 = x2;
+        let mut surface_y2 = y2;
+
+        // Draw recessed frame if needed
         if self.button_style.display_recessed() && !pressed {
-            width += 4;
-            height += 4;
-            ox -= 2;
-            oy -= 2;
+            let recessed_x1 = x1 - 2;
+            let recessed_y1 = y1 - 2;
+            let recessed_x2 = x2 + 2;
+            let recessed_y2 = y2 + 2;
+
+            // Outer recessed frame
+            self.draw_line(buf, recessed_x1, recessed_y1, recessed_x2, recessed_y1, cs);
+            self.draw_line(buf, recessed_x1, recessed_y1, recessed_x1, recessed_y2, cs);
+            self.draw_line(buf, recessed_x2, recessed_y1, recessed_x2, recessed_y2, br);
+            self.draw_line(buf, recessed_x1, recessed_y2, recessed_x2, recessed_y2, br);
+
+            self.put_pixel(buf, recessed_x1, recessed_y1, cc);
+            self.put_pixel(buf, recessed_x2, recessed_y1, cc);
+            self.put_pixel(buf, recessed_x1, recessed_y2, cc);
+            self.put_pixel(buf, recessed_x2, recessed_y2, cc);
+
+            // Inner black frame
+            self.draw_line(buf, recessed_x1 + 1, recessed_y1 + 1, recessed_x2 - 1, recessed_y1 + 1, bg);
+            self.draw_line(buf, recessed_x1 + 1, recessed_y1 + 1, recessed_x1 + 1, recessed_y2 - 1, bg);
+            self.draw_line(buf, recessed_x2 - 1, recessed_y1 + 1, recessed_x2 - 1, recessed_y2 - 1, bg);
+            self.draw_line(buf, recessed_x1 + 1, recessed_y2 - 1, recessed_x2 - 1, recessed_y2 - 1, bg);
         }
 
-        if self.button_style.display_bevel_special_effect() {
-            width += 2 * self.button_style.bevel_size;
-            height += 2 * self.button_style.bevel_size;
-            ox -= self.button_style.bevel_size;
-            oy -= self.button_style.bevel_size;
-        }
-
-        if self.button_style.display_recessed() && !pressed {
-            self.draw_line(buf, ox, oy, ox + width - 2, oy, cs);
-            self.draw_line(buf, ox, oy, ox, oy + height - 2, cs);
-            self.draw_line(buf, ox + width - 2, oy, ox + width - 2, oy + height - 2, ch);
-            self.draw_line(buf, ox, oy + height - 2, ox + width - 2, oy + height - 2, ch);
-
-            self.put_pixel(buf, ox, oy, cc);
-            self.put_pixel(buf, ox + width - 2, oy, cc);
-            self.put_pixel(buf, ox, oy + height - 2, cc);
-            self.put_pixel(buf, ox + width - 2, oy + height - 2, cc);
-
-            let ox = ox + 1;
-            let oy = oy + 1;
-            let width = width - 2;
-            let height = height - 2;
-            self.draw_line(buf, ox, oy, ox + width - 2, oy, bg);
-            self.draw_line(buf, ox, oy, ox, oy + height - 2, bg);
-            self.draw_line(buf, ox + width - 2, oy, ox + width - 2, oy + height - 2, bg);
-            self.draw_line(buf, ox, oy + height - 2, ox + width - 2, oy + height - 2, bg);
-        }
-
+        // Draw bevel effect if needed
         if self.button_style.display_bevel_special_effect() {
             for i in 1..=self.button_style.bevel_size {
-                self.draw_line(buf, x1 - i, y1 - i, x2 - 1 + i, y1 - i, ch);
-                self.draw_line(buf, x1 - i, y1 - i, x1 - i, y2 - 1 + i, ch);
-                self.draw_line(buf, x2 - 1 + i, y2 - 1 + i, x2 - 1 + i, y1 - i, cs);
-                self.draw_line(buf, x2 - 1 + i, y2 - 1 + i, x1 - i, y2 - 1 + i, cs);
+                self.draw_line(buf, x1 - i, y1 - i, x2 + i, y1 - i, br);
+                self.draw_line(buf, x1 - i, y1 - i, x1 - i, y2 + i, br);
+                self.draw_line(buf, x2 + i, y2 + i, x2 + i, y1 - i, cs);
+                self.draw_line(buf, x2 + i, y2 + i, x1 - i, y2 + i, cs);
                 self.put_pixel(buf, x1 - i, y1 - i, cc);
-                self.put_pixel(buf, x2 - 1 + i, y1 - i, cc);
-                self.put_pixel(buf, x1 - i, y2 - 1 + i, cc);
-                self.put_pixel(buf, x2 - 1 + i, y2 - 1 + i, cc);
+                self.put_pixel(buf, x2 + i, y1 - i, cc);
+                self.put_pixel(buf, x1 - i, y2 + i, cc);
+                self.put_pixel(buf, x2 + i, y2 + i, cc);
             }
         }
 
-        for y in y1..y2 {
-            for x in x1..x2 {
+        // Fill button surface
+        for y in surface_y1..=surface_y2 {
+            for x in surface_x1..=surface_x2 {
                 self.put_pixel(buf, x, y, su);
             }
         }
 
+        // Draw sunken effect (button border)
         if self.button_style.display_sunken_effect() {
-            self.draw_line(buf, x1, y1, x2, y1, cs);
-            self.draw_line(buf, x1, y1, x1, y2, cs);
-            self.draw_line(buf, x2, y2, x2, y1, ch);
-            self.draw_line(buf, x2, y2, x1, y2, ch);
+            if pressed {
+                // Pressed state: inverted border colors
+                self.draw_line(buf, x1, y1, x2, y1, cs);
+                self.draw_line(buf, x1, y1, x1, y2, cs);
+                self.draw_line(buf, x2, y2, x2, y1, br);
+                self.draw_line(buf, x2, y2, x1, y2, br);
+            } else {
+                // Normal state
+                self.draw_line(buf, x1, y1, x2, y1, br);
+                self.draw_line(buf, x1, y1, x1, y2, br);
+                self.draw_line(buf, x2, y2, x2, y1, cs);
+                self.draw_line(buf, x2, y2, x1, y2, cs);
+            }
             self.put_pixel(buf, x1, y1, cc);
             self.put_pixel(buf, x2, y1, cc);
             self.put_pixel(buf, x2, y2, cc);
             self.put_pixel(buf, x1, y2, cc);
         }
 
+        // Draw chisel effect
         if self.button_style.display_chisel() {
             let (xinset, yinset) = chisel_inset(y2 - y1 + 1);
-            self.draw_line(buf, x1 + xinset, y1 + yinset, x2 - xinset - 1, y1 + yinset, cs);
-            self.draw_line(buf, x1 + xinset, y1 + yinset, x1 + xinset, y2 - yinset - 1, cs);
 
-            self.draw_line(buf, x1 + xinset + 1, y1 + yinset + 1, x2 - xinset - 1, y1 + yinset + 1, ch);
-            self.draw_line(buf, x2 - xinset - 1, y1 + yinset + 1, x2 - xinset - 1, y2 - yinset - 1, ch);
-            self.draw_line(buf, x2 - xinset - 1, y2 - yinset - 1, x1 + xinset + 1, y2 - yinset - 1, ch);
-            self.draw_line(buf, x1 + xinset + 1, y2 - yinset - 1, x1 + xinset + 1, y1 + yinset + 1, ch);
+            if pressed {
+                // Pressed state: inverted chisel colors
+                self.draw_line(buf, x1 + xinset, y1 + yinset, x2 - xinset, y1 + yinset, cs);
+                self.draw_line(buf, x1 + xinset, y1 + yinset, x1 + xinset, y2 - yinset, cs);
 
-            self.draw_line(buf, x1 + xinset + 2, y2 - 2 - yinset, x2 - xinset - 2, y2 - 2 - yinset, cs);
-            self.draw_line(buf, x2 - xinset - 2, y2 - 2 - yinset, x2 - xinset - 2, y1 + yinset + 2, cs);
+                self.draw_line(buf, x1 + xinset + 1, y2 - yinset, x2 - xinset, y2 - yinset, br);
+                self.draw_line(buf, x2 - xinset, y1 + yinset + 1, x2 - xinset, y2 - yinset, br);
+            } else {
+                // Normal state
+                self.draw_line(buf, x1 + xinset, y1 + yinset, x2 - xinset, y1 + yinset, br);
+                self.draw_line(buf, x1 + xinset, y1 + yinset, x1 + xinset, y2 - yinset, br);
+
+                self.draw_line(buf, x1 + xinset + 1, y2 - yinset, x2 - xinset, y2 - yinset, cs);
+                self.draw_line(buf, x2 - xinset, y1 + yinset + 1, x2 - xinset, y2 - yinset, cs);
+            }
         }
 
-        // TODO: Handle icons
-        /*
-        if self.button_style.stamp_image_on_clipboard() {
-            rip.clipboard = getpixels(x1 - but->bevel_size,
-                    y1 - but->bevel_size,
-                    x2 + but->bevel_size,
-                    y2 + but->bevel_size,
-                    false);
-            rip.bstyle.button = BUTTON_TYPE_CLIPBOARD;
-            rip.bstyle.flags.chisel = false;
-            rip.bstyle.flags.bevel = false;
-            rip.bstyle.flags.autostamp = false;
-            rip.bstyle.flags.sunken = false;
-        }*/
-
-        /*
-        if (but->flags.left_justify)
-            puts("TODO: Left Justify flag");
-        if (but->flags.right_justify)
-            puts("TODO: Right Justify flag");
-            */
+        // Draw text label
         if !text.is_empty() {
             let mut text = text.to_string();
             if let Some(strip) = text.strip_prefix("<>") {
@@ -2010,274 +2189,39 @@ impl Bgi {
                 text.pop();
             }
 
-            match self.button_style.orientation {
+            let old_col = self.get_color();
+            let text_size = self.get_text_size(&text);
+
+            // Calculate base position for text (use original button area for reference)
+            let (tx, ty) = match self.button_style.orientation {
                 LabelOrientation::Above => {
-                    let old_col = self.get_color();
-                    let text_size = self.get_text_size(&text);
-
-                    // Horizontal alignment
                     let tx = if self.button_style.left_justify_label() {
-                        ox
+                        x1
                     } else if self.button_style.right_justify_label() {
-                        ox + width - text_size.width
+                        x1 + width - text_size.width
                     } else {
-                        ox + (width - text_size.width) / 2
+                        x1 + (width - text_size.width) / 2
                     };
-
-                    // Place above with a small gap
-                    let ty = oy - text_size.height - 2;
-
-                    if self.button_style.display_dropshadow() {
-                        self.set_color(cs);
-                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
-                    }
-                    self.set_color(ch);
-                    self.out_text_xy(buf, tx, ty, &text);
-
-                    // Hotkey rendering
-                    if hotkey != 0 && hotkey != 255 {
-                        let hk_ch = (hotkey as char).to_ascii_uppercase();
-                        for (i, ch) in text.chars().enumerate() {
-                            if ch.to_ascii_uppercase() == hk_ch {
-                                let prefix_size = self.get_text_size(&text[0..i]);
-                                if self.button_style.highlight_hotkey() {
-                                    self.set_color(ul);
-                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
-                                }
-                                if self.button_style.underline_hotkey() {
-                                    let hotkey_size = self.get_text_size(&text[i..=i]);
-                                    if self.button_style.display_dropshadow() {
-                                        self.draw_line(
-                                            buf,
-                                            tx + prefix_size.width + 1,
-                                            ty + hotkey_size.height + 2,
-                                            tx + prefix_size.width + hotkey_size.width,
-                                            ty + hotkey_size.height + 2,
-                                            cs,
-                                        );
-                                    }
-                                    self.draw_line(
-                                        buf,
-                                        tx + prefix_size.width,
-                                        ty + hotkey_size.height + 1,
-                                        tx + prefix_size.width + hotkey_size.width - 1,
-                                        ty + hotkey_size.height + 1,
-                                        ul,
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    self.set_color(old_col);
+                    (tx, y1 - text_size.height - 2)
                 }
-                LabelOrientation::Left => {
-                    let old_col = self.get_color();
-                    let text_size = self.get_text_size(&text);
-                    let ty = oy + (height - text_size.height) / 2;
-                    let tx = ox - text_size.width - 2; // gap to the left
-
-                    if self.button_style.display_dropshadow() {
-                        self.set_color(cs);
-                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
-                    }
-                    self.set_color(ch);
-                    self.out_text_xy(buf, tx, ty, &text);
-
-                    if hotkey != 0 && hotkey != 255 {
-                        let hk_ch = (hotkey as char).to_ascii_uppercase();
-                        for (i, ch) in text.chars().enumerate() {
-                            if ch.to_ascii_uppercase() == hk_ch {
-                                let prefix_size = self.get_text_size(&text[0..i]);
-                                if self.button_style.highlight_hotkey() {
-                                    self.set_color(ul);
-                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
-                                }
-                                if self.button_style.underline_hotkey() {
-                                    let hotkey_size = self.get_text_size(&text[i..=i]);
-                                    if self.button_style.display_dropshadow() {
-                                        self.draw_line(
-                                            buf,
-                                            tx + prefix_size.width + 1,
-                                            ty + hotkey_size.height + 2,
-                                            tx + prefix_size.width + hotkey_size.width,
-                                            ty + hotkey_size.height + 2,
-                                            cs,
-                                        );
-                                    }
-                                    self.draw_line(
-                                        buf,
-                                        tx + prefix_size.width,
-                                        ty + hotkey_size.height + 1,
-                                        tx + prefix_size.width + hotkey_size.width - 1,
-                                        ty + hotkey_size.height + 1,
-                                        ul,
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    self.set_color(old_col);
-                }
-                LabelOrientation::Right => {
-                    let old_col = self.get_color();
-                    let text_size = self.get_text_size(&text);
-                    let ty = oy + (height - text_size.height) / 2;
-                    let tx = ox + width + 2; // gap to the right
-
-                    if self.button_style.display_dropshadow() {
-                        self.set_color(cs);
-                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
-                    }
-                    self.set_color(ch);
-                    self.out_text_xy(buf, tx, ty, &text);
-
-                    if hotkey != 0 && hotkey != 255 {
-                        let hk_ch = (hotkey as char).to_ascii_uppercase();
-                        for (i, ch) in text.chars().enumerate() {
-                            if ch.to_ascii_uppercase() == hk_ch {
-                                let prefix_size = self.get_text_size(&text[0..i]);
-                                if self.button_style.highlight_hotkey() {
-                                    self.set_color(ul);
-                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
-                                }
-                                if self.button_style.underline_hotkey() {
-                                    let hotkey_size = self.get_text_size(&text[i..=i]);
-                                    if self.button_style.display_dropshadow() {
-                                        self.draw_line(
-                                            buf,
-                                            tx + prefix_size.width + 1,
-                                            ty + hotkey_size.height + 2,
-                                            tx + prefix_size.width + hotkey_size.width,
-                                            ty + hotkey_size.height + 2,
-                                            cs,
-                                        );
-                                    }
-                                    self.draw_line(
-                                        buf,
-                                        tx + prefix_size.width,
-                                        ty + hotkey_size.height + 1,
-                                        tx + prefix_size.width + hotkey_size.width - 1,
-                                        ty + hotkey_size.height + 1,
-                                        ul,
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    self.set_color(old_col);
-                }
+                LabelOrientation::Left => (x1 - text_size.width - 2, y1 + (height - text_size.height) / 2),
+                LabelOrientation::Right => (x1 + width + 2, y1 + (height - text_size.height) / 2),
                 LabelOrientation::Below => {
-                    let old_col = self.get_color();
-                    let text_size = self.get_text_size(&text);
-
                     let tx = if self.button_style.left_justify_label() {
-                        ox
+                        x1
                     } else if self.button_style.right_justify_label() {
-                        ox + width - text_size.width
+                        x1 + width - text_size.width
                     } else {
-                        ox + (width - text_size.width) / 2
+                        x1 + (width - text_size.width) / 2
                     };
-                    let ty = oy + height + 2; // gap below
-
-                    if self.button_style.display_dropshadow() {
-                        self.set_color(cs);
-                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
-                    }
-                    self.set_color(ch);
-                    self.out_text_xy(buf, tx, ty, &text);
-
-                    if hotkey != 0 && hotkey != 255 {
-                        let hk_ch = (hotkey as char).to_ascii_uppercase();
-                        for (i, ch) in text.chars().enumerate() {
-                            if ch.to_ascii_uppercase() == hk_ch {
-                                let prefix_size = self.get_text_size(&text[0..i]);
-                                if self.button_style.highlight_hotkey() {
-                                    self.set_color(ul);
-                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
-                                }
-                                if self.button_style.underline_hotkey() {
-                                    let hotkey_size = self.get_text_size(&text[i..=i]);
-                                    if self.button_style.display_dropshadow() {
-                                        self.draw_line(
-                                            buf,
-                                            tx + prefix_size.width + 1,
-                                            ty + hotkey_size.height + 2,
-                                            tx + prefix_size.width + hotkey_size.width,
-                                            ty + hotkey_size.height + 2,
-                                            cs,
-                                        );
-                                    }
-                                    self.draw_line(
-                                        buf,
-                                        tx + prefix_size.width,
-                                        ty + hotkey_size.height + 1,
-                                        tx + prefix_size.width + hotkey_size.width - 1,
-                                        ty + hotkey_size.height + 1,
-                                        ul,
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    self.set_color(old_col);
+                    (tx, y1 + height + 2)
                 }
+                LabelOrientation::Center => (x1 + (width - text_size.width) / 2, y1 + (height - text_size.height) / 2),
+            };
 
-                LabelOrientation::Center => {
-                    let old_col = self.get_color();
-                    let text_size = self.get_text_size(&text);
-                    let tx = ox + (width - text_size.width) / 2;
-                    let ty = oy + (height - text_size.height) / 2;
-
-                    if self.button_style.display_dropshadow() {
-                        self.set_color(cs);
-                        self.out_text_xy(buf, tx + 1, ty + 1, &text);
-                    }
-
-                    self.set_color(ch);
-                    self.out_text_xy(buf, tx, ty, &text);
-                    // print hotkey
-                    if hotkey != 0 && hotkey != 255 {
-                        let hk_ch = (hotkey as char).to_ascii_uppercase();
-                        for (i, ch) in text.chars().enumerate() {
-                            if ch.to_ascii_uppercase() == hk_ch {
-                                let prefix_size: Size = self.get_text_size(&text[0..i]);
-                                if self.button_style.highlight_hotkey() {
-                                    self.set_color(ul);
-                                    self.out_text_xy(buf, tx + prefix_size.width, ty, &ch.to_string());
-                                }
-
-                                if self.button_style.underline_hotkey() {
-                                    let hotkey_size = self.get_text_size(&text[i..=i]);
-                                    if self.button_style.display_dropshadow() {
-                                        self.draw_line(
-                                            buf,
-                                            tx + prefix_size.width + 1,
-                                            ty + hotkey_size.height + 2,
-                                            tx + prefix_size.width + hotkey_size.width,
-                                            ty + hotkey_size.height + 2,
-                                            cs,
-                                        );
-                                    }
-                                    self.draw_line(
-                                        buf,
-                                        tx + prefix_size.width,
-                                        ty + hotkey_size.height + 1,
-                                        tx + prefix_size.width + hotkey_size.width - 1,
-                                        ty + hotkey_size.height + 1,
-                                        ul,
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    self.set_color(old_col);
-                }
-            }
+            // Render the label text with all effects
+            self.render_button_label(buf, &text, tx, ty, hotkey, ch, cs, ul);
+            self.set_color(old_col);
         }
     }
 }
@@ -2344,18 +2288,6 @@ fn create_scan_rows() -> Vec<Vec<i32>> {
     vec![Vec::new(); 352]
 }
 
-fn add_scan_vertical(rows: &mut Vec<Vec<i32>>, x: i32, y: i32, count: i32) {
-    for i in 0..count {
-        add_scan_row(rows, x, y + i);
-    }
-}
-
-fn add_scan_horizontal(rows: &mut Vec<Vec<i32>>, x: i32, y: i32, count: i32) {
-    for i in 0..count {
-        add_scan_row(rows, x + i, y);
-    }
-}
-
 fn add_scan_row(rows: &mut Vec<Vec<i32>>, x: i32, y: i32) {
     if !(-1..=350).contains(&y) {
         return;
@@ -2365,10 +2297,6 @@ fn add_scan_row(rows: &mut Vec<Vec<i32>>, x: i32, y: i32) {
         rows.resize(y + 1, Vec::new());
     }
     rows[y].push(x);
-}
-
-fn in_angle(angle: i32, start_angle: i32, end_angle: i32) -> bool {
-    angle >= start_angle && angle <= end_angle
 }
 
 pub fn arc_coords(angle: f64, rx: f64, ry: f64) -> Position {

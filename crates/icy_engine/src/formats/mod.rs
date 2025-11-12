@@ -553,9 +553,15 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
         for (i, old_fnt) in buf_old.font_iter() {
             let new_fnt = buf_new.get_font(*i).unwrap();
 
-            for (ch, glyph) in &old_fnt.glyphs {
-                let new_glyph = new_fnt.glyphs.get(ch).unwrap();
-                assert_eq!(glyph, new_glyph, "glyphs differ font: {i}, char: {ch} (0x{:02X})", *ch as u32);
+            // Compare the yaff_font glyphs directly
+            assert_eq!(
+                old_fnt.yaff_font.glyphs.len(),
+                new_fnt.yaff_font.glyphs.len(),
+                "glyph count differs for font {i}"
+            );
+
+            for (old_glyph, new_glyph) in old_fnt.yaff_font.glyphs.iter().zip(new_fnt.yaff_font.glyphs.iter()) {
+                assert_eq!(old_glyph, new_glyph, "glyphs differ font: {i}");
             }
         }
     }
@@ -642,19 +648,24 @@ pub fn convert_ansi_to_utf8(data: &[u8]) -> (String, bool) {
 pub fn guess_font_name(font: &BitFont) -> String {
     for i in 0..ANSI_FONTS {
         if let Ok(ansi_font) = BitFont::from_ansi_font_page(i) {
-            if ansi_font.get_checksum() == font.get_checksum() {
-                return ansi_font.name.clone();
+            if ansi_font == *font {
+                return ansi_font.name().to_string();
             }
         }
     }
 
     for name in SAUCE_FONT_NAMES {
         if let Ok(sauce_font) = BitFont::from_sauce_name(name) {
-            if sauce_font.get_checksum() == font.get_checksum() {
-                return sauce_font.name.clone();
+            if sauce_font == *font {
+                return sauce_font.name().to_string();
             }
         }
     }
 
-    fl!(crate::LANGUAGE_LOADER, "unknown-font-name", width = font.size.width, height = font.size.height)
+    fl!(
+        crate::LANGUAGE_LOADER,
+        "unknown-font-name",
+        width = font.size().width,
+        height = font.size().height
+    )
 }

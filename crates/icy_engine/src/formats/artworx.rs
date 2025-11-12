@@ -115,7 +115,7 @@ impl OutputFormat for Artworx {
         let font_size = 4096;
         result.clear_font_table();
         let mut font = BitFont::from_basic(8, 16, &data[o..(o + font_size)]);
-        font.name = guess_font_name(&font);
+        font.yaff_font.name = Some(guess_font_name(&font));
         result.set_font(0, font);
         o += font_size;
 

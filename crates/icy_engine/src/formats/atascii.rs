@@ -64,8 +64,7 @@ impl OutputFormat for Atascii {
         let mut result = TextScreen::new((40, 24));
 
         result.buffer.clear_font_table();
-        let mut font = BitFont::from_bytes("", ATARI).unwrap();
-        font.length = 128;
+        let font = BitFont::from_bytes("", ATARI).unwrap();
         result.buffer.set_font(0, font);
         result.buffer.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
 

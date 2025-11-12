@@ -56,7 +56,7 @@ impl OutputFormat for XBin {
         let Some(font) = buf.get_font(fonts[0]) else {
             return Err(SavingError::NoFontFound.into());
         };
-        if font.length != 256 {
+        if font.length() != 256 {
             return Err(anyhow::anyhow!("File needs 1st font to be 256 chars long."));
         }
 
@@ -64,11 +64,11 @@ impl OutputFormat for XBin {
             return Err(anyhow::anyhow!("Only up to 2 fonts are supported by this format."));
         }
 
-        if font.size.width != 8 || font.size.height < 1 || font.size.height > 32 {
+        if font.size().width != 8 || font.size().height < 1 || font.size().height > 32 {
             return Err(SavingError::InvalidXBinFont.into());
         }
 
-        result.push(font.size.height as u8);
+        result.push(font.size().height as u8);
         if !font.is_default() || !buf.has_fonts() || fonts.len() > 1 {
             flags |= FLAG_FONT;
         }
@@ -107,7 +107,7 @@ impl OutputFormat for XBin {
         if flags & FLAG_FONT == FLAG_FONT {
             let font_data = font.convert_to_u8_data();
             let font_len = font_data.len();
-            if font_len != 256 * font.size.height as usize {
+            if font_len != 256 * font.size().height as usize {
                 return Err(anyhow::anyhow!("Invalid font len."));
             }
             result.extend(font_data);
@@ -116,7 +116,7 @@ impl OutputFormat for XBin {
                     return Err(anyhow::anyhow!("File needs 2 fonts for this save mode."));
                 }
                 if let Some(ext_font) = buf.get_font(fonts[1]) {
-                    if ext_font.length != 256 {
+                    if ext_font.length() != 256 {
                         return Err(anyhow::anyhow!("File needs 2nd font to be 256 chars long."));
                     }
 
@@ -212,12 +212,12 @@ impl OutputFormat for XBin {
             let font_length = font_size as usize * 256;
             result.clear_font_table();
             let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
-            font.name = guess_font_name(&font);
+            font.yaff_font.name = Some(guess_font_name(&font));
             result.set_font(0, font);
             o += font_length;
             if extended_char_mode {
                 let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
-                font.name = guess_font_name(&font);
+                font.yaff_font.name = Some(guess_font_name(&font));
                 result.set_font(1, font);
                 o += font_length;
             }

@@ -216,16 +216,17 @@ impl Font {
                 continue;
             }
             if let Some(ch) = &self.characters[c as usize] {
-                width += ch.width as f64;
+                // Use the scaled width, not the raw width
+                width += ch.get_width(size);
             }
         }
         match dir {
             Direction::Horizontal => Size::new(
                 width as i32,
-                (self.get_height() + self.org_to_dec as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.get_height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
             ),
             Direction::Vertical => Size::new(
-                (self.get_height() + self.org_to_dec as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.get_height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
                 width as i32,
             ),
         }

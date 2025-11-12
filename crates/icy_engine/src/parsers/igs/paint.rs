@@ -679,17 +679,22 @@ impl DrawExecutor {
         // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
 
         let color = self.text_color;
-        let font_size = font.size;
-        let high_bit = 1 << (font.size.width - 1);
+        let font_size = font.size();
         let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
         for ch in string_parameter.chars() {
-            let data = font.get_glyph(ch).unwrap().data.clone();
+            let glyph = font.get_glyph(ch).unwrap();
             for y in 0..font_size.height {
                 for x in 0..font_size.width {
                     let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
                     let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
                     draw_mask = draw_mask.rotate_left(1);
-                    if data[iy as usize] & (high_bit >> ix) != 0 {
+                    // Check pixel in bitmap.pixels[row][col]
+                    let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
+                        glyph.bitmap.pixels[iy as usize][ix as usize]
+                    } else {
+                        false
+                    };
+                    if pixel_set {
                         if 1 & draw_mask != 0 {
                             let p = pos + Position::new(x, y);
                             self.set_pixel(buf, p.x, p.y, color);
@@ -971,6 +976,7 @@ impl DrawExecutor {
         parameters: &[i32],
         string_parameter: &str,
     ) -> EngineResult<CallbackAction> {
+        buf.mark_dirty();
         match command {
             IgsCommands::Initialize => {
                 if parameters.len() < 1 {

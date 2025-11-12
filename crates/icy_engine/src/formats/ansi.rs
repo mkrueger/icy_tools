@@ -447,7 +447,7 @@ impl StringGenerator {
         for (page, font) in buf.font_iter() {
             let mut to_page = *page;
             for (i, ansi_font) in ansi_fonts.iter().enumerate() {
-                if ansi_font.get_checksum() == font.get_checksum() {
+                if ansi_font == font {
                     to_page = i;
                     break;
                 }

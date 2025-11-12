@@ -182,7 +182,7 @@ impl OutputFormat for IceDraw {
             }
         }
         let mut font = BitFont::from_basic(8, 16, &data[o..(o + FONT_SIZE)]);
-        font.name = guess_font_name(&font);
+        font.yaff_font.name = Some(guess_font_name(&font));
         result.set_font(0, font);
         o += FONT_SIZE;
 

@@ -4,7 +4,7 @@ use super::Size;
 
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
-        let font_size = self.get_font(0).unwrap().size;
+        let font_size = self.get_font(0).unwrap().size();
         let rect = options.rect.as_rectangle_with_width(self.get_width());
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;
@@ -156,14 +156,14 @@ impl TextBuffer {
 
                 // Foreground glyph overlay
                 if let Some(glyph) = font.get_glyph(ch.ch) {
-                    let max_cy = glyph.data.len().min(cell_pixel_h as usize);
+                    let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
                     for cy in 0..max_cy {
-                        let row_bits = glyph.data[cy];
+                        let row = &glyph.bitmap.pixels[cy];
                         let line_offset = (cy as i32 * line_bytes + base_px * 4) as usize;
                         unsafe {
-                            for cx in 0..cell_pixel_w.min(8) {
-                                if row_bits & (128 >> cx) != 0 {
-                                    let o = line_offset + (cx * 4) as usize;
+                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) {
+                                if row[cx as usize] {
+                                    let o: usize = line_offset + (cx * 4) as usize;
                                     *row_pixels.get_unchecked_mut(o) = f_r;
                                     *row_pixels.get_unchecked_mut(o + 1) = f_g;
                                     *row_pixels.get_unchecked_mut(o + 2) = f_b;
@@ -428,7 +428,7 @@ impl TextBuffer {
             if is_rendering_bottom_half || (is_in_double_height_line && render_ch.attribute.is_double_height()) {
                 // Render double-height (either top or bottom half)
                 if let Some(glyph) = font.get_glyph(render_ch.ch) {
-                    let glyph_height = glyph.data.len();
+                    let glyph_height = glyph.bitmap.pixels.len();
 
                     unsafe {
                         for cy in 0..cell_pixel_h {
@@ -445,14 +445,14 @@ impl TextBuffer {
                                 continue;
                             }
 
-                            let row_bits = glyph.data[source_y];
+                            let row = &glyph.bitmap.pixels[source_y];
                             let line_start = ((base_pixel_y + cy) * line_bytes + base_pixel_x * 4) as usize;
                             if line_start >= pixels.len() {
                                 break;
                             }
 
-                            for cx in 0..cell_pixel_w.min(8) {
-                                if row_bits & (128 >> cx) != 0 {
+                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) {
+                                if row[cx as usize] {
                                     let o = line_start + (cx * 4) as usize;
                                     if o + 3 >= pixels.len() {
                                         break;
@@ -468,16 +468,16 @@ impl TextBuffer {
             } else {
                 // Normal height rendering (including non-double-height chars in double-height lines)
                 if let Some(glyph) = font.get_glyph(render_ch.ch) {
-                    let max_cy = glyph.data.len().min(cell_pixel_h as usize);
+                    let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
                     for cy in 0..max_cy {
-                        let row_bits = glyph.data[cy];
+                        let row = &glyph.bitmap.pixels[cy];
                         let line_start = ((base_pixel_y + cy as i32) * line_bytes + base_pixel_x * 4) as usize;
                         if line_start >= pixels.len() {
                             break;
                         }
                         unsafe {
-                            for cx in 0..cell_pixel_w.min(8) {
-                                if row_bits & (128 >> cx) != 0 {
+                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) {
+                                if row[cx as usize] {
                                     let o = line_start + (cx * 4) as usize;
                                     if o + 3 >= pixels.len() {
                                         break;

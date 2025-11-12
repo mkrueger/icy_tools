@@ -1,4 +1,5 @@
-use crate::{BitFont, Glyph, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use crate::{BitFont, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use libyaff::GlyphDefinition;
 use std::collections::HashMap;
 
 enum GlyphShape {
@@ -68,22 +69,49 @@ fn generate_shape_map(buf: &TextBuffer) -> HashMap<usize, HashMap<char, GlyphSha
     let mut shape_map = HashMap::new();
     for (slot, font) in buf.font_iter() {
         let mut font_map = HashMap::new();
-        for (char, glyph) in &font.glyphs {
-            font_map.insert(*char, get_shape(font, glyph));
+        // Iterate over all glyphs in the yaff font
+        for glyph in &font.yaff_font.glyphs {
+            // Try to get character from glyph labels
+            if let Some(ch) = get_char_from_labels(&glyph.labels) {
+                font_map.insert(ch, get_shape(font, glyph));
+            }
         }
         shape_map.insert(*slot, font_map);
     }
     shape_map
 }
 
-fn get_shape(font: &BitFont, glyph: &Glyph) -> GlyphShape {
+fn get_char_from_labels(labels: &[libyaff::Label]) -> Option<char> {
+    // Try to parse any label as a character
+    for label in labels {
+        let label_str = format!("{:?}", label); // Get debug representation
+        // Try hex format like "0x41"
+        if let Some(hex_str) = label_str.strip_prefix("0x") {
+            if let Ok(code) = u32::from_str_radix(hex_str, 16) {
+                if let Some(ch) = char::from_u32(code) {
+                    return Some(ch);
+                }
+            }
+        }
+        // Try decimal
+        if let Ok(code) = label_str.parse::<u32>() {
+            if let Some(ch) = char::from_u32(code) {
+                return Some(ch);
+            }
+        }
+    }
+    None
+}
+
+fn get_shape(font: &BitFont, glyph: &GlyphDefinition) -> GlyphShape {
     let mut ones = 0;
-    for row in &glyph.data {
-        ones += row.count_ones();
+    let size = font.size();
+    for row in &glyph.bitmap.pixels {
+        ones += row.iter().filter(|&&b| b).count();
     }
     if ones == 0 {
         GlyphShape::Whitespace
-    } else if ones == font.size.width as u32 * font.size.height as u32 {
+    } else if ones == (size.width * size.height) as usize {
         GlyphShape::Block
     } else {
         GlyphShape::Mixed

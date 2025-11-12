@@ -34,8 +34,8 @@ impl<'a> CRTShaderProgram<'a> {
         // Size change triggers full content redraw
         if let Ok(screen) = self.term.screen.try_lock() {
             if let Some(font) = screen.get_font(0) {
-                let font_w = font.size.width as u32;
-                let font_h = font.size.height as u32;
+                let font_w = font.size().width as u32;
+                let font_h = font.size().height as u32;
                 let current_size = (screen.get_width() as u32 * font_w, screen.get_height() as u32 * font_h);
                 if state.last_rendered_size != Some(current_size) {
                     state.last_rendered_size = Some(current_size);
@@ -403,8 +403,8 @@ impl<'a> CRTShaderProgram<'a> {
 
         if let Ok(screen) = self.term.screen.lock() {
             if let Some(font) = screen.get_font(0) {
-                font_w = font.size.width as usize;
-                font_h = font.size.height as usize;
+                font_w = font.size().width as usize;
+                font_h = font.size().height as usize;
             }
 
             let current_buffer_version = screen.get_version();
@@ -652,8 +652,8 @@ fn map_mouse_to_xy(
     // 3. Lock edit state & obtain font + buffer size (already in pixel units)
     let screen = term.screen.try_lock().ok()?;
     let font = screen.get_font(0)?;
-    let font_w = font.size.width as f32;
-    let font_h = font.size.height as f32;
+    let font_w = font.size().width as f32;
+    let font_h = font.size().height as f32;
 
     let scale_factor = crate::get_scale_factor();
     let bounds = bounds * scale_factor;
@@ -710,8 +710,8 @@ fn map_mouse_to_cell(
     // 3. Lock edit state & obtain font + buffer size (already in pixel units)
     let screen = term.screen.try_lock().ok()?;
     let font = screen.get_font(0)?;
-    let font_w = font.size.width as f32;
-    let font_h = font.size.height as f32;
+    let font_w = font.size().width as f32;
+    let font_h = font.size().height as f32;
 
     let scale_factor = crate::get_scale_factor();
     let bounds = bounds * scale_factor;

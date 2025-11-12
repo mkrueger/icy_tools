@@ -404,8 +404,8 @@ impl TerminalThread {
 
             match config.terminal_type {
                 TerminalEmulation::Rip => {
-                    let buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
-                    //   buf.set_size((80, 42).into());
+                    let mut buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+                    rip::setup_rip_text_fonts(&mut buf);
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::Skypix => {
@@ -721,6 +721,7 @@ impl TerminalThread {
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
+                        log::error!("Upload error: {}", e);
                         self.send_event(TerminalEvent::Error(format!("Transfer failed: {}", e)));
                     }
                 }
@@ -744,6 +745,7 @@ impl TerminalThread {
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
+                        log::error!("Download error: {}", e);
                         self.send_event(TerminalEvent::Error(format!("Transfer failed: {}", e)));
                     }
                 }

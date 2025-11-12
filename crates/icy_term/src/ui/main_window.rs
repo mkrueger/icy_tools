@@ -280,6 +280,7 @@ impl MainWindow {
                 let lock = &mut self.terminal_window.terminal.screen.lock().unwrap();
                 if clear_screen {
                     lock.clear_screen();
+                    lock.reset_terminal();
                 }
                 let buffer_type = lock.buffer_type();
                 // Send the RIP command

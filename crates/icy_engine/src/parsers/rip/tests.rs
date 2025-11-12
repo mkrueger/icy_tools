@@ -273,12 +273,7 @@ fn test_roundtrip(arg: &str) {
     } else {
         // When multiple commands are parsed, concatenate their rip strings with no leading '!'
         // Combined string (not currently asserted directly, but useful for debugging)
-        let _combined = parser
-            .rip_commands
-            .iter()
-            .map(|c| c.to_rip_string())
-            .collect::<Vec<_>>()
-            .join("");
+        let _combined = parser.rip_commands.iter().map(|c| c.to_rip_string()).collect::<Vec<_>>().join("");
         assert!(arg.contains("\\"), "Unexpected multi-command without line continuation in input");
         // Ensure every parsed command string appears in order within the original arg (ignoring the backslash-newline)
         let mut remain = arg.replace("\\\n", "");
@@ -302,9 +297,12 @@ fn create_rip_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> PaletteSc
     buf
 }
 
-
-
 #[test]
 fn test_eol_continuation_bug() {
     test_roundtrip("|=00000003\\\n|c0C");
+}
+
+#[test]
+fn test_eol_continuation_bug1() {
+    test_roundtrip("|=00000003|\\\n=00000003");
 }

@@ -225,10 +225,6 @@ impl ScreenMode {
                 *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
             }
             ScreenMode::Unicode(_x, _y) => {
-                screen.clear_font_table();
-                let mut font = BitFont::default();
-                font.size = Size::new(32, 64);
-                screen.set_font(0, font);
                 *screen.buffer_type_mut() = icy_engine::BufferType::Unicode;
             }
             ScreenMode::Default => {
@@ -249,8 +245,8 @@ impl ScreenMode {
                     screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
                     *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
                 } else {
-                    screen.set_font(0, BitFont::from_bytes("", ATARI_XEP80).unwrap());
-                    screen.set_font(1, BitFont::from_bytes("", ATARI_XEP80_INT).unwrap());
+                    screen.set_font(0, ATARI_XEP80.clone());
+                    screen.set_font(1, ATARI_XEP80_INT.clone());
                     *screen.palette_mut() = Palette::from_slice(&ATARI_XEP80_PALETTE);
                 }
                 *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;

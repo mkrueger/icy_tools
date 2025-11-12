@@ -58,19 +58,12 @@ impl Command for TextWindow {
     }
 
     fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        let (x, y) = match self.size {
-            1 => (7, 8),
-            2 => (8, 14),
-            3 => (7, 14),
-            4 => (16, 14),
-            _ => (8, 8),
-        };
         if self.x0 == 0 && self.y0 == 0 && self.x1 == 0 && self.y1 == 0 && self.size == 0 && !self.wrap {
             bgi.suspend_text = !bgi.suspend_text;
         }
         buf.terminal_state_mut().set_text_window(self.x0, self.y0, self.x1, self.y1);
-        bgi.set_text_window(self.x0 * x, self.y0 * y, self.x1 * x, self.y1 * y, self.wrap);
-        buf.limit_caret_pos();
+        buf.caret_mut().set_font_page(self.size.clamp(0, 4) as usize);
+        buf.caret_mut().set_position_xy(self.x0, self.y0);
 
         Ok(CallbackAction::None)
     }
@@ -152,7 +145,7 @@ impl Command for ResetWindows {
     fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
         buf.terminal_state_mut().clear_text_window();
         buf.clear_screen();
-        bgi.clear_text_window(buf);
+        buf.reset_terminal();
         bgi.graph_defaults(buf);
         Ok(CallbackAction::None)
     }
@@ -166,8 +159,8 @@ impl Command for EraseWindow {
         "|e".to_string()
     }
 
-    fn run(&self, buf: &mut dyn EditableScreen, bgi: &mut Bgi) -> EngineResult<CallbackAction> {
-        bgi.clear_text_window(buf);
+    fn run(&self, buf: &mut dyn EditableScreen, _bgi: &mut Bgi) -> EngineResult<CallbackAction> {
+        buf.terminal_state_mut().clear_text_window();
         Ok(CallbackAction::Update)
     }
 }
