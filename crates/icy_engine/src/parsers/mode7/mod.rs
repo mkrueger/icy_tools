@@ -4,9 +4,6 @@ use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult};
 
 mod constants;
 
-#[cfg(test)]
-mod tests;
-
 /// BBC MODE 7 implementation. Spec here:
 /// <https://www.bbcbasic.co.uk/bbcwin/manual/bbcwin8.html>
 /// <https://central.kaserver5.org/Kasoft/Typeset/BBC/Ch28.html>

@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::TextScreen;
 use crate::{
     EditableScreen, EngineResult,
     ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType},
@@ -65,65 +63,3 @@ pub trait BufferParser: Send {
     /// This function will return an error if .
     fn print_char(&mut self, buffer: &mut dyn EditableScreen, c: char) -> EngineResult<CallbackAction>;
 }
-
-#[cfg(test)]
-fn _create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> TextScreen {
-    use crate::{Caret, SelectionMask, TextBuffer, TextScreen};
-
-    let mut buf = TextScreen {
-        buffer: TextBuffer::create((80, 25)),
-        caret: Caret::default(),
-        current_layer: 0,
-        selection_opt: None,
-        selection_mask: SelectionMask::default(),
-        mouse_fields: Vec::new(),
-    };
-
-    buf.terminal_state_mut().is_terminal_buffer = true;
-    buf.buffer.layers.first_mut().unwrap().lines.clear();
-
-    update_buffer(&mut buf, parser, input);
-    while parser.get_next_action(&mut buf).is_some() {}
-
-    buf
-}
-
-#[cfg(test)]
-fn update_buffer<T: BufferParser>(buf: &mut dyn EditableScreen, parser: &mut T, input: &[u8]) {
-    for b in input {
-        parser.print_char(buf, *b as char).unwrap(); // test code
-    }
-}
-/*
-#[cfg(test)]
-fn update_buffer_force<T: BufferParser>(buf: &mut dyn EditableScreen, parser: &mut T, input: &[u8]) {
-    for b in input {
-        let _ = parser.print_char(buf, *b as char); // test code
-    }
-}
-
-#[cfg(test)]
-fn get_simple_action<T: BufferParser>(parser: &mut T, input: &[u8]) -> CallbackAction {
-    use crate::{Buffer, Caret};
-
-    let mut buf = TextScreen {
-        buffer: Buffer::create((80, 25)),
-        caret: Caret::default(),
-        current_layer: 0,
-        selection_opt: None,
-    };
-    buf.buffer.terminal_state.is_terminal_buffer = true;
-
-    get_action(&mut buf, parser, input)
-}
-
-#[cfg(test)]
-fn get_action<T: BufferParser>(buf: &mut dyn EditableScreen, parser: &mut T, input: &[u8]) -> CallbackAction {
-    let mut action = CallbackAction::NoUpdate;
-    for b in input {
-        action = parser.print_char(buf, *b as char).unwrap(); // test code
-    }
-
-    action
-}
-*/

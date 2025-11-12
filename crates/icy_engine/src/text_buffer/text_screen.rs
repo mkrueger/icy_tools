@@ -241,6 +241,7 @@ impl EditableScreen for TextScreen {
 
     fn reset_terminal(&mut self) {
         self.buffer.reset_terminal();
+        self.caret.reset();
     }
 
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {

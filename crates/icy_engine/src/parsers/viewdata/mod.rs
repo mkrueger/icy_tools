@@ -4,9 +4,6 @@ use crate::{AttributedChar, CallbackAction, EditableScreen, EngineResult, Positi
 
 pub(crate) mod constants;
 
-#[cfg(test)]
-mod tests;
-
 pub const VIEWDATA_SCREEN_SIZE: Size = Size { width: 40, height: 24 };
 
 /// <https://www.blunham.com/Radar/Teletext/PDFs/Viewdata1976Spec.pdf>

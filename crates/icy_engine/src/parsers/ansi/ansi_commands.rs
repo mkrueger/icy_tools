@@ -578,18 +578,16 @@ impl Parser {
     pub(crate) fn erase_character(&mut self, buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.state = EngineState::Default;
         // ECH - Erase character
+        // Replaces characters with spaces starting at cursor position, without moving cursor
 
-        if let Some(number) = self.parsed_numbers.first() {
-            for _ in 0..*number {
-                buf.del();
-            }
-        } else {
-            buf.del();
-            if self.parsed_numbers.len() != 1 {
-                return Err(ParserError::UnsupportedEscapeSequence.into());
-            }
+        let count = self.parsed_numbers.first().copied().unwrap_or(1);
+        let pos = buf.caret().position();
+
+        for i in 0..count {
+            buf.set_char((pos.x + i, pos.y).into(), AttributedChar::default());
         }
-        Ok(CallbackAction::None)
+
+        Ok(CallbackAction::Update)
     }
 
     /// Sequence: `CSI Ps1 ; Ps2 SP D`</p>

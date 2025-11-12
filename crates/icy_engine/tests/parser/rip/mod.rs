@@ -1,6 +1,6 @@
-use super::*;
-#[cfg(test)]
-use crate::PaletteScreenBuffer;
+use icy_engine::rip::{Parser, RIP_SCREEN_SIZE};
+use icy_engine::{BufferParser, PaletteScreenBuffer};
+use std::path::PathBuf;
 
 #[test]
 fn test_rip_text_window() {
@@ -287,11 +287,14 @@ fn test_roundtrip(arg: &str) {
 
 #[cfg(test)]
 fn create_rip_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> PaletteScreenBuffer {
-    use crate::{parsers::update_buffer, rip};
+    use icy_engine::rip;
 
     let mut buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
 
-    update_buffer(&mut buf, parser, input);
+    for &b in input {
+        parser.print_char(&mut buf, b as char).unwrap();
+    }
+
     while parser.get_next_action(&mut buf).is_some() {}
 
     buf

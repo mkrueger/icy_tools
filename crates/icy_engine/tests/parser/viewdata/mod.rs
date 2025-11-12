@@ -1,59 +1,66 @@
-/*
-use crate::{
-    Buffer, BufferParser, Caret, Position, TextPane,
-    parsers::{update_buffer, viewdata::Parser},
-};
+use icy_engine::parsers::viewdata::Parser;
+use icy_engine::{BufferParser, Caret, Position, SelectionMask, TextBuffer, TextPane, TextScreen};
 
-fn create_viewdata_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (Buffer, Caret) {
-    let mut buf = Buffer::create((40, 24));
-    buf.terminal_state().is_terminal_buffer = true;
-    let mut caret = Caret::default();
+fn create_viewdata_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (TextBuffer, Caret) {
+    let mut screen = TextScreen {
+        buffer: TextBuffer::create((40, 24)),
+        caret: Caret::default(),
+        current_layer: 0,
+        selection_opt: None,
+        selection_mask: SelectionMask::default(),
+        mouse_fields: Vec::new(),
+    };
+    screen.buffer.terminal_state.is_terminal_buffer = true;
 
-    update_buffer(&mut buf, &mut caret, parser, input);
+    for &b in input {
+        parser.print_char(&mut screen, b as char).unwrap();
+    }
 
-    (buf, caret)
+    while parser.get_next_action(&mut screen).is_some() {}
+
+    (screen.buffer, screen.caret)
 }
 
 #[test]
 fn test_bs() {
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"ab\x08");
-    assert_eq!(Position::new(1, 0), caret.position);
+    assert_eq!(Position::new(1, 0), caret.position());
 
     let (buf, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x08");
-    assert_eq!(Position::new(buf.get_width() - 1, 23), caret.position);
+    assert_eq!(Position::new(buf.get_width() - 1, 23), caret.position());
 }
 
 #[test]
 fn test_ht() {
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x09");
-    assert_eq!(Position::new(1, 0), caret.position);
+    assert_eq!(Position::new(1, 0), caret.position());
 
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x08\x09");
-    assert_eq!(Position::new(0, 0), caret.position);
+    assert_eq!(Position::new(0, 0), caret.position());
 }
 
 #[test]
 fn test_lf() {
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"test\x0A");
-    assert_eq!(Position::new(4, 1), caret.position);
+    assert_eq!(Position::new(4, 1), caret.position());
 
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x0B\x0A");
-    assert_eq!(Position::new(0, 0), caret.position);
+    assert_eq!(Position::new(0, 0), caret.position());
 }
 
 #[test]
 fn test_vt() {
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\n\n\x0B");
-    assert_eq!(Position::new(0, 1), caret.position);
+    assert_eq!(Position::new(0, 1), caret.position());
 
     let (buf, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x0B");
-    assert_eq!(Position::new(0, buf.get_height() - 1), caret.position);
+    assert_eq!(Position::new(0, buf.get_height() - 1), caret.position());
 }
 
 #[test]
 fn test_ff() {
     let (buf, caret) = create_viewdata_buffer(&mut Parser::default(), b"test\x0C");
-    assert_eq!(Position::new(0, 0), caret.position);
+    assert_eq!(Position::new(0, 0), caret.position());
     assert_eq!(' ', buf.get_char(Position::new(0, 0)).ch);
 }
 
@@ -154,7 +161,7 @@ fn test_cr_at_eol() {
 fn test_lf_fill_bg_bug() {
     // conceal has no effect in graphics mode
     let (buf, _) = create_viewdata_buffer(&mut Parser::default(), b"\x1BD\x1B] \x1B\\\r\n");
-    assert_eq!(0, buf.get_char((5, 0)).attribute.get_background().into());
+    assert_eq!(0, buf.get_char(Position::new(5, 0)).attribute.get_background());
 }
 
 #[test]
@@ -162,7 +169,7 @@ fn test_drop_shadow() {
     // conceal has no effect in graphics mode
     let (buf, _) = create_viewdata_buffer(&mut Parser::default(), b"\x1B^\x1BT\x1B]\x1BGDrop Shadow\x1BTk\x1BV\x1B\\\x7F\x7F");
     assert_eq!('«', buf.get_char((18, 0).into()).ch);
-    assert_eq!(0, buf.get_char((18, 0)).attribute.get_background().into());
+    assert_eq!(0, buf.get_char(Position::new(18, 0)).attribute.get_background());
 }
 
 #[test]
@@ -172,18 +179,17 @@ fn test_color_on_clreol() {
         &mut Parser::default(),
         b"\x1E\x0B\x1BAACCESS DENIED.\x11\x1E\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\x1E\x0B\x1BB*1\x14\x1E\x09\n",
     );
-    assert_eq!(2, buf.get_char((3, buf.get_height() - 1)).attribute.get_foreground().into());
+    assert_eq!(2, buf.get_char(Position::new(3, buf.get_height() - 1)).attribute.get_foreground());
 }
 
 #[test]
 fn test_caret_visibility() {
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x14\n\n\n");
-    assert!(!caret.is_visible());
+    assert!(!caret.visible);
 
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x14\n\n\n\x11");
-    assert!(caret.is_visible());
+    assert!(caret.visible);
 
     let (_, caret) = create_viewdata_buffer(&mut Parser::default(), b"\x14\x0C");
-    assert!(!caret.is_visible());
+    assert!(!caret.visible);
 }
-*/

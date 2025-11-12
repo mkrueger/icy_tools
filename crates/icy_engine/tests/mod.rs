@@ -10,6 +10,7 @@ use icy_engine::{
 };
 
 mod output;
+mod parser;
 
 #[test]
 fn test_set_aspect_ratio() {

@@ -8,9 +8,6 @@ use crate::{CallbackAction, EditableScreen, EngineResult, ParserError, Rectangle
 pub mod bgi;
 mod commands;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Default, Clone, Debug)]
 enum State {
     #[default]
@@ -63,8 +60,8 @@ pub struct Parser {
     _current_write_mode: WriteMode,
 
     rip_counter: i32,
-    rip_commands: Vec<Box<dyn Command>>,
-    command: Option<Box<dyn Command>>,
+    pub rip_commands: Vec<Box<dyn Command>>,
+    pub command: Option<Box<dyn Command>>,
     last_rip_update: i32,
     pub bgi: Bgi,
     pub record_rip_commands: bool,
@@ -164,6 +161,16 @@ impl Parser {
     pub fn push_command(&mut self, buf: &mut dyn EditableScreen, cmd: Box<dyn Command>) -> EngineResult<CallbackAction> {
         self.state = State::GotRipStart;
         self.record_rip_command(buf, cmd)
+    }
+
+    /// Get a reference to the current command being built
+    pub fn get_command(&self) -> Option<&Box<dyn Command>> {
+        self.command.as_ref()
+    }
+
+    /// Get a reference to the recorded RIP commands
+    pub fn get_rip_commands(&self) -> &[Box<dyn Command>] {
+        &self.rip_commands
     }
 }
 

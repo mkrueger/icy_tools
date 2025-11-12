@@ -53,7 +53,7 @@ pub struct Layer {
     pub lines: Vec<Line>,
 
     pub sixels: Vec<Sixel>,
-    pub(crate) hyperlinks: Vec<HyperLink>,
+    pub hyperlinks: Vec<HyperLink>,
 }
 
 impl std::fmt::Display for Layer {

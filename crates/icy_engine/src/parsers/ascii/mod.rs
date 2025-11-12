@@ -1,10 +1,8 @@
 use super::{BufferParser, TAB};
 use crate::{BEL, BS, CR, CallbackAction, EditableScreen, EngineResult, FF, LF};
+
 #[derive(Default)]
 pub struct Parser {}
-
-#[cfg(test)]
-mod tests;
 
 impl BufferParser for Parser {
     fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) -> EngineResult<CallbackAction> {

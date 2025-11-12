@@ -13,10 +13,8 @@ pub use patterns::*;
 
 mod igs_loop;
 mod sound;
-mod vdi;
+pub mod vdi;
 
-#[cfg(test)]
-mod tests;
 const IGS_VERSION: &str = "2.19";
 
 #[derive(Default, Debug)]

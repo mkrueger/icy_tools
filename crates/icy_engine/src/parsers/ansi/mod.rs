@@ -22,9 +22,6 @@ mod dcs;
 pub mod mouse_event;
 mod osc;
 pub mod sound;
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum EngineState {
     Default,
@@ -1040,19 +1037,17 @@ impl BufferParser for Parser {
                     */
                     'X' => return self.erase_character(buf),
                     '@' => {
-                        // Insert character
+                        // Insert character (ICH)
+                        // Inserts blank characters at cursor position without moving cursor
                         self.state = EngineState::Default;
 
-                        if let Some(number) = self.parsed_numbers.first() {
-                            for _ in 0..*number {
-                                buf.ins();
-                            }
-                        } else {
+                        let count = self.parsed_numbers.first().copied().unwrap_or(1);
+                        let original_pos = buf.caret().position();
+                        for _ in 0..count {
                             buf.ins();
-                            if self.parsed_numbers.len() != 1 {
-                                return self.unsupported_escape_error();
-                            }
                         }
+                        // Restore cursor position (ins() advances it, but ICH should not)
+                        buf.caret_mut().set_position(original_pos);
                         return Ok(CallbackAction::Update);
                     }
                     'M' => {
