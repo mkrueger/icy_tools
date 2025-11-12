@@ -242,8 +242,7 @@ impl DrawExecutor {
 
     pub fn init_resolution(&mut self, buf: &mut dyn EditableScreen) {
         buf.clear_screen();
-        let res = buf.get_resolution();
-        buf.set_resolution(res);
+        // TODO?
     }
 
     pub fn reset_attributes(&mut self) {
