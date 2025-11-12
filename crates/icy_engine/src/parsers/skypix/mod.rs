@@ -58,65 +58,6 @@ impl Parser {
         }
     }
 
-    fn print_char(&mut self, buf: &mut dyn EditableScreen, ch: char) {
-        // TODO: Reimplement Amiga font rendering with new GlyphDefinition structure
-        // The old Amiga font structure had fields like data, width, shift_left, shift_up,
-        // spacing, cell_size, raster_size that don't exist in the new YaffFont-based structure.
-        // This needs a proper refactor to work with bitmap.pixels instead of data bitmasks.
-
-        if let Some(_font) = &self.font {
-            let Some(_glyph) = _font.get_glyph(ch) else {
-                return;
-            };
-            log::warn!("Skypix Amiga font rendering not yet implemented with new font structure");
-
-            // Old code commented out - needs refactoring:
-            /*
-            let x = self.graphic_cursor.x;
-            let y = self.graphic_cursor.y;
-
-            let lb = glyph.left_bearing;
-
-            for i in 0..glyph.data.len() {
-                for j in 0..glyph.width {
-                    if (glyph.data[i] & (1 << (glyph.width - j - 1))) != 0 {
-                        self.bgi.put_pixel(
-                            buf,
-                            lb - glyph.shift_left - font.shift_left + x + j as i32,
-                            glyph.top_bearing - glyph.shift_up - font.shift_up + y + i as i32,
-                            self.bgi.get_color(),
-                        );
-                    }
-                }
-            }
-            match font.spacing {
-                Spacing::Proportional => {
-                    self.graphic_cursor.x += lb + glyph.width as i32 + glyph.right_bearing as i32;
-                }
-                Spacing::CharacterCell => {
-                    self.graphic_cursor.x += font.cell_size.width as i32;
-                }
-                Spacing::Monospace => {
-                    self.graphic_cursor.x += font.size().width as i32;
-                }
-                Spacing::MultiCell => {
-                    self.graphic_cursor.x += font.cell_size.width as i32;
-                }
-            }
-            if self.graphic_cursor.x >= SKYPIX_SCREEN_SIZE.width {
-                self.graphic_cursor.x = 0;
-                let h = font.cell_size.height.max(font.raster_size.height).max(font.size().height);
-                self.graphic_cursor.y += h;
-
-                if self.graphic_cursor.y > SKYPIX_SCREEN_SIZE.height {
-                    self.scroll_down(buf, self.graphic_cursor.y - SKYPIX_SCREEN_SIZE.height);
-                    self.graphic_cursor.y = SKYPIX_SCREEN_SIZE.height;
-                }
-            }
-            */
-        }
-    }
-
     fn run_skypix_sequence(&mut self, cmd: i32, parameters: &[i32], buf: &mut dyn EditableScreen) -> EngineResult<CallbackAction> {
         self.cmd_counter += 1;
         buf.mark_dirty();
@@ -454,7 +395,7 @@ impl BufferParser for Parser {
             }
             _ => {
                 if self.font.is_some() && self.fallback_parser.state == EngineState::Default && ch >= ' ' && ch <= '~' {
-                    self.print_char(buf, ch);
+                    let _ = self.print_char(buf, ch);
                     return Ok(CallbackAction::None);
                 }
 

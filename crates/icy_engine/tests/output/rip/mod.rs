@@ -1,5 +1,5 @@
 use icy_engine::{
-    BufferParser, EditableScreen, PaletteScreenBuffer, ansi,
+    BufferParser, PaletteScreenBuffer, ansi,
     rip::{self, RIP_SCREEN_SIZE},
 };
 use std::fs::{self};
