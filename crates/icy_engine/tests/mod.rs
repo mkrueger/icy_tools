@@ -42,7 +42,6 @@ fn test_set_letter_spacing() {
 pub fn compare_output(screen: &dyn Screen, cur_entry: &Path) {
     let rect: Rectangle = screen.get_size().into();
     let (rendered_size, rendered_data) = screen.render_to_rgba(&rect.into());
-
     let filename = cur_entry.file_name().unwrap().to_string_lossy().to_string();
     let png_file = cur_entry.with_extension("png");
     let output_path = cur_entry.with_extension("output.png");

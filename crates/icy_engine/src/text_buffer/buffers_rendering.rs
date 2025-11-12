@@ -5,6 +5,7 @@ use super::Size;
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
         let font_size = self.get_font(0).unwrap().size();
+
         let rect = options.rect.as_rectangle_with_width(self.get_width());
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;

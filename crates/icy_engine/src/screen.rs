@@ -527,7 +527,6 @@ pub trait EditableScreen: RgbaScreen {
                 let left = self.get_first_editable_column().max(0);
                 let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
                 let x = self.caret().x.clamp(left, right);
-                println!("limit caret pos");
                 self.caret_mut().x = x;
             }
         }

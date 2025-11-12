@@ -84,19 +84,32 @@ fn generate_shape_map(buf: &TextBuffer) -> HashMap<usize, HashMap<char, GlyphSha
 fn get_char_from_labels(labels: &[libyaff::Label]) -> Option<char> {
     // Try to parse any label as a character
     for label in labels {
-        let label_str = format!("{:?}", label); // Get debug representation
-        // Try hex format like "0x41"
-        if let Some(hex_str) = label_str.strip_prefix("0x") {
-            if let Ok(code) = u32::from_str_radix(hex_str, 16) {
-                if let Some(ch) = char::from_u32(code) {
-                    return Some(ch);
+        match label {
+            libyaff::Label::Codepoint(codepoints) => {
+                // Get the first codepoint and convert to char
+                if let Some(&code) = codepoints.first() {
+                    if let Some(ch) = char::from_u32(code as u32) {
+                        return Some(ch);
+                    }
                 }
             }
-        }
-        // Try decimal
-        if let Ok(code) = label_str.parse::<u32>() {
-            if let Some(ch) = char::from_u32(code) {
-                return Some(ch);
+            _ => {
+                // Fallback to debug string parsing for other label types
+                let label_str = format!("{:?}", label);
+                // Try hex format like "0x41"
+                if let Some(hex_str) = label_str.strip_prefix("0x") {
+                    if let Ok(code) = u32::from_str_radix(hex_str, 16) {
+                        if let Some(ch) = char::from_u32(code) {
+                            return Some(ch);
+                        }
+                    }
+                }
+                // Try decimal
+                if let Ok(code) = label_str.parse::<u32>() {
+                    if let Some(ch) = char::from_u32(code) {
+                        return Some(ch);
+                    }
+                }
             }
         }
     }

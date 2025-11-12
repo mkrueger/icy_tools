@@ -50,15 +50,18 @@ impl BitFont {
     }
 
     pub fn size(&self) -> Size {
-        let mut width = 8;
-        let mut height = 16;
-
+        let mut width: i32 = 8;
+        let mut height: i32 = 16;
         if let Some(h) = self.yaff_font.line_height {
             height = h;
+        } else if let Some((_x, y)) = self.yaff_font.bounding_box {
+            height = y as i32;
         }
 
-        if let Some(cs) = self.yaff_font.cell_size {
-            width = cs.0;
+        if let Some(cs) = self.yaff_font.bounding_box {
+            width = cs.0 as i32;
+        } else if let Some((x, _y)) = self.yaff_font.cell_size {
+            width = x as i32;
         }
 
         Size::new(width as i32, height as i32)
