@@ -32,6 +32,9 @@ pub use viewdata::ViewdataParser;
 mod mode7;
 pub use mode7::Mode7Parser;
 
+mod rip;
+pub use rip::{RipCommand, RipParser};
+
 /// Erase in Display mode for ED command (ESC[nJ)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -560,6 +563,9 @@ pub enum TerminalCommand<'a> {
 
 pub trait CommandSink {
     fn emit(&mut self, cmd: TerminalCommand<'_>);
+
+    /// Emit a RIPscrip command. Default implementation does nothing.
+    fn emit_rip(&mut self, _cmd: RipCommand) {}
 
     /// Report a parsing error. Default implementation does nothing.
     fn report_error(&mut self, _error: ParseError) {}
