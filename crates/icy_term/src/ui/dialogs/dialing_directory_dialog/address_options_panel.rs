@@ -23,6 +23,33 @@ const VISIBILITY_OFF_SVG: &[u8] = include_bytes!("../../../../data/icons/visibil
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionTypeWrapper(pub ConnectionType);
 
+static AUTO_LOGIN_PRESETS: &[(&str, &str)] = &[
+    ("Autologin disabled", ""),
+    ("Escapes, Name, Password", "@E@W@N@P"),
+    ("Escapes, Name, Y, Password", "@E@W@NY@13@P"),
+    ("Escapes, Name, J, Password", "@E@W@NJ@13@P"),
+    ("Escapes, First, Last name, Password", "@E@W@F@L@P"),
+    ("Escapes, IEMSI", "@E"),
+    ("Name, Password", "@W@N@P"),
+    ("Name, Y, Password", "@W@NY@13@P"),
+    ("Name, J, Password", "@W@NJ@13@P"),
+    ("First name, Last name, Password", "@W@F@L@P"),
+    ("Disable autologin and IEMSI", "@I"),
+    ("1 Escape, Name, Password", "@27@W@N@P"),
+];
+
+#[derive(Debug, Clone, PartialEq)]
+struct AutoLoginOption {
+    label: String,
+    value: String,
+}
+
+impl fmt::Display for AutoLoginOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.label)
+    }
+}
+
 impl fmt::Display for ConnectionTypeWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
@@ -338,6 +365,23 @@ impl super::DialingDirectoryState {
                     }
                 }
             } else if addr.terminal_type == TerminalEmulation::ATAscii {
+                // ATAscii: Provide XEP80 module checkbox to choose 80 vs 40 column mode.
+                let is_xep80 = matches!(addr.screen_mode, ScreenMode::Atascii(80));
+                let toggle = iced::widget::checkbox("", is_xep80)
+                    .on_toggle(move |checked| {
+                        let width = if checked { 80 } else { 40 };
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::ScreenMode(ScreenMode::Atascii(width)),
+                        })
+                    })
+                    .text_size(14);
+
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-xep80-module")), toggle]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
             }
 
             // Music option row (only for ANSI/UTF8ANSI)
@@ -449,23 +493,44 @@ impl super::DialingDirectoryState {
                 .align_y(Alignment::Center),
             );
 
-            // Auto login field
-            let auto_login_field = text_input("", &addr.auto_login)
-                .on_input(move |s| {
-                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                        id,
-                        field: AddressFieldChange::AutoLogin(s),
-                    })
+            // Auto login combo box
+            let mut auto_login_options: Vec<AutoLoginOption> = AUTO_LOGIN_PRESETS
+                .iter()
+                .map(|(label, value)| AutoLoginOption {
+                    label: label.to_string(),
+                    value: value.to_string(),
                 })
-                .padding(6)
-                .size(14)
-                .width(Length::Fill);
+                .collect();
+
+            // Check if current auto_login matches any preset
+            let selected_option = auto_login_options.iter().find(|opt| opt.value == addr.auto_login);
+
+            // If no match and not empty, add custom option
+            let selected_option = if selected_option.is_none() && !addr.auto_login.is_empty() {
+                let custom_option = AutoLoginOption {
+                    label: format!("Custom: {}", addr.auto_login),
+                    value: addr.auto_login.clone(),
+                };
+                auto_login_options.push(custom_option.clone());
+                Some(custom_option)
+            } else {
+                selected_option.cloned()
+            };
+            /*
+            let auto_login_picker = pick_list(auto_login_options, selected_option, move |option: AutoLoginOption| {
+                Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                    id,
+                    field: AddressFieldChange::AutoLogin(option.value),
+                })
+            })
+            .width(Length::Fill)
+            .text_size(14);
 
             login_content = login_content.push(
-                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-autologin")), auto_login_field]
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-autologin")), auto_login_picker]
                     .spacing(12)
                     .align_y(Alignment::Center),
-            );
+            );*/
 
             Some(effect_box(login_content.into()).into())
         } else {

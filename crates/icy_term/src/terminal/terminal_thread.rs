@@ -537,18 +537,6 @@ impl TerminalThread {
         self.send_event(TerminalEvent::Disconnected(None));
     }
 
-    async fn send_login(&mut self) {
-        if let Some(auto_login) = &self.iemsi_auto_login {
-            if let Some(conn) = &mut self.connection {
-                // Send username, wait briefly, then password
-                // Some BBSes need a delay between username and password
-                let _ = conn.send(format!("{}\r", auto_login.user_name).as_bytes()).await;
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                let _ = conn.send(format!("{}\r", auto_login.password).as_bytes()).await;
-            }
-        }
-    }
-
     async fn read_connection(&mut self, buffer: &mut [u8]) -> Vec<u8> {
         if let Some(conn) = &mut self.connection {
             match conn.try_read(buffer).await {
@@ -563,7 +551,7 @@ impl TerminalThread {
                         self.write_to_capture(&data);
                         self.process_data(&data).await;
                     }
-                    Vec::new()
+                    data
                 }
                 Err(e) => {
                     error!("Connection read error: {e}");
@@ -871,6 +859,7 @@ impl TerminalThread {
         let password = password.unwrap_or_default();
 
         for command in commands {
+            println!("run cmd: {:?}", command);
             match command {
                 AutoLoginCommand::Delay(seconds) => {
                     tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
@@ -879,17 +868,71 @@ impl TerminalThread {
                 AutoLoginCommand::EmulateMailerAccess => {
                     // Send CR+CR then ESC
                     if let Some(conn) = &mut self.connection {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
                         let _ = conn.send(&[13, 13, 27]).await;
                         // Wait briefly for response
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
                     }
                 }
 
                 AutoLoginCommand::WaitForNamePrompt => {
-                    // This would ideally wait for prompts like "name:", "login:", "user:", etc.
-                    // For now, we'll just add a small delay
-                    // In a full implementation, this would scan incoming data for prompt patterns
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    // Wait for name/login prompts like "name:", "login:", "user:", etc.
+                    // Timeout after 10 seconds
+                    let timeout = tokio::time::Duration::from_secs(10);
+                    let start = tokio::time::Instant::now();
+                    let mut buffer = vec![0u8; 4096];
+                    let mut accumulated_text = String::new();
+
+                    // Get buffer type for unicode conversion
+                    let buffer_type = if let Ok(screen) = self.edit_screen.lock() {
+                        screen.buffer_type()
+                    } else {
+                        icy_engine::BufferType::CP437 // Default fallback
+                    };
+                    println!("wait !!!");
+
+                    loop {
+                        // Check timeout
+                        if start.elapsed() >= timeout {
+                            log::warn!("WaitForNamePrompt: Timeout waiting for prompt");
+                            break;
+                        }
+
+                        // Try to read data with a small timeout
+                        tokio::select! {
+                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                                // Continue loop to check for timeout
+                            }
+                            data = self.read_connection(&mut buffer) => {
+                                if data.is_empty() {
+                                    continue;
+                                }
+
+                                // Convert bytes to unicode string
+                                for &byte in &data {
+                                    let ch = buffer_type.convert_to_unicode(byte as char);
+                                    accumulated_text.push(ch.to_ascii_lowercase());
+                                }
+                                // Check for name/login prompts (case-insensitive)
+                                let prompt_patterns = [
+                                    "name",
+                                    "login",
+                                    "user",
+                                ];
+                                for pattern in &prompt_patterns {
+                                    if accumulated_text.contains(pattern) {
+                                        log::info!("WaitForNamePrompt: Detected prompt pattern '{}'", pattern);
+                                        return; // Exit the command - prompt detected
+                                    }
+                                }
+
+                                // Keep only last 512 characters to avoid unbounded growth
+                                if accumulated_text.len() > 512 {
+                                    accumulated_text = accumulated_text.chars().skip(accumulated_text.len() - 512).collect();
+                                }
+                            }
+                        }
+                    }
                 }
 
                 AutoLoginCommand::SendFullName => {
