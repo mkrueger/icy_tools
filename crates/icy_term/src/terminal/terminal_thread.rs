@@ -36,8 +36,9 @@ pub enum TerminalCommand {
     StartDownload(TransferProtocolType, Option<String>),
     CancelTransfer,
     Resize(u16, u16),
-    SendLogin, // Trigger auto-login
     SetBaudEmulation(BaudEmulation),
+    StartCapture(String),
+    StopCapture,
 }
 
 /// Messages sent from the terminal thread to the UI
@@ -45,7 +46,6 @@ pub enum TerminalCommand {
 pub enum TerminalEvent {
     Connected,
     Disconnected(Option<String>), // Optional error message
-    DataReceived(Vec<u8>),
     BufferUpdated,
     TransferStarted(TransferState, bool),
     TransferProgress(TransferState),
@@ -128,6 +128,9 @@ pub struct TerminalThread {
     auto_file_transfer: AutoFileTransfer,
     iemsi_auto_login: Option<IEmsiAutoLogin>,
     auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>, // For pending auto-transfers
+
+    // Capture state
+    capture_writer: Option<std::fs::File>,
 }
 
 impl TerminalThread {
@@ -153,6 +156,7 @@ impl TerminalThread {
             iemsi_auto_login: None,
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
+            capture_writer: None,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -188,8 +192,8 @@ impl TerminalThread {
                     if self.baud_emulator.has_buffered_data() {
                         let data = self.baud_emulator.emulate(&[]);
                         if !data.is_empty() {
+                            self.write_to_capture(&data);
                             self.process_data(&data).await;
-                            self.send_event(TerminalEvent::DataReceived(data));
                         }
                     }
 
@@ -322,11 +326,22 @@ impl TerminalThread {
             TerminalCommand::Resize(width, height) => {
                 self.perform_resize(width, height);
             }
-            TerminalCommand::SendLogin => {
-                self.send_login().await;
-            }
             TerminalCommand::SetBaudEmulation(bps) => {
                 self.baud_emulator.set_baud_rate(bps);
+            }
+            TerminalCommand::StartCapture(file_name) => match std::fs::File::create(&file_name) {
+                Ok(file) => {
+                    self.capture_writer = Some(file);
+                    log::info!("Started capturing to {}", file_name);
+                }
+                Err(e) => {
+                    log::error!("Failed to create capture file {}: {}", file_name, e);
+                    self.send_event(TerminalEvent::Error(format!("Failed to create capture file: {}", e)));
+                }
+            },
+            TerminalCommand::StopCapture => {
+                self.capture_writer = None;
+                log::info!("Stopped capturing");
             }
         }
     }
@@ -545,8 +560,8 @@ impl TerminalThread {
                     data = self.baud_emulator.emulate(&data);
 
                     if !data.is_empty() {
+                        self.write_to_capture(&data);
                         self.process_data(&data).await;
-                        self.send_event(TerminalEvent::DataReceived(data));
                     }
                     Vec::new()
                 }
@@ -833,6 +848,17 @@ impl TerminalThread {
     fn send_event(&mut self, evt: TerminalEvent) {
         if let Err(err) = self.event_tx.send(evt) {
             log::error!("Failed to send terminal event: {}", err);
+        }
+    }
+
+    fn write_to_capture(&mut self, data: &[u8]) {
+        if let Some(writer) = &mut self.capture_writer {
+            use std::io::Write;
+            if let Err(e) = writer.write_all(data) {
+                log::error!("Failed to write to capture file: {}", e);
+                // Close the capture file on error
+                self.capture_writer = None;
+            }
         }
     }
 

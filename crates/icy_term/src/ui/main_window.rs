@@ -1,6 +1,5 @@
 use core::panic;
 use std::{
-    io::Write,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -80,9 +79,6 @@ pub struct MainWindow {
     last_address: Option<Address>,
     terminal_emulation: TerminalEmulation,
 
-    // Capture state
-    capture_writer: Option<std::fs::File>,
-
     _is_fullscreen_mode: bool,
     _last_pos: Position,
     shift_pressed_during_selection: bool,
@@ -148,8 +144,6 @@ impl MainWindow {
             connection_time: None,
             current_address: None,
             last_address: None,
-
-            capture_writer: None,
 
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
@@ -433,13 +427,13 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 self.capture_dialog.capture_session = true;
                 self.terminal_window.is_capturing = true;
-                self.capture_writer = std::fs::File::create(&file_name).ok();
+                let _ = self.terminal_tx.send(TerminalCommand::StartCapture(file_name));
                 Task::none()
             }
             Message::StopCapture => {
                 self.capture_dialog.capture_session = false;
                 self.terminal_window.is_capturing = false;
-                self.capture_writer.take();
+                let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
                 Task::none()
             }
             Message::ShowFindDialog => {
@@ -605,7 +599,7 @@ impl MainWindow {
                 if self.terminal_window.is_capturing {
                     self.capture_dialog.capture_session = false;
                     self.terminal_window.is_capturing = false;
-                    self.capture_writer.take();
+                    let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
                 }
                 // Stop sound thread
                 self.sound_thread.lock().unwrap().clear();
@@ -811,15 +805,6 @@ impl MainWindow {
                 self.is_connected = false;
                 self.terminal_window.disconnect();
                 self.connection_time = None;
-                Task::none()
-            }
-            TerminalEvent::DataReceived(data) => {
-                // Handle capture
-                if self.terminal_window.is_capturing {
-                    if let Some(w) = self.capture_writer.as_mut() {
-                        let _ = w.write_all(&data);
-                    }
-                }
                 Task::none()
             }
             TerminalEvent::Reconnect => {
