@@ -23,6 +23,15 @@ pub use renegade::RenegadeParser;
 mod atascii;
 pub use atascii::AtasciiParser;
 
+mod petscii;
+pub use petscii::PetsciiParser;
+
+mod viewdata;
+pub use viewdata::ViewdataParser;
+
+mod mode7;
+pub use mode7::Mode7Parser;
+
 /// Erase in Display mode for ED command (ESC[nJ)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
