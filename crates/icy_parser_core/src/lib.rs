@@ -35,6 +35,9 @@ pub use mode7::Mode7Parser;
 mod rip;
 pub use rip::{RipCommand, RipParser};
 
+mod skypix;
+pub use skypix::{SkypixCommand, SkypixParser};
+
 /// Erase in Display mode for ED command (ESC[nJ)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -566,6 +569,9 @@ pub trait CommandSink {
 
     /// Emit a RIPscrip command. Default implementation does nothing.
     fn emit_rip(&mut self, _cmd: RipCommand) {}
+
+    /// Emit a SkyPix command. Default implementation does nothing.
+    fn emit_skypix(&mut self, _cmd: SkypixCommand) {}
 
     /// Report a parsing error. Default implementation does nothing.
     fn report_error(&mut self, _error: ParseError) {}
