@@ -1,0 +1,686 @@
+Just for documentation purposes: 
+It was indeed slower to use the lookup table.
+
+
+//! ANSI escape sequence parser
+//!
+//! Parses ANSI/VT100 escape sequences into structured commands.
+//! Supports CSI (Control Sequence Introducer), ESC, and OSC sequences.
+
+use crate::{CommandParser, CommandSink, TerminalCommand};
+
+// Action codes for the state transition table
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Action {
+    // No action, just accumulate printable
+    None = 0,
+    
+    // Ground state actions
+    EmitEscape = 1,
+    EmitBell = 2,
+    EmitBackspace = 3,
+    EmitTab = 4,
+    EmitLineFeed = 5,
+    EmitFormFeed = 6,
+    EmitCarriageReturn = 7,
+    EmitDelete = 8,
+    
+    // Escape state transitions
+    EnterCsi = 10,
+    EnterOsc = 11,
+    EscIndex = 12,
+    EscNextLine = 13,
+    EscSetTab = 14,
+    EscReverseIndex = 15,
+    EscSaveCursor = 16,
+    EscRestoreCursor = 17,
+    EscReset = 18,
+    EscUnknown = 19,
+    
+    // CSI state actions
+    CsiStartParam = 20,
+    CsiEmptyParam = 21,
+    CsiPrivateMarker = 22,
+    CsiFinalNoParams = 23,
+    CsiInvalid = 24,
+    
+    // CSI param state actions
+    CsiContinueParam = 30,
+    CsiNextParam = 31,
+    CsiIntermediate = 32,
+    CsiFinal = 33,
+    
+    // OSC state actions
+    OscCollect = 40,
+    OscEnd = 41,
+}
+
+// Flatten 2D table into 1D: index = (state << 8) | byte
+// Total size: 6 states * 256 bytes = 1536 entries
+const fn build_transition_table() -> [u8; 6 * 256] {
+    let mut table = [0u8; 6 * 256];
+    let mut state_idx = 0;
+    
+    // Ground state (0)
+    while state_idx < 1 {
+        let mut byte_idx = 0;
+        while byte_idx < 256 {
+            let index = (state_idx << 8) | byte_idx;
+            table[index] = match byte_idx as u8 {
+                0x1B => Action::EmitEscape as u8,
+                0x07 => Action::EmitBell as u8,
+                0x08 => Action::EmitBackspace as u8,
+                0x09 => Action::EmitTab as u8,
+                0x0A => Action::EmitLineFeed as u8,
+                0x0C => Action::EmitFormFeed as u8,
+                0x0D => Action::EmitCarriageReturn as u8,
+                0x7F => Action::EmitDelete as u8,
+                _ => Action::None as u8,
+            };
+            byte_idx += 1;
+        }
+        state_idx += 1;
+    }
+    
+    // Escape state (1)
+    while state_idx < 2 {
+        let mut byte_idx = 0;
+        while byte_idx < 256 {
+            let index = (state_idx << 8) | byte_idx;
+            table[index] = match byte_idx as u8 {
+                b'[' => Action::EnterCsi as u8,
+                b']' => Action::EnterOsc as u8,
+                b'D' => Action::EscIndex as u8,
+                b'E' => Action::EscNextLine as u8,
+                b'H' => Action::EscSetTab as u8,
+                b'M' => Action::EscReverseIndex as u8,
+                b'7' => Action::EscSaveCursor as u8,
+                b'8' => Action::EscRestoreCursor as u8,
+                b'c' => Action::EscReset as u8,
+                _ => Action::EscUnknown as u8,
+            };
+            byte_idx += 1;
+        }
+        state_idx += 1;
+    }
+    
+    // CsiEntry state (2)
+    while state_idx < 3 {
+        let mut byte_idx = 0;
+        while byte_idx < 256 {
+            let index = (state_idx << 8) | byte_idx;
+            table[index] = match byte_idx as u8 {
+                b'0'..=b'9' => Action::CsiStartParam as u8,
+                b';' => Action::CsiEmptyParam as u8,
+                b'?' | b'>' | b'!' | b'=' => Action::CsiPrivateMarker as u8,
+                b'@'..=b'~' => Action::CsiFinalNoParams as u8,
+                _ => Action::CsiInvalid as u8,
+            };
+            byte_idx += 1;
+        }
+        state_idx += 1;
+    }
+    
+    // CsiParam state (3)
+    while state_idx < 4 {
+        let mut byte_idx = 0;
+        while byte_idx < 256 {
+            let index = (state_idx << 8) | byte_idx;
+            table[index] = match byte_idx as u8 {
+                b'0'..=b'9' => Action::CsiContinueParam as u8,
+                b';' => Action::CsiNextParam as u8,
+                b' '..=b'/' => Action::CsiIntermediate as u8,
+                b'@'..=b'~' => Action::CsiFinal as u8,
+                _ => Action::CsiInvalid as u8,
+            };
+            byte_idx += 1;
+        }
+        state_idx += 1;
+    }
+    
+    // CsiIntermediate state (4)
+    while state_idx < 5 {
+        let mut byte_idx = 0;
+        while byte_idx < 256 {
+            let index = (state_idx << 8) | byte_idx;
+            table[index] = match byte_idx as u8 {
+                b'@'..=b'~' => Action::CsiFinal as u8,
+                b' '..=b'/' => Action::CsiIntermediate as u8,
+                _ => Action::CsiInvalid as u8,
+            };
+            byte_idx += 1;
+        }
+        state_idx += 1;
+    }
+    
+    // OscString state (5)
+    while state_idx < 6 {
+        let mut byte_idx = 0;
+        while byte_idx < 256 {
+            let index = (state_idx << 8) | byte_idx;
+            table[index] = match byte_idx as u8 {
+                0x07 | 0x1B => Action::OscEnd as u8,
+                _ => Action::OscCollect as u8,
+            };
+            byte_idx += 1;
+        }
+        state_idx += 1;
+    }
+    
+    table
+}
+
+const TRANSITION_TABLE: [u8; 6 * 256] = build_transition_table();
+
+#[derive(Default)]
+pub struct AnsiParser {
+    state: ParserState,
+    params: Vec<i32>,
+    intermediate_bytes: Vec<u8>,
+    parse_buffer: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum ParserState {
+    Ground = 0,
+    Escape = 1,
+    CsiEntry = 2,
+    CsiParam = 3,
+    CsiIntermediate = 4,
+    OscString = 5,
+}
+
+impl Default for ParserState {
+    fn default() -> Self {
+        ParserState::Ground
+    }
+}
+
+impl AnsiParser {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn reset(&mut self) {
+        self.params.clear();
+        self.intermediate_bytes.clear();
+        self.state = ParserState::Ground;
+    }
+
+    fn add_param(&mut self, value: i32) {
+        self.params.push(value);
+    }
+
+    fn current_param_or_default(&self, default: i32) -> i32 {
+        self.params.last().copied().unwrap_or(default)
+    }
+}
+
+impl CommandParser for AnsiParser {
+    fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
+        let mut i = 0;
+        let mut printable_start = 0;
+
+        while i < input.len() {
+            let byte = input[i];
+            
+            // Look up action in 1D table using: index = (state << 8) | byte
+            let action = unsafe {
+                let index = ((self.state as usize) << 8) | (byte as usize);
+                *TRANSITION_TABLE.get_unchecked(index)
+            };
+
+            match action {
+                0 => {
+                    // Action::None
+                    i += 1;
+                }                       
+                // Ground state actions
+                1 => {
+                    // Action::EmitEscape
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    self.state = ParserState::Escape;
+                    i += 1;
+                    printable_start = i;
+                }
+                2 => {
+                    // Action::EmitBell
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::Bell);
+                    i += 1;
+                    printable_start = i;
+                }
+                3 => {
+                    // Action::EmitBackspace
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::Backspace);
+                    i += 1;
+                    printable_start = i;
+                }
+                4 => {
+                    // Action::EmitTab
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::Tab);
+                    i += 1;
+                    printable_start = i;
+                }
+                5 => {
+                    // Action::EmitLineFeed
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::LineFeed);
+                    i += 1;
+                    printable_start = i;
+                }
+                6 => {
+                    // Action::EmitFormFeed
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::FormFeed);
+                    i += 1;
+                    printable_start = i;
+                }
+                7 => {
+                    // Action::EmitCarriageReturn
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::CarriageReturn);
+                    i += 1;
+                    printable_start = i;
+                }
+                8 => {
+                    // Action::EmitDelete
+                    if i > printable_start {
+                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                    }
+                    sink.emit(TerminalCommand::Delete);
+                    i += 1;
+                    printable_start = i;
+                }
+                
+                // Escape state actions
+                10 => {
+                    // Action::EnterCsi
+                    self.params.clear();
+                    self.intermediate_bytes.clear();
+                    self.state = ParserState::CsiEntry;
+                    i += 1;
+                    printable_start = i;
+                }
+                11 => {
+                    // Action::EnterOsc
+                    self.parse_buffer.clear();
+                    self.state = ParserState::OscString;
+                    i += 1;
+                    printable_start = i;
+                }
+                12 => {
+                    // Action::EscIndex
+                    sink.emit(TerminalCommand::EscIndex);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                13 => {
+                    // Action::EscNextLine
+                    sink.emit(TerminalCommand::EscNextLine);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                14 => {
+                    // Action::EscSetTab
+                    sink.emit(TerminalCommand::EscSetTab);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                15 => {
+                    // Action::EscReverseIndex
+                    sink.emit(TerminalCommand::EscReverseIndex);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                16 => {
+                    // Action::EscSaveCursor
+                    sink.emit(TerminalCommand::EscSaveCursor);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                17 => {
+                    // Action::EscRestoreCursor
+                    sink.emit(TerminalCommand::EscRestoreCursor);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                18 => {
+                    // Action::EscReset
+                    sink.emit(TerminalCommand::EscReset);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                19 => {
+                    // Action::EscUnknown
+                    sink.emit(TerminalCommand::Unknown(&input[i - 1..=i]));
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                
+                // CsiEntry state actions
+                20 => {
+                    // Action::CsiStartParam
+                    let digit = (byte - b'0') as i32;
+                    self.params.push(digit);
+                    self.state = ParserState::CsiParam;
+                    i += 1;
+                }
+                21 => {
+                    // Action::CsiEmptyParam
+                    self.params.push(0);
+                    i += 1;
+                }
+                22 => {
+                    // Action::CsiPrivateMarker
+                    self.intermediate_bytes.push(byte);
+                    i += 1;
+                }
+                23 => {
+                    // Action::CsiFinalNoParams
+                    self.emit_csi_sequence(byte, sink);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                24 => {
+                    // Action::CsiInvalid
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                
+                // CsiParam state actions
+                30 => {
+                    // Action::CsiContinueParam
+                    let digit = (byte - b'0') as i32;
+                    if let Some(last) = self.params.last_mut() {
+                        *last = last.saturating_mul(10).saturating_add(digit);
+                    } else {
+                        self.params.push(digit);
+                    }
+                    i += 1;
+                }
+                31 => {
+                    // Action::CsiNextParam
+                    self.params.push(0);
+                    i += 1;
+                }
+                32 => {
+                    // Action::CsiIntermediate
+                    self.intermediate_bytes.push(byte);
+                    self.state = ParserState::CsiIntermediate;
+                    i += 1;
+                }
+                33 => {
+                    // Action::CsiFinal
+                    self.emit_csi_sequence(byte, sink);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                
+                // OscString state actions
+                40 => {
+                    // Action::OscCollect
+                    self.parse_buffer.push(byte);
+                    i += 1;
+                }
+                41 => {
+                    // Action::OscEnd
+                    if byte == 0x1B {
+                        // Check for ESC \ (ST - String Terminator)
+                        if i + 1 < input.len() && input[i + 1] == b'\\' {
+                            i += 1; // Skip the backslash
+                        }
+                    }
+                    self.emit_osc_sequence(sink);
+                    self.reset();
+                    i += 1;
+                    printable_start = i;
+                }
+                
+                _ => {
+                    // Unknown action, skip byte
+                    i += 1;
+                }
+            }
+        
+        
+        }
+
+        // Emit any remaining printable bytes
+        if i > printable_start && self.state == ParserState::Ground {
+            sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+        }
+    }
+
+    fn flush(&mut self, _sink: &mut dyn CommandSink) {
+        // Reset parser state on flush
+        self.reset();
+    }
+}
+
+impl AnsiParser {
+    fn emit_csi_sequence(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
+        // Check for DEC private mode sequences (? prefix)
+        let is_dec_private = self.intermediate_bytes.first() == Some(&b'?');
+
+        match final_byte {
+            b'A' => {
+                // CUU - Cursor Up
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorUp(n));
+            }
+            b'B' => {
+                // CUD - Cursor Down
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorDown(n));
+            }
+            b'C' => {
+                // CUF - Cursor Forward
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorForward(n));
+            }
+            b'D' => {
+                // CUB - Cursor Back
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorBack(n));
+            }
+            b'E' => {
+                // CNL - Cursor Next Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorNextLine(n));
+            }
+            b'F' => {
+                // CPL - Cursor Previous Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorPreviousLine(n));
+            }
+            b'G' => {
+                // CHA - Cursor Horizontal Absolute
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n));
+            }
+            b'H' | b'f' => {
+                // CUP - Cursor Position
+                let row = self.params.first().copied().unwrap_or(1);
+                let col = self.params.get(1).copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorPosition(row, col));
+            }
+            b'J' => {
+                // ED - Erase in Display
+                let n = self.params.first().copied().unwrap_or(0);
+                sink.emit(TerminalCommand::CsiEraseInDisplay(n));
+            }
+            b'K' => {
+                // EL - Erase in Line
+                let n = self.params.first().copied().unwrap_or(0);
+                sink.emit(TerminalCommand::CsiEraseInLine(n));
+            }
+            b'S' => {
+                // SU - Scroll Up
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiScrollUp(n));
+            }
+            b'T' => {
+                // SD - Scroll Down
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiScrollDown(n));
+            }
+            b'm' => {
+                // SGR - Select Graphic Rendition
+                let params = if self.params.is_empty() {
+                    vec![0]
+                } else {
+                    self.params.clone()
+                };
+                sink.emit(TerminalCommand::CsiSelectGraphicRendition(params));
+            }
+            b'r' => {
+                // DECSTBM - Set Scrolling Region
+                let top = self.params.first().copied().unwrap_or(1);
+                let bottom = self.params.get(1).copied().unwrap_or(0);
+                sink.emit(TerminalCommand::CsiSetScrollingRegion(top, bottom));
+            }
+            b'@' => {
+                // ICH - Insert Character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiInsertCharacter(n));
+            }
+            b'P' => {
+                // DCH - Delete Character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiDeleteCharacter(n));
+            }
+            b'X' => {
+                // ECH - Erase Character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiEraseCharacter(n));
+            }
+            b'L' => {
+                // IL - Insert Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiInsertLine(n));
+            }
+            b'M' => {
+                // DL - Delete Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiDeleteLine(n));
+            }
+            b'b' => {
+                // REP - Repeat preceding character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiRepeatPrecedingCharacter(n));
+            }
+            b'c' => {
+                // DA - Device Attributes
+                sink.emit(TerminalCommand::CsiDeviceAttributes);
+            }
+            b'n' => {
+                // DSR - Device Status Report
+                let n = self.params.first().copied().unwrap_or(0);
+                sink.emit(TerminalCommand::CsiDeviceStatusReport(n));
+            }
+            b'h' => {
+                if is_dec_private {
+                    // DECSET - DEC Private Mode Set
+                    sink.emit(TerminalCommand::CsiDecPrivateModeSet(self.params.clone()));
+                } else {
+                    // SM - Set Mode
+                    sink.emit(TerminalCommand::CsiSetMode(self.params.clone()));
+                }
+            }
+            b'l' => {
+                if is_dec_private {
+                    // DECRST - DEC Private Mode Reset
+                    sink.emit(TerminalCommand::CsiDecPrivateModeReset(self.params.clone()));
+                } else {
+                    // RM - Reset Mode
+                    sink.emit(TerminalCommand::CsiResetMode(self.params.clone()));
+                }
+            }
+            _ => {
+                // Unknown CSI sequence
+                sink.emit(TerminalCommand::Unknown(&[]));
+            }
+        }
+    }
+
+    fn emit_osc_sequence(&mut self, sink: &mut dyn CommandSink) {
+        // OSC format: ESC ] Ps ; Pt BEL
+        // Ps is the command number, Pt is the text
+        
+        if self.parse_buffer.is_empty() {
+            return;
+        }
+
+        // Find semicolon separator
+        if let Some(semicolon_pos) = self.parse_buffer.iter().position(|&b| b == b';') {
+            let ps_bytes = &self.parse_buffer[..semicolon_pos];
+            let pt_bytes = &self.parse_buffer[semicolon_pos + 1..];
+
+            // Parse command number
+            if let Ok(ps_str) = std::str::from_utf8(ps_bytes) {
+                if let Ok(ps) = ps_str.parse::<u32>() {
+                    match ps {
+                        0 => {
+                            // Set icon name and window title
+                            sink.emit(TerminalCommand::OscSetTitle(pt_bytes));
+                        }
+                        1 => {
+                            // Set icon name
+                            sink.emit(TerminalCommand::OscSetIconName(pt_bytes));
+                        }
+                        2 => {
+                            // Set window title
+                            sink.emit(TerminalCommand::OscSetWindowTitle(pt_bytes));
+                        }
+                        8 => {
+                            // Hyperlink: OSC 8 ; params ; URI BEL
+                            if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
+                                let params = &pt_bytes[..uri_pos];
+                                let uri = &pt_bytes[uri_pos + 1..];
+                                sink.emit(TerminalCommand::OscHyperlink { params, uri });
+                            }
+                        }
+                        _ => {
+                            // Unknown OSC command
+                            sink.emit(TerminalCommand::Unknown(&self.parse_buffer));
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
+        // Malformed OSC
+        sink.emit(TerminalCommand::Unknown(&self.parse_buffer));
+    }
+}

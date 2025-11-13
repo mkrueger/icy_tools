@@ -1,0 +1,851 @@
+//! ANSI escape sequence parser
+//!
+//! Parses ANSI/VT100 escape sequences into structured commands.
+//! Supports CSI (Control Sequence Introducer), ESC, and OSC sequences.
+
+use crate::{
+    AnsiMode, Blink, Color, CommandParser, CommandSink, DecPrivateMode, DeviceStatusReport, EraseInDisplayMode, EraseInLineMode, Frame, Intensity, ParseError,
+    SgrAttribute, TerminalCommand, Underline,
+};
+
+/// SGR lookup table entry - describes what a particular SGR parameter code means
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SgrLutEntry {
+    /// Regular SGR attribute that can be directly used
+    SetAttribute(SgrAttribute),
+    /// Extended foreground color (38) - needs sub-parameters (38;5;n or 38;2;r;g;b)
+    ExtendedForeground,
+    /// Extended background color (48) - needs sub-parameters (48;5;n or 48;2;r;g;b)
+    ExtendedBackground,
+    /// Undefined/unsupported SGR code
+    Undefined,
+}
+
+// SGR lookup table: maps SGR parameter values (0-107) to their meaning
+static SGR_LUT: [SgrLutEntry; 108] = [
+    SgrLutEntry::SetAttribute(SgrAttribute::Reset),                        // 0
+    SgrLutEntry::SetAttribute(SgrAttribute::Intensity(Intensity::Bold)),   // 1
+    SgrLutEntry::SetAttribute(SgrAttribute::Intensity(Intensity::Faint)),  // 2
+    SgrLutEntry::SetAttribute(SgrAttribute::Italic(true)),                 // 3
+    SgrLutEntry::SetAttribute(SgrAttribute::Underline(Underline::Single)), // 4
+    SgrLutEntry::SetAttribute(SgrAttribute::Blink(Blink::Slow)),           // 5
+    SgrLutEntry::SetAttribute(SgrAttribute::Blink(Blink::Rapid)),          // 6
+    SgrLutEntry::SetAttribute(SgrAttribute::Inverse(true)),                // 7
+    SgrLutEntry::SetAttribute(SgrAttribute::Concealed(true)),              // 8
+    SgrLutEntry::SetAttribute(SgrAttribute::CrossedOut(true)),             // 9
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(0)),                      // 10
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(1)),                      // 11
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(2)),                      // 12
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(3)),                      // 13
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(4)),                      // 14
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(5)),                      // 15
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(6)),                      // 16
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(7)),                      // 17
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(8)),                      // 18
+    SgrLutEntry::SetAttribute(SgrAttribute::Font(9)),                      // 19
+    SgrLutEntry::SetAttribute(SgrAttribute::Fraktur),                      // 20
+    SgrLutEntry::SetAttribute(SgrAttribute::Underline(Underline::Double)), // 21
+    SgrLutEntry::SetAttribute(SgrAttribute::Intensity(Intensity::Normal)), // 22
+    SgrLutEntry::SetAttribute(SgrAttribute::Italic(false)),                // 23
+    SgrLutEntry::SetAttribute(SgrAttribute::Underline(Underline::Off)),    // 24
+    SgrLutEntry::SetAttribute(SgrAttribute::Blink(Blink::Off)),            // 25
+    SgrLutEntry::Undefined,                                                // 26 - proportional spacing (rarely supported)
+    SgrLutEntry::SetAttribute(SgrAttribute::Inverse(false)),               // 27
+    SgrLutEntry::SetAttribute(SgrAttribute::Concealed(false)),             // 28
+    SgrLutEntry::SetAttribute(SgrAttribute::CrossedOut(false)),            // 29
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(0))),   // 30 - Black
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(1))),   // 31 - Red
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(2))),   // 32 - Green
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(3))),   // 33 - Yellow
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(4))),   // 34 - Blue
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(5))),   // 35 - Magenta
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(6))),   // 36 - Cyan
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(7))),   // 37 - White
+    SgrLutEntry::ExtendedForeground,                                       // 38 - extended foreground (needs sub-params)
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Default)),   // 39
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(0))),   // 40 - Black
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(1))),   // 41 - Red
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(2))),   // 42 - Green
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(3))),   // 43 - Yellow
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(4))),   // 44 - Blue
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(5))),   // 45 - Magenta
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(6))),   // 46 - Cyan
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(7))),   // 47 - White
+    SgrLutEntry::ExtendedBackground,                                       // 48 - extended background (needs sub-params)
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Default)),   // 49
+    SgrLutEntry::Undefined,                                                // 50 - disable proportional spacing
+    SgrLutEntry::SetAttribute(SgrAttribute::Frame(Frame::Framed)),         // 51
+    SgrLutEntry::SetAttribute(SgrAttribute::Frame(Frame::Encircled)),      // 52
+    SgrLutEntry::SetAttribute(SgrAttribute::Overlined(true)),              // 53
+    SgrLutEntry::SetAttribute(SgrAttribute::Frame(Frame::Off)),            // 54
+    SgrLutEntry::SetAttribute(SgrAttribute::Overlined(false)),             // 55
+    SgrLutEntry::Undefined,                                                // 56 - reserved
+    SgrLutEntry::Undefined,                                                // 57 - reserved
+    SgrLutEntry::Undefined,                                                // 58 - underline color (rarely supported)
+    SgrLutEntry::Undefined,                                                // 59 - default underline color
+    SgrLutEntry::SetAttribute(SgrAttribute::IdeogramUnderline),            // 60
+    SgrLutEntry::SetAttribute(SgrAttribute::IdeogramDoubleUnderline),      // 61
+    SgrLutEntry::SetAttribute(SgrAttribute::IdeogramOverline),             // 62
+    SgrLutEntry::SetAttribute(SgrAttribute::IdeogramDoubleOverline),       // 63
+    SgrLutEntry::SetAttribute(SgrAttribute::IdeogramStress),               // 64
+    SgrLutEntry::SetAttribute(SgrAttribute::IdeogramAttributesOff),        // 65
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined, // 66-70
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined, // 71-75
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined, // 76-80
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined, // 81-85
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,                                               // 86-89
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(8))),  // 90 - Bright Black
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(9))),  // 91 - Bright Red
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(10))), // 92 - Bright Green
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(11))), // 93 - Bright Yellow
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(12))), // 94 - Bright Blue
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(13))), // 95 - Bright Magenta
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(14))), // 96 - Bright Cyan
+    SgrLutEntry::SetAttribute(SgrAttribute::Foreground(Color::Base(15))), // 97 - Bright White
+    SgrLutEntry::Undefined,
+    SgrLutEntry::Undefined,                                               // 98-99
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(8))),  // 100 - Bright Black
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(9))),  // 101 - Bright Red
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(10))), // 102 - Bright Green
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(11))), // 103 - Bright Yellow
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(12))), // 104 - Bright Blue
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(13))), // 105 - Bright Magenta
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(14))), // 106 - Bright Cyan
+    SgrLutEntry::SetAttribute(SgrAttribute::Background(Color::Base(15))), // 107 - Bright White
+];
+
+#[derive(Default)]
+pub struct AnsiParser {
+    state: ParserState,
+    params: Vec<u16>,
+    intermediate_bytes: Vec<u8>,
+    parse_buffer: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum ParserState {
+    Ground = 0,
+    Escape = 1,
+    CsiEntry = 2,
+    CsiParam = 3,
+    CsiIntermediate = 4,
+    OscString = 5,
+}
+
+impl Default for ParserState {
+    fn default() -> Self {
+        ParserState::Ground
+    }
+}
+
+impl AnsiParser {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn reset(&mut self) {
+        self.params.clear();
+        self.intermediate_bytes.clear();
+        self.state = ParserState::Ground;
+    }
+}
+
+impl CommandParser for AnsiParser {
+    fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
+        let mut i = 0;
+        let mut printable_start = 0;
+
+        while i < input.len() {
+            let byte = input[i];
+
+            match self.state {
+                ParserState::Ground => {
+                    match byte {
+                        0x1B => {
+                            // ESC - start escape sequence
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            self.state = ParserState::Escape;
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x07 => {
+                            // BEL
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::Bell);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x08 => {
+                            // BS
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::Backspace);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x09 => {
+                            // HT
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::Tab);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x0A => {
+                            // LF
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::LineFeed);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x0C => {
+                            // FF
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::FormFeed);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x0D => {
+                            // CR
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::CarriageReturn);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x7F => {
+                            // DEL
+                            if i > printable_start {
+                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                            }
+                            sink.emit(TerminalCommand::Delete);
+                            i += 1;
+                            printable_start = i;
+                        }
+                        _ => {
+                            // Printable or other character
+                            i += 1;
+                        }
+                    }
+                }
+
+                ParserState::Escape => {
+                    match byte {
+                        b'[' => {
+                            // CSI - Control Sequence Introducer
+                            self.params.clear();
+                            self.intermediate_bytes.clear();
+                            self.state = ParserState::CsiEntry;
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b']' => {
+                            // OSC - Operating System Command
+                            self.parse_buffer.clear();
+                            self.state = ParserState::OscString;
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'D' => {
+                            // IND - Index
+                            sink.emit(TerminalCommand::EscIndex);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'E' => {
+                            // NEL - Next Line
+                            sink.emit(TerminalCommand::EscNextLine);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'H' => {
+                            // HTS - Horizontal Tab Set
+                            sink.emit(TerminalCommand::EscSetTab);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'M' => {
+                            // RI - Reverse Index
+                            sink.emit(TerminalCommand::EscReverseIndex);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'7' => {
+                            // DECSC - Save Cursor
+                            sink.emit(TerminalCommand::EscSaveCursor);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'8' => {
+                            // DECRC - Restore Cursor
+                            sink.emit(TerminalCommand::EscRestoreCursor);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'c' => {
+                            // RIS - Reset to Initial State
+                            sink.emit(TerminalCommand::EscReset);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        _ => {
+                            // Unknown escape sequence
+                            sink.emit(TerminalCommand::Unknown(&input[i - 1..=i]));
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                    }
+                }
+
+                ParserState::CsiEntry => {
+                    match byte {
+                        b'0'..=b'9' => {
+                            // Start of parameter
+                            let digit = (byte - b'0') as u16;
+                            self.params.push(digit);
+                            self.state = ParserState::CsiParam;
+                            i += 1;
+                        }
+                        b';' => {
+                            // Empty parameter (default to 0)
+                            self.params.push(0);
+                            i += 1;
+                        }
+                        b'?' | b'>' | b'!' | b'=' => {
+                            // Private marker
+                            self.intermediate_bytes.push(byte);
+                            i += 1;
+                        }
+                        b'@'..=b'~' => {
+                            // Final byte without parameters
+                            self.emit_csi_sequence(byte, sink);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        _ => {
+                            // Invalid CSI sequence
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                    }
+                }
+
+                ParserState::CsiParam => {
+                    match byte {
+                        b'0'..=b'9' => {
+                            // Continue building current parameter
+                            let digit = (byte - b'0') as u16;
+                            if let Some(last) = self.params.last_mut() {
+                                *last = last.saturating_mul(10).saturating_add(digit);
+                            } else {
+                                self.params.push(digit);
+                            }
+                            i += 1;
+                        }
+                        b';' => {
+                            // Next parameter
+                            self.params.push(0);
+                            i += 1;
+                        }
+                        b' '..=b'/' => {
+                            // Intermediate byte
+                            self.intermediate_bytes.push(byte);
+                            self.state = ParserState::CsiIntermediate;
+                            i += 1;
+                        }
+                        b'@'..=b'~' => {
+                            // Final byte
+                            self.emit_csi_sequence(byte, sink);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        _ => {
+                            // Invalid character
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                    }
+                }
+
+                ParserState::CsiIntermediate => {
+                    match byte {
+                        b'@'..=b'~' => {
+                            // Final byte
+                            self.emit_csi_sequence(byte, sink);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b' '..=b'/' => {
+                            // Another intermediate byte
+                            self.intermediate_bytes.push(byte);
+                            i += 1;
+                        }
+                        _ => {
+                            // Invalid character
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                    }
+                }
+
+                ParserState::OscString => {
+                    match byte {
+                        0x07 => {
+                            // BEL - End of OSC
+                            self.emit_osc_sequence(sink);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
+                        0x1B => {
+                            // ESC - might be ST (String Terminator: ESC \)
+                            if i + 1 < input.len() && input[i + 1] == b'\\' {
+                                // ST - String Terminator
+                                self.emit_osc_sequence(sink);
+                                self.reset();
+                                i += 2; // Skip both ESC and \
+                                printable_start = i;
+                            } else {
+                                // Collect ESC as part of OSC string
+                                self.parse_buffer.push(byte);
+                                i += 1;
+                            }
+                        }
+                        _ => {
+                            // Collect byte
+                            self.parse_buffer.push(byte);
+                            i += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Emit any remaining printable bytes
+        if i > printable_start && self.state == ParserState::Ground {
+            sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+        }
+    }
+
+    fn flush(&mut self, _sink: &mut dyn CommandSink) {
+        // Reset parser state on flush
+        self.reset();
+    }
+}
+
+impl AnsiParser {
+    #[inline(always)]
+    fn emit_csi_sequence(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
+        // Check for DEC private mode sequences (? prefix)
+        let is_dec_private = self.intermediate_bytes.first() == Some(&b'?');
+
+        match final_byte {
+            b'A' => {
+                // CUU - Cursor Up
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorUp(n as u16));
+            }
+            b'B' => {
+                // CUD - Cursor Down
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorDown(n as u16));
+            }
+            b'C' => {
+                // CUF - Cursor Forward
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorForward(n as u16));
+            }
+            b'D' => {
+                // CUB - Cursor Back
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorBack(n as u16));
+            }
+            b'E' => {
+                // CNL - Cursor Next Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorNextLine(n as u16));
+            }
+            b'F' => {
+                // CPL - Cursor Previous Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorPreviousLine(n as u16));
+            }
+            b'G' => {
+                // CHA - Cursor Horizontal Absolute
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n as u16));
+            }
+            b'H' | b'f' => {
+                // CUP - Cursor Position
+                let row = self.params.first().copied().unwrap_or(1);
+                let col = self.params.get(1).copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
+            }
+            b'J' => {
+                // ED - Erase in Display
+                let n = self.params.first().copied().unwrap_or(0);
+                match EraseInDisplayMode::from_u16(n) {
+                    Some(mode) => sink.emit(TerminalCommand::CsiEraseInDisplay(mode)),
+                    None => {
+                        sink.report_error(ParseError::InvalidParameter {
+                            command: "CsiEraseInDisplay",
+                            value: n,
+                        });
+                        // Use default mode on error
+                        sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::CursorToEnd));
+                    }
+                }
+            }
+            b'K' => {
+                // EL - Erase in Line
+                let n = self.params.first().copied().unwrap_or(0);
+                match EraseInLineMode::from_u16(n) {
+                    Some(mode) => sink.emit(TerminalCommand::CsiEraseInLine(mode)),
+                    None => {
+                        sink.report_error(ParseError::InvalidParameter {
+                            command: "CsiEraseInLine",
+                            value: n,
+                        });
+                        // Use default mode on error
+                        sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::CursorToEnd));
+                    }
+                }
+            }
+            b'S' => {
+                // SU - Scroll Up
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiScrollUp(n as u16));
+            }
+            b'T' => {
+                // SD - Scroll Down
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiScrollDown(n as u16));
+            }
+            b'm' => {
+                // SGR - Select Graphic Rendition
+                self.parse_sgr(sink);
+            }
+            b'r' => {
+                // DECSTBM - Set Scrolling Region
+                let top = self.params.first().copied().unwrap_or(1);
+                let bottom = self.params.get(1).copied().unwrap_or(0);
+                sink.emit(TerminalCommand::CsiSetScrollingRegion(top as u16, bottom as u16));
+            }
+            b'@' => {
+                // ICH - Insert Character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiInsertCharacter(n as u16));
+            }
+            b'P' => {
+                // DCH - Delete Character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiDeleteCharacter(n as u16));
+            }
+            b'X' => {
+                // ECH - Erase Character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiEraseCharacter(n as u16));
+            }
+            b'L' => {
+                // IL - Insert Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiInsertLine(n as u16));
+            }
+            b'M' => {
+                // DL - Delete Line
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiDeleteLine(n as u16));
+            }
+            b'b' => {
+                // REP - Repeat preceding character
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiRepeatPrecedingCharacter(n as u16));
+            }
+            b'c' => {
+                // DA - Device Attributes
+                sink.emit(TerminalCommand::CsiDeviceAttributes);
+            }
+            b'n' => {
+                // DSR - Device Status Report
+                let n = self.params.first().copied().unwrap_or(0);
+                match DeviceStatusReport::from_u16(n) {
+                    Some(report) => sink.emit(TerminalCommand::CsiDeviceStatusReport(report)),
+                    None => {
+                        sink.report_error(ParseError::InvalidParameter {
+                            command: "CsiDeviceStatusReport",
+                            value: n,
+                        });
+                        // Emit as unknown on error
+                        sink.emit(TerminalCommand::Unknown(&[]));
+                    }
+                }
+            }
+            b'h' => {
+                if is_dec_private {
+                    // DECSET - DEC Private Mode Set - emit each mode individually
+                    for &param in &self.params {
+                        match DecPrivateMode::from_u16(param) {
+                            Some(mode) => {
+                                sink.emit(TerminalCommand::CsiDecPrivateModeSet(mode));
+                            }
+                            None => {
+                                sink.report_error(ParseError::InvalidParameter {
+                                    command: "CsiDecPrivateModeSet",
+                                    value: param,
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    // SM - Set Mode - emit each mode individually
+                    for &param in &self.params {
+                        match AnsiMode::from_u16(param) {
+                            Some(mode) => {
+                                sink.emit(TerminalCommand::CsiSetMode(mode));
+                            }
+                            None => {
+                                sink.report_error(ParseError::InvalidParameter {
+                                    command: "CsiSetMode",
+                                    value: param,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            b'l' => {
+                if is_dec_private {
+                    // DECRST - DEC Private Mode Reset - emit each mode individually
+                    for &param in &self.params {
+                        match DecPrivateMode::from_u16(param) {
+                            Some(mode) => {
+                                sink.emit(TerminalCommand::CsiDecPrivateModeReset(mode));
+                            }
+                            None => {
+                                sink.report_error(ParseError::InvalidParameter {
+                                    command: "CsiDecPrivateModeReset",
+                                    value: param,
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    // RM - Reset Mode - emit each mode individually
+                    for &param in &self.params {
+                        match AnsiMode::from_u16(param) {
+                            Some(mode) => {
+                                sink.emit(TerminalCommand::CsiResetMode(mode));
+                            }
+                            None => {
+                                sink.report_error(ParseError::InvalidParameter {
+                                    command: "CsiResetMode",
+                                    value: param,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Unknown CSI sequence
+                sink.emit(TerminalCommand::Unknown(&[]));
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn emit_osc_sequence(&mut self, sink: &mut dyn CommandSink) {
+        // OSC format: ESC ] Ps ; Pt BEL
+        // Ps is the command number, Pt is the text
+
+        if self.parse_buffer.is_empty() {
+            return;
+        }
+
+        // Find semicolon separator
+        if let Some(semicolon_pos) = self.parse_buffer.iter().position(|&b| b == b';') {
+            let ps_bytes = &self.parse_buffer[..semicolon_pos];
+            let pt_bytes = &self.parse_buffer[semicolon_pos + 1..];
+
+            // Parse command number
+            if let Ok(ps_str) = std::str::from_utf8(ps_bytes) {
+                if let Ok(ps) = ps_str.parse::<u32>() {
+                    match ps {
+                        0 => {
+                            // Set icon name and window title
+                            sink.emit(TerminalCommand::OscSetTitle(pt_bytes));
+                        }
+                        1 => {
+                            // Set icon name
+                            sink.emit(TerminalCommand::OscSetIconName(pt_bytes));
+                        }
+                        2 => {
+                            // Set window title
+                            sink.emit(TerminalCommand::OscSetWindowTitle(pt_bytes));
+                        }
+                        8 => {
+                            // Hyperlink: OSC 8 ; params ; URI BEL
+                            if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
+                                let params = &pt_bytes[..uri_pos];
+                                let uri = &pt_bytes[uri_pos + 1..];
+                                sink.emit(TerminalCommand::OscHyperlink { params, uri });
+                            }
+                        }
+                        _ => {
+                            // Unknown OSC command
+                            sink.emit(TerminalCommand::Unknown(&self.parse_buffer));
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
+        // Malformed OSC
+        sink.emit(TerminalCommand::Unknown(&self.parse_buffer));
+    }
+
+    #[inline(always)]
+    fn parse_sgr(&mut self, sink: &mut dyn CommandSink) {
+        let params: &[u16] = if self.params.is_empty() { &[0u16] } else { &self.params };
+
+        let mut i = 0;
+        while i < params.len() {
+            let param = params[i];
+
+            if param < 108 {
+                // Use lookup table for standard SGR codes
+                match SGR_LUT[param as usize] {
+                    SgrLutEntry::SetAttribute(attr) => {
+                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(attr));
+                    }
+                    SgrLutEntry::ExtendedForeground => {
+                        // Extended foreground color: ESC[38;5;nm or ESC[38;2;r;g;bm
+                        if i + 2 < params.len() {
+                            match params[i + 1] {
+                                5 => {
+                                    // 256-color palette: ESC[38;5;nm
+                                    let color = params[i + 2] as u8;
+                                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Extended(color))));
+                                    i += 2; // Skip the 5 and color parameters
+                                }
+                                2 => {
+                                    // RGB color: ESC[38;2;r;g;bm
+                                    if i + 4 < params.len() {
+                                        let r = params[i + 2] as u8;
+                                        let g = params[i + 3] as u8;
+                                        let b = params[i + 4] as u8;
+                                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Rgb(r, g, b))));
+                                        i += 4; // Skip the 2, r, g, b parameters
+                                    } else {
+                                        sink.report_error(ParseError::IncompleteSequence);
+                                    }
+                                }
+                                _ => {
+                                    sink.report_error(ParseError::InvalidParameter {
+                                        command: "CsiSelectGraphicRendition",
+                                        value: params[i + 1],
+                                    });
+                                }
+                            }
+                        } else {
+                            sink.report_error(ParseError::IncompleteSequence);
+                        }
+                    }
+                    SgrLutEntry::ExtendedBackground => {
+                        // Extended background color: ESC[48;5;nm or ESC[48;2;r;g;bm
+                        if i + 2 < params.len() {
+                            match params[i + 1] {
+                                5 => {
+                                    // 256-color palette: ESC[48;5;nm
+                                    let color = params[i + 2] as u8;
+                                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Extended(color))));
+                                    i += 2; // Skip the 5 and color parameters
+                                }
+                                2 => {
+                                    // RGB color: ESC[48;2;r;g;bm
+                                    if i + 4 < params.len() {
+                                        let r = params[i + 2] as u8;
+                                        let g = params[i + 3] as u8;
+                                        let b = params[i + 4] as u8;
+                                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Rgb(r, g, b))));
+                                        i += 4; // Skip the 2, r, g, b parameters
+                                    } else {
+                                        sink.report_error(ParseError::IncompleteSequence);
+                                    }
+                                }
+                                _ => {
+                                    sink.report_error(ParseError::InvalidParameter {
+                                        command: "CsiSelectGraphicRendition",
+                                        value: params[i + 1],
+                                    });
+                                }
+                            }
+                        } else {
+                            sink.report_error(ParseError::IncompleteSequence);
+                        }
+                    }
+                    SgrLutEntry::Undefined => {
+                        sink.report_error(ParseError::InvalidParameter {
+                            command: "CsiSelectGraphicRendition",
+                            value: param,
+                        });
+                    }
+                }
+            } else {
+                // Out of range
+                sink.report_error(ParseError::InvalidParameter {
+                    command: "CsiSelectGraphicRendition",
+                    value: param,
+                });
+            }
+
+            i += 1;
+        }
+    }
+}
