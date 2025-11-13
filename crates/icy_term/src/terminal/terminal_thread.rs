@@ -46,11 +46,10 @@ pub enum TerminalCommand {
 pub enum TerminalEvent {
     Connected,
     Disconnected(Option<String>), // Optional error message
-    BufferUpdated,
     TransferStarted(TransferState, bool),
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
-    Error(String),
+    Error(String, String),
     PlayMusic(icy_engine::ansi::sound::AnsiMusic),
     Beep,
     OpenLineSound,
@@ -249,8 +248,6 @@ impl TerminalThread {
         if let Ok(mut state) = self.edit_screen.lock() {
             state.set_size(icy_engine::Size::new(width as i32, height as i32));
         }
-        // Optionally notify UI so layout can adjust
-        self.send_event(TerminalEvent::BufferUpdated);
     }
 
     async fn handle_command(&mut self, command: TerminalCommand) {
@@ -264,7 +261,7 @@ impl TerminalThread {
                     self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
                     self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                 }
-
+/* 
                 if !auto_login.is_empty() {
                     match AutoLoginParser::parse(&auto_login) {
                         Ok(commands) => {
@@ -274,7 +271,7 @@ impl TerminalThread {
                             log::error!("Failed to parse auto-login expression: {}", err);
                         }
                     }
-                }
+                }*/
             }
 
             TerminalCommand::Disconnect => {
@@ -336,7 +333,7 @@ impl TerminalThread {
                 }
                 Err(e) => {
                     log::error!("Failed to create capture file {}: {}", file_name, e);
-                    self.send_event(TerminalEvent::Error(format!("Failed to create capture file: {}", e)));
+                    self.send_event(TerminalEvent::Error(format!("Failed to create capture file: {}", file_name), format!("{}", e)));
                 }
             },
             TerminalCommand::StopCapture => {
@@ -738,11 +735,11 @@ impl TerminalThread {
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
                         log::error!("Upload error: {}", e);
-                        self.send_event(TerminalEvent::Error(format!("Transfer failed: {}", e)));
+                        self.send_event(TerminalEvent::Error(format!("Upload failed."), format!("{}", e)));
                     }
                 }
                 Err(e) => {
-                    self.send_event(TerminalEvent::Error(format!("Failed to start upload: {}", e)));
+                    self.send_event(TerminalEvent::Error(format!("Upload failed."), format!("{}", e)));
                 }
             }
         }
@@ -762,11 +759,11 @@ impl TerminalThread {
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
                         log::error!("Download error: {}", e);
-                        self.send_event(TerminalEvent::Error(format!("Transfer failed: {}", e)));
+                        self.send_event(TerminalEvent::Error(format!("Download failed."), format!("{}", e)));
                     }
                 }
                 Err(e) => {
-                    self.send_event(TerminalEvent::Error(format!("Failed to start download: {}", e)));
+                    self.send_event(TerminalEvent::Error(format!("Download failed."), format!("{}", e)));
                 }
             }
         }

@@ -56,26 +56,3 @@ impl Line {
         true
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::{AttributedChar, Line};
-
-    #[test]
-    fn test_insert_char() {
-        let mut line = Line::new();
-        line.insert_char(100, AttributedChar::default());
-        assert_eq!(101, line.chars.len());
-        line.insert_char(1, AttributedChar::default());
-        assert_eq!(102, line.chars.len());
-    }
-
-    #[test]
-    fn test_set_char() {
-        let mut line = Line::new();
-        line.set_char(100, AttributedChar::default());
-        assert_eq!(101, line.chars.len());
-        line.set_char(100, AttributedChar::default());
-        assert_eq!(101, line.chars.len());
-    }
-}

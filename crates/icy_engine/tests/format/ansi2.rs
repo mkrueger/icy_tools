@@ -1,126 +1,117 @@
+use icy_engine::{AttributedChar, Color, FORMATS, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use std::path::PathBuf;
 
-#[cfg(test)]
-mod tests {
-    use crate::{Color, OutputFormat, SaveOptions, TextBuffer};
-    use std::path::PathBuf;
+fn test_ansi(data: &[u8]) {
+    let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
+    let converted: Vec<u8> = FORMATS[0].to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+    // more gentle output.
+    let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
+    let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
 
-    fn test_ansi(data: &[u8]) {
-        let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
-        let converted: Vec<u8> = super::Ansi::default().to_bytes(&mut buf, &SaveOptions::new()).unwrap();
-        // more gentle output.
-        let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
-        let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
+    let b: Vec<u8> = data.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
+    let expected = String::from_utf8_lossy(b.as_slice());
 
-        let b: Vec<u8> = data.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
-        let expected = String::from_utf8_lossy(b.as_slice());
+    assert_eq!(expected, converted);
+}
 
-        assert_eq!(expected, converted);
-    }
+#[test]
+fn test_space_compression() {
+    let data = b"A A  A   A    A\x1B[5CA\x1B[6CA\x1B[8CA";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_space_compression() {
-        let data = b"A A  A   A    A\x1B[5CA\x1B[6CA\x1B[8CA";
-        test_ansi(data);
-    }
+#[test]
+fn test_fg_color_change() {
+    let data = b"a\x1B[32ma\x1B[33ma\x1B[1ma\x1B[35ma\x1B[0;35ma\x1B[1;32ma\x1B[0;36ma\x1B[32mA";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_fg_color_change() {
-        let data = b"a\x1B[32ma\x1B[33ma\x1B[1ma\x1B[35ma\x1B[0;35ma\x1B[1;32ma\x1B[0;36ma\x1B[32mA";
-        test_ansi(data);
-    }
+#[test]
+fn test_bg_color_change() {
+    let data = b"A\x1B[44mA\x1B[45mA\x1B[31;40mA\x1B[42mA\x1B[40mA\x1B[1;46mA\x1B[0mA\x1B[1;47mA\x1B[0;47mA";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_bg_color_change() {
-        let data = b"A\x1B[44mA\x1B[45mA\x1B[31;40mA\x1B[42mA\x1B[40mA\x1B[1;46mA\x1B[0mA\x1B[1;47mA\x1B[0;47mA";
-        test_ansi(data);
-    }
+#[test]
+fn test_blink_change() {
+    let data = b"A\x1B[5mA\x1B[0mA\x1B[1;5;42mA\x1B[0;1;42mA\x1B[0;5mA\x1B[0;36mA\x1B[5;33mA\x1B[0;1mA";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_blink_change() {
-        let data = b"A\x1B[5mA\x1B[0mA\x1B[1;5;42mA\x1B[0;1;42mA\x1B[0;5mA\x1B[0;36mA\x1B[5;33mA\x1B[0;1mA";
-        test_ansi(data);
-    }
+#[test]
+fn test_eol_skip() {
+    let data = b"\x1B[79C\x1B[1mdd";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_eol_skip() {
-        let data = b"\x1B[79C\x1B[1mdd";
-        test_ansi(data);
-    }
+#[test]
+fn test_23bit() {
+    let data = b"\x1B[1;24;12;200t#";
+    test_ansi(data);
+    let data = b"\x1B[0;44;2;120t#";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_23bit() {
-        let data = b"\x1B[1;24;12;200t#";
-        test_ansi(data);
-        let data = b"\x1B[0;44;2;120t#";
-        test_ansi(data);
-    }
+#[test]
+fn test_extended_color() {
+    let data = b"\x1B[38;5;42m#";
+    test_ansi(data);
+    let data = b"\x1B[48;5;100m#";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_extended_color() {
-        let data = b"\x1B[38;5;42m#";
-        test_ansi(data);
-        let data = b"\x1B[48;5;100m#";
-        test_ansi(data);
-    }
+#[test]
+fn test_first_char_color() {
+    let data = b"\x1B[1;36mA";
+    test_ansi(data);
+    let data = b"\x1B[31mA";
+    test_ansi(data);
+    let data = b"\x1B[33;45mA\x1B[40m ";
+    test_ansi(data);
+    let data = b"\x1B[1;33;45mA";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_first_char_color() {
-        let data = b"\x1B[1;36mA";
-        test_ansi(data);
-        let data = b"\x1B[31mA";
-        test_ansi(data);
-        let data = b"\x1B[33;45mA\x1B[40m ";
-        test_ansi(data);
-        let data = b"\x1B[1;33;45mA";
-        test_ansi(data);
-    }
+#[test]
+fn test_ice() {
+    let data = b"\x1B[?33h\x1B[5m   test\x1B[?33l";
+    test_ansi(data);
+}
 
-    #[test]
-    fn test_ice() {
-        let data = b"\x1B[?33h\x1B[5m   test\x1B[?33l";
-        test_ansi(data);
-    }
+#[test]
+fn test_palette_color_bug() {
+    let mut buf = TextBuffer::new((3, 1));
+    buf.palette.set_color(25, Color::new(0xD3, 0xD3, 0xD3));
+    buf.layers[0].set_char(
+        (1, 0),
+        AttributedChar {
+            ch: 'A',
+            attribute: TextAttribute::new(25, 0),
+        },
+    );
 
-    #[test]
-    fn test_palette_color_bug() {
-        let mut buf = TextBuffer::new((3, 1));
-        buf.palette.set_color(25, Color::new(0xD3, 0xD3, 0xD3));
-        buf.layers[0].set_char(
-            (1, 0),
-            crate::AttributedChar {
-                ch: 'A',
-                attribute: crate::TextAttribute {
-                    font_page: 0,
-                    foreground_color: 25,
-                    background_color: 0,
-                    attr: 0,
-                },
-            },
-        );
+    let bytes = buf.to_bytes("ans", &SaveOptions::default()).unwrap();
+    let str = String::from_utf8_lossy(&bytes).to_string();
 
-        let bytes = buf.to_bytes("ans", &SaveOptions::default()).unwrap();
-        let str = String::from_utf8_lossy(&bytes).to_string();
-
-        assert_eq!(" \u{1b}[1;211;211;211tA ", str);
-    }
+    assert_eq!(" \u{1b}[1;211;211;211tA ", str);
 }
 /*
 #[cfg(test)]
 fn crop2_loaded_file(result: &mut dyn Screen) {
-    for l in 0..result.layers.len() {
-        if let Some(line) = result.layers[l].lines.last_mut() {
-            while !line.chars.is_empty() && !line.chars.last().unwrap().is_visible() {
-                line.chars.pop();
-            }
-        }
-
-        if !result.layers[l].lines.is_empty()
-            && result.layers[l].lines.last().unwrap().chars.is_empty()
-        {
-            result.layers[l].lines.pop();
-            crop2_loaded_file(result);
+for l in 0..result.layers.len() {
+    if let Some(line) = result.layers[l].lines.last_mut() {
+        while !line.chars.is_empty() && !line.chars.last().unwrap().is_visible() {
+            line.chars.pop();
         }
     }
+
+    if !result.layers[l].lines.is_empty()
+        && result.layers[l].lines.last().unwrap().chars.is_empty()
+    {
+        result.layers[l].lines.pop();
+        crop2_loaded_file(result);
+    }
+}
 }*/
 
 #[cfg(test)]

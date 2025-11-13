@@ -22,7 +22,7 @@ const VISIBILITY_OFF_SVG: &[u8] = include_bytes!("../../../../data/icons/visibil
 // Wrapper types to implement Display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionTypeWrapper(pub ConnectionType);
-
+/*
 static AUTO_LOGIN_PRESETS: &[(&str, &str)] = &[
     ("Autologin disabled", ""),
     ("Escapes, Name, Password", "@E@W@N@P"),
@@ -48,7 +48,7 @@ impl fmt::Display for AutoLoginOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.label)
     }
-}
+}*/
 
 impl fmt::Display for ConnectionTypeWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -493,6 +493,7 @@ impl super::DialingDirectoryState {
                 .align_y(Alignment::Center),
             );
 
+            /*
             // Auto login combo box
             let mut auto_login_options: Vec<AutoLoginOption> = AUTO_LOGIN_PRESETS
                 .iter()
@@ -516,7 +517,7 @@ impl super::DialingDirectoryState {
             } else {
                 selected_option.cloned()
             };
-            /*
+
             let auto_login_picker = pick_list(auto_login_options, selected_option, move |option: AutoLoginOption| {
                 Message::from(DialingDirectoryMsg::AddressFieldChanged {
                     id,

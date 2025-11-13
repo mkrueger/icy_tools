@@ -817,7 +817,6 @@ impl MainWindow {
                 Task::none()
             }
 
-            TerminalEvent::BufferUpdated => Task::none(),
             TerminalEvent::TransferStarted(_state, is_download) => {
                 self.state.mode = MainWindowMode::FileTransfer(is_download);
                 self.file_transfer_dialog.transfer_state = Some(_state);
@@ -832,9 +831,8 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
-            TerminalEvent::Error(error) => {
-                log::error!("Terminal error: {}", error);
-                // TODO: Show error dialog
+            TerminalEvent::Error(error, txt) => {
+                self.state.mode = MainWindowMode::ShowErrorDialog("Terminal Error".to_string(), error, txt, Box::new(MainWindowMode::ShowTerminal));
                 Task::none()
             }
             TerminalEvent::PlayMusic(music) => {
