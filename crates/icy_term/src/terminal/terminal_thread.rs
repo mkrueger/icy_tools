@@ -1,6 +1,7 @@
+use crate::auto_login::{AutoLoginCommand, AutoLoginParser};
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
-use crate::features::{AutoFileTransfer, AutoLogin};
+use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
@@ -87,7 +88,7 @@ pub struct ConnectionConfig {
 
     // Auto-login configuration
     pub iemsi_auto_login: bool,
-    pub login_exp: String,
+    pub auto_login_exp: String,
 }
 
 #[derive(Debug, Clone)]
@@ -125,7 +126,7 @@ pub struct TerminalThread {
 
     // Auto-features
     auto_file_transfer: AutoFileTransfer,
-    auto_login: Option<AutoLogin>,
+    iemsi_auto_login: Option<IEmsiAutoLogin>,
     auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>, // For pending auto-transfers
 }
 
@@ -149,7 +150,7 @@ impl TerminalThread {
             utf8_buffer: Vec::new(),
             auto_file_transfer: AutoFileTransfer::default(),
             baud_emulator: BaudEmulator::new(),
-            auto_login: None,
+            iemsi_auto_login: None,
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
         };
@@ -251,11 +252,27 @@ impl TerminalThread {
     async fn handle_command(&mut self, command: TerminalCommand) {
         match command {
             TerminalCommand::Connect(config) => {
+                let auto_login = config.auto_login_exp.to_string();
+                let user_name = config.user_name.clone();
+                let password = config.password.clone();
+
                 if let Err(e) = self.connect(config).await {
                     self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
                     self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                 }
+
+                if !auto_login.is_empty() {
+                    match AutoLoginParser::parse(&auto_login) {
+                        Ok(commands) => {
+                            self.auto_login(&commands, user_name, password).await;
+                        }
+                        Err(err) => {
+                            log::error!("Failed to parse auto-login expression: {}", err);
+                        }
+                    }
+                }
             }
+
             TerminalCommand::Disconnect => {
                 self.disconnect().await;
             }
@@ -449,7 +466,7 @@ impl TerminalThread {
 
     fn setup_auto_login(&mut self, config: &ConnectionConfig) {
         if !config.iemsi_auto_login {
-            self.auto_login = None;
+            self.iemsi_auto_login = None;
             return;
         }
 
@@ -484,11 +501,7 @@ impl TerminalThread {
 
         // Decide auto-login (requires BOTH credentials and non-SSH)
         if effective_user.is_some() && effective_pass.is_some() {
-            self.auto_login = Some(AutoLogin::new(
-                config.login_exp.clone(),
-                effective_user.clone().unwrap(),
-                effective_pass.clone().unwrap(),
-            ));
+            self.iemsi_auto_login = Some(IEmsiAutoLogin::new(effective_user.clone().unwrap(), effective_pass.clone().unwrap()));
         }
     }
 
@@ -504,13 +517,13 @@ impl TerminalThread {
         self.baud_emulator = BaudEmulator::new();
         self.connection_time = None;
         self.utf8_buffer.clear();
-        self.auto_login = None;
+        self.iemsi_auto_login = None;
         self.auto_file_transfer = AutoFileTransfer::default();
         self.send_event(TerminalEvent::Disconnected(None));
     }
 
     async fn send_login(&mut self) {
-        if let Some(auto_login) = &self.auto_login {
+        if let Some(auto_login) = &self.iemsi_auto_login {
             if let Some(conn) = &mut self.connection {
                 // Send username, wait briefly, then password
                 // Some BBSes need a delay between username and password
@@ -521,10 +534,10 @@ impl TerminalThread {
         }
     }
 
-    async fn read_connection(&mut self, buffer: &mut [u8]) -> usize {
+    async fn read_connection(&mut self, buffer: &mut [u8]) -> Vec<u8> {
         if let Some(conn) = &mut self.connection {
             match conn.try_read(buffer).await {
-                Ok(0) => 0,
+                Ok(0) => Vec::new(),
                 Ok(size) => {
                     let mut data = buffer[..size].to_vec();
 
@@ -535,17 +548,17 @@ impl TerminalThread {
                         self.process_data(&data).await;
                         self.send_event(TerminalEvent::DataReceived(data));
                     }
-                    size
+                    Vec::new()
                 }
                 Err(e) => {
                     error!("Connection read error: {e}");
                     self.disconnect().await;
                     self.process_data(format!("\n\r{}", e).as_bytes()).await;
-                    0
+                    Vec::new()
                 }
             }
         } else {
-            0
+            Vec::new()
         }
     }
 
@@ -618,7 +631,7 @@ impl TerminalThread {
                         }
 
                         let mut logged_in = false;
-                        if let Some(autologin) = &mut self.auto_login {
+                        if let Some(autologin) = &mut self.iemsi_auto_login {
                             if let Ok(Some(login_data)) = autologin.try_login(ch as u8) {
                                 if let Some(conn) = &mut self.connection {
                                     let _ = conn.send(&login_data).await;
@@ -630,7 +643,7 @@ impl TerminalThread {
                             logged_in = autologin.is_logged_in();
                         }
                         if logged_in {
-                            self.auto_login = None;
+                            self.iemsi_auto_login = None;
                         }
 
                         match self.buffer_parser.print_char(&mut **screen, ch) {
@@ -647,7 +660,7 @@ impl TerminalThread {
                         }
 
                         let mut logged_in = false;
-                        if let Some(autologin) = &mut self.auto_login {
+                        if let Some(autologin) = &mut self.iemsi_auto_login {
                             if let Ok(Some(login_data)) = autologin.try_login(byte) {
                                 if let Some(conn) = &mut self.connection {
                                     let _ = conn.send(&login_data).await;
@@ -660,7 +673,7 @@ impl TerminalThread {
                         }
 
                         if logged_in {
-                            self.auto_login = None;
+                            self.iemsi_auto_login = None;
                         }
                         match self.buffer_parser.print_char(&mut **screen, byte as char) {
                             Ok(action) => actions.push(action),
@@ -820,6 +833,84 @@ impl TerminalThread {
     fn send_event(&mut self, evt: TerminalEvent) {
         if let Err(err) = self.event_tx.send(evt) {
             log::error!("Failed to send terminal event: {}", err);
+        }
+    }
+
+    async fn auto_login(&mut self, commands: &[AutoLoginCommand], user_name: Option<String>, password: Option<String>) {
+        // Extract user name parts
+        let full_name = user_name.clone().unwrap_or_default();
+        let parts: Vec<&str> = full_name.split_whitespace().collect();
+        let first_name = parts.first().unwrap_or(&"").to_string();
+        let last_name = parts.get(1..).map(|parts| parts.join(" ")).unwrap_or_default();
+        let password = password.unwrap_or_default();
+
+        for command in commands {
+            match command {
+                AutoLoginCommand::Delay(seconds) => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
+                }
+
+                AutoLoginCommand::EmulateMailerAccess => {
+                    // Send CR+CR then ESC
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(&[13, 13, 27]).await;
+                        // Wait briefly for response
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    }
+                }
+
+                AutoLoginCommand::WaitForNamePrompt => {
+                    // This would ideally wait for prompts like "name:", "login:", "user:", etc.
+                    // For now, we'll just add a small delay
+                    // In a full implementation, this would scan incoming data for prompt patterns
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                }
+
+                AutoLoginCommand::SendFullName => {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(full_name.as_bytes()).await;
+                    }
+                }
+
+                AutoLoginCommand::SendFirstName => {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(first_name.as_bytes()).await;
+                    }
+                }
+
+                AutoLoginCommand::SendLastName => {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(last_name.as_bytes()).await;
+                    }
+                }
+
+                AutoLoginCommand::SendPassword => {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(password.as_bytes()).await;
+                    }
+                }
+
+                AutoLoginCommand::DisableIEMSI => {
+                    // Disable IEMSI for this session
+                    self.iemsi_auto_login = None;
+                }
+
+                AutoLoginCommand::SendControlCode(code) => {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(&[*code]).await;
+                    }
+                }
+
+                AutoLoginCommand::RunScript(_filename) => {
+                    // TODO: Implement script execution
+                }
+
+                AutoLoginCommand::SendText(text) => {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(text.as_bytes()).await;
+                    }
+                }
+            }
         }
     }
 }

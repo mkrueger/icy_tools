@@ -233,7 +233,7 @@ impl MainWindow {
                     music_option: address.ansi_music,
                     screen_mode: address.get_screen_mode(),
                     iemsi_auto_login: options.iemsi.autologin,
-                    login_exp: address.auto_login.clone(),
+                    auto_login_exp: address.auto_login.clone(),
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
@@ -358,7 +358,9 @@ impl MainWindow {
                         if !address.user_name.is_empty() && login {
                             let username_data = address.user_name.as_bytes().to_vec();
                             let mut username_with_cr = username_data;
-                            username_with_cr.push(b'\r');
+                            let enter_bytes = self.parse_key_string("enter").unwrap_or(vec![b'\r']);
+                            username_with_cr.extend(&enter_bytes);
+
                             let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
 
                             if pw && !address.password.is_empty() {
@@ -368,13 +370,14 @@ impl MainWindow {
                                 tokio::spawn(async move {
                                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                                     let mut password_with_cr = password.as_bytes().to_vec();
-                                    password_with_cr.push(b'\r');
+                                    password_with_cr.extend(enter_bytes);
                                     let _ = tx.send(TerminalCommand::SendData(password_with_cr));
                                 });
                             }
                         } else if pw && !address.password.is_empty() {
                             let mut password_with_cr = address.password.as_bytes().to_vec();
-                            password_with_cr.push(b'\r');
+                            let enter_bytes = self.parse_key_string("enter").unwrap_or(vec![b'\r']);
+                            password_with_cr.extend(enter_bytes);
                             let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
                         }
                     }

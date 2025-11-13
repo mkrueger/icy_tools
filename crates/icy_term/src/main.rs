@@ -38,6 +38,7 @@ pub use data::*;
 pub mod terminal;
 pub use terminal::*;
 
+pub mod auto_login;
 pub mod features;
 mod icons;
 pub mod mcp;
