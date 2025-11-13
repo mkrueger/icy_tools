@@ -4,8 +4,6 @@ use std::{fmt::Display, path::Path};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::update_crc32;
-
 lazy_static::lazy_static! {
     static ref HEX_REGEX: Regex = Regex::new(r"([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap();
 
@@ -712,17 +710,6 @@ impl Palette {
             res.push(col.b >> 2);
         }
         res
-    }
-
-    pub fn get_checksum(&mut self) -> u32 {
-        for i in self.old_checksum..self.colors.len() {
-            let c = &self.colors[i];
-            self.checksum = update_crc32(self.checksum, c.r);
-            self.checksum = update_crc32(self.checksum, c.g);
-            self.checksum = update_crc32(self.checksum, c.b);
-        }
-        self.old_checksum = self.colors.len();
-        self.checksum
     }
 }
 

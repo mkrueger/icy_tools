@@ -1,4 +1,4 @@
-use crate::auto_login::{AutoLoginCommand, AutoLoginParser};
+use crate::auto_login::AutoLoginCommand;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
@@ -253,15 +253,15 @@ impl TerminalThread {
     async fn handle_command(&mut self, command: TerminalCommand) {
         match command {
             TerminalCommand::Connect(config) => {
-                let auto_login = config.auto_login_exp.to_string();
-                let user_name = config.user_name.clone();
-                let password = config.password.clone();
+                // let auto_login = config.auto_login_exp.to_string();
+                // let user_name = config.user_name.clone();
+                // let password = config.password.clone();
 
                 if let Err(e) = self.connect(config).await {
                     self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
                     self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                 }
-/* 
+                /*
                 if !auto_login.is_empty() {
                     match AutoLoginParser::parse(&auto_login) {
                         Ok(commands) => {
@@ -846,139 +846,140 @@ impl TerminalThread {
             }
         }
     }
+    /*
+        async fn auto_login(&mut self, commands: &[AutoLoginCommand], user_name: Option<String>, password: Option<String>) {
+            // Extract user name parts
+            let full_name = user_name.clone().unwrap_or_default();
+            let parts: Vec<&str> = full_name.split_whitespace().collect();
+            let first_name = parts.first().unwrap_or(&"").to_string();
+            let last_name = parts.get(1..).map(|parts| parts.join(" ")).unwrap_or_default();
+            let password = password.unwrap_or_default();
 
-    async fn auto_login(&mut self, commands: &[AutoLoginCommand], user_name: Option<String>, password: Option<String>) {
-        // Extract user name parts
-        let full_name = user_name.clone().unwrap_or_default();
-        let parts: Vec<&str> = full_name.split_whitespace().collect();
-        let first_name = parts.first().unwrap_or(&"").to_string();
-        let last_name = parts.get(1..).map(|parts| parts.join(" ")).unwrap_or_default();
-        let password = password.unwrap_or_default();
-
-        for command in commands {
-            println!("run cmd: {:?}", command);
-            match command {
-                AutoLoginCommand::Delay(seconds) => {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
-                }
-
-                AutoLoginCommand::EmulateMailerAccess => {
-                    // Send CR+CR then ESC
-                    if let Some(conn) = &mut self.connection {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
-                        let _ = conn.send(&[13, 13, 27]).await;
-                        // Wait briefly for response
-                        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+            for command in commands {
+                println!("run cmd: {:?}", command);
+                match command {
+                    AutoLoginCommand::Delay(seconds) => {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
                     }
-                }
 
-                AutoLoginCommand::WaitForNamePrompt => {
-                    // Wait for name/login prompts like "name:", "login:", "user:", etc.
-                    // Timeout after 10 seconds
-                    let timeout = tokio::time::Duration::from_secs(10);
-                    let start = tokio::time::Instant::now();
-                    let mut buffer = vec![0u8; 4096];
-                    let mut accumulated_text = String::new();
-
-                    // Get buffer type for unicode conversion
-                    let buffer_type = if let Ok(screen) = self.edit_screen.lock() {
-                        screen.buffer_type()
-                    } else {
-                        icy_engine::BufferType::CP437 // Default fallback
-                    };
-                    println!("wait !!!");
-
-                    loop {
-                        // Check timeout
-                        if start.elapsed() >= timeout {
-                            log::warn!("WaitForNamePrompt: Timeout waiting for prompt");
-                            break;
+                    AutoLoginCommand::EmulateMailerAccess => {
+                        // Send CR+CR then ESC
+                        if let Some(conn) = &mut self.connection {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+                            let _ = conn.send(&[13, 13, 27]).await;
+                            // Wait briefly for response
+                            tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
                         }
+                    }
 
-                        // Try to read data with a small timeout
-                        tokio::select! {
-                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
-                                // Continue loop to check for timeout
+                    AutoLoginCommand::WaitForNamePrompt => {
+                        // Wait for name/login prompts like "name:", "login:", "user:", etc.
+                        // Timeout after 10 seconds
+                        let timeout = tokio::time::Duration::from_secs(10);
+                        let start = tokio::time::Instant::now();
+                        let mut buffer = vec![0u8; 4096];
+                        let mut accumulated_text = String::new();
+
+                        // Get buffer type for unicode conversion
+                        let buffer_type = if let Ok(screen) = self.edit_screen.lock() {
+                            screen.buffer_type()
+                        } else {
+                            icy_engine::BufferType::CP437 // Default fallback
+                        };
+                        println!("wait !!!");
+
+                        loop {
+                            // Check timeout
+                            if start.elapsed() >= timeout {
+                                log::warn!("WaitForNamePrompt: Timeout waiting for prompt");
+                                break;
                             }
-                            data = self.read_connection(&mut buffer) => {
-                                if data.is_empty() {
-                                    continue;
-                                }
 
-                                // Convert bytes to unicode string
-                                for &byte in &data {
-                                    let ch = buffer_type.convert_to_unicode(byte as char);
-                                    accumulated_text.push(ch.to_ascii_lowercase());
+                            // Try to read data with a small timeout
+                            tokio::select! {
+                                _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                                    // Continue loop to check for timeout
                                 }
-                                // Check for name/login prompts (case-insensitive)
-                                let prompt_patterns = [
-                                    "name",
-                                    "login",
-                                    "user",
-                                ];
-                                for pattern in &prompt_patterns {
-                                    if accumulated_text.contains(pattern) {
-                                        log::info!("WaitForNamePrompt: Detected prompt pattern '{}'", pattern);
-                                        return; // Exit the command - prompt detected
+                                data = self.read_connection(&mut buffer) => {
+                                    if data.is_empty() {
+                                        continue;
+                                    }
+
+                                    // Convert bytes to unicode string
+                                    for &byte in &data {
+                                        let ch = buffer_type.convert_to_unicode(byte as char);
+                                        accumulated_text.push(ch.to_ascii_lowercase());
+                                    }
+                                    // Check for name/login prompts (case-insensitive)
+                                    let prompt_patterns = [
+                                        "name",
+                                        "login",
+                                        "user",
+                                    ];
+                                    for pattern in &prompt_patterns {
+                                        if accumulated_text.contains(pattern) {
+                                            log::info!("WaitForNamePrompt: Detected prompt pattern '{}'", pattern);
+                                            return; // Exit the command - prompt detected
+                                        }
+                                    }
+
+                                    // Keep only last 512 characters to avoid unbounded growth
+                                    if accumulated_text.len() > 512 {
+                                        accumulated_text = accumulated_text.chars().skip(accumulated_text.len() - 512).collect();
                                     }
                                 }
-
-                                // Keep only last 512 characters to avoid unbounded growth
-                                if accumulated_text.len() > 512 {
-                                    accumulated_text = accumulated_text.chars().skip(accumulated_text.len() - 512).collect();
-                                }
                             }
                         }
                     }
-                }
 
-                AutoLoginCommand::SendFullName => {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(full_name.as_bytes()).await;
+                    AutoLoginCommand::SendFullName => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(full_name.as_bytes()).await;
+                        }
                     }
-                }
 
-                AutoLoginCommand::SendFirstName => {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(first_name.as_bytes()).await;
+                    AutoLoginCommand::SendFirstName => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(first_name.as_bytes()).await;
+                        }
                     }
-                }
 
-                AutoLoginCommand::SendLastName => {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(last_name.as_bytes()).await;
+                    AutoLoginCommand::SendLastName => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(last_name.as_bytes()).await;
+                        }
                     }
-                }
 
-                AutoLoginCommand::SendPassword => {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(password.as_bytes()).await;
+                    AutoLoginCommand::SendPassword => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(password.as_bytes()).await;
+                        }
                     }
-                }
 
-                AutoLoginCommand::DisableIEMSI => {
-                    // Disable IEMSI for this session
-                    self.iemsi_auto_login = None;
-                }
-
-                AutoLoginCommand::SendControlCode(code) => {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(&[*code]).await;
+                    AutoLoginCommand::DisableIEMSI => {
+                        // Disable IEMSI for this session
+                        self.iemsi_auto_login = None;
                     }
-                }
 
-                AutoLoginCommand::RunScript(_filename) => {
-                    // TODO: Implement script execution
-                }
+                    AutoLoginCommand::SendControlCode(code) => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(&[*code]).await;
+                        }
+                    }
 
-                AutoLoginCommand::SendText(text) => {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(text.as_bytes()).await;
+                    AutoLoginCommand::RunScript(_filename) => {
+                        // TODO: Implement script execution
+                    }
+
+                    AutoLoginCommand::SendText(text) => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(text.as_bytes()).await;
+                        }
                     }
                 }
             }
         }
-    }
+    */
 }
 
 // Helper function to create a terminal thread for the UI

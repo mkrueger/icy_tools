@@ -1,9 +1,7 @@
 #![allow(clippy::unnecessary_wraps)]
 
 use super::{BaudEmulation, EngineState, Parser, constants::COLOR_OFFSETS, set_font_selection_success};
-use crate::{
-    AttributedChar, BitFont, CallbackAction, Caret, EditableScreen, EngineResult, FontSelectionState, ParserError, TextPane, XTERM_256_PALETTE, update_crc16,
-};
+use crate::{AttributedChar, BitFont, CallbackAction, Caret, EditableScreen, EngineResult, FontSelectionState, ParserError, TextPane, XTERM_256_PALETTE};
 
 impl Parser {
     /// Sequence: `CSI Ps ... m`</p>
@@ -788,27 +786,23 @@ impl Parser {
         if pt > pb || pl > pr || pr > buf.get_width() || pb > buf.get_height() || pl < 0 || pt < 0 {
             return Err(ParserError::UnsupportedEscapeSequence.into());
         }
-        let mut crc16 = 0;
-        for y in pt..pb {
-            for x in pl..pr {
-                let ch = buf.get_char((x, y).into());
-                if ch.is_visible() {
-                    crc16 = update_crc16(crc16, ch.ch as u8);
-                    for b in ch.attribute.attr.to_be_bytes() {
-                        crc16 = update_crc16(crc16, b);
-                    }
-                    for b in ch.attribute.get_foreground().to_be_bytes() {
-                        crc16 = update_crc16(crc16, b);
-                    }
-                    for b in ch.attribute.get_background().to_be_bytes() {
-                        crc16 = update_crc16(crc16, b);
-                    }
-                }
-            }
-        }
-        Ok(CallbackAction::SendString(format!("\x1BP{}!~{crc16:04X}\x1B\\", self.parsed_numbers[0])))
+
+        let checksum = Self::decrqcra_checksum(buf, pt, pl, pb, pr);
+        Ok(CallbackAction::SendString(format!("\x1BP{}!~{checksum:04X}\x1B\\", self.parsed_numbers[0])))
         // DECRQCRA—Request Checksum of Rectangular Area
         // <https://vt100.net/docs/vt510-rm/DECRQCRA.html>
+    }
+
+    fn decrqcra_checksum(buf: &dyn TextPane, top: i32, left: i32, bottom: i32, right: i32) -> u16 {
+        // Matches the original DEC VT300/VT420 documentation and xterm’s implementation.
+        let mut sum: u32 = 0;
+        for y in top..=bottom {
+            for x in left..=right {
+                let ch = buf.get_char(crate::Position { x, y });
+                sum = sum.wrapping_add(ch.ch as u32);
+            }
+        }
+        (sum & 0xFFFF) as u16
     }
 
     /// Sequence: `CSI Pn * z`</p>

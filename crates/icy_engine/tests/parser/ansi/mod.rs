@@ -908,7 +908,7 @@ fn test_rect_checksum_decrqcra() {
     }
 
     let act = get_action(&mut buf, &mut caret, &mut parser, b"\x1B[42;1;1;1;10;10*y");
-    assert_eq!(CallbackAction::SendString("\u{1b}P42!~F175\u{1b}\\".to_string()), act);
+    assert_eq!(CallbackAction::SendString("\u{1b}P42!~25E4\u{1b}\\".to_string()), act);
 }
 
 #[test]
@@ -924,7 +924,7 @@ fn test_macro_checksum_report() {
     let mut parser = ansi::Parser::default();
     let (mut buf, mut caret) = create_buffer(&mut parser, b"\x1BP0;0;0!zHello\x1B\\\x1BP1;0;0!zWorld\x1B\\");
     let act = get_action(&mut buf, &mut caret, &mut parser, b"\x1B[?63;1n");
-    assert_eq!(CallbackAction::SendString("\x1BP1!~9D2C\x1B\\".to_string()), act);
+    assert_eq!(CallbackAction::SendString("\x1BP1!~03FC\x1B\\".to_string()), act);
 }
 
 #[test]

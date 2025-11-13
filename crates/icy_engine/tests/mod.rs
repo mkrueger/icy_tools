@@ -12,8 +12,6 @@ mod parser;
 mod format;
 
 mod buffer;
-
-mod crc;
 /*
 #[test]
 fn test_set_aspect_ratio() {

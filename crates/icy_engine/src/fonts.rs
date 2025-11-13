@@ -176,14 +176,6 @@ impl BitFont {
     pub fn from_basic(width: u8, height: u8, data: &[u8]) -> Self {
         Self::create_8("Custom", width, height, data)
     }
-    /*
-    /// Get checksum of font data (for font comparison)
-    pub fn get_checksum(&self) -> u32 {
-        let data = self.convert_to_u8_data();
-        let mut checksum = 0u32;
-        update_crc32(&mut checksum, &data);
-        checksum
-    }*/
 
     /// Length field for compatibility (always 256 for standard fonts)
     pub fn length(&self) -> usize {

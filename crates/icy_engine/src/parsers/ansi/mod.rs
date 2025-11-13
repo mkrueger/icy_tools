@@ -13,7 +13,7 @@ use self::sound::{AnsiMusic, MusicState};
 use super::{BufferParser, TAB};
 use crate::{
     AttributedChar, AutoWrapMode, BEL, BS, CR, CallbackAction, Caret, EditableScreen, EngineResult, ExtMouseMode, FF, FontSelectionState, HyperLink, IceMode,
-    LF, MouseMode, OriginMode, ParserError, Position, TerminalScrolling, update_crc16,
+    LF, MouseMode, OriginMode, ParserError, Position, TerminalScrolling,
 };
 
 mod ansi_commands;
@@ -546,18 +546,16 @@ impl BufferParser for Parser {
                                 if self.parsed_numbers.len() != 2 {
                                     return Err(ParserError::UnsupportedEscapeSequence.into());
                                 }
-                                let mut crc16 = 0;
+                                let mut sum: u32 = 0;
                                 for i in 0..64 {
                                     if let Some(m) = self.macros.get(&i) {
                                         for b in m.as_bytes() {
-                                            crc16 = update_crc16(crc16, *b);
+                                            sum = sum.wrapping_add(*b as u32);
                                         }
-                                        crc16 = update_crc16(crc16, 0);
-                                    } else {
-                                        crc16 = update_crc16(crc16, 0);
                                     }
                                 }
-                                return Ok(CallbackAction::SendString(format!("\x1BP{}!~{crc16:04X}\x1B\\", self.parsed_numbers[1])));
+                                let checksum = (sum & 0xFFFF) as u16;
+                                return Ok(CallbackAction::SendString(format!("\x1BP{}!~{checksum:04X}\x1B\\", self.parsed_numbers[1])));
                             }
                             _ => {
                                 return self.unsupported_escape_error();

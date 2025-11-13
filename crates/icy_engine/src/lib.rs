@@ -47,9 +47,6 @@ pub use caret::*;
 pub mod formats;
 pub use formats::*;
 
-mod crc;
-pub use crc::*;
-
 mod terminal_state;
 pub use terminal_state::*;
 
