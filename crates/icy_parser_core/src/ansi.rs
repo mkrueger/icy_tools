@@ -150,6 +150,10 @@ enum ParserState {
     CsiParam = 3,
     CsiIntermediate = 4,
     OscString = 5,
+    DcsString = 6,
+    DcsEscape = 7,
+    ApsString = 8,
+    ApsEscape = 9,
 }
 
 impl Default for ParserState {
@@ -277,6 +281,20 @@ impl CommandParser for AnsiParser {
                             i += 1;
                             printable_start = i;
                         }
+                        b'P' => {
+                            // DCS - Device Control String
+                            self.parse_buffer.clear();
+                            self.state = ParserState::DcsString;
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'_' => {
+                            // APS - Application Program String
+                            self.parse_buffer.clear();
+                            self.state = ParserState::ApsString;
+                            i += 1;
+                            printable_start = i;
+                        }
                         b'D' => {
                             // IND - Index
                             sink.emit(TerminalCommand::EscIndex);
@@ -388,6 +406,13 @@ impl CommandParser for AnsiParser {
                             self.params.push(0);
                             i += 1;
                         }
+                        b'\'' => {
+                            // Single quote - special case final byte (non-standard but used)
+                            self.emit_csi_sequence(byte, sink);
+                            self.reset();
+                            i += 1;
+                            printable_start = i;
+                        }
                         b' '..=b'/' => {
                             // Intermediate byte
                             self.intermediate_bytes.push(byte);
@@ -463,6 +488,68 @@ impl CommandParser for AnsiParser {
                         }
                     }
                 }
+
+                ParserState::DcsString => {
+                    match byte {
+                        0x1B => {
+                            // ESC - might be ST (String Terminator: ESC \)
+                            self.state = ParserState::DcsEscape;
+                            i += 1;
+                        }
+                        _ => {
+                            // Collect byte
+                            self.parse_buffer.push(byte);
+                            i += 1;
+                        }
+                    }
+                }
+
+                ParserState::DcsEscape => {
+                    if byte == b'\\' {
+                        // ST - String Terminator (ESC \)
+                        sink.emit(TerminalCommand::DcsString(&self.parse_buffer));
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    } else {
+                        // False alarm - ESC was part of DCS data
+                        self.parse_buffer.push(0x1B);
+                        self.parse_buffer.push(byte);
+                        self.state = ParserState::DcsString;
+                        i += 1;
+                    }
+                }
+
+                ParserState::ApsString => {
+                    match byte {
+                        0x1B => {
+                            // ESC - might be ST (String Terminator: ESC \)
+                            self.state = ParserState::ApsEscape;
+                            i += 1;
+                        }
+                        _ => {
+                            // Collect byte
+                            self.parse_buffer.push(byte);
+                            i += 1;
+                        }
+                    }
+                }
+
+                ParserState::ApsEscape => {
+                    if byte == b'\\' {
+                        // ST - String Terminator (ESC \)
+                        sink.emit(TerminalCommand::ApsString(&self.parse_buffer));
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    } else {
+                        // False alarm - ESC was part of APS data
+                        self.parse_buffer.push(0x1B);
+                        self.parse_buffer.push(byte);
+                        self.state = ParserState::ApsString;
+                        i += 1;
+                    }
+                }
             }
         }
 
@@ -481,8 +568,136 @@ impl CommandParser for AnsiParser {
 impl AnsiParser {
     #[inline(always)]
     fn emit_csi_sequence(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
-        // Check for DEC private mode sequences (? prefix)
+        // Check for intermediate byte prefixes
         let is_dec_private = self.intermediate_bytes.first() == Some(&b'?');
+        let is_asterisk = self.intermediate_bytes.first() == Some(&b'*');
+        let is_dollar = self.intermediate_bytes.first() == Some(&b'$');
+        let is_space = self.intermediate_bytes.first() == Some(&b' ');
+
+        // Handle sequences with intermediate bytes first
+        if is_asterisk {
+            // CSI * sequences
+            match final_byte {
+                b'z' => {
+                    // Invoke Macro
+                    let n = self.params.first().copied().unwrap_or(0);
+                    sink.emit(TerminalCommand::CsiInvokeMacro(n as u16));
+                    return;
+                }
+                b'r' => {
+                    // Select Communication Speed
+                    let ps1 = self.params.first().copied().unwrap_or(0);
+                    let ps2 = self.params.get(1).copied().unwrap_or(0);
+                    sink.emit(TerminalCommand::CsiSelectCommunicationSpeed(ps1 as u16, ps2 as u16));
+                    return;
+                }
+                b'y' => {
+                    // Request Checksum of Rectangular Area
+                    let params: Vec<u16> = self.params.iter().map(|&p| p as u16).collect();
+                    sink.emit(TerminalCommand::CsiRequestChecksumRectangularArea(params));
+                    return;
+                }
+                _ => {
+                    sink.emit(TerminalCommand::Unknown(&[]));
+                    return;
+                }
+            }
+        }
+
+        if is_dollar {
+            // CSI $ sequences
+            match final_byte {
+                b'w' => {
+                    // DECRQTSR - Request Tab Stop Report
+                    let ps = self.params.first().copied().unwrap_or(0);
+                    sink.emit(TerminalCommand::CsiRequestTabStopReport(ps as u16));
+                    return;
+                }
+                b'x' => {
+                    // DECFRA - Fill Rectangular Area
+                    let pchar = self.params.first().copied().unwrap_or(0);
+                    let pt = self.params.get(1).copied().unwrap_or(1);
+                    let pl = self.params.get(2).copied().unwrap_or(1);
+                    let pb = self.params.get(3).copied().unwrap_or(1);
+                    let pr = self.params.get(4).copied().unwrap_or(1);
+                    sink.emit(TerminalCommand::CsiFillRectangularArea(
+                        pchar as u16,
+                        pt as u16,
+                        pl as u16,
+                        pb as u16,
+                        pr as u16,
+                    ));
+                    return;
+                }
+                b'z' => {
+                    // DECERA - Erase Rectangular Area
+                    let pt = self.params.first().copied().unwrap_or(1);
+                    let pl = self.params.get(1).copied().unwrap_or(1);
+                    let pb = self.params.get(2).copied().unwrap_or(1);
+                    let pr = self.params.get(3).copied().unwrap_or(1);
+                    sink.emit(TerminalCommand::CsiEraseRectangularArea(pt as u16, pl as u16, pb as u16, pr as u16));
+                    return;
+                }
+                b'{' => {
+                    // DECSERA - Selective Erase Rectangular Area
+                    let pt = self.params.first().copied().unwrap_or(1);
+                    let pl = self.params.get(1).copied().unwrap_or(1);
+                    let pb = self.params.get(2).copied().unwrap_or(1);
+                    let pr = self.params.get(3).copied().unwrap_or(1);
+                    sink.emit(TerminalCommand::CsiSelectiveEraseRectangularArea(pt as u16, pl as u16, pb as u16, pr as u16));
+                    return;
+                }
+                _ => {
+                    sink.emit(TerminalCommand::Unknown(&[]));
+                    return;
+                }
+            }
+        }
+
+        if is_space {
+            // CSI SP sequences
+            match final_byte {
+                b'q' => {
+                    // DECSCUSR - Set Cursor Style
+                    let style = self.params.first().copied().unwrap_or(0);
+                    sink.emit(TerminalCommand::CsiSetCursorStyle(style as u16));
+                    return;
+                }
+                b'D' => {
+                    // Font Selection
+                    let ps1 = self.params.first().copied().unwrap_or(0);
+                    let ps2 = self.params.get(1).copied().unwrap_or(0);
+                    sink.emit(TerminalCommand::CsiFontSelection(ps1 as u16, ps2 as u16));
+                    return;
+                }
+                b'A' => {
+                    // Scroll Right
+                    let n = self.params.first().copied().unwrap_or(1);
+                    sink.emit(TerminalCommand::CsiScrollRight(n as u16));
+                    return;
+                }
+                b'@' => {
+                    // Scroll Left
+                    let n = self.params.first().copied().unwrap_or(1);
+                    sink.emit(TerminalCommand::CsiScrollLeft(n as u16));
+                    return;
+                }
+                b'd' => {
+                    // Tabulation Clear
+                    let ps = self.params.first().copied().unwrap_or(0);
+                    if ps == 0 {
+                        sink.emit(TerminalCommand::CsiClearTabulation);
+                    } else {
+                        sink.emit(TerminalCommand::CsiClearAllTabs);
+                    }
+                    return;
+                }
+                _ => {
+                    sink.emit(TerminalCommand::Unknown(&[]));
+                    return;
+                }
+            }
+        }
 
         match final_byte {
             b'A' => {
@@ -525,6 +740,36 @@ impl AnsiParser {
                 let row = self.params.first().copied().unwrap_or(1);
                 let col = self.params.get(1).copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
+            }
+            b'j' => {
+                // HPB - Character Position Backward (alias for CUB)
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorBack(n as u16));
+            }
+            b'k' => {
+                // VPB - Line Position Backward (alias for CUU)
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorUp(n as u16));
+            }
+            b'd' => {
+                // VPA - Line Position Absolute
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiLinePositionAbsolute(n as u16));
+            }
+            b'e' => {
+                // VPR - Line Position Forward
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiLinePositionForward(n as u16));
+            }
+            b'a' => {
+                // HPR - Character Position Forward
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCharacterPositionForward(n as u16));
+            }
+            b'\'' => {
+                // HPA - Horizontal Position Absolute
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiHorizontalPositionAbsolute(n as u16));
             }
             b'J' => {
                 // ED - Erase in Display
@@ -605,6 +850,43 @@ impl AnsiParser {
                 // REP - Repeat preceding character
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiRepeatPrecedingCharacter(n as u16));
+            }
+            b's' => {
+                // SCOSC - Save Cursor Position
+                sink.emit(TerminalCommand::CsiSaveCursorPosition);
+            }
+            b'u' => {
+                // SCORC - Restore Cursor Position
+                sink.emit(TerminalCommand::CsiRestoreCursorPosition);
+            }
+            b'g' => {
+                // TBC - Tabulation Clear
+                let ps = self.params.first().copied().unwrap_or(0);
+                if ps == 0 {
+                    sink.emit(TerminalCommand::CsiClearTabulation);
+                } else {
+                    sink.emit(TerminalCommand::CsiClearAllTabs);
+                }
+            }
+            b'Y' => {
+                // CVT - Cursor Line Tabulation (forward to next tab)
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorLineTabulationForward(n as u16));
+            }
+            b'Z' => {
+                // CBT - Cursor Backward Tabulation
+                let n = self.params.first().copied().unwrap_or(1);
+                sink.emit(TerminalCommand::CsiCursorBackwardTabulation(n as u16));
+            }
+            b't' => {
+                // Window Manipulation / 24-bit color selection
+                let params: Vec<u16> = self.params.iter().map(|&p| p as u16).collect();
+                sink.emit(TerminalCommand::CsiWindowManipulation(params));
+            }
+            b'~' => {
+                // Special keys (Home, Insert, Delete, End, PageUp, PageDown)
+                let n = self.params.first().copied().unwrap_or(0);
+                sink.emit(TerminalCommand::CsiSpecialKey(n as u16));
             }
             b'c' => {
                 // DA - Device Attributes

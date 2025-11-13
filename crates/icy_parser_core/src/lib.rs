@@ -20,6 +20,9 @@ pub use ctrla::CtrlAParser;
 mod renegade;
 pub use renegade::RenegadeParser;
 
+mod atascii;
+pub use atascii::AtasciiParser;
+
 /// Erase in Display mode for ED command (ESC[nJ)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -359,6 +362,8 @@ pub enum TerminalCommand<'a> {
     FormFeed,
     Bell,
     Delete,
+    /// Insert character at current position (used by ATASCII 0xFF and potentially others)
+    InsertChar(u8),
 
     // ANSI CSI (Control Sequence Introducer) sequences
     /// CUU - Cursor Up: ESC[{n}A
@@ -410,6 +415,37 @@ pub enum TerminalCommand<'a> {
     /// REP - Repeat preceding character: ESC[{n}b
     CsiRepeatPrecedingCharacter(u16),
 
+    /// VPA - Line Position Absolute: ESC[{n}d
+    CsiLinePositionAbsolute(u16),
+    /// VPR - Line Position Forward: ESC[{n}e
+    CsiLinePositionForward(u16),
+    /// HPR - Character Position Forward: ESC[{n}a
+    CsiCharacterPositionForward(u16),
+    /// HPA - Horizontal Position Absolute: ESC[{n}'
+    CsiHorizontalPositionAbsolute(u16),
+
+    /// TBC - Tabulation Clear: ESC[0g (clear tab at current position)
+    CsiClearTabulation,
+    /// TBC - Tabulation Clear All: ESC[3g or ESC[5g (clear all tabs)
+    CsiClearAllTabs,
+    /// CVT - Cursor Line Tabulation: ESC[{n}Y (forward to next tab)
+    CsiCursorLineTabulationForward(u16),
+    /// CBT - Cursor Backward Tabulation: ESC[{n}Z
+    CsiCursorBackwardTabulation(u16),
+
+    /// SCOSC - Save Cursor Position: ESC[s
+    CsiSaveCursorPosition,
+    /// SCORC - Restore Cursor Position: ESC[u
+    CsiRestoreCursorPosition,
+
+    /// Window Manipulation / 24-bit color: ESC[{...}t
+    /// Can be window size manipulation or color selection depending on param count
+    CsiWindowManipulation(Vec<u16>),
+
+    /// Special keys: ESC[{n}~
+    /// 1=Home, 2=Insert, 3=Delete, 4=End, 5=PageUp, 6=PageDown
+    CsiSpecialKey(u16),
+
     /// DA - Device Attributes: ESC[c or ESC[0c
     CsiDeviceAttributes,
     /// DSR - Device Status Report: ESC[{n}n
@@ -428,6 +464,43 @@ pub enum TerminalCommand<'a> {
     /// RM - Reset Mode: ESC[{n}l
     /// Emitted once per mode
     CsiResetMode(AnsiMode),
+
+    // CSI with intermediate bytes
+    /// DECSCUSR - Set Cursor Style: ESC[{Ps} q
+    /// Ps = 0 or 1 -> blinking block, 2 -> steady block
+    /// Ps = 3 -> blinking underline, 4 -> steady underline
+    /// Ps = 5 -> blinking bar, 6 -> steady bar
+    CsiSetCursorStyle(u16),
+
+    /// Scroll Right: ESC[{n} A
+    CsiScrollRight(u16),
+    /// Scroll Left: ESC[{n} @
+    CsiScrollLeft(u16),
+
+    /// Font Selection: ESC[{Ps1};{Ps2} D
+    /// Ps1 = slot (0-3), Ps2 = font number
+    CsiFontSelection(u16, u16),
+
+    /// Invoke Macro: ESC[{Pn}*z
+    CsiInvokeMacro(u16),
+
+    /// Select Communication Speed: ESC[{Ps1};{Ps2}*r
+    CsiSelectCommunicationSpeed(u16, u16),
+
+    /// Request Checksum of Rectangular Area: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y
+    CsiRequestChecksumRectangularArea(Vec<u16>),
+
+    /// DECRQTSR - Request Tab Stop Report: ESC[{Ps}$w
+    CsiRequestTabStopReport(u16),
+
+    /// DECFRA - Fill Rectangular Area: ESC[{Pchar};{Pt};{Pl};{Pb};{Pr}$x
+    CsiFillRectangularArea(u16, u16, u16, u16, u16),
+
+    /// DECERA - Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}$z
+    CsiEraseRectangularArea(u16, u16, u16, u16),
+
+    /// DECSERA - Selective Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}${
+    CsiSelectiveEraseRectangularArea(u16, u16, u16, u16),
 
     // ANSI ESC sequences (non-CSI)
     /// IND - Index: ESC D (move cursor down, scroll if at bottom)
@@ -457,6 +530,15 @@ pub enum TerminalCommand<'a> {
         params: &'a [u8],
         uri: &'a [u8],
     },
+
+    // DCS (Device Control String) sequence: ESC P ... ESC \
+    /// Used for sixel graphics, macros, custom fonts, etc.
+    /// The consumer should parse the content based on application needs
+    DcsString(&'a [u8]),
+
+    // APS (Application Program String) sequence: ESC _ ... ESC \
+    /// Application-specific command string
+    ApsString(&'a [u8]),
 
     // Avatar (Advanced Video Attribute Terminal Assembler and Recreator) commands
     /// AVT Repeat Character: ^Y{char}{count}
