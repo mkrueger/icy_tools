@@ -22,7 +22,14 @@ use icy_parser_core::{
     OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline,
 };
 
-use crate::{AttributedChar, CallbackAction, EditableScreen, Position, screen};
+use crate::{AttributedChar, AutoWrapMode, CallbackAction, Caret, EditableScreen, OriginMode, Position};
+
+#[derive(Clone)]
+struct SavedCursorState {
+    caret: Caret,
+    origin_mode: OriginMode,
+    auto_wrap_mode: AutoWrapMode,
+}
 
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
@@ -32,6 +39,10 @@ pub struct ScreenSink<'a, T: EditableScreen + ?Sized> {
     last_char: Option<AttributedChar>,
     /// Collected callback actions that need to be handled by the application
     pub callbacks: Vec<CallbackAction>,
+    
+    saved_pos: Option<Position>,
+    saved_cursor_state: Option<SavedCursorState>,
+    
 }
 
 impl<'a, T: EditableScreen + ?Sized> ScreenSink<'a, T> {
@@ -40,6 +51,8 @@ impl<'a, T: EditableScreen + ?Sized> ScreenSink<'a, T> {
             screen,
             last_char: None,
             callbacks: Vec::new(),
+            saved_cursor_state : None,
+            saved_pos: None
         }
     }
 
@@ -413,22 +426,50 @@ impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
             TerminalCommand::CsiClearAllTabs => {
                 self.screen.terminal_state_mut().clear_tab_stops();
             }
-            TerminalCommand::CsiCursorLineTabulationForward(n) => {
-                for _ in 0..n {
-                    self.screen.tab_forward();
-                }
+            TerminalCommand::CsiCursorLineTabulationForward(num) => {
+                (0..num).for_each(|_| {
+                    let x = self.screen.terminal_state().next_tab_stop(self.screen.caret().position().x);
+                    self.screen.caret_mut().x = x;
+                });
             }
-            TerminalCommand::CsiCursorBackwardTabulation(_n) => {
-                // Backward tabulation not implemented in EditableScreen
+            TerminalCommand::CsiCursorBackwardTabulation(num) => {
+                (0..num).for_each(|_| {
+                    let x = self.screen.terminal_state().prev_tab_stop(self.screen.caret().position().x);
+                    self.screen.caret_mut().x = x;
+                });
             }
 
             // Cursor save/restore
-            TerminalCommand::CsiSaveCursorPosition | TerminalCommand::EscSaveCursor => {
-                // Save cursor - EditableScreen doesn't have this API yet
-                // Would need to add saved_caret field to TerminalState
+            TerminalCommand::CsiSaveCursorPosition => {
+                self.saved_pos = Some(self.screen.caret().position());
+
             }
-            TerminalCommand::CsiRestoreCursorPosition | TerminalCommand::EscRestoreCursor => {
-                // Restore cursor - EditableScreen doesn't have this API yet
+            TerminalCommand::CsiRestoreCursorPosition => {
+                if let Some(pos) = self.saved_pos.take() {
+                    self.screen.caret_mut().set_position(pos);
+                }
+            }
+
+            TerminalCommand::EscSaveCursor => {
+                // DECSC - Save Cursor
+                self.saved_cursor_state = Some(SavedCursorState {
+                    caret: self.screen.caret().clone(),
+                    origin_mode: self.screen.terminal_state().origin_mode,
+                    auto_wrap_mode: self.screen.terminal_state().auto_wrap_mode,
+                });
+            }
+
+            TerminalCommand::EscRestoreCursor => {
+                if let Some(saved_state) = &self.saved_cursor_state.take() {
+                    *self.screen.caret_mut() = saved_state.caret.clone();
+                    self.screen.terminal_state_mut().origin_mode = saved_state.origin_mode;
+                    self.screen.terminal_state_mut().auto_wrap_mode = saved_state.auto_wrap_mode;
+                } else {
+                    // If no saved state, reset to defaults per VT100 spec
+                    self.screen.caret_mut().reset();
+                    self.screen.terminal_state_mut().origin_mode = OriginMode::UpperLeftCorner;
+                    self.screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
+                }
             }
 
             // Terminal resize

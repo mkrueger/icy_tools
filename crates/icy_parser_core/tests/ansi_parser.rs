@@ -161,7 +161,7 @@ fn test_sgr_colors() {
     ));
     assert!(matches!(
         &sink.cmds[1],
-        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(1)))
+        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(4)))
     ));
 
     sink.cmds.clear();
@@ -266,7 +266,7 @@ fn test_sgr_bright_colors() {
     assert_eq!(sink.cmds.len(), 2);
     assert!(matches!(
         &sink.cmds[0],
-        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(9)))
+        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(12)))
     ));
     assert!(matches!(
         &sink.cmds[1],
@@ -370,7 +370,7 @@ fn test_mixed_content() {
     ));
     assert!(matches!(
         sink.cmds[1],
-        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(1)))
+        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(4)))
     ));
     assert!(matches!(sink.cmds[2], TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset)));
 }
