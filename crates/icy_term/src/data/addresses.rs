@@ -2,9 +2,7 @@ use crate::{ConnectionInformation, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_engine::rip::RIP_SCREEN_SIZE;
-use icy_engine::skypix::SKYPIX_SCREEN_SIZE;
-use icy_engine::{BufferParser, ansi, ascii, atascii, avatar, mode7, petscii, rip, skypix, viewdata};
+use icy_parser_core::CommandParser;
 use icy_net::ConnectionType;
 use icy_net::telnet::TerminalEmulation;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
@@ -48,46 +46,25 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
 }
 
 #[must_use]
-pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, screen_mode: ScreenMode, cache_directory: PathBuf) -> Box<dyn BufferParser> {
+pub fn get_parser(emulator: &TerminalEmulation, _use_ansi_music: MusicOption, _screen_mode: ScreenMode, _cache_directory: PathBuf) -> Box<dyn CommandParser + Send> {
     match emulator {
         TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
-            let mut parser = ansi::Parser::default();
-            parser.ansi_music = use_ansi_music;
-            parser.bs_is_ctrl_char = true;
-            Box::new(parser)
+            Box::new(icy_parser_core::AnsiParser::new())
         }
-        TerminalEmulation::Avatar => Box::<avatar::Parser>::default(),
-        TerminalEmulation::Ascii => Box::<ascii::Parser>::default(),
-        TerminalEmulation::PETscii => Box::<petscii::Parser>::default(),
-        TerminalEmulation::ATAscii => Box::<atascii::Parser>::default(),
-        TerminalEmulation::ViewData => Box::<viewdata::Parser>::default(),
-        TerminalEmulation::Mode7 => Box::<mode7::Parser>::default(),
+        TerminalEmulation::Avatar => Box::new(icy_parser_core::AvatarParser::new()),
+        TerminalEmulation::Ascii => Box::new(icy_parser_core::AsciiParser::new()),
+        TerminalEmulation::PETscii => Box::new(icy_parser_core::PetsciiParser::new()),
+        TerminalEmulation::ATAscii => Box::new(icy_parser_core::AtasciiParser::new()),
+        TerminalEmulation::ViewData => Box::new(icy_parser_core::ViewdataParser::new()),
+        TerminalEmulation::Mode7 => Box::new(icy_parser_core::Mode7Parser::new()),
         TerminalEmulation::Rip => {
-            let mut parser = ansi::Parser::default();
-            parser.ansi_music = use_ansi_music;
-            parser.bs_is_ctrl_char = true;
-            let parser = rip::Parser::new(Box::new(parser), cache_directory, RIP_SCREEN_SIZE);
-            Box::new(parser)
+            Box::new(icy_parser_core::RipParser::new())
         }
         TerminalEmulation::Skypix => {
-            let mut parser = ansi::Parser::default();
-            parser.ansi_music = use_ansi_music;
-            parser.bs_is_ctrl_char = true;
-            let parser = skypix::Parser::new(Box::new(parser), cache_directory, SKYPIX_SCREEN_SIZE);
-            Box::new(parser)
+            Box::new(icy_parser_core::SkypixParser::new())
         }
         TerminalEmulation::AtariST => {
-            let res = if let ScreenMode::AtariST(cols) = screen_mode {
-                if cols == 80 {
-                    icy_engine::igs::TerminalResolution::Medium
-                } else {
-                    icy_engine::igs::TerminalResolution::Low
-                }
-            } else {
-                icy_engine::igs::TerminalResolution::Low
-            };
-
-            Box::new(icy_engine::igs::Parser::new(res))
+            Box::new(icy_parser_core::IgsParser::new())
         }
     }
 }

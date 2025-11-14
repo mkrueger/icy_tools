@@ -6,7 +6,8 @@ use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
 use icy_engine::rip::RIP_SCREEN_SIZE;
 use icy_engine::skypix::SKYPIX_SCREEN_SIZE;
-use icy_engine::{ATARI, BitFont, BufferParser, CallbackAction, EditableScreen, PaletteScreenBuffer, TextScreen, rip};
+use icy_engine::{ATARI, BitFont, EditableScreen, PaletteScreenBuffer, ScreenSink, TextScreen, rip};
+use icy_parser_core::{AnsiMusic, CommandParser, CommandSink, TerminalCommand as ParserCommand};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -102,13 +103,77 @@ pub struct ModemConfig {
     pub dial_string: String,
 }
 
+/// Custom CommandSink implementation for terminal thread
+struct TerminalSink<'a> {
+    screen_sink: ScreenSink<'a>,
+    event_tx: &'a mpsc::UnboundedSender<TerminalEvent>,
+}
+
+impl<'a> TerminalSink<'a> {
+    fn new(screen: &'a mut dyn EditableScreen, event_tx: &'a mpsc::UnboundedSender<TerminalEvent>) -> Self {
+        Self {
+            screen_sink: ScreenSink::new(screen),
+            event_tx,
+        }
+    }
+}
+
+impl<'a> CommandSink for TerminalSink<'a> {
+    fn print(&mut self, text: &[u8]) {
+        self.screen_sink.print(text);
+    }
+
+    fn emit(&mut self, cmd: ParserCommand) {
+        // Handle terminal-specific events
+        match cmd {
+            ParserCommand::Bell => {
+                let _ = self.event_tx.send(TerminalEvent::Beep);
+            }
+            ParserCommand::CsiResizeTerminal(height, width) => {
+                self.screen_sink.screen_mut().set_size(icy_engine::Size::new(width as i32, height as i32));
+            }
+            _ => {
+                // Delegate all other commands to screen_sink
+                self.screen_sink.emit(cmd);
+            }
+        }
+    }
+
+    fn play_music(&mut self, music: AnsiMusic) {
+        // Convert icy_parser_core::AnsiMusic to icy_engine::ansi::sound::AnsiMusic
+        let engine_music = icy_engine::ansi::sound::AnsiMusic {
+            music_actions: music.music_actions.into_iter().map(|action| {
+                match action {
+                    icy_parser_core::MusicAction::PlayNote(freq, tempo_len, dotted) => {
+                        icy_engine::ansi::sound::MusicAction::PlayNote(freq, tempo_len, dotted)
+                    }
+                    icy_parser_core::MusicAction::Pause(tempo_len) => {
+                        icy_engine::ansi::sound::MusicAction::Pause(tempo_len)
+                    }
+                    icy_parser_core::MusicAction::SetStyle(style) => {
+                        let engine_style = match style {
+                            icy_parser_core::MusicStyle::Foreground => icy_engine::ansi::sound::MusicStyle::Foreground,
+                            icy_parser_core::MusicStyle::Background => icy_engine::ansi::sound::MusicStyle::Background,
+                            icy_parser_core::MusicStyle::Normal => icy_engine::ansi::sound::MusicStyle::Normal,
+                            icy_parser_core::MusicStyle::Legato => icy_engine::ansi::sound::MusicStyle::Legato,
+                            icy_parser_core::MusicStyle::Staccato => icy_engine::ansi::sound::MusicStyle::Staccato,
+                        };
+                        icy_engine::ansi::sound::MusicAction::SetStyle(engine_style)
+                    }
+                }
+            }).collect(),
+        };
+        let _ = self.event_tx.send(TerminalEvent::PlayMusic(engine_music));
+    }
+}
+
 pub struct TerminalThread {
     // Shared state with UI
     edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
 
     // Thread-local state
     connection: Option<Box<dyn Connection>>,
-    buffer_parser: Box<dyn BufferParser>,
+    parser: Box<dyn CommandParser + Send>,
     current_transfer: Option<TransferState>,
     connection_time: Option<Instant>,
     baud_emulator: BaudEmulator,
@@ -134,7 +199,7 @@ pub struct TerminalThread {
 impl TerminalThread {
     pub fn spawn(
         edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
-        buffer_parser: Box<dyn BufferParser>,
+        parser: Box<dyn CommandParser + Send>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -142,7 +207,7 @@ impl TerminalThread {
         let mut thread = Self {
             edit_screen,
             connection: None,
-            buffer_parser,
+            parser,
             current_transfer: None,
             connection_time: None,
             command_rx,
@@ -466,7 +531,7 @@ impl TerminalThread {
 
             screen_mode.apply_to_edit_screen(&mut **screen);
         }
-        self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
+        self.parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
 
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
@@ -563,10 +628,36 @@ impl TerminalThread {
 
     #[async_recursion::async_recursion(?Send)]
     async fn process_data(&mut self, data: &[u8]) {
-        let mut actions = Vec::new();
+        let start = std::time::Instant::now();
+        let byte_count = data.len();
+        
+        // Check for auto-features before parsing
+        for &byte in data {
+            if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(byte) {
+                self.auto_transfer = Some((protocol_type, download, None));
+            }
+
+            let mut logged_in = false;
+            if let Some(autologin) = &mut self.iemsi_auto_login {
+                if let Ok(Some(login_data)) = autologin.try_login(byte) {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(&login_data).await;
+                    }
+                    if let Some(isi) = &autologin.iemsi.isi {
+                        let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
+                    }
+                }
+                logged_in = autologin.is_logged_in();
+            }
+            if logged_in {
+                self.iemsi_auto_login = None;
+            }
+        }
 
         if let Ok(mut screen) = self.edit_screen.lock() {
             {
+                let mut sink = TerminalSink::new(&mut **screen, &self.event_tx);
+
                 if self.use_utf8 {
                     // UTF-8 mode: decode multi-byte sequences
                     let mut to_process = Vec::new();
@@ -582,30 +673,21 @@ impl TerminalThread {
                         match std::str::from_utf8(remaining) {
                             Ok(valid_str) => {
                                 // All remaining bytes form valid UTF-8
-                                for ch in valid_str.chars() {
-                                    to_process.push(ch);
-                                }
+                                to_process.extend_from_slice(valid_str.as_bytes());
                                 i = self.utf8_buffer.len(); // Consumed everything
                             }
                             Err(e) => {
                                 // Partial UTF-8 sequence or error
                                 if e.valid_up_to() > 0 {
                                     // Process the valid part
-                                    let valid_str = unsafe {
-                                        // Safe because we know valid_up_to() bytes are valid UTF-8
-                                        std::str::from_utf8_unchecked(&remaining[..e.valid_up_to()])
-                                    };
-                                    for ch in valid_str.chars() {
-                                        to_process.push(ch);
-                                    }
+                                    to_process.extend_from_slice(&remaining[..e.valid_up_to()]);
                                     i += e.valid_up_to();
                                 }
 
                                 // Check if we have an incomplete sequence at the end
                                 if let Some(error_len) = e.error_len() {
-                                    // Invalid UTF-8 sequence, skip these bytes
-                                    // Could also replace with � (U+FFFD)
-                                    to_process.push('\u{FFFD}'); // Replacement character
+                                    // Invalid UTF-8 sequence, replace with replacement character
+                                    to_process.extend_from_slice("�".as_bytes());
                                     i += error_len;
                                 } else {
                                     // Incomplete sequence at end, keep it for next time
@@ -622,63 +704,11 @@ impl TerminalThread {
                         self.utf8_buffer.clear();
                     }
 
-                    // Process all complete characters with auto-features
-                    for ch in to_process {
-                        // Check for auto-file transfer triggers
-                        if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch as u8) {
-                            self.auto_transfer = Some((protocol_type, download, None));
-                        }
-
-                        let mut logged_in = false;
-                        if let Some(autologin) = &mut self.iemsi_auto_login {
-                            if let Ok(Some(login_data)) = autologin.try_login(ch as u8) {
-                                if let Some(conn) = &mut self.connection {
-                                    let _ = conn.send(&login_data).await;
-                                }
-                                if let Some(isi) = autologin.iemsi.isi.clone() {
-                                    let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
-                                }
-                            }
-                            logged_in = autologin.is_logged_in();
-                        }
-                        if logged_in {
-                            self.iemsi_auto_login = None;
-                        }
-
-                        match self.buffer_parser.print_char(&mut **screen, ch) {
-                            Ok(action) => actions.push(action),
-                            Err(e) => error!("Parser error: {e}"),
-                        }
-                    }
+                    // Parse the complete UTF-8 data
+                    self.parser.parse(&to_process, &mut sink);
                 } else {
-                    // Legacy mode: treat each byte as a character (CP437 or similar)
-                    for &byte in data {
-                        // Check for auto-file transfer triggers
-                        if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(byte) {
-                            self.auto_transfer = Some((protocol_type, download, None));
-                        }
-
-                        let mut logged_in = false;
-                        if let Some(autologin) = &mut self.iemsi_auto_login {
-                            if let Ok(Some(login_data)) = autologin.try_login(byte) {
-                                if let Some(conn) = &mut self.connection {
-                                    let _ = conn.send(&login_data).await;
-                                }
-                            }
-                            if let Some(isi) = &autologin.iemsi.isi {
-                                let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
-                            }
-                            logged_in = autologin.is_logged_in();
-                        }
-
-                        if logged_in {
-                            self.iemsi_auto_login = None;
-                        }
-                        match self.buffer_parser.print_char(&mut **screen, byte as char) {
-                            Ok(action) => actions.push(action),
-                            Err(e) => error!("Parser error: {e}"),
-                        }
-                    }
+                    // Legacy mode: parse bytes directly
+                    self.parser.parse(data, &mut sink);
                 }
 
                 screen.update_hyperlinks();
@@ -689,38 +719,8 @@ impl TerminalThread {
                 tokio::task::yield_now().await;
             }
         }
-
-        for action in actions {
-            self.handle_parser_action(action).await;
-        }
-    }
-
-    async fn handle_parser_action(&mut self, action: CallbackAction) {
-        match action {
-            CallbackAction::SendString(s) => {
-                if let Some(conn) = &mut self.connection {
-                    let _ = conn.send(s.as_bytes()).await;
-                } else {
-                    // Echo locally when disconnected
-                    self.process_data(s.as_bytes()).await;
-                }
-            }
-            CallbackAction::PlayMusic(music) => {
-                self.send_event(TerminalEvent::PlayMusic(music));
-            }
-            CallbackAction::Beep => {
-                self.send_event(TerminalEvent::Beep);
-            }
-            CallbackAction::ResizeTerminal(width, height) => {
-                // Avoid async recursion by calling sync helper
-                self.perform_resize(width as u16, height as u16);
-            }
-            CallbackAction::XModemTransfer(file_name) => {
-                // Set up auto-transfer for X-Modem
-                self.auto_transfer = Some((TransferProtocolType::XModem, true, Some(file_name)));
-            }
-            _ => {}
-        }
+        
+        println!("process_data: {} bytes took {:?}", byte_count, start.elapsed());
     }
 
     async fn start_upload(&mut self, protocol: TransferProtocolType, files: Vec<PathBuf>) {

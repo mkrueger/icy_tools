@@ -20,6 +20,8 @@ license = "MIT or Apache-2.0"
 
 [workspace.dependencies]
 icy_engine = { path = "crates/icy_engine" }
+icy_parser_core = { path = "crates/icy_parser_core"} 
+
 #icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = "0.3.4"
 #icy_sauce = { path = "../icy_sauce" }

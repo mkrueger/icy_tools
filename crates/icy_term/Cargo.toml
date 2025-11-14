@@ -33,6 +33,7 @@ base64 = "0.22.1"
 #sound
 rodio = { workspace = true }
 icy_engine = { workspace = true }
+icy_parser_core = { workspace = true }
 
 walkdir = { workspace = true }
 toml = { workspace = true }
