@@ -2,9 +2,9 @@ use crate::{ConnectionInformation, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
 use icy_engine::ansi::{BaudEmulation, MusicOption};
-use icy_parser_core::CommandParser;
 use icy_net::ConnectionType;
 use icy_net::telnet::TerminalEmulation;
+use icy_parser_core::CommandParser;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use semver::Version;
@@ -46,26 +46,23 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
 }
 
 #[must_use]
-pub fn get_parser(emulator: &TerminalEmulation, _use_ansi_music: MusicOption, _screen_mode: ScreenMode, _cache_directory: PathBuf) -> Box<dyn CommandParser + Send> {
+pub fn get_parser(
+    emulator: &TerminalEmulation,
+    _use_ansi_music: MusicOption,
+    _screen_mode: ScreenMode,
+    _cache_directory: PathBuf,
+) -> Box<dyn CommandParser + Send> {
     match emulator {
-        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
-            Box::new(icy_parser_core::AnsiParser::new())
-        }
+        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => Box::new(icy_parser_core::AnsiParser::new()),
         TerminalEmulation::Avatar => Box::new(icy_parser_core::AvatarParser::new()),
         TerminalEmulation::Ascii => Box::new(icy_parser_core::AsciiParser::new()),
         TerminalEmulation::PETscii => Box::new(icy_parser_core::PetsciiParser::new()),
         TerminalEmulation::ATAscii => Box::new(icy_parser_core::AtasciiParser::new()),
         TerminalEmulation::ViewData => Box::new(icy_parser_core::ViewdataParser::new()),
         TerminalEmulation::Mode7 => Box::new(icy_parser_core::Mode7Parser::new()),
-        TerminalEmulation::Rip => {
-            Box::new(icy_parser_core::RipParser::new())
-        }
-        TerminalEmulation::Skypix => {
-            Box::new(icy_parser_core::SkypixParser::new())
-        }
-        TerminalEmulation::AtariST => {
-            Box::new(icy_parser_core::IgsParser::new())
-        }
+        TerminalEmulation::Rip => Box::new(icy_parser_core::RipParser::new()),
+        TerminalEmulation::Skypix => Box::new(icy_parser_core::SkypixParser::new()),
+        TerminalEmulation::AtariST => Box::new(icy_parser_core::IgsParser::new()),
     }
 }
 

@@ -9,6 +9,8 @@ use icy_engine::{
     parsers::ansi,
 };
 
+mod sixel_tests;
+
 // Test helper functions - these work with TextScreen internally but return (buffer, caret) tuple
 fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (TextBuffer, Caret) {
     let mut screen = TextScreen {
@@ -1261,6 +1263,32 @@ fn test_load_palette_case2() {
     assert_eq!(buf.palette.get_rgb(17), (0x00, 0x11, 0x22));
     assert_eq!(buf.palette.get_rgb(255), (0x01, 0xef, 0x2d));
 }
+
+#[test]
+fn test_set_palette_color_single() {
+    let mut parser = ansi::Parser::default();
+    let (buf, _) = create_buffer(&mut parser, b"\x1b]4;5;rgb:ff/80/00\x07");
+    assert_eq!(buf.palette.get_rgb(5), (0xff, 0x80, 0x00));
+}
+
+#[test]
+fn test_set_palette_color_multiple() {
+    let mut parser = ansi::Parser::default();
+    let (buf, _) = create_buffer(&mut parser, b"\x1b]4;1;rgb:12/34/56;10;rgb:ab/cd/ef;200;rgb:ff/ff/ff\x1b\\");
+    assert_eq!(buf.palette.get_rgb(1), (0x12, 0x34, 0x56));
+    assert_eq!(buf.palette.get_rgb(10), (0xab, 0xcd, 0xef));
+    assert_eq!(buf.palette.get_rgb(200), (0xff, 0xff, 0xff));
+}
+
+#[test]
+fn test_set_palette_color_edge_cases() {
+    let mut parser = ansi::Parser::default();
+    // Test color index 0 and 255 (min and max)
+    let (buf, _) = create_buffer(&mut parser, b"\x1b]4;0;rgb:10/20/30;255;rgb:e0/f0/ff\x07");
+    assert_eq!(buf.palette.get_rgb(0), (0x10, 0x20, 0x30));
+    assert_eq!(buf.palette.get_rgb(255), (0xe0, 0xf0, 0xff));
+}
+
 /* Doesn't - make much sense anymore with terminal buffers.
 
 #[test]

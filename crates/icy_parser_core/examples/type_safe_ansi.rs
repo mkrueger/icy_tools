@@ -1,8 +1,8 @@
 //! Example demonstrating type-safe ANSI command parameters and error reporting
 
 use icy_parser_core::{
-    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecPrivateMode, DeviceStatusReport, EraseInDisplayMode, EraseInLineMode, Intensity,
-    ParseError, SgrAttribute, TerminalCommand, Underline,
+    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecPrivateMode, EraseInDisplayMode, EraseInLineMode, Intensity, ParseError, SgrAttribute,
+    TerminalCommand, Underline,
 };
 
 struct ExampleSink {
@@ -44,13 +44,6 @@ impl CommandSink for ExampleSink {
                         println!("      → Clear from start of line to cursor")
                     }
                     EraseInLineMode::All => println!("      → Clear entire line"),
-                }
-            }
-            TerminalCommand::CsiDeviceStatusReport(report) => {
-                println!("  [{}] Device Status Report: {:?}", self.command_count, report);
-                match report {
-                    DeviceStatusReport::OperatingStatus => println!("      → Request operating status"),
-                    DeviceStatusReport::CursorPosition => println!("      → Request cursor position"),
                 }
             }
             TerminalCommand::CsiSetMode(mode) => {

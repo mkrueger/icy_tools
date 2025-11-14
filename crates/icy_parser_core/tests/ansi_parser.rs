@@ -1,11 +1,12 @@
 use icy_parser_core::{
     AnsiMode, AnsiParser, Blink, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode,
-    EraseInLineMode, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, Underline,
+    EraseInLineMode, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
 };
 
 struct CollectSink {
     pub text: Vec<u8>,
     pub cmds: Vec<TerminalCommand>,
+    pub requests: Vec<TerminalRequest>,
     pub aps_data: Vec<Vec<u8>>,
     pub dcs_commands: Vec<DeviceControlString<'static>>,
     pub osc_commands: Vec<OperatingSystemCommand<'static>>,
@@ -16,6 +17,7 @@ impl CollectSink {
         Self {
             text: Vec::new(),
             cmds: Vec::new(),
+            requests: Vec::new(),
             aps_data: Vec::new(),
             dcs_commands: Vec::new(),
             osc_commands: Vec::new(),
@@ -30,6 +32,10 @@ impl CommandSink for CollectSink {
 
     fn emit(&mut self, cmd: TerminalCommand) {
         self.cmds.push(cmd);
+    }
+
+    fn request(&mut self, request: TerminalRequest) {
+        self.requests.push(request);
     }
 
     fn device_control(&mut self, dcs: DeviceControlString<'_>) {
@@ -61,6 +67,9 @@ impl CommandSink for CollectSink {
                 let owned = data.to_vec();
                 let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
                 self.osc_commands.push(OperatingSystemCommand::SetWindowTitle(leaked));
+            }
+            OperatingSystemCommand::SetPaletteColor(index, r, g, b) => {
+                self.osc_commands.push(OperatingSystemCommand::SetPaletteColor(index, r, g, b));
             }
             OperatingSystemCommand::Hyperlink { params, uri } => {
                 let params_owned = params.to_vec();
@@ -753,15 +762,15 @@ fn test_csi_asterisk_sequences() {
     // CSI multiple params *y - Request Checksum of Rectangular Area
     // Format: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y (Pid is ignored)
     parser.parse(b"\x1B[1;2;3;4;5;6*y", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiRequestChecksumRectangularArea(ppage, pt, pl, pb, pr) = sink.cmds[0] {
+    assert_eq!(sink.requests.len(), 1);
+    if let TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr) = sink.requests[0] {
         assert_eq!(ppage, 2); // Pid (1) is ignored, this is Ppage
         assert_eq!(pt, 3);
         assert_eq!(pl, 4);
         assert_eq!(pb, 5);
         assert_eq!(pr, 6);
     } else {
-        panic!("Expected CsiRequestChecksumRectangularArea");
+        panic!("Expected RequestChecksumRectangularArea");
     }
 }
 
@@ -772,11 +781,11 @@ fn test_csi_dollar_sequences() {
 
     // CSI Ps$w - Request Tab Stop Report
     parser.parse(b"\x1B[2$w", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiRequestTabStopReport(ps) = sink.cmds[0] {
-        assert_eq!(ps, 2);
+    assert_eq!(sink.requests.len(), 1);
+    if let TerminalRequest::RequestTabStopReport = sink.requests[0] {
+        // Success
     } else {
-        panic!("Expected CsiRequestTabStopReport");
+        panic!("Expected RequestTabStopReport");
     }
 
     sink.cmds.clear();
@@ -1123,5 +1132,90 @@ fn test_special_keys() {
         assert_eq!(n, 6);
     } else {
         panic!("Expected CsiSpecialKey");
+    }
+}
+
+#[test]
+fn test_macro_checksum_report() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // Load two macros: macro 0 with "Hello", macro 1 with "World"
+    parser.parse(b"\x1BP0;0;0!zHello\x1B\\", &mut sink);
+    parser.parse(b"\x1BP1;0;0!zWorld\x1B\\", &mut sink);
+
+    // Request memory checksum report with pid=1
+    parser.parse(b"\x1B[?63;1n", &mut sink);
+
+    // Should have one request
+    assert_eq!(sink.requests.len(), 1);
+
+    // Check that we got a MemoryChecksumReport with the correct checksum
+    if let TerminalRequest::MemoryChecksumReport(pid, checksum) = sink.requests[0] {
+        assert_eq!(pid, 1);
+        // Checksum calculation: "Hello" = 72+101+108+108+111 = 500 (0x01F4)
+        //                       "World" = 87+111+114+108+100 = 520 (0x0208)
+        //                       Total = 1020 (0x03FC)
+        assert_eq!(checksum, 0x03FC);
+    } else {
+        panic!("Expected MemoryChecksumReport");
+    }
+}
+
+#[test]
+fn test_osc_palette() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // OSC 4 - Set palette color 0 to black
+    parser.parse(b"\x1B]4;0;rgb:00/00/00\x07", &mut sink);
+
+    assert_eq!(sink.osc_commands.len(), 1);
+    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[0] {
+        assert_eq!(index, 0);
+        assert_eq!(r, 0x00);
+        assert_eq!(g, 0x00);
+        assert_eq!(b, 0x00);
+    } else {
+        panic!("Expected SetPaletteColor");
+    }
+
+    sink.osc_commands.clear();
+
+    // OSC 4 - Set palette color 15 to white (using ST terminator)
+    parser.parse(b"\x1B]4;15;rgb:ff/ff/ff\x1B\\", &mut sink);
+
+    assert_eq!(sink.osc_commands.len(), 1);
+    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[0] {
+        assert_eq!(index, 15);
+        assert_eq!(r, 0xff);
+        assert_eq!(g, 0xff);
+        assert_eq!(b, 0xff);
+    } else {
+        panic!("Expected SetPaletteColor");
+    }
+
+    sink.osc_commands.clear();
+
+    // OSC 4 - Multiple palette entries
+    parser.parse(b"\x1B]4;1;rgb:80/00/00;2;rgb:00/80/00\x07", &mut sink);
+
+    assert_eq!(sink.osc_commands.len(), 2);
+    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[0] {
+        assert_eq!(index, 1);
+        assert_eq!(r, 0x80);
+        assert_eq!(g, 0x00);
+        assert_eq!(b, 0x00);
+    } else {
+        panic!("Expected SetPaletteColor");
+    }
+
+    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[1] {
+        assert_eq!(index, 2);
+        assert_eq!(r, 0x00);
+        assert_eq!(g, 0x80);
+        assert_eq!(b, 0x00);
+    } else {
+        panic!("Expected SetPaletteColor");
     }
 }

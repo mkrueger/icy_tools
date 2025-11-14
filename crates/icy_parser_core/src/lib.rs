@@ -101,26 +101,6 @@ pub enum Direction {
     Right,
 }
 
-/// Device Status Report type for DSR command (ESC[nn)
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeviceStatusReport {
-    /// Report operating status (reply: ESC[0n = OK)
-    OperatingStatus = 5,
-    /// Report cursor position (reply: ESC[{row};{col}R)
-    CursorPosition = 6,
-}
-
-impl DeviceStatusReport {
-    fn from_u16(n: u16) -> Option<Self> {
-        match n {
-            5 => Some(Self::OperatingStatus),
-            6 => Some(Self::CursorPosition),
-            _ => None,
-        }
-    }
-}
-
 /// ANSI Mode for SM/RM commands (ESC[nh / ESC[nl)
 /// Standard ANSI modes - distinct from DEC private modes (which use ESC[?nh)
 /// Currently only IRM (Insert/Replace Mode) is used by icy_engine
@@ -407,6 +387,9 @@ pub enum OperatingSystemCommand<'a> {
     SetIconName(&'a [u8]),
     /// OSC 2 - Set Window Title: ESC]2;{text}BEL
     SetWindowTitle(&'a [u8]),
+    /// OSC 4 - Set Palette Color: ESC]4;{index};rgb:{rr}/{gg}/{bb}BEL
+    /// Parameters: color_index, r, g, b
+    SetPaletteColor(u8, u8, u8, u8),
     /// OSC 8 - Hyperlink: ESC]8;{params};{uri}BEL
     Hyperlink { params: &'a [u8], uri: &'a [u8] },
 }
@@ -504,11 +487,6 @@ pub enum TerminalCommand {
     /// 1=Home, 2=Insert, 3=Delete, 4=End, 5=PageUp, 6=PageDown
     CsiSpecialKey(u16),
 
-    /// DA - Device Attributes: ESC[c or ESC[0c
-    CsiDeviceAttributes,
-    /// DSR - Device Status Report: ESC[{n}n
-    CsiDeviceStatusReport(DeviceStatusReport),
-
     /// DECSET - DEC Private Mode Set: ESC[?{n}h
     /// Emitted once per mode (e.g., ESC[?25;1000h emits two commands)
     CsiDecPrivateModeSet(DecPrivateMode),
@@ -536,13 +514,6 @@ pub enum TerminalCommand {
     /// Select Communication Speed: ESC[{Ps1};{Ps2}*r
     CsiSelectCommunicationSpeed(u16, u16),
 
-    /// Request Checksum of Rectangular Area: ESC[{Ppage};{Pt};{Pl};{Pb};{Pr}*y
-    /// (Pid parameter ignored)
-    CsiRequestChecksumRectangularArea(u8, u16, u16, u16, u16),
-
-    /// DECRQTSR - Request Tab Stop Report: ESC[{Ps}$w
-    CsiRequestTabStopReport(u16),
-
     /// DECFRA - Fill Rectangular Area: ESC[{Pchar};{Pt};{Pl};{Pb};{Pr}$x
     CsiFillRectangularArea(u16, u16, u16, u16, u16),
 
@@ -551,6 +522,12 @@ pub enum TerminalCommand {
 
     /// DECSERA - Selective Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}${
     CsiSelectiveEraseRectangularArea(u16, u16, u16, u16),
+
+    // CSI = sequences (extended terminal functions)
+    /// Set Margins: ESC[={top};{bottom}r
+    CsiEqualsSetMargins(u16, u16),
+    /// Set Specific Margins: ESC[={top};{bottom}m
+    CsiEqualsSetSpecificMargins(u16, u16),
 
     // ANSI ESC sequences (non-CSI)
     /// IND - Index: ESC D (move cursor down, scroll if at bottom)
@@ -631,6 +608,92 @@ pub struct AnsiMusic {
     pub music_actions: Vec<MusicAction>,
 }
 
+/// Terminal requests that expect a response from the terminal emulator.
+/// These are commands that query terminal state and require the terminal
+/// to send data back to the host.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TerminalRequest {
+    /// Primary Device Attributes (DA): ESC[c or ESC[0c
+    /// Terminal should respond with its capabilities
+    DeviceAttributes,
+
+    /// Secondary Device Attributes: ESC[>c
+    /// Terminal should respond with version and hardware info
+    SecondaryDeviceAttributes,
+
+    /// Extended Device Attributes: ESC[<c
+    /// Terminal should respond with extended capabilities
+    ExtendedDeviceAttributes,
+
+    /// Device Status Report (DSR): ESC[5n
+    /// Terminal should respond with "\x1b[0n" (terminal OK)
+    DeviceStatusReport,
+
+    /// Cursor Position Report (CPR): ESC[6n
+    /// Terminal should respond with "\x1b[{row};{col}R"
+    CursorPositionReport,
+
+    /// Current Screen Size: ESC[255n
+    /// Terminal should respond with "\x1b[{height};{width}R"
+    ScreenSizeReport,
+
+    /// ANSI Mode Report: ESC[{mode}$p
+    /// Terminal should respond with current mode status
+    AnsiModeReport(AnsiMode),
+
+    /// DEC Private Mode Report: ESC[?{mode}$p
+    /// Terminal should respond with current DEC mode status
+    DecPrivateModeReport(DecPrivateMode),
+
+    /// Request Checksum of Rectangular Area: ESC[{page};{top};{left};{bottom};{right}*y
+    /// Terminal should respond with checksum in DCS format
+    RequestChecksumRectangularArea(u8, u16, u16, u16, u16),
+
+    /// Request Tab Stop Report: ESC[2$w
+    /// Terminal should respond with current tab stops in DCS format
+    RequestTabStopReport,
+
+    /// Font State Report: ESC[=1n
+    /// Terminal should respond with font selection state and current slots
+    FontStateReport,
+
+    /// Font Mode Report: ESC[=2n
+    /// Terminal should respond with current terminal modes
+    FontModeReport,
+
+    /// Font Dimension Report: ESC[=3n
+    /// Terminal should respond with current font dimensions
+    FontDimensionReport,
+
+    /// Macro Space Report: ESC[?62n
+    /// Terminal should respond with available macro space
+    MacroSpaceReport,
+
+    /// Memory Checksum Report: ESC[?63;{Pid}n
+    /// Terminal should respond with memory checksum
+    /// Parameters: (pid, checksum)
+    MemoryChecksumReport(u16, u16),
+
+    /// RIPscrip: Request terminal ID
+    /// Should respond with RIP terminal ID string
+    RipRequestTerminalId,
+
+    /// RIPscrip: Query file - check if file exists
+    RipQueryFile(String),
+
+    /// RIPscrip: Query file size
+    RipQueryFileSize(String),
+
+    /// RIPscrip: Query file date
+    RipQueryFileDate(String),
+
+    /// RIPscrip: Read file data
+    RipReadFile(String),
+
+    /// IGS: Query version (0) or resolution (3)
+    IgsQuery(u8),
+}
+
 pub trait CommandSink {
     /// Output printable text data
     fn print(&mut self, text: &[u8]);
@@ -658,6 +721,11 @@ pub trait CommandSink {
 
     /// Play ANSI music sequence. Default implementation does nothing.
     fn play_music(&mut self, _music: AnsiMusic) {}
+
+    /// Handle a terminal request that expects a response.
+    /// The implementation should send appropriate data back to the host.
+    /// Default implementation does nothing.
+    fn request(&mut self, _request: TerminalRequest) {}
 
     /// Report a parsing error. Default implementation does nothing.
     fn report_error(&mut self, _error: ParseError) {}

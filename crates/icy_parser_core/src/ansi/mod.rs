@@ -6,8 +6,8 @@
 use base64::{Engine as _, engine::general_purpose};
 mod sgr;
 use crate::{
-    AnsiMode, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, DeviceStatusReport, Direction, EraseInDisplayMode,
-    EraseInLineMode, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand,
+    AnsiMode, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode,
+    OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
 };
 
 #[derive(Default)]
@@ -34,6 +34,7 @@ enum ParserState {
     CsiGreater = 18,    // CSI > ...
     CsiExclaim = 20,    // CSI ! ...
     CsiEquals = 22,     // CSI = ...
+    CsiLess = 24,       // CSI < ...
     // Other states
     OscString = 5,
     DcsString = 6,
@@ -447,6 +448,10 @@ impl CommandParser for AnsiParser {
                             self.state = ParserState::CsiGreater;
                             i += 1;
                         }
+                        b'<' => {
+                            self.state = ParserState::CsiLess;
+                            i += 1;
+                        }
                         b'!' => {
                             self.state = ParserState::CsiExclaim;
                             i += 1;
@@ -604,7 +609,7 @@ impl CommandParser for AnsiParser {
                         let pl = self.params.get(3).copied().unwrap_or(0) as u16;
                         let pb = self.params.get(4).copied().unwrap_or(0) as u16;
                         let pr = self.params.get(5).copied().unwrap_or(0) as u16;
-                        sink.emit(TerminalCommand::CsiRequestChecksumRectangularArea(ppage, pt, pl, pb, pr));
+                        sink.request(TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -636,8 +641,7 @@ impl CommandParser for AnsiParser {
                     }
                     b'w' => {
                         // DECRQTSR - Request Tab Stop Report
-                        let ps = self.params.first().copied().unwrap_or(0);
-                        sink.emit(TerminalCommand::CsiRequestTabStopReport(ps as u16));
+                        sink.request(TerminalRequest::RequestTabStopReport);
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -787,9 +791,50 @@ impl CommandParser for AnsiParser {
                         i += 1;
                     }
                     _ => {
-                        // No specific commands implemented for CSI > sequences
+                        // CSI > sequences
+                        match byte {
+                            b'c' => {
+                                // Secondary Device Attributes
+                                sink.request(TerminalRequest::SecondaryDeviceAttributes);
+                            }
+                            _ => {
+                                sink.report_error(ParseError::MalformedSequence {
+                                    description: "Unsupported CSI > sequence",
+                                });
+                            }
+                        }
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                },
+
+                // CSI < (Less Than sequences) - Extended Device Attributes
+                ParserState::CsiLess => match byte {
+                    b'0'..=b'9' => {
+                        let digit = (byte - b'0') as u16;
+                        if let Some(last) = self.params.last_mut() {
+                            *last = last.wrapping_mul(10).wrapping_add(digit);
+                        } else {
+                            self.params.push(digit);
+                        }
+                        i += 1;
+                    }
+                    b';' => {
+                        self.params.push(0);
+                        i += 1;
+                    }
+                    b'c' => {
+                        // Extended Device Attributes: ESC[<...c
+                        // Reports terminal capabilities
+                        sink.request(TerminalRequest::ExtendedDeviceAttributes);
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    _ => {
                         sink.report_error(ParseError::MalformedSequence {
-                            description: "Unsupported CSI > sequence",
+                            description: "Unsupported CSI < sequence",
                         });
                         self.reset();
                         i += 1;
@@ -838,6 +883,58 @@ impl CommandParser for AnsiParser {
                         self.params.push(0);
                         i += 1;
                     }
+                    b'n' => {
+                        // Font/mode reports: ESC[={n}n
+                        if self.params.len() == 1 {
+                            match self.params.first() {
+                                Some(1) => sink.request(TerminalRequest::FontStateReport),
+                                Some(2) => sink.request(TerminalRequest::FontModeReport),
+                                Some(3) => sink.request(TerminalRequest::FontDimensionReport),
+                                _ => {
+                                    sink.report_error(ParseError::MalformedSequence {
+                                        description: "Unsupported CSI = n sequence",
+                                    });
+                                }
+                            }
+                        } else {
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Invalid parameter count for CSI = n",
+                            });
+                        }
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    b'r' => {
+                        // Set margins: ESC[={top};{bottom}r
+                        if self.params.len() == 2 {
+                            let top = self.params[0];
+                            let bottom = self.params[1];
+                            sink.emit(TerminalCommand::CsiEqualsSetMargins(top, bottom));
+                        } else {
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Invalid parameter count for CSI = r",
+                            });
+                        }
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    b'm' => {
+                        // Set specific margins: ESC[={top};{bottom}m
+                        if self.params.len() == 2 {
+                            let top = self.params[0];
+                            let bottom = self.params[1];
+                            sink.emit(TerminalCommand::CsiEqualsSetSpecificMargins(top, bottom));
+                        } else {
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Invalid parameter count for CSI = m",
+                            });
+                        }
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
                     _ => {
                         // No specific commands implemented for CSI = sequences
                         sink.report_error(ParseError::MalformedSequence {
@@ -850,16 +947,21 @@ impl CommandParser for AnsiParser {
                 },
 
                 ParserState::OscString => {
-                    match byte {
-                        0x07 => {
+                    // Use memchr to quickly find the next BEL or ESC byte
+                    if let Some(term_pos) = memchr::memchr2(0x07, 0x1B, &input[i..]) {
+                        let term_byte = input[i + term_pos];
+                        // Copy everything up to terminator into parse_buffer
+                        self.parse_buffer.extend_from_slice(&input[i..i + term_pos]);
+
+                        if term_byte == 0x07 {
                             // BEL - End of OSC
                             self.emit_osc_sequence(sink);
                             self.reset();
-                            i += 1;
+                            i += term_pos + 1;
                             printable_start = i;
-                        }
-                        0x1B => {
+                        } else {
                             // ESC - might be ST (String Terminator: ESC \)
+                            i += term_pos;
                             if i + 1 < input.len() && input[i + 1] == b'\\' {
                                 // ST - String Terminator
                                 self.emit_osc_sequence(sink);
@@ -868,30 +970,30 @@ impl CommandParser for AnsiParser {
                                 printable_start = i;
                             } else {
                                 // Collect ESC as part of OSC string
-                                self.parse_buffer.push(byte);
+                                self.parse_buffer.push(0x1B);
                                 i += 1;
                             }
                         }
-                        _ => {
-                            // Collect byte
-                            self.parse_buffer.push(byte);
-                            i += 1;
-                        }
+                    } else {
+                        // No terminator found - consume rest of input
+                        self.parse_buffer.extend_from_slice(&input[i..]);
+                        i = input.len();
                     }
                 }
 
                 ParserState::DcsString => {
-                    match byte {
-                        0x1B => {
-                            // ESC - might be ST (String Terminator: ESC \)
-                            self.state = ParserState::DcsEscape;
-                            i += 1;
-                        }
-                        _ => {
-                            // Collect byte
-                            self.parse_buffer.push(byte);
-                            i += 1;
-                        }
+                    // Use memchr to quickly find the next ESC byte
+                    if let Some(esc_pos) = memchr::memchr(0x1B, &input[i..]) {
+                        // Copy everything up to ESC into parse_buffer
+                        self.parse_buffer.extend_from_slice(&input[i..i + esc_pos]);
+                        i += esc_pos;
+                        // Now we're at ESC - transition to DcsEscape state
+                        self.state = ParserState::DcsEscape;
+                        i += 1;
+                    } else {
+                        // No ESC found - consume rest of input
+                        self.parse_buffer.extend_from_slice(&input[i..]);
+                        i = input.len();
                     }
                 }
 
@@ -913,17 +1015,18 @@ impl CommandParser for AnsiParser {
                 }
 
                 ParserState::ApsString => {
-                    match byte {
-                        0x1B => {
-                            // ESC - might be ST (String Terminator: ESC \)
-                            self.state = ParserState::ApsEscape;
-                            i += 1;
-                        }
-                        _ => {
-                            // Collect byte
-                            self.parse_buffer.push(byte);
-                            i += 1;
-                        }
+                    // Use memchr to quickly find the next ESC byte
+                    if let Some(esc_pos) = memchr::memchr(0x1B, &input[i..]) {
+                        // Copy everything up to ESC into parse_buffer
+                        self.parse_buffer.extend_from_slice(&input[i..i + esc_pos]);
+                        i += esc_pos;
+                        // Now we're at ESC - transition to ApsEscape state
+                        self.state = ParserState::ApsEscape;
+                        i += 1;
+                    } else {
+                        // No ESC found - consume rest of input
+                        self.parse_buffer.extend_from_slice(&input[i..]);
+                        i = input.len();
                     }
                 }
 
@@ -989,6 +1092,11 @@ impl AnsiParser {
                             // Set window title
                             sink.operating_system_command(OperatingSystemCommand::SetWindowTitle(pt_bytes));
                         }
+                        4 => {
+                            // Set Palette Color: OSC 4 ; index ; rgb:rr/gg/bb BEL
+                            // Format: "4;0;rgb:00/00/00" or just "0;rgb:00/00/00" after the first semicolon
+                            self.parse_osc_palette(pt_bytes, sink);
+                        }
                         8 => {
                             // Hyperlink: OSC 8 ; params ; URI BEL
                             if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
@@ -1013,6 +1121,90 @@ impl AnsiParser {
         sink.report_error(ParseError::MalformedSequence {
             description: "Unknown or malformed escape sequence",
         });
+    }
+
+    #[inline(always)]
+    fn parse_osc_palette(&self, data: &[u8], sink: &mut dyn CommandSink) {
+        // Parse OSC 4 palette entries: "index;rgb:rr/gg/bb"
+        // Can have multiple entries separated by more semicolons
+
+        let data_str = match std::str::from_utf8(data) {
+            Ok(s) => s,
+            Err(_) => {
+                sink.report_error(ParseError::MalformedSequence {
+                    description: "Invalid UTF-8 in OSC 4 palette sequence",
+                });
+                return;
+            }
+        };
+
+        // Split by semicolons to handle multiple palette entries
+        let parts: Vec<&str> = data_str.split(';').collect();
+
+        let mut i = 0;
+        while i + 1 < parts.len() {
+            // Parse color index
+            let index = match parts[i].parse::<u32>() {
+                Ok(idx) if idx <= 255 => idx as u8,
+                _ => {
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Invalid color index in OSC 4",
+                    });
+                    i += 2;
+                    continue;
+                }
+            };
+
+            // Parse rgb:rr/gg/bb format
+            let color_spec = parts[i + 1];
+            if let Some(rgb_part) = color_spec.strip_prefix("rgb:").or_else(|| color_spec.strip_prefix("RGB:")) {
+                let rgb_parts: Vec<&str> = rgb_part.split('/').collect();
+                if rgb_parts.len() == 3 {
+                    // Parse hex values (can be 1-4 hex digits each, we take first 2)
+                    let r = Self::parse_hex_color_component(rgb_parts[0]);
+                    let g = Self::parse_hex_color_component(rgb_parts[1]);
+                    let b = Self::parse_hex_color_component(rgb_parts[2]);
+
+                    if let (Some(r), Some(g), Some(b)) = (r, g, b) {
+                        sink.operating_system_command(OperatingSystemCommand::SetPaletteColor(index, r, g, b));
+                    } else {
+                        sink.report_error(ParseError::MalformedSequence {
+                            description: "Invalid RGB values in OSC 4",
+                        });
+                    }
+                } else {
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Invalid RGB format in OSC 4",
+                    });
+                }
+            } else {
+                sink.report_error(ParseError::MalformedSequence {
+                    description: "Missing 'rgb:' prefix in OSC 4",
+                });
+            }
+
+            i += 2;
+        }
+    }
+
+    #[inline(always)]
+    fn parse_hex_color_component(hex_str: &str) -> Option<u8> {
+        // X11 color spec can be 1-4 hex digits: h, hh, hhh, hhhh
+        // We take the most significant byte (first 2 hex digits)
+        if hex_str.is_empty() || hex_str.len() > 4 {
+            return None;
+        }
+
+        // Pad or truncate to 2 hex digits
+        let normalized = if hex_str.len() == 1 {
+            // Single digit: repeat it (e.g., "f" -> "ff")
+            format!("{}{}", hex_str, hex_str)
+        } else {
+            // Take first 2 characters
+            hex_str[..2.min(hex_str.len())].to_string()
+        };
+
+        u8::from_str_radix(&normalized, 16).ok()
     }
 
     #[inline(always)]
@@ -1202,17 +1394,16 @@ impl AnsiParser {
                 sink.emit(TerminalCommand::CsiSpecialKey(n as u16));
             }
             b'c' => {
-                sink.emit(TerminalCommand::CsiDeviceAttributes);
+                sink.request(TerminalRequest::DeviceAttributes);
             }
             b'n' => {
                 let n = self.params.first().copied().unwrap_or(0);
-                match DeviceStatusReport::from_u16(n) {
-                    Some(report) => sink.emit(TerminalCommand::CsiDeviceStatusReport(report)),
-                    None => {
-                        sink.report_error(ParseError::InvalidParameter {
-                            command: "CsiDeviceStatusReport",
-                            value: n,
-                        });
+                match n {
+                    5 => sink.request(TerminalRequest::DeviceStatusReport),
+                    6 => sink.request(TerminalRequest::CursorPositionReport),
+                    255 => sink.request(TerminalRequest::ScreenSizeReport),
+                    _ => {
+                        sink.report_error(ParseError::InvalidParameter { command: "DSR", value: n });
                     }
                 }
             }
@@ -1285,6 +1476,45 @@ impl AnsiParser {
                             });
                         }
                     }
+                }
+            }
+            b'n' => {
+                // DEC Private Device Status Report
+                if self.params.len() == 1 {
+                    match self.params.first() {
+                        Some(62) => {
+                            // DSR—Macro Space Report
+                            sink.request(TerminalRequest::MacroSpaceReport);
+                        }
+                        Some(63) => {
+                            // Memory Checksum Report (DECCKSR) - needs 2 params
+                            sink.report_error(ParseError::InvalidParameter { command: "DECCKSR", value: 63 });
+                        }
+                        _ => {
+                            sink.report_error(ParseError::InvalidParameter {
+                                command: "DEC DSR",
+                                value: self.params[0],
+                            });
+                        }
+                    }
+                } else if self.params.len() == 2 && self.params[0] == 63 {
+                    // Memory Checksum Report (DECCKSR) with 2 params
+                    // Calculate checksum from all macros (0-63)
+                    let pid = self.params[1];
+                    let mut sum: u32 = 0;
+                    for i in 0..64 {
+                        if let Some(m) = self.macros.get(&i) {
+                            for b in m {
+                                sum = sum.wrapping_add(*b as u32);
+                            }
+                        }
+                    }
+                    let checksum: u16 = (sum & 0xFFFF) as u16;
+                    sink.request(TerminalRequest::MemoryChecksumReport(pid, checksum));
+                } else {
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Invalid parameter count for DEC DSR",
+                    });
                 }
             }
             _ => {

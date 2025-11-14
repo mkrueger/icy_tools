@@ -401,3 +401,15 @@ pub trait TextPane {
         }
     }
 }
+
+pub fn decrqcra_checksum(buf: &dyn TextPane, top: i32, left: i32, bottom: i32, right: i32) -> u16 {
+    // Matches the original DEC VT300/VT420 documentation and xterm’s implementation.
+    let mut sum: u32 = 0;
+    for y in top..=bottom {
+        for x in left..=right {
+            let ch = buf.get_char(crate::Position { x, y });
+            sum = sum.wrapping_add(ch.ch as u32);
+        }
+    }
+    (sum & 0xFFFF) as u16
+}

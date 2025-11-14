@@ -554,7 +554,7 @@ impl BufferParser for Parser {
                                         }
                                     }
                                 }
-                                let checksum = (sum & 0xFFFF) as u16;
+                                let checksum: u16 = (sum & 0xFFFF) as u16;
                                 return Ok(CallbackAction::SendString(format!("\x1BP{}!~{checksum:04X}\x1B\\", self.parsed_numbers[1])));
                             }
                             _ => {

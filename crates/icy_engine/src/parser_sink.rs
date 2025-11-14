@@ -437,10 +437,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
             // Special keys (typically handled by application)
             TerminalCommand::CsiSpecialKey(_key) => {}
 
-            // Device queries (typically handled by application layer)
-            TerminalCommand::CsiDeviceAttributes => {}
-            TerminalCommand::CsiDeviceStatusReport(_report) => {}
-
             // DEC Private Modes
             TerminalCommand::CsiDecPrivateModeSet(mode) => {
                 self.set_dec_private_mode(mode, true);
@@ -485,11 +481,21 @@ impl<'a> CommandSink for ScreenSink<'a> {
             // Commands not yet fully mapped
             TerminalCommand::CsiFontSelection(_, _) => {}
             TerminalCommand::CsiSelectCommunicationSpeed(_, _) => {}
-            TerminalCommand::CsiRequestChecksumRectangularArea(_, _, _, _, _) => {}
-            TerminalCommand::CsiRequestTabStopReport(_) => {}
             TerminalCommand::CsiFillRectangularArea(_, _, _, _, _) => {}
             TerminalCommand::CsiEraseRectangularArea(_, _, _, _) => {}
             TerminalCommand::CsiSelectiveEraseRectangularArea(_, _, _, _) => {}
+            TerminalCommand::CsiEqualsSetMargins(top, bottom) => {
+                // CSI = {top};{bottom}r - Set margins
+                let top = (top as i32).saturating_sub(1).max(0);
+                let bottom = (bottom as i32).saturating_sub(1).max(0);
+                self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
+            }
+            TerminalCommand::CsiEqualsSetSpecificMargins(top, bottom) => {
+                // CSI = {top};{bottom}m - Set specific margins
+                let top = (top as i32).saturating_sub(1).max(0);
+                let bottom = (bottom as i32).saturating_sub(1).max(0);
+                self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
+            }
         }
     }
 
@@ -572,6 +578,11 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 if let Ok(title_str) = std::str::from_utf8(title) {
                     log::debug!("OSC: Set window title to '{}'", title_str);
                 }
+            }
+            OperatingSystemCommand::SetPaletteColor(index, r, g, b) => {
+                // Set palette color
+                self.screen.palette_mut().set_color_rgb(index as u32, r, g, b);
+                log::debug!("OSC: Set palette color {} to RGB({}, {}, {})", index, r, g, b);
             }
             OperatingSystemCommand::Hyperlink { params, uri } => {
                 if let (Ok(_params_str), Ok(uri_str)) = (std::str::from_utf8(params), std::str::from_utf8(uri)) {

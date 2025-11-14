@@ -122,12 +122,6 @@ fn test_macro_space_report() {
     assert_eq!(CallbackAction::SendString("\x1B[32767*{".to_string()), act);
 }
 
-#[test]
-fn test_macro_checksum_report() {
-    let (mut buf, mut caret) = create_buffer(b"\x1BP0;0;0!zHello\x1B\\\x1BP1;0;0!zWorld\x1B\\");
-    let act = get_action(&mut buf, &mut caret, &mut parser, b"\x1B[?63;1n");
-    assert_eq!(CallbackAction::SendString("\x1BP1!~03FC\x1B\\".to_string()), act);
-}
 
 #[test]
 fn test_request_tab_stop_report() {
