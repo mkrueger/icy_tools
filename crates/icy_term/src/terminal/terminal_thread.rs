@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
+use icy_parser_core::*;
 
 /// Messages sent to the terminal thread
 #[derive(Debug, Clone)]
@@ -164,6 +165,33 @@ impl<'a> CommandSink for TerminalSink<'a> {
             }).collect(),
         };
         let _ = self.event_tx.send(TerminalEvent::PlayMusic(engine_music));
+    }
+
+    fn emit_rip(&mut self, cmd: RipCommand) {
+        self.screen_sink.emit_rip(cmd);
+    }
+    fn emit_skypix(&mut self, cmd: SkypixCommand) {
+        self.screen_sink.emit_skypix(cmd);
+    }
+    fn emit_igs(&mut self, cmd: IgsCommand) {
+        self.screen_sink.emit_igs(cmd);
+
+    }
+    fn device_control(&mut self, dcs: DeviceControlString<'_>) {
+        self.screen_sink.device_control(dcs);
+    }
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand<'_>) {
+        self.screen_sink.operating_system_command(osc);
+    }
+
+    /// Emit an Application Program String (APS) sequence: ESC _ ... ESC \
+    /// Default implementation does nothing.
+    fn aps(&mut self, _data: &[u8]) {
+        // ignore for now
+    }
+
+    fn report_error(&mut self, error: ParseError) {
+        log::error!("Parse Error:{:?}", error);
     }
 }
 
