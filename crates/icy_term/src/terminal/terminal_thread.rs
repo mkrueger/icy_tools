@@ -6,7 +6,7 @@ use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
 use icy_engine::rip::RIP_SCREEN_SIZE;
 use icy_engine::skypix::SKYPIX_SCREEN_SIZE;
-use icy_engine::{ATARI, BitFont, EditableScreen, PaletteScreenBuffer, ScreenSink, TextScreen, rip};
+use icy_engine::{ATARI, BitFont, EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, TextScreen, rip};
 use icy_engine::{AutoWrapMode, ExtMouseMode, FontSelectionState, IceMode, MouseMode, OriginMode};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
@@ -197,6 +197,7 @@ impl<'a> CommandSink for TerminalSink<'a> {
     fn request(&mut self, request: TerminalRequest) {
         use icy_parser_core::TerminalRequest;
 
+        println!("request: {:?}", request);
         match request {
             TerminalRequest::DeviceAttributes => {
                 // respond with IcyTerm as ASCII followed by the package version.
@@ -374,6 +375,12 @@ impl<'a> CommandSink for TerminalSink<'a> {
                 // Checksum was calculated by the parser from macro memory
                 let response = format!("\x1BP{}!~{:04X}\x1B\\", pid, checksum);
                 self.output.extend_from_slice(response.as_bytes());
+            }
+
+            TerminalRequest::RipRequestTerminalId => {
+                if self.screen_sink.screen().graphics_type() == icy_engine::GraphicsType::Rip {
+                    self.output.extend_from_slice(rip::RIP_TERMINAL_ID.as_bytes());
+                }
             }
             // RIPscrip and IGS requests are not implemented
             _ => {}
@@ -710,28 +717,17 @@ impl TerminalThread {
 
             match config.terminal_type {
                 TerminalEmulation::Rip => {
-                    let mut buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+                    let mut buf = PaletteScreenBuffer::new(GraphicsType::Rip);
                     rip::setup_rip_text_fonts(&mut buf);
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::Skypix => {
-                    let buf = PaletteScreenBuffer::new(SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+                    let buf = PaletteScreenBuffer::new(GraphicsType::Skypix);
                     //   buf.set_size((80, 42).into());
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::AtariST => {
-                    let res = if let ScreenMode::AtariST(cols) = screen_mode {
-                        if cols == 80 {
-                            icy_engine::igs::TerminalResolution::Medium
-                        } else {
-                            icy_engine::igs::TerminalResolution::Low
-                        }
-                    } else {
-                        icy_engine::igs::TerminalResolution::Low
-                    }
-                    .get_resolution();
-                    let font = BitFont::from_bytes("", ATARI).unwrap();
-                    let buf = PaletteScreenBuffer::new(res.width, res.height, font);
+                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(icy_engine::igs::TerminalResolution::Low));
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
 

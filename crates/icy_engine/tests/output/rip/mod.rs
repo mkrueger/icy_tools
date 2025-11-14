@@ -18,7 +18,7 @@ pub fn test_rip() {
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         let data = String::from_utf8_lossy(&data);
 
-        let mut buffer: PaletteScreenBuffer = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+        let mut buffer: PaletteScreenBuffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::Rip);
         rip::setup_rip_text_fonts(&mut buffer);
 
         let mut ansi_parser = ansi::Parser::default();

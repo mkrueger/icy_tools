@@ -500,10 +500,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
-        // RIP commands would need RIP engine integration
-        // For now, just log that we received one
-        log::debug!("Received RIP command: {:?}", cmd);
-        // TODO: Convert to appropriate callback when RIP engine is integrated
+        self.screen.handle_rip_command(cmd);
     }
 
     fn emit_skypix(&mut self, cmd: SkypixCommand) {

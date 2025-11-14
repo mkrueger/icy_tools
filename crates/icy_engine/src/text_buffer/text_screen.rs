@@ -1,3 +1,7 @@
+use core::panic;
+
+use icy_parser_core::RipCommand;
+
 use crate::{
     AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions,
     SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard, rip::bgi::MouseField,
@@ -544,5 +548,9 @@ impl EditableScreen for TextScreen {
 
     fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
         &mut self.saved_caret_state
+    }
+
+    fn handle_rip_command(&mut self, _cmd: RipCommand) {
+        panic!("RIP not supported for text screeens.");
     }
 }

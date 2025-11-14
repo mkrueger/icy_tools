@@ -144,7 +144,7 @@ impl Parser {
     }
 }
 
-static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
+pub static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
 
 impl Parser {
     pub fn start_command(&mut self, cmd: Box<dyn Command>) {

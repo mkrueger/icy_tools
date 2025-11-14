@@ -12,7 +12,8 @@ use crate::{
     load_atari_fonts,
 };
 
-#[derive(Default)]
+#[repr(u8)]
+#[derive(Default, Clone, Copy, PartialEq)]
 pub enum TerminalResolution {
     /// 320x200
     #[default]

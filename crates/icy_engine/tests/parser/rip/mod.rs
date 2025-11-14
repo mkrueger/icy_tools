@@ -287,9 +287,7 @@ fn test_roundtrip(arg: &str) {
 
 #[cfg(test)]
 fn create_rip_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> PaletteScreenBuffer {
-    use icy_engine::rip;
-
-    let mut buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+    let mut buf = PaletteScreenBuffer::new(icy_engine::GraphicsType::Rip);
 
     for &b in input {
         parser.print_char(&mut buf, b as char).unwrap();

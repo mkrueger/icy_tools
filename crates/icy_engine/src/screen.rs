@@ -1,12 +1,26 @@
 use std::cmp::max;
 
+use icy_parser_core::RipCommand;
+
 use crate::{
     AttributedChar, BitFont, CallbackAction, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
     TerminalState, TextAttribute, TextPane, caret, rip::bgi::MouseField,
 };
 
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq)]
+pub enum GraphicsType {
+    Text,
+    Rip,
+    IGS(crate::igs::TerminalResolution),
+    Skypix,
+}
+
 pub trait Screen: TextPane + Send {
     fn buffer_type(&self) -> crate::BufferType;
+    fn graphics_type(&self) -> crate::GraphicsType {
+        crate::GraphicsType::Text
+    }
 
     fn ice_mode(&self) -> IceMode;
 
@@ -535,6 +549,8 @@ pub trait EditableScreen: RgbaScreen {
     fn saved_caret_pos(&mut self) -> &mut Position;
 
     fn saved_cursor_state(&mut self) -> &mut SavedCaretState;
+
+    fn handle_rip_command(&mut self, cmd: RipCommand);
 }
 
 #[derive(Clone, Default)]

@@ -1,9 +1,18 @@
+use icy_parser_core::RipCommand;
+
+mod rip_impl;
+
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
-    rip::bgi::{DEFAULT_BITFONT, MouseField},
+    ATARI, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line,
+    Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    rip::{
+        self,
+        bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    },
 };
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::thread::JoinHandle;
 
 pub struct PaletteScreenBuffer {
@@ -27,18 +36,35 @@ pub struct PaletteScreenBuffer {
     // Font dimensions in pixels
     mouse_fields: Vec<MouseField>,
 
+    // BGI graphics handler
+    pub bgi: Bgi,
+
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
     buffer_version: std::sync::atomic::AtomicU64,
 
     saved_pos: Position,
     saved_cursor_state: SavedCaretState,
+    graphics_type: GraphicsType,
 }
 
 impl PaletteScreenBuffer {
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
-    pub fn new(px_width: i32, px_height: i32, font: BitFont) -> Self {
+    pub fn new(graphics_type: GraphicsType) -> Self {
+        let (px_width, px_height, font) = match graphics_type {
+            GraphicsType::Text => {
+                panic!()
+            }
+            GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, RIP_FONT.clone()),
+            GraphicsType::IGS(term_res) => {
+                let res = term_res.get_resolution();
+                let font = BitFont::from_bytes("", ATARI).unwrap();
+                (res.width, res.height, font)
+            }
+            GraphicsType::Skypix => (800, 600, rip::bgi::DEFAULT_BITFONT.clone()),
+        };
+
         // Calculate character grid dimensions from pixel size
         let char_cols = px_width / font.size().width;
         let char_rows = px_height / font.size().height;
@@ -70,10 +96,12 @@ impl PaletteScreenBuffer {
             hyperlinks: Vec::new(),
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
+            bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
             saved_pos: Position::default(),
             saved_cursor_state: SavedCaretState::default(),
+            graphics_type,
         }
     }
 
@@ -214,6 +242,10 @@ impl Screen for PaletteScreenBuffer {
 
     fn terminal_state(&self) -> &TerminalState {
         &self.terminal_state
+    }
+
+    fn graphics_type(&self) -> crate::GraphicsType {
+        self.graphics_type
     }
 
     fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
@@ -585,5 +617,9 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
         &mut self.saved_cursor_state
+    }
+
+    fn handle_rip_command(&mut self, cmd: RipCommand) {
+        self.handle_rip_command_impl(cmd);
     }
 }

@@ -4,9 +4,7 @@ use icy_engine::parsers::igs::Parser;
 use icy_engine::{ATARI, BitFont, BufferParser, Caret, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
 
 fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (PaletteScreenBuffer, Caret) {
-    let font = BitFont::from_bytes("", ATARI).unwrap();
-    let res = icy_engine::igs::TerminalResolution::Low.get_resolution();
-    let mut buffer = PaletteScreenBuffer::new(res.width, res.height, font);
+    let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::igs::TerminalResolution::Low));
     *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
 
     for &b in input {

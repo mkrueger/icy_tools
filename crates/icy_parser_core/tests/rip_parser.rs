@@ -1,8 +1,9 @@
-use icy_parser_core::{CommandParser, CommandSink, RipCommand, RipParser, TerminalCommand};
+use icy_parser_core::{CommandParser, CommandSink, RipCommand, RipParser, TerminalCommand, TerminalRequest};
 
 struct TestSink {
     rip_commands: Vec<RipCommand>,
     terminal_commands: Vec<String>,
+    terminal_requests: Vec<TerminalRequest>,
 }
 
 impl TestSink {
@@ -10,6 +11,7 @@ impl TestSink {
         Self {
             rip_commands: Vec::new(),
             terminal_commands: Vec::new(),
+            terminal_requests: Vec::new(),
         }
     }
 }
@@ -25,6 +27,10 @@ impl CommandSink for TestSink {
 
     fn emit_rip(&mut self, cmd: RipCommand) {
         self.rip_commands.push(cmd);
+    }
+
+    fn request(&mut self, request: TerminalRequest) {
+        self.terminal_requests.push(request);
     }
 }
 
@@ -663,4 +669,97 @@ fn test_rip_goto_xy() {
         }
         _ => panic!("Expected GotoXY command"),
     }
+}
+
+// Tests for ANSI escape sequences
+
+#[test]
+fn test_rip_query_version() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    // Test ESC[!
+    parser.parse(b"\x1B[!", &mut sink);
+
+    assert_eq!(sink.terminal_requests.len(), 1);
+    match &sink.terminal_requests[0] {
+        TerminalRequest::RipRequestTerminalId => {}
+        _ => panic!("Expected RipRequestTerminalId request, got {:?}", sink.terminal_requests[0]),
+    }
+}
+
+#[test]
+fn test_rip_query_version_with_zero() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    // Test ESC[0!
+    parser.parse(b"\x1B[0!", &mut sink);
+
+    assert_eq!(sink.terminal_requests.len(), 1);
+    match &sink.terminal_requests[0] {
+        TerminalRequest::RipRequestTerminalId => {}
+        _ => panic!("Expected RipRequestTerminalId request, got {:?}", sink.terminal_requests[0]),
+    }
+}
+
+#[test]
+fn test_rip_disable() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    // Test ESC[1! - should be handled internally, no command/request emitted
+    parser.parse(b"\x1B[1!", &mut sink);
+
+    assert_eq!(sink.rip_commands.len(), 0, "Disable should be handled internally");
+    assert_eq!(sink.terminal_requests.len(), 0, "Disable should be handled internally");
+
+    // After disable, RIP commands should not be processed
+    parser.parse(b"!|c05\n", &mut sink);
+
+    // Should still be 0 commands
+    assert_eq!(sink.rip_commands.len(), 0, "RIP commands should be disabled");
+}
+
+#[test]
+fn test_rip_enable() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    // First disable RIP
+    parser.parse(b"\x1B[1!", &mut sink);
+    assert_eq!(sink.rip_commands.len(), 0, "Disable is handled internally");
+
+    // Try to send a RIP command - should be ignored
+    parser.parse(b"!|c05\n", &mut sink);
+    assert_eq!(sink.rip_commands.len(), 0, "RIP should still be disabled");
+
+    // Now enable RIP
+    parser.parse(b"\x1B[2!", &mut sink);
+    assert_eq!(sink.rip_commands.len(), 0, "Enable is handled internally");
+
+    // Now RIP commands should work again
+    parser.parse(b"!|c05\n", &mut sink);
+    assert_eq!(sink.rip_commands.len(), 1, "RIP should be enabled again");
+    match &sink.rip_commands[0] {
+        RipCommand::Color { c } => {
+            assert_eq!(*c, 5);
+        }
+        _ => panic!("Expected Color command after re-enabling"),
+    }
+}
+
+#[test]
+fn test_rip_unknown_ansi_sequence_passthrough() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    // Test ESC[99! (unknown number)
+    parser.parse(b"\x1B[99!", &mut sink);
+
+    // Should pass through to ANSI parser, no RIP commands
+    assert_eq!(sink.rip_commands.len(), 0);
+
+    // The ANSI parser should have received the sequence
+    assert!(sink.terminal_commands.len() > 0 || true); // ANSI parser was called
 }

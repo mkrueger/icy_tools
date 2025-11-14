@@ -1,4 +1,4 @@
-use icy_engine::{ATARI, BitFont, BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
+use icy_engine::{BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
 use std::fs::{self};
 
 use crate::compare_output;
@@ -12,9 +12,7 @@ pub fn test_igs_lowres() {
         }
 
         let data = fs::read_to_string(&cur_entry).expect("Error reading file.");
-        let font = BitFont::from_bytes("", ATARI).unwrap();
-        let res = icy_engine::igs::TerminalResolution::Low.get_resolution();
-        let mut buffer = PaletteScreenBuffer::new(res.width, res.height, font);
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::igs::TerminalResolution::Low));
         *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
 
         let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
@@ -36,9 +34,7 @@ pub fn test_igs_highres() {
         }
 
         let data = fs::read_to_string(&cur_entry).expect("Error reading file.");
-        let font = BitFont::from_bytes("", ATARI).unwrap();
-        let res = icy_engine::igs::TerminalResolution::High.get_resolution();
-        let mut buffer = PaletteScreenBuffer::new(res.width, res.height, font);
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::igs::TerminalResolution::High));
         *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
 
         let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
