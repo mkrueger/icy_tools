@@ -21,7 +21,6 @@ enum OwnedCommand {
     CsiEraseInLine(EraseInLineMode),
     CsiDecPrivateModeReset(DecPrivateMode),
     CsiSelectGraphicRendition(SgrAttribute),
-    AvtRepeatChar(u8, u8),
 }
 
 impl CommandSink for CollectSink {
@@ -43,7 +42,6 @@ impl CommandSink for CollectSink {
             TerminalCommand::CsiEraseInLine(mode) => OwnedCommand::CsiEraseInLine(mode),
             TerminalCommand::CsiDecPrivateModeReset(mode) => OwnedCommand::CsiDecPrivateModeReset(mode),
             TerminalCommand::CsiSelectGraphicRendition(attr) => OwnedCommand::CsiSelectGraphicRendition(attr),
-            TerminalCommand::AvtRepeatChar(ch, cnt) => OwnedCommand::AvtRepeatChar(ch, cnt),
             _ => panic!("Unexpected command type in Avatar test"),
         };
         self.commands.push(owned);
@@ -92,7 +90,7 @@ fn test_repeat_character() {
 
     assert_eq!(sink.commands.len(), 3);
     assert_eq!(sink.commands[0], OwnedCommand::Printable(b"X".to_vec()));
-    assert_eq!(sink.commands[1], OwnedCommand::AvtRepeatChar(b'b', 3));
+    assert_eq!(sink.commands[1], OwnedCommand::Printable(b"bbb".to_vec()));
     assert_eq!(sink.commands[2], OwnedCommand::Printable(b"Y".to_vec()));
 }
 
@@ -104,8 +102,7 @@ fn test_zero_repeat() {
     // Zero repeat count
     parser.parse(b"\x19b\x00", &mut sink);
 
-    assert_eq!(sink.commands.len(), 1);
-    assert_eq!(sink.commands[0], OwnedCommand::AvtRepeatChar(b'b', 0));
+    assert_eq!(sink.commands.len(), 0);
 }
 
 #[test]
@@ -205,7 +202,7 @@ fn test_mixed_content() {
         OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(0)))
     );
     assert_eq!(sink.commands[3], OwnedCommand::Printable(b" World".to_vec()));
-    assert_eq!(sink.commands[4], OwnedCommand::AvtRepeatChar(b'!', 5));
+    assert_eq!(sink.commands[3], OwnedCommand::Printable(b"!!!!!".to_vec()));
     assert_eq!(sink.commands[5], OwnedCommand::Printable(b" End".to_vec()));
 }
 

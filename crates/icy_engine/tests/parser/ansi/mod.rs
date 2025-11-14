@@ -1,5 +1,6 @@
 #![allow(clippy::float_cmp)]
 
+use icy_engine::SavedCaretState;
 use icy_engine::ansi::sound::MusicAction;
 use icy_engine::{
     AttributedChar, BufferParser, CallbackAction, Caret, Color, EditableScreen, IceMode, Position, SelectionMask, TerminalScrolling, TextAttribute, TextBuffer,
@@ -17,6 +18,8 @@ fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (TextBuffer, 
         selection_opt: None,
         selection_mask: SelectionMask::default(),
         mouse_fields: Vec::new(),
+        saved_caret_pos: Position::default(),
+        saved_caret_state: SavedCaretState::default(),
     };
 
     screen.terminal_state_mut().is_terminal_buffer = true;
@@ -43,6 +46,8 @@ fn update_buffer<T: BufferParser>(buf: &mut TextBuffer, caret: &mut Caret, parse
         selection_opt: None,
         selection_mask: SelectionMask::default(),
         mouse_fields: Vec::new(),
+        saved_caret_pos: Position::default(),
+        saved_caret_state: SavedCaretState::default(),
     };
 
     for b in input {
@@ -62,6 +67,8 @@ fn update_buffer_force<T: BufferParser>(buf: &mut TextBuffer, caret: &mut Caret,
         selection_opt: None,
         selection_mask: SelectionMask::default(),
         mouse_fields: Vec::new(),
+        saved_caret_pos: Position::default(),
+        saved_caret_state: SavedCaretState::default(),
     };
 
     for b in input {
@@ -80,6 +87,8 @@ fn get_action<T: BufferParser>(buf: &mut TextBuffer, caret: &mut Caret, parser: 
         selection_opt: None,
         selection_mask: SelectionMask::default(),
         mouse_fields: Vec::new(),
+        saved_caret_pos: Position::default(),
+        saved_caret_state: SavedCaretState::default(),
     };
 
     for b in input {

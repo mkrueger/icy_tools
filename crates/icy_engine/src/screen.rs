@@ -531,4 +531,15 @@ pub trait EditableScreen: RgbaScreen {
             }
         }
     }
+
+    fn saved_caret_pos(&mut self) -> &mut Position;
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState;
+}
+
+#[derive(Clone, Default)]
+pub struct SavedCaretState {
+    pub caret: crate::Caret,
+    pub origin_mode: crate::OriginMode,
+    pub auto_wrap_mode: crate::AutoWrapMode,
 }

@@ -216,7 +216,7 @@ impl CommandParser for AvatarParser {
 
                 AvatarState::ReadRepeatCount { ch } => {
                     // Repeat count
-                    sink.emit(TerminalCommand::AvtRepeatChar(ch, byte));
+                    sink.print(&vec![ch; byte as usize]);
                     self.reset();
                     i += 1;
                     printable_start = i;

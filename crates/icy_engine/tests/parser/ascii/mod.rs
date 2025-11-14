@@ -1,16 +1,9 @@
-use icy_engine::{BufferParser, Caret, EditableScreen, Position, SelectionMask, TextBuffer, TextPane, TextScreen, parsers};
+use icy_engine::{BufferParser, Caret, EditableScreen, Position, SavedCaretState, SelectionMask, TextBuffer, TextPane, TextScreen, parsers};
 
 // Test helper functions - these work with TextScreen internally but return (buffer, caret) tuple
 fn create_buffer(input: &[u8]) -> (TextBuffer, Caret) {
     let mut parser = parsers::ascii::Parser::default();
-    let mut screen = TextScreen {
-        buffer: TextBuffer::create((80, 25)),
-        caret: Caret::default(),
-        current_layer: 0,
-        selection_opt: None,
-        selection_mask: SelectionMask::default(),
-        mouse_fields: Vec::new(),
-    };
+    let mut screen = TextScreen::new((80, 25));
 
     screen.terminal_state_mut().is_terminal_buffer = true;
 
@@ -32,6 +25,8 @@ fn update_buffer(buf: &mut TextBuffer, caret: &mut Caret, input: &[u8]) {
         selection_opt: None,
         selection_mask: SelectionMask::default(),
         mouse_fields: Vec::new(),
+        saved_caret_pos: Position::default(),
+        saved_caret_state: SavedCaretState::default(),
     };
 
     for b in input {
@@ -121,9 +116,7 @@ fn test_eol_start() {
 
 #[test]
 fn test_eol_line_break() {
-    let (mut buf, mut caret) = create_buffer(
-        b"################################################################################\r\n",
-    );
+    let (mut buf, mut caret) = create_buffer(b"################################################################################\r\n");
     assert_eq!(Position::new(0, 2), caret.position());
 
     update_buffer(&mut buf, &mut caret, b"#");
@@ -144,9 +137,7 @@ fn test_url_scanner_simple() {
 
 #[test]
 fn test_url_scanner_multiple() {
-    let (buf, _) = create_buffer(
-        b"\n\r http://www.example.com https://www.google.com\n\rhttps://github.com/mkrueger/icy_engine",
-    );
+    let (buf, _) = create_buffer(b"\n\r http://www.example.com https://www.google.com\n\rhttps://github.com/mkrueger/icy_engine");
 
     let hyperlinks = buf.parse_hyperlinks();
 

@@ -15,6 +15,7 @@ pub struct AnsiParser {
     state: ParserState,
     params: Vec<u16>,
     parse_buffer: Vec<u8>,
+    last_char: u8,
     macros: std::collections::HashMap<usize, Vec<u8>>,
 }
 
@@ -249,6 +250,7 @@ impl CommandParser for AnsiParser {
                         0x1B => {
                             // ESC - start escape sequence
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             self.state = ParserState::Escape;
@@ -258,6 +260,7 @@ impl CommandParser for AnsiParser {
                         0x07 => {
                             // BEL
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Bell);
@@ -267,6 +270,7 @@ impl CommandParser for AnsiParser {
                         0x08 => {
                             // BS
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Backspace);
@@ -276,6 +280,7 @@ impl CommandParser for AnsiParser {
                         0x09 => {
                             // HT
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Tab);
@@ -285,6 +290,7 @@ impl CommandParser for AnsiParser {
                         0x0A => {
                             // LF
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::LineFeed);
@@ -294,6 +300,7 @@ impl CommandParser for AnsiParser {
                         0x0C => {
                             // FF
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::FormFeed);
@@ -303,6 +310,7 @@ impl CommandParser for AnsiParser {
                         0x0D => {
                             // CR
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::CarriageReturn);
@@ -312,6 +320,7 @@ impl CommandParser for AnsiParser {
                         0x7F => {
                             // DEL
                             if i > printable_start {
+                                self.last_char = input[i - 1];
                                 sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Delete);
@@ -938,6 +947,7 @@ impl CommandParser for AnsiParser {
 
         // Emit any remaining printable bytes
         if i > printable_start && self.state == ParserState::Ground {
+            self.last_char = input[i - 1];
             sink.print(&input[printable_start..i]);
         }
     }
@@ -1130,7 +1140,7 @@ impl AnsiParser {
             }
             b'b' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiRepeatPrecedingCharacter(n as u16));
+                sink.print(&vec![self.last_char; n as usize]);
             }
             b's' => {
                 sink.emit(TerminalCommand::CsiSaveCursorPosition);

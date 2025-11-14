@@ -474,9 +474,6 @@ pub enum TerminalCommand {
     /// DL - Delete Line: ESC[{n}M
     CsiDeleteLine(u16),
 
-    CsiRepeatPrecedingCharacter(u16),
-    /// REP - Repeat preceding character: ESC[{n}b
-
     /// VPA - Line Position Absolute: ESC[{n}d
     CsiLinePositionAbsolute(u16),
     /// VPR - Line Position Forward: ESC[{n}e
@@ -570,10 +567,6 @@ pub enum TerminalCommand {
     EscRestoreCursor,
     /// RIS - Reset to Initial State: ESC c
     EscReset,
-
-    // Avatar (Advanced Video Attribute Terminal Assembler and Recreator) commands
-    /// AVT Repeat Character: ^Y{char}{count}
-    AvtRepeatChar(u8, u8),
 }
 
 /// Music style for ANSI music playback

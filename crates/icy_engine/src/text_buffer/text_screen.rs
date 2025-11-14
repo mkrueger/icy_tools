@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions, Screen,
-    Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard, rip::bgi::MouseField,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions,
+    SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard, rip::bgi::MouseField,
 };
 
 pub struct TextScreen {
@@ -12,6 +12,9 @@ pub struct TextScreen {
     pub selection_opt: Option<Selection>,
     pub selection_mask: SelectionMask,
     pub mouse_fields: Vec<MouseField>,
+
+    pub saved_caret_pos: Position,
+    pub saved_caret_state: SavedCaretState,
 }
 
 impl TextScreen {
@@ -23,6 +26,8 @@ impl TextScreen {
             selection_opt: None,
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
+            saved_caret_pos: Position::default(),
+            saved_caret_state: SavedCaretState::default(),
         }
     }
 }
@@ -531,5 +536,13 @@ impl EditableScreen for TextScreen {
 
     fn mark_dirty(&self) {
         self.buffer.mark_dirty()
+    }
+
+    fn saved_caret_pos(&mut self) -> &mut Position {
+        &mut self.saved_caret_pos
+    }
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
+        &mut self.saved_caret_state
     }
 }

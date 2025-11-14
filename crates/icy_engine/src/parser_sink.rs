@@ -22,53 +22,26 @@ use icy_parser_core::{
     OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline,
 };
 
-use crate::{AttributedChar, AutoWrapMode, CallbackAction, Caret, EditableScreen, OriginMode, Position};
-
-#[derive(Clone)]
-struct SavedCursorState {
-    caret: Caret,
-    origin_mode: OriginMode,
-    auto_wrap_mode: AutoWrapMode,
-}
-
+use crate::{AttributedChar, EditableScreen, Position, SavedCaretState};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
-pub struct ScreenSink<'a, T: EditableScreen + ?Sized> {
-    screen: &'a mut T,
-    /// Last printed character for REP (repeat) command
-    last_char: Option<AttributedChar>,
-    /// Collected callback actions that need to be handled by the application
-    pub callbacks: Vec<CallbackAction>,
-    
-    saved_pos: Option<Position>,
-    saved_cursor_state: Option<SavedCursorState>,
-    
+pub struct ScreenSink<'a> {
+    screen: &'a mut dyn EditableScreen,
 }
 
-impl<'a, T: EditableScreen + ?Sized> ScreenSink<'a, T> {
-    pub fn new(screen: &'a mut T) -> Self {
-        Self {
-            screen,
-            last_char: None,
-            callbacks: Vec::new(),
-            saved_cursor_state : None,
-            saved_pos: None
-        }
+impl<'a> ScreenSink<'a> {
+    pub fn new(screen: &'a mut dyn EditableScreen) -> Self {
+        Self { screen }
     }
 
     /// Get mutable reference to the underlying screen
-    pub fn screen_mut(&mut self) -> &mut T {
+    pub fn screen_mut(&mut self) -> &mut dyn EditableScreen {
         self.screen
     }
 
     /// Get reference to the underlying screen
-    pub fn screen(&self) -> &T {
+    pub fn screen(&self) -> &dyn EditableScreen {
         self.screen
-    }
-
-    /// Take the collected callbacks, leaving an empty vec in their place
-    pub fn take_callbacks(&mut self) -> Vec<CallbackAction> {
-        std::mem::take(&mut self.callbacks)
     }
 
     fn apply_sgr(&mut self, sgr: SgrAttribute) {
@@ -242,11 +215,10 @@ impl<'a, T: EditableScreen + ?Sized> ScreenSink<'a, T> {
     }
 }
 
-impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
+impl<'a> CommandSink for ScreenSink<'a> {
     fn print(&mut self, text: &[u8]) {
         for &byte in text {
             let ch = AttributedChar::new(byte as char, self.screen.caret().attribute);
-            self.last_char = Some(ch);
             self.screen.print_char(ch);
         }
     }
@@ -390,13 +362,6 @@ impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
                     self.screen.remove_terminal_line(self.screen.caret().y);
                 }
             }
-            TerminalCommand::CsiRepeatPrecedingCharacter(n) => {
-                if let Some(ch) = self.last_char {
-                    for _ in 0..n {
-                        self.screen.print_char(ch);
-                    }
-                }
-            }
 
             // Vertical positioning
             TerminalCommand::CsiLinePositionAbsolute(line) => {
@@ -441,35 +406,27 @@ impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
 
             // Cursor save/restore
             TerminalCommand::CsiSaveCursorPosition => {
-                self.saved_pos = Some(self.screen.caret().position());
-
+                *self.screen.saved_caret_pos() = self.screen.caret().position();
             }
             TerminalCommand::CsiRestoreCursorPosition => {
-                if let Some(pos) = self.saved_pos.take() {
-                    self.screen.caret_mut().set_position(pos);
-                }
+                let pos = *self.screen.saved_caret_pos();
+                self.screen.caret_mut().set_position(pos);
             }
 
             TerminalCommand::EscSaveCursor => {
                 // DECSC - Save Cursor
-                self.saved_cursor_state = Some(SavedCursorState {
+                *self.screen.saved_cursor_state() = SavedCaretState {
                     caret: self.screen.caret().clone(),
                     origin_mode: self.screen.terminal_state().origin_mode,
                     auto_wrap_mode: self.screen.terminal_state().auto_wrap_mode,
-                });
+                };
             }
 
             TerminalCommand::EscRestoreCursor => {
-                if let Some(saved_state) = &self.saved_cursor_state.take() {
-                    *self.screen.caret_mut() = saved_state.caret.clone();
-                    self.screen.terminal_state_mut().origin_mode = saved_state.origin_mode;
-                    self.screen.terminal_state_mut().auto_wrap_mode = saved_state.auto_wrap_mode;
-                } else {
-                    // If no saved state, reset to defaults per VT100 spec
-                    self.screen.caret_mut().reset();
-                    self.screen.terminal_state_mut().origin_mode = OriginMode::UpperLeftCorner;
-                    self.screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
-                }
+                let state = self.screen.saved_cursor_state().clone();
+                self.screen.terminal_state_mut().origin_mode = state.origin_mode;
+                self.screen.terminal_state_mut().auto_wrap_mode = state.auto_wrap_mode;
+                *self.screen.caret_mut() = state.caret;
             }
 
             // Terminal resize
@@ -523,14 +480,6 @@ impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
             }
             TerminalCommand::EscReset => {
                 self.screen.reset_terminal();
-            }
-
-            // Avatar
-            TerminalCommand::AvtRepeatChar(ch, count) => {
-                let ach = AttributedChar::new(ch as char, self.screen.caret().attribute);
-                for _ in 0..count {
-                    self.screen.print_char(ach);
-                }
             }
 
             // Commands not yet fully mapped
@@ -643,7 +592,6 @@ impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
                         position: self.screen.caret().position(),
                         length: 0,
                     });
-                    //                    }
                 }
             }
         }
@@ -653,28 +601,8 @@ impl<'a, T: EditableScreen + ?Sized> CommandSink for ScreenSink<'a, T> {
         // APS sequences not commonly used
     }
 
-    fn play_music(&mut self, music: AnsiMusic) {
+    fn play_music(&mut self, _music: AnsiMusic) {
         // Push music playback callback to be handled by application layer
-        self.callbacks.push(CallbackAction::PlayMusic(crate::parsers::ansi::sound::AnsiMusic {
-            music_actions: music
-                .music_actions
-                .into_iter()
-                .map(|action| match action {
-                    icy_parser_core::MusicAction::PlayNote(freq, len, dotted) => crate::parsers::ansi::sound::MusicAction::PlayNote(freq, len, dotted),
-                    icy_parser_core::MusicAction::Pause(len) => crate::parsers::ansi::sound::MusicAction::Pause(len),
-                    icy_parser_core::MusicAction::SetStyle(style) => {
-                        let mapped_style = match style {
-                            icy_parser_core::MusicStyle::Foreground => crate::parsers::ansi::sound::MusicStyle::Foreground,
-                            icy_parser_core::MusicStyle::Background => crate::parsers::ansi::sound::MusicStyle::Background,
-                            icy_parser_core::MusicStyle::Normal => crate::parsers::ansi::sound::MusicStyle::Normal,
-                            icy_parser_core::MusicStyle::Legato => crate::parsers::ansi::sound::MusicStyle::Legato,
-                            icy_parser_core::MusicStyle::Staccato => crate::parsers::ansi::sound::MusicStyle::Staccato,
-                        };
-                        crate::parsers::ansi::sound::MusicAction::SetStyle(mapped_style)
-                    }
-                })
-                .collect(),
-        }));
     }
 
     fn report_error(&mut self, error: ParseError) {

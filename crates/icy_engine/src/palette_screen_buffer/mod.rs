@@ -1,6 +1,6 @@
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     rip::bgi::{DEFAULT_BITFONT, MouseField},
 };
 use std::collections::HashMap;
@@ -30,6 +30,9 @@ pub struct PaletteScreenBuffer {
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
     buffer_version: std::sync::atomic::AtomicU64,
+
+    saved_pos: Position,
+    saved_cursor_state: SavedCaretState,
 }
 
 impl PaletteScreenBuffer {
@@ -69,6 +72,8 @@ impl PaletteScreenBuffer {
             mouse_fields: Vec::new(),
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
+            saved_pos: Position::default(),
+            saved_cursor_state: SavedCaretState::default(),
         }
     }
 
@@ -572,5 +577,13 @@ impl EditableScreen for PaletteScreenBuffer {
     fn mark_dirty(&self) {
         self.buffer_dirty.store(true, std::sync::atomic::Ordering::Release);
         self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn saved_caret_pos(&mut self) -> &mut Position {
+        &mut self.saved_pos
+    }
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
+        &mut self.saved_cursor_state
     }
 }

@@ -1,15 +1,8 @@
 use icy_engine::parsers::viewdata::Parser;
-use icy_engine::{BufferParser, Caret, Position, SelectionMask, TextBuffer, TextPane, TextScreen};
+use icy_engine::{BufferParser, Caret, Position, TextBuffer, TextPane, TextScreen};
 
 fn create_viewdata_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (TextBuffer, Caret) {
-    let mut screen = TextScreen {
-        buffer: TextBuffer::create((40, 24)),
-        caret: Caret::default(),
-        current_layer: 0,
-        selection_opt: None,
-        selection_mask: SelectionMask::default(),
-        mouse_fields: Vec::new(),
-    };
+    let mut screen = TextScreen::new((40, 24));
     screen.buffer.terminal_state.is_terminal_buffer = true;
 
     for &b in input {

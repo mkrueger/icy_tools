@@ -6,14 +6,16 @@ pub enum TerminalScrolling {
     Fast,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum OriginMode {
+    #[default]
     UpperLeftCorner,
     WithinMargins,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum AutoWrapMode {
+    #[default]
     NoWrap,
     AutoWrap,
 }
