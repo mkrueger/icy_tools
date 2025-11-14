@@ -1,7 +1,8 @@
 use icy_engine::{BufferParser, Caret, EditableScreen, Position, SelectionMask, TextBuffer, TextPane, TextScreen, parsers};
 
 // Test helper functions - these work with TextScreen internally but return (buffer, caret) tuple
-fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (TextBuffer, Caret) {
+fn create_buffer(input: &[u8]) -> (TextBuffer, Caret) {
+    let mut parser = parsers::ascii::Parser::default();
     let mut screen = TextScreen {
         buffer: TextBuffer::create((80, 25)),
         caret: Caret::default(),
@@ -22,7 +23,8 @@ fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (TextBuffer, 
     (screen.buffer, screen.caret)
 }
 
-fn update_buffer<T: BufferParser>(buf: &mut TextBuffer, caret: &mut Caret, parser: &mut T, input: &[u8]) {
+fn update_buffer(buf: &mut TextBuffer, caret: &mut Caret, input: &[u8]) {
+    let mut parser = parsers::ascii::Parser::default();
     let mut screen = TextScreen {
         buffer: std::mem::take(buf),
         caret: caret.clone(),
@@ -41,7 +43,7 @@ fn update_buffer<T: BufferParser>(buf: &mut TextBuffer, caret: &mut Caret, parse
 }
 
 fn test_ascii(data: &[u8]) {
-    let (buf, _) = create_buffer(&mut parsers::ascii::Parser::default(), data);
+    let (buf, _) = create_buffer(data);
 
     // ASCII format struct is not exported, so we'll just verify the buffer content matches
     // by checking character by character (the original test was round-tripping through ASCII format)
@@ -53,13 +55,13 @@ fn test_ascii(data: &[u8]) {
 fn test_full_line_height() {
     let mut vec = Vec::new();
     vec.resize(80, b'-');
-    let (mut buf, mut caret) = create_buffer(&mut parsers::ascii::Parser::default(), &vec);
+    let (mut buf, mut caret) = create_buffer(&vec);
     // After writing exactly 80 characters (one full line), we have 1 line with content
     // The caret is on line 1, but that line is empty so get_line_count() returns 1
     assert_eq!(1, buf.get_line_count());
 
     // Add one more character - just process the new character, not the whole buffer again
-    update_buffer(&mut buf, &mut caret, &mut parsers::ascii::Parser::default(), b"-");
+    update_buffer(&mut buf, &mut caret, b"-");
     // Now we have content on line 1, so get_line_count() returns 2
     assert_eq!(2, buf.get_line_count());
 }
@@ -69,7 +71,7 @@ fn test_emptylastline_height() {
     let mut vec = Vec::new();
     vec.resize(80, b'-');
     vec.resize(80 * 2, b' ');
-    let (buf, _) = create_buffer(&mut parsers::ascii::Parser::default(), &vec);
+    let (buf, _) = create_buffer(&vec);
     // Line 0 has dashes, line 1 has only spaces which count as empty
     // So get_line_count() returns 1
     assert_eq!(1, buf.get_line_count());
@@ -93,7 +95,7 @@ fn test_emptylastline_roundtrip() {
 #[test]
 fn test_eol() {
     let data = b"foo\r\n";
-    let (buf, _) = create_buffer(&mut parsers::ascii::Parser::default(), data);
+    let (buf, _) = create_buffer(data);
     // "foo\r\n" creates one line with content (line 0), cursor moves to line 1 which is empty
     assert_eq!(1, buf.get_line_count());
 }
@@ -120,19 +122,18 @@ fn test_eol_start() {
 #[test]
 fn test_eol_line_break() {
     let (mut buf, mut caret) = create_buffer(
-        &mut parsers::ascii::Parser::default(),
         b"################################################################################\r\n",
     );
     assert_eq!(Position::new(0, 2), caret.position());
 
-    update_buffer(&mut buf, &mut caret, &mut parsers::ascii::Parser::default(), b"#");
+    update_buffer(&mut buf, &mut caret, b"#");
     assert_eq!(Position::new(1, 2), caret.position());
     assert_eq!(b'#', buf.get_char(Position::new(0, 2)).ch as u8);
 }
 
 #[test]
 fn test_url_scanner_simple() {
-    let (buf, _) = create_buffer(&mut parsers::ascii::Parser::default(), b"\n\r http://www.example.com");
+    let (buf, _) = create_buffer(b"\n\r http://www.example.com");
 
     let hyperlinks = buf.parse_hyperlinks();
 
@@ -144,7 +145,6 @@ fn test_url_scanner_simple() {
 #[test]
 fn test_url_scanner_multiple() {
     let (buf, _) = create_buffer(
-        &mut parsers::ascii::Parser::default(),
         b"\n\r http://www.example.com https://www.google.com\n\rhttps://github.com/mkrueger/icy_engine",
     );
 
@@ -164,6 +164,6 @@ fn test_url_scanner_multiple() {
 #[test]
 fn test_tab() {
     let data = b"\ta";
-    let (buf, _) = create_buffer(&mut parsers::ascii::Parser::default(), data);
+    let (buf, _) = create_buffer(data);
     assert_eq!(b'a', buf.get_char(Position::new(8, 0)).ch as u8);
 }
