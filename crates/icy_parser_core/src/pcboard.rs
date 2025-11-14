@@ -84,7 +84,7 @@ impl CommandParser for PcBoardParser {
                     if byte == b'@' {
                         // Emit any accumulated printable text
                         if start < i {
-                            sink.emit(TerminalCommand::Printable(&input[start..i]));
+                            sink.print(&input[start..i]);
                         }
                         self.state = State::AtSign;
                         self.accumulated.clear();
@@ -95,7 +95,7 @@ impl CommandParser for PcBoardParser {
                     match byte {
                         b'@' => {
                             // Escaped @ - emit literal @
-                            sink.emit(TerminalCommand::Printable(b"@"));
+                            sink.print(b"@");
                             self.reset_state();
                             start = i + 1;
                         }
@@ -128,7 +128,7 @@ impl CommandParser for PcBoardParser {
                         self.state = State::ColorFirstHex;
                     } else {
                         // Invalid hex char after @X, treat as literal
-                        sink.emit(TerminalCommand::Printable(b"@X"));
+                        sink.print(b"@X");
                         self.reset_state();
                         start = i; // Re-process this byte
                     }
@@ -144,7 +144,7 @@ impl CommandParser for PcBoardParser {
                         start = i + 1;
                     } else {
                         // Invalid second hex digit
-                        sink.emit(TerminalCommand::Printable(b"@X"));
+                        sink.print(b"@X");
                         self.reset_state();
                         start = i; // Re-process this byte
                     }
@@ -154,7 +154,7 @@ impl CommandParser for PcBoardParser {
 
         // Emit any remaining printable text
         if start < input.len() && self.state == State::Normal {
-            sink.emit(TerminalCommand::Printable(&input[start..]));
+            sink.print(&input[start..]);
         }
     }
 }

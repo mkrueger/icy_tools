@@ -1,4 +1,4 @@
-use crate::{Blink, Color, CommandParser, CommandSink, EraseInDisplayMode, EraseInLineMode, Intensity, SgrAttribute, TerminalCommand};
+use crate::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, EraseInLineMode, Intensity, SgrAttribute, TerminalCommand};
 
 /// SkyPix-specific commands (those with ! terminator)
 #[derive(Debug, Clone, PartialEq)]
@@ -255,22 +255,22 @@ impl SkypixParser {
             b'A' => {
                 // Cursor Up
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiCursorUp(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
             }
             b'B' => {
                 // Cursor Down
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiCursorDown(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16));
             }
             b'C' => {
                 // Cursor Forward
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiCursorForward(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16));
             }
             b'D' => {
                 // Cursor Backward
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiCursorBack(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
             }
             b'H' | b'f' => {
                 // Cursor Position
@@ -343,7 +343,7 @@ impl CommandParser for SkypixParser {
                         self.builder.reset();
                     } else {
                         // Regular character - pass through
-                        sink.emit(TerminalCommand::Printable(&[ch]));
+                        sink.print(&[ch]);
                     }
                 }
                 State::GotEscape => {
@@ -351,8 +351,8 @@ impl CommandParser for SkypixParser {
                         self.state = State::GotBracket;
                     } else {
                         // Not a valid sequence, emit ESC and current char
-                        sink.emit(TerminalCommand::Printable(b"\x1B"));
-                        sink.emit(TerminalCommand::Printable(&[ch]));
+                        sink.print(b"\x1B");
+                        sink.print(&[ch]);
                         self.state = State::Default;
                     }
                 }

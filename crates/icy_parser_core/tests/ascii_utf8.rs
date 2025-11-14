@@ -2,22 +2,25 @@ use icy_parser_core::{AsciiParser, CommandParser, CommandSink, TerminalCommand};
 
 // Sink that owns emitted commands by copying printable slices.
 struct CollectSink {
-    pub cmds: Vec<TerminalCommand<'static>>,
+    pub text: Vec<u8>,
+    pub cmds: Vec<TerminalCommand>,
 }
 impl CollectSink {
     fn new() -> Self {
-        Self { cmds: Vec::new() }
+        Self {
+            text: Vec::new(),
+            cmds: Vec::new(),
+        }
     }
 }
 
 impl CommandSink for CollectSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.text.extend_from_slice(text);
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         match cmd {
-            TerminalCommand::Printable(bytes) => {
-                let owned = bytes.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::Printable(leaked));
-            }
             TerminalCommand::CarriageReturn => self.cmds.push(TerminalCommand::CarriageReturn),
             TerminalCommand::LineFeed => self.cmds.push(TerminalCommand::LineFeed),
             TerminalCommand::Backspace => self.cmds.push(TerminalCommand::Backspace),
@@ -41,10 +44,7 @@ fn ascii_parser_handles_utf8_multibyte_as_printable_run() {
     let mut sink = CollectSink::new();
     parser.parse(bytes, &mut sink);
 
-    // Expect single Printable spanning entire UTF-8 sequence (no controls inside).
-    assert_eq!(sink.cmds.len(), 1);
-    match &sink.cmds[0] {
-        TerminalCommand::Printable(p) => assert_eq!(*p, bytes),
-        _ => panic!("Expected one printable run"),
-    }
+    // Expect all text captured via print()
+    assert_eq!(sink.text, bytes);
+    assert_eq!(sink.cmds.len(), 0);
 }

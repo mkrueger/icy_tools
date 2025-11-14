@@ -11,12 +11,14 @@ struct ExampleSink {
 }
 
 impl CommandSink for ExampleSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.command_count += 1;
+        println!("  [{}] Printable: {:?}", self.command_count, String::from_utf8_lossy(text));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         self.command_count += 1;
         match cmd {
-            TerminalCommand::Printable(bytes) => {
-                println!("  [{}] Printable: {:?}", self.command_count, String::from_utf8_lossy(bytes));
-            }
             TerminalCommand::CsiEraseInDisplay(mode) => {
                 println!("  [{}] Erase in Display: {:?}", self.command_count, mode);
                 match mode {
@@ -154,9 +156,6 @@ impl CommandSink for ExampleSink {
                     },
                     other => println!("{:?}", other),
                 }
-            }
-            TerminalCommand::Unknown(bytes) => {
-                println!("  [{}] Unknown sequence: {:?}", self.command_count, bytes);
             }
             other => {
                 println!("  [{}] {:?}", self.command_count, other);

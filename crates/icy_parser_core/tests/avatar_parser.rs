@@ -1,4 +1,4 @@
-use icy_parser_core::{AvatarParser, Color, CommandParser, CommandSink, DecPrivateMode, EraseInLineMode, SgrAttribute, TerminalCommand};
+use icy_parser_core::{AvatarParser, Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInLineMode, SgrAttribute, TerminalCommand};
 
 /// Test helper that collects all emitted commands
 struct CollectSink {
@@ -16,22 +16,21 @@ enum OwnedCommand {
     FormFeed,
     Bell,
     Delete,
-    CsiCursorUp(u16),
-    CsiCursorDown(u16),
-    CsiCursorForward(u16),
-    CsiCursorBack(u16),
+    CsiMoveCursor(Direction, u16),
     CsiCursorPosition(u16, u16),
     CsiEraseInLine(EraseInLineMode),
     CsiDecPrivateModeReset(DecPrivateMode),
     CsiSelectGraphicRendition(SgrAttribute),
     AvtRepeatChar(u8, u8),
-    Unknown(Vec<u8>),
 }
 
 impl CommandSink for CollectSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.commands.push(OwnedCommand::Printable(text.to_vec()));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         let owned = match cmd {
-            TerminalCommand::Printable(b) => OwnedCommand::Printable(b.to_vec()),
             TerminalCommand::CarriageReturn => OwnedCommand::CarriageReturn,
             TerminalCommand::LineFeed => OwnedCommand::LineFeed,
             TerminalCommand::Backspace => OwnedCommand::Backspace,
@@ -39,16 +38,12 @@ impl CommandSink for CollectSink {
             TerminalCommand::FormFeed => OwnedCommand::FormFeed,
             TerminalCommand::Bell => OwnedCommand::Bell,
             TerminalCommand::Delete => OwnedCommand::Delete,
-            TerminalCommand::CsiCursorUp(n) => OwnedCommand::CsiCursorUp(n),
-            TerminalCommand::CsiCursorDown(n) => OwnedCommand::CsiCursorDown(n),
-            TerminalCommand::CsiCursorForward(n) => OwnedCommand::CsiCursorForward(n),
-            TerminalCommand::CsiCursorBack(n) => OwnedCommand::CsiCursorBack(n),
+            TerminalCommand::CsiMoveCursor(dir, n) => OwnedCommand::CsiMoveCursor(dir, n),
             TerminalCommand::CsiCursorPosition(r, c) => OwnedCommand::CsiCursorPosition(r, c),
             TerminalCommand::CsiEraseInLine(mode) => OwnedCommand::CsiEraseInLine(mode),
             TerminalCommand::CsiDecPrivateModeReset(mode) => OwnedCommand::CsiDecPrivateModeReset(mode),
             TerminalCommand::CsiSelectGraphicRendition(attr) => OwnedCommand::CsiSelectGraphicRendition(attr),
             TerminalCommand::AvtRepeatChar(ch, cnt) => OwnedCommand::AvtRepeatChar(ch, cnt),
-            TerminalCommand::Unknown(b) => OwnedCommand::Unknown(b.to_vec()),
             _ => panic!("Unexpected command type in Avatar test"),
         };
         self.commands.push(owned);
@@ -157,10 +152,10 @@ fn test_cursor_movement() {
     parser.parse(b"\x16\x03\x16\x04\x16\x05\x16\x06", &mut sink);
 
     assert_eq!(sink.commands.len(), 4);
-    assert_eq!(sink.commands[0], OwnedCommand::CsiCursorUp(1));
-    assert_eq!(sink.commands[1], OwnedCommand::CsiCursorDown(1));
-    assert_eq!(sink.commands[2], OwnedCommand::CsiCursorBack(1));
-    assert_eq!(sink.commands[3], OwnedCommand::CsiCursorForward(1));
+    assert_eq!(sink.commands[0], OwnedCommand::CsiMoveCursor(Direction::Up, 1));
+    assert_eq!(sink.commands[1], OwnedCommand::CsiMoveCursor(Direction::Down, 1));
+    assert_eq!(sink.commands[2], OwnedCommand::CsiMoveCursor(Direction::Left, 1));
+    assert_eq!(sink.commands[3], OwnedCommand::CsiMoveCursor(Direction::Right, 1));
 }
 
 #[test]
@@ -236,11 +231,10 @@ fn test_unknown_command() {
     let mut parser = AvatarParser::new();
     let mut sink = CollectSink::new();
 
-    // ^V followed by an unknown command byte (e.g., 0xFF)
+    // ^V followed by an unknown command byte (e.g., 0xFF) - now reports error instead of Unknown
     parser.parse(b"\x16\xFF", &mut sink);
 
-    assert_eq!(sink.commands.len(), 1);
-    assert_eq!(sink.commands[0], OwnedCommand::Unknown(vec![0x16, 0xFF]));
+    assert_eq!(sink.commands.len(), 0); // No commands emitted for malformed Avatar sequence
 }
 
 #[test]

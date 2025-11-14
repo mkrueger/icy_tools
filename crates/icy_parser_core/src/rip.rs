@@ -942,7 +942,7 @@ impl CommandParser for RipParser {
                         self.state = State::GotExclaim;
                     } else {
                         // Pass through as printable
-                        sink.emit(TerminalCommand::Printable(&[ch]));
+                        sink.print(&[ch]);
                     }
                 }
                 State::GotExclaim => {
@@ -956,9 +956,9 @@ impl CommandParser for RipParser {
                         self.state = State::Default;
                     } else {
                         // Not a RIP command - emit ! and continue
-                        sink.emit(TerminalCommand::Printable(b"!"));
+                        sink.print(b"!");
                         self.state = State::Default;
-                        sink.emit(TerminalCommand::Printable(&[ch]));
+                        sink.print(&[ch]);
                     }
                 }
                 State::GotPipe => {

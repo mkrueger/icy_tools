@@ -1,22 +1,25 @@
 use icy_parser_core::{AsciiParser, CommandParser, CommandSink, TerminalCommand};
 
 struct CollectSink {
-    pub cmds: Vec<TerminalCommand<'static>>,
+    pub text: Vec<u8>,
+    pub cmds: Vec<TerminalCommand>,
 }
 impl CollectSink {
     fn new() -> Self {
-        Self { cmds: Vec::new() }
+        Self {
+            text: Vec::new(),
+            cmds: Vec::new(),
+        }
     }
 }
 
 impl CommandSink for CollectSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.text.extend_from_slice(text);
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         match cmd {
-            TerminalCommand::Printable(b) => {
-                let owned = b.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::Printable(leaked));
-            }
             TerminalCommand::CarriageReturn => self.cmds.push(TerminalCommand::CarriageReturn),
             TerminalCommand::LineFeed => self.cmds.push(TerminalCommand::LineFeed),
             TerminalCommand::Backspace => self.cmds.push(TerminalCommand::Backspace),
@@ -37,19 +40,11 @@ fn batches_printable_and_controls() {
     let mut sink = CollectSink::new();
     p.parse(data, &mut sink);
 
-    assert_eq!(sink.cmds.len(), 8);
-    if let TerminalCommand::Printable(bs) = &sink.cmds[0] {
-        assert_eq!(bs, b"Hello");
-    }
-    assert!(matches!(sink.cmds[1], TerminalCommand::LineFeed));
-    if let TerminalCommand::Printable(bs) = &sink.cmds[2] {
-        assert_eq!(bs, b"World");
-    }
-    assert!(matches!(sink.cmds[3], TerminalCommand::CarriageReturn));
-    if let TerminalCommand::Printable(bs) = &sink.cmds[4] {
-        assert_eq!(bs, b"!");
-    }
-    assert!(matches!(sink.cmds[5], TerminalCommand::Bell));
-    assert!(matches!(sink.cmds[6], TerminalCommand::Backspace));
-    assert!(matches!(sink.cmds[7], TerminalCommand::Delete));
+    assert_eq!(sink.text, b"HelloWorld!");
+    assert_eq!(sink.cmds.len(), 5);
+    assert!(matches!(sink.cmds[0], TerminalCommand::LineFeed));
+    assert!(matches!(sink.cmds[1], TerminalCommand::CarriageReturn));
+    assert!(matches!(sink.cmds[2], TerminalCommand::Bell));
+    assert!(matches!(sink.cmds[3], TerminalCommand::Backspace));
+    assert!(matches!(sink.cmds[4], TerminalCommand::Delete));
 }

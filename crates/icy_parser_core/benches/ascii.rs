@@ -4,7 +4,11 @@ use icy_parser_core::{AsciiParser, CommandParser, CommandSink, TerminalCommand};
 struct NullSink;
 impl CommandSink for NullSink {
     #[inline]
-    fn emit(&mut self, _cmd: TerminalCommand<'_>) { /* discard */
+    fn print(&mut self, _text: &[u8]) { /* discard */
+    }
+
+    #[inline]
+    fn emit(&mut self, _cmd: TerminalCommand) { /* discard */
     }
 }
 

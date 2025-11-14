@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, PetsciiParser, TerminalCommand};
+use icy_parser_core::{CommandParser, CommandSink, Direction, PetsciiParser, TerminalCommand};
 
 struct TestSink {
     commands: Vec<String>,
@@ -11,21 +11,22 @@ impl TestSink {
 }
 
 impl CommandSink for TestSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(text)));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         match cmd {
-            TerminalCommand::Printable(s) => {
-                self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(s)));
-            }
-            TerminalCommand::CsiCursorUp(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Up, n) => {
                 self.commands.push(format!("CursorUp: {}", n));
             }
-            TerminalCommand::CsiCursorDown(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Down, n) => {
                 self.commands.push(format!("CursorDown: {}", n));
             }
-            TerminalCommand::CsiCursorBack(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Left, n) => {
                 self.commands.push(format!("CursorBack: {}", n));
             }
-            TerminalCommand::CsiCursorForward(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Right, n) => {
                 self.commands.push(format!("CursorForward: {}", n));
             }
             TerminalCommand::CsiCursorPosition(row, col) => {
@@ -57,9 +58,6 @@ impl CommandSink for TestSink {
             }
             TerminalCommand::CsiSelectGraphicRendition(attr) => {
                 self.commands.push(format!("SGR: {:?}", attr));
-            }
-            TerminalCommand::InsertChar(_) => {
-                self.commands.push("InsertChar".to_string());
             }
             TerminalCommand::CsiClearAllTabs => {
                 self.commands.push("ClearAllTabs".to_string());
@@ -238,11 +236,11 @@ fn test_petscii_insert_char() {
     let mut parser = PetsciiParser::new();
     let mut sink = TestSink::new();
 
-    // Insert character (0x94)
+    // Insert character (0x94) - now outputs a space
     parser.parse(b"\x94", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert_eq!(sink.commands[0], "InsertChar");
+    assert_eq!(sink.commands[0], "Text: \" \""); // Space character
 }
 
 #[test]

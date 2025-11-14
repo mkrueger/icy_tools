@@ -1,153 +1,82 @@
 use icy_parser_core::{
-    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecPrivateMode, EraseInDisplayMode, EraseInLineMode, Intensity, ParseError, SgrAttribute,
-    TerminalCommand, Underline,
+    AnsiMode, AnsiParser, Blink, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode,
+    EraseInLineMode, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, Underline,
 };
 
 struct CollectSink {
-    pub cmds: Vec<TerminalCommand<'static>>,
+    pub text: Vec<u8>,
+    pub cmds: Vec<TerminalCommand>,
+    pub aps_data: Vec<Vec<u8>>,
+    pub dcs_commands: Vec<DeviceControlString<'static>>,
+    pub osc_commands: Vec<OperatingSystemCommand<'static>>,
 }
 
 impl CollectSink {
     fn new() -> Self {
-        Self { cmds: Vec::new() }
+        Self {
+            text: Vec::new(),
+            cmds: Vec::new(),
+            aps_data: Vec::new(),
+            dcs_commands: Vec::new(),
+            osc_commands: Vec::new(),
+        }
     }
 }
 
 impl CommandSink for CollectSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
-        match cmd {
-            TerminalCommand::Printable(b) => {
-                let owned = b.to_vec();
+    fn print(&mut self, text: &[u8]) {
+        self.text.extend_from_slice(text);
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
+        self.cmds.push(cmd);
+    }
+
+    fn device_control(&mut self, dcs: DeviceControlString<'_>) {
+        match dcs {
+            DeviceControlString::LoadFont(slot, data) => {
+                self.dcs_commands.push(DeviceControlString::LoadFont(slot, data));
+            }
+            DeviceControlString::Sixel(scale, color, data) => {
+                let owned = data.to_vec();
                 let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::Printable(leaked));
+                self.dcs_commands.push(DeviceControlString::Sixel(scale, color, leaked));
             }
-            TerminalCommand::CsiSelectGraphicRendition(params) => {
-                self.cmds.push(TerminalCommand::CsiSelectGraphicRendition(params));
-            }
-            TerminalCommand::CsiDecPrivateModeSet(params) => {
-                self.cmds.push(TerminalCommand::CsiDecPrivateModeSet(params));
-            }
-            TerminalCommand::CsiDecPrivateModeReset(params) => {
-                self.cmds.push(TerminalCommand::CsiDecPrivateModeReset(params));
-            }
-            TerminalCommand::CsiSetMode(params) => {
-                self.cmds.push(TerminalCommand::CsiSetMode(params));
-            }
-            TerminalCommand::CsiResetMode(params) => {
-                self.cmds.push(TerminalCommand::CsiResetMode(params));
-            }
-            TerminalCommand::OscSetTitle(b) => {
-                let owned = b.to_vec();
+        }
+    }
+
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand<'_>) {
+        match osc {
+            OperatingSystemCommand::SetTitle(data) => {
+                let owned = data.to_vec();
                 let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::OscSetTitle(leaked));
+                self.osc_commands.push(OperatingSystemCommand::SetTitle(leaked));
             }
-            TerminalCommand::OscSetIconName(b) => {
-                let owned = b.to_vec();
+            OperatingSystemCommand::SetIconName(data) => {
+                let owned = data.to_vec();
                 let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::OscSetIconName(leaked));
+                self.osc_commands.push(OperatingSystemCommand::SetIconName(leaked));
             }
-            TerminalCommand::OscSetWindowTitle(b) => {
-                let owned = b.to_vec();
+            OperatingSystemCommand::SetWindowTitle(data) => {
+                let owned = data.to_vec();
                 let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::OscSetWindowTitle(leaked));
+                self.osc_commands.push(OperatingSystemCommand::SetWindowTitle(leaked));
             }
-            TerminalCommand::OscHyperlink { params, uri } => {
+            OperatingSystemCommand::Hyperlink { params, uri } => {
                 let params_owned = params.to_vec();
                 let uri_owned = uri.to_vec();
                 let params_leaked: &'static [u8] = Box::leak(params_owned.into_boxed_slice());
                 let uri_leaked: &'static [u8] = Box::leak(uri_owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::OscHyperlink {
+                self.osc_commands.push(OperatingSystemCommand::Hyperlink {
                     params: params_leaked,
                     uri: uri_leaked,
                 });
             }
-            TerminalCommand::Unknown(b) => {
-                let owned = b.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::Unknown(leaked));
-            }
-            // Handle all other variants
-            TerminalCommand::CarriageReturn => self.cmds.push(TerminalCommand::CarriageReturn),
-            TerminalCommand::LineFeed => self.cmds.push(TerminalCommand::LineFeed),
-            TerminalCommand::Backspace => self.cmds.push(TerminalCommand::Backspace),
-            TerminalCommand::Tab => self.cmds.push(TerminalCommand::Tab),
-            TerminalCommand::FormFeed => self.cmds.push(TerminalCommand::FormFeed),
-            TerminalCommand::Bell => self.cmds.push(TerminalCommand::Bell),
-            TerminalCommand::Delete => self.cmds.push(TerminalCommand::Delete),
-            TerminalCommand::CsiCursorUp(n) => self.cmds.push(TerminalCommand::CsiCursorUp(n)),
-            TerminalCommand::CsiCursorDown(n) => self.cmds.push(TerminalCommand::CsiCursorDown(n)),
-            TerminalCommand::CsiCursorForward(n) => self.cmds.push(TerminalCommand::CsiCursorForward(n)),
-            TerminalCommand::CsiCursorBack(n) => self.cmds.push(TerminalCommand::CsiCursorBack(n)),
-            TerminalCommand::CsiCursorNextLine(n) => self.cmds.push(TerminalCommand::CsiCursorNextLine(n)),
-            TerminalCommand::CsiCursorPreviousLine(n) => self.cmds.push(TerminalCommand::CsiCursorPreviousLine(n)),
-            TerminalCommand::CsiCursorHorizontalAbsolute(n) => self.cmds.push(TerminalCommand::CsiCursorHorizontalAbsolute(n)),
-            TerminalCommand::CsiCursorPosition(row, col) => self.cmds.push(TerminalCommand::CsiCursorPosition(row, col)),
-            TerminalCommand::CsiEraseInDisplay(n) => self.cmds.push(TerminalCommand::CsiEraseInDisplay(n)),
-            TerminalCommand::CsiEraseInLine(n) => self.cmds.push(TerminalCommand::CsiEraseInLine(n)),
-            TerminalCommand::CsiScrollUp(n) => self.cmds.push(TerminalCommand::CsiScrollUp(n)),
-            TerminalCommand::CsiScrollDown(n) => self.cmds.push(TerminalCommand::CsiScrollDown(n)),
-            TerminalCommand::CsiSetScrollingRegion(top, bottom) => self.cmds.push(TerminalCommand::CsiSetScrollingRegion(top, bottom)),
-            TerminalCommand::CsiInsertCharacter(n) => self.cmds.push(TerminalCommand::CsiInsertCharacter(n)),
-            TerminalCommand::CsiDeleteCharacter(n) => self.cmds.push(TerminalCommand::CsiDeleteCharacter(n)),
-            TerminalCommand::CsiEraseCharacter(n) => self.cmds.push(TerminalCommand::CsiEraseCharacter(n)),
-            TerminalCommand::CsiInsertLine(n) => self.cmds.push(TerminalCommand::CsiInsertLine(n)),
-            TerminalCommand::CsiDeleteLine(n) => self.cmds.push(TerminalCommand::CsiDeleteLine(n)),
-            TerminalCommand::CsiRepeatPrecedingCharacter(n) => self.cmds.push(TerminalCommand::CsiRepeatPrecedingCharacter(n)),
-            TerminalCommand::CsiLinePositionAbsolute(n) => self.cmds.push(TerminalCommand::CsiLinePositionAbsolute(n)),
-            TerminalCommand::CsiLinePositionForward(n) => self.cmds.push(TerminalCommand::CsiLinePositionForward(n)),
-            TerminalCommand::CsiCharacterPositionForward(n) => self.cmds.push(TerminalCommand::CsiCharacterPositionForward(n)),
-            TerminalCommand::CsiHorizontalPositionAbsolute(n) => self.cmds.push(TerminalCommand::CsiHorizontalPositionAbsolute(n)),
-            TerminalCommand::CsiClearTabulation => self.cmds.push(TerminalCommand::CsiClearTabulation),
-            TerminalCommand::CsiClearAllTabs => self.cmds.push(TerminalCommand::CsiClearAllTabs),
-            TerminalCommand::CsiCursorLineTabulationForward(n) => self.cmds.push(TerminalCommand::CsiCursorLineTabulationForward(n)),
-            TerminalCommand::CsiCursorBackwardTabulation(n) => self.cmds.push(TerminalCommand::CsiCursorBackwardTabulation(n)),
-            TerminalCommand::CsiSaveCursorPosition => self.cmds.push(TerminalCommand::CsiSaveCursorPosition),
-            TerminalCommand::CsiRestoreCursorPosition => self.cmds.push(TerminalCommand::CsiRestoreCursorPosition),
-            TerminalCommand::CsiWindowManipulation(params) => self.cmds.push(TerminalCommand::CsiWindowManipulation(params)),
-            TerminalCommand::CsiSpecialKey(n) => self.cmds.push(TerminalCommand::CsiSpecialKey(n)),
-            TerminalCommand::CsiDeviceAttributes => self.cmds.push(TerminalCommand::CsiDeviceAttributes),
-            TerminalCommand::CsiDeviceStatusReport(n) => self.cmds.push(TerminalCommand::CsiDeviceStatusReport(n)),
-            TerminalCommand::EscIndex => self.cmds.push(TerminalCommand::EscIndex),
-            TerminalCommand::EscNextLine => self.cmds.push(TerminalCommand::EscNextLine),
-            TerminalCommand::EscSetTab => self.cmds.push(TerminalCommand::EscSetTab),
-            TerminalCommand::EscReverseIndex => self.cmds.push(TerminalCommand::EscReverseIndex),
-            TerminalCommand::EscSaveCursor => self.cmds.push(TerminalCommand::EscSaveCursor),
-            TerminalCommand::EscRestoreCursor => self.cmds.push(TerminalCommand::EscRestoreCursor),
-            TerminalCommand::EscReset => self.cmds.push(TerminalCommand::EscReset),
-
-            // CSI intermediate byte sequences
-            TerminalCommand::CsiSetCursorStyle(n) => self.cmds.push(TerminalCommand::CsiSetCursorStyle(n)),
-            TerminalCommand::CsiScrollRight(n) => self.cmds.push(TerminalCommand::CsiScrollRight(n)),
-            TerminalCommand::CsiScrollLeft(n) => self.cmds.push(TerminalCommand::CsiScrollLeft(n)),
-            TerminalCommand::CsiFontSelection(ps1, ps2) => self.cmds.push(TerminalCommand::CsiFontSelection(ps1, ps2)),
-            TerminalCommand::CsiInvokeMacro(n) => self.cmds.push(TerminalCommand::CsiInvokeMacro(n)),
-            TerminalCommand::CsiSelectCommunicationSpeed(ps1, ps2) => self.cmds.push(TerminalCommand::CsiSelectCommunicationSpeed(ps1, ps2)),
-            TerminalCommand::CsiRequestChecksumRectangularArea(params) => self.cmds.push(TerminalCommand::CsiRequestChecksumRectangularArea(params)),
-            TerminalCommand::CsiRequestTabStopReport(n) => self.cmds.push(TerminalCommand::CsiRequestTabStopReport(n)),
-            TerminalCommand::CsiFillRectangularArea(pchar, pt, pl, pb, pr) => self.cmds.push(TerminalCommand::CsiFillRectangularArea(pchar, pt, pl, pb, pr)),
-            TerminalCommand::CsiEraseRectangularArea(pt, pl, pb, pr) => self.cmds.push(TerminalCommand::CsiEraseRectangularArea(pt, pl, pb, pr)),
-            TerminalCommand::CsiSelectiveEraseRectangularArea(pt, pl, pb, pr) => {
-                self.cmds.push(TerminalCommand::CsiSelectiveEraseRectangularArea(pt, pl, pb, pr))
-            }
-
-            // Avatar commands (should not appear in ANSI parser tests)
-            TerminalCommand::AvtRepeatChar(_, _) => {
-                panic!("Avatar commands should not appear in ANSI parser tests")
-            }
-            // InsertChar
-            TerminalCommand::InsertChar(ch) => self.cmds.push(TerminalCommand::InsertChar(ch)),
-            // DCS and APS commands
-            TerminalCommand::DcsString(b) => {
-                let owned = b.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::DcsString(leaked));
-            }
-            TerminalCommand::ApsString(b) => {
-                let owned = b.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.cmds.push(TerminalCommand::ApsString(leaked));
-            }
         }
+    }
+
+    fn aps(&mut self, data: &[u8]) {
+        self.aps_data.push(data.to_vec());
     }
 }
 
@@ -158,11 +87,8 @@ fn test_basic_text() {
 
     parser.parse(b"Hello World", &mut sink);
 
-    assert_eq!(sink.cmds.len(), 1);
-    assert!(matches!(sink.cmds[0], TerminalCommand::Printable(_)));
-    if let TerminalCommand::Printable(text) = &sink.cmds[0] {
-        assert_eq!(text, b"Hello World");
-    }
+    assert_eq!(sink.cmds.len(), 0);
+    assert_eq!(sink.text, b"Hello World");
 }
 
 #[test]
@@ -172,11 +98,10 @@ fn test_control_characters() {
 
     parser.parse(b"Hello\r\nWorld", &mut sink);
 
-    assert_eq!(sink.cmds.len(), 4);
-    assert!(matches!(sink.cmds[0], TerminalCommand::Printable(_)));
-    assert!(matches!(sink.cmds[1], TerminalCommand::CarriageReturn));
-    assert!(matches!(sink.cmds[2], TerminalCommand::LineFeed));
-    assert!(matches!(sink.cmds[3], TerminalCommand::Printable(_)));
+    assert_eq!(sink.cmds.len(), 2);
+    assert_eq!(sink.text, b"HelloWorld");
+    assert!(matches!(sink.cmds[0], TerminalCommand::CarriageReturn));
+    assert!(matches!(sink.cmds[1], TerminalCommand::LineFeed));
 }
 
 #[test]
@@ -187,14 +112,14 @@ fn test_csi_cursor_movement() {
     // ESC[5A - Cursor Up 5
     parser.parse(b"\x1B[5A", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiCursorUp(5));
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Up, 5));
 
     sink.cmds.clear();
 
     // ESC[B - Cursor Down 1 (default)
     parser.parse(b"\x1B[B", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiCursorDown(1));
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Down, 1));
 
     sink.cmds.clear();
 
@@ -413,18 +338,17 @@ fn test_osc_sequences() {
 
     // ESC]0;My Title BEL - Set window title
     parser.parse(b"\x1B]0;My Title\x07", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    assert!(matches!(sink.cmds[0], TerminalCommand::OscSetTitle(_)));
-    if let TerminalCommand::OscSetTitle(title) = &sink.cmds[0] {
+    assert_eq!(sink.osc_commands.len(), 1);
+    if let OperatingSystemCommand::SetTitle(title) = &sink.osc_commands[0] {
         assert_eq!(title, b"My Title");
     }
 
-    sink.cmds.clear();
+    sink.osc_commands.clear();
 
     // ESC]2;Another Title ESC\ - Set window title with ST terminator
     parser.parse(b"\x1B]2;Another Title\x1B\\", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::OscSetWindowTitle(title) = &sink.cmds[0] {
+    assert_eq!(sink.osc_commands.len(), 1);
+    if let OperatingSystemCommand::SetWindowTitle(title) = &sink.osc_commands[0] {
         assert_eq!(title, b"Another Title");
     }
 }
@@ -437,20 +361,18 @@ fn test_mixed_content() {
     // Text with embedded escape sequences
     parser.parse(b"Hello \x1B[1;31mRed\x1B[m World", &mut sink);
 
-    // Should be: "Hello ", SGR(Bold), SGR(ForegroundRed), "Red", SGR(Reset), " World"
-    assert_eq!(sink.cmds.len(), 6);
-    assert!(matches!(sink.cmds[0], TerminalCommand::Printable(_)));
+    // Should be: SGR(Bold), SGR(ForegroundRed), SGR(Reset), with text "Hello Red World"
+    assert_eq!(sink.cmds.len(), 3);
+    assert_eq!(sink.text, b"Hello Red World");
     assert!(matches!(
-        sink.cmds[1],
+        sink.cmds[0],
         TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Intensity(Intensity::Bold))
     ));
     assert!(matches!(
-        sink.cmds[2],
+        sink.cmds[1],
         TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(1)))
     ));
-    assert!(matches!(sink.cmds[3], TerminalCommand::Printable(_)));
-    assert!(matches!(sink.cmds[4], TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset)));
-    assert!(matches!(sink.cmds[5], TerminalCommand::Printable(_)));
+    assert!(matches!(sink.cmds[2], TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset)));
 }
 
 #[test]
@@ -534,43 +456,18 @@ fn test_character_operations() {
 #[test]
 fn test_error_reporting() {
     struct ErrorCollectSink {
-        cmds: Vec<TerminalCommand<'static>>,
+        text: Vec<u8>,
+        cmds: Vec<TerminalCommand>,
         errors: Vec<ParseError>,
     }
 
     impl CommandSink for ErrorCollectSink {
-        fn emit(&mut self, cmd: TerminalCommand<'_>) {
-            match cmd {
-                TerminalCommand::Printable(b) => {
-                    let owned = b.to_vec();
-                    let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                    self.cmds.push(TerminalCommand::Printable(leaked));
-                }
-                TerminalCommand::CsiEraseInDisplay(mode) => {
-                    self.cmds.push(TerminalCommand::CsiEraseInDisplay(mode));
-                }
-                TerminalCommand::CsiEraseInLine(mode) => {
-                    self.cmds.push(TerminalCommand::CsiEraseInLine(mode));
-                }
-                TerminalCommand::CsiSetMode(mode) => {
-                    self.cmds.push(TerminalCommand::CsiSetMode(mode));
-                }
-                TerminalCommand::CsiResetMode(mode) => {
-                    self.cmds.push(TerminalCommand::CsiResetMode(mode));
-                }
-                TerminalCommand::CsiDecPrivateModeSet(mode) => {
-                    self.cmds.push(TerminalCommand::CsiDecPrivateModeSet(mode));
-                }
-                TerminalCommand::CsiDecPrivateModeReset(mode) => {
-                    self.cmds.push(TerminalCommand::CsiDecPrivateModeReset(mode));
-                }
-                TerminalCommand::Unknown(b) => {
-                    let owned = b.to_vec();
-                    let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                    self.cmds.push(TerminalCommand::Unknown(leaked));
-                }
-                _ => {}
-            }
+        fn print(&mut self, text: &[u8]) {
+            self.text.extend_from_slice(text);
+        }
+
+        fn emit(&mut self, cmd: TerminalCommand) {
+            self.cmds.push(cmd);
         }
 
         fn report_error(&mut self, error: ParseError) {
@@ -580,6 +477,7 @@ fn test_error_reporting() {
 
     let mut parser = AnsiParser::new();
     let mut sink = ErrorCollectSink {
+        text: Vec::new(),
         cmds: Vec::new(),
         errors: Vec::new(),
     };
@@ -628,11 +526,9 @@ fn test_error_reporting() {
             value: 99,
         }
     );
-    // Should emit Unknown command
-    assert_eq!(sink.cmds.len(), 1);
-    assert!(matches!(sink.cmds[0], TerminalCommand::Unknown(_)));
+    // Should not emit any commands for invalid parameter
+    assert_eq!(sink.cmds.len(), 0);
 
-    sink.cmds.clear();
     sink.errors.clear();
 
     // ESC[?9999h - Invalid DEC private mode
@@ -670,21 +566,18 @@ fn test_error_reporting() {
 #[test]
 fn test_ansi_modes() {
     struct ErrorCollectSink {
-        cmds: Vec<TerminalCommand<'static>>,
+        text: Vec<u8>,
+        cmds: Vec<TerminalCommand>,
         errors: Vec<ParseError>,
     }
 
     impl CommandSink for ErrorCollectSink {
-        fn emit(&mut self, cmd: TerminalCommand<'_>) {
-            match cmd {
-                TerminalCommand::CsiSetMode(mode) => {
-                    self.cmds.push(TerminalCommand::CsiSetMode(mode));
-                }
-                TerminalCommand::CsiResetMode(mode) => {
-                    self.cmds.push(TerminalCommand::CsiResetMode(mode));
-                }
-                _ => {}
-            }
+        fn print(&mut self, _text: &[u8]) {
+            // Ignore print in error test
+        }
+
+        fn emit(&mut self, cmd: TerminalCommand) {
+            self.cmds.push(cmd);
         }
 
         fn report_error(&mut self, error: ParseError) {
@@ -694,6 +587,7 @@ fn test_ansi_modes() {
 
     let mut parser = AnsiParser::new();
     let mut sink = ErrorCollectSink {
+        text: Vec::new(),
         cmds: Vec::new(),
         errors: Vec::new(),
     };
@@ -774,40 +668,41 @@ fn test_dcs_sequences() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
 
-    // DCS with string terminator ESC \
+    // DCS with unknown content now reports error instead of Unknown
     parser.parse(b"\x1BPHello\x1B\\World", &mut sink);
-    assert_eq!(sink.cmds.len(), 2);
-    if let TerminalCommand::DcsString(data) = sink.cmds[0] {
-        assert_eq!(data, b"Hello");
-    } else {
-        panic!("Expected DcsString");
-    }
-    if let TerminalCommand::Printable(text) = sink.cmds[1] {
-        assert_eq!(text, b"World");
-    } else {
-        panic!("Expected Printable");
-    }
+    assert_eq!(sink.cmds.len(), 0); // No commands emitted for malformed DCS
+    assert_eq!(sink.text, b"World");
 
-    sink.cmds.clear();
+    sink.text.clear();
 
-    // DCS with ESC in the middle (not a terminator)
+    // DCS with ESC in the middle (not a terminator) also reports error
     parser.parse(b"\x1BPTest\x1BData\x1B\\", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::DcsString(data) = sink.cmds[0] {
-        assert_eq!(data, b"Test\x1BData");
+    assert_eq!(sink.cmds.len(), 0); // No commands emitted for malformed DCS
+
+    sink.text.clear();
+
+    // DCS for sixel graphics
+    parser.parse(b"\x1BP0;0;8q\"1;1;80;80#0;2;0;0;0#1!80~-#1!80~-\x1B\\", &mut sink);
+    assert_eq!(sink.dcs_commands.len(), 1);
+    if let DeviceControlString::Sixel(scale, bg_color, data) = sink.dcs_commands[0] {
+        assert_eq!(scale, 2); // Vertical scale for params 0
+        assert_eq!(bg_color, (0, 0, 0));
+        assert!(data.starts_with(b"\"1;1;80;80"));
     } else {
-        panic!("Expected DcsString");
+        panic!("Expected Sixel");
     }
 
-    sink.cmds.clear();
+    sink.dcs_commands.clear();
 
-    // DCS for sixel graphics (common use case)
-    parser.parse(b"\x1BP0;0;8q\"1;1;80;80#0;2;0;0;0#1!80~-#1!80~-\x1B\\", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::DcsString(data) = sink.cmds[0] {
-        assert!(data.starts_with(b"0;0;8q"));
+    // DCS for custom font loading: CTerm:Font:{slot}:{base64_data}
+    // Base64 "dGVzdGRhdGE=" decodes to "testdata"
+    parser.parse(b"\x1BPCTerm:Font:5:dGVzdGRhdGE=\x1B\\", &mut sink);
+    assert_eq!(sink.dcs_commands.len(), 1);
+    if let DeviceControlString::LoadFont(slot, data) = &sink.dcs_commands[0] {
+        assert_eq!(*slot, 5);
+        assert_eq!(data, b"testdata");
     } else {
-        panic!("Expected DcsString");
+        panic!("Expected LoadFont");
     }
 }
 
@@ -818,28 +713,17 @@ fn test_aps_sequences() {
 
     // APS with string terminator ESC \
     parser.parse(b"\x1B_AppCommand\x1B\\Text", &mut sink);
-    assert_eq!(sink.cmds.len(), 2);
-    if let TerminalCommand::ApsString(data) = sink.cmds[0] {
-        assert_eq!(data, b"AppCommand");
-    } else {
-        panic!("Expected ApsString");
-    }
-    if let TerminalCommand::Printable(text) = sink.cmds[1] {
-        assert_eq!(text, b"Text");
-    } else {
-        panic!("Expected Printable");
-    }
+    assert_eq!(sink.aps_data.len(), 1);
+    assert_eq!(sink.text, b"Text");
+    assert_eq!(sink.aps_data[0], b"AppCommand");
 
-    sink.cmds.clear();
+    sink.text.clear();
+    sink.aps_data.clear();
 
     // APS with ESC in the middle
     parser.parse(b"\x1B_Test\x1BData\x1B\\", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::ApsString(data) = sink.cmds[0] {
-        assert_eq!(data, b"Test\x1BData");
-    } else {
-        panic!("Expected ApsString");
-    }
+    assert_eq!(sink.aps_data.len(), 1);
+    assert_eq!(sink.aps_data[0], b"Test\x1BData");
 }
 
 #[test]
@@ -847,14 +731,10 @@ fn test_csi_asterisk_sequences() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
 
-    // CSI Pn*z - Invoke Macro
+    // CSI Pn*z - Invoke Macro (executed internally)
+    // Invoking a non-existent macro should not error or emit anything
     parser.parse(b"\x1B[5*z", &mut sink);
-    assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiInvokeMacro(n) = sink.cmds[0] {
-        assert_eq!(n, 5);
-    } else {
-        panic!("Expected CsiInvokeMacro");
-    }
+    assert_eq!(sink.cmds.len(), 0, "Non-existent macro should not emit commands");
 
     sink.cmds.clear();
 
@@ -871,10 +751,15 @@ fn test_csi_asterisk_sequences() {
     sink.cmds.clear();
 
     // CSI multiple params *y - Request Checksum of Rectangular Area
+    // Format: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y (Pid is ignored)
     parser.parse(b"\x1B[1;2;3;4;5;6*y", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiRequestChecksumRectangularArea(ref params) = sink.cmds[0] {
-        assert_eq!(params, &vec![1, 2, 3, 4, 5, 6]);
+    if let TerminalCommand::CsiRequestChecksumRectangularArea(ppage, pt, pl, pb, pr) = sink.cmds[0] {
+        assert_eq!(ppage, 2); // Pid (1) is ignored, this is Ppage
+        assert_eq!(pt, 3);
+        assert_eq!(pl, 4);
+        assert_eq!(pb, 5);
+        assert_eq!(pr, 6);
     } else {
         panic!("Expected CsiRequestChecksumRectangularArea");
     }
@@ -943,13 +828,14 @@ fn test_csi_space_sequences() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
 
-    // CSI Ps q - Set Cursor Style (DECSCUSR)
+    // CSI Ps q - Set Caret Style (DECSCUSR)
     parser.parse(b"\x1B[3 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSetCursorStyle(style) = sink.cmds[0] {
-        assert_eq!(style, 3); // blinking underline
+    if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
+        assert_eq!(blinking, true);
+        assert_eq!(shape, CaretShape::Underline);
     } else {
-        panic!("Expected CsiSetCursorStyle");
+        panic!("Expected CsiSetCaretStyle");
     }
 
     sink.cmds.clear();
@@ -957,10 +843,23 @@ fn test_csi_space_sequences() {
     // CSI 0 q - default (blinking block)
     parser.parse(b"\x1B[0 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSetCursorStyle(style) = sink.cmds[0] {
-        assert_eq!(style, 0);
+    if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
+        assert_eq!(blinking, true);
+        assert_eq!(shape, CaretShape::Block);
     } else {
-        panic!("Expected CsiSetCursorStyle");
+        panic!("Expected CsiSetCaretStyle");
+    }
+
+    sink.cmds.clear();
+
+    // CSI 6 q - steady bar
+    parser.parse(b"\x1B[6 q", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
+        assert_eq!(blinking, false);
+        assert_eq!(shape, CaretShape::Bar);
+    } else {
+        panic!("Expected CsiSetCaretStyle");
     }
 
     sink.cmds.clear();
@@ -980,10 +879,10 @@ fn test_csi_space_sequences() {
     // CSI Pn A - Scroll Right
     parser.parse(b"\x1B[4 A", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiScrollRight(n) = sink.cmds[0] {
+    if let TerminalCommand::CsiScroll(Direction::Right, n) = sink.cmds[0] {
         assert_eq!(n, 4);
     } else {
-        panic!("Expected CsiScrollRight");
+        panic!("Expected CsiScroll Right");
     }
 
     sink.cmds.clear();
@@ -991,10 +890,10 @@ fn test_csi_space_sequences() {
     // CSI Pn @ - Scroll Left
     parser.parse(b"\x1B[3 @", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiScrollLeft(n) = sink.cmds[0] {
+    if let TerminalCommand::CsiScroll(Direction::Left, n) = sink.cmds[0] {
         assert_eq!(n, 3);
     } else {
-        panic!("Expected CsiScrollLeft");
+        panic!("Expected CsiScroll Left");
     }
 }
 
@@ -1006,10 +905,10 @@ fn test_cursor_position_aliases() {
     // CSI Pn j - Character Position Backward (alias for D)
     parser.parse(b"\x1B[5j", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiCursorBack(n) = sink.cmds[0] {
+    if let TerminalCommand::CsiMoveCursor(Direction::Left, n) = sink.cmds[0] {
         assert_eq!(n, 5);
     } else {
-        panic!("Expected CsiCursorBack");
+        panic!("Expected CsiMoveCursor Left");
     }
 
     sink.cmds.clear();
@@ -1017,10 +916,10 @@ fn test_cursor_position_aliases() {
     // CSI Pn k - Line Position Backward (alias for A)
     parser.parse(b"\x1B[3k", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiCursorUp(n) = sink.cmds[0] {
+    if let TerminalCommand::CsiMoveCursor(Direction::Up, n) = sink.cmds[0] {
         assert_eq!(n, 3);
     } else {
-        panic!("Expected CsiCursorUp");
+        panic!("Expected CsiMoveCursor(Up, 3)");
     }
 
     sink.cmds.clear();
@@ -1131,24 +1030,40 @@ fn test_window_manipulation() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
 
-    // CSI ... t - Window Manipulation
+    // CSI 8;{height};{width}t - Resize Terminal
     parser.parse(b"\x1B[8;24;80t", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiWindowManipulation(ref params) = sink.cmds[0] {
-        assert_eq!(params, &vec![8, 24, 80]);
+    if let TerminalCommand::CsiResizeTerminal(height, width) = sink.cmds[0] {
+        assert_eq!(height, 24);
+        assert_eq!(width, 80);
     } else {
-        panic!("Expected CsiWindowManipulation");
+        panic!("Expected CsiResizeTerminal");
     }
 
     sink.cmds.clear();
 
-    // 24-bit color selection (4 params)
-    parser.parse(b"\x1B[38;2;255;128;64t", &mut sink);
+    // 24-bit color selection: ESC[0;{r};{g};{b}t (background) or ESC[1;{r};{g};{b}t (foreground)
+    parser.parse(b"\x1B[1;255;128;64t", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiWindowManipulation(ref params) = sink.cmds[0] {
-        assert_eq!(params, &vec![38, 2, 255, 128, 64]);
+    if let TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Rgb(r, g, b))) = sink.cmds[0] {
+        assert_eq!(r, 255);
+        assert_eq!(g, 128);
+        assert_eq!(b, 64);
     } else {
-        panic!("Expected CsiWindowManipulation");
+        panic!("Expected CsiSelectGraphicRendition with RGB foreground color");
+    }
+
+    sink.cmds.clear();
+
+    // 24-bit background color
+    parser.parse(b"\x1B[0;100;150;200t", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    if let TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Rgb(r, g, b))) = sink.cmds[0] {
+        assert_eq!(r, 100);
+        assert_eq!(g, 150);
+        assert_eq!(b, 200);
+    } else {
+        panic!("Expected CsiSelectGraphicRendition with RGB background color");
     }
 }
 

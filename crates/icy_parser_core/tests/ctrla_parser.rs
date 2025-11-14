@@ -11,11 +11,12 @@ impl TestSink {
 }
 
 impl CommandSink for TestSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(text)));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         match cmd {
-            TerminalCommand::Printable(s) => {
-                self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(s)));
-            }
             TerminalCommand::CsiSelectGraphicRendition(icy_parser_core::SgrAttribute::Foreground(icy_parser_core::Color::Base(c))) => {
                 self.commands.push(format!("FG: {}", c));
             }

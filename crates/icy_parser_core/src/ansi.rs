@@ -3,9 +3,11 @@
 //! Parses ANSI/VT100 escape sequences into structured commands.
 //! Supports CSI (Control Sequence Introducer), ESC, and OSC sequences.
 
+use base64::{Engine as _, engine::general_purpose};
+
 use crate::{
-    AnsiMode, Blink, Color, CommandParser, CommandSink, DecPrivateMode, DeviceStatusReport, EraseInDisplayMode, EraseInLineMode, Frame, Intensity, ParseError,
-    SgrAttribute, TerminalCommand, Underline,
+    AnsiMode, Blink, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, DeviceStatusReport, Direction, EraseInDisplayMode,
+    EraseInLineMode, Frame, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, Underline,
 };
 
 /// SGR lookup table entry - describes what a particular SGR parameter code means
@@ -139,6 +141,7 @@ pub struct AnsiParser {
     params: Vec<u16>,
     intermediate_bytes: Vec<u8>,
     parse_buffer: Vec<u8>,
+    macros: std::collections::HashMap<usize, Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,6 +175,184 @@ impl AnsiParser {
         self.intermediate_bytes.clear();
         self.state = ParserState::Ground;
     }
+
+    fn parse_dcs(&mut self, sink: &mut dyn CommandSink) {
+        // Check for CTerm custom font: "CTerm:Font:{slot}:{base64_data}"
+        if self.parse_buffer.starts_with(b"CTerm:Font:") {
+            let start_index = b"CTerm:Font:".len();
+            if let Some(colon_pos) = self.parse_buffer[start_index..].iter().position(|&b| b == b':') {
+                let slot_end = start_index + colon_pos;
+                // Parse slot number
+                if let Ok(slot_str) = std::str::from_utf8(&self.parse_buffer[start_index..slot_end]) {
+                    if let Ok(slot) = slot_str.parse::<usize>() {
+                        // Decode base64 font data (after second colon)
+                        let data_start = slot_end + 1;
+                        match general_purpose::STANDARD.decode(&self.parse_buffer[data_start..]) {
+                            Ok(decoded_data) => {
+                                sink.device_control(DeviceControlString::LoadFont(slot, decoded_data));
+                                return;
+                            }
+                            Err(_) => {
+                                sink.report_error(ParseError::MalformedSequence {
+                                    description: "Invalid base64 in DCS font data",
+                                });
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            // If parsing failed, report error
+            sink.report_error(ParseError::MalformedSequence {
+                description: "Unknown or malformed DCS sequence",
+            });
+            return;
+        }
+
+        // Parse parameters from DCS buffer
+        let mut i = 0;
+        self.params.clear();
+        self.params.push(0);
+
+        while i < self.parse_buffer.len() {
+            let byte = self.parse_buffer[i];
+            match byte {
+                b'0'..=b'9' => {
+                    let last = self.params.pop().unwrap_or(0);
+                    self.params.push(last * 10 + (byte - b'0') as u16);
+                }
+                b';' => {
+                    self.params.push(0);
+                }
+                _ => {
+                    break;
+                }
+            }
+            i += 1;
+        }
+
+        // Check for macro definition: ESC P {params} ! z {data} ESC \
+        if i + 2 < self.parse_buffer.len() && self.parse_buffer[i] == b'!' && self.parse_buffer[i + 1] == b'z' {
+            self.parse_macro_definition(i + 2);
+            return;
+        }
+
+        // Check for Sixel graphics: ESC P {params} q {data} ESC \
+        if i < self.parse_buffer.len() && self.parse_buffer[i] == b'q' {
+            let vertical_scale = match self.params.first() {
+                Some(0 | 1 | 5 | 6) | None => 2,
+                Some(2) => 5,
+                Some(3 | 4) => 3,
+                _ => 1,
+            };
+
+            // Get background color (param 1: 1 = transparent, otherwise opaque black)
+            let bg_color = if self.params.get(1) == Some(&1) {
+                (0, 0, 0) // Transparent
+            } else {
+                (0, 0, 0) // Opaque black
+            };
+
+            sink.device_control(DeviceControlString::Sixel(vertical_scale, bg_color, &self.parse_buffer[i + 1..]));
+            return;
+        }
+
+        // Unknown DCS - emit as Unknown
+        sink.report_error(ParseError::MalformedSequence {
+            description: "Unknown or malformed escape sequence",
+        });
+    }
+
+    fn parse_macro_definition(&mut self, start_index: usize) {
+        let pid = self.params.first().copied().unwrap_or(0) as usize;
+        let pdt = self.params.get(1).copied().unwrap_or(0);
+        let encoding = self.params.get(2).copied().unwrap_or(0);
+
+        // pdt = 1 means clear all macros first
+        if pdt == 1 {
+            self.macros.clear();
+        }
+
+        match encoding {
+            0 => {
+                // Text encoding - store as-is
+                self.macros.insert(pid, self.parse_buffer[start_index..].to_vec());
+            }
+            1 => {
+                // Hex encoding - decode it
+                if let Ok(decoded) = self.parse_hex_macro(&self.parse_buffer[start_index..]) {
+                    self.macros.insert(pid, decoded);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn parse_hex_macro(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
+        let mut result = Vec::new();
+        let mut i = 0;
+        let mut repeat_count = 0;
+        let mut in_repeat = false;
+        let mut repeat_start = 0;
+
+        while i < data.len() {
+            if data[i] == b'!' {
+                // Repeat sequence: !{count};{hex_data};
+                i += 1;
+                repeat_count = 0;
+                while i < data.len() && data[i].is_ascii_digit() {
+                    repeat_count = repeat_count * 10 + (data[i] - b'0') as usize;
+                    i += 1;
+                }
+                if i < data.len() && data[i] == b';' {
+                    i += 1;
+                    in_repeat = true;
+                    repeat_start = result.len();
+                }
+            } else if in_repeat && data[i] == b';' {
+                // End of repeat section
+                let repeat_data = result[repeat_start..].to_vec();
+                for _ in 1..repeat_count {
+                    result.extend_from_slice(&repeat_data);
+                }
+                in_repeat = false;
+                i += 1;
+            } else if i + 1 < data.len() {
+                // Parse hex pair
+                let high = Self::hex_digit(data[i])?;
+                let low = Self::hex_digit(data[i + 1])?;
+                result.push((high << 4) | low);
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+
+        if in_repeat {
+            let repeat_data = result[repeat_start..].to_vec();
+            for _ in 1..repeat_count {
+                result.extend_from_slice(&repeat_data);
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn hex_digit(byte: u8) -> Result<u8, ()> {
+        match byte {
+            b'0'..=b'9' => Ok(byte - b'0'),
+            b'A'..=b'F' => Ok(byte - b'A' + 10),
+            b'a'..=b'f' => Ok(byte - b'a' + 10),
+            _ => Err(()),
+        }
+    }
+
+    fn invoke_macro(&mut self, macro_id: usize, sink: &mut dyn CommandSink) {
+        if let Some(macro_data) = self.macros.get(&macro_id).cloned() {
+            // Recursively parse the macro content
+            self.parse(&macro_data, sink);
+        }
+    }
 }
 
 impl CommandParser for AnsiParser {
@@ -188,7 +369,7 @@ impl CommandParser for AnsiParser {
                         0x1B => {
                             // ESC - start escape sequence
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             self.state = ParserState::Escape;
                             i += 1;
@@ -197,7 +378,7 @@ impl CommandParser for AnsiParser {
                         0x07 => {
                             // BEL
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Bell);
                             i += 1;
@@ -206,7 +387,7 @@ impl CommandParser for AnsiParser {
                         0x08 => {
                             // BS
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Backspace);
                             i += 1;
@@ -215,7 +396,7 @@ impl CommandParser for AnsiParser {
                         0x09 => {
                             // HT
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Tab);
                             i += 1;
@@ -224,7 +405,7 @@ impl CommandParser for AnsiParser {
                         0x0A => {
                             // LF
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::LineFeed);
                             i += 1;
@@ -233,7 +414,7 @@ impl CommandParser for AnsiParser {
                         0x0C => {
                             // FF
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::FormFeed);
                             i += 1;
@@ -242,7 +423,7 @@ impl CommandParser for AnsiParser {
                         0x0D => {
                             // CR
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::CarriageReturn);
                             i += 1;
@@ -251,7 +432,7 @@ impl CommandParser for AnsiParser {
                         0x7F => {
                             // DEL
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::Delete);
                             i += 1;
@@ -346,7 +527,9 @@ impl CommandParser for AnsiParser {
                         }
                         _ => {
                             // Unknown escape sequence
-                            sink.emit(TerminalCommand::Unknown(&input[i - 1..=i]));
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Unknown or malformed escape sequence",
+                            });
                             self.reset();
                             i += 1;
                             printable_start = i;
@@ -507,7 +690,8 @@ impl CommandParser for AnsiParser {
                 ParserState::DcsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        sink.emit(TerminalCommand::DcsString(&self.parse_buffer));
+                        self.parse_dcs(sink);
+                        self.parse_buffer.clear();
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -538,7 +722,7 @@ impl CommandParser for AnsiParser {
                 ParserState::ApsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        sink.emit(TerminalCommand::ApsString(&self.parse_buffer));
+                        sink.aps(&self.parse_buffer);
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -555,7 +739,7 @@ impl CommandParser for AnsiParser {
 
         // Emit any remaining printable bytes
         if i > printable_start && self.state == ParserState::Ground {
-            sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+            sink.print(&input[printable_start..i]);
         }
     }
 
@@ -579,9 +763,9 @@ impl AnsiParser {
             // CSI * sequences
             match final_byte {
                 b'z' => {
-                    // Invoke Macro
-                    let n = self.params.first().copied().unwrap_or(0);
-                    sink.emit(TerminalCommand::CsiInvokeMacro(n as u16));
+                    // Invoke Macro - execute it internally
+                    let n = self.params.first().copied().unwrap_or(0) as usize;
+                    self.invoke_macro(n, sink);
                     return;
                 }
                 b'r' => {
@@ -592,13 +776,21 @@ impl AnsiParser {
                     return;
                 }
                 b'y' => {
-                    // Request Checksum of Rectangular Area
-                    let params: Vec<u16> = self.params.iter().map(|&p| p as u16).collect();
-                    sink.emit(TerminalCommand::CsiRequestChecksumRectangularArea(params));
+                    // Request Checksum of Rectangular Area: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y
+                    // Pid is ignored, extract ppage, pt, pl, pb, pr
+                    let _pid = self.params.first().copied().unwrap_or(0);
+                    let ppage = self.params.get(1).copied().unwrap_or(0) as u8;
+                    let pt = self.params.get(2).copied().unwrap_or(0) as u16;
+                    let pl = self.params.get(3).copied().unwrap_or(0) as u16;
+                    let pb = self.params.get(4).copied().unwrap_or(0) as u16;
+                    let pr = self.params.get(5).copied().unwrap_or(0) as u16;
+                    sink.emit(TerminalCommand::CsiRequestChecksumRectangularArea(ppage, pt, pl, pb, pr));
                     return;
                 }
                 _ => {
-                    sink.emit(TerminalCommand::Unknown(&[]));
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Unknown or malformed escape sequence",
+                    });
                     return;
                 }
             }
@@ -648,7 +840,9 @@ impl AnsiParser {
                     return;
                 }
                 _ => {
-                    sink.emit(TerminalCommand::Unknown(&[]));
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Unknown or malformed escape sequence",
+                    });
                     return;
                 }
             }
@@ -658,9 +852,21 @@ impl AnsiParser {
             // CSI SP sequences
             match final_byte {
                 b'q' => {
-                    // DECSCUSR - Set Cursor Style
-                    let style = self.params.first().copied().unwrap_or(0);
-                    sink.emit(TerminalCommand::CsiSetCursorStyle(style as u16));
+                    // DECSCUSR - Set Caret Style
+                    // Ps = 0 or 1 -> blinking block, 2 -> steady block
+                    // Ps = 3 -> blinking underline, 4 -> steady underline
+                    // Ps = 5 -> blinking bar, 6 -> steady bar
+                    let style = self.params.first().copied().unwrap_or(1); // Default is blinking block
+                    let (blinking, shape) = match style {
+                        0 | 1 => (true, CaretShape::Block),
+                        2 => (false, CaretShape::Block),
+                        3 => (true, CaretShape::Underline),
+                        4 => (false, CaretShape::Underline),
+                        5 => (true, CaretShape::Bar),
+                        6 => (false, CaretShape::Bar),
+                        _ => (true, CaretShape::Block), // Invalid: default to blinking block
+                    };
+                    sink.emit(TerminalCommand::CsiSetCaretStyle(blinking, shape));
                     return;
                 }
                 b'D' => {
@@ -673,13 +879,13 @@ impl AnsiParser {
                 b'A' => {
                     // Scroll Right
                     let n = self.params.first().copied().unwrap_or(1);
-                    sink.emit(TerminalCommand::CsiScrollRight(n as u16));
+                    sink.emit(TerminalCommand::CsiScroll(Direction::Right, n as u16));
                     return;
                 }
                 b'@' => {
                     // Scroll Left
                     let n = self.params.first().copied().unwrap_or(1);
-                    sink.emit(TerminalCommand::CsiScrollLeft(n as u16));
+                    sink.emit(TerminalCommand::CsiScroll(Direction::Left, n as u16));
                     return;
                 }
                 b'd' => {
@@ -693,7 +899,9 @@ impl AnsiParser {
                     return;
                 }
                 _ => {
-                    sink.emit(TerminalCommand::Unknown(&[]));
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Unknown or malformed escape sequence",
+                    });
                     return;
                 }
             }
@@ -703,22 +911,22 @@ impl AnsiParser {
             b'A' => {
                 // CUU - Cursor Up
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorUp(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
             }
             b'B' => {
                 // CUD - Cursor Down
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorDown(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16));
             }
             b'C' => {
                 // CUF - Cursor Forward
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorForward(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16));
             }
             b'D' => {
                 // CUB - Cursor Back
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorBack(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
             }
             b'E' => {
                 // CNL - Cursor Next Line
@@ -744,12 +952,12 @@ impl AnsiParser {
             b'j' => {
                 // HPB - Character Position Backward (alias for CUB)
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorBack(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
             }
             b'k' => {
                 // VPB - Line Position Backward (alias for CUU)
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorUp(n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
             }
             b'd' => {
                 // VPA - Line Position Absolute
@@ -804,12 +1012,12 @@ impl AnsiParser {
             b'S' => {
                 // SU - Scroll Up
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiScrollUp(n as u16));
+                sink.emit(TerminalCommand::CsiScroll(Direction::Up, n as u16));
             }
             b'T' => {
                 // SD - Scroll Down
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiScrollDown(n as u16));
+                sink.emit(TerminalCommand::CsiScroll(Direction::Down, n as u16));
             }
             b'm' => {
                 // SGR - Select Graphic Rendition
@@ -880,8 +1088,41 @@ impl AnsiParser {
             }
             b't' => {
                 // Window Manipulation / 24-bit color selection
-                let params: Vec<u16> = self.params.iter().map(|&p| p as u16).collect();
-                sink.emit(TerminalCommand::CsiWindowManipulation(params));
+                match self.params.len() {
+                    3 => {
+                        // Window manipulation: ESC[8;{height};{width}t
+                        let cmd = self.params.first().copied().unwrap_or(0);
+                        if cmd == 8 {
+                            let height = self.params.get(1).copied().unwrap_or(1).max(1).min(60) as u16;
+                            let width = self.params.get(2).copied().unwrap_or(1).max(1).min(132) as u16;
+                            sink.emit(TerminalCommand::CsiResizeTerminal(height, width));
+                        } else {
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Unknown or malformed escape sequence",
+                            });
+                        }
+                    }
+                    4 => {
+                        // 24-bit color selection: ESC[{fg/bg};{r};{g};{b}t
+                        let fg_or_bg = self.params.first().copied().unwrap_or(0);
+                        let r = self.params.get(1).copied().unwrap_or(0) as u8;
+                        let g = self.params.get(2).copied().unwrap_or(0) as u8;
+                        let b = self.params.get(3).copied().unwrap_or(0) as u8;
+                        let color = Color::Rgb(r, g, b);
+                        match fg_or_bg {
+                            0 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(color))),
+                            1 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(color))),
+                            _ => sink.report_error(ParseError::MalformedSequence {
+                                description: "Unknown or malformed escape sequence",
+                            }),
+                        }
+                    }
+                    _ => {
+                        sink.report_error(ParseError::MalformedSequence {
+                            description: "Unknown or malformed escape sequence",
+                        });
+                    }
+                }
             }
             b'~' => {
                 // Special keys (Home, Insert, Delete, End, PageUp, PageDown)
@@ -902,8 +1143,6 @@ impl AnsiParser {
                             command: "CsiDeviceStatusReport",
                             value: n,
                         });
-                        // Emit as unknown on error
-                        sink.emit(TerminalCommand::Unknown(&[]));
                     }
                 }
             }
@@ -975,7 +1214,9 @@ impl AnsiParser {
             }
             _ => {
                 // Unknown CSI sequence
-                sink.emit(TerminalCommand::Unknown(&[]));
+                sink.report_error(ParseError::MalformedSequence {
+                    description: "Unknown or malformed escape sequence",
+                });
             }
         }
     }
@@ -1000,27 +1241,29 @@ impl AnsiParser {
                     match ps {
                         0 => {
                             // Set icon name and window title
-                            sink.emit(TerminalCommand::OscSetTitle(pt_bytes));
+                            sink.operating_system_command(OperatingSystemCommand::SetTitle(pt_bytes));
                         }
                         1 => {
                             // Set icon name
-                            sink.emit(TerminalCommand::OscSetIconName(pt_bytes));
+                            sink.operating_system_command(OperatingSystemCommand::SetIconName(pt_bytes));
                         }
                         2 => {
                             // Set window title
-                            sink.emit(TerminalCommand::OscSetWindowTitle(pt_bytes));
+                            sink.operating_system_command(OperatingSystemCommand::SetWindowTitle(pt_bytes));
                         }
                         8 => {
                             // Hyperlink: OSC 8 ; params ; URI BEL
                             if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
                                 let params = &pt_bytes[..uri_pos];
                                 let uri = &pt_bytes[uri_pos + 1..];
-                                sink.emit(TerminalCommand::OscHyperlink { params, uri });
+                                sink.operating_system_command(OperatingSystemCommand::Hyperlink { params, uri });
                             }
                         }
                         _ => {
                             // Unknown OSC command
-                            sink.emit(TerminalCommand::Unknown(&self.parse_buffer));
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Unknown or malformed escape sequence",
+                            });
                         }
                     }
                     return;
@@ -1029,7 +1272,9 @@ impl AnsiParser {
         }
 
         // Malformed OSC
-        sink.emit(TerminalCommand::Unknown(&self.parse_buffer));
+        sink.report_error(ParseError::MalformedSequence {
+            description: "Unknown or malformed escape sequence",
+        });
     }
 
     #[inline(always)]

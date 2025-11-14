@@ -15,7 +15,11 @@ impl TestSink {
 }
 
 impl CommandSink for TestSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.ansi_commands.push(format!("Printable({:?})", String::from_utf8_lossy(text)));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         // Capture ANSI commands for testing
         self.ansi_commands.push(format!("{:?}", cmd));
     }

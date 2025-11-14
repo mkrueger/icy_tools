@@ -3,7 +3,7 @@
 //! Avatar is a video control language similar to ANSI but more compact.
 //! It uses ^V (0x16) to introduce commands and ^Y (0x19) for character repetition.
 
-use crate::{AnsiParser, Color, CommandParser, CommandSink, DecPrivateMode, EraseInLineMode, SgrAttribute, TerminalCommand};
+use crate::{AnsiParser, Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInLineMode, ParseError, SgrAttribute, TerminalCommand};
 
 const AVT_CMD: u8 = 0x16; // ^V - Avatar command introducer
 const AVT_CLR: u8 = 0x0C; // ^L - Clear screen
@@ -83,7 +83,7 @@ impl CommandParser for AvatarParser {
                         AVT_CLR => {
                             // Clear screen and reset attributes
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             sink.emit(TerminalCommand::FormFeed);
                             i += 1;
@@ -92,7 +92,7 @@ impl CommandParser for AvatarParser {
                         AVT_CMD => {
                             // Avatar command introducer
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             self.state = AvatarState::ReadCommand;
                             i += 1;
@@ -101,7 +101,7 @@ impl CommandParser for AvatarParser {
                         AVT_REP => {
                             // Repeat character
                             if i > printable_start {
-                                sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
+                                sink.print(&input[printable_start..i]);
                             }
                             self.state = AvatarState::ReadRepeatChar;
                             i += 1;
@@ -132,28 +132,28 @@ impl CommandParser for AvatarParser {
                         }
                         3 => {
                             // Move up - maps to ANSI CUU (Cursor Up)
-                            sink.emit(TerminalCommand::CsiCursorUp(1));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
                             self.reset();
                             i += 1;
                             printable_start = i;
                         }
                         4 => {
                             // Move down - maps to ANSI CUD (Cursor Down)
-                            sink.emit(TerminalCommand::CsiCursorDown(1));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
                             self.reset();
                             i += 1;
                             printable_start = i;
                         }
                         5 => {
                             // Move left - maps to ANSI CUB (Cursor Back)
-                            sink.emit(TerminalCommand::CsiCursorBack(1));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
                             self.reset();
                             i += 1;
                             printable_start = i;
                         }
                         6 => {
                             // Move right - maps to ANSI CUF (Cursor Forward)
-                            sink.emit(TerminalCommand::CsiCursorForward(1));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
                             self.reset();
                             i += 1;
                             printable_start = i;
@@ -173,7 +173,9 @@ impl CommandParser for AvatarParser {
                         }
                         _ => {
                             // Unknown Avatar command
-                            sink.emit(TerminalCommand::Unknown(&input[i - 1..=i]));
+                            sink.report_error(ParseError::MalformedSequence {
+                                description: "Unknown or malformed Avatar command",
+                            });
                             self.reset();
                             i += 1;
                             printable_start = i;

@@ -12,7 +12,7 @@
 //!
 //! Reference: <https://www.blunham.com/Radar/Teletext/PDFs/Viewdata1976Spec.pdf>
 
-use crate::{Blink, Color, CommandParser, CommandSink, SgrAttribute, TerminalCommand};
+use crate::{Blink, Color, CommandParser, CommandSink, Direction, SgrAttribute, TerminalCommand};
 
 /// Viewdata/Prestel parser
 pub struct ViewdataParser {
@@ -87,25 +87,25 @@ impl CommandParser for ViewdataParser {
                 // Cursor movement
                 0x08 => {
                     // Cursor left
-                    sink.emit(TerminalCommand::CsiCursorBack(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
                     self.got_esc = false;
                     continue;
                 }
                 0x09 => {
                     // Cursor right
-                    sink.emit(TerminalCommand::CsiCursorForward(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
                     self.got_esc = false;
                     continue;
                 }
                 0x0A => {
                     // Cursor down (resets state on new row)
-                    sink.emit(TerminalCommand::CsiCursorDown(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
                     self.reset_state();
                     continue;
                 }
                 0x0B => {
                     // Cursor up
-                    sink.emit(TerminalCommand::CsiCursorUp(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
                     self.got_esc = false;
                     continue;
                 }
@@ -235,10 +235,10 @@ impl CommandParser for ViewdataParser {
                 // Process the character for display (space or held graphic)
                 let display_char = self.process_char(byte);
                 if display_char != b' ' || byte >= 0x20 {
-                    sink.emit(TerminalCommand::Printable(&[display_char]));
+                    sink.print(&[display_char]);
                 } else {
                     // Emit space for control codes
-                    sink.emit(TerminalCommand::Printable(b" "));
+                    sink.print(b" ");
                 }
 
                 // Update hold graphics state
@@ -250,7 +250,7 @@ impl CommandParser for ViewdataParser {
             } else {
                 // Regular printable character
                 let display_char = self.process_char(byte);
-                sink.emit(TerminalCommand::Printable(&[display_char]));
+                sink.print(&[display_char]);
 
                 // Update held graphics character if in graphics mode
                 if !self.hold_graphics {

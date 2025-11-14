@@ -15,10 +15,12 @@ impl TestSink {
 }
 
 impl CommandSink for TestSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
-        if let TerminalCommand::Printable(s) = cmd {
-            self.terminal_commands.push(format!("Text: {:?}", String::from_utf8_lossy(s)));
-        }
+    fn print(&mut self, text: &[u8]) {
+        self.terminal_commands.push(format!("Text: {:?}", String::from_utf8_lossy(text)));
+    }
+
+    fn emit(&mut self, _cmd: TerminalCommand) {
+        // No terminal commands expected in RIP tests
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {

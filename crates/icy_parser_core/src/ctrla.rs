@@ -6,7 +6,7 @@
 //! - Attributes: H (bold/high intensity), I (blink), E (high background), N (normal)
 //! - Other: J (clear down), > (clear to EOL), | (CR), A (literal ^A), Z (EOF)
 
-use crate::{CommandParser, CommandSink, TerminalCommand};
+use crate::{CommandParser, CommandSink, Direction, TerminalCommand};
 
 const CTRL_A: u8 = 0x01;
 
@@ -52,7 +52,7 @@ impl CommandParser for CtrlAParser {
 
                 // Emit any text before this command
                 if start < i - 1 {
-                    sink.emit(TerminalCommand::Printable(&input[start..i - 1]));
+                    sink.print(&input[start..i - 1]);
                 }
 
                 match byte {
@@ -61,12 +61,12 @@ impl CommandParser for CtrlAParser {
                     b'\'' => sink.emit(TerminalCommand::CsiCursorPosition(1, 1)), // Home
                     b'J' => sink.emit(TerminalCommand::CsiEraseInDisplay(crate::EraseInDisplayMode::CursorToEnd)),
                     b'>' => sink.emit(TerminalCommand::CsiEraseInLine(crate::EraseInLineMode::CursorToEnd)),
-                    b'<' => sink.emit(TerminalCommand::CsiCursorBack(1)),
-                    b']' => sink.emit(TerminalCommand::CsiCursorDown(1)),
-                    b'|' => sink.emit(TerminalCommand::Printable(b"\r")),
+                    b'<' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1)),
+                    b']' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1)),
+                    b'|' => sink.print(b"\r"),
 
                     // Literal CTRL-A
-                    b'A' => sink.emit(TerminalCommand::Printable(&[CTRL_A])),
+                    b'A' => sink.print(&[CTRL_A]),
 
                     // Attributes
                     b'H' => {
@@ -107,13 +107,13 @@ impl CommandParser for CtrlAParser {
                         } else if ch >= 128 {
                             // Cursor right (128-255 = move right by N-127)
                             let count = (ch - 127) as u16;
-                            sink.emit(TerminalCommand::CsiCursorForward(count));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, count));
                         }
                     }
 
                     _ => {
                         // Unknown CTRL-A sequence, emit as-is
-                        sink.emit(TerminalCommand::Printable(&[CTRL_A, byte]));
+                        sink.print(&[CTRL_A, byte]);
                     }
                 }
 
@@ -121,7 +121,7 @@ impl CommandParser for CtrlAParser {
             } else if byte == CTRL_A {
                 // Emit any text before this
                 if start < i {
-                    sink.emit(TerminalCommand::Printable(&input[start..i]));
+                    sink.print(&input[start..i]);
                 }
                 self.in_sequence = true;
                 start = i + 1; // Skip the CTRL_A byte
@@ -130,7 +130,7 @@ impl CommandParser for CtrlAParser {
 
         // Emit any remaining text
         if start < input.len() && !self.in_sequence {
-            sink.emit(TerminalCommand::Printable(&input[start..]));
+            sink.print(&input[start..]);
         }
     }
 }

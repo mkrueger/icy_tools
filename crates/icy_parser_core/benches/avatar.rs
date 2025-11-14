@@ -6,7 +6,11 @@ use std::path::Path;
 struct NullSink;
 impl CommandSink for NullSink {
     #[inline]
-    fn emit(&mut self, _cmd: TerminalCommand<'_>) { /* discard */
+    fn print(&mut self, _text: &[u8]) { /* discard */
+    }
+
+    #[inline]
+    fn emit(&mut self, _cmd: TerminalCommand) { /* discard */
     }
 }
 

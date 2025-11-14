@@ -31,13 +31,12 @@ use icy_parser_core::{AsciiParser, CommandParser, CommandSink, ParseError, Termi
 
 struct PrintSink;
 impl CommandSink for PrintSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
-        match cmd {
-            TerminalCommand::Printable(bytes) => {
-                println!("PRINT {:?}", std::str::from_utf8(bytes).unwrap_or("<non-utf8>"))
-            }
-            other => println!("EVENT {:?}", other),
-        }
+    fn print(&mut self, text: &[u8]) {
+        println!("PRINT {:?}", std::str::from_utf8(text).unwrap_or("<non-utf8>"));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
+        println!("EVENT {:?}", cmd);
     }
     
     fn report_error(&mut self, error: ParseError) {

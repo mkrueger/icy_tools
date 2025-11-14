@@ -14,7 +14,7 @@
 //! - <https://www.bbcbasic.co.uk/bbcwin/manual/bbcwin8.html>
 //! - <https://central.kaserver5.org/Kasoft/Typeset/BBC/Ch28.html>
 
-use crate::{Blink, Color, CommandParser, CommandSink, EraseInDisplayMode, SgrAttribute, TerminalCommand};
+use crate::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand};
 
 /// Mode7/Teletext parser for BBC Micro and compatible systems
 pub struct Mode7Parser {
@@ -82,7 +82,7 @@ impl Mode7Parser {
         } else {
             b' '
         };
-        sink.emit(TerminalCommand::Printable(&[display_ch]));
+        sink.print(&[display_ch]);
     }
 
     /// Process graphics character with contiguous/separated mapping
@@ -175,7 +175,7 @@ impl CommandParser for Mode7Parser {
             // Handle ESC (VDU 27) - next char goes directly to screen
             if self.got_esc {
                 self.got_esc = false;
-                sink.emit(TerminalCommand::Printable(&[byte]));
+                sink.print(&[byte]);
                 continue;
             }
 
@@ -208,15 +208,15 @@ impl CommandParser for Mode7Parser {
                 }
                 8 => {
                     // Cursor left
-                    sink.emit(TerminalCommand::CsiCursorBack(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
                 }
                 9 => {
                     // Cursor right
-                    sink.emit(TerminalCommand::CsiCursorForward(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
                 }
                 10 => {
                     // Cursor down (resets line state)
-                    sink.emit(TerminalCommand::CsiCursorDown(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
                     self.reset_state();
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
                         self.current_fg,
@@ -227,7 +227,7 @@ impl CommandParser for Mode7Parser {
                 }
                 11 => {
                     // Cursor up (resets line state)
-                    sink.emit(TerminalCommand::CsiCursorUp(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
                     self.reset_state();
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
                         self.current_fg,
@@ -338,7 +338,7 @@ impl CommandParser for Mode7Parser {
                 127 => {
                     // Destructive backspace
                     sink.emit(TerminalCommand::Backspace);
-                    sink.emit(TerminalCommand::Printable(b" "));
+                    sink.print(b" ");
                     sink.emit(TerminalCommand::Backspace);
                 }
 
@@ -426,18 +426,18 @@ impl CommandParser for Mode7Parser {
                 // Printable characters
                 32..=126 => {
                     // Normal ASCII printable
-                    sink.emit(TerminalCommand::Printable(&[byte]));
+                    sink.print(&[byte]);
                 }
 
                 // Graphics characters
                 160..=255 => {
                     let mapped = self.process_graphics_char(byte);
-                    sink.emit(TerminalCommand::Printable(&[mapped]));
+                    sink.print(&[mapped]);
                 }
 
                 _ => {
                     // Other control codes - emit as-is
-                    sink.emit(TerminalCommand::Printable(&[byte]));
+                    sink.print(&[byte]);
                 }
             }
         }

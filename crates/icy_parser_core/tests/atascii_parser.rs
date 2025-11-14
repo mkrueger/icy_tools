@@ -1,4 +1,4 @@
-use icy_parser_core::{AtasciiParser, CommandParser, CommandSink, TerminalCommand};
+use icy_parser_core::{AtasciiParser, CommandParser, CommandSink, Direction, TerminalCommand};
 
 struct TestSink {
     commands: Vec<String>,
@@ -11,21 +11,22 @@ impl TestSink {
 }
 
 impl CommandSink for TestSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>) {
+    fn print(&mut self, text: &[u8]) {
+        self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(text)));
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
         match cmd {
-            TerminalCommand::Printable(s) => {
-                self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(s)));
-            }
-            TerminalCommand::CsiCursorUp(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Up, n) => {
                 self.commands.push(format!("CursorUp: {}", n));
             }
-            TerminalCommand::CsiCursorDown(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Down, n) => {
                 self.commands.push(format!("CursorDown: {}", n));
             }
-            TerminalCommand::CsiCursorBack(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Left, n) => {
                 self.commands.push(format!("CursorBack: {}", n));
             }
-            TerminalCommand::CsiCursorForward(n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Right, n) => {
                 self.commands.push(format!("CursorForward: {}", n));
             }
             TerminalCommand::CsiEraseInDisplay(_mode) => {
@@ -57,9 +58,6 @@ impl CommandSink for TestSink {
             }
             TerminalCommand::EscSetTab => {
                 self.commands.push("SetTab".to_string());
-            }
-            TerminalCommand::InsertChar(_) => {
-                self.commands.push("InsertChar".to_string());
             }
             _ => {
                 self.commands.push(format!("Other: {:?}", cmd));
@@ -202,7 +200,7 @@ fn test_atascii_delete_insert_char() {
     assert_eq!(sink.commands.len(), 4);
     assert_eq!(sink.commands[0], "Delete");
     assert_eq!(sink.commands[1], "Text: \"Delete\"");
-    assert_eq!(sink.commands[2], "InsertChar");
+    assert_eq!(sink.commands[2], "Text: \" \""); // Space from 0xFF
     assert_eq!(sink.commands[3], "Text: \"Insert\"");
 }
 

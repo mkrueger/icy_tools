@@ -44,7 +44,7 @@ impl CommandParser for RenegadeParser {
                     if byte == b'|' {
                         // Emit any accumulated text
                         if start < i {
-                            sink.emit(TerminalCommand::Printable(&input[start..i]));
+                            sink.print(&input[start..i]);
                         }
                         self.state = State::Pipe;
                         start = i + 1;
@@ -57,7 +57,7 @@ impl CommandParser for RenegadeParser {
                         self.state = State::FirstDigit(self.first_digit);
                     } else {
                         // Invalid sequence, emit literal pipe and continue
-                        sink.emit(TerminalCommand::Printable(b"|"));
+                        sink.print(b"|");
                         self.state = State::Normal;
                         start = i; // Re-process this byte
                     }
@@ -80,7 +80,7 @@ impl CommandParser for RenegadeParser {
                         } else {
                             // Invalid color code, emit as literal
                             let literal = format!("|{}{}", tens, ones);
-                            sink.emit(TerminalCommand::Printable(literal.as_bytes()));
+                            sink.print(literal.as_bytes());
                         }
 
                         self.state = State::Normal;
@@ -88,7 +88,7 @@ impl CommandParser for RenegadeParser {
                     } else {
                         // Invalid second digit
                         let literal = format!("|{}", tens);
-                        sink.emit(TerminalCommand::Printable(literal.as_bytes()));
+                        sink.print(literal.as_bytes());
                         self.state = State::Normal;
                         start = i; // Re-process this byte
                     }
@@ -98,7 +98,7 @@ impl CommandParser for RenegadeParser {
 
         // Emit any remaining text
         if start < input.len() && self.state == State::Normal {
-            sink.emit(TerminalCommand::Printable(&input[start..]));
+            sink.print(&input[start..]);
         }
     }
 }

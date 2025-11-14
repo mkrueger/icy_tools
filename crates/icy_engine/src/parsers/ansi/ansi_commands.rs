@@ -922,7 +922,7 @@ impl Parser {
         let r = self.parsed_numbers[1];
         let g = self.parsed_numbers[2];
         let b = self.parsed_numbers[3];
-        let color = buf.palette_mut().insert_color_rgb(r as u8, g as u8, b as u8);
+        let color: u32 = buf.palette_mut().insert_color_rgb(r as u8, g as u8, b as u8);
         match self.parsed_numbers.first() {
             Some(0) => {
                 buf.caret_mut().attribute.set_background(color);

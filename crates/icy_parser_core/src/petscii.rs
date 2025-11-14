@@ -8,7 +8,7 @@
 //! - C128 extended ESC sequences
 //! - Character code remapping based on shift mode
 
-use crate::{Color, CommandParser, CommandSink, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand};
+use crate::{Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand};
 
 /// PETSCII parser for Commodore 8-bit computer systems
 pub struct PetsciiParser {
@@ -64,7 +64,7 @@ impl PetsciiParser {
     fn emit_char(&self, sink: &mut dyn CommandSink, byte: u8) {
         if let Some(tch) = self.petscii_to_internal(byte) {
             let ch = self.apply_reverse(tch);
-            sink.emit(TerminalCommand::Printable(&[ch]));
+            sink.print(&[ch]);
         }
     }
 }
@@ -401,7 +401,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiCursorDown(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
                     start = i + 1;
                 }
                 0x91 => {
@@ -411,7 +411,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiCursorUp(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
                     start = i + 1;
                 }
                 0x1D => {
@@ -421,7 +421,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiCursorForward(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
                     start = i + 1;
                 }
                 0x9D => {
@@ -431,7 +431,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiCursorBack(1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
                     start = i + 1;
                 }
 
@@ -509,7 +509,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::InsertChar(b' '));
+                    sink.print(&[b' ']);
                     start = i + 1;
                 }
 
@@ -520,7 +520,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::Printable(&[94])); // PI character mapped to 94
+                    sink.print(&[94]); // PI character mapped to 94
                     start = i + 1;
                 }
 

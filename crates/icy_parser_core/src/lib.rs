@@ -82,6 +82,16 @@ impl EraseInLineMode {
     }
 }
 
+/// Direction for cursor movement and scrolling commands
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 /// Device Status Report type for DSR command (ESC[nn)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -346,6 +356,45 @@ pub enum SgrAttribute {
     IdeogramAttributesOff,
 }
 
+/// Caret (cursor) shape for DECSCUSR
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CaretShape {
+    /// Block cursor (default)
+    #[default]
+    Block,
+    /// Underline cursor
+    Underline,
+    /// Bar/vertical line cursor
+    Bar,
+}
+
+/// Device Control String (DCS) sequences: ESC P ... ESC \
+#[repr(u8)]
+#[derive(Debug, PartialEq)]
+pub enum DeviceControlString<'a> {
+    /// Load custom font: ESC P CTerm:Font:{slot}:{base64_data} ESC \
+    /// Parameters: font slot number, decoded font data (already base64-decoded by parser)
+    LoadFont(usize, Vec<u8>),
+    /// Sixel graphics: ESC P {params} q {data} ESC \
+    /// Parameters: vertical_scale, background_color (r, g, b), sixel_data
+    Sixel(u8, (u8, u8, u8), &'a [u8]),
+}
+
+/// Operating System Command (OSC) sequences: ESC ] ... BEL or ESC \
+#[repr(u8)]
+#[derive(Debug, PartialEq)]
+pub enum OperatingSystemCommand<'a> {
+    /// OSC 0 - Set Icon Name and Window Title: ESC]0;{text}BEL or ESC]0;{text}ESC\
+    SetTitle(&'a [u8]),
+    /// OSC 1 - Set Icon Name: ESC]1;{text}BEL
+    SetIconName(&'a [u8]),
+    /// OSC 2 - Set Window Title: ESC]2;{text}BEL
+    SetWindowTitle(&'a [u8]),
+    /// OSC 8 - Hyperlink: ESC]8;{params};{uri}BEL
+    Hyperlink { params: &'a [u8], uri: &'a [u8] },
+}
+
 /// Parser error types
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -360,10 +409,7 @@ pub enum ParseError {
 
 #[repr(u8)]
 #[derive(Debug, PartialEq)]
-pub enum TerminalCommand<'a> {
-    /// A contiguous run of displayable bytes (any byte not a handled control).
-    Printable(&'a [u8]),
-
+pub enum TerminalCommand {
     // Basic control characters (C0 controls)
     CarriageReturn,
     LineFeed,
@@ -373,18 +419,9 @@ pub enum TerminalCommand<'a> {
     Bell,
     Delete,
 
-    /// Insert character at current position (used by ATASCII 0xFF and potentially others)
-    InsertChar(u8),
-
     // ANSI CSI (Control Sequence Introducer) sequences
-    /// CUU - Cursor Up: ESC[{n}A
-    CsiCursorUp(u16),
-    /// CUD - Cursor Down: ESC[{n}B
-    CsiCursorDown(u16),
-    /// CUF - Cursor Forward: ESC[{n}C
-    CsiCursorForward(u16),
-    /// CUB - Cursor Back: ESC[{n}D
-    CsiCursorBack(u16),
+    /// CUU/CUD/CUF/CUB - Cursor Movement: ESC[{n}A/B/C/D
+    CsiMoveCursor(Direction, u16),
     /// CNL - Cursor Next Line: ESC[{n}E
     CsiCursorNextLine(u16),
     /// CPL - Cursor Previous Line: ESC[{n}F
@@ -399,10 +436,8 @@ pub enum TerminalCommand<'a> {
     /// EL - Erase in Line: ESC[{n}K
     CsiEraseInLine(EraseInLineMode),
 
-    /// SU - Scroll Up: ESC[{n}S
-    CsiScrollUp(u16),
-    /// SD - Scroll Down: ESC[{n}T
-    CsiScrollDown(u16),
+    /// SU/SD/SR/SL - Scroll: ESC[{n}S/T/ A/ @
+    CsiScroll(Direction, u16),
 
     /// SGR - Select Graphic Rendition: ESC[{param}m
     /// Text attributes like color, bold, underline, etc.
@@ -449,9 +484,8 @@ pub enum TerminalCommand<'a> {
     /// SCORC - Restore Cursor Position: ESC[u
     CsiRestoreCursorPosition,
 
-    /// Window Manipulation / 24-bit color: ESC[{...}t
-    /// Can be window size manipulation or color selection depending on param count
-    CsiWindowManipulation(Vec<u16>),
+    /// Resize Terminal: ESC[8;{height};{width}t
+    CsiResizeTerminal(u16, u16),
 
     /// Special keys: ESC[{n}~
     /// 1=Home, 2=Insert, 3=Delete, 4=End, 5=PageUp, 6=PageDown
@@ -477,29 +511,21 @@ pub enum TerminalCommand<'a> {
     CsiResetMode(AnsiMode),
 
     // CSI with intermediate bytes
-    /// DECSCUSR - Set Cursor Style: ESC[{Ps} q
-    /// Ps = 0 or 1 -> blinking block, 2 -> steady block
-    /// Ps = 3 -> blinking underline, 4 -> steady underline
-    /// Ps = 5 -> blinking bar, 6 -> steady bar
-    CsiSetCursorStyle(u16),
-
-    /// Scroll Right: ESC[{n} A
-    CsiScrollRight(u16),
-    /// Scroll Left: ESC[{n} @
-    CsiScrollLeft(u16),
+    /// DECSCUSR - Set Caret Style: ESC[{Ps} q
+    /// First parameter: blinking (true) or steady (false)
+    /// Second parameter: shape (Block, Underline, or Bar)
+    CsiSetCaretStyle(bool, CaretShape),
 
     /// Font Selection: ESC[{Ps1};{Ps2} D
     /// Ps1 = slot (0-3), Ps2 = font number
     CsiFontSelection(u16, u16),
 
-    /// Invoke Macro: ESC[{Pn}*z
-    CsiInvokeMacro(u16),
-
     /// Select Communication Speed: ESC[{Ps1};{Ps2}*r
     CsiSelectCommunicationSpeed(u16, u16),
 
-    /// Request Checksum of Rectangular Area: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y
-    CsiRequestChecksumRectangularArea(Vec<u16>),
+    /// Request Checksum of Rectangular Area: ESC[{Ppage};{Pt};{Pl};{Pb};{Pr}*y
+    /// (Pid parameter ignored)
+    CsiRequestChecksumRectangularArea(u8, u16, u16, u16, u16),
 
     /// DECRQTSR - Request Tab Stop Report: ESC[{Ps}$w
     CsiRequestTabStopReport(u16),
@@ -529,45 +555,32 @@ pub enum TerminalCommand<'a> {
     /// RIS - Reset to Initial State: ESC c
     EscReset,
 
-    // OSC (Operating System Command) sequences
-    /// OSC 0 - Set Icon Name and Window Title: ESC]0;{text}BEL or ESC]0;{text}ESC\
-    OscSetTitle(&'a [u8]),
-    /// OSC 1 - Set Icon Name: ESC]1;{text}BEL
-    OscSetIconName(&'a [u8]),
-    /// OSC 2 - Set Window Title: ESC]2;{text}BEL
-    OscSetWindowTitle(&'a [u8]),
-    /// OSC 8 - Hyperlink: ESC]8;{params};{uri}BEL
-    OscHyperlink {
-        params: &'a [u8],
-        uri: &'a [u8],
-    },
-
-    // DCS (Device Control String) sequence: ESC P ... ESC \
-    /// Used for sixel graphics, macros, custom fonts, etc.
-    /// The consumer should parse the content based on application needs
-    DcsString(&'a [u8]),
-
-    // APS (Application Program String) sequence: ESC _ ... ESC \
-    /// Application-specific command string
-    ApsString(&'a [u8]),
-
     // Avatar (Advanced Video Attribute Terminal Assembler and Recreator) commands
     /// AVT Repeat Character: ^Y{char}{count}
     AvtRepeatChar(u8, u8),
-
-    /// Unknown or unsupported escape sequence
-    /// Contains the raw bytes for potential logging/debugging
-    Unknown(&'a [u8]),
 }
 
 pub trait CommandSink {
-    fn emit(&mut self, cmd: TerminalCommand<'_>);
+    /// Output printable text data
+    fn print(&mut self, text: &[u8]);
+
+    fn emit(&mut self, cmd: TerminalCommand);
 
     /// Emit a RIPscrip command. Default implementation does nothing.
     fn emit_rip(&mut self, _cmd: RipCommand) {}
 
     /// Emit a SkyPix command. Default implementation does nothing.
     fn emit_skypix(&mut self, _cmd: SkypixCommand) {}
+
+    /// Emit a Device Control String (DCS) sequence. Default implementation does nothing.
+    fn device_control(&mut self, _dcs: DeviceControlString<'_>) {}
+
+    /// Emit an Operating System Command (OSC) sequence. Default implementation does nothing.
+    fn operating_system_command(&mut self, _osc: OperatingSystemCommand<'_>) {}
+
+    /// Emit an Application Program String (APS) sequence: ESC _ ... ESC \
+    /// Default implementation does nothing.
+    fn aps(&mut self, _data: &[u8]) {}
 
     /// Report a parsing error. Default implementation does nothing.
     fn report_error(&mut self, _error: ParseError) {}
@@ -641,7 +654,7 @@ impl CommandParser for AsciiParser {
                     }
                     i += 1;
                 }
-                sink.emit(TerminalCommand::Printable(&input[start..i]));
+                sink.print(&input[start..i]);
             }
         }
     }
