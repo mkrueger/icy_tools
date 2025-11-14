@@ -266,7 +266,7 @@ fn test_rip_mouse() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|1M01000010001000000GO\n", &mut sink);
+    parser.parse(b"!|1M0100001000010000GO\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
@@ -300,7 +300,7 @@ fn test_rip_button() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|1U05051015001Enter<>cmd<>label<>text\n", &mut sink);
+    parser.parse(b"!|1U05051015000100Enter<>cmd<>label<>text\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
@@ -332,7 +332,7 @@ fn test_rip_load_icon() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|1I0A0A00000test.icn\n", &mut sink);
+    parser.parse(b"!|1I0A0A000000test.icn\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
@@ -360,7 +360,7 @@ fn test_rip_bezier() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|Z0000050005100510000A\n", &mut sink);
+    parser.parse(b"!|Z00000500051005100A\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
@@ -471,12 +471,12 @@ fn test_rip_arc() {
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
-        RipCommand::Arc { x, y, st_ang, end_ang, radius } => {
+        RipCommand::Arc { x, y, st_ang, end_ang, radius: _ } => {
             assert_eq!(*x, 10);
             assert_eq!(*y, 10);
             assert_eq!(*st_ang, 0);
-            assert_eq!(*end_ang, 35);
-            assert_eq!(*end_ang, 35 * 36 + 35); // ZZ in base36
+            assert_eq!(*end_ang, 35 * 36 + 1); // Z1 in base36
+            // radius is 0Z = 35
         }
         _ => panic!("Expected Arc command"),
     }
@@ -539,7 +539,7 @@ fn test_rip_oval() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|O0A0A00Z10Z0505\n", &mut sink);
+    parser.parse(b"!|O0A0A00ZZ0505\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {

@@ -3,7 +3,7 @@
 //! RIPscrip is a graphics-based BBS protocol that extends ANSI art with vector graphics,
 //! buttons, and mouse support. Commands start with !| and use base-36 encoded parameters.
 
-use crate::{CommandParser, CommandSink, TerminalCommand};
+use crate::{AnsiParser, CommandParser, CommandSink};
 
 /// Helper function to parse a base-36 character into a digit
 #[inline]
@@ -245,7 +245,14 @@ enum State {
     ReadLevel1,
     ReadLevel9,
     ReadParams,
-    SkipToEOL,
+    SkipToEOL(Box<State>), // Store the state to return to after EOL
+}
+
+#[derive(Default, Clone, Debug, PartialEq)]
+enum ParserMode {
+    #[default]
+    NonRip, // Use ANSI parser for text
+    Rip,    // RIP command mode
 }
 
 #[derive(Default)]
@@ -302,18 +309,19 @@ impl CommandBuilder {
 }
 
 pub struct RipParser {
+    mode: ParserMode,
     state: State,
     builder: CommandBuilder,
-    // Buffer for pass-through to ANSI parser (if needed)
-    ansi_buffer: Vec<u8>,
+    ansi_parser: AnsiParser,
 }
 
 impl RipParser {
     pub fn new() -> Self {
         Self {
+            mode: ParserMode::default(),
             state: State::Default,
             builder: CommandBuilder::default(),
-            ansi_buffer: Vec::new(),
+            ansi_parser: AnsiParser::new(),
         }
     }
 
@@ -455,13 +463,13 @@ impl RipParser {
                 cnt: self.builder.i32_params[8],
             },
             (0, b'P') => RipCommand::Polygon {
-                points: self.builder.i32_params[1..].to_vec(),
+                points: self.builder.i32_params.clone(),
             },
             (0, b'p') => RipCommand::FilledPolygon {
-                points: self.builder.i32_params[1..].to_vec(),
+                points: self.builder.i32_params.clone(),
             },
             (0, b'l') => RipCommand::PolyLine {
-                points: self.builder.i32_params[1..].to_vec(),
+                points: self.builder.i32_params.clone(),
             },
             (0, b'F') if self.builder.i32_params.len() >= 3 => RipCommand::Fill {
                 x: self.builder.i32_params[0],
@@ -610,9 +618,9 @@ impl RipParser {
     }
 
     fn parse_params(&mut self, ch: u8, sink: &mut dyn CommandSink) -> bool {
-        // Handle line continuation
+        // Handle line continuation - backslash skips to end of line
         if ch == b'\\' {
-            self.state = State::SkipToEOL;
+            self.state = State::SkipToEOL(Box::new(State::ReadParams));
             return true;
         }
 
@@ -624,6 +632,7 @@ impl RipParser {
             self.emit_command(sink);
             self.builder.reset();
             self.state = State::Default;
+            // Stay in RIP mode after command completes
             return true;
         }
         if ch == b'|' {
@@ -651,52 +660,40 @@ impl RipParser {
             }
 
             // TextXY, Button - initial params then string
-            (0, b'@') if self.builder.param_state < 4 => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 3),
+            (0, b'@') if self.builder.param_state < 4 => {
+                let result = self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 3);
+                // Don't signal completion even if params are done - we still need the string
+                match result {
+                    Ok(_) => Ok(false),
+                    Err(e) => Err(e),
+                }
+            }
             (0, b'@') => {
                 self.builder.string_param.push(ch as char);
                 Ok(false)
             }
 
-            (1, b'U') if self.builder.param_state < 12 => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 11),
+            // Button - 7 params (14 digits) then string
+            (1, b'U') if self.builder.param_state < 14 => {
+                let result = self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 13);
+                // Don't signal completion even if params are done - we still need the string
+                match result {
+                    Ok(_) => Ok(false),
+                    Err(e) => Err(e),
+                }
+            }
             (1, b'U') => {
                 self.builder.string_param.push(ch as char);
                 Ok(false)
             }
 
-            // Mouse - params then string
-            (1, b'M') if self.builder.param_state < 17 => {
-                if self.builder.param_state < 10 {
-                    self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9)
-                } else if self.builder.param_state == 10 {
-                    if let Some(digit) = parse_base36_digit(ch) {
-                        self.builder.i32_params.push(digit);
-                        self.builder.param_state += 1;
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
-                } else if self.builder.param_state == 11 {
-                    if let Some(digit) = parse_base36_digit(ch) {
-                        self.builder.i32_params.push(digit);
-                        self.builder.param_state += 1;
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
-                } else {
-                    // States 12-16: 5-digit reserved field
-                    if let Some(digit) = parse_base36_digit(ch) {
-                        if self.builder.param_state == 12 {
-                            self.builder.i32_params.push(digit);
-                        } else {
-                            let idx = self.builder.i32_params.len() - 1;
-                            self.builder.i32_params[idx] = self.builder.i32_params[idx] * 36 + digit;
-                        }
-                        self.builder.param_state += 1;
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
+            // Mouse - 8 params (16 digits) then string
+            (1, b'M') if self.builder.param_state < 16 => {
+                let result = self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 15);
+                // Don't signal completion even if params are done - we still need the string
+                match result {
+                    Ok(_) => Ok(false),
+                    Err(e) => Err(e),
                 }
             }
             (1, b'M') => {
@@ -724,8 +721,15 @@ impl RipParser {
                 Ok(false)
             }
 
-            // LoadIcon - params then string
-            (1, b'I') if self.builder.param_state < 9 => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 8),
+            // LoadIcon - 5 params (10 digits) then string
+            (1, b'I') if self.builder.param_state < 10 => {
+                let result = self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9);
+                // Don't signal completion even if params are done - we still need the string
+                match result {
+                    Ok(_) => Ok(false),
+                    Err(e) => Err(e),
+                }
+            }
             (1, b'I') => {
                 self.builder.string_param.push(ch as char);
                 Ok(false)
@@ -768,16 +772,17 @@ impl RipParser {
                 }
             }
 
+            // A - Arc (10 digits: 5 params)
             (0, b'A') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
             (0, b'I') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
 
-            // 12-digit parameter commands
+            // O, V, i - Oval commands (12 digits: 6 params)
             (0, b'O') | (0, b'V') | (0, b'i') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 11),
 
             // Y - Font Style (8 digits)
             (0, b'Y') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 7),
 
-            // Z - Bezier (18 digits)
+            // Z - Bezier (18 digits: 9 params)
             (0, b'Z') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 17),
 
             // = - Line Style (2 + 4 + 2 = 8 digits)
@@ -918,8 +923,9 @@ impl RipParser {
                 true
             }
             Err(()) => {
-                // Parse error - abort command
+                // Parse error - abort command and return to NonRip mode
                 self.builder.reset();
+                self.mode = ParserMode::NonRip;
                 self.state = State::Default;
                 false
             }
@@ -936,13 +942,33 @@ impl Default for RipParser {
 impl CommandParser for RipParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
         for &ch in input {
-            match self.state {
+            // Check for backslash (line continuation) in any RIP state
+            if self.mode == ParserMode::Rip && ch == b'\\' && !matches!(self.state, State::SkipToEOL(_) | State::Default) {
+                self.state = State::SkipToEOL(Box::new(self.state.clone()));
+                continue;
+            }
+
+            match &self.state.clone() {
                 State::Default => {
-                    if ch == b'!' {
-                        self.state = State::GotExclaim;
-                    } else {
-                        // Pass through as printable
-                        sink.print(&[ch]);
+                    match self.mode {
+                        ParserMode::NonRip => {
+                            if ch == b'!' {
+                                self.mode = ParserMode::Rip;
+                                self.state = State::GotExclaim;
+                            } else {
+                                // Pass through to ANSI parser
+                                self.ansi_parser.parse(&[ch], sink);
+                            }
+                        }
+                        ParserMode::Rip => {
+                            if ch == b'!' {
+                                self.state = State::GotExclaim;
+                            } else {
+                                // In RIP mode without !, treat as error and go back to NonRip
+                                self.mode = ParserMode::NonRip;
+                                self.ansi_parser.parse(&[ch], sink);
+                            }
+                        }
                     }
                 }
                 State::GotExclaim => {
@@ -952,13 +978,16 @@ impl CommandParser for RipParser {
                     } else if ch == b'|' {
                         self.state = State::GotPipe;
                     } else if ch == b'\n' || ch == b'\r' {
-                        // End of line after ! - reset
+                        // End of line after ! - reset to NonRip mode
+                        self.mode = ParserMode::NonRip;
                         self.state = State::Default;
+                        self.ansi_parser.parse(&[ch], sink);
                     } else {
-                        // Not a RIP command - emit ! and continue
-                        sink.print(b"!");
+                        // Not a RIP command - emit ! and continue in NonRip mode
+                        self.mode = ParserMode::NonRip;
                         self.state = State::Default;
-                        sink.print(&[ch]);
+                        self.ansi_parser.parse(b"!", sink);
+                        self.ansi_parser.parse(&[ch], sink);
                     }
                 }
                 State::GotPipe => {
@@ -975,6 +1004,7 @@ impl CommandParser for RipParser {
                         self.builder.level = 0;
                         self.emit_command(sink);
                         self.builder.reset();
+                        self.mode = ParserMode::NonRip;
                         self.state = State::Default;
                     } else {
                         // Level 0 command
@@ -996,14 +1026,16 @@ impl CommandParser for RipParser {
                         // Parse error - already reset by parse_params
                     }
                 }
-                State::SkipToEOL => {
+                State::SkipToEOL(return_state) => {
                     if ch == b'\n' {
-                        self.state = State::ReadParams;
+                        // Return to the saved state
+                        self.state = (**return_state).clone();
                     }
-                    // Ignore everything else
+                    // Ignore everything else until newline
                 }
                 State::ReadCommand => {
                     // Shouldn't reach here
+                    self.mode = ParserMode::NonRip;
                     self.state = State::Default;
                 }
             }
