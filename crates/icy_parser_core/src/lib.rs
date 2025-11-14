@@ -1,10 +1,5 @@
 //! Core parser infrastructure: command emission traits and basic ASCII parser.
 
-#![cfg_attr(feature = "simd", feature(portable_simd))]
-
-#[cfg(feature = "simd")]
-use std::simd::{cmp::SimdPartialEq, *};
-
 mod ansi;
 pub use ansi::AnsiParser;
 
@@ -377,6 +372,7 @@ pub enum TerminalCommand<'a> {
     FormFeed,
     Bell,
     Delete,
+
     /// Insert character at current position (used by ATASCII 0xFF and potentially others)
     InsertChar(u8),
 
@@ -427,8 +423,8 @@ pub enum TerminalCommand<'a> {
     /// DL - Delete Line: ESC[{n}M
     CsiDeleteLine(u16),
 
-    /// REP - Repeat preceding character: ESC[{n}b
     CsiRepeatPrecedingCharacter(u16),
+    /// REP - Repeat preceding character: ESC[{n}b
 
     /// VPA - Line Position Absolute: ESC[{n}d
     CsiLinePositionAbsolute(u16),
@@ -617,94 +613,6 @@ const fn build_control_lut() -> [u8; 256] {
 
 const CONTROL_LUT: [u8; 256] = build_control_lut();
 
-#[cfg(feature = "simd")]
-impl CommandParser for AsciiParser {
-    fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
-        let mut i = 0;
-        let mut printable_start = 0;
-
-        // SIMD fast path: check 16-byte chunks for controls
-        while i + 16 <= input.len() {
-            let chunk = u8x16::from_slice(&input[i..i + 16]);
-
-            // Check for each control byte type
-            let has_bell = chunk.simd_eq(u8x16::splat(0x07));
-            let has_bs = chunk.simd_eq(u8x16::splat(0x08));
-            let has_tab = chunk.simd_eq(u8x16::splat(0x09));
-            let has_lf = chunk.simd_eq(u8x16::splat(0x0A));
-            let has_ff = chunk.simd_eq(u8x16::splat(0x0C));
-            let has_cr = chunk.simd_eq(u8x16::splat(0x0D));
-            let has_del = chunk.simd_eq(u8x16::splat(0x7F));
-
-            // Combine all control masks
-            let has_control = has_bell | has_bs | has_tab | has_lf | has_ff | has_cr | has_del;
-
-            // If no controls in this 16-byte chunk, skip ahead
-            if !has_control.any() {
-                i += 16;
-                continue;
-            }
-
-            // Found control(s) - process byte-by-byte until we hit one
-            while i < input.len() {
-                let b = unsafe { *input.get_unchecked(i) };
-                let code = unsafe { *CONTROL_LUT.get_unchecked(b as usize) };
-                if code != 0 {
-                    if i > printable_start {
-                        sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
-                    }
-                    match code {
-                        c if c == ControlKind::Bell as u8 => sink.emit(TerminalCommand::Bell),
-                        c if c == ControlKind::Backspace as u8 => sink.emit(TerminalCommand::Backspace),
-                        c if c == ControlKind::Tab as u8 => sink.emit(TerminalCommand::Tab),
-                        c if c == ControlKind::LineFeed as u8 => sink.emit(TerminalCommand::LineFeed),
-                        c if c == ControlKind::FormFeed as u8 => sink.emit(TerminalCommand::FormFeed),
-                        c if c == ControlKind::CarriageReturn as u8 => sink.emit(TerminalCommand::CarriageReturn),
-                        c if c == ControlKind::Delete as u8 => sink.emit(TerminalCommand::Delete),
-                        _ => unreachable!(),
-                    }
-                    i += 1;
-                    printable_start = i;
-                    break;
-                } else {
-                    i += 1;
-                }
-            }
-        }
-
-        // Tail: handle remaining bytes (< 16) with scalar loop
-        while i < input.len() {
-            let b = unsafe { *input.get_unchecked(i) };
-            let code = unsafe { *CONTROL_LUT.get_unchecked(b as usize) };
-            if code != 0 {
-                if i > printable_start {
-                    sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
-                }
-                match code {
-                    c if c == ControlKind::Bell as u8 => sink.emit(TerminalCommand::Bell),
-                    c if c == ControlKind::Backspace as u8 => sink.emit(TerminalCommand::Backspace),
-                    c if c == ControlKind::Tab as u8 => sink.emit(TerminalCommand::Tab),
-                    c if c == ControlKind::LineFeed as u8 => sink.emit(TerminalCommand::LineFeed),
-                    c if c == ControlKind::FormFeed as u8 => sink.emit(TerminalCommand::FormFeed),
-                    c if c == ControlKind::CarriageReturn as u8 => sink.emit(TerminalCommand::CarriageReturn),
-                    c if c == ControlKind::Delete as u8 => sink.emit(TerminalCommand::Delete),
-                    _ => unreachable!(),
-                }
-                i += 1;
-                printable_start = i;
-            } else {
-                i += 1;
-            }
-        }
-
-        // Emit final printable run if any
-        if i > printable_start {
-            sink.emit(TerminalCommand::Printable(&input[printable_start..i]));
-        }
-    }
-}
-
-#[cfg(not(feature = "simd"))]
 impl CommandParser for AsciiParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
         let mut i = 0;
