@@ -79,7 +79,7 @@ impl CommandParser for PetsciiParser {
                 self.got_esc = false;
 
                 // Emit any pending printable text
-                if start < i - 1 {
+                if i > 0 && start < i - 1 {
                     for &b in &input[start..i - 1] {
                         self.emit_char(sink, b);
                     }

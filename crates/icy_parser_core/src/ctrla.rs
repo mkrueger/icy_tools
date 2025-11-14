@@ -51,7 +51,7 @@ impl CommandParser for CtrlAParser {
                 self.in_sequence = false;
 
                 // Emit any text before this command
-                if start < i - 1 {
+                if i > 0 && start < i - 1 {
                     sink.print(&input[start..i - 1]);
                 }
 

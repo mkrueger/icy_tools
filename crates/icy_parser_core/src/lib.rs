@@ -33,6 +33,12 @@ pub use rip::{RipCommand, RipParser};
 mod skypix;
 pub use skypix::{SkypixCommand, SkypixParser};
 
+mod igs;
+pub use igs::{IgsCommand, IgsParser};
+
+mod vt52;
+pub use vt52::Vt52Parser;
+
 /// Erase in Display mode for ED command (ESC[nJ)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +156,12 @@ pub enum DecPrivateMode {
     /// When reset: cursor stops at right margin
     AutoWrap = 7,
 
+    // Video Modes
+    /// Inverse Video Mode (VT-52 compatibility)
+    /// When set: enable inverse/reverse video
+    /// When reset: normal video
+    Inverse = 5,
+
     // Cursor Modes
     /// DECTCEM - Text Cursor Enable Mode (Mode 25)
     /// When set: cursor is visible
@@ -205,6 +217,7 @@ impl DecPrivateMode {
     fn from_u16(n: u16) -> Option<Self> {
         match n {
             4 => Some(Self::SmoothScroll),
+            5 => Some(Self::Inverse),
             6 => Some(Self::OriginMode),
             7 => Some(Self::AutoWrap),
             25 => Some(Self::CursorVisible),
@@ -560,6 +573,68 @@ pub enum TerminalCommand {
     AvtRepeatChar(u8, u8),
 }
 
+/// Music style for ANSI music playback
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MusicStyle {
+    /// Play music in foreground (blocks)
+    Foreground,
+    /// Play music in background (non-blocking)
+    Background,
+    /// Normal note articulation (7/8 of note duration)
+    Normal,
+    /// Legato articulation (full note duration, no pause between notes)
+    Legato,
+    /// Staccato articulation (3/4 of note duration, 1/4 pause)
+    Staccato,
+}
+
+impl MusicStyle {
+    /// Calculate the pause length after a note based on the music style
+    pub fn get_pause_length(&self, duration: i32) -> i32 {
+        match self {
+            MusicStyle::Legato => 0,
+            MusicStyle::Staccato => duration / 4,
+            _ => duration / 8,
+        }
+    }
+}
+
+/// ANSI music action - a single music command
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MusicAction {
+    /// Play a note: frequency (Hz), tempo * length, is_dotted
+    PlayNote(f32, i32, bool),
+    /// Pause for given tempo * length
+    Pause(i32),
+    /// Change music style
+    SetStyle(MusicStyle),
+}
+
+impl MusicAction {
+    /// Get the duration of this music action in milliseconds
+    pub fn get_duration(&self) -> i32 {
+        match self {
+            MusicAction::PlayNote(_, len, dotted) => {
+                if *dotted {
+                    360000 / *len
+                } else {
+                    240000 / *len
+                }
+            }
+            MusicAction::Pause(len) => 240000 / *len,
+            _ => 0,
+        }
+    }
+}
+
+/// ANSI music sequence - a collection of music actions
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AnsiMusic {
+    /// The music actions to perform
+    pub music_actions: Vec<MusicAction>,
+}
+
 pub trait CommandSink {
     /// Output printable text data
     fn print(&mut self, text: &[u8]);
@@ -572,6 +647,9 @@ pub trait CommandSink {
     /// Emit a SkyPix command. Default implementation does nothing.
     fn emit_skypix(&mut self, _cmd: SkypixCommand) {}
 
+    /// Emit an IGS (Interactive Graphics System) command. Default implementation does nothing.
+    fn emit_igs(&mut self, _cmd: IgsCommand) {}
+
     /// Emit a Device Control String (DCS) sequence. Default implementation does nothing.
     fn device_control(&mut self, _dcs: DeviceControlString<'_>) {}
 
@@ -581,6 +659,9 @@ pub trait CommandSink {
     /// Emit an Application Program String (APS) sequence: ESC _ ... ESC \
     /// Default implementation does nothing.
     fn aps(&mut self, _data: &[u8]) {}
+
+    /// Play ANSI music sequence. Default implementation does nothing.
+    fn play_music(&mut self, _music: AnsiMusic) {}
 
     /// Report a parsing error. Default implementation does nothing.
     fn report_error(&mut self, _error: ParseError) {}

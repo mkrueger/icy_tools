@@ -65,7 +65,7 @@ impl CommandParser for RenegadeParser {
                 State::FirstDigit(tens) => {
                     if byte.is_ascii_digit() {
                         let ones = byte - b'0';
-                        let color_code = tens * 10 + ones;
+                        let color_code = tens.wrapping_mul(10).wrapping_add(ones);
 
                         if color_code < 16 {
                             // Foreground color (0-15)

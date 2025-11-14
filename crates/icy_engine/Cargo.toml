@@ -32,6 +32,7 @@ rust-embed = { workspace = true }
 once_cell = { workspace = true }
 icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
+icy_parser_core = { path = "../icy_parser_core" }
 bitflags = "2.8.0"
 zip = { workspace = true }
 libyaff = { workspace = true }

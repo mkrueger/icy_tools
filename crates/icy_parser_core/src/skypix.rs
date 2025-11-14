@@ -121,7 +121,7 @@ impl CommandBuilder {
     }
 
     fn add_digit(&mut self, digit: i32) {
-        self.current_param = self.current_param * 10 + digit;
+        self.current_param = self.current_param.wrapping_mul(10).wrapping_add(digit);
         self.has_param = true;
     }
 }

@@ -241,7 +241,7 @@ enum State {
     Default,
     GotExclaim,
     GotPipe,
-    ReadCommand,
+    _ReadCommand,
     ReadLevel1,
     ReadLevel9,
     ReadParams,
@@ -252,7 +252,7 @@ enum State {
 enum ParserMode {
     #[default]
     NonRip, // Use ANSI parser for text
-    Rip,    // RIP command mode
+    Rip, // RIP command mode
 }
 
 #[derive(Default)]
@@ -279,7 +279,7 @@ impl CommandBuilder {
         self.char_param = 0;
     }
 
-    fn parse_base36_2digit(&mut self, ch: u8, target_idx: usize) -> Result<bool, ()> {
+    fn _parse_base36_2digit(&mut self, ch: u8, target_idx: usize) -> Result<bool, ()> {
         let digit = parse_base36_digit(ch).ok_or(())?;
         if self.param_state % 2 == 0 {
             if self.i32_params.len() <= target_idx {
@@ -287,7 +287,7 @@ impl CommandBuilder {
             }
             self.i32_params[target_idx] = digit;
         } else {
-            self.i32_params[target_idx] = self.i32_params[target_idx] * 36 + digit;
+            self.i32_params[target_idx] = self.i32_params[target_idx].wrapping_mul(36).wrapping_add(digit);
         }
         self.param_state += 1;
         Ok(false) // Not done yet
@@ -301,7 +301,7 @@ impl CommandBuilder {
             }
             self.i32_params[target_idx] = digit;
         } else {
-            self.i32_params[target_idx] = self.i32_params[target_idx] * 36 + digit;
+            self.i32_params[target_idx] = self.i32_params[target_idx].wrapping_mul(36).wrapping_add(digit);
         }
         self.param_state += 1;
         Ok(self.param_state > final_state)
@@ -793,7 +793,7 @@ impl RipParser {
                         self.builder.i32_params.push(digit);
                     } else {
                         let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx] * 36 + digit;
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
                     }
                     self.builder.param_state += 1;
                     Ok(false)
@@ -816,7 +816,7 @@ impl RipParser {
                         self.builder.i32_params.push(digit);
                     } else {
                         let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx] * 36 + digit;
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
                     }
                     self.builder.param_state += 1;
                     Ok(self.builder.param_state >= 32)
@@ -831,7 +831,7 @@ impl RipParser {
                     if self.builder.param_state == 0 {
                         self.builder.npoints = digit;
                     } else {
-                        self.builder.npoints = self.builder.npoints * 36 + digit;
+                        self.builder.npoints = self.builder.npoints.wrapping_mul(36).wrapping_add(digit);
                     }
                     self.builder.param_state += 1;
                     Ok(false)
@@ -845,7 +845,7 @@ impl RipParser {
                         self.builder.i32_params.push(digit);
                     } else {
                         let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx] * 36 + digit;
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
                     }
                     self.builder.param_state += 1;
                     let expected = 2 + self.builder.npoints * 4;
@@ -866,7 +866,7 @@ impl RipParser {
                         self.builder.i32_params.push(digit);
                     } else {
                         let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx] * 36 + digit;
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
                     }
                     self.builder.param_state += 1;
                     Ok(false)
@@ -885,7 +885,7 @@ impl RipParser {
                         self.builder.i32_params.push(digit);
                     } else {
                         let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx] * 36 + digit;
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
                     }
                     self.builder.param_state += 1;
                     Ok(self.builder.param_state >= 43)
@@ -1033,7 +1033,7 @@ impl CommandParser for RipParser {
                     }
                     // Ignore everything else until newline
                 }
-                State::ReadCommand => {
+                State::_ReadCommand => {
                     // Shouldn't reach here
                     self.mode = ParserMode::NonRip;
                     self.state = State::Default;

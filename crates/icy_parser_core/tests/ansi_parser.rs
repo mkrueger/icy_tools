@@ -566,7 +566,7 @@ fn test_error_reporting() {
 #[test]
 fn test_ansi_modes() {
     struct ErrorCollectSink {
-        text: Vec<u8>,
+        _text: Vec<u8>,
         cmds: Vec<TerminalCommand>,
         errors: Vec<ParseError>,
     }
@@ -587,7 +587,7 @@ fn test_ansi_modes() {
 
     let mut parser = AnsiParser::new();
     let mut sink = ErrorCollectSink {
-        text: Vec::new(),
+        _text: Vec::new(),
         cmds: Vec::new(),
         errors: Vec::new(),
     };

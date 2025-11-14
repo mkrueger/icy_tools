@@ -219,7 +219,7 @@ impl AnsiParser {
             match byte {
                 b'0'..=b'9' => {
                     let last = self.params.pop().unwrap_or(0);
-                    self.params.push(last * 10 + (byte - b'0') as u16);
+                    self.params.push(last.wrapping_mul(10).wrapping_add((byte - b'0') as u16));
                 }
                 b';' => {
                     self.params.push(0);
@@ -291,7 +291,7 @@ impl AnsiParser {
     fn parse_hex_macro(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
         let mut result = Vec::new();
         let mut i = 0;
-        let mut repeat_count = 0;
+        let mut repeat_count: usize = 0;
         let mut in_repeat = false;
         let mut repeat_start = 0;
 
@@ -301,7 +301,7 @@ impl AnsiParser {
                 i += 1;
                 repeat_count = 0;
                 while i < data.len() && data[i].is_ascii_digit() {
-                    repeat_count = repeat_count * 10 + (data[i] - b'0') as usize;
+                    repeat_count = repeat_count.wrapping_mul(10).wrapping_add((data[i] - b'0') as usize);
                     i += 1;
                 }
                 if i < data.len() && data[i] == b';' {
@@ -578,7 +578,7 @@ impl CommandParser for AnsiParser {
                             // Continue building current parameter
                             let digit = (byte - b'0') as u16;
                             if let Some(last) = self.params.last_mut() {
-                                *last = last.saturating_mul(10).saturating_add(digit);
+                                *last = last.wrapping_mul(10).wrapping_add(digit);
                             } else {
                                 self.params.push(digit);
                             }

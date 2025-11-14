@@ -35,7 +35,7 @@ impl CommandParser for AtasciiParser {
             if self.got_escape {
                 self.got_escape = false;
                 // Emit any text before the escape
-                if start < i - 1 {
+                if i > 0 && start < i - 1 {
                     sink.print(&input[start..i - 1]);
                 }
                 // Emit the literal character

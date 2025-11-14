@@ -60,6 +60,9 @@ mod selection_mask;
 mod url_scanner;
 pub use selection_mask::*;
 
+mod parser_sink;
+pub use parser_sink::*;
+
 pub type EngineResult<T> = anyhow::Result<T>;
 
 pub mod overlay_mask;

@@ -471,7 +471,13 @@ fn test_rip_arc() {
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
-        RipCommand::Arc { x, y, st_ang, end_ang, radius: _ } => {
+        RipCommand::Arc {
+            x,
+            y,
+            st_ang,
+            end_ang,
+            radius: _,
+        } => {
             assert_eq!(*x, 10);
             assert_eq!(*y, 10);
             assert_eq!(*st_ang, 0);

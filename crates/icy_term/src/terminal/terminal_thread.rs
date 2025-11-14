@@ -1,4 +1,3 @@
-use crate::auto_login::AutoLoginCommand;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
