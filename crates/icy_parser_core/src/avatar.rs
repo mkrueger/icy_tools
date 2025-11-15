@@ -212,13 +212,12 @@ impl CommandParser for AvatarParser {
 
         while i < input.len() {
             let byte = input[i];
-
             match self.state {
                 AvatarState::Ground => {
                     match byte {
                         CLEAR_SCREEN => {
                             if i > printable_start {
-                                sink.print(&input[printable_start..i]);
+                                self.ansi_parser.parse(&input[printable_start..i], sink);
                             }
                             // Clear screen
                             sink.emit(TerminalCommand::FormFeed);
@@ -229,7 +228,7 @@ impl CommandParser for AvatarParser {
                         }
                         COMMAND => {
                             if i > printable_start {
-                                sink.print(&input[printable_start..i]);
+                                self.ansi_parser.parse(&input[printable_start..i], sink);
                             }
                             self.state = AvatarState::ReadCommand;
                             i += 1;
@@ -237,7 +236,7 @@ impl CommandParser for AvatarParser {
                         }
                         REPEAT => {
                             if i > printable_start {
-                                sink.print(&input[printable_start..i]);
+                                self.ansi_parser.parse(&input[printable_start..i], sink);
                             }
                             self.state = AvatarState::ReadRepeatChar;
                             i += 1;
@@ -396,7 +395,8 @@ impl CommandParser for AvatarParser {
                 AvatarState::ReadRepeatCount { ch } => {
                     // Repeat count
                     if byte > 0 {
-                        sink.print(&vec![ch; byte as usize]);
+                        let repeated = vec![ch; byte as usize];
+                        self.ansi_parser.parse(&repeated, sink);
                     }
                     self.reset();
                     i += 1;
@@ -555,7 +555,10 @@ impl CommandParser for AvatarParser {
                 }
 
                 AvatarState::ReadPatternCount => {
-                    sink.print(&self.buf);
+                    // Repeat the pattern 'byte' times
+                    for _ in 0..byte {
+                        self.ansi_parser.parse(&self.buf, sink);
+                    }
                     self.reset();
                     i += 1;
                     printable_start = i;

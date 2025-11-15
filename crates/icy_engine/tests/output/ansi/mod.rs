@@ -1,4 +1,4 @@
-use icy_engine::{EditableScreen, RgbaScreen, TextScreen};
+use icy_engine::{EditableScreen, TextScreen};
 use icy_parser_core::AnsiParser;
 use std::{
     fs::{self},
