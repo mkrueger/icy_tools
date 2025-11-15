@@ -10,13 +10,13 @@ pub use ansi::AnsiParser;
 pub use ansi::music::*;
 
 mod avatar;
-pub use avatar::AvatarParser;
+pub use avatar::{AvatarParser, constants as avatar_constants};
 
 mod pcboard;
 pub use pcboard::PcBoardParser;
 
 mod ctrla;
-pub use ctrla::CtrlAParser;
+pub use ctrla::{BG_CODES as ctrla_bg, CtrlAParser, FG_CODES as ctrla_fg};
 
 mod renegade;
 pub use renegade::RenegadeParser;
@@ -603,6 +603,10 @@ pub enum TerminalCommand {
         lines: u8,
         columns: u8,
     },
+
+    /// ANSI Music sequence
+    /// Conflicting CSI M/N commands can trigger music playback
+    AnsiMusic(AnsiMusic),
 }
 
 /// Terminal requests that expect a response from the terminal emulator.

@@ -1,5 +1,5 @@
-use icy_engine::{BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, IgsParser, Palette, PaletteScreenBuffer, ScreenSink};
-use icy_parser_core::CommandParser;
+use icy_engine::{PaletteScreenBuffer, ScreenSink};
+use icy_parser_core::{CommandParser, IgsParser};
 use std::fs::{self};
 
 use crate::compare_output;

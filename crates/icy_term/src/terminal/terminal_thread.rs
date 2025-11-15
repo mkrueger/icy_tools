@@ -3,7 +3,6 @@ use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
-use icy_engine::ansi::BaudEmulation;
 use icy_engine::{AutoWrapMode, ExtMouseMode, FontSelectionState, IceMode, MouseMode, OriginMode, RIP_TERMINAL_ID};
 use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, TextScreen};
 use icy_net::iemsi::EmsiISI;
@@ -20,6 +19,7 @@ use icy_net::{
 };
 use icy_parser_core::*;
 use icy_parser_core::{AnsiMusic, CommandParser, CommandSink, TerminalCommand as ParserCommand, TerminalRequest};
+use icy_parser_core::{BaudEmulation, MusicOption};
 use log::error;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -50,7 +50,7 @@ pub enum TerminalEvent {
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
     Error(String, String),
-    PlayMusic(icy_engine::ansi::sound::AnsiMusic),
+    PlayMusic(AnsiMusic),
     Beep,
     OpenLineSound,
     OpenDialSound(bool, String),
@@ -80,7 +80,7 @@ pub struct ConnectionConfig {
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
 
-    pub music_option: icy_engine::ansi::MusicOption,
+    pub music_option: MusicOption,
     pub screen_mode: ScreenMode,
 
     pub baud_emulation: BaudEmulation,
@@ -142,28 +142,7 @@ impl<'a> CommandSink for TerminalSink<'a> {
     }
 
     fn play_music(&mut self, music: AnsiMusic) {
-        // Convert icy_parser_core::AnsiMusic to icy_engine::ansi::sound::AnsiMusic
-        let engine_music = icy_engine::ansi::sound::AnsiMusic {
-            music_actions: music
-                .music_actions
-                .into_iter()
-                .map(|action| match action {
-                    icy_parser_core::MusicAction::PlayNote(freq, tempo_len, dotted) => icy_engine::ansi::sound::MusicAction::PlayNote(freq, tempo_len, dotted),
-                    icy_parser_core::MusicAction::Pause(tempo_len) => icy_engine::ansi::sound::MusicAction::Pause(tempo_len),
-                    icy_parser_core::MusicAction::SetStyle(style) => {
-                        let engine_style = match style {
-                            icy_parser_core::MusicStyle::Foreground => icy_engine::ansi::sound::MusicStyle::Foreground,
-                            icy_parser_core::MusicStyle::Background => icy_engine::ansi::sound::MusicStyle::Background,
-                            icy_parser_core::MusicStyle::Normal => icy_engine::ansi::sound::MusicStyle::Normal,
-                            icy_parser_core::MusicStyle::Legato => icy_engine::ansi::sound::MusicStyle::Legato,
-                            icy_parser_core::MusicStyle::Staccato => icy_engine::ansi::sound::MusicStyle::Staccato,
-                        };
-                        icy_engine::ansi::sound::MusicAction::SetStyle(engine_style)
-                    }
-                })
-                .collect(),
-        };
-        let _ = self.event_tx.send(TerminalEvent::PlayMusic(engine_music));
+        let _ = self.event_tx.send(TerminalEvent::PlayMusic(music));
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
@@ -1198,7 +1177,7 @@ pub fn create_terminal_thread(
     edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
     terminal_type: TerminalEmulation,
 ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
-    use icy_engine::ansi::MusicOption;
+    use icy_parser_core::MusicOption;
     let parser = crate::get_parser(
         &terminal_type,
         MusicOption::Off,

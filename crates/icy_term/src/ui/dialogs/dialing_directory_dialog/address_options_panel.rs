@@ -9,8 +9,8 @@ use iced::{
     widget::{Space, button, column, container, pick_list, row, scrollable, svg, text, text_input},
 };
 use iced_engine_gui::settings::{SECTION_SPACING, effect_box, left_label, section_header};
-use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_parser_core::{BaudEmulation, MusicOption};
 use once_cell::sync::Lazy;
 use std::fmt;
 

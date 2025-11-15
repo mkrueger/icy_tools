@@ -4,7 +4,8 @@ use iced::{
     widget::{Space, button, column, container, row, text},
 };
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
-use icy_engine::{AttributedChar, EditableScreen, Position, TextAttribute, TextBuffer, TextPane, TextScreen, ansi::MusicOption};
+use icy_engine::{AttributedChar, EditableScreen, Position, TextAttribute, TextBuffer, TextPane, TextScreen};
+use icy_parser_core::MusicOption;
 use std::sync::{Arc, Mutex};
 
 use crate::{

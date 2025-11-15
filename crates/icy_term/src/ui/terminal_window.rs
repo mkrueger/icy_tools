@@ -4,8 +4,9 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
-use icy_engine::{EditableScreen, ansi::BaudEmulation};
+use icy_engine::EditableScreen;
 use icy_net::telnet::TerminalEmulation;
+use icy_parser_core::BaudEmulation;
 use std::sync::{Arc, Mutex};
 // use iced_aw::{menu, menu_bar, menu_items};
 

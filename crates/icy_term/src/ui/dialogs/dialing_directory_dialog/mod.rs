@@ -7,8 +7,8 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced::{Event, keyboard};
-use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_parser_core::{BaudEmulation, MusicOption};
 use std::sync::Arc;
 use std::sync::Mutex;
 

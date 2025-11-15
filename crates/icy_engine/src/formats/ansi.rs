@@ -5,7 +5,7 @@ use codepages::tables::UNICODE_TO_CP437;
 
 use crate::{
     ANSI_FONTS, AttributedChar, BitFont, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextBuffer, TextPane,
-    XTERM_256_PALETTE, analyze_font_usage, parse_with_parser,
+    XTERM_256_PALETTE, analyze_font_usage, load_with_parser,
 };
 use crate::{Color, EditableScreen, TextScreen};
 
@@ -62,16 +62,15 @@ impl OutputFormat for Ansi {
             result.buffer.load_sauce(sauce);
         }
 
-        let mut parser = crate::parsers::ansi::Parser::default();
+        let mut parser = icy_parser_core::AnsiParser::new();
         if let Some(music) = load_data.ansi_music {
-            parser.ansi_music = music;
+            parser.set_music_option(music);
         }
-        parser.bs_is_ctrl_char = false;
         let (text, is_unicode) = crate::convert_ansi_to_utf8(data);
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        parse_with_parser(&mut result, &mut parser, &text, true)?;
+        load_with_parser(&mut result, &mut parser, &text, true)?;
         Ok(result.buffer)
     }
 }

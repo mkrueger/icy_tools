@@ -1,4 +1,5 @@
-use icy_engine::{BufferParser, EditableScreen, TextScreen, avatar};
+use icy_engine::{EditableScreen, TextScreen};
+use icy_parser_core::AvatarParser;
 use std::fs::{self};
 
 use crate::compare_output;
@@ -18,12 +19,8 @@ pub fn test_avatar() {
         screen.terminal_state_mut().is_terminal_buffer = true;
         *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
 
-        let mut parser = avatar::Parser::default();
-        for c in data {
-            if let Err(err) = parser.print_char(&mut screen, *c as char) {
-                eprintln!("Error parsing char '{}' ({:02X}): {}", c, c, err);
-            }
-        }
+        super::parse_with_parser(&mut screen, &mut AvatarParser::default(), &data).expect("Error parsing file");
+
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);
     }

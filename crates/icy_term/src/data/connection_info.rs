@@ -452,8 +452,8 @@ mod tests {
     #[test]
     fn test_from_address() {
         use chrono::{Duration, Utc};
-        use icy_engine::ansi::{BaudEmulation, MusicOption};
         use icy_net::telnet::TerminalEmulation;
+        use icy_parser_core::{BaudEmulation, MusicOption};
 
         let address = Address {
             system_name: "Test BBS".to_string(),
@@ -493,8 +493,8 @@ mod tests {
     #[test]
     fn test_from_address_no_port() {
         use chrono::{Duration, Utc};
-        use icy_engine::ansi::{BaudEmulation, MusicOption};
         use icy_net::telnet::TerminalEmulation;
+        use icy_parser_core::{BaudEmulation, MusicOption};
 
         let address = Address {
             system_name: "Test BBS".to_string(),
@@ -533,8 +533,8 @@ mod tests {
     #[test]
     fn test_from_address_user_override() {
         use chrono::{Duration, Utc};
-        use icy_engine::ansi::{BaudEmulation, MusicOption};
         use icy_net::telnet::TerminalEmulation;
+        use icy_parser_core::{BaudEmulation, MusicOption};
 
         let address = Address {
             system_name: "Test BBS".to_string(),

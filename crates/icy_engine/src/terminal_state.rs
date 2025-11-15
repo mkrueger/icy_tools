@@ -29,7 +29,7 @@ pub enum FontSelectionState {
     Failure,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct MouseState {
     pub mouse_mode: MouseMode,
     pub focus_out_event_enabled: bool,

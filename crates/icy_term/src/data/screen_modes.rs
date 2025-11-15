@@ -3,7 +3,6 @@ use std::fmt::{self, Display};
 use icy_engine::{
     ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437,
     EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE, Palette, SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
-    atascii::{ATASCII_SCREEN_SIZE, ATASCII_XEP80_SCREEN_SIZE},
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -194,6 +193,10 @@ impl Display for ScreenMode {
         }
     }
 }
+
+pub const ATASCII_SCREEN_SIZE: Size = Size { width: 40, height: 24 };
+pub const ATASCII_PAL_SCREEN_SIZE: Size = Size { width: 40, height: 25 };
+pub const ATASCII_XEP80_SCREEN_SIZE: Size = Size { width: 80, height: 25 };
 
 impl ScreenMode {
     pub fn get_window_size(&self) -> Size {

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{LoadData, SaveOptions};
-use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, EngineResult, OutputFormat, Palette, Position, TextPane, TextScreen, parse_with_parser};
+use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, EngineResult, OutputFormat, Palette, Position, TextPane, TextScreen, load_with_parser};
 
 #[derive(Default)]
 pub(super) struct Atascii {}
@@ -75,7 +75,7 @@ impl OutputFormat for Atascii {
         }
 
         let text: String = data.iter().map(|&b| b as char).collect();
-        parse_with_parser(&mut result, &mut crate::parsers::atascii::Parser::default(), &text, true)?;
+        load_with_parser(&mut result, &mut icy_parser_core::AtasciiParser::default(), &text, true)?;
         Ok(result.buffer)
     }
 }

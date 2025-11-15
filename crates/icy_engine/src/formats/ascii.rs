@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TextBuffer, TextPane, TextScreen, parse_with_parser};
+use crate::{BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TextBuffer, TextPane, TextScreen, load_with_parser};
 
 use super::{LoadData, SaveOptions};
 
@@ -74,7 +74,7 @@ impl OutputFormat for Ascii {
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        parse_with_parser(&mut result, &mut crate::parsers::ascii::Parser::default(), &text, true)?;
+        load_with_parser(&mut result, &mut icy_parser_core::AsciiParser::default(), &text, true)?;
         Ok(result.buffer)
     }
 }

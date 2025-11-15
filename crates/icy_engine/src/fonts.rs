@@ -607,3 +607,17 @@ impl std::fmt::Display for ParserError {
         }
     }
 }
+
+impl std::error::Error for ParserError {
+    fn description(&self) -> &str {
+        "use std::display"
+    }
+
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+
+    fn cause(&self) -> Option<&dyn Error> {
+        self.source()
+    }
+}

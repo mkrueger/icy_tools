@@ -1,10 +1,10 @@
 use crate::{ConnectionInformation, ScreenMode, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
-use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::ConnectionType;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::CommandParser;
+use icy_parser_core::{BaudEmulation, MusicOption};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use semver::Version;

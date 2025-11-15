@@ -3,6 +3,10 @@ use icy_parser_core::{
     EraseInLineMode, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
 };
 
+mod debug_melody;
+mod debug_music;
+pub mod music;
+
 struct CollectSink {
     pub text: Vec<u8>,
     pub cmds: Vec<TerminalCommand>,

@@ -9,7 +9,7 @@ use std::thread;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
 
-use icy_engine::ansi::sound::{AnsiMusic, MusicAction, MusicStyle};
+use icy_parser_core::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
     Source,
     source::{Function, SignalGenerator, SineWave},

@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use icy_engine::ansi::BaudEmulation;
+use icy_parser_core::BaudEmulation;
 
 #[derive(Clone, Debug)]
 pub struct BaudEmulator {

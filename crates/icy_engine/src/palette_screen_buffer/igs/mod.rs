@@ -5,7 +5,7 @@ pub mod paint;
 pub mod patterns;
 pub use patterns::*;
 
-mod sound;
+pub mod sound;
 pub mod vdi;
 
 pub const IGS_VERSION: &str = "2.19";

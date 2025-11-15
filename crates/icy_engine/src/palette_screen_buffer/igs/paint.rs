@@ -107,12 +107,12 @@ pub struct DrawExecutor {
     text_size: i32,
     text_rotation: TextRotation,
 
-    polymaker_type: PolymarkerType,
+    _polymaker_type: PolymarkerType,
     line_type: LineType,
     drawing_mode: DrawingMode,
-    polymarker_size: usize,
+    _polymarker_size: usize,
     solidline_size: usize,
-    user_defined_pattern_number: usize,
+    _user_defined_pattern_number: usize,
 
     fill_pattern_type: FillPatternType,
     fill_pattern: &'static [u16],
@@ -155,12 +155,12 @@ impl DrawExecutor {
             text_effects: TextEffects::Normal,
             text_size: 9,
             text_rotation: TextRotation::Right,
-            polymaker_type: PolymarkerType::Point,
+            _polymaker_type: PolymarkerType::Point,
             line_type: LineType::Solid,
             drawing_mode: DrawingMode::Replace,
-            polymarker_size: 1,
+            _polymarker_size: 1,
             solidline_size: 1,
-            user_defined_pattern_number: 1,
+            _user_defined_pattern_number: 1,
             font_7px,
             font_9px,
             font_16px,
@@ -204,7 +204,7 @@ impl DrawExecutor {
         // TODO
     }
 
-    fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
+    pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
         let res = buf.get_resolution();
 
         if x0 < 0 || y0 < 0 || x0 >= res.width || y0 >= res.height {
@@ -279,7 +279,7 @@ impl DrawExecutor {
         }
     }*/
 
-    fn set_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, line_color: u8) {
+    pub fn set_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, line_color: u8) {
         let res = buf.get_resolution();
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;
@@ -288,7 +288,7 @@ impl DrawExecutor {
         buf.screen_mut()[offset] = line_color;
     }
 
-    fn get_pixel(&mut self, buf: &dyn EditableScreen, x: i32, y: i32) -> u8 {
+    pub fn get_pixel(&mut self, buf: &dyn EditableScreen, x: i32, y: i32) -> u8 {
         let offset = (y * buf.get_resolution().width + x) as usize;
         buf.screen()[offset]
     }
@@ -346,7 +346,7 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_line(&mut self, buf: &mut dyn EditableScreen, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32, color: u8, mask: usize) {
+    pub fn draw_line(&mut self, buf: &mut dyn EditableScreen, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32, color: u8, mask: usize) {
         if x1 < x0 {
             swap(&mut x0, &mut x1);
             swap(&mut y0, &mut y1);
@@ -415,35 +415,35 @@ impl DrawExecutor {
         }
     }
 
-    fn fill_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32) {
+    pub fn fill_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32) {
         let y_rad = self.calc_circle_y_rad(r).max(1);
         self.fill_ellipse(buf, xm, ym, r, y_rad);
     }
 
-    fn draw_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32) {
+    pub fn draw_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32) {
         let y_rad = self.calc_circle_y_rad(r);
         let points: Vec<i32> = gdp_curve(xm, ym, r, y_rad, 0, TWOPI as i32);
         self.draw_poly(buf, &points, self.line_color, false);
     }
 
-    fn draw_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
+    pub fn draw_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
         let points: Vec<i32> = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.draw_poly(buf, &points, self.line_color, false);
     }
 
-    fn draw_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
+    pub fn draw_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
         let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
         points.extend_from_slice(&[xm, ym]);
         self.draw_poly(buf, &points, self.line_color, true);
     }
 
-    fn fill_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
+    pub fn fill_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
         let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
         points.extend_from_slice(&[xm, ym]);
         self.fill_poly(buf, &points);
     }
 
-    fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
+    pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
         let points: Vec<i32> = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.fill_poly(buf, &points);
     }
@@ -679,7 +679,7 @@ impl DrawExecutor {
         }
     }
 
-    fn blit_screen_to_screen(&mut self, buf: &mut dyn EditableScreen, write_mode: i32, from: Position, to: Position, mut dest: Position) {
+    pub fn blit_screen_to_screen(&mut self, buf: &mut dyn EditableScreen, write_mode: i32, from: Position, to: Position, mut dest: Position) {
         let mut width = (to.x - from.x).abs() as usize + 1;
         let mut height = (to.y - from.y).abs() as usize + 1;
 
@@ -741,7 +741,7 @@ impl DrawExecutor {
         }
     }
 
-    fn blit_memory_to_screen(&mut self, buf: &mut dyn EditableScreen, write_mode: i32, from: Position, to: Position, mut dest: Position) {
+    pub fn blit_memory_to_screen(&mut self, buf: &mut dyn EditableScreen, write_mode: i32, from: Position, to: Position, mut dest: Position) {
         let mut width = (to.x - from.x).abs() as usize + 1;
         let mut height = (to.y - from.y).abs() as usize + 1;
 
@@ -793,7 +793,7 @@ impl DrawExecutor {
         }
     }
 
-    fn blit_screen_to_memory(&mut self, buf: &mut dyn EditableScreen, _write_mode: i32, from: Position, to: Position) {
+    pub fn blit_screen_to_memory(&mut self, buf: &mut dyn EditableScreen, _write_mode: i32, from: Position, to: Position) {
         let width = (to.x - from.x).abs() + 1;
         let height = (to.y - from.y).abs() + 1;
 
@@ -811,7 +811,7 @@ impl DrawExecutor {
         }
     }
 
-    fn round_rect(&mut self, buf: &mut dyn EditableScreen, mut x1: i32, mut y1: i32, mut x2: i32, mut y2: i32, filled: bool) {
+    pub fn round_rect(&mut self, buf: &mut dyn EditableScreen, mut x1: i32, mut y1: i32, mut x2: i32, mut y2: i32, filled: bool) {
         let mut points = Vec::new();
         if x1 > x2 {
             swap(&mut x1, &mut x2);
@@ -884,8 +884,8 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_poly_maker(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
-        let points = match self.polymaker_type {
+    pub fn draw_poly_maker(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
+        let points = match self._polymaker_type {
             PolymarkerType::Point => vec![1i32, 2, 0, 0, 0, 0],
             PolymarkerType::Plus => vec![2, 2, 0, -3, 0, 3, 2, -4, 0, 4, 0],
             PolymarkerType::Star => vec![3, 2, 0, -3, 0, 3, 2, 3, 2, -3, -2, 2, 3, -2, -3, 2],
@@ -1658,7 +1658,7 @@ impl DrawExecutor {
     */
 }
 
-const REGISTER_TO_PEN: &[usize; 17] = &[0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 12, 15, 13, 1];
+pub const REGISTER_TO_PEN: &[usize; 17] = &[0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 12, 15, 13, 1];
 
 // Public wrapper methods for IGS command handling
 impl DrawExecutor {

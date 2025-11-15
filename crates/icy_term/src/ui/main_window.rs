@@ -20,8 +20,9 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_parser_core::BaudEmulation;
 use image::DynamicImage;
 use tokio::sync::mpsc;
 

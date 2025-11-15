@@ -7,7 +7,6 @@ use std::{
 use icy_engine::{Color, Rectangle, Screen};
 
 mod output;
-mod parser;
 
 mod format;
 

@@ -496,6 +496,33 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let bottom = (bottom as i32).saturating_sub(1).max(0);
                 self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
             }
+            TerminalCommand::ScrollArea {
+                direction,
+                num_lines,
+                top,
+                left,
+                bottom,
+                right,
+            } => {
+                // Scroll a rectangular area
+                let _ = (direction, num_lines, top, left, bottom, right);
+                // TODO:
+                //self.screen.scroll_area(direction, num_lines as i32, top as i32, left as i32, bottom as i32, right as i32);
+            }
+            TerminalCommand::AvatarClearArea { attr, lines, columns } => {
+                // Avatar clear area
+                let _ = (attr, lines, columns);
+                // TODO: Implement Avatar clear area
+            }
+            TerminalCommand::AvatarInitArea { attr, ch, lines, columns } => {
+                // Avatar init area
+                let _ = (attr, ch, lines, columns);
+                // TODO: Implement Avatar init area
+            }
+            TerminalCommand::AnsiMusic(music) => {
+                // ANSI music playback
+                self.play_music(music);
+            }
         }
     }
 

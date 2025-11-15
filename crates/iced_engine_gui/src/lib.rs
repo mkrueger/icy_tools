@@ -8,6 +8,9 @@ pub use terminal_shader::*;
 pub mod terminal_view;
 pub use terminal_view::*;
 
+// Re-export mouse event types from icy_engine
+pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
+
 pub mod key_map;
 pub mod settings;
 

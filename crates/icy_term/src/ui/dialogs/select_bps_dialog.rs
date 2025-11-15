@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, button, column, container, radio, row, scrollable, text, text_input},
 };
-use icy_engine::ansi::BaudEmulation;
+use icy_parser_core::BaudEmulation;
 
 use crate::ui::MainWindowMode;
 

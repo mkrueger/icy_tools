@@ -38,6 +38,9 @@ pub use palette_handling::*;
 mod fonts;
 pub use fonts::*;
 
+mod mouse_handling;
+pub use mouse_handling::*;
+
 // Re-export parsers from icy_parser_core
 pub use icy_parser_core::{IgsParser, MusicOption, SkypixParser};
 

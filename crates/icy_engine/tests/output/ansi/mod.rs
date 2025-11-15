@@ -1,4 +1,5 @@
-use icy_engine::{BufferParser, EditableScreen, TextScreen, ansi};
+use icy_engine::{EditableScreen, RgbaScreen, TextScreen};
+use icy_parser_core::AnsiParser;
 use std::{
     fs::{self},
     thread,
@@ -22,16 +23,12 @@ pub fn test_ansi() {
         screen.terminal_state_mut().is_terminal_buffer = true;
         *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
 
-        let mut parser = ansi::Parser::default();
-        for c in data {
-            if let Err(err) = parser.print_char(&mut screen, *c as char) {
-                eprintln!("Error parsing char '{}' ({:02X}): {}", c, c, err);
-            }
-        }
+        super::parse_with_parser(&mut screen, &mut AnsiParser::default(), &data).expect("Error parsing file");
         while !screen.buffer.sixel_threads.is_empty() {
             thread::sleep(Duration::from_millis(50));
             let _ = screen.buffer.update_sixel_threads();
         }
+        println!("res:{}", screen.get_resolution());
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);

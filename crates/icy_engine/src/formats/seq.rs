@@ -3,7 +3,7 @@ use std::path::Path;
 use super::{LoadData, SaveOptions};
 use crate::{
     AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, EngineResult, OutputFormat, Palette, TextPane,
-    TextScreen, parse_with_parser,
+    TextScreen, load_with_parser,
 };
 
 #[derive(Default)]
@@ -57,7 +57,7 @@ impl OutputFormat for Seq {
         result.caret.set_foreground(14);
         result.caret.set_background(6);
         let text: String = data.iter().map(|&b| b as char).collect();
-        parse_with_parser(&mut result, &mut crate::parsers::petscii::Parser::default(), &text, true)?;
+        load_with_parser(&mut result, &mut icy_parser_core::PetsciiParser::default(), &text, true)?;
         Ok(result.buffer)
     }
 }

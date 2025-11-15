@@ -38,7 +38,7 @@ mod renegade;
 mod seq;
 
 use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
-use icy_parser_core::MusicOption;
+use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};
 
@@ -202,37 +202,19 @@ lazy_static::lazy_static! {
         ];
 }
 
-/// .
-///
-/// # Panics
-///
-/// Panics if .
+/// Parse text using a CommandParser from icy_parser_core
 ///
 /// # Errors
 ///
-/// This function will return an error if .
-pub fn parse_with_parser(result: &mut TextScreen, interpreter: &mut dyn BufferParser, text: &str, skip_errors: bool) -> EngineResult<()> {
-    // result.layers[0].lines.clear();
+/// Returns an error if sixel processing fails
+pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, text: &str, _skip_errors: bool) -> EngineResult<()> {
+    use crate::ScreenSink;
 
-    for ch in text.chars() {
-        if ch == '\x1A' {
-            break;
-        }
-        let res = interpreter.print_char(result, ch);
-        match res {
-            Ok(action) => match action {
-                CallbackAction::PlayMusic(ansi_music) => {
-                    result.buffer.ansi_music.push(ansi_music);
-                }
-                _ => {}
-            },
-            Err(err) => {
-                if !skip_errors {
-                    return Err(err);
-                }
-            }
-        }
-    }
+    // Stop at EOF marker (Ctrl-Z)
+    let text = if let Some(pos) = text.find('\x1A') { &text[..pos] } else { text };
+
+    let mut sink = ScreenSink::new(result);
+    interpreter.parse(text.as_bytes(), &mut sink);
 
     // transform sixels to layers for non terminal buffers (makes sense in icy_draw for example)
     if !result.terminal_state().is_terminal_buffer {

@@ -1,6 +1,7 @@
 #![allow(static_mut_refs)]
 use crate::{MonitorSettings, Terminal, create_crt_shader};
 use iced::Element;
+use icy_engine::MouseEvent;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -11,7 +12,7 @@ pub enum Message {
     /// The bool indicates whether to clear the RIP screen before sending the command
     RipCommand(bool, String),
 
-    SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
+    SendMouseEvent(MouseEvent),
 }
 
 pub struct TerminalView<'a> {
