@@ -1,13 +1,16 @@
 use icy_parser_core::{CommandParser, CommandSink, RipCommand, RipParser, TerminalCommand, TerminalRequest};
 
-struct TestSink {
+mod load;
+mod roundtrip;
+
+pub struct TestSink {
     rip_commands: Vec<RipCommand>,
     terminal_commands: Vec<String>,
     terminal_requests: Vec<TerminalRequest>,
 }
 
 impl TestSink {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             rip_commands: Vec::new(),
             terminal_commands: Vec::new(),
@@ -31,6 +34,43 @@ impl CommandSink for TestSink {
 
     fn request(&mut self, request: TerminalRequest) {
         self.terminal_requests.push(request);
+    }
+}
+
+#[test]
+fn test_rip_command_display() {
+    // Test that Display trait generates valid RIP strings that can be parsed back
+    let commands = vec![
+        RipCommand::Color { c: 5 },
+        RipCommand::Line {
+            x0: 10,
+            y0: 20,
+            x1: 30,
+            y1: 40,
+        },
+        RipCommand::Circle {
+            x_center: 50,
+            y_center: 60,
+            radius: 25,
+        },
+        RipCommand::Text { text: "Hello".to_string() },
+        RipCommand::Home,
+        RipCommand::EraseWindow,
+    ];
+
+    for cmd in commands {
+        let rip_string = format!("!{}\n", cmd);
+
+        // Parse the generated RIP string back
+        let mut parser = RipParser::new();
+        let mut sink = TestSink::new();
+        parser.parse(rip_string.as_bytes(), &mut sink);
+
+        // Check that we got exactly one command back
+        assert_eq!(sink.rip_commands.len(), 1, "Failed to parse generated RIP string: {}", rip_string);
+
+        // Check that the parsed command matches the original
+        assert_eq!(sink.rip_commands[0], cmd, "Round-trip failed for command: {:?}", cmd);
     }
 }
 

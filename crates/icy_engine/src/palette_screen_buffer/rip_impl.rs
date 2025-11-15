@@ -286,13 +286,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             // BeginText not implemented in current BGI
         }
 
-        RipCommand::RegionText {
-            x: _,
-            y: _,
-            w: _,
-            h: _,
-            res: _,
-        } => {
+        RipCommand::RegionText { .. } => {
             // RegionText not implemented in current BGI
         }
 
@@ -379,24 +373,15 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             }
         }
 
-        RipCommand::Define { res: _, text: _ } => {
+        RipCommand::Define { .. } => {
             // Macro definition - not implemented
         }
 
-        RipCommand::Query { query: _ } => {
+        RipCommand::Query { .. } => {
             // Query command - not implemented
         }
 
-        RipCommand::CopyRegion {
-            x0: _,
-            y0: _,
-            x1: _,
-            y1: _,
-            dest_x: _,
-            dest_y: _,
-            mode: _,
-            res: _,
-        } => {
+        RipCommand::CopyRegion { .. } => {
             // CopyRegion not implemented in current BGI
         }
 
@@ -408,7 +393,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             // File query - not implemented
         }
 
-        RipCommand::EnterBlockMode => {
+        RipCommand::EnterBlockMode { .. } => {
             // Block mode - not implemented
         }
 

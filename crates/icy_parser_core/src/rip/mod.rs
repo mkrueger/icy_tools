@@ -4,6 +4,8 @@
 //! buttons, and mouse support. Commands start with !| and use base-36 encoded parameters.
 
 use crate::{AnsiParser, CommandParser, CommandSink};
+mod command;
+pub use command::RipCommand;
 
 /// Helper function to parse a base-36 character into a digit
 #[inline]
@@ -16,223 +18,18 @@ fn parse_base36_digit(ch: u8) -> Option<i32> {
     }
 }
 
-/// All RIPscrip commands
-#[derive(Debug, Clone, PartialEq)]
-pub enum RipCommand {
-    // Level 0 commands
-    /// |w - Text Window: x0, y0, x1, y1, wrap, size
-    TextWindow {
-        x0: i32,
-        y0: i32,
-        x1: i32,
-        y1: i32,
-        wrap: bool,
-        size: i32,
-    },
-    /// |v - Viewport: x0, y0, x1, y1
-    ViewPort { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |* - Reset Windows
-    ResetWindows,
-    /// |e - Erase Window
-    EraseWindow,
-    /// |E - Erase View (graphics viewport)
-    EraseView,
-    /// |g - Goto XY: x, y
-    GotoXY { x: i32, y: i32 },
-    /// |H - Home (goto 0,0)
-    Home,
-    /// |> - Erase to End of Line
-    EraseEOL,
-    /// |c - Color: c (0-15)
-    Color { c: i32 },
-    /// |Q - Set Palette: 16 colors (0-63 each)
-    SetPalette { colors: Vec<i32> },
-    /// |a - One Palette: color index, value
-    OnePalette { color: i32, value: i32 },
-    /// |W - Write Mode: mode (0=normal, 1=xor)
-    WriteMode { mode: i32 },
-    /// |m - Move: x, y
-    Move { x: i32, y: i32 },
-    /// |T - Text: text string
-    Text { text: String },
-    /// |@ - Text XY: x, y, text string
-    TextXY { x: i32, y: i32, text: String },
-    /// |Y - Font Style: font, direction, size, res
-    FontStyle { font: i32, direction: i32, size: i32, res: i32 },
-    /// |X - Pixel: x, y
-    Pixel { x: i32, y: i32 },
-    /// |L - Line: x0, y0, x1, y1
-    Line { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |R - Rectangle: x0, y0, x1, y1
-    Rectangle { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |B - Bar (filled rectangle): x0, y0, x1, y1
-    Bar { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |C - Circle: x_center, y_center, radius
-    Circle { x_center: i32, y_center: i32, radius: i32 },
-    /// |O - Oval: x, y, start_angle, end_angle, x_radius, y_radius
-    Oval {
-        x: i32,
-        y: i32,
-        st_ang: i32,
-        end_ang: i32,
-        x_rad: i32,
-        y_rad: i32,
-    },
-    /// |o - Filled Oval: x, y, x_radius, y_radius
-    FilledOval { x: i32, y: i32, x_rad: i32, y_rad: i32 },
-    /// |A - Arc: x, y, start_angle, end_angle, radius
-    Arc { x: i32, y: i32, st_ang: i32, end_ang: i32, radius: i32 },
-    /// |V - Oval Arc: x, y, start_angle, end_angle, x_radius, y_radius
-    OvalArc {
-        x: i32,
-        y: i32,
-        st_ang: i32,
-        end_ang: i32,
-        x_rad: i32,
-        y_rad: i32,
-    },
-    /// |I - Pie Slice: x, y, start_angle, end_angle, radius
-    PieSlice { x: i32, y: i32, st_ang: i32, end_ang: i32, radius: i32 },
-    /// |i - Oval Pie Slice: x, y, start_angle, end_angle, x_radius, y_radius
-    OvalPieSlice {
-        x: i32,
-        y: i32,
-        st_ang: i32,
-        end_ang: i32,
-        x_rad: i32,
-        y_rad: i32,
-    },
-    /// |Z - Bezier: x1, y1, x2, y2, x3, y3, x4, y4, count
-    Bezier {
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
-        x3: i32,
-        y3: i32,
-        x4: i32,
-        y4: i32,
-        cnt: i32,
-    },
-    /// |P - Polygon: points (npoints followed by x,y pairs)
-    Polygon { points: Vec<i32> },
-    /// |p - Filled Polygon: points (npoints followed by x,y pairs)
-    FilledPolygon { points: Vec<i32> },
-    /// |l - Polyline: points (npoints followed by x,y pairs)
-    PolyLine { points: Vec<i32> },
-    /// |F - Fill: x, y, border_color
-    Fill { x: i32, y: i32, border: i32 },
-    /// |= - Line Style: style, user_pattern, thickness
-    LineStyle { style: i32, user_pat: i32, thick: i32 },
-    /// |S - Fill Style: pattern, color
-    FillStyle { pattern: i32, color: i32 },
-    /// |s - Fill Pattern: 8 bytes + color
-    FillPattern {
-        c1: i32,
-        c2: i32,
-        c3: i32,
-        c4: i32,
-        c5: i32,
-        c6: i32,
-        c7: i32,
-        c8: i32,
-        col: i32,
-    },
+/// Convert a number to base-36 representation with a fixed length
+pub fn to_base_36(len: usize, number: i32) -> String {
+    let mut res = String::new();
+    let mut number = number;
+    for _ in 0..len {
+        let num2 = (number % 36) as u8;
+        let ch2 = if num2 < 10 { (num2 + b'0') as char } else { (num2 - 10 + b'A') as char };
 
-    // Level 1 commands
-    /// |1M - Mouse: num, x0, y0, x1, y1, click, clear, reserved, text
-    Mouse {
-        num: i32,
-        x0: i32,
-        y0: i32,
-        x1: i32,
-        y1: i32,
-        clk: i32,
-        clr: i32,
-        res: i32,
-        text: String,
-    },
-    /// |1K - Mouse Fields (clear all mouse regions)
-    MouseFields,
-    /// |1T - Begin Text: x0, y0, x1, y1, reserved
-    BeginText { x0: i32, y0: i32, x1: i32, y1: i32, res: i32 },
-    /// |1t - Region Text: x, y, w, h, reserved
-    RegionText { x: i32, y: i32, w: i32, h: i32, res: i32 },
-    /// |1E - End Text
-    EndText,
-    /// |1C - Get Image (copy): x0, y0, x1, y1, reserved
-    GetImage { x0: i32, y0: i32, x1: i32, y1: i32, res: i32 },
-    /// |1P - Put Image (paste): x, y, mode, reserved
-    PutImage { x: i32, y: i32, mode: i32, res: i32 },
-    /// |1W - Write Icon: reserved, data string
-    WriteIcon { res: u8, data: String },
-    /// |1I - Load Icon: x, y, mode, clipboard, reserved, filename
-    LoadIcon {
-        x: i32,
-        y: i32,
-        mode: i32,
-        clipboard: i32,
-        res: i32,
-        file_name: String,
-    },
-    /// |1B - Button Style: width, height, orientation, flags, bevel_size, label_color, shadow_color, bright, dark, surface, group, flags2, underline_color, corner_color, reserved
-    ButtonStyle {
-        wid: i32,
-        hgt: i32,
-        orient: i32,
-        flags: i32,
-        bevsize: i32,
-        dfore: i32,
-        dback: i32,
-        bright: i32,
-        dark: i32,
-        surface: i32,
-        grp_no: i32,
-        flags2: i32,
-        uline_col: i32,
-        corner_col: i32,
-        res: i32,
-    },
-    /// |1U - Button: x0, y0, x1, y1, hotkey, flags, reserved, text
-    Button {
-        x0: i32,
-        y0: i32,
-        x1: i32,
-        y1: i32,
-        hotkey: i32,
-        flags: i32,
-        res: i32,
-        text: String,
-    },
-    /// |1D - Define: reserved, text
-    Define { res: u8, text: String },
-    /// |1ESC - Query
-    Query { query: Vec<i32> },
-    /// |1G - Copy Region: x0, y0, x1, y1, dest_x, dest_y, mode, reserved
-    CopyRegion {
-        x0: i32,
-        y0: i32,
-        x1: i32,
-        y1: i32,
-        dest_x: i32,
-        dest_y: i32,
-        mode: i32,
-        res: i32,
-    },
-    /// |1R - Read Scene: filename
-    ReadScene { file_name: String },
-    /// |1F - File Query: filename
-    FileQuery { file_name: String },
-
-    // Level 9 commands
-    /// |9ESC - Enter Block Mode
-    EnterBlockMode,
-
-    // Special commands
-    /// |$ - Text Variable: text
-    TextVariable { text: String },
-    /// |# - No More RIP (end of RIP commands)
-    NoMore,
+        res = ch2.to_string() + res.as_str();
+        number /= 36;
+    }
+    res
 }
 
 #[derive(Default, Clone, Debug, PartialEq)]
@@ -526,12 +323,9 @@ impl RipParser {
                 y1: self.builder.i32_params[3],
                 res: self.builder.i32_params[4],
             },
-            (1, b't') if self.builder.i32_params.len() >= 5 => RipCommand::RegionText {
-                x: self.builder.i32_params[0],
-                y: self.builder.i32_params[1],
-                w: self.builder.i32_params[2],
-                h: self.builder.i32_params[3],
-                res: self.builder.i32_params[4],
+            (1, b't') => RipCommand::RegionText {
+                justify: !self.builder.i32_params.is_empty() && self.builder.i32_params[0] != 0,
+                text: self.builder.string_param.clone(),
             },
             (1, b'E') => RipCommand::EndText,
             (1, b'C') if self.builder.i32_params.len() >= 5 => RipCommand::GetImage {
@@ -586,22 +380,23 @@ impl RipParser {
                 res: self.builder.i32_params[6],
                 text: self.builder.string_param.clone(),
             },
-            (1, b'D') => RipCommand::Define {
-                res: self.builder.char_param,
+            (1, b'D') if self.builder.i32_params.len() >= 2 => RipCommand::Define {
+                flags: self.builder.i32_params[0],
+                res: self.builder.i32_params[1],
                 text: self.builder.string_param.clone(),
             },
-            (1, 0x1B) => RipCommand::Query {
-                query: self.builder.i32_params.clone(),
+            (1, 0x1B) if self.builder.i32_params.len() >= 2 => RipCommand::Query {
+                mode: self.builder.i32_params[0],
+                res: self.builder.i32_params[1],
+                text: self.builder.string_param.clone(),
             },
-            (1, b'G') if self.builder.i32_params.len() >= 8 => RipCommand::CopyRegion {
+            (1, b'G') if self.builder.i32_params.len() >= 6 => RipCommand::CopyRegion {
                 x0: self.builder.i32_params[0],
                 y0: self.builder.i32_params[1],
                 x1: self.builder.i32_params[2],
                 y1: self.builder.i32_params[3],
-                dest_x: self.builder.i32_params[4],
-                dest_y: self.builder.i32_params[5],
-                mode: self.builder.i32_params[6],
-                res: self.builder.i32_params[7],
+                res: self.builder.i32_params[4],
+                dest_line: self.builder.i32_params[5],
             },
             (1, b'R') => RipCommand::ReadScene {
                 file_name: self.builder.string_param.clone(),
@@ -611,7 +406,13 @@ impl RipParser {
             },
 
             // Level 9 commands
-            (9, 0x1B) => RipCommand::EnterBlockMode,
+            (9, 0x1B) if self.builder.i32_params.len() >= 4 => RipCommand::EnterBlockMode {
+                mode: self.builder.i32_params[0],
+                proto: self.builder.i32_params[1],
+                file_type: self.builder.i32_params[2],
+                res: self.builder.i32_params[3],
+                file_name: self.builder.string_param.clone(),
+            },
 
             _ => {
                 // Unknown command - don't emit anything
@@ -623,12 +424,6 @@ impl RipParser {
     }
 
     fn parse_params(&mut self, ch: u8, sink: &mut dyn CommandSink) -> bool {
-        // Handle line continuation - backslash skips to end of line
-        if ch == b'\\' {
-            self.state = State::SkipToEOL(Box::new(State::ReadParams));
-            return true;
-        }
-
         // Handle command termination
         if ch == b'\r' {
             return true;
@@ -650,7 +445,7 @@ impl RipParser {
         // Parse parameters based on command
         let result = match (self.builder.level, self.builder.cmd_char) {
             // Commands with no parameters
-            (0, b'*') | (0, b'e') | (0, b'E') | (0, b'H') | (0, b'>') | (0, b'#') | (1, b'K') | (1, b'E') | (9, 0x1B) => {
+            (0, b'*') | (0, b'e') | (0, b'E') | (0, b'H') | (0, b'>') | (0, b'#') | (1, b'K') | (1, b'E') => {
                 // Immediate commands - complete immediately
                 self.emit_command(sink);
                 self.builder.reset();
@@ -692,36 +487,67 @@ impl RipParser {
                 Ok(false)
             }
 
-            // Mouse - 8 params (16 digits) then string
-            (1, b'M') if self.builder.param_state < 16 => {
-                let result = self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 15);
-                // Don't signal completion even if params are done - we still need the string
-                match result {
-                    Ok(_) => Ok(false),
-                    Err(e) => Err(e),
+            // Mouse: states 0..11 (6 two-digit + 2 one-digit), 12..16 (res 5 digits), then text
+            (1, b'M') => {
+                if self.builder.param_state <= 16 {
+                    if let Some(digit) = parse_base36_digit(ch) {
+                        match self.builder.param_state {
+                            0..=1 => {
+                                // num
+                                if self.builder.i32_params.is_empty() {
+                                    self.builder.i32_params.resize(8, 0);
+                                }
+                                self.builder.i32_params[0] = self.builder.i32_params[0].wrapping_mul(36).wrapping_add(digit);
+                            }
+                            2..=3 => {
+                                // x0
+                                self.builder.i32_params[1] = self.builder.i32_params[1].wrapping_mul(36).wrapping_add(digit);
+                            }
+                            4..=5 => {
+                                // y0
+                                self.builder.i32_params[2] = self.builder.i32_params[2].wrapping_mul(36).wrapping_add(digit);
+                            }
+                            6..=7 => {
+                                // x1
+                                self.builder.i32_params[3] = self.builder.i32_params[3].wrapping_mul(36).wrapping_add(digit);
+                            }
+                            8..=9 => {
+                                // y1
+                                self.builder.i32_params[4] = self.builder.i32_params[4].wrapping_mul(36).wrapping_add(digit);
+                            }
+                            10 => {
+                                // clk (1 digit)
+                                self.builder.i32_params[5] = digit;
+                            }
+                            11 => {
+                                // clr (1 digit)
+                                self.builder.i32_params[6] = digit;
+                            }
+                            12..=16 => {
+                                // res (5 digits)
+                                self.builder.i32_params[7] = self.builder.i32_params[7].wrapping_mul(36).wrapping_add(digit);
+                            }
+                            _ => {}
+                        }
+                        self.builder.param_state += 1;
+                        Ok(false)
+                    } else {
+                        Err(())
+                    }
+                } else {
+                    // After 17 digits, rest is text
+                    self.builder.string_param.push(ch as char);
+                    Ok(false)
                 }
             }
-            (1, b'M') => {
-                self.builder.string_param.push(ch as char);
-                Ok(false)
-            }
 
-            // WriteIcon, Define - char then string
+            // WriteIcon - char then string
             (1, b'W') if self.builder.param_state == 0 => {
                 self.builder.char_param = ch;
                 self.builder.param_state += 1;
                 Ok(false)
             }
             (1, b'W') => {
-                self.builder.string_param.push(ch as char);
-                Ok(false)
-            }
-            (1, b'D') if self.builder.param_state == 0 => {
-                self.builder.char_param = ch;
-                self.builder.param_state += 1;
-                Ok(false)
-            }
-            (1, b'D') => {
                 self.builder.string_param.push(ch as char);
                 Ok(false)
             }
@@ -790,23 +616,39 @@ impl RipParser {
             // Z - Bezier (18 digits: 9 params)
             (0, b'Z') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 17),
 
-            // = - Line Style (2 + 4 + 2 = 8 digits)
-            (0, b'=') if self.builder.param_state < 2 => self.builder.parse_base36_complete(ch, 0, 1),
-            (0, b'=') if self.builder.param_state < 6 => {
+            // = - Line Style: states 0..1 (style), 2..5 (user_pat), 6..7 (thick)
+            (0, b'=') => {
                 if let Some(digit) = parse_base36_digit(ch) {
-                    if self.builder.param_state == 2 {
-                        self.builder.i32_params.push(digit);
-                    } else {
-                        let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
+                    match self.builder.param_state {
+                        0..=1 => {
+                            // style
+                            if self.builder.i32_params.is_empty() {
+                                self.builder.i32_params.push(0);
+                            }
+                            self.builder.i32_params[0] = self.builder.i32_params[0].wrapping_mul(36).wrapping_add(digit);
+                        }
+                        2..=5 => {
+                            // user_pat
+                            if self.builder.i32_params.len() < 2 {
+                                self.builder.i32_params.resize(2, 0);
+                            }
+                            self.builder.i32_params[1] = self.builder.i32_params[1].wrapping_mul(36).wrapping_add(digit);
+                        }
+                        6..=7 => {
+                            // thick
+                            if self.builder.i32_params.len() < 3 {
+                                self.builder.i32_params.resize(3, 0);
+                            }
+                            self.builder.i32_params[2] = self.builder.i32_params[2].wrapping_mul(36).wrapping_add(digit);
+                        }
+                        _ => {}
                     }
                     self.builder.param_state += 1;
-                    Ok(false)
+                    Ok(self.builder.param_state > 7)
                 } else {
                     Err(())
                 }
             }
-            (0, b'=') => self.builder.parse_base36_complete(ch, 2, 7),
 
             // S - Fill Style (4 digits)
             (0, b'S') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 3),
@@ -861,48 +703,11 @@ impl RipParser {
             }
 
             // Level 1 commands
-            (1, b'T') | (1, b't') | (1, b'C') | (1, b'P') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
+            // BeginText, GetImage, PutImage: 5 params (10 digits)
+            (1, b'T') | (1, b'C') | (1, b'P') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
 
-            (1, b'B') if self.builder.param_state < 10 => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
-            (1, b'B') if self.builder.param_state < 14 => {
-                // Flags: 4 digits
-                if let Some(digit) = parse_base36_digit(ch) {
-                    if self.builder.param_state == 10 {
-                        self.builder.i32_params.push(digit);
-                    } else {
-                        let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
-                    }
-                    self.builder.param_state += 1;
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-            (1, b'B') if self.builder.param_state < 36 => {
-                // Remaining 2-digit fields
-                self.builder.parse_base36_complete(ch, 5 + (self.builder.param_state - 14) / 2, 35)
-            }
-            (1, b'B') => {
-                // Reserved: 7 digits
-                if let Some(digit) = parse_base36_digit(ch) {
-                    if self.builder.param_state == 36 {
-                        self.builder.i32_params.push(digit);
-                    } else {
-                        let idx = self.builder.i32_params.len() - 1;
-                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
-                    }
-                    self.builder.param_state += 1;
-                    Ok(self.builder.param_state >= 43)
-                } else {
-                    Err(())
-                }
-            }
-
-            (1, b'G') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 15),
-
-            (1, 0x1B) => {
-                // Query - collect all digits
+            // RegionText: 1 digit (justify) then text
+            (1, b't') if self.builder.param_state == 0 => {
                 if let Some(digit) = parse_base36_digit(ch) {
                     self.builder.i32_params.push(digit);
                     self.builder.param_state += 1;
@@ -910,6 +715,156 @@ impl RipParser {
                 } else {
                     Err(())
                 }
+            }
+            (1, b't') => {
+                self.builder.string_param.push(ch as char);
+                Ok(false)
+            }
+
+            // ButtonStyle: 37 states total (0..36)
+            // states 0..=35: parse 2-digit pairs for first 3 params, then 4-digit flags, then 2-digit pairs for remaining params, then 7-digit res
+            // state 36: done
+            (1, b'B') => {
+                if let Some(digit) = parse_base36_digit(ch) {
+                    let state = self.builder.param_state;
+
+                    // states 0-1: wid, 2-3: hgt, 4-5: orient (params 0,1,2)
+                    if state <= 5 {
+                        let idx = state / 2;
+                        if self.builder.i32_params.len() <= idx {
+                            self.builder.i32_params.resize(idx + 1, 0);
+                        }
+                        if state % 2 == 0 {
+                            self.builder.i32_params[idx] = digit;
+                        } else {
+                            self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
+                        }
+                    }
+                    // states 6-9: flags (4 digits, param 3)
+                    else if state <= 9 {
+                        let idx = 3;
+                        if self.builder.i32_params.len() <= idx {
+                            self.builder.i32_params.resize(idx + 1, 0);
+                        }
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
+                    }
+                    // states 10-29: bevsize, dfore, dback, bright, dark, surface, grp_no, flags2, uline_col, corner_col (params 4-13, all 2 digits)
+                    else if state <= 29 {
+                        let idx = 4 + (state - 10) / 2;
+                        if self.builder.i32_params.len() <= idx {
+                            self.builder.i32_params.resize(idx + 1, 0);
+                        }
+                        if (state - 10) % 2 == 0 {
+                            self.builder.i32_params[idx] = digit;
+                        } else {
+                            self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
+                        }
+                    }
+                    // states 30-36: res (7 digits, param 14)
+                    else if state <= 36 {
+                        let idx = 14;
+                        if self.builder.i32_params.len() <= idx {
+                            self.builder.i32_params.resize(idx + 1, 0);
+                        }
+                        self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
+                    }
+
+                    self.builder.param_state += 1;
+                    Ok(self.builder.param_state > 36)
+                } else {
+                    Err(())
+                }
+            }
+
+            (1, b'G') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 11),
+
+            // Define: flags (3 digits) + res (2 digits) then text
+            (1, b'D') => {
+                // states 0..=2: flags (3 digits)
+                if self.builder.param_state <= 2 {
+                    if let Some(digit) = parse_base36_digit(ch) {
+                        if self.builder.i32_params.len() == 0 {
+                            self.builder.i32_params.push(0);
+                        }
+                        self.builder.i32_params[0] = self.builder.i32_params[0].wrapping_mul(36).wrapping_add(digit);
+                        self.builder.param_state += 1;
+                        Ok(false)
+                    } else {
+                        Err(())
+                    }
+                }
+                // states 3, 4: res (2 digits)
+                else if self.builder.param_state <= 4 {
+                    if let Some(digit) = parse_base36_digit(ch) {
+                        if self.builder.i32_params.len() < 2 {
+                            self.builder.i32_params.resize(2, 0);
+                        }
+                        self.builder.i32_params[1] = self.builder.i32_params[1].wrapping_mul(36).wrapping_add(digit);
+                        self.builder.param_state += 1;
+                        Ok(false)
+                    } else {
+                        Err(())
+                    }
+                }
+                // state >= 5: everything is text
+                else {
+                    self.builder.string_param.push(ch as char);
+                    Ok(false)
+                }
+            }
+
+            // Query: state 0 (mode), states 1..3 (res), then text
+            (1, 0x1B) => {
+                if self.builder.param_state <= 3 {
+                    if let Some(digit) = parse_base36_digit(ch) {
+                        if self.builder.param_state == 0 {
+                            // mode: 1 digit
+                            if self.builder.i32_params.is_empty() {
+                                self.builder.i32_params.resize(2, 0);
+                            }
+                            self.builder.i32_params[0] = digit;
+                        } else {
+                            // res: 3 digits (states 1..3)
+                            self.builder.i32_params[1] = self.builder.i32_params[1].wrapping_mul(36).wrapping_add(digit);
+                        }
+                        self.builder.param_state += 1;
+                        Ok(false)
+                    } else {
+                        // first non-digit belongs to text
+                        self.builder.string_param.push(ch as char);
+                        self.builder.param_state = 4;
+                        Ok(false)
+                    }
+                } else {
+                    self.builder.string_param.push(ch as char);
+                    Ok(false)
+                }
+            }
+
+            // Level 9: EnterBlockMode: mode(1), proto(1), file_type(2), res(4) then text
+            (9, 0x1B) if self.builder.param_state < 8 => {
+                if let Some(digit) = parse_base36_digit(ch) {
+                    let idx = match self.builder.param_state {
+                        0..=1 => self.builder.param_state as usize, // mode, proto
+                        2..=3 => 2,                                 // file_type
+                        _ => 3,                                     // res
+                    };
+                    if self.builder.i32_params.len() <= idx {
+                        self.builder.i32_params.resize(idx + 1, 0);
+                    }
+                    self.builder.i32_params[idx] = self.builder.i32_params[idx].wrapping_mul(36).wrapping_add(digit);
+                    self.builder.param_state += 1;
+                    Ok(false)
+                } else {
+                    // non-digit starts filename
+                    self.builder.string_param.push(ch as char);
+                    self.builder.param_state = 8;
+                    Ok(false)
+                }
+            }
+            (9, 0x1B) => {
+                self.builder.string_param.push(ch as char);
+                Ok(false)
             }
 
             _ => Err(()),

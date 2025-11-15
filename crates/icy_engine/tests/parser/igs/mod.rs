@@ -1,7 +1,7 @@
 mod vdi;
 
 use icy_engine::parsers::igs::Parser;
-use icy_engine::{ATARI, BitFont, BufferParser, Caret, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
+use icy_engine::{BufferParser, Caret, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
 
 fn create_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> (PaletteScreenBuffer, Caret) {
     let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::igs::TerminalResolution::Low));

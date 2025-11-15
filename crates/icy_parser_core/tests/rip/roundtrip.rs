@@ -1,6 +1,23 @@
-use icy_engine::rip::{Parser, RIP_SCREEN_SIZE};
-use icy_engine::{BufferParser, PaletteScreenBuffer};
-use std::path::PathBuf;
+use icy_parser_core::{CommandParser, CommandSink, RipCommand, RipParser, TerminalCommand, TerminalRequest};
+
+struct TestSink {
+    rip_commands: Vec<RipCommand>,
+}
+
+impl TestSink {
+    fn new() -> Self {
+        Self { rip_commands: Vec::new() }
+    }
+}
+
+impl CommandSink for TestSink {
+    fn print(&mut self, _text: &[u8]) {}
+    fn emit(&mut self, _cmd: TerminalCommand) {}
+    fn emit_rip(&mut self, cmd: RipCommand) {
+        self.rip_commands.push(cmd);
+    }
+    fn request(&mut self, _request: TerminalRequest) {}
+}
 
 #[test]
 fn test_rip_text_window() {
@@ -164,6 +181,18 @@ fn test_fill() {
 
 #[test]
 fn test_line_style() {
+    // Debug this specific test
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    let input = b"!|=01000001\n";
+    parser.parse(input, &mut sink);
+
+    eprintln!("Commands parsed: {}", sink.rip_commands.len());
+    for cmd in &sink.rip_commands {
+        eprintln!("Command: {:?}", cmd);
+    }
+
     test_roundtrip("|=01000001");
 }
 
@@ -259,43 +288,39 @@ fn test_enter_block_mode() {
 }
 
 fn test_roundtrip(arg: &str) {
-    let mut parser = Parser::new(Box::default(), PathBuf::new(), RIP_SCREEN_SIZE);
-    parser.record_rip_commands = true;
-    create_rip_buffer(&mut parser, ("!".to_string() + arg + "|").as_bytes());
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
 
-    assert!(parser.command.is_none());
+    // Parse the input with RIP prefix and suffix
+    let input = format!("!{}\n", arg);
+    parser.parse(input.as_bytes(), &mut sink);
+
+    // Check that we got exactly the expected number of commands
+    if sink.rip_commands.is_empty() {
+        panic!("No RIP commands parsed from input: {}", arg);
+    }
+
     // Some RIP sequences may contain a line continuation ("\\\n") which keeps the
     // RIP mode active for the next command on the following line. In those cases
     // the supplied test arg actually encodes multiple commands. Accept both the
     // single-command and multi-command forms for roundtrip tests.
-    if parser.rip_commands.len() == 1 {
-        assert_eq!(parser.rip_commands[0].to_rip_string(), arg);
+    if sink.rip_commands.len() == 1 {
+        let generated = format!("{}", sink.rip_commands[0]);
+        assert_eq!(generated, arg, "Round-trip failed: expected '{}', got '{}'", arg, generated);
     } else {
-        // When multiple commands are parsed, concatenate their rip strings with no leading '!'
-        // Combined string (not currently asserted directly, but useful for debugging)
-        let _combined = parser.rip_commands.iter().map(|c| c.to_rip_string()).collect::<Vec<_>>().join("");
+        // When multiple commands are parsed, concatenate their rip strings
+        let _combined = sink.rip_commands.iter().map(|c| format!("{}", c)).collect::<Vec<_>>().join("");
+
         assert!(arg.contains("\\"), "Unexpected multi-command without line continuation in input");
+
         // Ensure every parsed command string appears in order within the original arg (ignoring the backslash-newline)
         let mut remain = arg.replace("\\\n", "");
-        for cmd in &parser.rip_commands {
-            let rs = cmd.to_rip_string();
+        for cmd in &sink.rip_commands {
+            let rs = format!("{}", cmd);
             let idx = remain.find(&rs).expect("command not found in original arg");
             remain = remain[idx + rs.len()..].to_string();
         }
     }
-}
-
-#[cfg(test)]
-fn create_rip_buffer<T: BufferParser>(parser: &mut T, input: &[u8]) -> PaletteScreenBuffer {
-    let mut buf = PaletteScreenBuffer::new(icy_engine::GraphicsType::Rip);
-
-    for &b in input {
-        parser.print_char(&mut buf, b as char).unwrap();
-    }
-
-    while parser.get_next_action(&mut buf).is_some() {}
-
-    buf
 }
 
 #[test]
