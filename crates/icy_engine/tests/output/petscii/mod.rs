@@ -1,5 +1,5 @@
 use icy_engine::{BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, Palette, TextScreen};
-use icy_parser_core::PetsciiParser;
+use icy_parser_core::{C64_TERMINAL_SIZE, PetsciiParser};
 use std::fs::{self};
 
 use crate::compare_output;
@@ -15,7 +15,7 @@ pub fn test_petscii() {
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
-        let mut screen = TextScreen::new((40, 25)); // C64 standard screen size
+        let mut screen = TextScreen::new(C64_TERMINAL_SIZE);
         screen.terminal_state_mut().is_terminal_buffer = true;
         screen.clear_font_table();
         screen.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());

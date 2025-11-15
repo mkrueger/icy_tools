@@ -283,3 +283,53 @@ fn test_petscii_pi_character() {
     assert_eq!(sink.commands.len(), 1);
     assert!(sink.commands[0].contains("Text"));
 }
+
+#[test]
+#[ignore = "C128 ESC A/C should toggle insert/replace mode like the legacy BufferParser"]
+fn test_petscii_c128_auto_insert_mode_sequences() {
+    let mut parser = PetsciiParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1BA", &mut sink);
+    assert!(
+        sink.commands.iter().any(|c| c == "SetMode: InsertReplace"),
+        "expected insert mode enable (CSI 4 h) for ESC A"
+    );
+
+    sink.commands.clear();
+
+    parser.parse(b"\x1BC", &mut sink);
+    assert!(
+        sink.commands.iter().any(|c| c == "ResetMode: InsertReplace"),
+        "expected insert mode disable (CSI 4 l) for ESC C"
+    );
+}
+#[test]
+fn test_petscii_shift_emits_font_selection() {
+    let mut parser = PetsciiParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x0E", &mut sink);
+    assert!(sink.commands.iter().any(|c| c == "SGR: Font(0)"), "expected ESC \\x0E to emit SGR Font(0)");
+
+    sink.commands.clear();
+    parser.parse(b"\x0F", &mut sink);
+    assert!(sink.commands.iter().any(|c| c == "SGR: Font(1)"), "expected ESC \\x0F to emit SGR Font(1)");
+
+    sink.commands.clear();
+    parser.parse(b"\x8E", &mut sink);
+    assert!(sink.commands.iter().any(|c| c == "SGR: Font(1)"), "expected ESC \\x8E to emit SGR Font(1)");
+}
+
+#[test]
+#[ignore = "Insert character (0x94) should map to CSI ICH like the legacy BufferParser"]
+fn test_petscii_insert_char_should_issue_ich() {
+    let mut parser = PetsciiParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x94", &mut sink);
+    assert!(
+        sink.commands.iter().any(|c| c == "InsertChar: 1"),
+        "expected PETSCII 0x94 to emit CSI ICH 1 instead of printing a space"
+    );
+}

@@ -209,11 +209,13 @@ impl AnsiParser {
 
         match encoding {
             0 => {
+                println!("insert macro {} normal", pid);
                 // Text encoding - store as-is
                 self.macros.insert(pid, self.parse_buffer[start_index..].to_vec());
             }
             1 => {
                 // Hex encoding - decode it
+                println!("insert macro {} hex", pid);
                 if let Ok(decoded) = self.parse_hex_macro(&self.parse_buffer[start_index..]) {
                     self.macros.insert(pid, decoded);
                 }
@@ -292,7 +294,6 @@ impl CommandParser for AnsiParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
         let mut i = 0;
         let mut printable_start = 0;
-
         while i < input.len() {
             let byte = input[i];
             match self.state {
@@ -1061,6 +1062,37 @@ impl CommandParser for AnsiParser {
                         self.reset();
                         i += 1;
                         printable_start = i;
+                    } else if byte == b'[' {
+                        // Start of macro invocation inside DCS: ESC [ <num> * z
+                        // Save position and parse the macro sequence
+                        i += 1;
+
+                        // Parse number
+                        let mut macro_id = 0u16;
+                        while i < input.len() && input[i].is_ascii_digit() {
+                            macro_id = macro_id.wrapping_mul(10).wrapping_add((input[i] - b'0') as u16);
+                            i += 1;
+                        }
+
+                        // Expect '*'
+                        if i < input.len() && input[i] == b'*' {
+                            i += 1;
+                            // Expect 'z'
+                            if i < input.len() && input[i] == b'z' {
+                                // Invoke the macro
+                                self.state = ParserState::DcsString;
+                                self.invoke_macro(macro_id as usize, sink);
+                                i += 1;
+                                continue;
+                            }
+                        }
+
+                        // If we get here, it wasn't a valid macro sequence
+                        // Treat the ESC [ and following chars as regular DCS data
+                        self.parse_buffer.push(0x1B);
+                        self.parse_buffer.push(b'[');
+                        // The next iteration will handle the current byte
+                        self.state = ParserState::DcsString;
                     } else {
                         // False alarm - ESC was part of DCS data
                         self.parse_buffer.push(0x1B);

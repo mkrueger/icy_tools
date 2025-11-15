@@ -22,7 +22,7 @@ use icy_parser_core::{
     OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline,
 };
 
-use crate::{AttributedChar, EditableScreen, Position, SavedCaretState};
+use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, XTERM_256_PALETTE, screen};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
@@ -42,6 +42,21 @@ impl<'a> ScreenSink<'a> {
     /// Get reference to the underlying screen
     pub fn screen(&self) -> &dyn EditableScreen {
         self.screen
+    }
+
+    fn set_font_selection_success(&mut self, slot: usize) {
+        self.screen.terminal_state_mut().font_selection_state = FontSelectionState::Success;
+        self.screen.caret_mut().set_font_page(slot);
+
+        if self.screen.caret().attribute.is_blinking() && self.screen.caret().attribute.is_bold() {
+            self.screen.terminal_state_mut().high_intensity_blink_attribute_font_slot = slot;
+        } else if self.screen.caret().attribute.is_blinking() {
+            self.screen.terminal_state_mut().blink_attribute_font_slot = slot;
+        } else if self.screen.caret().attribute.is_bold() {
+            self.screen.terminal_state_mut().high_intensity_attribute_font_slot = slot;
+        } else {
+            self.screen.terminal_state_mut().normal_attribute_font_slot = slot;
+        }
     }
 
     fn apply_sgr(&mut self, sgr: SgrAttribute) {
@@ -109,7 +124,13 @@ impl<'a> ScreenSink<'a> {
                         attr.set_foreground(c as u32);
                     }
                     Color::Extended(c) => {
-                        attr.set_foreground(c as u32);
+                        let color_val = {
+                            let _ = attr;
+                            let pal = XTERM_256_PALETTE[c as usize].1.clone();
+                            self.screen.palette_mut().insert_color(pal)
+                        };
+                        self.screen.caret_mut().set_foreground(color_val);
+                        return;
                     }
                     Color::Rgb(r, g, b) => {
                         // Need to release attr borrow before calling palette_mut
@@ -133,7 +154,13 @@ impl<'a> ScreenSink<'a> {
                         attr.set_background(c as u32);
                     }
                     Color::Extended(c) => {
-                        attr.set_background(c as u32);
+                        let color_val = {
+                            let _ = attr;
+                            let pal = XTERM_256_PALETTE[c as usize].1.clone();
+                            self.screen.palette_mut().insert_color(pal)
+                        };
+                        self.screen.caret_mut().set_background(color_val);
+                        return;
                     }
                     Color::Rgb(r, g, b) => {
                         // Need to release attr borrow before calling palette_mut
@@ -479,7 +506,22 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
 
             // Commands not yet fully mapped
-            TerminalCommand::CsiFontSelection(_, _) => {}
+            TerminalCommand::CsiFontSelection(_slot, font_number) => {
+                let nr = font_number as usize;
+                if self.screen().get_font(nr).is_some() {
+                    self.set_font_selection_success(nr);
+                }
+                match BitFont::from_ansi_font_page(nr) {
+                    Ok(font) => {
+                        self.screen_mut().set_font(nr, font);
+                        self.set_font_selection_success(nr);
+                    }
+                    Err(err) => {
+                        log::error!("failed font selection: {}", err);
+                        self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                    }
+                }
+            }
             TerminalCommand::CsiSelectCommunicationSpeed(_, _) => {}
             TerminalCommand::CsiFillRectangularArea(_, _, _, _, _) => {}
             TerminalCommand::CsiEraseRectangularArea(_, _, _, _) => {}

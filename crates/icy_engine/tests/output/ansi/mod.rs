@@ -28,7 +28,6 @@ pub fn test_ansi() {
             thread::sleep(Duration::from_millis(50));
             let _ = screen.buffer.update_sixel_threads();
         }
-        println!("res:{}", screen.get_resolution());
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);

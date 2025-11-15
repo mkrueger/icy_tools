@@ -25,7 +25,7 @@ mod atascii;
 pub use atascii::AtasciiParser;
 
 mod petscii;
-pub use petscii::PetsciiParser;
+pub use petscii::{C64_TERMINAL_SIZE, PetsciiParser};
 
 mod viewdata;
 use serde::Deserialize;

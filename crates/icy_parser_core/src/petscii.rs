@@ -10,6 +10,26 @@
 
 use crate::{Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand};
 
+pub const C64_TERMINAL_SIZE: (i32, i32) = (40, 25);
+
+// C64 color palette indices
+const BLACK: u8 = 0x00;
+const WHITE: u8 = 0x01;
+const RED: u8 = 0x02;
+const CYAN: u8 = 0x03;
+const PURPLE: u8 = 0x04;
+const GREEN: u8 = 0x05;
+const BLUE: u8 = 0x06;
+const YELLOW: u8 = 0x07;
+const ORANGE: u8 = 0x08;
+const BROWN: u8 = 0x09;
+const PINK: u8 = 0x0a;
+const GREY1: u8 = 0x0b;
+const GREY2: u8 = 0x0c;
+const LIGHT_GREEN: u8 = 0x0d;
+const LIGHT_BLUE: u8 = 0x0e;
+const GREY3: u8 = 0x0f;
+
 /// PETSCII parser for Commodore 8-bit computer systems
 pub struct PetsciiParser {
     /// Escape sequence state (for C128 ESC sequences)
@@ -153,7 +173,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(1))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(WHITE))));
                     start = i + 1;
                 }
                 0x1C => {
@@ -163,7 +183,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(2))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(RED))));
                     start = i + 1;
                 }
                 0x1E => {
@@ -173,7 +193,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(5))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(GREEN))));
                     start = i + 1;
                 }
                 0x1F => {
@@ -183,7 +203,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(6))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(BLUE))));
                     start = i + 1;
                 }
                 0x81 => {
@@ -193,7 +213,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(8))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(ORANGE))));
                     start = i + 1;
                 }
                 0x90 => {
@@ -203,7 +223,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(0))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(BLACK))));
                     start = i + 1;
                 }
                 0x95 => {
@@ -213,7 +233,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(9))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(BROWN))));
                     start = i + 1;
                 }
                 0x96 => {
@@ -223,7 +243,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(10))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(PINK))));
                     start = i + 1;
                 }
                 0x97 => {
@@ -233,7 +253,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(11))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(GREY1))));
                     start = i + 1;
                 }
                 0x98 => {
@@ -243,7 +263,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(12))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(GREY2))));
                     start = i + 1;
                 }
                 0x99 => {
@@ -253,7 +273,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(13))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(LIGHT_GREEN))));
                     start = i + 1;
                 }
                 0x9A => {
@@ -263,7 +283,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(14))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(LIGHT_BLUE))));
                     start = i + 1;
                 }
                 0x9B => {
@@ -273,7 +293,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(15))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(GREY3))));
                     start = i + 1;
                 }
                 0x9C => {
@@ -283,7 +303,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(4))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(PURPLE))));
                     start = i + 1;
                 }
                 0x9E => {
@@ -293,7 +313,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(7))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(YELLOW))));
                     start = i + 1;
                 }
                 0x9F => {
@@ -303,7 +323,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(3))));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(CYAN))));
                     start = i + 1;
                 }
 
