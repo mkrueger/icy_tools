@@ -22,8 +22,8 @@ enum State {
     ReadLevel1,
     ReadLevel9,
     ReadParams,
-    GotEscape,               // Got ESC character
-    GotEscBracket,           // Got ESC[
+    GotEscape,          // Got ESC character
+    GotEscBracket,      // Got ESC[
     ReadAnsiNumber(u8), // Reading number after ESC[
 }
 
@@ -106,7 +106,7 @@ impl CommandParser for RipParser {
                 }
             }
 
-            match &self.state {
+            match self.state {
                 State::Default => {
                     match self.mode {
                         ParserMode::NonRip => {
@@ -156,14 +156,13 @@ impl CommandParser for RipParser {
                     } else {
                         // Unknown ESC[ sequence - pass to ANSI parser
                         self.state = State::Default;
-                        self.ansi_parser.parse(b"\x1B[", sink);
-                        self.ansi_parser.parse(&[ch], sink);
+                        self.ansi_parser.parse(&[0x1B, b'[', ch], sink);
                     }
                 }
                 State::ReadAnsiNumber(digit) => {
                     if ch == b'!' {
                         // Complete ESC[<number>! sequence
-                        match *digit {
+                        match digit {
                             b'0' => {
                                 // ESC[0! - Query version
                                 sink.request(crate::TerminalRequest::RipRequestTerminalId);
@@ -187,9 +186,7 @@ impl CommandParser for RipParser {
                             }
                         }
                     }
-                    self.ansi_parser.parse(b"\x1B[", sink);
-                    self.ansi_parser.parse(&[*digit], sink);
-                    self.ansi_parser.parse(b"!", sink);
+                    self.ansi_parser.parse(&[0x1B, b'[', digit, ch], sink);
                     self.state = State::Default;
                 }
                 State::GotExclaim => {

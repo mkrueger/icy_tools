@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[repr(u8)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum GraphicsType {
     Text,
     Rip,

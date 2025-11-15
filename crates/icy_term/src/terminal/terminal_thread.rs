@@ -167,95 +167,6 @@ impl<'a> CommandSink for TerminalSink<'a> {
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
-        if let RipCommand::FileQuery { file_name } = &cmd {
-            let file_name = lookup_cache_file(bgi, &self.file_name)?;
-            match self.mode {
-                // Simply query the existence of the file.  If it exists, a "1" is
-                // returned.  Otherwise a "0" is returned to the Host (without a
-                // carriage return).
-                0 => {
-                    if file_name.exists() {
-                        return Ok(CallbackAction::SendString("1".to_string()));
-                    }
-                    return Ok(CallbackAction::SendString("0".to_string()));
-                }
-
-                // Same as 0, except a carriage return is added after the response.
-                1 => {
-                    if file_name.exists() {
-                        return Ok(CallbackAction::SendString("1\r\n".to_string()));
-                    }
-                    return Ok(CallbackAction::SendString("0\r\n".to_string()));
-                }
-
-                // Queries the existence of a file.  If it does not exist, a "0" is
-                // returned to the Host followed by a carriage return.  If it does
-                // exist, the returned text is a "1." followed by the file size (in
-                // decimal).  The return sequence is terminated by a carriage
-                // return.  An example of the returned text could be "1.20345".
-                2 => {
-                    if let Ok(data) = fs::metadata(file_name) {
-                        return Ok(CallbackAction::SendString(format!("1.{}\r\n", data.len())));
-                    }
-                    return Ok(CallbackAction::SendString("0\r\n".to_string()));
-                }
-                // Queries extended return information.  If the file does not
-                // exist, a "0" is returned followed by a carriage return.  If it
-                // does exist, the text returned to the Host is in the Format:
-                // 1.size.date.time <cr>.  An example of a return statement could
-                // be "1.20345.01/02/93.03:04:30<cr>"
-                3 => {
-                    if let Ok(data) = fs::metadata(file_name) {
-                        let time = data.modified().unwrap().duration_since(UNIX_EPOCH).unwrap();
-                        if let Some(time) = DateTime::from_timestamp(time.as_secs() as i64, 0) {
-                            return Ok(CallbackAction::SendString(format!(
-                                "1.{}.{:02}.{:02}.{:02}.{:02}:{:02}:{:02}\r\n",
-                                data.len(),
-                                time.month(),
-                                time.day(),
-                                time.year(),
-                                time.hour(),
-                                time.minute(),
-                                time.second(),
-                            )));
-                        }
-                        return Ok(CallbackAction::SendString(format!("1.{}.\r\n", data.len())));
-                    }
-                    return Ok(CallbackAction::SendString("0\r\n".to_string()));
-                }
-                // Queries extended return information.  If the file does not
-                // exist, a "0" is returned followed by a carriage return.  If it
-                // does exist, the text returned to the Host is in the Format:
-                // 1.filename.size.date.time <cr>. An example of a return statement
-                // could be "1.MYFILE.RIP.20345.01/02/93.03:04:30 <cr>".  Note that
-                // the file extension adds another period into the return text.
-                4 => {
-                    if let Ok(data) = fs::metadata(file_name) {
-                        let time = data.modified().unwrap().duration_since(UNIX_EPOCH).unwrap();
-                        if let Some(time) = DateTime::from_timestamp(time.as_secs() as i64, 0) {
-                            return Ok(CallbackAction::SendString(format!(
-                                "1.{}.{}.{:02}.{:02}.{:02}.{:02}:{:02}:{:02}\r\n",
-                                self.file_name,
-                                data.len(),
-                                time.month(),
-                                time.day(),
-                                time.year(),
-                                time.hour(),
-                                time.minute(),
-                                time.second(),
-                            )));
-                        }
-                        return Ok(CallbackAction::SendString(format!("1.{}.{}.\r\n", self.file_name, data.len())));
-                    }
-                    return Ok(CallbackAction::SendString("0\r\n".to_string()));
-                }
-                _ => {
-                    log::error!("Invalid mode for FileQuery: {}", self.mode);
-                }
-            }
-            Ok(CallbackAction::None)
-        }
-
         self.screen_sink.emit_rip(cmd);
     }
     fn emit_skypix(&mut self, cmd: SkypixCommand) {
@@ -284,7 +195,6 @@ impl<'a> CommandSink for TerminalSink<'a> {
     fn request(&mut self, request: TerminalRequest) {
         use icy_parser_core::TerminalRequest;
 
-        println!("request: {:?}", request);
         match request {
             TerminalRequest::DeviceAttributes => {
                 // respond with IcyTerm as ASCII followed by the package version.
@@ -502,6 +412,8 @@ pub struct TerminalThread {
 
     // Capture state
     capture_writer: Option<std::fs::File>,
+
+    output_buffer: Vec<u8>,
 }
 
 impl TerminalThread {
@@ -528,6 +440,7 @@ impl TerminalThread {
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
             capture_writer: None,
+            output_buffer: Vec::new(),
         };
 
         // Spawn the async runtime for the terminal thread
@@ -804,7 +717,7 @@ impl TerminalThread {
 
             match config.terminal_type {
                 TerminalEmulation::Rip => {
-                    let mut buf = PaletteScreenBuffer::new(GraphicsType::Rip);
+                    let buf = PaletteScreenBuffer::new(GraphicsType::Rip);
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::Skypix => {
@@ -832,6 +745,7 @@ impl TerminalThread {
         self.auto_file_transfer = AutoFileTransfer::default();
 
         self.send_event(TerminalEvent::Connected);
+
         Ok(())
     }
 
@@ -947,11 +861,10 @@ impl TerminalThread {
         }
 
         // Vector for collecting terminal query responses
-        let mut output = Vec::new();
 
         if let Ok(mut screen) = self.edit_screen.lock() {
             {
-                let mut sink = TerminalSink::new(&mut **screen, &self.event_tx, &mut output);
+                let mut sink = TerminalSink::new(&mut **screen, &self.event_tx, &mut self.output_buffer);
 
                 if self.use_utf8 {
                     // UTF-8 mode: decode multi-byte sequences
@@ -1016,10 +929,11 @@ impl TerminalThread {
         }
 
         // Send any terminal query responses collected during parsing
-        if !output.is_empty() {
+        if !self.output_buffer.is_empty() {
             if let Some(conn) = &mut self.connection {
-                let _ = conn.send(&output).await;
+                let _ = conn.send(&self.output_buffer).await;
             }
+            self.output_buffer.clear();
         }
     }
 
@@ -1155,7 +1069,6 @@ impl TerminalThread {
             let password = password.unwrap_or_default();
 
             for command in commands {
-                println!("run cmd: {:?}", command);
                 match command {
                     AutoLoginCommand::Delay(seconds) => {
                         tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
@@ -1185,7 +1098,6 @@ impl TerminalThread {
                         } else {
                             icy_engine::BufferType::CP437 // Default fallback
                         };
-                        println!("wait !!!");
 
                         loop {
                             // Check timeout

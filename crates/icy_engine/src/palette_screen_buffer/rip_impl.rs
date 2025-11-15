@@ -29,13 +29,13 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             if x0 == 0 && y0 == 0 && x1 == 0 && y1 == 0 && size == 0 && !wrap {
                 bgi.suspend_text = !bgi.suspend_text;
             }
-            buf.terminal_state_mut().set_text_window(x0, y0, x1, y1);
+            buf.terminal_state_mut().set_text_window(x0.into(), y0.into(), x1.into(), y1.into());
             buf.caret_mut().set_font_page(size.clamp(0, 4) as usize);
-            buf.caret_mut().set_position_xy(x0, y0);
+            buf.caret_mut().set_position_xy(x0.into(), y0.into());
         }
 
         RipCommand::ViewPort { x0, y0, x1, y1 } => {
-            bgi.set_viewport(x0, y0, x1, y1);
+            bgi.set_viewport(x0.into(), y0.into(), x1.into(), y1.into());
         }
 
         RipCommand::ResetWindows => {
@@ -54,7 +54,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::GotoXY { x, y } => {
-            bgi.move_to(x, y);
+            bgi.move_to(x.into(), y.into());
         }
 
         RipCommand::Home => {
@@ -70,11 +70,12 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::SetPalette { colors } => {
-            bgi.set_palette(buf, &colors);
+            let colors_i32: Vec<i32> = colors.iter().map(|&c| c.into()).collect();
+            bgi.set_palette(buf, &colors_i32);
         }
 
         RipCommand::OnePalette { color, value } => {
-            bgi.set_palette_color(buf, color, value as u8);
+            bgi.set_palette_color(buf, color.into(), value as u8);
         }
 
         RipCommand::WriteMode { mode } => {
@@ -86,7 +87,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::Move { x, y } => {
-            bgi.move_to(x, y);
+            bgi.move_to(x.into(), y.into());
         }
 
         RipCommand::Text { text } => {
@@ -94,33 +95,33 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::TextXY { x, y, text } => {
-            bgi.out_text_xy(buf, x, y, &text);
+            bgi.out_text_xy(buf, x.into(), y.into(), &text);
         }
 
         RipCommand::FontStyle { font, direction, size, res: _ } => {
-            bgi.set_text_style(FontType::from(font as u8), Direction::from(direction as u8), size);
+            bgi.set_text_style(FontType::from(font as u8), Direction::from(direction as u8), size.into());
         }
 
         RipCommand::Pixel { x, y } => {
-            bgi.put_pixel(buf, x, y, bgi.get_color());
+            bgi.put_pixel(buf, x.into(), y.into(), bgi.get_color());
         }
 
         RipCommand::Line { x0, y0, x1, y1 } => {
-            bgi.line(buf, x0, y0, x1, y1);
+            bgi.line(buf, x0.into(), y0.into(), x1.into(), y1.into());
         }
 
         RipCommand::Rectangle { x0, y0, x1, y1 } => {
-            bgi.rectangle(buf, x0, y0, x1, y1);
+            bgi.rectangle(buf, x0.into(), y0.into(), x1.into(), y1.into());
         }
 
         RipCommand::Bar { x0, y0, x1, y1 } => {
             let (left, right) = if x0 < x1 { (x0, x1) } else { (x1, x0) };
             let (top, bottom) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
-            bgi.bar(buf, left, top, right, bottom);
+            bgi.bar(buf, left.into(), top.into(), right.into(), bottom.into());
         }
 
         RipCommand::Circle { x_center, y_center, radius } => {
-            bgi.circle(buf, x_center, y_center, radius);
+            bgi.circle(buf, x_center.into(), y_center.into(), radius.into());
         }
 
         RipCommand::Oval {
@@ -131,15 +132,15 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             x_rad,
             y_rad,
         } => {
-            bgi.ellipse(buf, x, y, st_ang, end_ang, x_rad, y_rad);
+            bgi.ellipse(buf, x.into(), y.into(), st_ang.into(), end_ang.into(), x_rad.into(), y_rad.into());
         }
 
         RipCommand::FilledOval { x, y, x_rad, y_rad } => {
-            bgi.fill_ellipse(buf, x, y, 0, 360, x_rad, y_rad);
+            bgi.fill_ellipse(buf, x.into(), y.into(), 0, 360, x_rad.into(), y_rad.into());
         }
 
         RipCommand::Arc { x, y, st_ang, end_ang, radius } => {
-            bgi.arc(buf, x, y, st_ang, end_ang, radius);
+            bgi.arc(buf, x.into(), y.into(), st_ang.into(), end_ang.into(), radius.into());
         }
 
         RipCommand::OvalArc {
@@ -150,11 +151,11 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             x_rad,
             y_rad,
         } => {
-            bgi.ellipse(buf, x, y, st_ang, end_ang, x_rad, y_rad);
+            bgi.ellipse(buf, x.into(), y.into(), st_ang.into(), end_ang.into(), x_rad.into(), y_rad.into());
         }
 
         RipCommand::PieSlice { x, y, st_ang, end_ang, radius } => {
-            bgi.pie_slice(buf, x, y, st_ang, end_ang, radius);
+            bgi.pie_slice(buf, x.into(), y.into(), st_ang.into(), end_ang.into(), radius.into());
         }
 
         RipCommand::OvalPieSlice {
@@ -165,7 +166,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             x_rad,
             y_rad,
         } => {
-            bgi.sector(buf, x, y, st_ang, end_ang, x_rad, y_rad);
+            bgi.sector(buf, x.into(), y.into(), st_ang.into(), end_ang.into(), x_rad.into(), y_rad.into());
         }
 
         RipCommand::Bezier {
@@ -179,7 +180,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             y4,
             cnt,
         } => {
-            bgi.rip_bezier(buf, x1, y1, x2, y2, x3, y3, x4, y4, cnt);
+            bgi.rip_bezier(buf, x1.into(), y1.into(), x2.into(), y2.into(), x3.into(), y3.into(), x4.into(), y4.into(), cnt.into());
         }
 
         RipCommand::Polygon { points } => {
@@ -188,7 +189,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             }
             let mut poly_points = Vec::new();
             for i in 0..points.len() / 2 {
-                poly_points.push(Position::new(points[i * 2], points[i * 2 + 1]));
+                poly_points.push(Position::new(points[i * 2].into(), points[i * 2 + 1].into()));
             }
             bgi.draw_poly(buf, &poly_points);
         }
@@ -199,7 +200,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             }
             let mut poly_points = Vec::new();
             for i in 0..points.len() / 2 {
-                poly_points.push(Position::new(points[i * 2], points[i * 2 + 1]));
+                poly_points.push(Position::new(points[i * 2].into(), points[i * 2 + 1].into()));
             }
             bgi.fill_poly(buf, &poly_points);
         }
@@ -210,21 +211,21 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             }
             let mut poly_points = Vec::new();
             for i in 0..points.len() / 2 {
-                poly_points.push(Position::new(points[i * 2], points[i * 2 + 1]));
+                poly_points.push(Position::new(points[i * 2].into(), points[i * 2 + 1].into()));
             }
             bgi.draw_poly_line(buf, &poly_points);
         }
 
         RipCommand::Fill { x, y, border } => {
-            bgi.flood_fill(buf, x, y, border as u8);
+            bgi.flood_fill(buf, x.into(), y.into(), border as u8);
         }
 
         RipCommand::LineStyle { style, user_pat, thick } => {
             bgi.set_line_style(BgiLineStyle::from(style as u8));
             if style == 4 {
-                bgi.set_line_pattern(user_pat);
+                bgi.set_line_pattern(user_pat.into());
             }
-            bgi.set_line_thickness(thick);
+            bgi.set_line_thickness(thick.into());
         }
 
         RipCommand::FillStyle { pattern, color } => {
@@ -264,7 +265,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             let host_command = parse_host_command(&text);
             let mut style = ButtonStyle2::default();
             style.flags |= 1024;
-            buf.add_mouse_field(MouseField::new(x0, y0, x1, y1, host_command, style));
+            buf.add_mouse_field(MouseField::new(x0.into(), y0.into(), x1.into(), y1.into(), host_command, style));
         }
 
         RipCommand::MouseFields => {
@@ -290,7 +291,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::GetImage { x0, y0, x1, y1, res: _ } => {
-            bgi.rip_image = Some(bgi.get_image(buf, x0, y0, x1, y1));
+            bgi.rip_image = Some(bgi.get_image(buf, x0.into(), y0.into(), x1.into(), y1.into()));
         }
 
         RipCommand::PutImage { x, y, mode, res: _ } => {
@@ -301,7 +302,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
                 ImagePasteMode::And => BgiWriteMode::And,
                 ImagePasteMode::Not => BgiWriteMode::Not,
             };
-            bgi.put_rip_image(buf, x, y, bgi_mode);
+            bgi.put_rip_image(buf, x.into(), y.into(), bgi_mode);
         }
 
         RipCommand::WriteIcon { res: _, data: _ } => {
@@ -313,7 +314,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             y,
             mode,
             clipboard: _,
-            res,
+            res: _,
             file_name,
         } => {
             let Ok(file_name) = lookup_cache_file(bgi, &file_name) else {
@@ -355,7 +356,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             let res = buf.get_resolution();
 
             for y2 in 0..height {
-                if y + y2 >= res.height {
+                if i32::from(y) + y2 >= res.height {
                     break;
                 }
                 let row = (width / 8 + i32::from((width & 7) != 0)) as usize;
@@ -363,7 +364,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
                 let _ = br.read_exact(&mut planes);
 
                 for x2 in 0..width as usize {
-                    if x + x2 as i32 >= res.width {
+                    if i32::from(x) + x2 as i32 >= res.width {
                         break;
                     }
                     let bit = 7 - (x2 & 7);
@@ -371,7 +372,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
                     color |= ((planes[row + (x2 / 8)] >> bit) & 1) << 1;
                     color |= ((planes[(row * 2) + (x2 / 8)] >> bit) & 1) << 2;
                     color |= ((planes[(row * 3) + (x2 / 8)] >> bit) & 1) << 3;
-                    bgi.put_pixel(buf, x + x2 as i32, y + y2, color);
+                    bgi.put_pixel(buf, i32::from(x) + x2 as i32, i32::from(y) + y2, color);
                 }
             }
             // Restore original write mode
@@ -396,19 +397,19 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             res: _,
         } => {
             let style = ButtonStyle2 {
-                size: Size::new(wid, hgt),
+                size: Size::new(wid.into(), hgt.into()),
                 orientation: LabelOrientation::from(orient as u8),
-                bevel_size: bevsize,
-                label_color: dfore,
-                drop_shadow_color: dback,
-                bright,
-                dark,
-                flags,
-                flags2,
-                surface_color: surface,
-                group: grp_no,
-                underline_color: uline_col,
-                corner_color: corner_col,
+                bevel_size: bevsize.into(),
+                label_color: dfore.into(),
+                drop_shadow_color: dback.into(),
+                bright: bright.into(),
+                dark: dark.into(),
+                flags: flags.into(),
+                flags2: flags2.into(),
+                surface_color: surface.into(),
+                group: grp_no.into(),
+                underline_color: uline_col.into(),
+                corner_color: corner_col.into(),
             };
             bgi.set_button_style(style);
         }
@@ -427,30 +428,30 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             if split.len() == 4 {
                 bgi.add_button(
                     buf,
-                    x0,
-                    y0,
-                    x1,
-                    y1,
+                    x0.into(),
+                    y0.into(),
+                    x1.into(),
+                    y1.into(),
                     hotkey as u8,
-                    flags,
+                    flags.into(),
                     Some(split[0]),
                     split[1],
                     parse_host_command(split[2]),
                     false,
                 );
             } else if split.len() == 3 {
-                bgi.add_button(buf, x0, y0, x1, y1, hotkey as u8, flags, None, split[1], parse_host_command(split[2]), false);
+                bgi.add_button(buf, x0.into(), y0.into(), x1.into(), y1.into(), hotkey as u8, flags.into(), None, split[1], parse_host_command(split[2]), false);
             } else if split.len() == 2 {
-                bgi.add_button(buf, x0, y0, x1, y1, hotkey as u8, flags, None, split[1], None, false);
+                bgi.add_button(buf, x0.into(), y0.into(), x1.into(), y1.into(), hotkey as u8, flags.into(), None, split[1], None, false);
             } else {
                 bgi.add_button(
                     buf,
-                    x0,
-                    y0,
-                    x1,
-                    y1,
+                    x0.into(),
+                    y0.into(),
+                    x1.into(),
+                    y1.into(),
                     hotkey as u8,
-                    flags,
+                    flags.into(),
                     None,
                     &format!("error in text {}", split.len()),
                     None,
@@ -475,8 +476,8 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             res: _,
             dest_line,
         } => {
-            let image = bgi.get_image(buf, x0, y0, x1 + 1, y1 + 1);
-            bgi.put_image(buf, x0, dest_line, &image, bgi.get_write_mode());
+            let image = bgi.get_image(buf, x0.into(), y0.into(), (x1 + 1).into(), (y1 + 1).into());
+            bgi.put_image(buf, x0.into(), dest_line.into(), &image, bgi.get_write_mode());
         }
 
         RipCommand::ReadScene { file_name: _ } => {

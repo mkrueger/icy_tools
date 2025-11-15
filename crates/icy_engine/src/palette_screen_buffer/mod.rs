@@ -3,14 +3,10 @@ use icy_parser_core::RipCommand;
 mod rip_impl;
 
 use crate::{
-    ATARI, ATARI_ST_8X8, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode,
-    Layer, Line, Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState,
-    TextPane,
+    ATARI, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line,
+    Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
-    rip::{
-        self,
-        bgi::{Bgi, DEFAULT_BITFONT, MouseField},
-    },
+    rip::bgi::{Bgi, DEFAULT_BITFONT, MouseField},
 };
 use std::collections::HashMap;
 use std::path::PathBuf;

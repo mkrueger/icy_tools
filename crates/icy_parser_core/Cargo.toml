@@ -16,6 +16,7 @@ default = []
 log = "0.4.28"
 base64 = "0.22"
 memchr = "2.7"
+smallvec = "1.15.1"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

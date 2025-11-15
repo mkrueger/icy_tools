@@ -244,7 +244,6 @@ impl CommandParser for AnsiParser {
 
         while i < input.len() {
             let byte = input[i];
-
             match self.state {
                 ParserState::Ground => {
                     match byte {

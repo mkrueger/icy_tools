@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[repr(u8)]
-#[derive(Default, Clone, Copy, PartialEq)]
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub enum TerminalResolution {
     /// 320x200
     #[default]
