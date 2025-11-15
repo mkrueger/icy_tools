@@ -46,14 +46,13 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
 }
 
 #[must_use]
-pub fn get_parser(
-    emulator: &TerminalEmulation,
-    _use_ansi_music: MusicOption,
-    _screen_mode: ScreenMode,
-    _cache_directory: PathBuf,
-) -> Box<dyn CommandParser + Send> {
+pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, _screen_mode: ScreenMode) -> Box<dyn CommandParser + Send> {
     match emulator {
-        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => Box::new(icy_parser_core::AnsiParser::new()),
+        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
+            let mut parser = icy_parser_core::AnsiParser::new();
+            parser.music_option = use_ansi_music;
+            Box::new(parser)
+        }
         TerminalEmulation::Avatar => Box::new(icy_parser_core::AvatarParser::new()),
         TerminalEmulation::Ascii => Box::new(icy_parser_core::AsciiParser::new()),
         TerminalEmulation::PETscii => Box::new(icy_parser_core::PetsciiParser::new()),

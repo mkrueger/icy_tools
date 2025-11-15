@@ -1,4 +1,5 @@
 use icy_parser_core::{AsciiParser, CommandParser, CommandSink, TerminalCommand};
+pub mod mapping;
 
 struct CollectSink {
     pub text: Vec<u8>,

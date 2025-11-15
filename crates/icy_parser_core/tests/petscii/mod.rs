@@ -1,5 +1,7 @@
 use icy_parser_core::{CommandParser, CommandSink, Direction, PetsciiParser, TerminalCommand};
 
+mod mapping;
+
 struct TestSink {
     commands: Vec<String>,
 }

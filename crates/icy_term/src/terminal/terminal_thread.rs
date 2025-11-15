@@ -718,7 +718,7 @@ impl TerminalThread {
 
             screen_mode.apply_to_edit_screen(&mut **screen);
         }
-        self.parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
+        self.parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode);
 
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
@@ -1178,12 +1178,7 @@ pub fn create_terminal_thread(
     terminal_type: TerminalEmulation,
 ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
     use icy_parser_core::MusicOption;
-    let parser = crate::get_parser(
-        &terminal_type,
-        MusicOption::Off,
-        ScreenMode::default(),
-        PathBuf::from(".cache"), // cache directory
-    );
+    let parser = crate::get_parser(&terminal_type, MusicOption::Off, ScreenMode::default());
 
     TerminalThread::spawn(edit_screen, parser)
 }
