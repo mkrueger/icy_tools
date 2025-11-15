@@ -506,6 +506,9 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
 
             // Commands not yet fully mapped
+            TerminalCommand::SetFontPage(page) => {
+                self.screen.caret_mut().set_font_page(page);
+            }
             TerminalCommand::CsiFontSelection(_slot, font_number) => {
                 let nr = font_number as usize;
                 if self.screen().get_font(nr).is_some() {

@@ -12,11 +12,12 @@ pub fn test_petscii() {
             continue;
         }
 
-        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
+        let data: Vec<u8> = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
         let mut screen = TextScreen::new(C64_TERMINAL_SIZE);
         screen.terminal_state_mut().is_terminal_buffer = true;
+        screen.terminal_state_mut().auto_wrap_mode = icy_engine::AutoWrapMode::AutoWrap;
         screen.clear_font_table();
         screen.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
         screen.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());

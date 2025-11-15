@@ -201,8 +201,6 @@ impl RgbaScreen for TextScreen {
     fn get_resolution(&self) -> Size {
         let font_size = self.get_font(0).unwrap().size();
         let rect = self.get_size();
-        println!("font size {:?}", font_size);
-        println!("size {:?}", rect);
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
         Size::new(px_width, px_height)

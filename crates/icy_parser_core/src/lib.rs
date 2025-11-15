@@ -548,6 +548,10 @@ pub enum TerminalCommand {
     /// Ps1 = slot (0-3), Ps2 = font number
     CsiFontSelection(u16, u16),
 
+    /// Set Font Page (for PETSCII/ATASCII character set switching)
+    /// Direct font page selection without font loading
+    SetFontPage(usize),
+
     /// Select Communication Speed: ESC[{Ps1};{Ps2}*r
     /// Ps1 = communication line type, Ps2 = baud rate
     CsiSelectCommunicationSpeed(CommunicationLine, BaudEmulation),

@@ -61,12 +61,10 @@ impl PetsciiParser {
         }
     }
 
-    /// Apply reverse mode to a character code
     #[inline]
-    fn apply_reverse(&self, ch: u8) -> u8 {
+    pub fn apply_reverse(&self, ch: u8) -> u8 {
         if self.reverse_mode { ch | 0x80 } else { ch }
     }
-
     /// Convert PETSCII byte to internal screen code
     fn petscii_to_internal(&self, code: u8) -> Option<u8> {
         let mapped = match code {
@@ -83,9 +81,79 @@ impl PetsciiParser {
     /// Emit a printable character with current modes applied
     fn emit_char(&self, sink: &mut dyn CommandSink, byte: u8) {
         if let Some(tch) = self.petscii_to_internal(byte) {
-            let ch = self.apply_reverse(tch);
-            sink.print(&[ch]);
+            let tch = self.apply_reverse(tch);
+            sink.print(&[tch]);
         }
+    }
+
+    /// Produce a human-readable description of a PETSCII byte including its role
+    /// (control, color change, shift toggle, printable mapping, etc.) and current parser modes.
+    pub fn debug_description(&self, byte: u8) -> String {
+        let mode = format!(
+            "[shift={} c_shift={} reverse={} underline={}]",
+            if self.shift_mode { "on" } else { "off" },
+            if self.c_shift { "on" } else { "off" },
+            if self.reverse_mode { "on" } else { "off" },
+            if self.underline_mode { "on" } else { "off" },
+        );
+
+        let desc = match byte {
+            0x02 => "Enable underline",
+            0x03 => "Disable underline",
+            0x05 => "Set foreground WHITE",
+            0x07 => "Bell (BEEP)",
+            0x08 => "Capital shift OFF",
+            0x09 => "Capital shift ON",
+            0x0A => "CR (Carriage Return)",
+            0x0D | 0x8D => "LF (Line Feed) + reset reverse",
+            0x0E => "Shift mode: UNshifted (upper+graphics)",
+            0x0F => "Shift mode: SHIFTED (upper+lowercase)",
+            0x11 => "Cursor DOWN",
+            0x12 => "Reverse ON",
+            0x13 => "Home cursor",
+            0x14 => "Backspace",
+            0x1B => "ESC (C128 escape sequence follows)",
+            0x1C => "Set foreground RED",
+            0x1D => "Cursor RIGHT",
+            0x1E => "Set foreground GREEN",
+            0x1F => "Set foreground BLUE",
+            0x81 => "Set foreground ORANGE",
+            0x8E => "SHIFT IN (shifted mode)",
+            0x90 => "Set foreground BLACK",
+            0x91 => "Cursor UP",
+            0x92 => "Reverse OFF",
+            0x93 => "Clear screen",
+            0x95 => "Set foreground BROWN",
+            0x96 => "Set foreground PINK",
+            0x97 => "Set foreground GREY1",
+            0x98 => "Set foreground GREY2",
+            0x99 => "Set foreground LIGHT_GREEN",
+            0x9A => "Set foreground LIGHT_BLUE",
+            0x9B => "Set foreground GREY3",
+            0x9C => "Set foreground PURPLE",
+            0x9D => "Cursor LEFT",
+            0x9E => "Set foreground YELLOW",
+            0x9F => "Set foreground CYAN",
+            0xFF => "Printable PI character",
+            b if matches!(b, 0x20..=0x7F | 0xA0..=0xBF | 0xC0..=0xFE) => {
+                // Attempt mapping to internal code to show transformed character
+                match self.petscii_to_internal(byte) {
+                    Some(mapped) => {
+                        // Show resulting code with potential reverse application
+                        let rev_mapped = self.apply_reverse(mapped);
+                        let display = if rev_mapped.is_ascii_graphic() { rev_mapped as char } else { '·' };
+                        return format!(
+                            "Printable PETSCII '{}' (0x{:02X}) -> internal 0x{:02X} '{}' {}",
+                            byte as char, byte, mapped, display, mode
+                        );
+                    }
+                    None => return format!("Printable PETSCII '{}' (0x{:02X}) [mapping error] {}", byte as char, byte, mode),
+                }
+            }
+            _ => "Unknown / Unsupported control",
+        };
+
+        format!("{} (0x{:02X}) {}", desc, byte, mode)
     }
 }
 
@@ -94,6 +162,7 @@ impl CommandParser for PetsciiParser {
         let mut start = 0;
 
         for (i, &byte) in input.iter().enumerate() {
+            //println!("byte {:02X} {}", byte, self.debug_description(byte));
             // Handle C128 escape sequences
             if self.got_esc {
                 self.got_esc = false;
@@ -378,7 +447,6 @@ impl CommandParser for PetsciiParser {
                     }
                     sink.emit(TerminalCommand::LineFeed);
                     self.reverse_mode = false;
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(false)));
                     start = i + 1;
                 }
 
@@ -401,6 +469,7 @@ impl CommandParser for PetsciiParser {
                         }
                     }
                     self.shift_mode = false; // Unshifted (uppercase + graphics)
+                    sink.emit(TerminalCommand::SetFontPage(0));
                     start = i + 1;
                 }
                 0x0F | 0x8E => {
@@ -410,6 +479,7 @@ impl CommandParser for PetsciiParser {
                         }
                     }
                     self.shift_mode = true; // Shifted (uppercase + lowercase)
+                    sink.emit(TerminalCommand::SetFontPage(1));
                     start = i + 1;
                 }
 
@@ -463,7 +533,6 @@ impl CommandParser for PetsciiParser {
                         }
                     }
                     self.reverse_mode = true;
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(true)));
                     start = i + 1;
                 }
                 0x92 => {
