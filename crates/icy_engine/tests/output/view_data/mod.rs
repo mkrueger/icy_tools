@@ -21,6 +21,9 @@ pub fn test_viewdata() {
         screen.set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());
         *screen.palette_mut() = Palette::from_slice(&VIEWDATA_PALETTE);
         *screen.buffer_type_mut() = icy_engine::BufferType::Viewdata;
+        //screen.terminal_state_mut().auto_wrap_mode = icy_engine::AutoWrapMode::AutoWrap;
+        // Set default foreground to white for Viewdata
+        screen.caret_mut().attribute.set_foreground(7);
 
         super::parse_with_parser(&mut screen, &mut ViewdataParser::default(), &data).expect("Error parsing file");
 

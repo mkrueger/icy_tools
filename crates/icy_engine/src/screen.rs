@@ -397,11 +397,12 @@ pub trait EditableScreen: RgbaScreen {
         self.set_char(caret_pos, ch);
         caret_pos.x += 1;
         if caret_pos.x >= buffer_width {
-            if let crate::AutoWrapMode::AutoWrap = self.terminal_state_mut().auto_wrap_mode {
+            if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
+                caret_pos.x = 0;
+                caret_pos.y += 1;
+            } else {
                 self.lf();
                 return;
-            } else {
-                caret_pos.y -= 1;
             }
         }
         self.caret_mut().set_position(caret_pos);

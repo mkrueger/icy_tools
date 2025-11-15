@@ -714,6 +714,11 @@ pub trait CommandSink {
     /// Emit an IGS (Interactive Graphics System) command. Default implementation does nothing.
     fn emit_igs(&mut self, _cmd: IgsCommand) {}
 
+    /// if true, reset on row change should be called.
+    fn emit_view_data(&mut self, _cmd: ViewDataCommand) -> bool {
+        false
+    }
+
     /// Emit a Device Control String (DCS) sequence. Default implementation does nothing.
     fn device_control(&mut self, _dcs: DeviceControlString<'_>) {}
 
@@ -778,4 +783,22 @@ impl BaudEmulation {
             BaudEmulation::Rate(baud) => *baud,
         }
     }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewDataCommand {
+    /// preserves caret visibilty
+    ViewDataClearScreen,
+    FillToEol,
+    DoubleHeight(bool),
+    /// Reset colors to default on row change
+    ResetRowColors,
+    /// Check if row changed and reset colors if it did
+    CheckAndResetOnRowChange,
+
+    MoveCaret(Direction),
+
+    SetBgToFg,
+    SetChar(u8),
 }

@@ -19,19 +19,20 @@
 
 use icy_parser_core::{
     AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, IgsCommand, Intensity,
-    OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline,
+    OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
 };
 
-use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, XTERM_256_PALETTE, screen};
+use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, XTERM_256_PALETTE};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
     screen: &'a mut dyn EditableScreen,
+    vd_last_row: i32,
 }
 
 impl<'a> ScreenSink<'a> {
     pub fn new(screen: &'a mut dyn EditableScreen) -> Self {
-        Self { screen }
+        Self { screen, vd_last_row: 0 }
     }
 
     /// Get mutable reference to the underlying screen
@@ -238,6 +239,33 @@ impl<'a> ScreenSink<'a> {
             AnsiMode::InsertReplace => {
                 self.screen.caret_mut().insert_mode = enabled;
             }
+        }
+    }
+
+    fn vd_fill_to_eol(&mut self) {
+        if self.screen.caret().position().x <= 0 {
+            return;
+        }
+        let sx = self.screen.caret().position().x;
+        let sy = self.screen.caret().position().y;
+
+        let prev_attr = self.screen.get_char((sx, sy).into()).attribute;
+
+        // Fill remaining characters on the line that match the previous attribute
+        // This handles cases like double-height where we need to update all following characters
+        for x in sx..self.screen.terminal_state().get_width() {
+            let p = Position::new(x, sy);
+            let mut ch = self.screen.get_char(p);
+
+            // Stop if we hit a character with a different attribute
+            // (this means a new color/style command was encountered)
+            if ch.attribute != prev_attr {
+                break;
+            }
+
+            // Update this character with the new caret attribute
+            ch.attribute = self.screen.caret().attribute;
+            self.screen.set_char(p, ch);
         }
     }
 }
@@ -581,6 +609,89 @@ impl<'a> CommandSink for ScreenSink<'a> {
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
         self.screen.handle_igs_command(cmd);
+    }
+
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+        match cmd {
+            ViewDataCommand::ViewDataClearScreen => {
+                // Preserve caret visibility (e.g., if hidden by 0x14)
+                let was_visible = self.screen.caret().visible;
+                self.screen.reset_terminal();
+                self.screen.caret_mut().visible = was_visible;
+                self.screen.clear_screen();
+                // For Viewdata, default foreground is white (color 7), not black
+                self.screen.caret_mut().attribute.set_foreground(7);
+                self.screen.caret_mut().attribute.set_background(0);
+                self.vd_last_row = 0;
+            }
+            ViewDataCommand::FillToEol => {
+                self.vd_fill_to_eol();
+            }
+            ViewDataCommand::DoubleHeight(enabled) => {
+                self.screen.caret_mut().attribute.set_is_double_height(enabled);
+                self.vd_fill_to_eol();
+            }
+            ViewDataCommand::ResetRowColors => {
+                // For Viewdata, default foreground is white (color 7), not black
+                self.screen.caret_mut().attribute.set_foreground(7);
+                self.screen.caret_mut().attribute.set_background(0);
+                self.vd_last_row = self.screen.caret().y;
+            }
+            ViewDataCommand::CheckAndResetOnRowChange => {
+                let current_row = self.screen.caret().y;
+                if current_row != self.vd_last_row {
+                    // For Viewdata, default foreground is white (color 7), not black
+                    self.screen.caret_mut().attribute.set_foreground(7);
+                    self.screen.caret_mut().attribute.set_background(0);
+                    self.vd_last_row = current_row;
+                }
+            }
+            ViewDataCommand::MoveCaret(direction) => match direction {
+                Direction::Up => {
+                    let y = if self.screen.caret().y > 0 {
+                        self.screen.caret().y.saturating_sub(1)
+                    } else {
+                        self.screen.terminal_state().get_height() - 1
+                    };
+                    self.screen.caret_mut().y = y;
+                }
+                Direction::Down => {
+                    let y = self.screen.caret().y;
+                    self.screen.caret_mut().y = y + 1;
+                    if self.screen.caret().y >= self.screen.terminal_state().get_height() {
+                        self.screen.caret_mut().y = 0;
+                    }
+                }
+                Direction::Left => {
+                    if self.screen.caret().x > 0 {
+                        let x = self.screen.caret().x.saturating_sub(1);
+                        self.screen.caret_mut().x = x;
+                    } else {
+                        let x = self.screen.terminal_state().get_width().saturating_sub(1);
+                        self.screen.caret_mut().x = x;
+                        self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Up));
+                    }
+                }
+                Direction::Right => {
+                    let x = self.screen.caret().x;
+                    self.screen.caret_mut().x = x + 1;
+                    if self.screen.caret().x >= self.screen.terminal_state().get_width() {
+                        self.screen.caret_mut().x = 0;
+                        self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Down));
+                        return true;
+                    }
+                }
+            },
+            ViewDataCommand::SetBgToFg => {
+                let fg = self.screen.caret_mut().attribute.get_foreground();
+                self.screen.caret_mut().attribute.set_background(fg);
+            }
+            ViewDataCommand::SetChar(ch) => {
+                let ch = AttributedChar::new(ch as char, self.screen.caret().attribute);
+                self.screen.set_char(self.screen.caret().position(), ch);
+            }
+        }
+        false
     }
 
     fn device_control(&mut self, dcs: DeviceControlString<'_>) {

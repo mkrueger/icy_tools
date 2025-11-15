@@ -12,7 +12,7 @@
 //!
 //! Reference: <https://www.blunham.com/Radar/Teletext/PDFs/Viewdata1976Spec.pdf>
 
-use crate::{Blink, Color, CommandParser, CommandSink, Direction, SgrAttribute, TerminalCommand};
+use crate::{Blink, Color, CommandParser, CommandSink, Direction, SgrAttribute, TerminalCommand, ViewDataCommand};
 
 /// Viewdata/Prestel parser
 pub struct ViewdataParser {
@@ -46,7 +46,7 @@ impl ViewdataParser {
     }
 
     /// Reset parser state (called on new row or clear screen)
-    fn reset_state(&mut self) {
+    fn reset_screen(&mut self) {
         self.got_esc = false;
         self.hold_graphics = false;
         self.held_graphics_character = b' ';
@@ -54,209 +54,206 @@ impl ViewdataParser {
         self.is_in_graphic_mode = false;
     }
 
-    /// Process a character with current mode settings
-    fn process_char(&mut self, ch: u8) -> u8 {
-        if self.got_esc || ch < 0x20 {
-            // Control code or ESC sequence - print held graphic or space
-            if self.hold_graphics { self.held_graphics_character } else { b' ' }
-        } else if self.is_in_graphic_mode {
-            // Graphics mode - remap characters to graphics set
-            if (0x20..0x40).contains(&ch) || (0x60..0x80).contains(&ch) {
-                let mut mapped = if ch < 0x40 { ch - 0x20 } else { ch - 0x40 };
+    fn reset_on_row_change(&mut self, sink: &mut dyn CommandSink) {
+        self.reset_screen();
+        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
+    }
 
-                // Add offset for contiguous/separated graphics
-                mapped += if self.is_contiguous { 0x80 } else { 0xC0 };
-
-                self.held_graphics_character = mapped;
-                mapped
-            } else {
-                ch
+    #[inline(always)]
+    fn interpret_char(&mut self, sink: &mut dyn CommandSink, ch: u8) {
+        if self.got_esc {
+            match ch {
+                b'\\' => {
+                    // Black Background
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(0))));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+                b']' => {
+                    sink.emit_view_data(ViewDataCommand::SetBgToFg);
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+                b'I' => {
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(Blink::Off)));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+                b'L' => {
+                    sink.emit_view_data(ViewDataCommand::DoubleHeight(false));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+                b'X' => {
+                    if !self.is_in_graphic_mode {
+                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(true)));
+                        sink.emit_view_data(ViewDataCommand::FillToEol);
+                    }
+                }
+                b'Y' => {
+                    self.is_contiguous = true;
+                    self.is_in_graphic_mode = true;
+                }
+                b'Z' => self.is_contiguous = false,
+                b'^' => {
+                    self.hold_graphics = true;
+                    self.is_in_graphic_mode = true;
+                }
+                _ => {}
             }
-        } else {
-            // Alpha mode - use character as-is
-            ch
         }
+        if !self.hold_graphics {
+            self.held_graphics_character = b' ';
+        }
+
+        let mut print_ch = ch;
+        if self.got_esc || ch < 0x20 {
+            print_ch = if self.hold_graphics { self.held_graphics_character as u8 } else { b' ' };
+        } else if self.is_in_graphic_mode {
+            if (0x20..0x40).contains(&ch) || (0x60..0x80).contains(&ch) {
+                if print_ch < 0x40 {
+                    print_ch -= 0x20;
+                } else {
+                    print_ch -= 0x40;
+                }
+
+                if self.is_contiguous {
+                    print_ch += 0x80;
+                } else {
+                    print_ch += 0xC0;
+                }
+            }
+            self.held_graphics_character = print_ch;
+        }
+        sink.emit_view_data(ViewDataCommand::SetChar(print_ch));
+        if sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right)) {
+            self.reset_on_row_change(sink);
+        }
+
+        if self.got_esc {
+            match ch {
+                b'A'..=b'G' => {
+                    // Alpha Red, Green, Yellow, Blue, Magenta, Cyan, White
+                    self.is_in_graphic_mode = false;
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
+                    self.held_graphics_character = b' ';
+                    let color = 1 + (ch - b'A') as u8;
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+                b'Q'..=b'W' => {
+                    // Graphics Red, Green, Yellow, Blue, Magenta, Cyan, White
+                    if !self.is_in_graphic_mode {
+                        self.is_in_graphic_mode = true;
+                        self.held_graphics_character = b' ';
+                    }
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
+                    let color = 1 + (ch - b'Q') as u8;
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+                b'H' => {
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(Blink::Slow)));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+
+                b'M' => {
+                    sink.emit_view_data(ViewDataCommand::DoubleHeight(true));
+                    sink.emit_view_data(ViewDataCommand::FillToEol);
+                }
+
+                b'_' => {
+                    self.hold_graphics = false;
+                }
+
+                _ => {}
+            }
+        }
+
+        self.got_esc = false;
     }
 }
 
 impl CommandParser for ViewdataParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
         for &byte in input {
-            // Handle control codes first
             match byte {
-                // Cursor movement
-                0x08 => {
-                    // Cursor left
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
-                    self.got_esc = false;
-                    continue;
+                // control codes 0
+                0b000_0000 => {}                                           // ignore
+                0b000_0001 => {}                                           // ignore
+                0b000_0010 => {}                                           // STX
+                0b000_0011 => {}                                           // ETX
+                0b000_0100 => {}                                           // ignore
+                0b000_0101 => { /*return Ok(Some("1\0".to_string())); */ } // ENQ - send identity number <= 16 digits - ignore doesn't work properly 2022
+                0b000_0110 => {}                                           // ACK
+                0b000_0111 => {}                                           // ignore
+                0b000_1000 => {
+                    // Caret left 0x08
+                    sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Left));
                 }
-                0x09 => {
-                    // Cursor right
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
-                    self.got_esc = false;
-                    continue;
+                0b000_1001 => {
+                    // Caret right 0x09
+                    if sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right)) {
+                        self.reset_on_row_change(sink);
+                    }
                 }
-                0x0A => {
-                    // Cursor down (resets state on new row)
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
-                    self.reset_state();
-                    continue;
+                0b000_1010 => {
+                    // Caret down 0x0A
+                    sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Down));
+                    self.reset_on_row_change(sink);
                 }
-                0x0B => {
-                    // Cursor up
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
-                    self.got_esc = false;
-                    continue;
+                0b000_1011 => {
+                    // Caret up 0x0B
+                    sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Up));
                 }
-                0x0C => {
-                    // Form feed / clear screen
-                    sink.emit(TerminalCommand::CsiEraseInDisplay(crate::EraseInDisplayMode::All));
-                    sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
-                    self.reset_state();
-                    continue;
+                0b000_1100 => {
+                    // 12 / 0x0C - Form feed/clear screen
+                    // Preserve caret visibility (e.g., if hidden by 0x14)
+                    sink.emit_view_data(ViewDataCommand::ViewDataClearScreen);
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
+                    self.reset_screen();
                 }
-                0x0D => {
-                    // Carriage return
+                0b000_1101 => {
+                    // 13 / 0x0D
                     sink.emit(TerminalCommand::CarriageReturn);
-                    self.got_esc = false;
-                    continue;
                 }
-                0x11 => {
-                    // Show cursor
-                    // Note: Cursor visibility is typically handled by the consumer
-                    self.got_esc = false;
+                0b000_1110 => {
                     continue;
-                }
-                0x14 => {
-                    // Hide cursor
-                    // Note: Cursor visibility is typically handled by the consumer
-                    self.got_esc = false;
+                } // TODO: SO - switch to G1 char set
+                0b000_1111 => {
                     continue;
-                }
-                0x1E => {
-                    // Home cursor
-                    sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
-                    self.got_esc = false;
-                    continue;
-                }
-                0x1B => {
-                    // ESC - next byte is a command
+                } // TODO: SI - switch to G0 char set
+
+                // control codes 1
+                0b001_0000 => {} // ignore
+                0b001_0001 => sink.emit(TerminalCommand::CsiDecPrivateModeSet(crate::DecPrivateMode::CursorVisible)),
+                0b001_0010 => {} // ignore
+                0b001_0011 => {} // ignore
+                0b001_0100 => sink.emit(TerminalCommand::CsiDecPrivateModeReset(crate::DecPrivateMode::CursorVisible)),
+                0b001_0101 => {} // NAK
+                0b001_0110 => {} // ignore
+                0b001_0111 => {} // ignore
+                0b001_1000 => {} // CAN
+                0b001_1001 => {} // ignore
+                0b001_1010 => {} // ignore
+                0b001_1011 => {
                     self.got_esc = true;
                     continue;
+                } // 0x1B ESC
+                0b001_1100 => {
+                    continue;
+                } // TODO: SS2 - switch to G2 char set
+                0b001_1101 => {
+                    continue;
+                } // TODO: SS3 - switch to G3 char set
+                0b001_1110 => {
+                    // 28 / 0x1E
+                    sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
                 }
-                0x00..=0x07 | 0x0E..=0x10 | 0x12..=0x13 | 0x15..=0x1D | 0x1F => {
-                    // Other control codes - ignore but reset ESC state
-                    self.got_esc = false;
+                0b001_1111 => {} // ignore
+                _ => {
+                    self.interpret_char(sink, byte);
                     continue;
                 }
-                _ => {}
             }
-
-            // Handle ESC sequences
-            if self.got_esc {
-                match byte {
-                    b'A'..=b'G' => {
-                        // Alpha colors: Red, Green, Yellow, Blue, Magenta, Cyan, White
-                        self.is_in_graphic_mode = false;
-                        self.held_graphics_character = b' ';
-                        let color = 1 + (byte - b'A') as u8;
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
-                        // Also turn off concealed
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
-                    }
-                    b'Q'..=b'W' => {
-                        // Graphics colors: Red, Green, Yellow, Blue, Magenta, Cyan, White
-                        if !self.is_in_graphic_mode {
-                            self.is_in_graphic_mode = true;
-                            self.held_graphics_character = b' ';
-                        }
-                        let color = 1 + (byte - b'Q') as u8;
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
-                        // Also turn off concealed
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
-                    }
-                    b'H' => {
-                        // Flash/blink on
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(Blink::Slow)));
-                    }
-                    b'I' => {
-                        // Steady (blink off)
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(Blink::Off)));
-                    }
-                    b'M' => {
-                        // Double height (not directly supported in TerminalCommand)
-                        // Consumer would need to handle this
-                    }
-                    b'L' => {
-                        // Normal height (cancel double height)
-                        // Consumer would need to handle this
-                    }
-                    b'X' => {
-                        // Conceal (only in alpha mode)
-                        if !self.is_in_graphic_mode {
-                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(true)));
-                        }
-                    }
-                    b'Y' => {
-                        // Contiguous graphics
-                        self.is_contiguous = true;
-                        self.is_in_graphic_mode = true;
-                    }
-                    b'Z' => {
-                        // Separated graphics
-                        self.is_contiguous = false;
-                    }
-                    b'^' => {
-                        // Hold graphics
-                        self.hold_graphics = true;
-                        self.is_in_graphic_mode = true;
-                    }
-                    b'_' => {
-                        // Release graphics
-                        self.hold_graphics = false;
-                    }
-                    b'\\' => {
-                        // Black background
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(0))));
-                        // Turn off concealed
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
-                    }
-                    b']' => {
-                        // New background (use current foreground as background)
-                        // This is a special case that would need consumer support
-                        // We'll just emit the command and let consumer handle it
-                    }
-                    _ => {
-                        // Unknown ESC sequence - ignore
-                    }
-                }
-
-                // Process the character for display (space or held graphic)
-                let display_char = self.process_char(byte);
-                if display_char != b' ' || byte >= 0x20 {
-                    sink.print(&[display_char]);
-                } else {
-                    // Emit space for control codes
-                    sink.print(b" ");
-                }
-
-                // Update hold graphics state
-                if !self.hold_graphics {
-                    self.held_graphics_character = b' ';
-                }
-
-                self.got_esc = false;
-            } else {
-                // Regular printable character
-                let display_char = self.process_char(byte);
-                sink.print(&[display_char]);
-
-                // Update held graphics character if in graphics mode
-                if !self.hold_graphics {
-                    self.held_graphics_character = b' ';
-                }
-            }
+            self.got_esc = false;
         }
     }
 }
