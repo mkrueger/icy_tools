@@ -1,5 +1,185 @@
 use std::fmt;
 
+/// File query mode for RIP_FILE_QUERY command.
+///
+/// Determines the format of the response returned to the host when querying
+/// file existence and metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileQueryMode {
+    /// Simply query existence: returns "1" if exists, "0" otherwise (no CR).
+    FileExists = 0,
+    /// Same as FileExists, but adds a carriage return after the response.
+    FileExistsWithCR = 1,
+    /// Query with file size: returns "0\r\n" if missing, or "1.{size}\r\n" if present.
+    /// Example: "1.20345\r\n"
+    QueryWithSize = 2,
+    /// Extended info with date/time: returns "0\r\n" or "1.{size}.{date}.{time}\r\n".
+    /// Example: "1.20345.01/02/93.03:04:30\r\n"
+    QueryExtended = 3,
+    /// Extended info including filename: "0\r\n" or "1.{filename}.{size}.{date}.{time}\r\n".
+    /// Example: "1.MYFILE.RIP.20345.01/02/93.03:04:30\r\n"
+    QueryWithFilename = 4,
+}
+
+impl FileQueryMode {
+    /// Convert from i32 value, returns None if out of range.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::FileExists),
+            1 => Some(Self::FileExistsWithCR),
+            2 => Some(Self::QueryWithSize),
+            3 => Some(Self::QueryExtended),
+            4 => Some(Self::QueryWithFilename),
+            _ => None,
+        }
+    }
+
+    /// Convert to i32 value.
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+/// Write mode for RIP drawing operations.
+///
+/// Determines how drawing operations interact with existing screen content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteMode {
+    /// Normal drawing mode (overwrite existing content).
+    Normal = 0,
+    /// XOR (complimentary) mode - allows rubber banding and temporary drawings.
+    Xor = 1,
+}
+
+impl WriteMode {
+    /// Convert from i32 value, returns None if out of range.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Normal),
+            1 => Some(Self::Xor),
+            _ => None,
+        }
+    }
+
+    /// Convert to i32 value.
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+/// Image paste mode for RIP_PUT_IMAGE and RIP_LOAD_ICON commands.
+///
+/// Determines how pasted images interact with existing screen content using
+/// logical operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImagePasteMode {
+    /// Paste the image on-screen normally (COPY).
+    Copy = 0,
+    /// Exclusive-OR image with the one already on screen (XOR).
+    Xor = 1,
+    /// Logically OR image with the one already on screen (OR).
+    Or = 2,
+    /// Logically AND image with the one already on screen (AND).
+    And = 3,
+    /// Paste the inverse of the image on the screen (NOT).
+    Not = 4,
+}
+
+impl ImagePasteMode {
+    /// Convert from i32 value, returns None if out of range.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Copy),
+            1 => Some(Self::Xor),
+            2 => Some(Self::Or),
+            3 => Some(Self::And),
+            4 => Some(Self::Not),
+            _ => None,
+        }
+    }
+
+    /// Convert to i32 value.
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+/// Query processing mode for RIP_QUERY command.
+///
+/// Determines when and how query commands are processed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryMode {
+    /// Process the query command NOW (upon receipt).
+    ProcessNow = 0,
+    /// Process when mouse clicked in Graphics Window.
+    OnClickGraphics = 1,
+    /// Process when mouse clicked in Text Window.
+    /// Mouse coordinates return TEXT coordinates (2 digits), not graphics (4 digits).
+    OnClickText = 2,
+}
+
+impl QueryMode {
+    /// Convert from i32 value, returns None if out of range.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::ProcessNow),
+            1 => Some(Self::OnClickGraphics),
+            2 => Some(Self::OnClickText),
+            _ => None,
+        }
+    }
+
+    /// Convert to i32 value.
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+/// Block transfer protocol for RIP_ENTER_BLOCK_MODE command.
+///
+/// Specifies which file transfer protocol to use for block/file transfers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockTransferMode {
+    /// Xmodem (checksum) - requires filename.
+    XmodemChecksum = 0,
+    /// Xmodem (CRC) - requires filename.
+    XmodemCrc = 1,
+    /// Xmodem-1K - requires filename.
+    Xmodem1K = 2,
+    /// Xmodem-1K (G) - requires filename.
+    Xmodem1KG = 3,
+    /// Kermit - requires filename.
+    Kermit = 4,
+    /// Ymodem (batch) - filename not required.
+    Ymodem = 5,
+    /// Ymodem-G - filename not required.
+    YmodemG = 6,
+    /// Zmodem (crash recovery) - filename not required.
+    Zmodem = 7,
+}
+
+impl BlockTransferMode {
+    /// Convert from i32 value, returns None if out of range.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::XmodemChecksum),
+            1 => Some(Self::XmodemCrc),
+            2 => Some(Self::Xmodem1K),
+            3 => Some(Self::Xmodem1KG),
+            4 => Some(Self::Kermit),
+            5 => Some(Self::Ymodem),
+            6 => Some(Self::YmodemG),
+            7 => Some(Self::Zmodem),
+            _ => None,
+        }
+    }
+
+    /// Convert to i32 value.
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
+
 /// Escape special characters in RIPscrip text strings.
 /// Per spec: ! and | are command delimiters, \ is escape character.
 /// Must escape: \! \| \\
@@ -101,9 +281,9 @@ pub enum RipCommand {
     /// (0–63). Enables simple cycling.
     OnePalette { color: i32, value: i32 },
     /// RIP_WRITE_MODE (`|W`)
-    /// Selects drawing mode: 0 Normal (replace), 1 XOR (invert allowing rubber
+    /// Selects drawing mode: Normal (replace) or XOR (invert allowing rubber
     /// banding / temporary drawings).
-    WriteMode { mode: i32 },
+    WriteMode { mode: WriteMode },
     /// RIP_MOVE (`|m`) – move graphics pen (drawing cursor) without drawing.
     Move { x: i32, y: i32 },
     /// RIP_TEXT (`|T`)
@@ -238,15 +418,15 @@ pub enum RipCommand {
     EndText,
     /// RIP_GET_IMAGE (`|1C`) – copies rectangle to internal clipboard. `res` reserved.
     GetImage { x0: i32, y0: i32, x1: i32, y1: i32, res: i32 },
-    /// RIP_PUT_IMAGE (`|1P`) – pastes clipboard at (x,y) using write `mode`; `res` reserved.
-    PutImage { x: i32, y: i32, mode: i32, res: i32 },
+    /// RIP_PUT_IMAGE (`|1P`) – pastes clipboard at (x,y) using paste `mode`; `res` reserved.
+    PutImage { x: i32, y: i32, mode: ImagePasteMode, res: i32 },
     /// RIP_WRITE_ICON (`|1W`) – writes clipboard to disk (icon); `res` is raw byte; `data` filename (no path). Overwrites existing.
     WriteIcon { res: u8, data: String },
     /// RIP_LOAD_ICON (`|1I`) – loads icon file to screen at (x,y); optional copy to clipboard if `clipboard`==1. `res` reserved.
     LoadIcon {
         x: i32,
         y: i32,
-        mode: i32,
+        mode: ImagePasteMode,
         clipboard: i32,
         res: i32,
         file_name: String,
@@ -292,7 +472,7 @@ pub enum RipCommand {
     /// RIP_DEFINE (`|1D`) – defines named data / macro region; flags plus reserved field and text payload.
     Define { flags: i32, res: i32, text: String },
     /// RIP_QUERY (`|1ESC`) – query/command with mode & reserved triple‑digit quantity plus text payload.
-    Query { mode: i32, res: i32, text: String },
+    Query { mode: QueryMode, res: i32, text: String },
     /// RIP_COPY_REGION (`|1G`) – copies rectangular region to destination scan line offset `dest_line` (implementation detail); `res` reserved.
     CopyRegion {
         x0: i32,
@@ -305,14 +485,15 @@ pub enum RipCommand {
     /// RIP_READ_SCENE (`|1R`) – loads scene file (filename only, no path).
     ReadScene { file_name: String },
     /// RIP_FILE_QUERY (`|1F`) – queries file (existence / metadata) by name.
-    FileQuery { file_name: String },
+    /// `mode` determines response format, `res` (4 digits) reserved for future use.
+    FileQuery { mode: FileQueryMode, res: i32, file_name: String },
 
     // Level 9 commands
     /// RIP_ENTER_BLOCK_MODE (`|9ESC`)
-    /// Initiates block/file transfer mode: protocol `proto`, file type
+    /// Initiates block/file transfer mode: protocol `mode`, file type
     /// `file_type`, reserved, plus `file_name` for upcoming transfer session.
     EnterBlockMode {
-        mode: i32,
+        mode: BlockTransferMode,
         proto: i32,
         file_type: i32,
         res: i32,
@@ -364,7 +545,7 @@ impl fmt::Display for RipCommand {
             RipCommand::OnePalette { color, value } => {
                 write!(f, "|a{}{}", to_base_36(2, *color), to_base_36(2, *value))
             }
-            RipCommand::WriteMode { mode } => write!(f, "|W{}", to_base_36(2, *mode)),
+            RipCommand::WriteMode { mode } => write!(f, "|W{}", to_base_36(2, mode.to_i32())),
             RipCommand::Move { x, y } => {
                 write!(f, "|m{}{}", to_base_36(2, *x), to_base_36(2, *y))
             }
@@ -626,7 +807,7 @@ impl fmt::Display for RipCommand {
                     "|1P{}{}{}{}",
                     to_base_36(2, *x),
                     to_base_36(2, *y),
-                    to_base_36(2, *mode),
+                    to_base_36(2, mode.to_i32()),
                     to_base_36(1, *res)
                 )
             }
@@ -644,7 +825,7 @@ impl fmt::Display for RipCommand {
                     "|1I{}{}{}{}{}{}",
                     to_base_36(2, *x),
                     to_base_36(2, *y),
-                    to_base_36(2, *mode),
+                    to_base_36(2, mode.to_i32()),
                     to_base_36(1, *clipboard),
                     to_base_36(2, *res),
                     escape_text(file_name)
@@ -714,7 +895,7 @@ impl fmt::Display for RipCommand {
                 write!(f, "|1D{}{}{}", to_base_36(3, *flags), to_base_36(2, *res), escape_text(text))
             }
             RipCommand::Query { mode, res, text } => {
-                write!(f, "|1\x1B{}{}{}", to_base_36(1, *mode), to_base_36(3, *res), escape_text(text))
+                write!(f, "|1\x1B{}{}{}", to_base_36(1, mode.to_i32()), to_base_36(3, *res), escape_text(text))
             }
             RipCommand::CopyRegion {
                 x0,
@@ -736,7 +917,9 @@ impl fmt::Display for RipCommand {
                 )
             }
             RipCommand::ReadScene { file_name } => write!(f, "|1R{}", escape_text(file_name)),
-            RipCommand::FileQuery { file_name } => write!(f, "|1F{}", escape_text(file_name)),
+            RipCommand::FileQuery { mode, res, file_name } => {
+                write!(f, "|1F{}{}{}", to_base_36(2, mode.to_i32()), to_base_36(4, *res), escape_text(file_name))
+            }
 
             // Level 9 commands
             RipCommand::EnterBlockMode {
@@ -749,7 +932,7 @@ impl fmt::Display for RipCommand {
                 write!(
                     f,
                     "|9\x1B{}{}{}{}{}",
-                    to_base_36(1, *mode),
+                    to_base_36(1, mode.to_i32()),
                     to_base_36(1, *proto),
                     to_base_36(2, *file_type),
                     to_base_36(4, *res),

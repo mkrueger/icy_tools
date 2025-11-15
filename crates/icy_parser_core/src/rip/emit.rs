@@ -35,9 +35,11 @@ impl RipParser {
                 color: self.builder.i32_params[0],
                 value: self.builder.i32_params[1],
             },
-            (0, b'W') if !self.builder.i32_params.is_empty() => RipCommand::WriteMode {
-                mode: self.builder.i32_params[0],
-            },
+            (0, b'W') if !self.builder.i32_params.is_empty() => {
+                use crate::rip::command::WriteMode;
+                let mode = WriteMode::from_i32(self.builder.i32_params[0]).unwrap_or(WriteMode::Normal);
+                RipCommand::WriteMode { mode }
+            }
             (0, b'm') if self.builder.i32_params.len() >= 2 => RipCommand::Move {
                 x: self.builder.i32_params[0],
                 y: self.builder.i32_params[1],
@@ -209,24 +211,32 @@ impl RipParser {
                 y1: self.builder.i32_params[3],
                 res: self.builder.i32_params[4],
             },
-            (1, b'P') if self.builder.i32_params.len() >= 4 => RipCommand::PutImage {
-                x: self.builder.i32_params[0],
-                y: self.builder.i32_params[1],
-                mode: self.builder.i32_params[2],
-                res: self.builder.i32_params[3],
-            },
+            (1, b'P') if self.builder.i32_params.len() >= 4 => {
+                use crate::rip::command::ImagePasteMode;
+                let mode = ImagePasteMode::from_i32(self.builder.i32_params[2]).unwrap_or(ImagePasteMode::Copy);
+                RipCommand::PutImage {
+                    x: self.builder.i32_params[0],
+                    y: self.builder.i32_params[1],
+                    mode,
+                    res: self.builder.i32_params[3],
+                }
+            }
             (1, b'W') => RipCommand::WriteIcon {
                 res: self.builder.char_param,
                 data: self.builder.string_param.clone(),
             },
-            (1, b'I') if self.builder.i32_params.len() >= 5 => RipCommand::LoadIcon {
-                x: self.builder.i32_params[0],
-                y: self.builder.i32_params[1],
-                mode: self.builder.i32_params[2],
-                clipboard: self.builder.i32_params[3],
-                res: self.builder.i32_params[4],
-                file_name: self.builder.string_param.clone(),
-            },
+            (1, b'I') if self.builder.i32_params.len() >= 5 => {
+                use crate::rip::command::ImagePasteMode;
+                let mode = ImagePasteMode::from_i32(self.builder.i32_params[2]).unwrap_or(ImagePasteMode::Copy);
+                RipCommand::LoadIcon {
+                    x: self.builder.i32_params[0],
+                    y: self.builder.i32_params[1],
+                    mode,
+                    clipboard: self.builder.i32_params[3],
+                    res: self.builder.i32_params[4],
+                    file_name: self.builder.string_param.clone(),
+                }
+            }
             (1, b'B') if self.builder.i32_params.len() >= 15 => RipCommand::ButtonStyle {
                 wid: self.builder.i32_params[0],
                 hgt: self.builder.i32_params[1],
@@ -259,11 +269,15 @@ impl RipParser {
                 res: self.builder.i32_params[1],
                 text: self.builder.string_param.clone(),
             },
-            (1, 0x1B) if self.builder.i32_params.len() >= 2 => RipCommand::Query {
-                mode: self.builder.i32_params[0],
-                res: self.builder.i32_params[1],
-                text: self.builder.string_param.clone(),
-            },
+            (1, 0x1B) if self.builder.i32_params.len() >= 2 => {
+                use crate::rip::command::QueryMode;
+                let mode = QueryMode::from_i32(self.builder.i32_params[0]).unwrap_or(QueryMode::ProcessNow);
+                RipCommand::Query {
+                    mode,
+                    res: self.builder.i32_params[1],
+                    text: self.builder.string_param.clone(),
+                }
+            }
             (1, b'G') if self.builder.i32_params.len() >= 6 => RipCommand::CopyRegion {
                 x0: self.builder.i32_params[0],
                 y0: self.builder.i32_params[1],
@@ -275,18 +289,28 @@ impl RipParser {
             (1, b'R') => RipCommand::ReadScene {
                 file_name: self.builder.string_param.clone(),
             },
-            (1, b'F') => RipCommand::FileQuery {
-                file_name: self.builder.string_param.clone(),
-            },
+            (1, b'F') if self.builder.i32_params.len() >= 2 => {
+                use crate::rip::command::FileQueryMode;
+                let mode = FileQueryMode::from_i32(self.builder.i32_params[0]).unwrap_or(FileQueryMode::FileExists);
+                RipCommand::FileQuery {
+                    mode,
+                    res: self.builder.i32_params[1],
+                    file_name: self.builder.string_param.clone(),
+                }
+            }
 
             // Level 9 commands
-            (9, 0x1B) if self.builder.i32_params.len() >= 4 => RipCommand::EnterBlockMode {
-                mode: self.builder.i32_params[0],
-                proto: self.builder.i32_params[1],
-                file_type: self.builder.i32_params[2],
-                res: self.builder.i32_params[3],
-                file_name: self.builder.string_param.clone(),
-            },
+            (9, 0x1B) if self.builder.i32_params.len() >= 4 => {
+                use crate::rip::command::BlockTransferMode;
+                let mode = BlockTransferMode::from_i32(self.builder.i32_params[0]).unwrap_or(BlockTransferMode::XmodemChecksum);
+                RipCommand::EnterBlockMode {
+                    mode,
+                    proto: self.builder.i32_params[1],
+                    file_type: self.builder.i32_params[2],
+                    res: self.builder.i32_params[3],
+                    file_name: self.builder.string_param.clone(),
+                }
+            }
 
             _ => {
                 // Unknown command - don't emit anything

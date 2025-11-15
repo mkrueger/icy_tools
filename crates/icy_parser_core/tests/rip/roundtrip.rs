@@ -350,8 +350,8 @@ fn test_load_icon_with_clipboard() {
 
 #[test]
 fn test_file_query() {
-    // |1F - File Query
-    test_roundtrip("|1FTEST.RIP");
+    // |1F - File Query (mode:2, res:4, filename)
+    test_roundtrip("|1F010000TEST.RIP");
 }
 
 // Special commands

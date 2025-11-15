@@ -1403,7 +1403,10 @@ impl AnsiParser {
                     6 => sink.request(TerminalRequest::CursorPositionReport),
                     255 => sink.request(TerminalRequest::ScreenSizeReport),
                     _ => {
-                        sink.report_error(ParseError::InvalidParameter { command: "DSR", value: n });
+                        sink.report_error(ParseError::InvalidParameter {
+                            command: "CsiDeviceStatusReport",
+                            value: n,
+                        });
                     }
                 }
             }

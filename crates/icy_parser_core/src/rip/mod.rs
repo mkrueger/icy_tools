@@ -5,7 +5,7 @@
 
 use crate::{AnsiParser, CommandParser, CommandSink};
 mod command;
-pub use command::RipCommand;
+pub use command::{BlockTransferMode, FileQueryMode, ImagePasteMode, QueryMode, RipCommand, WriteMode};
 
 mod builder;
 use builder::*;

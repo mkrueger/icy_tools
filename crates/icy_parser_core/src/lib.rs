@@ -31,7 +31,7 @@ mod mode7;
 pub use mode7::Mode7Parser;
 
 mod rip;
-pub use rip::{RipCommand, RipParser};
+pub use rip::{BlockTransferMode, FileQueryMode, ImagePasteMode, QueryMode, RipCommand, RipParser, WriteMode};
 
 mod skypix;
 pub use skypix::{SkypixCommand, SkypixParser};

@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "renegade"
 harness = false
+
+[[bench]]
+name = "rip"
+harness = false

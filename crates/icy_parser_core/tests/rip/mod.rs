@@ -1,4 +1,6 @@
-use icy_parser_core::{CommandParser, CommandSink, RipCommand, RipParser, TerminalCommand, TerminalRequest};
+use icy_parser_core::{
+    BlockTransferMode, CommandParser, CommandSink, FileQueryMode, ImagePasteMode, QueryMode, RipCommand, RipParser, TerminalCommand, TerminalRequest, WriteMode,
+};
 
 mod load;
 
@@ -394,7 +396,7 @@ fn test_rip_load_icon() {
         } => {
             assert_eq!(*x, 10);
             assert_eq!(*y, 10);
-            assert_eq!(*mode, 0);
+            assert_eq!(*mode, ImagePasteMode::Copy);
             assert_eq!(*clipboard, 0);
             assert_eq!(*res, 0);
             assert_eq!(file_name, "test.icn");
@@ -559,7 +561,7 @@ fn test_rip_write_mode() {
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
         RipCommand::WriteMode { mode } => {
-            assert_eq!(*mode, 1);
+            assert_eq!(*mode, WriteMode::Xor);
         }
         _ => panic!("Expected WriteMode command"),
     }

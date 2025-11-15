@@ -36,7 +36,22 @@ impl RipParser {
             }
 
             // Text commands (consume rest as string)
-            (0, b'T') | (0, b'$') | (1, b'R') | (1, b'F') => {
+            (0, b'T') | (0, b'$') | (1, b'R') => {
+                self.builder.string_param.push(ch as char);
+                Ok(false)
+            }
+
+            // FileQuery: mode(2) + res(4) then filename string
+            (1, b'F') if self.builder.param_state < 6 => {
+                let result = self
+                    .builder
+                    .parse_base36_complete(ch, self.builder.param_state / 2, if self.builder.param_state < 2 { 2 } else { 4 });
+                match result {
+                    Ok(_) => Ok(false),
+                    Err(e) => Err(e),
+                }
+            }
+            (1, b'F') => {
                 self.builder.string_param.push(ch as char);
                 Ok(false)
             }

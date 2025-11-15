@@ -1,13 +1,20 @@
 // This file contains the implementation of handle_rip_command
 // It maps RipCommand enums to BGI function calls
 
+use std::{
+    fs,
+    io::{Cursor, Read},
+    path,
+};
+
 use crate::{
-    BitFont, EditableScreen, Position, Size,
+    BitFont, EditableScreen, EngineResult, Position, Size,
     rip::bgi::{
         Bgi, ButtonStyle2, Direction, FillStyle as BgiFillStyle, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode,
     },
 };
-use icy_parser_core::RipCommand;
+use byteorder::{LittleEndian, ReadBytesExt};
+use icy_parser_core::{ImagePasteMode, RipCommand, WriteMode as RipWriteMode};
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
 
 lazy_static::lazy_static! {
@@ -71,7 +78,11 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::WriteMode { mode } => {
-            bgi.set_write_mode(BgiWriteMode::from(mode as u8));
+            let bgi_mode = match mode {
+                RipWriteMode::Normal => BgiWriteMode::Copy,
+                RipWriteMode::Xor => BgiWriteMode::Xor,
+            };
+            bgi.set_write_mode(bgi_mode);
         }
 
         RipCommand::Move { x, y } => {
@@ -234,6 +245,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         } => {
             let pattern = vec![c1 as u8, c2 as u8, c3 as u8, c4 as u8, c5 as u8, c6 as u8, c7 as u8, c8 as u8];
             bgi.set_user_fill_pattern(&pattern);
+            bgi.set_fill_style(BgiFillStyle::User);
             bgi.set_fill_color(col as u8);
         }
 
@@ -282,7 +294,14 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::PutImage { x, y, mode, res: _ } => {
-            bgi.put_rip_image(buf, x, y, BgiWriteMode::from(mode as u8));
+            let bgi_mode = match mode {
+                ImagePasteMode::Copy => BgiWriteMode::Copy,
+                ImagePasteMode::Xor => BgiWriteMode::Xor,
+                ImagePasteMode::Or => BgiWriteMode::Or,
+                ImagePasteMode::And => BgiWriteMode::And,
+                ImagePasteMode::Not => BgiWriteMode::Not,
+            };
+            bgi.put_rip_image(buf, x, y, bgi_mode);
         }
 
         RipCommand::WriteIcon { res: _, data: _ } => {
@@ -290,14 +309,73 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::LoadIcon {
-            x: _,
-            y: _,
-            mode: _,
+            x,
+            y,
+            mode,
             clipboard: _,
-            res: _,
-            file_name: _,
+            res,
+            file_name,
         } => {
-            // LoadIcon not implemented in current BGI
+            let Ok(file_name) = lookup_cache_file(bgi, &file_name) else {
+                return;
+            };
+            if !file_name.exists() {
+                log::error!("File not found: {}", file_name.display());
+                return;
+            }
+            let Ok(mut file) = std::fs::File::open(file_name) else {
+                return;
+            };
+            let mut file_buf = Vec::new();
+            let _ = file.read_to_end(&mut file_buf);
+
+            let _len = file_buf.len();
+            let mut br = Cursor::new(file_buf);
+
+            let width = br.read_u16::<LittleEndian>().unwrap() as i32 + 1;
+            let height = br.read_u16::<LittleEndian>().unwrap() as i32 + 1;
+
+            // let _tmp = br.read_u16::<LittleEndian>()? + 1;
+
+            /*
+            00    Paste the image on-screen normally                   (COPY)
+            01    Exclusive-OR  image with the one already on screen   (XOR)
+            02    Logically OR  image with the one already on screen   (OR)
+            03    Logically AND image with the one already on screen   (AND)
+            04    Paste the inverse of the image on the screen         (NOT)
+            */
+            let bgi_mode = match mode {
+                ImagePasteMode::Copy => BgiWriteMode::Copy,
+                ImagePasteMode::Xor => BgiWriteMode::Xor,
+                ImagePasteMode::Or => BgiWriteMode::Or,
+                ImagePasteMode::And => BgiWriteMode::And,
+                ImagePasteMode::Not => BgiWriteMode::Not,
+            };
+            bgi.set_write_mode(bgi_mode);
+            let res = buf.get_resolution();
+
+            for y2 in 0..height {
+                if y + y2 >= res.height {
+                    break;
+                }
+                let row = (width / 8 + i32::from((width & 7) != 0)) as usize;
+                let mut planes = vec![0u8; row * 4];
+                let _ = br.read_exact(&mut planes);
+
+                for x2 in 0..width as usize {
+                    if x + x2 as i32 >= res.width {
+                        break;
+                    }
+                    let bit = 7 - (x2 & 7);
+                    let mut color = (planes[x2 / 8] >> bit) & 1;
+                    color |= ((planes[row + (x2 / 8)] >> bit) & 1) << 1;
+                    color |= ((planes[(row * 2) + (x2 / 8)] >> bit) & 1) << 2;
+                    color |= ((planes[(row * 3) + (x2 / 8)] >> bit) & 1) << 3;
+                    bgi.put_pixel(buf, x + x2 as i32, y + y2, color);
+                }
+            }
+            // Restore original write mode
+            bgi.set_write_mode(bgi_mode);
         }
 
         RipCommand::ButtonStyle {
@@ -389,16 +467,24 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             // Query command - not implemented
         }
 
-        RipCommand::CopyRegion { .. } => {
-            // CopyRegion not implemented in current BGI
+        RipCommand::CopyRegion {
+            x0,
+            y0,
+            x1,
+            y1,
+            res: _,
+            dest_line,
+        } => {
+            let image = bgi.get_image(buf, x0, y0, x1 + 1, y1 + 1);
+            bgi.put_image(buf, x0, dest_line, &image, bgi.get_write_mode());
         }
 
         RipCommand::ReadScene { file_name: _ } => {
             // ReadScene not implemented in current BGI
         }
 
-        RipCommand::FileQuery { file_name: _ } => {
-            // File query - not implemented
+        RipCommand::FileQuery { mode: _, res: _, file_name: _ } => {
+            // File query - should be hadled by the terminal sink
         }
 
         RipCommand::EnterBlockMode { .. } => {
@@ -468,4 +554,24 @@ fn parse_host_command(split: &str) -> Option<String> {
         res.push(c);
     }
     Some(res)
+}
+
+fn lookup_cache_file(bgi: &mut Bgi, search_file: &str) -> EngineResult<path::PathBuf> {
+    let mut search_file = search_file.to_uppercase();
+    let has_extension = search_file.contains('.');
+    if !has_extension {
+        search_file.push('.');
+    }
+
+    for path in fs::read_dir(&bgi.file_path)?.flatten() {
+        if let Some(file_name) = path.file_name().to_str() {
+            if has_extension && file_name.to_uppercase() == search_file {
+                return Ok(path.path());
+            }
+            if !has_extension && file_name.to_uppercase().starts_with(&search_file) {
+                return Ok(path.path());
+            }
+        }
+    }
+    Ok(bgi.file_path.join(&search_file))
 }
