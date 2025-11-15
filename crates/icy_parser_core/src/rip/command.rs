@@ -16,11 +16,42 @@ fn escape_text(text: &str) -> String {
     result
 }
 
-/// All RIPscrip commands
+/// RIPscrip command enumeration.
+///
+/// Each variant corresponds to a command defined in the original RIPscrip 1.54
+/// specification (see `RIPSCRIP.TXT`). Parameters are already decoded from
+/// their on‑wire Base‑36 representation into signed `i32` values; string / text
+/// parameters are unescaped (the parser converts `\!`, `\|`, `\\` back to
+/// literal characters). Display (`fmt::Display`) re‑encodes to canonical
+/// Base‑36 form and re‑escapes text where required.
+///
+/// Conventions:
+/// - Level 0 commands use a single `|<char>` prefix (after the mandatory `!`).
+/// - Level 1 commands add `1` after the pipe (e.g. `|1M`). Level 9 similar.
+/// - Angles are degrees, 0 == 3 o'clock, increasing counter‑clockwise.
+/// - Coordinates are pixel (graphics) unless noted as text cell (TextWindow).
+/// - Boolean flags decoded as non‑zero => true.
+/// - Pattern / palette / style values retain their raw numeric meaning; caller
+///   can interpret bitfields (e.g. `ButtonStyle.flags`).
+///
+/// Rendering notes (when converting back to string):
+/// - Fixed size numeric fields are zero‑padded to their defined digit count.
+/// - Variable length collections (`SetPalette`, polygons, etc.) are emitted in
+///   the order received.
+/// - Text is escaped per spec (`!`, `|`, `\`).
+///
+/// This enum intentionally provides semantic names for parameters instead of
+/// the terse protocol fields to aid consumers. For authoritative semantics see
+/// the spec sections referenced in each variant’s doc comment.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RipCommand {
     // Level 0 commands
-    /// |w - Text Window: x0, y0, x1, y1, wrap, size
+    /// RIP_TEXT_WINDOW (`|w`)
+    /// Defines the TTY text window (character cell coordinates). `(x0,y0)` is
+    /// upper‑left, `(x1,y1)` lower‑right inclusive. `wrap` controls horizontal
+    /// (and vertical per spec) wrapping: when false, text past the right edge
+    /// is truncated. `size` selects font height impacting valid coordinate
+    /// ranges. Setting all coords to 0 hides the window.
     TextWindow {
         x0: i32,
         y0: i32,
@@ -29,47 +60,76 @@ pub enum RipCommand {
         wrap: bool,
         size: i32,
     },
-    /// |v - Viewport: x0, y0, x1, y1
+    /// RIP_VIEWPORT (`|v`)
+    /// Defines graphics clipping rectangle in pixel coordinates. All graphics
+    /// primitives are clipped to this viewport. Zero rectangle disables
+    /// graphics.
     ViewPort { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |* - Reset Windows
+    /// RIP_RESET_WINDOWS (`|*`)
+    /// Restores default text (80x43) & full graphics (640x350) windows, clears
+    /// them with current background, resets palette, deletes mouse regions,
+    /// buttons & clipboard.
     ResetWindows,
-    /// |e - Erase Window
+    /// RIP_ERASE_WINDOW (`|e`)
+    /// Clears the text window to current graphics background color; cursor to
+    /// upper‑left. Ignored if window inactive.
     EraseWindow,
-    /// |E - Erase View (graphics viewport)
+    /// RIP_ERASE_VIEW (`|E`)
+    /// Clears graphics viewport to current background color (clipped). Ignored
+    /// if viewport disabled.
     EraseView,
-    /// |g - Goto XY: x, y
+    /// RIP_GOTOXY (`|g`)
+    /// Sets text cursor position inside active text window (0‑based). Similar
+    /// to ANSI ESC[x;yH but zero‑based & clipped.
     GotoXY { x: i32, y: i32 },
-    /// |H - Home (goto 0,0)
+    /// RIP_HOME (`|H`) – text cursor to (0,0) of text window.
     Home,
-    /// |> - Erase to End of Line
+    /// RIP_ERASE_EOL (`|>`)
+    /// Clears from current text cursor to end of line using graphics bg color
+    /// (differs from ANSI ESC[K which uses ANSI bg).
     EraseEOL,
-    /// |c - Color: c (0-15)
+    /// RIP_COLOR (`|c`)
+    /// Sets current drawing color (0–15 index into RIP palette) used for line
+    /// borders & text (graphics text), not fills.
     Color { c: i32 },
-    /// |Q - Set Palette: 16 colors (0-63 each)
+    /// RIP_SET_PALETTE (`|Q`)
+    /// Reassigns all 16 palette entries; each value 0–63 (master palette).
+    /// Instant recolor of already drawn items referencing entries.
     SetPalette { colors: Vec<i32> },
-    /// |a - One Palette: color index, value
+    /// RIP_ONE_PALETTE (`|a`)
+    /// Changes a single palette entry `color` (0–15) to master value `value`
+    /// (0–63). Enables simple cycling.
     OnePalette { color: i32, value: i32 },
-    /// |W - Write Mode: mode (0=normal, 1=xor)
+    /// RIP_WRITE_MODE (`|W`)
+    /// Selects drawing mode: 0 Normal (replace), 1 XOR (invert allowing rubber
+    /// banding / temporary drawings).
     WriteMode { mode: i32 },
-    /// |m - Move: x, y
+    /// RIP_MOVE (`|m`) – move graphics pen (drawing cursor) without drawing.
     Move { x: i32, y: i32 },
-    /// |T - Text: text string
+    /// RIP_TEXT (`|T`)
+    /// Draws graphics text at current pen position using current font style,
+    /// color, write mode, etc. Pen moves to end of rendered text.
     Text { text: String },
-    /// |@ - Text XY: x, y, text string
+    /// RIP_TEXT_XY (`|@`)
+    /// Combined Move + Text; draws at explicit pixel position then advances
+    /// pen.
     TextXY { x: i32, y: i32, text: String },
-    /// |Y - Font Style: font, direction, size, res
+    /// RIP_FONT_STYLE (`|Y`)
+    /// Sets font id, direction (00 horizontal / 01 vertical), magnification
+    /// size (01..0A), and reserved field.
     FontStyle { font: i32, direction: i32, size: i32, res: i32 },
-    /// |X - Pixel: x, y
+    /// RIP_PIXEL (`|X`) – draw single pixel; rarely efficient, provided for completeness.
     Pixel { x: i32, y: i32 },
-    /// |L - Line: x0, y0, x1, y1
+    /// RIP_LINE (`|L`) – draws line with current line style pattern & thickness.
     Line { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |R - Rectangle: x0, y0, x1, y1
+    /// RIP_RECTANGLE (`|R`)
+    /// Draws rectangle outline (no fill) honoring line style/thickness.
     Rectangle { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |B - Bar (filled rectangle): x0, y0, x1, y1
+    /// RIP_BAR (`|B`) – filled rectangle (no border) using current fill pattern/color.
     Bar { x0: i32, y0: i32, x1: i32, y1: i32 },
-    /// |C - Circle: x_center, y_center, radius
+    /// RIP_CIRCLE (`|C`) – aspect‑aware circle (not ellipse); uses line thickness.
     Circle { x_center: i32, y_center: i32, radius: i32 },
-    /// |O - Oval: x, y, start_angle, end_angle, x_radius, y_radius
+    /// RIP_OVAL (`|O`) – elliptical arc from `st_ang` to `end_ang` (counter‑clockwise).
     Oval {
         x: i32,
         y: i32,
@@ -78,11 +138,11 @@ pub enum RipCommand {
         x_rad: i32,
         y_rad: i32,
     },
-    /// |o - Filled Oval: x, y, x_radius, y_radius
+    /// RIP_FILLED_OVAL (`|o`) – filled ellipse (full 360°) using fill pattern/color; outline uses drawing color & line thickness.
     FilledOval { x: i32, y: i32, x_rad: i32, y_rad: i32 },
-    /// |A - Arc: x, y, start_angle, end_angle, radius
+    /// RIP_ARC (`|A`) – circular arc from `st_ang` to `end_ang` (counter‑clockwise); full circle if 0..360.
     Arc { x: i32, y: i32, st_ang: i32, end_ang: i32, radius: i32 },
-    /// |V - Oval Arc: x, y, start_angle, end_angle, x_radius, y_radius
+    /// RIP_OVAL_ARC (`|V`) – elliptical arc segment (not aspect corrected circle).
     OvalArc {
         x: i32,
         y: i32,
@@ -91,9 +151,9 @@ pub enum RipCommand {
         x_rad: i32,
         y_rad: i32,
     },
-    /// |I - Pie Slice: x, y, start_angle, end_angle, radius
+    /// RIP_PIE_SLICE (`|I`) – circular sector (arc + two radial lines) filled with current fill style; outline uses line thickness.
     PieSlice { x: i32, y: i32, st_ang: i32, end_ang: i32, radius: i32 },
-    /// |i - Oval Pie Slice: x, y, start_angle, end_angle, x_radius, y_radius
+    /// RIP_OVAL_PIE_SLICE (`|i`) – elliptical sector (arc + radial lines to center) filled.
     OvalPieSlice {
         x: i32,
         y: i32,
@@ -102,7 +162,9 @@ pub enum RipCommand {
         x_rad: i32,
         y_rad: i32,
     },
-    /// |Z - Bezier: x1, y1, x2, y2, x3, y3, x4, y4, count
+    /// RIP_BEZIER (`|Z`)
+    /// Cubic Bezier curve defined by endpoints (x1,y1)/(x4,y4) and control
+    /// points (x2,y2)/(x3,y3). `cnt` is segment count (straight line subdivisions).
     Bezier {
         x1: i32,
         y1: i32,
@@ -114,19 +176,26 @@ pub enum RipCommand {
         y4: i32,
         cnt: i32,
     },
-    /// |P - Polygon: points (npoints followed by x,y pairs)
+    /// RIP_POLYGON (`|P`)
+    /// Closed polygon; number of vertices inferred by point vector length /2.
+    /// Outline only; use `FilledPolygon` for fill.
     Polygon { points: Vec<i32> },
-    /// |p - Filled Polygon: points (npoints followed by x,y pairs)
+    /// RIP_FILL_POLYGON (`|p`) – polygon with filled interior & outlined border.
     FilledPolygon { points: Vec<i32> },
-    /// |l - Polyline: points (npoints followed by x,y pairs)
+    /// RIP_POLYLINE (`|l`) – open multi‑segment path; last point not auto‑connected.
     PolyLine { points: Vec<i32> },
-    /// |F - Fill: x, y, border_color
+    /// RIP_FILL (`|F`)
+    /// Flood fill from (x,y) until encountering `border` color (which is not overwritten). No action if start pixel is border color.
     Fill { x: i32, y: i32, border: i32 },
-    /// |= - Line Style: style, user_pattern, thickness
+    /// RIP_LINE_STYLE (`|=`)
+    /// Sets global line pattern & thickness. `style` selects predefined pattern
+    /// or custom (value 4) using 16‑bit `user_pat` bitmask MSB = start side.
     LineStyle { style: i32, user_pat: i32, thick: i32 },
-    /// |S - Fill Style: pattern, color
+    /// RIP_FILL_STYLE (`|S`)
+    /// Selects predefined 8x8 fill pattern `pattern` (0–11) and fill `color`.
     FillStyle { pattern: i32, color: i32 },
-    /// |s - Fill Pattern: 8 bytes + color
+    /// RIP_FILL_PATTERN (`|s`)
+    /// Custom 8x8 fill pattern rows `c1..c8` (bitfields) and fill color `col`.
     FillPattern {
         c1: i32,
         c2: i32,
@@ -140,7 +209,10 @@ pub enum RipCommand {
     },
 
     // Level 1 commands
-    /// |1M - Mouse: num, x0, y0, x1, y1, click, clear, reserved, text
+    /// RIP_MOUSE (`|1M`)
+    /// Declares clickable rectangular region; sends `text` (host command) when
+    /// clicked. `clk` => invert visual feedback, `clr` => clear/zoom text window
+    /// before host command. `num` obsolete (spec sets to 00). `res` reserved.
     Mouse {
         num: i32,
         x0: i32,
@@ -152,21 +224,25 @@ pub enum RipCommand {
         res: i32,
         text: String,
     },
-    /// |1K - Mouse Fields (clear all mouse regions)
+    /// RIP_KILL_MOUSE_FIELDS (`|1K`) – clears all defined mouse regions.
     MouseFields,
-    /// |1T - Begin Text: x0, y0, x1, y1, reserved
+    /// RIP_BEGIN_TEXT (`|1T`)
+    /// Starts formatted text region; subsequent `RegionText` lines flow within
+    /// rectangle until `EndText`. `res` reserved.
     BeginText { x0: i32, y0: i32, x1: i32, y1: i32, res: i32 },
-    /// |1t - Region Text: justify flag + text
+    /// RIP_REGION_TEXT (`|1t`)
+    /// One wrapped line inside a begin/end block. `justify` true => full width
+    /// justification (adds spacing between words). No scrolling beyond bottom.
     RegionText { justify: bool, text: String },
-    /// |1E - End Text
+    /// RIP_END_TEXT (`|1E`) – terminates formatted text block.
     EndText,
-    /// |1C - Get Image (copy): x0, y0, x1, y1, reserved
+    /// RIP_GET_IMAGE (`|1C`) – copies rectangle to internal clipboard. `res` reserved.
     GetImage { x0: i32, y0: i32, x1: i32, y1: i32, res: i32 },
-    /// |1P - Put Image (paste): x, y, mode, reserved
+    /// RIP_PUT_IMAGE (`|1P`) – pastes clipboard at (x,y) using write `mode`; `res` reserved.
     PutImage { x: i32, y: i32, mode: i32, res: i32 },
-    /// |1W - Write Icon: reserved, data string
+    /// RIP_WRITE_ICON (`|1W`) – writes clipboard to disk (icon); `res` is raw byte; `data` filename (no path). Overwrites existing.
     WriteIcon { res: u8, data: String },
-    /// |1I - Load Icon: x, y, mode, clipboard, reserved, filename
+    /// RIP_LOAD_ICON (`|1I`) – loads icon file to screen at (x,y); optional copy to clipboard if `clipboard`==1. `res` reserved.
     LoadIcon {
         x: i32,
         y: i32,
@@ -175,7 +251,12 @@ pub enum RipCommand {
         res: i32,
         file_name: String,
     },
-    /// |1B - Button Style: width, height, orientation, flags, bevel_size, label_color, shadow_color, bright, dark, surface, group, flags2, underline_color, corner_color, reserved
+    /// RIP_BUTTON_STYLE (`|1B`)
+    /// Defines styling for subsequent `Button` instances: static or dynamic
+    /// sizing, orientation (label placement), effect colors (bright/dark/
+    /// surface), group id (`grp_no` 0–35), flag bitfields (`flags` primary,
+    /// `flags2` secondary), underline & corner colors, bevel thickness. `res`
+    /// reserved (extended feature packing).
     ButtonStyle {
         wid: i32,
         hgt: i32,
@@ -193,7 +274,11 @@ pub enum RipCommand {
         corner_col: i32,
         res: i32,
     },
-    /// |1U - Button: x0, y0, x1, y1, hotkey, flags, reserved, text
+    /// RIP_BUTTON (`|1U`)
+    /// Instance of a button in current style. Rect defines bounds (or dynamic
+    /// sizing if style configured). `hotkey` two‑digit code, per spec features
+    /// influenced by flags. `res` reserved. `text` label may include escaped
+    /// chars.
     Button {
         x0: i32,
         y0: i32,
@@ -204,11 +289,11 @@ pub enum RipCommand {
         res: i32,
         text: String,
     },
-    /// |1D - Define: flags, reserved, text
+    /// RIP_DEFINE (`|1D`) – defines named data / macro region; flags plus reserved field and text payload.
     Define { flags: i32, res: i32, text: String },
-    /// |1ESC - Query
+    /// RIP_QUERY (`|1ESC`) – query/command with mode & reserved triple‑digit quantity plus text payload.
     Query { mode: i32, res: i32, text: String },
-    /// |1G - Copy Region: x0, y0, x1, y1, res, dest_line
+    /// RIP_COPY_REGION (`|1G`) – copies rectangular region to destination scan line offset `dest_line` (implementation detail); `res` reserved.
     CopyRegion {
         x0: i32,
         y0: i32,
@@ -217,13 +302,15 @@ pub enum RipCommand {
         res: i32,
         dest_line: i32,
     },
-    /// |1R - Read Scene: filename
+    /// RIP_READ_SCENE (`|1R`) – loads scene file (filename only, no path).
     ReadScene { file_name: String },
-    /// |1F - File Query: filename
+    /// RIP_FILE_QUERY (`|1F`) – queries file (existence / metadata) by name.
     FileQuery { file_name: String },
 
     // Level 9 commands
-    /// |9ESC - Enter Block Mode
+    /// RIP_ENTER_BLOCK_MODE (`|9ESC`)
+    /// Initiates block/file transfer mode: protocol `proto`, file type
+    /// `file_type`, reserved, plus `file_name` for upcoming transfer session.
     EnterBlockMode {
         mode: i32,
         proto: i32,
@@ -233,9 +320,9 @@ pub enum RipCommand {
     },
 
     // Special commands
-    /// |$ - Text Variable: text
+    /// RIP_TEXT_VARIABLE (`|$`) – defines a variable expansion text token.
     TextVariable { text: String },
-    /// |# - No More RIP (end of RIP commands)
+    /// RIP_NO_MORE (`|#`) – terminator: signals end of RIP command stream & return to plain text/ANSI.
     NoMore,
 }
 
