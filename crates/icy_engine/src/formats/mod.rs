@@ -37,10 +37,8 @@ mod icy_draw;
 mod renegade;
 mod seq;
 
-use crate::{
-    ANSI_FONTS, BitFont, BufferFeatures, BufferParser, CallbackAction, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane,
-    TextScreen, ansi::MusicOption,
-};
+use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
+use icy_parser_core::MusicOption;
 
 use super::{Position, TextAttribute};
 

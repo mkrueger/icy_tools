@@ -1,4 +1,4 @@
-use crate::{EngineResult, Palette, ParserError, Position, Rectangle, Size, ansi::parse_next_number};
+use crate::{EngineResult, Palette, Position, Rectangle, Size};
 
 #[derive(Clone, Debug, Copy)]
 pub enum SixelState {
@@ -102,7 +102,7 @@ impl SixelParser {
                     }
                     if self.parsed_numbers.len() > 1 {
                         if self.parsed_numbers.len() != 5 {
-                            return Err(ParserError::InvalidColorInSixelSequence.into());
+                            return Err(SixelSixelParserError::InvalidColorInSixelSequence.into());
                         }
 
                         match self.parsed_numbers.get(1) {
@@ -123,10 +123,10 @@ impl SixelParser {
                                 );
                             }
                             Some(n) => {
-                                return Err(ParserError::UnsupportedSixelColorformat(*n).into());
+                                return Err(SixelSixelParserError::UnsupportedSixelColorformat(*n).into());
                             }
                             None => {
-                                return Err(ParserError::InvalidColorInSixelSequence.into());
+                                return Err(SixelSixelParserError::InvalidColorInSixelSequence.into());
                             }
                         }
                     }
@@ -144,7 +144,7 @@ impl SixelParser {
                     self.parsed_numbers.push(0);
                 } else {
                     if self.parsed_numbers.len() < 2 || self.parsed_numbers.len() > 4 {
-                        return Err(ParserError::InvalidPictureSize.into());
+                        return Err(SixelSixelParserError::InvalidPictureSize.into());
                     }
                     self.vertical_scale = self.parsed_numbers[0];
                     self.horizontal_scale = self.parsed_numbers[1];
@@ -177,7 +177,7 @@ impl SixelParser {
                             self.parse_sixel_data(ch)?;
                         }
                     } else {
-                        return Err(ParserError::NumberMissingInSixelRepeat.into());
+                        return Err(SixelSixelParserError::NumberMissingInSixelRepeat.into());
                     }
                     self.state = SixelState::Read;
                 }
@@ -191,7 +191,7 @@ impl SixelParser {
 
         let sixel = &mut buf.layers[0].sixels[current_sixel];*/
         if ch < '?' {
-            return Err(ParserError::InvalidSixelChar(ch).into());
+            return Err(SixelSixelParserError::InvalidSixelChar(ch).into());
         }
         let mask = ch as u8 - b'?';
 
@@ -349,5 +349,85 @@ impl Sixel {
 
     pub fn set_size(&mut self, size: Size) {
         self.size = size;
+    }
+}
+
+#[inline(always)]
+pub fn parse_next_number(x: i32, ch: u8) -> i32 {
+    x.saturating_mul(10).saturating_add(ch as i32).saturating_sub(b'0' as i32)
+}
+
+#[derive(Debug, Clone)]
+pub enum SixelSixelParserError {
+    InvalidChar(char),
+    InvalidBuffer,
+    UnsupportedEscapeSequence,
+    UnsupportedCustomCommand(i32),
+    Description(&'static str),
+    UnsupportedControlCode(u32),
+    UnsupportedFont(usize),
+    UnsupportedSauceFont(String),
+    UnexpectedSixelEnd(char),
+    InvalidColorInSixelSequence,
+    NumberMissingInSixelRepeat,
+    InvalidSixelChar(char),
+    UnsupportedSixelColorformat(i32),
+    ErrorInSixelEngine(&'static str),
+    InvalidPictureSize,
+
+    InvalidRipAnsiQuery(i32),
+
+    Error(String),
+}
+
+impl std::fmt::Display for SixelSixelParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SixelSixelParserError::InvalidChar(ch) => write!(f, "invalid character {ch}"),
+            SixelSixelParserError::UnsupportedEscapeSequence => {
+                write!(f, "unsupported escape sequence")
+            }
+            SixelSixelParserError::Description(str) => write!(f, "{str}"),
+            SixelSixelParserError::UnsupportedControlCode(code) => {
+                write!(f, "unsupported control code 0x{:02X}", *code)
+            }
+            SixelSixelParserError::UnsupportedCustomCommand(code) => {
+                write!(f, "unsupported custom ansi command: {}", *code)
+            }
+            SixelSixelParserError::UnsupportedFont(code) => write!(f, "font {} not supported", *code),
+            SixelSixelParserError::UnsupportedSauceFont(name) => write!(f, "font {name} not supported"),
+            SixelSixelParserError::UnexpectedSixelEnd(ch) => {
+                write!(f, "sixel sequence ended with <esc>{ch} expected '\\'")
+            }
+            SixelSixelParserError::InvalidBuffer => write!(f, "output buffer is invalid"),
+            SixelSixelParserError::InvalidColorInSixelSequence => {
+                write!(f, "invalid color in sixel sequence")
+            }
+            SixelSixelParserError::NumberMissingInSixelRepeat => {
+                write!(f, "sixel repeat sequence is missing number")
+            }
+            SixelSixelParserError::InvalidSixelChar(ch) => write!(f, "{ch} invalid in sixel data"),
+            SixelSixelParserError::UnsupportedSixelColorformat(i) => {
+                write!(f, "{i} invalid color format in sixel data")
+            }
+            SixelSixelParserError::ErrorInSixelEngine(err) => write!(f, "sixel engine error: {err}"),
+            SixelSixelParserError::InvalidPictureSize => write!(f, "invalid sixel picture size description"),
+            SixelSixelParserError::InvalidRipAnsiQuery(i) => write!(f, "invalid rip ansi query <esc>[{i}!"),
+            SixelSixelParserError::Error(err) => write!(f, "Parse error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for SixelSixelParserError {
+    fn description(&self) -> &str {
+        "use std::display"
+    }
+
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+
+    fn cause(&self) -> Option<&dyn std::error::Error> {
+        self.source()
     }
 }

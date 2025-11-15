@@ -4,10 +4,11 @@
 //! Supports CSI (Control Sequence Introducer), ESC, and OSC sequences.
 
 use base64::{Engine as _, engine::general_purpose};
+pub mod music;
 mod sgr;
 use crate::{
-    AnsiMode, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode,
-    OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
+    AnsiMode, BaudEmulation, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DecPrivateMode, DeviceControlString, Direction,
+    EraseInDisplayMode, EraseInLineMode, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
 };
 
 #[derive(Default)]
@@ -592,10 +593,16 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     b'r' => {
-                        // Select Communication Speed
+                        // Select Communication Speed: ESC[{Ps1};{Ps2}*r
+                        // Ps1 = communication line (0/1/none = Host Transmit, 2 = Host Receive,
+                        //       3 = Printer, 4 = Modem Hi, 5 = Modem Lo)
+                        // Ps2 = baud rate
                         let ps1 = self.params.first().copied().unwrap_or(0);
                         let ps2 = self.params.get(1).copied().unwrap_or(0);
-                        sink.emit(TerminalCommand::CsiSelectCommunicationSpeed(ps1 as u16, ps2 as u16));
+                        let comm_line = CommunicationLine::from_u16(ps1 as u16);
+                        let baud_option = *BaudEmulation::OPTIONS.get(ps2 as usize).unwrap_or(&BaudEmulation::Off);
+
+                        sink.emit(TerminalCommand::CsiSelectCommunicationSpeed(comm_line, baud_option));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -647,18 +654,12 @@ impl CommandParser for AnsiParser {
                     }
                     b'x' => {
                         // DECFRA - Fill Rectangular Area
-                        let pchar = self.params.first().copied().unwrap_or(0);
+                        let pchar = self.params.first().copied().unwrap_or(0) as u8;
                         let pt = self.params.get(1).copied().unwrap_or(1);
                         let pl = self.params.get(2).copied().unwrap_or(1);
                         let pb = self.params.get(3).copied().unwrap_or(1);
                         let pr = self.params.get(4).copied().unwrap_or(1);
-                        sink.emit(TerminalCommand::CsiFillRectangularArea(
-                            pchar as u16,
-                            pt as u16,
-                            pl as u16,
-                            pb as u16,
-                            pr as u16,
-                        ));
+                        sink.emit(TerminalCommand::CsiFillRectangularArea(pchar, pt as u16, pl as u16, pb as u16, pr as u16));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1052,11 +1053,6 @@ impl CommandParser for AnsiParser {
             self.last_char = input[i - 1];
             sink.print(&input[printable_start..i]);
         }
-    }
-
-    fn flush(&mut self, _sink: &mut dyn CommandSink) {
-        // Reset parser state on flush
-        self.reset();
     }
 }
 

@@ -504,15 +504,11 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn emit_skypix(&mut self, cmd: SkypixCommand) {
-        // SkyPix commands need graphics integration
-        log::debug!("Received SkyPix command: {:?}", cmd);
-        // TODO: Convert SkypixCommand to RunSkypixSequence callback
+        self.screen.handle_skypix_command(cmd);
     }
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
-        // IGS commands need graphics integration
-        log::debug!("Received IGS command: {:?}", cmd);
-        // TODO: Add IGS callback variant to CallbackAction
+        self.screen.handle_igs_command(cmd);
     }
 
     fn device_control(&mut self, dcs: DeviceControlString<'_>) {

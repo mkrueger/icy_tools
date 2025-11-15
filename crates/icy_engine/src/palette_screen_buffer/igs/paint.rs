@@ -1,46 +1,12 @@
 use std::mem::swap;
 
+use super::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN};
 use super::{
-    IGS_VERSION, LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
-    cmd::IgsCommands,
-    sound::SOUND_DATA,
+    LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
     vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
 };
-use crate::{
-    BitFont, CallbackAction, Color, EditableScreen, EngineResult, IGS_PALETTE, IGS_SYSTEM_PALETTE, Palette, Position, Size,
-    igs::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN, vdi::blit_px},
-    load_atari_fonts,
-};
-
-#[repr(u8)]
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
-pub enum TerminalResolution {
-    /// 320x200
-    #[default]
-    Low,
-    /// 640x200
-    Medium,
-    /// 640x400  
-    High,
-}
-
-impl TerminalResolution {
-    pub fn resolution_id(&self) -> String {
-        match self {
-            TerminalResolution::Low => "0".to_string(),
-            TerminalResolution::Medium => "1".to_string(),
-            TerminalResolution::High => "2".to_string(),
-        }
-    }
-
-    pub fn get_resolution(&self) -> Size {
-        match self {
-            TerminalResolution::Low => Size { width: 320, height: 200 },
-            TerminalResolution::Medium => Size { width: 640, height: 200 },
-            TerminalResolution::High => Size { width: 640, height: 400 },
-        }
-    }
-}
+use crate::palette_screen_buffer::igs::TerminalResolution;
+use crate::{BitFont, EditableScreen, Position, Size, load_atari_fonts, palette_screen_buffer::igs::vdi::blit_px};
 
 #[derive(Debug, PartialEq)]
 pub enum TextEffects {
@@ -158,25 +124,14 @@ pub struct DrawExecutor {
     font_16px: BitFont,
     hollow_set: bool,
 
+    // Screen memory for blit operations
     screen_memory: Vec<u8>,
     screen_memory_size: Size,
-
-    /// for the G command.
-    double_step: f32,
 }
 
 unsafe impl Send for DrawExecutor {}
 
 unsafe impl Sync for DrawExecutor {}
-
-pub enum ClearCommand {
-    /// Clear screen home cursor.
-    ClearScreen,
-    /// Clear from home to cursor.
-    ClearFromHomeToCursor,
-    /// Clear from cursor to bottom of screen.
-    ClearFromCursorToBottom,
-}
 
 impl Default for DrawExecutor {
     fn default() -> Self {
@@ -209,15 +164,14 @@ impl DrawExecutor {
             font_7px,
             font_9px,
             font_16px,
-            screen_memory: Vec::new(),
-            screen_memory_size: Size::new(0, 0),
 
             fill_pattern_type: FillPatternType::Solid,
             fill_pattern: &SOLID_PATTERN,
             pattern_index_number: 0,
             draw_border: false,
             hollow_set: false,
-            double_step: -1.0,
+            screen_memory: Vec::new(),
+            screen_memory_size: Size::new(0, 0),
         }
     }
 
@@ -969,6 +923,7 @@ impl DrawExecutor {
         xrad * x_size / 372
     }
 
+    /*
     pub fn execute_command(
         &mut self,
         buf: &mut dyn EditableScreen,
@@ -1699,6 +1654,147 @@ impl DrawExecutor {
             _ => Err(anyhow::anyhow!("Unimplemented IGS command: {command:?}")),
         }
     }
+
+    */
 }
 
 const REGISTER_TO_PEN: &[usize; 17] = &[0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 12, 15, 13, 1];
+
+// Public wrapper methods for IGS command handling
+impl DrawExecutor {
+    pub fn draw_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
+        self.fill_rect(buf, x1, y1, x2, y2);
+        if self.draw_border {
+            let color = self.fill_color;
+            self.draw_line(buf, x1, y1, x1, y2, color, 0);
+            self.draw_line(buf, x2, y1, x2, y2, color, 0);
+            self.draw_line(buf, x1, y1, x2, y1, color, 0);
+            self.draw_line(buf, x1, y2, x2, y2, color, 0);
+        }
+    }
+
+    pub fn draw_rounded_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
+        self.round_rect(buf, x1, y1, x2, y2, true);
+        if self.draw_border {
+            self.round_rect(buf, x1, y1, x2, y2, false);
+        }
+    }
+
+    pub fn draw_line_pub(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
+        let color = self.line_color;
+        let mask = self.line_type.get_mask();
+        self.draw_line(buf, x1, y1, x2, y2, color, mask);
+    }
+
+    pub fn draw_circle_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, radius: i32) {
+        self.draw_circle(buf, x, y, radius);
+    }
+
+    pub fn draw_ellipse_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, x_radius: i32, y_radius: i32) {
+        self.draw_ellipse(buf, x, y, x_radius, y_radius);
+    }
+
+    pub fn draw_arc_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
+        let y_radius = self.calc_circle_y_rad(radius);
+        self.draw_arc(buf, x, y, radius, y_radius, start_angle, end_angle);
+    }
+
+    pub fn draw_polyline_pub(&mut self, buf: &mut dyn crate::EditableScreen, points: &[i32]) {
+        self.draw_polyline(buf, self.line_color, points);
+    }
+
+    pub fn fill_poly_pub(&mut self, buf: &mut dyn crate::EditableScreen, points: &[i32]) {
+        self.fill_poly(buf, points);
+    }
+
+    pub fn flood_fill_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32) {
+        self.flood_fill(buf, x, y);
+    }
+
+    pub fn set_color(&mut self, pen: u8, color: u8) {
+        match pen {
+            0 => self.polymarker_color = color,
+            1 => self.line_color = color,
+            2 => self.fill_color = color,
+            3 => self.text_color = color,
+            _ => {}
+        }
+    }
+
+    pub fn set_fill_pattern(&mut self, pattern_type: u8, pattern_index: u8) {
+        self.fill_pattern_type = match pattern_type {
+            0 => FillPatternType::Hollow,
+            1 => FillPatternType::Solid,
+            2 => FillPatternType::Pattern,
+            3 => FillPatternType::Hatch,
+            4 => FillPatternType::UserdDefined,
+            _ => FillPatternType::Solid,
+        };
+
+        self.fill_pattern = match self.fill_pattern_type {
+            FillPatternType::Hollow => &HOLLOW_PATTERN,
+            FillPatternType::Solid => &SOLID_PATTERN,
+            FillPatternType::Pattern => &TYPE_PATTERN[pattern_index.min(5) as usize],
+            FillPatternType::Hatch if pattern_index < 6 => &HATCH_PATTERN[pattern_index as usize],
+            FillPatternType::Hatch => &HATCH_WIDE_PATTERN[(pattern_index - 6) as usize],
+            FillPatternType::UserdDefined => &RANDOM_PATTERN,
+        };
+
+        self.pattern_index_number = pattern_index as usize;
+        self.hollow_set = self.fill_pattern_type == FillPatternType::Hollow;
+    }
+
+    pub fn set_draw_border(&mut self, border: bool) {
+        self.draw_border = border;
+    }
+
+    pub fn set_line_style_pub(&mut self, style: u8) {
+        self.line_type = match style {
+            0 | 1 => LineType::Solid,
+            2 => LineType::LongDash,
+            3 => LineType::DottedLine,
+            4 => LineType::DashDot,
+            5 => LineType::DashedLine,
+            6 => LineType::DashedDotDot,
+            _ => LineType::UserDefined,
+        };
+    }
+
+    pub fn set_line_thickness(&mut self, thickness: usize) {
+        self.solidline_size = thickness;
+    }
+
+    pub fn set_text_effects_pub(&mut self, effects: u8) {
+        self.text_effects = match effects {
+            0 => TextEffects::Normal,
+            1 => TextEffects::Thickened,
+            4 => TextEffects::Ghosted,
+            8 => TextEffects::Skewed,
+            16 => TextEffects::Underlined,
+            32 => TextEffects::Outlined,
+            _ => TextEffects::Normal,
+        };
+    }
+
+    pub fn set_text_size(&mut self, size: i32) {
+        self.text_size = size;
+    }
+
+    pub fn set_text_rotation_pub(&mut self, rotation: u8) {
+        self.text_rotation = match rotation {
+            0 => TextRotation::Right,
+            1 => TextRotation::Up,
+            2 => TextRotation::Left,
+            3 => TextRotation::Down,
+            _ => TextRotation::RightReverse,
+        };
+    }
+
+    pub fn get_cur_position(&self) -> crate::Position {
+        self.cur_position
+    }
+
+    pub fn set_cur_position(&mut self, x: i32, y: i32) {
+        self.cur_position = crate::Position::new(x, y);
+    }
+}

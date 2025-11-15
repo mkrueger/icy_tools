@@ -33,19 +33,18 @@ impl CommandBuilder {
     #[inline(always)]
     pub fn parse_base36_complete(&mut self, ch: u8, target_idx: usize, final_state: usize) -> Result<bool, ()> {
         let digit = BASE36_LUT[ch as usize].ok_or(())?;
-        
+
         // Ensure vector has space (do this once, not in the branch)
         if self.u16_params.len() <= target_idx {
             self.u16_params.resize(target_idx + 1, 0);
         }
-        
+
         if (self.param_state & 1) == 0 {
             self.u16_params[target_idx] = digit;
         } else {
             // Use unsafe indexing since we know the bounds
             unsafe {
-                *self.u16_params.get_unchecked_mut(target_idx) = 
-                    self.u16_params.get_unchecked(target_idx).wrapping_mul(36).wrapping_add(digit);
+                *self.u16_params.get_unchecked_mut(target_idx) = self.u16_params.get_unchecked(target_idx).wrapping_mul(36).wrapping_add(digit);
             }
         }
         self.param_state += 1;

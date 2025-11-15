@@ -1,9 +1,12 @@
 use std::{f64::consts, path::PathBuf};
 
-use crate::{BitFont, EGA_PALETTE, EditableScreen, Palette, Position, Rectangle, Size, rip::bgi::font::Font};
+use crate::{BitFont, EGA_PALETTE, EditableScreen, Palette, Position, Rectangle, Size};
 
 mod character;
+pub use character::*;
+
 mod font;
+pub use font::*;
 
 #[derive(Clone, Copy)]
 pub enum Color {

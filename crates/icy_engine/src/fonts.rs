@@ -1,7 +1,7 @@
 use base64::{Engine, engine::general_purpose};
 use libyaff::{GlyphDefinition, YaffFont};
 
-use crate::{EngineResult, ParserError};
+use crate::EngineResult;
 use std::{collections::HashMap, error::Error, path::PathBuf, str::FromStr, sync::Mutex};
 
 use super::Size;
@@ -590,5 +590,20 @@ impl Error for FontError {
 
     fn cause(&self) -> Option<&dyn Error> {
         self.source()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ParserError {
+    UnsupportedFont(usize),
+    UnsupportedSauceFont(String),
+}
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParserError::UnsupportedFont(code) => write!(f, "font {} not supported", *code),
+            ParserError::UnsupportedSauceFont(name) => write!(f, "font {name} not supported"),
+        }
     }
 }

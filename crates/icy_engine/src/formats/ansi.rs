@@ -3,12 +3,13 @@ use std::path::Path;
 
 use codepages::tables::UNICODE_TO_CP437;
 
-use crate::ansi::constants::COLOR_OFFSETS;
 use crate::{
     ANSI_FONTS, AttributedChar, BitFont, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextBuffer, TextPane,
-    XTERM_256_PALETTE, analyze_font_usage, parse_with_parser, parsers,
+    XTERM_256_PALETTE, analyze_font_usage, parse_with_parser,
 };
 use crate::{Color, EditableScreen, TextScreen};
+
+const COLOR_OFFSETS: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
 use super::{LoadData, SaveOptions};
 
@@ -60,7 +61,8 @@ impl OutputFormat for Ansi {
         if let Some(sauce) = load_data.sauce_opt {
             result.buffer.load_sauce(sauce);
         }
-        let mut parser = parsers::ansi::Parser::default();
+
+        let mut parser = crate::parsers::ansi::Parser::default();
         if let Some(music) = load_data.ansi_music {
             parser.ansi_music = music;
         }

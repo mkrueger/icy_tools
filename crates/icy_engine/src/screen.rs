@@ -1,10 +1,10 @@
 use std::cmp::max;
 
-use icy_parser_core::RipCommand;
+use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, CallbackAction, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
-    TerminalState, TextAttribute, TextPane, caret, rip::bgi::MouseField,
+    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Line, MouseField, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
+    TerminalResolution, TerminalState, TextAttribute, TextPane, caret,
 };
 
 #[repr(u8)]
@@ -12,7 +12,7 @@ use crate::{
 pub enum GraphicsType {
     Text,
     Rip,
-    IGS(crate::igs::TerminalResolution),
+    IGS(TerminalResolution),
     Skypix,
 }
 
@@ -142,16 +142,14 @@ pub trait EditableScreen: RgbaScreen {
     fn clear_dirty(&self);
     fn mark_dirty(&self);
 
-    fn lf(&mut self) -> CallbackAction {
+    fn lf(&mut self) {
         let _was_ooe = self.caret().y > self.get_last_editable_line();
-        let mut line_inserted = 0;
         self.caret_mut().x = 0;
         let y = self.caret_mut().y;
         self.caret_mut().y = y + 1;
 
         if self.terminal_state().is_terminal_buffer {
             while self.caret().y >= self.get_height() {
-                line_inserted += 1;
                 self.scroll_up();
                 self.caret_mut().y -= 1;
                 continue;
@@ -160,18 +158,11 @@ pub trait EditableScreen: RgbaScreen {
             if self.caret().y + 1 > self.get_height() {
                 self.set_height(self.caret().y + 1);
             }
-            if line_inserted > 0 {
-                return CallbackAction::ScrollDown(1);
-            }
-            return CallbackAction::Update;
+            return;
         }
 
         self.check_scrolling_on_caret_down(false);
         self.limit_caret_pos();
-        if line_inserted > 0 {
-            return CallbackAction::ScrollDown(line_inserted);
-        }
-        CallbackAction::Update
     }
 
     /// (form feed, FF, \f, ^L), to cause a printer to eject paper to the top of the next page, or a video terminal to clear the screen.
@@ -551,6 +542,10 @@ pub trait EditableScreen: RgbaScreen {
     fn saved_cursor_state(&mut self) -> &mut SavedCaretState;
 
     fn handle_rip_command(&mut self, cmd: RipCommand);
+
+    fn handle_skypix_command(&mut self, cmd: SkypixCommand);
+
+    fn handle_igs_command(&mut self, cmd: IgsCommand);
 }
 
 #[derive(Clone, Default)]

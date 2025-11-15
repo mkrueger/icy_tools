@@ -168,88 +168,12 @@ fn bench_rip_parser_mixed(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_rip_parser_complex_scene(c: &mut Criterion) {
-    let (_, _, _, complex) = make_synthetic_inputs();
-    let mut group = c.benchmark_group("rip_parser_synthetic");
-    group.throughput(Throughput::Bytes(complex.len() as u64));
-
-    group.bench_function("complex_scene", |b| {
-        b.iter(|| {
-            let mut parser = RipParser::new();
-            let mut sink = NullSink;
-            parser.parse(black_box(&complex), &mut sink);
-        });
-    });
-
-    group.finish();
-}
-
-fn bench_rip_parser_incremental(c: &mut Criterion) {
-    let data = load_rip_files();
-    let mut group = c.benchmark_group("rip_parser_incremental");
-
-    // Benchmark parsing in small chunks (realistic for streaming)
-    group.bench_function("parse_1kb_chunks", |b| {
-        b.iter(|| {
-            let mut parser = RipParser::new();
-            let mut sink = NullSink;
-            for chunk in data.chunks(1024) {
-                parser.parse(black_box(chunk), &mut sink);
-            }
-        });
-    });
-
-    group.bench_function("parse_256b_chunks", |b| {
-        b.iter(|| {
-            let mut parser = RipParser::new();
-            let mut sink = NullSink;
-            for chunk in data.chunks(256) {
-                parser.parse(black_box(chunk), &mut sink);
-            }
-        });
-    });
-
-    group.finish();
-}
-
-fn bench_rip_parser_individual_files(c: &mut Criterion) {
-    let rip_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/rip_data");
-    let mut group = c.benchmark_group("rip_parser_individual_files");
-
-    let files = [
-        ("dragon01", "dragon01.rip"),
-        ("garfield", "garfield.rip"),
-        ("lthouse", "lthouse.rip"),
-        ("paleo", "paleo.rip"),
-        ("shadow", "shadow.rip"),
-    ];
-
-    for (name, filename) in &files {
-        let path = rip_dir.join(filename);
-        if let Ok(data) = fs::read(&path) {
-            group.throughput(Throughput::Bytes(data.len() as u64));
-            group.bench_function(*name, |b| {
-                b.iter(|| {
-                    let mut parser = RipParser::new();
-                    let mut sink = NullSink;
-                    parser.parse(black_box(&data), &mut sink);
-                });
-            });
-        }
-    }
-
-    group.finish();
-}
-
 criterion_group!(
     benches,
     bench_rip_parser_real_world,
-    //    bench_rip_parser_text_heavy,
-    //    bench_rip_parser_command_heavy,
-    //    bench_rip_parser_mixed,
-    //    bench_rip_parser_complex_scene,
-    //    bench_rip_parser_incremental,
-    //    bench_rip_parser_individual_files
+    bench_rip_parser_text_heavy,
+    bench_rip_parser_command_heavy,
+    bench_rip_parser_mixed,
 );
 
 criterion_main!(benches);

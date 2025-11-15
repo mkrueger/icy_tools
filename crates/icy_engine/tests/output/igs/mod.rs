@@ -1,4 +1,5 @@
-use icy_engine::{BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
+use icy_engine::{BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, IgsParser, Palette, PaletteScreenBuffer, ScreenSink};
+use icy_parser_core::CommandParser;
 use std::fs::{self};
 
 use crate::compare_output;
@@ -11,14 +12,14 @@ pub fn test_igs_lowres() {
             continue;
         }
 
-        let data = fs::read_to_string(&cur_entry).expect("Error reading file.");
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::igs::TerminalResolution::Low));
-        *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
-        for c in data.chars() {
-            parser.print_char(&mut buffer, c).unwrap();
-        }
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Low));
+
+        let mut parser: IgsParser = IgsParser::new();
+        let mut sink = ScreenSink::new(&mut buffer);
+
+        parser.parse(&data, &mut sink);
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);
@@ -33,14 +34,14 @@ pub fn test_igs_highres() {
             continue;
         }
 
-        let data = fs::read_to_string(&cur_entry).expect("Error reading file.");
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::igs::TerminalResolution::High));
-        *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
-        for c in data.chars() {
-            parser.print_char(&mut buffer, c).unwrap();
-        }
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::High));
+
+        let mut parser: IgsParser = IgsParser::new();
+        let mut sink = ScreenSink::new(&mut buffer);
+
+        parser.parse(&data, &mut sink);
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);

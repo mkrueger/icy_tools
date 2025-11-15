@@ -1,9 +1,6 @@
-use icy_engine::{BufferParser as _, PaletteScreenBuffer, ScreenSink};
+use icy_engine::{PaletteScreenBuffer, ScreenSink};
 use icy_parser_core::{CommandParser, RipParser};
-use std::{
-    env::current_dir,
-    fs::{self},
-};
+use std::fs::{self};
 
 use crate::compare_output;
 

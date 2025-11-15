@@ -4,8 +4,8 @@ use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
 use icy_engine::ansi::BaudEmulation;
-use icy_engine::{AutoWrapMode, ExtMouseMode, FontSelectionState, IceMode, MouseMode, OriginMode};
-use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, TextScreen, rip};
+use icy_engine::{AutoWrapMode, ExtMouseMode, FontSelectionState, IceMode, MouseMode, OriginMode, RIP_TERMINAL_ID};
+use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, TextScreen};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -376,7 +376,7 @@ impl<'a> CommandSink for TerminalSink<'a> {
 
             TerminalRequest::RipRequestTerminalId => {
                 if self.screen_sink.screen().graphics_type() == icy_engine::GraphicsType::Rip {
-                    self.output.extend_from_slice(rip::RIP_TERMINAL_ID.as_bytes());
+                    self.output.extend_from_slice(RIP_TERMINAL_ID.as_bytes());
                 }
             }
             // RIPscrip and IGS requests are not implemented
@@ -726,7 +726,7 @@ impl TerminalThread {
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::AtariST => {
-                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(icy_engine::igs::TerminalResolution::Low));
+                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(icy_engine::TerminalResolution::Low));
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
 

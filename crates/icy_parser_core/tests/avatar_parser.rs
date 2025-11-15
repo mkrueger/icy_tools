@@ -135,7 +135,10 @@ fn test_blink_on() {
     parser.parse(b"\x16\x02", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert_eq!(sink.commands[0], OwnedCommand::CsiDecPrivateModeReset(DecPrivateMode::CursorBlinking));
+    assert_eq!(
+        sink.commands[0],
+        OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(icy_parser_core::Blink::Slow))
+    );
 }
 
 #[test]
@@ -202,7 +205,7 @@ fn test_mixed_content() {
         OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(0)))
     );
     assert_eq!(sink.commands[3], OwnedCommand::Printable(b" World".to_vec()));
-    assert_eq!(sink.commands[3], OwnedCommand::Printable(b"!!!!!".to_vec()));
+    assert_eq!(sink.commands[4], OwnedCommand::Printable(b"!!!!!".to_vec()));
     assert_eq!(sink.commands[5], OwnedCommand::Printable(b" End".to_vec()));
 }
 

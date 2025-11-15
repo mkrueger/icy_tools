@@ -1,10 +1,13 @@
 //! Core parser infrastructure: command emission traits and basic ASCII parser.
 
 mod ascii;
+use std::fmt::Display;
+
 pub use ascii::AsciiParser;
 
 mod ansi;
 pub use ansi::AnsiParser;
+pub use ansi::music::*;
 
 mod avatar;
 pub use avatar::AvatarParser;
@@ -25,6 +28,8 @@ mod petscii;
 pub use petscii::PetsciiParser;
 
 mod viewdata;
+use serde::Deserialize;
+use serde::Serialize;
 pub use viewdata::ViewdataParser;
 
 mod mode7;
@@ -41,6 +46,9 @@ pub use igs::{IgsCommand, IgsParser};
 
 mod vt52;
 pub use vt52::Vt52Parser;
+
+mod tables;
+pub use tables::*;
 
 /// Erase in Display mode for ED command (ESC[nJ)
 #[repr(u8)]
@@ -87,6 +95,35 @@ impl EraseInLineMode {
             1 => Some(Self::StartToCursor),
             2 => Some(Self::All),
             _ => None,
+        }
+    }
+}
+
+/// Communication line type for Select Communication Speed command
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommunicationLine {
+    /// Host Transmit (default)
+    HostTransmit = 0,
+    /// Host Receive
+    HostReceive = 2,
+    /// Printer
+    Printer = 3,
+    /// Modem Hi
+    ModemHi = 4,
+    /// Modem Lo
+    ModemLo = 5,
+}
+
+impl CommunicationLine {
+    pub fn from_u16(n: u16) -> Self {
+        match n {
+            0 | 1 => Self::HostTransmit,
+            2 => Self::HostReceive,
+            3 => Self::Printer,
+            4 => Self::ModemHi,
+            5 => Self::ModemLo,
+            _ => Self::HostTransmit, // Default to Host Transmit
         }
     }
 }
@@ -512,10 +549,11 @@ pub enum TerminalCommand {
     CsiFontSelection(u16, u16),
 
     /// Select Communication Speed: ESC[{Ps1};{Ps2}*r
-    CsiSelectCommunicationSpeed(u16, u16),
+    /// Ps1 = communication line type, Ps2 = baud rate
+    CsiSelectCommunicationSpeed(CommunicationLine, BaudEmulation),
 
     /// DECFRA - Fill Rectangular Area: ESC[{Pchar};{Pt};{Pl};{Pb};{Pr}$x
-    CsiFillRectangularArea(u16, u16, u16, u16, u16),
+    CsiFillRectangularArea(u8, u16, u16, u16, u16),
 
     /// DECERA - Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}$z
     CsiEraseRectangularArea(u16, u16, u16, u16),
@@ -544,68 +582,27 @@ pub enum TerminalCommand {
     EscRestoreCursor,
     /// RIS - Reset to Initial State: ESC c
     EscReset,
-}
 
-/// Music style for ANSI music playback
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MusicStyle {
-    /// Play music in foreground (blocks)
-    Foreground,
-    /// Play music in background (non-blocking)
-    Background,
-    /// Normal note articulation (7/8 of note duration)
-    Normal,
-    /// Legato articulation (full note duration, no pause between notes)
-    Legato,
-    /// Staccato articulation (3/4 of note duration, 1/4 pause)
-    Staccato,
-}
+    ScrollArea {
+        direction: Direction,
+        num_lines: u16,
+        top: u16,
+        left: u16,
+        bottom: u16,
+        right: u16,
+    },
 
-impl MusicStyle {
-    /// Calculate the pause length after a note based on the music style
-    pub fn get_pause_length(&self, duration: i32) -> i32 {
-        match self {
-            MusicStyle::Legato => 0,
-            MusicStyle::Staccato => duration / 4,
-            _ => duration / 8,
-        }
-    }
-}
-
-/// ANSI music action - a single music command
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum MusicAction {
-    /// Play a note: frequency (Hz), tempo * length, is_dotted
-    PlayNote(f32, i32, bool),
-    /// Pause for given tempo * length
-    Pause(i32),
-    /// Change music style
-    SetStyle(MusicStyle),
-}
-
-impl MusicAction {
-    /// Get the duration of this music action in milliseconds
-    pub fn get_duration(&self) -> i32 {
-        match self {
-            MusicAction::PlayNote(_, len, dotted) => {
-                if *dotted {
-                    360000 / *len
-                } else {
-                    240000 / *len
-                }
-            }
-            MusicAction::Pause(len) => 240000 / *len,
-            _ => 0,
-        }
-    }
-}
-
-/// ANSI music sequence - a collection of music actions
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct AnsiMusic {
-    /// The music actions to perform
-    pub music_actions: Vec<MusicAction>,
+    AvatarClearArea {
+        attr: u8,
+        lines: u8,
+        columns: u8,
+    },
+    AvatarInitArea {
+        attr: u8,
+        ch: u8,
+        lines: u8,
+        columns: u8,
+    },
 }
 
 /// Terminal requests that expect a response from the terminal emulator.
@@ -733,5 +730,44 @@ pub trait CommandSink {
 
 pub trait CommandParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink);
-    fn flush(&mut self, _sink: &mut dyn CommandSink) {}
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BaudEmulation {
+    #[default]
+    Off,
+    Rate(u32),
+}
+
+impl Display for BaudEmulation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Off => write!(f, "Off"),
+            Self::Rate(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+impl BaudEmulation {
+    pub const OPTIONS: [BaudEmulation; 12] = [
+        BaudEmulation::Off,
+        BaudEmulation::Rate(300),
+        BaudEmulation::Rate(600),
+        BaudEmulation::Rate(1200),
+        BaudEmulation::Rate(2400),
+        BaudEmulation::Rate(4800),
+        BaudEmulation::Rate(9600),
+        BaudEmulation::Rate(19200),
+        BaudEmulation::Rate(38400),
+        BaudEmulation::Rate(57600),
+        BaudEmulation::Rate(76800),
+        BaudEmulation::Rate(115_200),
+    ];
+
+    pub fn get_baud_rate(&self) -> u32 {
+        match self {
+            BaudEmulation::Off => 0,
+            BaudEmulation::Rate(baud) => *baud,
+        }
+    }
 }

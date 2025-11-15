@@ -1,4 +1,6 @@
-use crate::{Size, ansi::BaudEmulation};
+use icy_parser_core::BaudEmulation;
+
+use crate::Size;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalScrolling {

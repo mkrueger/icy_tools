@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use crate::{
-    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen, ctrla, parse_with_parser, parsers,
-};
+use crate::{BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen, parse_with_parser};
 
 use super::{LoadData, SaveOptions};
 
@@ -90,11 +88,11 @@ impl OutputFormat for CtrlA {
 
                     if cur_attribute.get_foreground() != last_fore {
                         result.push(1);
-                        result.push(ctrla::FG[cur_attribute.get_foreground() as usize % 8]);
+                        result.push(crate::parsers::ctrla::FG[cur_attribute.get_foreground() as usize % 8]);
                     }
                     if cur_attribute.get_background() != last_back {
                         result.push(1);
-                        result.push(parsers::ctrla::BG[cur_attribute.get_background() as usize % 8]);
+                        result.push(crate::parsers::ctrla::BG[cur_attribute.get_background() as usize % 8]);
                     }
                     was_bold = is_bold;
                     was_high_bg = high_bg;
@@ -164,11 +162,11 @@ impl OutputFormat for CtrlA {
 
                     if cur_attribute.get_foreground() != last_fore {
                         result.push(1);
-                        result.push(ctrla::FG[cur_attribute.get_foreground() as usize % 8]);
+                        result.push(crate::parsers::ctrla::FG[cur_attribute.get_foreground() as usize % 8]);
                     }
                     if cur_attribute.get_background() != last_back {
                         result.push(1);
-                        result.push(parsers::ctrla::BG[cur_attribute.get_background() as usize % 8]);
+                        result.push(crate::parsers::ctrla::BG[cur_attribute.get_background() as usize % 8]);
                     }
                     was_bold = is_bold;
                     was_high_bg = high_bg;
@@ -202,7 +200,7 @@ impl OutputFormat for CtrlA {
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        parse_with_parser(&mut result, &mut parsers::ctrla::Parser::default(), &text, true)?;
+        parse_with_parser(&mut result, &mut crate::parsers::ctrla::Parser::default(), &text, true)?;
         Ok(result.buffer)
     }
 }

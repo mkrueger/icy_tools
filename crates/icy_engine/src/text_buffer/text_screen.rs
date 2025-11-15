@@ -1,10 +1,10 @@
 use core::panic;
 
-use icy_parser_core::RipCommand;
+use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
     AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions,
-    SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard, rip::bgi::MouseField,
+    SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
 };
 
 pub struct TextScreen {
@@ -552,5 +552,13 @@ impl EditableScreen for TextScreen {
 
     fn handle_rip_command(&mut self, _cmd: RipCommand) {
         panic!("RIP not supported for text screeens.");
+    }
+
+    fn handle_skypix_command(&mut self, _cmd: SkypixCommand) {
+        panic!("SkyPix not supported for text screens.");
+    }
+
+    fn handle_igs_command(&mut self, _cmd: icy_parser_core::IgsCommand) {
+        panic!("IGS not supported for text screens.");
     }
 }

@@ -9,13 +9,14 @@ use std::{
 
 use crate::{
     BitFont, EditableScreen, EngineResult, Position, Size,
-    rip::bgi::{
+    bgi::{
         Bgi, ButtonStyle2, Direction, FillStyle as BgiFillStyle, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode,
     },
 };
 use byteorder::{LittleEndian, ReadBytesExt};
 use icy_parser_core::{ImagePasteMode, RipCommand, WriteMode as RipWriteMode};
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
+pub static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
 
 lazy_static::lazy_static! {
     pub static ref RIP_FONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
@@ -180,7 +181,18 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             y4,
             cnt,
         } => {
-            bgi.rip_bezier(buf, x1.into(), y1.into(), x2.into(), y2.into(), x3.into(), y3.into(), x4.into(), y4.into(), cnt.into());
+            bgi.rip_bezier(
+                buf,
+                x1.into(),
+                y1.into(),
+                x2.into(),
+                y2.into(),
+                x3.into(),
+                y3.into(),
+                x4.into(),
+                y4.into(),
+                cnt.into(),
+            );
         }
 
         RipCommand::Polygon { points } => {
@@ -440,9 +452,33 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
                     false,
                 );
             } else if split.len() == 3 {
-                bgi.add_button(buf, x0.into(), y0.into(), x1.into(), y1.into(), hotkey as u8, flags.into(), None, split[1], parse_host_command(split[2]), false);
+                bgi.add_button(
+                    buf,
+                    x0.into(),
+                    y0.into(),
+                    x1.into(),
+                    y1.into(),
+                    hotkey as u8,
+                    flags.into(),
+                    None,
+                    split[1],
+                    parse_host_command(split[2]),
+                    false,
+                );
             } else if split.len() == 2 {
-                bgi.add_button(buf, x0.into(), y0.into(), x1.into(), y1.into(), hotkey as u8, flags.into(), None, split[1], None, false);
+                bgi.add_button(
+                    buf,
+                    x0.into(),
+                    y0.into(),
+                    x1.into(),
+                    y1.into(),
+                    hotkey as u8,
+                    flags.into(),
+                    None,
+                    split[1],
+                    None,
+                    false,
+                );
             } else {
                 bgi.add_button(
                     buf,

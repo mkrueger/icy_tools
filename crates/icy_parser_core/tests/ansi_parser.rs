@@ -748,11 +748,13 @@ fn test_csi_asterisk_sequences() {
     sink.cmds.clear();
 
     // CSI Ps1;Ps2*r - Select Communication Speed
-    parser.parse(b"\x1B[9600;9600*r", &mut sink);
+    // Ps1 = communication line (0/1/none = Host Transmit, 2 = Host Receive, etc.)
+    // Ps2 = baud rate index (5 = 9600 baud in OPTIONS array)
+    parser.parse(b"\x1B[2;6*r", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSelectCommunicationSpeed(ps1, ps2) = sink.cmds[0] {
-        assert_eq!(ps1, 9600);
-        assert_eq!(ps2, 9600);
+    if let TerminalCommand::CsiSelectCommunicationSpeed(comm_line, baud) = sink.cmds[0] {
+        assert_eq!(comm_line, icy_parser_core::CommunicationLine::HostReceive);
+        assert_eq!(baud, icy_parser_core::BaudEmulation::Rate(9600));
     } else {
         panic!("Expected CsiSelectCommunicationSpeed");
     }

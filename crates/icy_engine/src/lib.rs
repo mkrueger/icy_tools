@@ -38,8 +38,16 @@ pub use palette_handling::*;
 mod fonts;
 pub use fonts::*;
 
-pub mod parsers;
-pub use parsers::*;
+// Re-export parsers from icy_parser_core
+pub use icy_parser_core::{IgsParser, MusicOption, SkypixParser};
+
+// Create a parsers module that re-exports from icy_parser_core
+pub mod parsers {
+    pub use icy_parser_core::{
+        AnsiParser as ansi, AsciiParser as ascii, AtasciiParser as atascii, AvatarParser as avatar, CtrlAParser as ctrla, Mode7Parser as mode7,
+        PcBoardParser as pcboard, PetsciiParser as petscii, RenegadeParser as renegade, ViewdataParser as viewdata,
+    };
+}
 
 mod caret;
 pub use caret::*;
@@ -74,6 +82,8 @@ pub mod clipboard;
 
 pub mod paint;
 pub use paint::*;
+
+pub use palette_screen_buffer::bgi::MouseField;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Size {

@@ -1,16 +1,25 @@
-use icy_parser_core::RipCommand;
+use icy_parser_core::{RipCommand, SkypixCommand};
 
+pub mod bgi;
+mod igs_impl;
 mod rip_impl;
+mod skypix_impl;
+
+pub mod igs;
+pub use igs::TerminalResolution;
+use igs_impl::IgsState;
 
 use crate::{
     ATARI, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line,
     Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
-    rip::bgi::{Bgi, DEFAULT_BITFONT, MouseField},
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::thread::JoinHandle;
+
+pub use rip_impl::RIP_TERMINAL_ID;
 
 pub struct PaletteScreenBuffer {
     pub pixel_size: Size,
@@ -35,6 +44,9 @@ pub struct PaletteScreenBuffer {
 
     // BGI graphics handler
     pub bgi: Bgi,
+
+    // IGS state (only used for IGS graphics)
+    igs_state: Option<IgsState>,
 
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
@@ -110,6 +122,7 @@ impl PaletteScreenBuffer {
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
             bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
+            igs_state: None,
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
             saved_pos: Position::default(),
@@ -634,5 +647,13 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn handle_rip_command(&mut self, cmd: RipCommand) {
         self.handle_rip_command_impl(cmd);
+    }
+
+    fn handle_skypix_command(&mut self, cmd: SkypixCommand) {
+        self.handle_skypix_command_impl(cmd);
+    }
+
+    fn handle_igs_command(&mut self, cmd: icy_parser_core::IgsCommand) {
+        self.handle_igs_command_impl(cmd);
     }
 }
