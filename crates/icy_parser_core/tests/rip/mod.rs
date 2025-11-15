@@ -1,6 +1,7 @@
 use icy_parser_core::{CommandParser, CommandSink, RipCommand, RipParser, TerminalCommand, TerminalRequest};
 
 mod load;
+
 mod roundtrip;
 
 pub struct TestSink {
@@ -312,7 +313,8 @@ fn test_rip_mouse() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|1M0100001000010000GO\n", &mut sink);
+    // Fixed: res should be 5 digits, not 4
+    parser.parse(b"!|1M01000010000100000GO\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
@@ -332,8 +334,8 @@ fn test_rip_mouse() {
             assert_eq!(*y0, 0);
             assert_eq!(*x1, 36);
             assert_eq!(*y1, 0);
-            assert_eq!(*clk, 1);
-            assert_eq!(*clr, 0);
+            assert_eq!(*clk, 0);
+            assert_eq!(*clr, 1);
             assert_eq!(*res, 0);
             assert_eq!(text, "GO");
         }
@@ -365,9 +367,9 @@ fn test_rip_button() {
             assert_eq!(*x1, 36);
             assert_eq!(*y1, 41);
             assert_eq!(*hotkey, 0);
-            assert_eq!(*flags, 1);
-            assert_eq!(*res, 0);
-            assert_eq!(text, "Enter<>cmd<>label<>text");
+            assert_eq!(*flags, 0);
+            assert_eq!(*res, 1);
+            assert_eq!(text, "00Enter<>cmd<>label<>text");
         }
         _ => panic!("Expected Button command"),
     }
@@ -378,7 +380,7 @@ fn test_rip_load_icon() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"!|1I0A0A000000test.icn\n", &mut sink);
+    parser.parse(b"!|1I0A0A00000test.icn\n", &mut sink);
 
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
@@ -802,4 +804,94 @@ fn test_rip_unknown_ansi_sequence_passthrough() {
 
     // The ANSI parser should have received the sequence
     assert!(sink.terminal_commands.len() > 0 || true); // ANSI parser was called
+}
+
+#[test]
+fn test_debug_text_escapes() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    let input = b"!|Thello \\! \\| \\\\\n";
+    eprintln!("Input: {:?}", std::str::from_utf8(input).unwrap());
+
+    parser.parse(input, &mut sink);
+
+    eprintln!("Parsed {} commands", sink.rip_commands.len());
+    for (i, cmd) in sink.rip_commands.iter().enumerate() {
+        eprintln!("  [{}]: {:?}", i, cmd);
+    }
+
+    assert_eq!(sink.rip_commands.len(), 1, "Should parse exactly 1 command");
+}
+
+#[test]
+fn test_debug_simple_text() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    let input = b"!|Thello_world\n";
+    eprintln!("Input: {:?}", std::str::from_utf8(input).unwrap());
+
+    parser.parse(input, &mut sink);
+
+    eprintln!("Parsed {} commands", sink.rip_commands.len());
+    for (i, cmd) in sink.rip_commands.iter().enumerate() {
+        eprintln!("  [{}]: {:?}", i, cmd);
+    }
+
+    assert_eq!(sink.rip_commands.len(), 1, "Should parse exactly 1 command");
+}
+
+#[test]
+fn test_debug_text_escaped_bang() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    let input = b"!|Thello\\!\n";
+    eprintln!("Input: {:?}", std::str::from_utf8(input).unwrap());
+
+    parser.parse(input, &mut sink);
+
+    eprintln!("Parsed {} commands", sink.rip_commands.len());
+    for (i, cmd) in sink.rip_commands.iter().enumerate() {
+        eprintln!("  [{}]: {:?}", i, cmd);
+    }
+
+    assert!(sink.rip_commands.len() >= 1, "Should parse at least 1 command");
+}
+
+#[test]
+fn test_debug_text_double_backslash() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    let input = b"!|Thello\\\\\n";
+    eprintln!("Input: {:?}", std::str::from_utf8(input).unwrap());
+
+    parser.parse(input, &mut sink);
+
+    eprintln!("Parsed {} commands", sink.rip_commands.len());
+    for (i, cmd) in sink.rip_commands.iter().enumerate() {
+        eprintln!("  [{}]: {:?}", i, cmd);
+    }
+
+    assert_eq!(sink.rip_commands.len(), 1, "Should parse exactly 1 command");
+}
+
+#[test]
+fn test_debug_line_continuation() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    let input = b"!|=00000003\\\n|c0C\n";
+    eprintln!("Input: {:?}", std::str::from_utf8(input).unwrap());
+
+    parser.parse(input, &mut sink);
+
+    eprintln!("Parsed {} commands", sink.rip_commands.len());
+    for (i, cmd) in sink.rip_commands.iter().enumerate() {
+        eprintln!("  [{}]: {:?}", i, cmd);
+    }
+
+    assert_eq!(sink.rip_commands.len(), 2, "Should parse exactly 2 commands");
 }

@@ -90,6 +90,11 @@ fn test_text() {
 }
 
 #[test]
+fn test_text_escapes() {
+    test_roundtrip("|Thello \\! \\| \\\\");
+}
+
+#[test]
 fn test_text_xy() {
     test_roundtrip("|@0011hello world");
 }
@@ -256,11 +261,11 @@ fn test_load_icon() {
 fn test_button_style() {
     test_roundtrip("|1B0A0A010274030F080F080700010E07000000");
 }
-/*
+
 #[test]
 fn test_button() {
     test_roundtrip("|1U010100003200iconfile<>Label<>HostCmd^m");
-}*/
+}
 
 #[test]
 fn test_define() {
@@ -331,4 +336,34 @@ fn test_eol_continuation_bug() {
 #[test]
 fn test_eol_continuation_bug1() {
     test_roundtrip("|=00000003|\\\n=00000003");
+}
+
+// Additional Level 0 tests with examples from spec
+
+#[test]
+fn test_load_icon_with_clipboard() {
+    // Example: |1I0G0A0010ICONFILE
+    test_roundtrip("|1I0G0A0010ICONFILE");
+}
+
+// Level 1 additional tests
+
+#[test]
+fn test_file_query() {
+    // |1F - File Query
+    test_roundtrip("|1FTEST.RIP");
+}
+
+// Special commands
+
+#[test]
+fn test_text_variable() {
+    // |$ - Text Variable (used in Define, Query, etc.)
+    test_roundtrip("|$TEST$");
+}
+
+#[test]
+fn test_no_more() {
+    // |# - No More RIP
+    test_roundtrip("|#");
 }

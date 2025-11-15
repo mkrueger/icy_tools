@@ -1,4 +1,3 @@
-use chrono::format::parse;
 use icy_engine::{BufferParser as _, PaletteScreenBuffer, ScreenSink};
 use icy_parser_core::{CommandParser, RipParser};
 use std::{
@@ -53,6 +52,7 @@ pub fn test_rip2() {
         let mut buffer: PaletteScreenBuffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::Rip);
         icy_engine::rip::setup_rip_text_fonts(&mut buffer);
 
+        println!("file : {}", cur_entry.display());
         let mut ansi_parser = icy_engine::ansi::Parser::default();
         ansi_parser.bs_is_ctrl_char = true;
         let mut parser = icy_engine::rip::Parser::new(Box::new(ansi_parser), ".".into(), icy_engine::rip::RIP_SCREEN_SIZE);

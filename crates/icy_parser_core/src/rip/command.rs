@@ -1,6 +1,20 @@
 use std::fmt;
 
-use super::to_base_36;
+/// Escape special characters in RIPscrip text strings.
+/// Per spec: ! and | are command delimiters, \ is escape character.
+/// Must escape: \! \| \\
+fn escape_text(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '!' => result.push_str("\\!"),
+            '|' => result.push_str("\\|"),
+            '\\' => result.push_str("\\\\"),
+            _ => result.push(ch),
+        }
+    }
+    result
+}
 
 /// All RIPscrip commands
 #[derive(Debug, Clone, PartialEq)]
@@ -267,9 +281,9 @@ impl fmt::Display for RipCommand {
             RipCommand::Move { x, y } => {
                 write!(f, "|m{}{}", to_base_36(2, *x), to_base_36(2, *y))
             }
-            RipCommand::Text { text } => write!(f, "|T{}", text),
+            RipCommand::Text { text } => write!(f, "|T{}", escape_text(text)),
             RipCommand::TextXY { x, y, text } => {
-                write!(f, "|@{}{}{}", to_base_36(2, *x), to_base_36(2, *y), text)
+                write!(f, "|@{}{}{}", to_base_36(2, *x), to_base_36(2, *y), escape_text(text))
             }
             RipCommand::FontStyle { font, direction, size, res } => {
                 write!(
@@ -489,7 +503,7 @@ impl fmt::Display for RipCommand {
                     to_base_36(1, *clk),
                     to_base_36(1, *clr),
                     to_base_36(5, *res),
-                    text
+                    escape_text(text)
                 )
             }
             RipCommand::MouseFields => write!(f, "|1K"),
@@ -505,7 +519,7 @@ impl fmt::Display for RipCommand {
                 )
             }
             RipCommand::RegionText { justify, text } => {
-                write!(f, "|1t{}{}", if *justify { '1' } else { '0' }, text)
+                write!(f, "|1t{}{}", if *justify { '1' } else { '0' }, escape_text(text))
             }
             RipCommand::EndText => write!(f, "|1E"),
             RipCommand::GetImage { x0, y0, x1, y1, res } => {
@@ -529,7 +543,7 @@ impl fmt::Display for RipCommand {
                     to_base_36(1, *res)
                 )
             }
-            RipCommand::WriteIcon { res, data } => write!(f, "|1W{}{}", *res as char, data),
+            RipCommand::WriteIcon { res, data } => write!(f, "|1W{}{}", *res as char, escape_text(data)),
             RipCommand::LoadIcon {
                 x,
                 y,
@@ -546,7 +560,7 @@ impl fmt::Display for RipCommand {
                     to_base_36(2, *mode),
                     to_base_36(1, *clipboard),
                     to_base_36(2, *res),
-                    file_name
+                    escape_text(file_name)
                 )
             }
             RipCommand::ButtonStyle {
@@ -606,14 +620,14 @@ impl fmt::Display for RipCommand {
                     to_base_36(2, *hotkey),
                     to_base_36(1, *flags),
                     to_base_36(1, *res),
-                    text
+                    escape_text(text)
                 )
             }
             RipCommand::Define { flags, res, text } => {
-                write!(f, "|1D{}{}{}", to_base_36(3, *flags), to_base_36(2, *res), text)
+                write!(f, "|1D{}{}{}", to_base_36(3, *flags), to_base_36(2, *res), escape_text(text))
             }
             RipCommand::Query { mode, res, text } => {
-                write!(f, "|1\x1B{}{}{}", to_base_36(1, *mode), to_base_36(3, *res), text)
+                write!(f, "|1\x1B{}{}{}", to_base_36(1, *mode), to_base_36(3, *res), escape_text(text))
             }
             RipCommand::CopyRegion {
                 x0,
@@ -634,8 +648,8 @@ impl fmt::Display for RipCommand {
                     to_base_36(2, *dest_line)
                 )
             }
-            RipCommand::ReadScene { file_name } => write!(f, "|1R{}", file_name),
-            RipCommand::FileQuery { file_name } => write!(f, "|1F{}", file_name),
+            RipCommand::ReadScene { file_name } => write!(f, "|1R{}", escape_text(file_name)),
+            RipCommand::FileQuery { file_name } => write!(f, "|1F{}", escape_text(file_name)),
 
             // Level 9 commands
             RipCommand::EnterBlockMode {
@@ -652,13 +666,27 @@ impl fmt::Display for RipCommand {
                     to_base_36(1, *proto),
                     to_base_36(2, *file_type),
                     to_base_36(4, *res),
-                    file_name
+                    escape_text(file_name)
                 )
             }
 
             // Special commands
-            RipCommand::TextVariable { text } => write!(f, "|${}", text),
+            RipCommand::TextVariable { text } => write!(f, "|${}", escape_text(text)),
             RipCommand::NoMore => write!(f, "|#"),
         }
     }
+}
+
+/// Convert a number to base-36 representation with a fixed length
+pub fn to_base_36(len: usize, number: i32) -> String {
+    let mut res = String::new();
+    let mut number = number;
+    for _ in 0..len {
+        let num2 = (number % 36) as u8;
+        let ch2 = if num2 < 10 { (num2 + b'0') as char } else { (num2 - 10 + b'A') as char };
+
+        res = ch2.to_string() + res.as_str();
+        number /= 36;
+    }
+    res
 }

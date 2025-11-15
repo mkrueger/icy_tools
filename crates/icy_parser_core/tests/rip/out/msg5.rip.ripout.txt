@@ -37,7 +37,7 @@
 |c00
 |Y03000200
 |@2I28oin Conference                  elp Level's
-|@2I2Wead Messages                   ..HELP
+|@2I2Wead Messages                   ..HELP\!
 |@2I3Kcan Messages                   ile Menu
 |@2I48nter a Message                 ownload Mail
 |@2I4Will a Message                    pdate Conference
@@ -90,3 +90,4 @@
 |c02
 |LCJ1ND31N
 |L501O5K1O
+|#
