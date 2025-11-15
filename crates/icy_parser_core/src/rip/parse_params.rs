@@ -73,7 +73,7 @@ impl RipParser {
             // Button: states 0..11 (x0,y0,x1,y1,hotkey are 2-digit; flags,res are 1-digit), then text
             (1, b'U') => {
                 if self.builder.param_state <= 11 {
-                    if let Some(digit) = parse_base36_digit(ch) {
+                    if let Some(digit) = BASE36_LUT[ch as usize] {
                         match self.builder.param_state {
                             0..=1 => {
                                 // x0 (2 digits)
@@ -124,7 +124,7 @@ impl RipParser {
             // Mouse: states 0..11 (6 two-digit + 2 one-digit), 12..16 (res 5 digits), then text
             (1, b'M') => {
                 if self.builder.param_state <= 16 {
-                    if let Some(digit) = parse_base36_digit(ch) {
+                    if let Some(digit) = BASE36_LUT[ch as usize] {
                         match self.builder.param_state {
                             0..=1 => {
                                 // num
@@ -189,7 +189,7 @@ impl RipParser {
             // LoadIcon: states 0..8 (x,y,mode are 2-digit; clipboard is 1-digit; res is 2-digit), then filename
             (1, b'I') => {
                 if self.builder.param_state <= 8 {
-                    if let Some(digit) = parse_base36_digit(ch) {
+                    if let Some(digit) = BASE36_LUT[ch as usize] {
                         match self.builder.param_state {
                             0..=1 => {
                                 // x (2 digits)
@@ -250,7 +250,7 @@ impl RipParser {
             // TextWindow: 4 two-digit params, then wrap (1 digit), then size (1 digit)
             (0, b'w') if self.builder.param_state < 8 => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 8),
             (0, b'w') if self.builder.param_state == 8 => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     self.builder.i32_params.push(digit);
                     self.builder.param_state += 1;
                     Ok(false)
@@ -260,7 +260,7 @@ impl RipParser {
             }
             (0, b'w') => {
                 // param_state == 9: final single digit parameter (size)
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     self.builder.i32_params.push(digit);
                     self.builder.param_state += 1;
                     Ok(true)
@@ -284,7 +284,7 @@ impl RipParser {
 
             // = - Line Style: states 0..1 (style), 2..5 (user_pat), 6..7 (thick)
             (0, b'=') => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     match self.builder.param_state {
                         0..=1 => {
                             // style
@@ -324,7 +324,7 @@ impl RipParser {
 
             // Q - Set Palette (32 digits for 16 colors)
             (0, b'Q') => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     if self.builder.param_state % 2 == 0 {
                         self.builder.i32_params.push(digit);
                     } else {
@@ -340,7 +340,7 @@ impl RipParser {
 
             // P, p, l - Polygon/PolyLine (variable length based on npoints)
             (0, b'P') | (0, b'p') | (0, b'l') if self.builder.param_state < 2 => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     if self.builder.param_state == 0 {
                         self.builder.npoints = digit;
                     } else {
@@ -353,7 +353,7 @@ impl RipParser {
                 }
             }
             (0, b'P') | (0, b'p') | (0, b'l') => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     if self.builder.param_state % 2 == 0 {
                         self.builder.i32_params.push(digit);
                     } else {
@@ -374,7 +374,7 @@ impl RipParser {
 
             // RegionText: 1 digit (justify) then text
             (1, b't') if self.builder.param_state == 0 => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     self.builder.i32_params.push(digit);
                     self.builder.param_state += 1;
                     Ok(false)
@@ -391,7 +391,7 @@ impl RipParser {
             // states 0..=35: parse 2-digit pairs for first 3 params, then 4-digit flags, then 2-digit pairs for remaining params, then 7-digit res
             // state 36: done
             (1, b'B') => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     let state = self.builder.param_state;
 
                     // states 0-1: wid, 2-3: hgt, 4-5: orient (params 0,1,2)
@@ -448,7 +448,7 @@ impl RipParser {
             (1, b'D') => {
                 // states 0..=2: flags (3 digits)
                 if self.builder.param_state <= 2 {
-                    if let Some(digit) = parse_base36_digit(ch) {
+                    if let Some(digit) = BASE36_LUT[ch as usize] {
                         if self.builder.i32_params.len() == 0 {
                             self.builder.i32_params.push(0);
                         }
@@ -461,7 +461,7 @@ impl RipParser {
                 }
                 // states 3, 4: res (2 digits)
                 else if self.builder.param_state <= 4 {
-                    if let Some(digit) = parse_base36_digit(ch) {
+                    if let Some(digit) = BASE36_LUT[ch as usize] {
                         if self.builder.i32_params.len() < 2 {
                             self.builder.i32_params.resize(2, 0);
                         }
@@ -482,7 +482,7 @@ impl RipParser {
             // Query: state 0 (mode), states 1..3 (res), then text
             (1, 0x1B) => {
                 if self.builder.param_state <= 3 {
-                    if let Some(digit) = parse_base36_digit(ch) {
+                    if let Some(digit) = BASE36_LUT[ch as usize] {
                         if self.builder.param_state == 0 {
                             // mode: 1 digit
                             if self.builder.i32_params.is_empty() {
@@ -509,7 +509,7 @@ impl RipParser {
 
             // Level 9: EnterBlockMode: mode(1), proto(1), file_type(2), res(4) then text
             (9, 0x1B) if self.builder.param_state < 8 => {
-                if let Some(digit) = parse_base36_digit(ch) {
+                if let Some(digit) = BASE36_LUT[ch as usize] {
                     let idx = match self.builder.param_state {
                         0..=1 => self.builder.param_state as usize, // mode, proto
                         2..=3 => 2,                                 // file_type

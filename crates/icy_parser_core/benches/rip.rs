@@ -244,12 +244,12 @@ fn bench_rip_parser_individual_files(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_rip_parser_real_world,
-    bench_rip_parser_text_heavy,
-    bench_rip_parser_command_heavy,
-    bench_rip_parser_mixed,
-    bench_rip_parser_complex_scene,
-    bench_rip_parser_incremental,
-    bench_rip_parser_individual_files
+    //    bench_rip_parser_text_heavy,
+    //    bench_rip_parser_command_heavy,
+    //    bench_rip_parser_mixed,
+    //    bench_rip_parser_complex_scene,
+    //    bench_rip_parser_incremental,
+    //    bench_rip_parser_individual_files
 );
 
 criterion_main!(benches);
