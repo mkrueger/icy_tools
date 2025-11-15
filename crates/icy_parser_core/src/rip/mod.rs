@@ -215,7 +215,7 @@ impl CommandParser for RipParser {
                         // End of line after ! - reset to NonRip mode
                         self.mode = ParserMode::NonRip;
                         self.state = State::Default;
-                        self.ansi_parser.parse(&[ch], sink);
+                    //                        self.ansi_parser.parse(&[ch], sink);
                     } else {
                         // Not a RIP command - emit ! and continue in NonRip mode
                         self.mode = ParserMode::NonRip;
@@ -238,8 +238,9 @@ impl CommandParser for RipParser {
                         self.builder.level = 0;
                         self.emit_command(sink);
                         self.builder.reset();
-                        self.mode = ParserMode::NonRip;
-                        self.state = State::Default;
+                        // Unfortunately, real-world files have multiple |# commands, so stay in RIP mode
+                        // and go back to GotExclaim state to allow |#|#|# sequences
+                        self.state = State::GotExclaim;
                     } else {
                         // Level 0 command
                         self.builder.level = 0;

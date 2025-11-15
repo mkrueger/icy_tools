@@ -716,7 +716,6 @@ impl TerminalThread {
             match config.terminal_type {
                 TerminalEmulation::Rip => {
                     let mut buf = PaletteScreenBuffer::new(GraphicsType::Rip);
-                    rip::setup_rip_text_fonts(&mut buf);
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::Skypix => {

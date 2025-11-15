@@ -241,6 +241,7 @@ impl TerminalState {
 
     pub fn set_text_window(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         self.origin_mode = OriginMode::WithinMargins;
+        println!("set text window to {},{} - {},{}", x0, y0, x1, y1);
         self.set_margins_top_bottom(y0, y1);
         self.set_margins_left_right(x0, x1);
     }

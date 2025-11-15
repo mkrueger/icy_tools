@@ -429,11 +429,3 @@ pub fn parse_base_36(number: &mut i32, ch: char) -> EngineResult<()> {
         Err(anyhow::Error::msg("Invalid base 36 digit"))
     }
 }
-
-pub fn setup_rip_text_fonts(buffer: &mut dyn EditableScreen) {
-    buffer.set_font(0, bgi::DEFAULT_BITFONT.clone());
-    buffer.set_font(1, crate::EGA_7x8.clone());
-    buffer.set_font(2, crate::VGA_8x14.clone());
-    buffer.set_font(3, crate::VGA_7x14.clone());
-    buffer.set_font(4, crate::VGA_16x14.clone());
-}

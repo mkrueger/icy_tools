@@ -38,4 +38,7 @@
 |c0F
 |Y05000400
 |c09
+|@1Q7VSample Buttons Created With JDraw\!
+|#
+|#
 |#

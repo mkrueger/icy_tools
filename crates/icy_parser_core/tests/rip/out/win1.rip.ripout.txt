@@ -1,0 +1,20 @@
+|*
+|1K
+|W00
+|c09
+|=00000003
+|R170BFW2K
+|R1E6HFP93
+|R183FFV5O
+|c0F
+|@652UText Window - 8x8 Font
+|@635WText Window - 7x8 Font
+|@5Y9BText Window - 8x14 Font
+|Y01010400
+|@000GText Window Demo
+|w06021Y0A00
+|w070G280O01
+|w070H1X0M02
+|#
+|#
+|#

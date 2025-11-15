@@ -3,7 +3,9 @@
 
 use crate::{
     BitFont, EditableScreen, Position, Size,
-    rip::bgi::{Bgi, ButtonStyle2, Direction, FillStyle as BgiFillStyle, FontType, LabelOrientation, LineStyle as BgiLineStyle, WriteMode as BgiWriteMode},
+    rip::bgi::{
+        Bgi, ButtonStyle2, Direction, FillStyle as BgiFillStyle, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode,
+    },
 };
 use icy_parser_core::RipCommand;
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
@@ -173,12 +175,9 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             if points.is_empty() {
                 return;
             }
-            let npoints = points[0] as usize;
             let mut poly_points = Vec::new();
-            for i in 0..npoints {
-                if i * 2 + 2 < points.len() {
-                    poly_points.push(Position::new(points[i * 2 + 1], points[i * 2 + 2]));
-                }
+            for i in 0..points.len() / 2 {
+                poly_points.push(Position::new(points[i * 2], points[i * 2 + 1]));
             }
             bgi.draw_poly(buf, &poly_points);
         }
@@ -187,12 +186,9 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             if points.is_empty() {
                 return;
             }
-            let npoints = points[0] as usize;
             let mut poly_points = Vec::new();
-            for i in 0..npoints {
-                if i * 2 + 2 < points.len() {
-                    poly_points.push(Position::new(points[i * 2 + 1], points[i * 2 + 2]));
-                }
+            for i in 0..points.len() / 2 {
+                poly_points.push(Position::new(points[i * 2], points[i * 2 + 1]));
             }
             bgi.fill_poly(buf, &poly_points);
         }
@@ -201,12 +197,9 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             if points.is_empty() {
                 return;
             }
-            let npoints = points[0] as usize;
             let mut poly_points = Vec::new();
-            for i in 0..npoints {
-                if i * 2 + 2 < points.len() {
-                    poly_points.push(Position::new(points[i * 2 + 1], points[i * 2 + 2]));
-                }
+            for i in 0..points.len() / 2 {
+                poly_points.push(Position::new(points[i * 2], points[i * 2 + 1]));
             }
             bgi.draw_poly_line(buf, &poly_points);
         }
@@ -246,30 +239,20 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
 
         // Level 1 commands
         RipCommand::Mouse {
-            num,
+            num: _,
             x0,
             y0,
             x1,
             y1,
-            clk,
+            clk: _,
             clr: _,
             res: _,
             text,
         } => {
-            let host_command = if !text.is_empty() { Some(text) } else { None };
-            bgi.add_button(
-                buf,
-                x0,
-                y0,
-                x1,
-                y1,
-                0,    // hotkey
-                clk,  // flags
-                None, // icon_file
-                &format!("{}", num),
-                host_command,
-                false, // pressed
-            );
+            let host_command = parse_host_command(&text);
+            let mut style = ButtonStyle2::default();
+            style.flags |= 1024;
+            buf.add_mouse_field(MouseField::new(x0, y0, x1, y1, host_command, style));
         }
 
         RipCommand::MouseFields => {
@@ -363,13 +346,38 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             text,
         } => {
             let split: Vec<&str> = text.split("<>").collect();
-
-            if split.len() >= 2 {
-                let icon_file = if split.len() >= 4 { Some(split[0]) } else { None };
-                let label = split[if split.len() >= 4 { 1 } else { 0 }];
-                let host_cmd = if split.len() >= 3 { Some(split[split.len() - 2].to_string()) } else { None };
-
-                bgi.add_button(buf, x0, y0, x1, y1, hotkey as u8, flags, icon_file, label, host_cmd, false);
+            if split.len() == 4 {
+                bgi.add_button(
+                    buf,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    hotkey as u8,
+                    flags,
+                    Some(split[0]),
+                    split[1],
+                    parse_host_command(split[2]),
+                    false,
+                );
+            } else if split.len() == 3 {
+                bgi.add_button(buf, x0, y0, x1, y1, hotkey as u8, flags, None, split[1], parse_host_command(split[2]), false);
+            } else if split.len() == 2 {
+                bgi.add_button(buf, x0, y0, x1, y1, hotkey as u8, flags, None, split[1], None, false);
+            } else {
+                bgi.add_button(
+                    buf,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    hotkey as u8,
+                    flags,
+                    None,
+                    &format!("error in text {}", split.len()),
+                    None,
+                    false,
+                );
             }
         }
 
@@ -417,4 +425,47 @@ impl crate::PaletteScreenBuffer {
         }
         self.mark_dirty();
     }
+}
+
+fn parse_host_command(split: &str) -> Option<String> {
+    if split.is_empty() {
+        return None;
+    }
+    let mut res = String::new();
+    let mut got_caret = false;
+    for c in split.chars() {
+        if got_caret {
+            match c {
+                // Null (ASCII 0)
+                '@' => res.push('\x00'),
+                // Beep
+                'G' => res.push('\x07'),
+                // Clear Screen (Top of Form)
+                'L' => res.push('\x0C'),
+                // Carriage Return
+                'M' => res.push('\x0D'),
+                // Break (sometimes)
+                'C' => res.push('\x18'),
+                // Backspace
+                'H' => res.push('\x08'),
+                // Escape character
+                '[' => res.push('\x1B'),
+                // Pause data transmission
+                'S' => res.push('\x13'), // XOFF
+                // Resume data transmission
+                'Q' => res.push('\x11'), // XON
+                _ => {
+                    log::error!("Invalid character after ^ in button command: {}", c);
+                }
+            }
+            got_caret = false;
+            continue;
+        }
+        if c == '^' {
+            got_caret = true;
+            continue;
+        }
+        res.push(c);
+    }
+    Some(res)
 }

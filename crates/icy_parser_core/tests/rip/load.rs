@@ -3,8 +3,6 @@ use std::fs;
 
 #[test]
 pub fn test_rip_load() {
-    let skip_files = vec!["buttons.rip", "dragon01.rip", "pk!knght.rip", "test1.rip", "test2.rip", "win1.rip"];
-
     for entry in fs::read_dir("benches/rip_data").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "rip" {
@@ -12,10 +10,6 @@ pub fn test_rip_load() {
         }
 
         let filename = cur_entry.file_name().unwrap().to_string_lossy().to_string();
-        if skip_files.contains(&filename.as_str()) {
-            println!("Skipping {}", filename);
-            continue;
-        }
 
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 

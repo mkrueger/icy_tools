@@ -3,8 +3,9 @@ use icy_parser_core::RipCommand;
 mod rip_impl;
 
 use crate::{
-    ATARI, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line,
-    Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    ATARI, ATARI_ST_8X8, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode,
+    Layer, Line, Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState,
+    TextPane,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
     rip::{
         self,
@@ -52,19 +53,38 @@ impl PaletteScreenBuffer {
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(graphics_type: GraphicsType) -> Self {
-        let (px_width, px_height, font) = match graphics_type {
+        let (px_width, px_height) = match graphics_type {
             GraphicsType::Text => {
                 panic!()
             }
-            GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, RIP_FONT.clone()),
+            GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
             GraphicsType::IGS(term_res) => {
                 let res = term_res.get_resolution();
-                let font = BitFont::from_bytes("", ATARI).unwrap();
-                (res.width, res.height, font)
+                (res.width, res.height)
             }
-            GraphicsType::Skypix => (800, 600, rip::bgi::DEFAULT_BITFONT.clone()),
+            GraphicsType::Skypix => (800, 600),
         };
 
+        let mut font_table: HashMap<usize, BitFont> = HashMap::new();
+        match graphics_type {
+            GraphicsType::Rip => {
+                font_table.insert(0, RIP_FONT.clone());
+                font_table.insert(1, crate::EGA_7x8.clone());
+                font_table.insert(2, crate::VGA_8x14.clone());
+                font_table.insert(3, crate::VGA_7x14.clone());
+                font_table.insert(4, crate::VGA_16x14.clone());
+            }
+            GraphicsType::IGS(_) => {
+                let font = BitFont::from_bytes("", ATARI).unwrap();
+                font_table.insert(0, font);
+            }
+            GraphicsType::Skypix => {
+                font_table.insert(0, RIP_FONT.clone());
+            }
+            GraphicsType::Text => unreachable!(),
+        };
+
+        let font = font_table.get(&0).unwrap();
         // Calculate character grid dimensions from pixel size
         let char_cols = px_width / font.size().width;
         let char_rows = px_height / font.size().height;
@@ -78,9 +98,6 @@ impl PaletteScreenBuffer {
         for _ in 0..char_rows {
             layer.lines.push(Line::new());
         }
-
-        let mut font_table = HashMap::new();
-        font_table.insert(0, font);
 
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions

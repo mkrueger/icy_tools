@@ -449,6 +449,19 @@ fn test_rip_no_more() {
 }
 
 #[test]
+fn test_multiple_rip_no_more() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+    // real world files contain more than 1 no more.
+    parser.parse(b"!|#|#|#\n", &mut sink);
+
+    assert_eq!(sink.rip_commands.len(), 3);
+    assert!(matches!(sink.rip_commands[0], RipCommand::NoMore));
+    assert!(matches!(sink.rip_commands[1], RipCommand::NoMore));
+    assert!(matches!(sink.rip_commands[2], RipCommand::NoMore));
+}
+
+#[test]
 fn test_rip_multiple_commands() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();
