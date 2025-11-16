@@ -32,6 +32,7 @@ pub fn test_igs_load() {
         let output_lines: Vec<&str> = output.trim().lines().collect();
         let expected_lines: Vec<&str> = expected.trim().lines().collect();
 
+        let mut errors = 0;
         if output_lines != expected_lines {
             println!("\n=== Mismatch in file: {} ===", filename);
             println!("Expected {} lines, got {} lines\n", expected_lines.len(), output_lines.len());
@@ -42,6 +43,10 @@ pub fn test_igs_load() {
                 let out = output_lines.get(i).unwrap_or(&"<MISSING>");
 
                 if exp != out {
+                    errors += 1;
+                    if errors > 10 {
+                        break;
+                    }
                     println!("Line {}: MISMATCH", i + 1);
                     println!("  Expected: {}", exp);
                     println!("  Got:      {}", out);

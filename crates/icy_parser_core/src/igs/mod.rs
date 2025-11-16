@@ -3,7 +3,7 @@
 //! IGS is a graphics system developed for Atari ST BBS systems.
 //! Commands start with 'G#' and use single-letter command codes followed by parameters.
 
-use crate::{CommandParser, CommandSink, TerminalCommand};
+use crate::{CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, TerminalCommand};
 
 mod command;
 pub use command::*;
@@ -535,8 +535,10 @@ impl IgsParser {
                                 ":" => params_tokens.push(LoopParamToken::GroupSeparator),
                                 "x" | "y" => params_tokens.push(LoopParamToken::Symbol(token.chars().next().unwrap())),
                                 _ => {
-                                    if let Ok(n) = token.parse::<i32>() {
-                                        params_tokens.push(LoopParamToken::Number(n));
+                                    // Check if token starts with a prefix operator (+, -, !)
+                                    let has_prefix = token.starts_with('+') || token.starts_with('-') || token.starts_with('!');
+                                    if !has_prefix && token.parse::<i32>().is_ok() {
+                                        params_tokens.push(LoopParamToken::Number(token.parse::<i32>().unwrap()));
                                     } else {
                                         params_tokens.push(LoopParamToken::Expr(token.clone()));
                                     }
@@ -546,7 +548,8 @@ impl IgsParser {
                     }
 
                     let mut modifiers = LoopModifiers::default();
-                    let mut base_ident = command_identifier.as_str();
+                    let original_ident = command_identifier.as_str();
+                    let mut base_ident = original_ident;
                     if let Some(pos) = base_ident.find(|c| c == '|' || c == '@') {
                         let (ident_part, mod_part) = base_ident.split_at(pos);
                         base_ident = ident_part;
@@ -559,11 +562,11 @@ impl IgsParser {
                         }
                     }
 
-                    let target = if base_ident.starts_with('>') && base_ident.ends_with('@') {
-                        let inner: String = base_ident.chars().skip(1).take(base_ident.len().saturating_sub(2)).collect();
+                    let target = if base_ident.starts_with('>') && original_ident.ends_with('@') {
+                        let inner: String = base_ident.chars().skip(1).collect();
                         let commands: Vec<char> = inner.chars().collect();
                         LoopTarget::ChainGang {
-                            raw: base_ident.to_string(),
+                            raw: original_ident.to_string(),
                             commands,
                         }
                     } else {
@@ -1077,7 +1080,9 @@ impl CommandParser for IgsParser {
                                     // For chain-gangs (>XXX@), the @ is part of the identifier, not a modifier
                                     // Modifiers come AFTER the chain-gang's closing @
                                     let mut modifiers = LoopModifiers::default();
-                                    let mut base_ident = raw_identifier.as_str();
+                                    let original_ident = raw_identifier.as_str();
+                                    let mut base_ident = original_ident;
+                                    let mut target = LoopTarget::Single(' ');
 
                                     // Check if this is a chain-gang command (>...@)
                                     let is_chain_gang = base_ident.starts_with('>') && base_ident.contains('@');
@@ -1096,6 +1101,13 @@ impl CommandParser for IgsParser {
                                             }
                                             // base_ident includes the chain-gang with its closing @
                                             base_ident = &base_ident[..=chain_end_pos];
+                                            // Create ChainGang target with the base_ident (which includes @)
+                                            let inner: String = base_ident.chars().skip(1).take(base_ident.len().saturating_sub(2)).collect();
+                                            let commands: Vec<char> = inner.chars().collect();
+                                            target = LoopTarget::ChainGang {
+                                                raw: base_ident.to_string(),
+                                                commands,
+                                            };
                                         }
                                     } else {
                                         // For single commands, parse modifiers normally
@@ -1112,17 +1124,19 @@ impl CommandParser for IgsParser {
                                         }
                                     }
 
-                                    let target = if base_ident.starts_with('>') && base_ident.ends_with('@') {
-                                        let inner: String = base_ident.chars().skip(1).take(base_ident.len().saturating_sub(2)).collect();
-                                        let commands: Vec<char> = inner.chars().collect();
-                                        LoopTarget::ChainGang {
-                                            raw: base_ident.to_string(),
-                                            commands,
-                                        }
-                                    } else {
-                                        let ch = base_ident.chars().next().unwrap_or(' ');
-                                        LoopTarget::Single(ch)
-                                    };
+                                    if matches!(target, LoopTarget::Single(' ')) {
+                                        target = if base_ident.starts_with('>') && original_ident.ends_with('@') {
+                                            let inner: String = base_ident.chars().skip(1).collect();
+                                            let commands: Vec<char> = inner.chars().collect();
+                                            LoopTarget::ChainGang {
+                                                raw: original_ident.to_string(),
+                                                commands,
+                                            }
+                                        } else {
+                                            let ch = base_ident.chars().next().unwrap_or(' ');
+                                            LoopTarget::Single(ch)
+                                        };
+                                    }
 
                                     // Convert parameters into typed tokens, preserving ':' position
                                     let mut params: Vec<LoopParamToken> = Vec::new();
@@ -1131,10 +1145,14 @@ impl CommandParser for IgsParser {
                                             params.push(LoopParamToken::GroupSeparator);
                                         } else if token == "x" || token == "y" {
                                             params.push(LoopParamToken::Symbol(token.chars().next().unwrap()));
-                                        } else if let Ok(n) = token.parse::<i32>() {
-                                            params.push(LoopParamToken::Number(n));
                                         } else {
-                                            params.push(LoopParamToken::Expr(token.clone()));
+                                            // Check if token starts with a prefix operator (+, -, !)
+                                            let has_prefix = token.starts_with('+') || token.starts_with('-') || token.starts_with('!');
+                                            if !has_prefix && token.parse::<i32>().is_ok() {
+                                                params.push(LoopParamToken::Number(token.parse::<i32>().unwrap()));
+                                            } else {
+                                                params.push(LoopParamToken::Expr(token.clone()));
+                                            }
                                         }
                                     }
 
@@ -1177,7 +1195,8 @@ impl CommandParser for IgsParser {
                                 let param_count = parse_i32(&self.loop_tokens[5]) as usize;
 
                                 let mut modifiers = LoopModifiers::default();
-                                let mut base_ident = raw_identifier.as_str();
+                                let original_ident = raw_identifier.as_str();
+                                let mut base_ident = original_ident;
                                 if let Some(pos) = base_ident.find(|c| c == '|' || c == '@') {
                                     let (ident_part, mod_part) = base_ident.split_at(pos);
                                     base_ident = ident_part;
@@ -1190,11 +1209,11 @@ impl CommandParser for IgsParser {
                                     }
                                 }
 
-                                let target = if base_ident.starts_with('>') && base_ident.ends_with('@') {
-                                    let inner: String = base_ident.chars().skip(1).take(base_ident.len().saturating_sub(2)).collect();
+                                let target = if base_ident.starts_with('>') && original_ident.ends_with('@') {
+                                    let inner: String = base_ident.chars().skip(1).collect();
                                     let commands: Vec<char> = inner.chars().collect();
                                     LoopTarget::ChainGang {
-                                        raw: base_ident.to_string(),
+                                        raw: original_ident.to_string(),
                                         commands,
                                     }
                                 } else {
@@ -1208,10 +1227,14 @@ impl CommandParser for IgsParser {
                                         params.push(LoopParamToken::GroupSeparator);
                                     } else if token == "x" || token == "y" {
                                         params.push(LoopParamToken::Symbol(token.chars().next().unwrap()));
-                                    } else if let Ok(n) = token.parse::<i32>() {
-                                        params.push(LoopParamToken::Number(n));
                                     } else {
-                                        params.push(LoopParamToken::Expr(token.clone()));
+                                        // Check if token starts with a prefix operator (+, -, !)
+                                        let has_prefix = token.starts_with('+') || token.starts_with('-') || token.starts_with('!');
+                                        if !has_prefix && token.parse::<i32>().is_ok() {
+                                            params.push(LoopParamToken::Number(token.parse::<i32>().unwrap()));
+                                        } else {
+                                            params.push(LoopParamToken::Expr(token.clone()));
+                                        }
                                     }
                                 }
 
@@ -1313,35 +1336,36 @@ impl CommandParser for IgsParser {
                 State::Escape => {
                     match ch {
                         'A' => {
-                            sink.emit_igs(IgsCommand::CursorUp);
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
                             self.state = State::Default;
                         }
                         'B' => {
-                            sink.emit_igs(IgsCommand::CursorDown);
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
                             self.state = State::Default;
                         }
                         'C' => {
-                            sink.emit_igs(IgsCommand::CursorRight);
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
                             self.state = State::Default;
                         }
                         'D' => {
-                            sink.emit_igs(IgsCommand::CursorLeft);
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
                             self.state = State::Default;
                         }
                         'E' => {
-                            sink.emit_igs(IgsCommand::ClearScreen);
+                            sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All));
+                            sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
                             self.state = State::Default;
                         }
                         'H' => {
-                            sink.emit_igs(IgsCommand::CursorHome);
+                            sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
                             self.state = State::Default;
                         }
                         'J' => {
-                            sink.emit_igs(IgsCommand::ClearToEOS);
+                            sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::CursorToEnd));
                             self.state = State::Default;
                         }
                         'K' => {
-                            sink.emit_igs(IgsCommand::ClearToEOL);
+                            sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::CursorToEnd));
                             self.state = State::Default;
                         }
                         'Y' => {
@@ -1354,19 +1378,19 @@ impl CommandParser for IgsParser {
                             self.state = State::ReadBgColor;
                         }
                         'e' => {
-                            sink.emit_igs(IgsCommand::ShowCursor);
+                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::CursorVisible));
                             self.state = State::Default;
                         }
                         'f' => {
-                            sink.emit_igs(IgsCommand::HideCursor);
+                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::CursorVisible));
                             self.state = State::Default;
                         }
                         'j' => {
-                            sink.emit_igs(IgsCommand::SaveCursorPos);
+                            sink.emit(TerminalCommand::CsiSaveCursorPosition);
                             self.state = State::Default;
                         }
                         'k' => {
-                            sink.emit_igs(IgsCommand::RestoreCursorPos);
+                            sink.emit(TerminalCommand::CsiRestoreCursorPosition);
                             self.state = State::Default;
                         }
                         'd' => {
@@ -1379,7 +1403,7 @@ impl CommandParser for IgsParser {
                         }
                         'l' => {
                             // Clear line ESC form: mode implicitly 0
-                            sink.emit_igs(IgsCommand::ClearLine { mode: 0 });
+                            sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::All));
                             self.state = State::Default;
                         }
                         'r' => {
@@ -1421,17 +1445,17 @@ impl CommandParser for IgsParser {
                 }
                 State::ReadCursorY(row) => {
                     let col = (byte.wrapping_sub(32)) as i32;
-                    sink.emit_igs(IgsCommand::SetCursorPos { x: col, y: row });
+                    sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
                     self.state = State::Default;
                 }
                 State::ReadDeleteLineCount => {
                     let count = byte;
-                    sink.emit_igs(IgsCommand::DeleteLine { count });
+                    sink.emit(TerminalCommand::CsiDeleteLine(count as u16));
                     self.state = State::Default;
                 }
                 State::ReadInsertLineCount => {
                     let count = byte;
-                    sink.emit_igs(IgsCommand::InsertLine { mode: 0, count });
+                    sink.emit(TerminalCommand::CsiInsertLine(count as u16));
                     self.state = State::Default;
                 }
             }

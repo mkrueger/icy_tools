@@ -451,70 +451,13 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             log::info!("IGS LineWrap {} not implemented", enabled);
         }
 
-        // VT52 compatibility commands - these use EditableScreen trait methods
-        IgsCommand::CursorUp => {
-            let pos = buf.caret().position();
-            buf.caret_mut().set_position(crate::Position::new(pos.x, pos.y.saturating_sub(1)));
-        }
-
-        IgsCommand::CursorDown => {
-            let pos = buf.caret().position();
-            buf.caret_mut().set_position(crate::Position::new(pos.x, pos.y + 1));
-        }
-
-        IgsCommand::CursorRight => {
-            let pos = buf.caret().position();
-            buf.caret_mut().set_position(crate::Position::new(pos.x + 1, pos.y));
-        }
-
-        IgsCommand::CursorLeft => {
-            let pos = buf.caret().position();
-            buf.caret_mut().set_position(crate::Position::new(pos.x.saturating_sub(1), pos.y));
-        }
-
-        IgsCommand::CursorHome => {
-            buf.caret_mut().set_position(crate::Position::new(0, 0));
-        }
-
-        IgsCommand::ClearScreen => {
-            buf.clear_screen();
-        }
-
-        IgsCommand::ClearToEOL => {
-            buf.clear_line_end();
-        }
-
-        IgsCommand::ClearToEOS => {
-            buf.clear_buffer_down();
-        }
-
-        IgsCommand::SetCursorPos { x, y } => {
-            buf.caret_mut().set_position(crate::Position::new(x, y));
-        }
-
+        // IGS-specific color commands (ESC b/c)
         IgsCommand::SetForeground { color } => {
             buf.caret_mut().set_foreground(color as u32);
         }
 
         IgsCommand::SetBackground { color } => {
             buf.caret_mut().set_background(color as u32);
-        }
-
-        IgsCommand::ShowCursor => {
-            buf.caret_mut().visible = true;
-        }
-
-        IgsCommand::HideCursor => {
-            buf.caret_mut().visible = false;
-        }
-
-        IgsCommand::SaveCursorPos => {
-            *buf.saved_caret_pos() = buf.caret().position();
-        }
-
-        IgsCommand::RestoreCursorPos => {
-            let pos = *buf.saved_caret_pos();
-            buf.caret_mut().set_position(pos);
         }
     }
 }

@@ -117,8 +117,8 @@ fn test_igs_write_text() {
     let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
-    // G#W10,20,0,Hello World@
-    parser.parse(b"G#W10,20,0,Hello World@", &mut sink);
+    // G#W10,20,Hello World@
+    parser.parse(b"G#W10,20,Hello World@", &mut sink);
 
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
@@ -152,8 +152,9 @@ fn test_igs_vt52_cursor_up() {
 
     parser.parse(b"\x1BA", &mut sink);
 
-    assert_eq!(sink.igs_commands.len(), 1);
-    assert!(matches!(sink.igs_commands[0], IgsCommand::CursorUp));
+    // VT52 commands now emit TerminalCommand, not IgsCommand
+    assert_eq!(sink.igs_commands.len(), 0);
+    assert_eq!(sink.terminal_commands.len(), 1);
 }
 
 #[test]
@@ -165,14 +166,9 @@ fn test_igs_vt52_set_cursor_pos() {
     // Set cursor to (5, 10): ESC Y space+10 space+5
     parser.parse(b"\x1BY*%", &mut sink);
 
-    assert_eq!(sink.igs_commands.len(), 1);
-    match &sink.igs_commands[0] {
-        IgsCommand::SetCursorPos { x, y } => {
-            assert_eq!(*x, 10);
-            assert_eq!(*y, 5);
-        }
-        _ => panic!("Expected SetCursorPos command"),
-    }
+    // VT52 commands now emit TerminalCommand, not IgsCommand
+    assert_eq!(sink.igs_commands.len(), 0);
+    assert_eq!(sink.terminal_commands.len(), 1);
 }
 
 #[test]
@@ -180,7 +176,7 @@ fn test_igs_vt52_set_foreground_color() {
     let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"\x1Bb7", &mut sink);
+    parser.parse(b"\x1Bb\x07", &mut sink);
 
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {

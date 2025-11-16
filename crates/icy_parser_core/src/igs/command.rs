@@ -1040,66 +1040,7 @@ pub enum IgsCommand {
         params: Vec<i32>,
     },
 
-    // VT52 commands (for compatibility)
-    /// VT52 cursor up (ESC A)
-    ///
-    /// Moves the text cursor up one line. Stops at top of screen.
-    CursorUp,
-
-    /// VT52 cursor down (ESC B)
-    ///
-    /// Moves the text cursor down one line. Stops at bottom of screen.
-    CursorDown,
-
-    /// VT52 cursor right (ESC C)
-    ///
-    /// Moves the text cursor right one column. May wrap to next line
-    /// depending on line wrap setting.
-    CursorRight,
-
-    /// VT52 cursor left (ESC D)
-    ///
-    /// Moves the text cursor left one column. May wrap to previous line
-    /// depending on line wrap setting.
-    CursorLeft,
-
-    /// VT52 cursor home (ESC H)
-    ///
-    /// Moves cursor to top-left corner (0,0).
-    CursorHome,
-
-    /// Clear screen (VT52 compatible)
-    ///
-    /// Clears the entire screen and homes the cursor.
-    /// Equivalent to `G#s>0:`
-    ClearScreen,
-
-    /// VT52 clear to end of line (ESC K)
-    ///
-    /// Clears from cursor position to end of current line.
-    ClearToEOL,
-
-    /// Clear to end of screen
-    ///
-    /// Clears from cursor position to bottom of screen.
-    /// Equivalent to `G#s>2:`
-    ClearToEOS,
-
-    /// VT52 set cursor position (ESC Y row col)
-    ///
-    /// IGS: `\x1bY[row+32][col+32]`
-    ///
-    /// Positions cursor at specified row and column.
-    /// VT52 adds 32 to row/col values for transmission.
-    ///
-    /// # Parameters
-    /// * `x` - Column (0-79)
-    /// * `y` - Row (0-24)
-    SetCursorPos {
-        x: i32,
-        y: i32,
-    },
-
+    // IGS-specific color commands (ESC b/c are IGS extensions, not standard VT52)
     /// Set text foreground color (ESC b)
     ///
     /// IGS: `\x1bb[color]` or `G#c>1,color:`
@@ -1124,29 +1065,7 @@ pub enum IgsCommand {
         color: u8,
     },
 
-    /// Show cursor
-    ///
-    /// Makes the text cursor visible.
-    /// Equivalent to `G#k>1:`
-    ShowCursor,
-
-    /// Hide cursor
-    ///
-    /// Makes the text cursor invisible.
-    /// Equivalent to `G#k>0:`
-    HideCursor,
-
-    /// VT52 save cursor position (ESC j)
-    ///
-    /// Saves the current cursor position for later restoration.
-    SaveCursorPos,
-
-    /// VT52 restore cursor position (ESC k)
-    ///
-    /// Restores the cursor to the previously saved position.
-    RestoreCursorPos,
-
-    // VT52 additional commands
+    // VT52 additional IGS commands (not removed because they have IGS G# equivalents)
     /// Delete lines (ESC d)
     ///
     /// IGS: `G#d>count:` or `\x1bd[count]`
@@ -1177,7 +1096,7 @@ pub enum IgsCommand {
 
     /// Clear line (ESC l)
     ///
-    /// IGS: `G#l>mode:` or `\x1bl`
+    /// IGS: `G#l>mode:`
     ///
     /// Clears the current line. Mode parameter only in IG form; ESC form implies 0.
     ///
@@ -1552,21 +1471,8 @@ impl fmt::Display for IgsCommand {
                 }
                 write!(f, ":")
             }
-            IgsCommand::CursorUp => write!(f, "\x1bA"),
-            IgsCommand::CursorDown => write!(f, "\x1bB"),
-            IgsCommand::CursorRight => write!(f, "\x1bC"),
-            IgsCommand::CursorLeft => write!(f, "\x1bD"),
-            IgsCommand::CursorHome => write!(f, "\x1bH"),
-            IgsCommand::ClearScreen => write!(f, "G#s>0:"),
-            IgsCommand::ClearToEOL => write!(f, "\x1bK"),
-            IgsCommand::ClearToEOS => write!(f, "G#s>2:"),
-            IgsCommand::SetCursorPos { x, y } => write!(f, "\x1bY{}{}", (y + 32) as u8 as char, (x + 32) as u8 as char),
             IgsCommand::SetForeground { color } => write!(f, "\x1bb{}", *color as u8 as char),
             IgsCommand::SetBackground { color } => write!(f, "\x1bc{}", *color as u8 as char),
-            IgsCommand::ShowCursor => write!(f, "G#k>1:"),
-            IgsCommand::HideCursor => write!(f, "G#k>0:"),
-            IgsCommand::SaveCursorPos => write!(f, "\x1bj"),
-            IgsCommand::RestoreCursorPos => write!(f, "\x1bk"),
             IgsCommand::DeleteLine { count } => write!(f, "\x1bd{}", *count as u8 as char),
             IgsCommand::InsertLine { mode: _, count } => {
                 // Emit VT52 ESC form to match input format

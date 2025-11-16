@@ -72,10 +72,24 @@ fn test_first_char_color() {
     test_ansi(data);
 }
 
+fn test_ansi_ice(data: &[u8]) {
+    let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
+    buf.ice_mode = icy_engine::IceMode::Ice;
+    let converted: Vec<u8> = FORMATS[0].to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+    // more gentle output.
+    let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
+    let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
+
+    let b: Vec<u8> = data.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
+    let expected = String::from_utf8_lossy(b.as_slice());
+
+    assert_eq!(expected, converted);
+}
+
 #[test]
 fn test_ice() {
     let data = b"\x1B[?33h\x1B[5m   test\x1B[?33l";
-    test_ansi(data);
+    test_ansi_ice(data);
 }
 
 #[test]
