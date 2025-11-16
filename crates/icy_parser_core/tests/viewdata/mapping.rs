@@ -1,4 +1,6 @@
-use icy_parser_core::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, ViewDataCommand, ViewdataParser};
+use icy_parser_core::{
+    Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, ViewDataCommand, ViewdataParser,
+};
 
 #[derive(Debug, PartialEq)]
 enum MappingCommand {

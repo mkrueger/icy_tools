@@ -61,6 +61,9 @@ impl CommandSink for TestSink {
             TerminalCommand::CsiSelectGraphicRendition(attr) => {
                 self.commands.push(format!("SGR: {:?}", attr));
             }
+            TerminalCommand::SetFontPage(page) => {
+                self.commands.push(format!("SetFontPage: {}", page));
+            }
             TerminalCommand::CsiClearAllTabs => {
                 self.commands.push("ClearAllTabs".to_string());
             }
@@ -137,29 +140,15 @@ fn test_petscii_clear_screen() {
 }
 
 #[test]
-fn test_petscii_reverse_mode() {
-    let mut parser = PetsciiParser::new();
-    let mut sink = TestSink::new();
-
-    // Reverse on (0x12), text, reverse off (0x92)
-    parser.parse(b"\x12RVS\x92OFF", &mut sink);
-
-    // Should have: Reverse ON command, "RVS" text, Reverse OFF command, "OFF" text
-    assert!(sink.commands.iter().any(|c| c.contains("Inverse(true)")));
-    assert!(sink.commands.iter().any(|c| c.contains("Inverse(false)")));
-}
-
-#[test]
 fn test_petscii_line_feed() {
     let mut parser = PetsciiParser::new();
     let mut sink = TestSink::new();
 
-    // Line feed (0x0D) - should reset reverse mode
+    // Line feed (0x0D) - resets reverse mode internally but doesn't emit command
     parser.parse(b"\x0D", &mut sink);
 
-    assert_eq!(sink.commands.len(), 2);
+    assert_eq!(sink.commands.len(), 1);
     assert_eq!(sink.commands[0], "LineFeed");
-    assert!(sink.commands[1].contains("Inverse(false)"));
 }
 
 #[test]
@@ -309,16 +298,17 @@ fn test_petscii_shift_emits_font_selection() {
     let mut parser = PetsciiParser::new();
     let mut sink = TestSink::new();
 
+    // Shift codes emit SetFontPage commands
     parser.parse(b"\x0E", &mut sink);
-    assert!(sink.commands.iter().any(|c| c == "SGR: Font(0)"), "expected ESC \\x0E to emit SGR Font(0)");
+    assert!(sink.commands.iter().any(|c| c == "SetFontPage: 0"), "expected 0x0E to emit SetFontPage(0)");
 
     sink.commands.clear();
     parser.parse(b"\x0F", &mut sink);
-    assert!(sink.commands.iter().any(|c| c == "SGR: Font(1)"), "expected ESC \\x0F to emit SGR Font(1)");
+    assert!(sink.commands.iter().any(|c| c == "SetFontPage: 1"), "expected 0x0F to emit SetFontPage(1)");
 
     sink.commands.clear();
     parser.parse(b"\x8E", &mut sink);
-    assert!(sink.commands.iter().any(|c| c == "SGR: Font(1)"), "expected ESC \\x8E to emit SGR Font(1)");
+    assert!(sink.commands.iter().any(|c| c == "SetFontPage: 1"), "expected 0x8E to emit SetFontPage(1)");
 }
 
 #[test]

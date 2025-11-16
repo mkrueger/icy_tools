@@ -134,11 +134,9 @@ fn test_petscii_all_byte_mappings() {
     assert_eq!(cmd, Some(MappingCommand::CarriageReturn), "0x0A: Expected CarriageReturn");
 
     // 0x0B, 0x0C: No special commands
-    // 0x0D: Line feed + reset reverse mode
+    // 0x0D: Line feed (resets reverse mode internally)
     let cmd = get_cmd();
     assert_eq!(cmd, Some(MappingCommand::LineFeed), "0x0D: Expected LineFeed");
-    let cmd = get_cmd();
-    assert_eq!(cmd, Some(MappingCommand::ReverseMode(false)), "0x0D: Expected ReverseMode(false)");
 
     // 0x0E: Shift mode UNshifted - no output command
     // 0x0F: Shift mode SHIFTED - no output command
@@ -147,10 +145,7 @@ fn test_petscii_all_byte_mappings() {
     let cmd = get_cmd();
     assert_eq!(cmd, Some(MappingCommand::CursorDown), "0x11: Expected CursorDown");
 
-    // 0x12: Reverse mode ON
-    let cmd = get_cmd();
-    assert_eq!(cmd, Some(MappingCommand::ReverseMode(true)), "0x12: Expected ReverseMode(true)");
-
+    // 0x12: Reverse mode ON (no command emitted, only internal state change)
     // 0x13: Home cursor
     let cmd = get_cmd();
     assert_eq!(cmd, Some(MappingCommand::Home), "0x13: Expected Home");

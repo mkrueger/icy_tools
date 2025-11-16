@@ -139,7 +139,7 @@ pub struct IgsParser {
     loop_state: LoopParseState,
     loop_tokens: Vec<String>,
     loop_token_buffer: String,
-    reading_chain_gang: bool,  // True when reading >XXX@ chain-gang identifier
+    reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1086,7 +1086,7 @@ impl CommandParser for IgsParser {
 
                                     // Check if this is a chain-gang command (>...@)
                                     let is_chain_gang = base_ident.starts_with('>') && base_ident.contains('@');
-                                    
+
                                     if is_chain_gang {
                                         // For chain-gangs, find the closing @ of the chain
                                         if let Some(chain_end_pos) = base_ident.find('@') {
