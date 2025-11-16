@@ -38,4 +38,12 @@ impl TerminalResolution {
             TerminalResolution::High => Size { width: 640, height: 400 },
         }
     }
+
+    pub fn get_text_resolution(&self) -> Size {
+        match self {
+            TerminalResolution::Low => Size { width: 40, height: 25 },
+            TerminalResolution::Medium => Size { width: 80, height: 25 },
+            TerminalResolution::High => Size { width: 80, height: 50 },
+        }
+    }
 }

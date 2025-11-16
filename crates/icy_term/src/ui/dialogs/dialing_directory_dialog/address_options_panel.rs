@@ -382,6 +382,8 @@ impl super::DialingDirectoryState {
                         .spacing(12)
                         .align_y(Alignment::Center),
                 );
+            } else if addr.terminal_type == TerminalEmulation::AtariST {
+                // TODO: Add Resolution pick list & enable IGS check box
             }
 
             // Music option row (only for ANSI/UTF8ANSI)

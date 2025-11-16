@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 use icy_engine::{
     ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437,
-    EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE, Palette, SKYPIX_PALETTE, Size, VIEWDATA, VIEWDATA_PALETTE,
+    EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE, igs,
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -24,7 +24,7 @@ pub enum ScreenMode {
     Mode7,
     Rip,
     SkyPix,
-    AtariST(i32),
+    AtariST(TerminalResolution, bool),
 }
 
 impl Default for ScreenMode {
@@ -67,7 +67,14 @@ impl Serialize for ScreenMode {
             ScreenMode::Mode7 => "Mode7".to_string(),
             ScreenMode::Rip => "Rip".to_string(),
             ScreenMode::SkyPix => "SkyPix".to_string(),
-            ScreenMode::AtariST(n) => format!("AtariST({})", n),
+            ScreenMode::AtariST(n, igs) => {
+                let term_res = match n {
+                    TerminalResolution::High => "High",
+                    TerminalResolution::Medium => "Medium",
+                    TerminalResolution::Low => "Low",
+                };
+                format!("AtariST({}, {})", term_res, *igs)
+            }
         };
         serializer.serialize_str(&s)
     }
@@ -116,11 +123,16 @@ impl<'de> Deserialize<'de> for ScreenMode {
                             Ok(ScreenMode::Unicode(w, h))
                         }
                         "AtariST" => {
-                            if params.len() != 1 {
-                                return Err(E::custom("AtariST expects one integer parameter"));
+                            if params.len() != 2 {
+                                return Err(E::custom("Vga expects two integer parameters"));
                             }
-                            let n = params[0].parse::<i32>().map_err(E::custom)?;
-                            Ok(ScreenMode::AtariST(n))
+                            let term_res = match params[0] {
+                                "high" => TerminalResolution::High,
+                                "medium" => TerminalResolution::Medium,
+                                _ => TerminalResolution::Low,
+                            };
+                            let has_igs = params[1] == "true";
+                            Ok(ScreenMode::AtariST(term_res, has_igs))
                         }
                         _ => Err(E::unknown_variant(name, &["Vga", "Unicode", "AtariST"])),
                     }
@@ -154,8 +166,9 @@ lazy_static::lazy_static! {
     ];
 
     pub static ref ATARI_MODES: Vec<ScreenMode> = vec![
-        ScreenMode::AtariST(80),
-        ScreenMode::AtariST(40),
+        ScreenMode::AtariST(TerminalResolution::Low, false),
+        ScreenMode::AtariST(TerminalResolution::Medium, false),
+        ScreenMode::AtariST(TerminalResolution::High, false),
     ];
 }
 impl Display for ScreenMode {
@@ -182,11 +195,12 @@ impl Display for ScreenMode {
             ScreenMode::Default => write!(f, "Default"),
             ScreenMode::Rip => write!(f, "RIPscrip"),
             ScreenMode::SkyPix => write!(f, "SkyPix"),
-            ScreenMode::AtariST(x) => {
-                if *x == 80 {
-                    write!(f, "Atari ST 80 cols")
-                } else {
-                    write!(f, "Atari ST 40 cols")
+            ScreenMode::AtariST(resolution, igs) => {
+                let igs = if igs { "enabled " } else { "disabled" };
+                match resolution {
+                    TerminalResolution::Low => write!(f, "Atari ST low, igs {}", igs),
+                    TerminalResolution::Medium => write!(f, "Atari ST medium, igs {}", igs),
+                    TerminalResolution::High => write!(f, "Atari ST high, igs {}", igs),
                 }
             }
             ScreenMode::Mode7 => write!(f, "Mode7"),
@@ -204,7 +218,7 @@ impl ScreenMode {
             // ScreenMode::Cga(w, h) | ScreenMode::Ega(w, h) |
             ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => Size::new(*w, *h),
             ScreenMode::Vic | ScreenMode::Mode7 => Size::new(40, 25),
-            ScreenMode::AtariST(cols) => Size::new(*cols, 25),
+            ScreenMode::AtariST(res, _igs) => res.get_text_resolution(),
             ScreenMode::Atascii(i) => {
                 if *i == 80 {
                     ATASCII_XEP80_SCREEN_SIZE
@@ -269,7 +283,7 @@ impl ScreenMode {
             ScreenMode::SkyPix => {
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
             }
-            ScreenMode::AtariST(_x) => {
+            ScreenMode::AtariST(_x, igs) => {
                 *screen.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
                 *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
             }

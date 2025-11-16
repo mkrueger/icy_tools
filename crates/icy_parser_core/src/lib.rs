@@ -42,7 +42,7 @@ mod skypix;
 pub use skypix::{SkypixCommand, SkypixParser};
 
 mod igs;
-pub use igs::{IgsCommand, IgsParser};
+pub use igs::*;
 
 mod vt52;
 pub use vt52::Vt52Parser;

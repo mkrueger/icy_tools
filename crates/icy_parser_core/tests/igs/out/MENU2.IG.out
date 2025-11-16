@@ -1,0 +1,96 @@
+G#I>0:
+G#k>0:
+G#s>0:
+G#b>8:
+G#C>2,0:
+G#B>0,190,639,199,0:
+G#T>1,3,4:
+G#C>0,1:
+G#C>1,2:
+G#S>0,7,7,7:
+G#S>1,7,7,7:
+G#C>2,3:
+G#A>2,8,1:
+G#S>2,7,7,7:
+G#S>3,7,7,7:
+G#B>0,0,639,165,1:
+G#H>1:
+G#C>2,2:
+G#B>5,2,634,163,1:
+G#P>242,14:
+G#P>404,14:
+G#T>1,2,3:
+G#P>242,14:
+G#P>404,14:
+G#T>1,3,4:
+G#C>0,2:
+G#P>240,12:
+G#P>402,12:
+G#b>8:
+G#T>1,2,3:
+G#P>240,12:
+G#P>402,12:
+G#M>2:
+G#E>1,10,0:
+G#C>3,1:
+G#W>269,19,> KenCom BBS <@
+G#E>1,10,0:
+G#C>3,2:
+G#W>266,17,> KenCom BBS <@
+G#E>5,8,0:
+G#C>3,1:
+G#W>280,27,Houston, Texas@
+G#C>3,2:
+G#W>278,26,Houston, Texas@
+G#T>2,1,8:
+G#T>2,1,60:
+G#C>1,1:
+G#L>212,8,38,8:
+G#L>432,8,606,8:
+G#L>212,14,106,14:
+G#L>432,14,538,14:
+G#b>8:
+G#L>212,20,156,20:
+G#L>432,20,488,20:
+G#C>1,2:
+G#L>210,6,36,6:
+G#L>430,6,604,6:
+G#L>210,12,104,12:
+G#L>430,12,536,12:
+G#L>210,18,154,18:
+G#L>430,18,486,18:
+G#E>0,9,0:
+G#b>17:
+G#S>3,0,0,5:
+G#S>1,0,0,0:
+G#S>2,7,7,0:
+G#C>3,2:
+G#W>45,47,B > Browse Files/Downloads         Q > Quickscan Message Bases@
+G#W>45,57,C > Chat w/SysOp - Call Chronos    S > Ship Bulletin/News@
+G#W>45,67,D > File Inquiry/Download Info     T > Time Status@
+G#W>45,77,E > E-Mail/F-Mail Send/Rec'v       U > You Want- File Requests@
+G#W>45,87,F > Feedback to SysOp/Chronos      V > BBS Etiquette@
+G#W>45,97,G > Goodbye - Standard Logoff      W > The Wall!@
+G#W>45,107,H > Atascii Holodeck/Movies        X > Non-Verify/Quick Logoff@
+G#W>45,117,I > Ship Information               Y > Your Status@
+G#W>45,127,L > Look At Today@
+G#W>45,137,N > Ten Forward/Game Room@
+G#W>45,147,O > Other Ships/BBS Listing@
+G#W>45,157,! > IGS Holodeck/Demos@
+G#C>2,1:
+G#H>0:
+G#B>320,125,610,159,1:
+G#C>2,2:
+G#B>315,122,603,156,1:
+G#C>2,3:
+G#B>319,124,599,154,1:
+G#E>0,8,0:
+G#M>2:
+G#W>337,130,"?" At Main Prompt - Menu : Other - Help@
+G#W>337,137,"=" Select Message Base - No listing.@
+G#W>337,144,"*" Listing of Available Message Bases@
+G#W>337,151,"#" Tag/Untag Bases Marked for Quickscan@
+G#k>1:
+G#k>2:
+G#p>1,21:
+G#t>4:
