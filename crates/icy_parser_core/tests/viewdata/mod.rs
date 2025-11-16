@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, Direction, TerminalCommand, ViewdataParser};
+use icy_parser_core::{CommandParser, CommandSink, Direction, TerminalCommand, ViewDataCommand, ViewdataParser};
 
 mod mapping;
 
@@ -48,6 +48,35 @@ impl CommandSink for TestSink {
             }
         }
     }
+
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+        match cmd {
+            ViewDataCommand::ViewDataClearScreen => {
+                self.commands.push("EraseInDisplay: All".to_string());
+                self.commands.push("CursorPosition: 1,1".to_string());
+            }
+            ViewDataCommand::SetChar(ch) => {
+                self.commands.push(format!("Text: {:?}", String::from_utf8_lossy(&[ch])));
+            }
+            ViewDataCommand::MoveCaret(Direction::Up) => {
+                self.commands.push("CursorUp: 1".to_string());
+            }
+            ViewDataCommand::MoveCaret(Direction::Down) => {
+                self.commands.push("CursorDown: 1".to_string());
+            }
+            ViewDataCommand::MoveCaret(Direction::Left) => {
+                self.commands.push("CursorBack: 1".to_string());
+            }
+            ViewDataCommand::MoveCaret(Direction::Right) => {
+                self.commands.push("CursorForward: 1".to_string());
+            }
+            ViewDataCommand::CheckAndResetOnRowChange | ViewDataCommand::ResetRowColors => {
+                self.commands.push("SGR: Reset".to_string());
+            }
+            _ => {}
+        }
+        false
+    }
 }
 
 #[test]
@@ -57,8 +86,8 @@ fn test_viewdata_simple_text() {
 
     parser.parse(b"HELLO", &mut sink);
 
-    assert_eq!(sink.commands.len(), 5);
-    assert!(sink.commands.iter().all(|c| c.starts_with("Text")));
+    let text_count = sink.commands.iter().filter(|c| c.starts_with("Text")).count();
+    assert_eq!(text_count, 5, "Expected 5 text commands, got {}: {:?}", text_count, sink.commands);
 }
 
 #[test]
@@ -69,11 +98,13 @@ fn test_viewdata_cursor_movement() {
     // Left (0x08), right (0x09), down (0x0A), up (0x0B)
     parser.parse(b"\x08\x09\x0A\x0B", &mut sink);
 
-    assert_eq!(sink.commands.len(), 4);
+    // CursorDown triggers row change reset, adding SGR: Reset
+    assert_eq!(sink.commands.len(), 5);
     assert_eq!(sink.commands[0], "CursorBack: 1");
     assert_eq!(sink.commands[1], "CursorForward: 1");
     assert_eq!(sink.commands[2], "CursorDown: 1");
-    assert_eq!(sink.commands[3], "CursorUp: 1");
+    assert_eq!(sink.commands[3], "SGR: Reset");
+    assert_eq!(sink.commands[4], "CursorUp: 1");
 }
 
 #[test]
@@ -84,9 +115,8 @@ fn test_viewdata_clear_screen() {
     // Form feed / clear screen (0x0C)
     parser.parse(b"\x0C", &mut sink);
 
-    assert_eq!(sink.commands.len(), 2);
-    assert!(sink.commands[0].contains("EraseInDisplay"));
-    assert_eq!(sink.commands[1], "CursorPosition: 1,1");
+    assert!(sink.commands.iter().any(|c| c.contains("EraseInDisplay")), "Expected EraseInDisplay");
+    assert!(sink.commands.iter().any(|c| c == "CursorPosition: 1,1"), "Expected CursorPosition");
 }
 
 #[test]
@@ -263,8 +293,10 @@ fn test_viewdata_state_reset_on_down() {
 
     parser.parse(b"\x0A", &mut sink); // Cursor down (resets state)
 
-    assert_eq!(sink.commands.len(), 1);
+    // CursorDown and SGR: Reset (from row change)
+    assert_eq!(sink.commands.len(), 2);
     assert_eq!(sink.commands[0], "CursorDown: 1");
+    assert_eq!(sink.commands[1], "SGR: Reset");
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use icy_parser_core::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, ViewdataParser};
+use icy_parser_core::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, ViewDataCommand, ViewdataParser};
 
 #[derive(Debug, PartialEq)]
 enum MappingCommand {
@@ -80,6 +80,32 @@ impl CommandSink for MappingTestSink {
             _ => {}
         }
     }
+
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+        match cmd {
+            ViewDataCommand::ViewDataClearScreen => {
+                self.commands.push(MappingCommand::ClearScreen);
+                self.commands.push(MappingCommand::Home);
+            }
+            ViewDataCommand::SetChar(ch) => {
+                self.commands.push(MappingCommand::Text(vec![ch]));
+            }
+            ViewDataCommand::MoveCaret(Direction::Up) => {
+                self.commands.push(MappingCommand::CursorUp);
+            }
+            ViewDataCommand::MoveCaret(Direction::Down) => {
+                self.commands.push(MappingCommand::CursorDown);
+            }
+            ViewDataCommand::MoveCaret(Direction::Left) => {
+                self.commands.push(MappingCommand::CursorLeft);
+            }
+            ViewDataCommand::MoveCaret(Direction::Right) => {
+                self.commands.push(MappingCommand::CursorRight);
+            }
+            _ => {}
+        }
+        false
+    }
 }
 
 #[test]
@@ -154,9 +180,11 @@ fn test_viewdata_esc_alpha_colors() {
 
         parser.parse(&[0x1B, *letter], &mut sink);
 
-        // Should get SetForeground, Concealed(false), and Text (for the space)
-        assert_eq!(sink.get_cmd(0), Some(MappingCommand::SetForeground(Color::Base(*color_value))));
+        // Parser first emits space character, then Concealed and SetForeground
+        assert_eq!(sink.get_cmd(0), Some(MappingCommand::Text(vec![b' '])));
+        assert_eq!(sink.get_cmd(0), Some(MappingCommand::CursorRight));
         assert_eq!(sink.get_cmd(0), Some(MappingCommand::Concealed(false)));
+        assert_eq!(sink.get_cmd(0), Some(MappingCommand::SetForeground(Color::Base(*color_value))));
     }
 }
 
@@ -181,9 +209,11 @@ fn test_viewdata_esc_graphic_colors() {
 
         parser.parse(&[0x1B, *letter], &mut sink);
 
-        // Should get SetForeground, Concealed(false), and Text
-        assert_eq!(sink.get_cmd(0), Some(MappingCommand::SetForeground(Color::Base(*color_value))));
+        // Parser first emits space character, then Concealed and SetForeground
+        assert_eq!(sink.get_cmd(0), Some(MappingCommand::Text(vec![b' '])));
+        assert_eq!(sink.get_cmd(0), Some(MappingCommand::CursorRight));
         assert_eq!(sink.get_cmd(0), Some(MappingCommand::Concealed(false)));
+        assert_eq!(sink.get_cmd(0), Some(MappingCommand::SetForeground(Color::Base(*color_value))));
     }
 }
 
@@ -194,13 +224,19 @@ fn test_viewdata_esc_flash_steady() {
     // Test ESC + H (Flash on)
     let mut parser = ViewdataParser::default();
     parser.parse(&[0x1B, b'H'], &mut sink);
+    // Parser first emits space character, then Blink (ESC+H is processed after SetChar)
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::Text(vec![b' '])));
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::CursorRight));
     assert_eq!(sink.get_cmd(0), Some(MappingCommand::Blink(true)));
 
     // Test ESC + I (Steady - blink off)
     sink.commands.clear();
     parser = ViewdataParser::default();
     parser.parse(&[0x1B, b'I'], &mut sink);
+    // For ESC+I: Blink command comes first, then space character
     assert_eq!(sink.get_cmd(0), Some(MappingCommand::Blink(false)));
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::Text(vec![b' '])));
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::CursorRight));
 }
 
 #[test]
@@ -210,8 +246,11 @@ fn test_viewdata_esc_background() {
 
     // Test ESC + \ (Black background)
     parser.parse(&[0x1B, b'\\'], &mut sink);
-    assert_eq!(sink.get_cmd(0), Some(MappingCommand::SetBackground(Color::Base(0))));
+    // For ESC+\: Concealed and SetBackground come first, then space character
     assert_eq!(sink.get_cmd(0), Some(MappingCommand::Concealed(false)));
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::SetBackground(Color::Base(0))));
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::Text(vec![b' '])));
+    assert_eq!(sink.get_cmd(0), Some(MappingCommand::CursorRight));
 }
 
 #[test]
