@@ -99,7 +99,7 @@ pub struct DrawExecutor {
 
     cur_position: Position,
     polymarker_color: u8,
-    line_color: u8,
+    pub line_color: u8,
     pub fill_color: u8,
     pub text_color: u8,
 
@@ -126,7 +126,7 @@ pub struct DrawExecutor {
 
     // Screen memory for blit operations
     screen_memory: Vec<u8>,
-    screen_memory_size: Size,
+    pub screen_memory_size: Size,
 }
 
 unsafe impl Send for DrawExecutor {}
@@ -443,6 +443,20 @@ impl DrawExecutor {
         self.fill_poly(buf, &points);
     }
 
+    pub fn draw_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, radius: i32, beg_ang: i32, end_ang: i32) {
+        let yr = self.calc_circle_y_rad(radius);
+        let mut points = gdp_curve(xm, ym, radius, yr, beg_ang * 10, end_ang * 10);
+        points.extend_from_slice(&[xm, ym]);
+        self.draw_poly(buf, &points, self.line_color, true);
+    }
+
+    pub fn fill_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, radius: i32, beg_ang: i32, end_ang: i32) {
+        let yr = self.calc_circle_y_rad(radius);
+        let mut points = gdp_curve(xm, ym, radius, yr, beg_ang * 10, end_ang * 10);
+        points.extend_from_slice(&[xm, ym]);
+        self.fill_poly(buf, &points);
+    }
+
     pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
         let points: Vec<i32> = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.fill_poly(buf, &points);
@@ -463,7 +477,7 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_arc(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32, beg_ang: i32, end_ang: i32) {
+    pub fn draw_arc(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32, beg_ang: i32, end_ang: i32) {
         let points = gdp_curve(xm, ym, a, b, beg_ang * 10, end_ang * 10);
         self.draw_poly(buf, &points, self.line_color, false);
     }
@@ -487,7 +501,7 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_polyline(&mut self, buf: &mut dyn EditableScreen, color: u8, parameters: &[i32]) {
+    pub fn draw_polyline(&mut self, buf: &mut dyn EditableScreen, color: u8, parameters: &[i32]) {
         let mut x = parameters[0];
         let mut y = parameters[1];
         let mask = self.line_type.get_mask();
@@ -502,7 +516,7 @@ impl DrawExecutor {
         }
     }
 
-    fn fill_poly(&mut self, buf: &mut dyn EditableScreen, points: &[i32]) {
+    pub fn fill_poly(&mut self, buf: &mut dyn EditableScreen, points: &[i32]) {
         if self.hollow_set {
             self.draw_poly(buf, points, self.fill_color, true);
             return;
@@ -1036,9 +1050,14 @@ impl DrawExecutor {
                     return Err(anyhow::anyhow!("ColorSet unknown/unsupported argument: {color}"));
                 }
                 //println!("Set pen color {} to {:b}", color, parameters[1]);
+                // Convert 3-bit RGB (0-7) to 8-bit (0-255)
+                // Using value * 34 to match Atari ST convention: 0->0, 7->238
+                let r = (parameters[1] * 34) as u8;
+                let g = (parameters[2] * 34) as u8;
+                let b = (parameters[3] * 34) as u8;
                 buf.palette_mut().set_color(
                     color as u32,
-                    Color::new((parameters[1] * 0x22) as u8, (parameters[2] * 0x22) as u8, (parameters[3] * 0x22) as u8),
+                    Color::new(r, g, b),
                 );
                 //println!("Set pen color {} to {}", color, buf.palette()[color as usize]);
                 Ok(CallbackAction::Update)
@@ -1665,7 +1684,7 @@ impl DrawExecutor {
     pub fn draw_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
         self.fill_rect(buf, x1, y1, x2, y2);
         if self.draw_border {
-            let color = self.fill_color;
+            let color = self.line_color;
             self.draw_line(buf, x1, y1, x1, y2, color, 0);
             self.draw_line(buf, x2, y1, x2, y2, color, 0);
             self.draw_line(buf, x1, y1, x2, y1, color, 0);
@@ -1687,11 +1706,17 @@ impl DrawExecutor {
     }
 
     pub fn draw_circle_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, radius: i32) {
-        self.draw_circle(buf, x, y, radius);
+        self.fill_circle(buf, x, y, radius);
+        if self.draw_border {
+            self.draw_circle(buf, x, y, radius);
+        }
     }
 
     pub fn draw_ellipse_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, x_radius: i32, y_radius: i32) {
-        self.draw_ellipse(buf, x, y, x_radius, y_radius);
+        self.fill_ellipse(buf, x, y, x_radius, y_radius);
+        if self.draw_border {
+            self.draw_ellipse(buf, x, y, x_radius, y_radius);
+        }
     }
 
     pub fn draw_arc_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
@@ -1699,16 +1724,27 @@ impl DrawExecutor {
         self.draw_arc(buf, x, y, radius, y_radius, start_angle, end_angle);
     }
 
-    pub fn draw_polyline_pub(&mut self, buf: &mut dyn crate::EditableScreen, points: &[i32]) {
-        self.draw_polyline(buf, self.line_color, points);
+    pub fn draw_pieslice_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, radius: i32, start_angle: i32, end_angle: i32) {
+        self.fill_pieslice(buf, x, y, radius, start_angle, end_angle);
+        if self.draw_border {
+            self.draw_pieslice(buf, x, y, radius, start_angle, end_angle);
+        }
     }
 
-    pub fn fill_poly_pub(&mut self, buf: &mut dyn crate::EditableScreen, points: &[i32]) {
-        self.fill_poly(buf, points);
-    }
-
-    pub fn flood_fill_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32) {
-        self.flood_fill(buf, x, y);
+    pub fn draw_elliptical_pieslice_pub(
+        &mut self,
+        buf: &mut dyn crate::EditableScreen,
+        x: i32,
+        y: i32,
+        x_radius: i32,
+        y_radius: i32,
+        start_angle: i32,
+        end_angle: i32,
+    ) {
+        self.fill_elliptical_pieslice(buf, x, y, x_radius, y_radius, start_angle, end_angle);
+        if self.draw_border {
+            self.draw_elliptical_pieslice(buf, x, y, x_radius, y_radius, start_angle, end_angle);
+        }
     }
 
     pub fn set_color(&mut self, pen: u8, color: u8) {
@@ -1734,9 +1770,24 @@ impl DrawExecutor {
         self.fill_pattern = match self.fill_pattern_type {
             FillPatternType::Hollow => &HOLLOW_PATTERN,
             FillPatternType::Solid => &SOLID_PATTERN,
-            FillPatternType::Pattern => &TYPE_PATTERN[pattern_index.min(5) as usize],
-            FillPatternType::Hatch if pattern_index < 6 => &HATCH_PATTERN[pattern_index as usize],
-            FillPatternType::Hatch => &HATCH_WIDE_PATTERN[(pattern_index - 6) as usize],
+            FillPatternType::Pattern => {
+                if pattern_index == 0 {
+                    &RANDOM_PATTERN
+                } else if pattern_index >= 1 && pattern_index <= 24 {
+                    &TYPE_PATTERN[pattern_index as usize - 1]
+                } else {
+                    &SOLID_PATTERN
+                }
+            }
+            FillPatternType::Hatch => {
+                if pattern_index >= 1 && pattern_index <= 6 {
+                    &HATCH_PATTERN[pattern_index as usize - 1]
+                } else if pattern_index >= 7 && pattern_index <= 12 {
+                    &HATCH_WIDE_PATTERN[pattern_index as usize - 7]
+                } else {
+                    &SOLID_PATTERN
+                }
+            }
             FillPatternType::UserdDefined => &RANDOM_PATTERN,
         };
 
@@ -1746,6 +1797,14 @@ impl DrawExecutor {
 
     pub fn set_draw_border(&mut self, border: bool) {
         self.draw_border = border;
+    }
+
+    pub fn set_drawing_mode(&mut self, mode: DrawingMode) {
+        self.drawing_mode = mode;
+    }
+
+    pub fn get_screen_memory_size(&self) -> Size {
+        self.screen_memory_size
     }
 
     pub fn set_line_style_pub(&mut self, style: u8) {

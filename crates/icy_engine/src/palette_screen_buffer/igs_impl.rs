@@ -56,7 +56,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::PolyLine { points } => {
             if !points.is_empty() {
-                state.executor.draw_polyline_pub(buf, &points);
+                log::info!("PolyLine with {} points, line_color={}", points.len() / 2, state.executor.line_color);
+                state.executor.draw_polyline(buf, state.executor.line_color, &points);
                 if points.len() >= 2 {
                     let last_idx = points.len() - 2;
                     state.executor.set_cur_position(points[last_idx], points[last_idx + 1]);
@@ -66,12 +67,13 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::PolyFill { points } => {
             if !points.is_empty() {
-                state.executor.fill_poly_pub(buf, &points);
+                log::info!("PolyFill with {} points, fill_color={}", points.len() / 2, state.executor.fill_color);
+                state.executor.fill_poly(buf, &points);
             }
         }
 
         IgsCommand::FloodFill { x, y } => {
-            state.executor.flood_fill_pub(buf, x, y);
+            state.executor.flood_fill(buf, x, y);
         }
 
         IgsCommand::ColorSet { pen, color } => {
@@ -142,8 +144,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // Additional drawing commands
         IgsCommand::PolymarkerPlot { x, y } => {
+            state.executor.draw_poly_maker(buf, x, y);
             state.executor.set_cur_position(x, y);
-            // Actual plotting of polymarker not yet implemented
         }
 
         IgsCommand::PieSlice {
@@ -153,32 +155,31 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             start_angle,
             end_angle,
         } => {
-            state.executor.draw_arc_pub(buf, x, y, start_angle, end_angle, radius);
-            // TODO: Fill the pie slice
+            state.executor.draw_pieslice_pub(buf, x, y, radius, start_angle, end_angle);
         }
 
         IgsCommand::EllipticalArc {
-            x: _,
-            y: _,
-            x_radius: _,
-            y_radius: _,
-            start_angle: _,
-            end_angle: _,
+            x,
+            y,
+            x_radius,
+            y_radius,
+            start_angle,
+            end_angle,
         } => {
-            // TODO: Implement elliptical arc
-            log::info!("IGS EllipticalArc not fully implemented");
+            state.executor.draw_arc(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
 
         IgsCommand::EllipticalPieSlice {
-            x: _,
-            y: _,
-            x_radius: _,
-            y_radius: _,
-            start_angle: _,
-            end_angle: _,
+            x,
+            y,
+            x_radius,
+            y_radius,
+            start_angle,
+            end_angle,
         } => {
-            // TODO: Implement elliptical pie slice
-            log::info!("IGS EllipticalPieSlice not fully implemented");
+            state
+                .executor
+                .draw_elliptical_pieslice_pub(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
 
         IgsCommand::RoundedRectangles { x1, y1, x2, y2, fill: _ } => {
@@ -186,23 +187,32 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::FilledRectangle { x1, y1, x2, y2 } => {
-            state.executor.draw_rect(buf, x1, y1, x2, y2);
+            state.executor.fill_rect(buf, x1, y1, x2, y2);
         }
 
         // Style and appearance commands
-        IgsCommand::SetPenColor {
-            pen: _,
-            red: _,
-            green: _,
-            blue: _,
-        } => {
-            // TODO: Set pen RGB values
-            log::info!("IGS SetPenColor not implemented");
+        IgsCommand::SetPenColor { pen, red, green, blue } => {
+            // Convert 3-bit RGB (0-7) to 8-bit (0-255)
+            // Using value * 34 to match Atari ST convention: 0->0, 7->238
+            let r = (red * 34) as u8;
+            let g = (green * 34) as u8;
+            let b = (blue * 34) as u8;
+            buf.palette_mut().set_color(pen as u32, crate::Color::new(r, g, b));
         }
 
         IgsCommand::DrawingMode { mode } => {
-            // TODO: Implement drawing modes (Replace, Transparent, XOR, etc.)
-            log::info!("IGS DrawingMode {} not implemented", mode);
+            use super::igs::paint::DrawingMode;
+            let drawing_mode = match mode {
+                1 => DrawingMode::Replace,
+                2 => DrawingMode::Transparent,
+                3 => DrawingMode::Xor,
+                4 => DrawingMode::ReverseTransparent,
+                _ => {
+                    log::warn!("IGS DrawingMode unknown mode: {}, using Replace", mode);
+                    DrawingMode::Replace
+                }
+            };
+            state.executor.set_drawing_mode(drawing_mode);
         }
 
         IgsCommand::HollowSet { enabled } => {
@@ -211,8 +221,52 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         // Screen and system commands
-        IgsCommand::GrabScreen { blit_type, mode, params: _ } => {
-            log::info!("IGS GrabScreen (type {}, mode {}) not implemented", blit_type, mode);
+        IgsCommand::GrabScreen { blit_type, mode, params } => {
+            match blit_type {
+                0 => {
+                    // Screen to screen
+                    if params.len() >= 6 {
+                        let from_start = crate::Position::new(params[0], params[1]);
+                        let from_end = crate::Position::new(params[2], params[3]);
+                        let dest = crate::Position::new(params[4], params[5]);
+                        state.executor.blit_screen_to_screen(buf, mode as i32, from_start, from_end, dest);
+                    }
+                }
+                1 => {
+                    // Screen to memory
+                    if params.len() >= 4 {
+                        let from_start = crate::Position::new(params[0], params[1]);
+                        let from_end = crate::Position::new(params[2], params[3]);
+                        state.executor.blit_screen_to_memory(buf, mode as i32, from_start, from_end);
+                    }
+                }
+                2 => {
+                    // Memory to screen
+                    if params.len() >= 2 {
+                        let dest = crate::Position::new(params[0], params[1]);
+                        let size = state.executor.get_screen_memory_size();
+                        state.executor.blit_memory_to_screen(
+                            buf,
+                            mode as i32,
+                            crate::Position::new(0, 0),
+                            crate::Position::new(size.width - 1, size.height - 1),
+                            dest,
+                        );
+                    }
+                }
+                3 => {
+                    // Piece of memory to screen
+                    if params.len() >= 6 {
+                        let from_start = crate::Position::new(params[0], params[1]);
+                        let from_end = crate::Position::new(params[2], params[3]);
+                        let dest = crate::Position::new(params[4], params[5]);
+                        state.executor.blit_memory_to_screen(buf, mode as i32, from_start, from_end, dest);
+                    }
+                }
+                _ => {
+                    log::warn!("IGS GrabScreen unknown blit_type {}", blit_type);
+                }
+            }
         }
 
         IgsCommand::Initialize { mode } => {
@@ -241,11 +295,44 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             log::info!("IGS AskIG query {} not implemented", query);
         }
 
-        IgsCommand::ScreenClear { mode } => match mode {
-            0 | 3 | 4 | 5 => buf.clear_screen(),
-            2 => buf.clear_buffer_down(),
-            _ => {}
-        },
+        IgsCommand::ScreenClear { mode } => {
+            // Mode 5 is "Quick VT52 reset" which should reset colors to default
+            if mode == 5 {
+                // Set default Atari ST palette (16 colors, 3-bit RGB)
+                // Standard ST palette: White, Black, Red, Green, Blue, Cyan, Black, Yellow, ...
+                let default_colors: [(i32, i32, i32); 16] = [
+                    (7, 7, 7), // 0: White
+                    (0, 0, 0), // 1: Black
+                    (7, 0, 0), // 2: Red
+                    (0, 7, 0), // 3: Green
+                    (0, 0, 7), // 4: Blue
+                    (0, 7, 7), // 5: Cyan
+                    (7, 0, 7), // 6: Magenta
+                    (7, 7, 0), // 7: Yellow
+                    (5, 5, 5), // 8: Light Gray
+                    (3, 3, 3), // 9: Dark Gray
+                    (7, 3, 3), // 10: Light Red
+                    (3, 7, 3), // 11: Light Green
+                    (3, 3, 7), // 12: Light Blue
+                    (3, 7, 7), // 13: Light Cyan
+                    (7, 3, 7), // 14: Light Magenta
+                    (7, 7, 3), // 15: Light Yellow
+                ];
+
+                for (i, (r, g, b)) in default_colors.iter().enumerate() {
+                    let r8 = (r * 34) as u8;
+                    let g8 = (g * 34) as u8;
+                    let b8 = (b * 34) as u8;
+                    buf.palette_mut().set_color(i as u32, crate::Color::new(r8, g8, b8));
+                }
+            }
+
+            match mode {
+                0 | 3 | 4 | 5 => buf.clear_screen(),
+                2 => buf.clear_buffer_down(),
+                _ => {}
+            }
+        }
 
         IgsCommand::SetResolution { resolution, palette } => {
             log::info!("IGS SetResolution {} palette {} not implemented", resolution, palette);

@@ -50,3 +50,7 @@ harness = false
 [[bench]]
 name = "rip"
 harness = false
+
+[[bench]]
+name = "igs"
+harness = false

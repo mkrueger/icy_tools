@@ -2,9 +2,19 @@ use std::{
     fs::File,
     io::{BufReader, BufWriter},
     path::Path,
+    sync::Once,
 };
 
 use icy_engine::{Color, Rectangle, Screen};
+
+static INIT: Once = Once::new();
+
+/// Initialize logging for tests
+pub fn init_logging() {
+    INIT.call_once(|| {
+        let _ = env_logger::builder().is_test(true).filter_level(log::LevelFilter::Info).try_init();
+    });
+}
 
 mod output;
 

@@ -107,13 +107,19 @@ impl PaletteScreenBuffer {
             layer.lines.push(Line::new());
         }
 
+        // Set appropriate default palette based on graphics type
+        let palette = match graphics_type {
+            GraphicsType::IGS(_) => Palette::from_slice(&crate::IGS_SYSTEM_PALETTE),
+            _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
+        };
+
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
             char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
             screen,
             layer,
             font_table,
-            palette: Palette::from_slice(&DOS_DEFAULT_PALETTE),
+            palette,
             caret: Caret::default(),
             ice_mode: IceMode::Unlimited,
             terminal_state: TerminalState::from(Size::new(char_cols, char_rows)),

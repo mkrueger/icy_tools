@@ -69,8 +69,8 @@ impl Sixel {
     ///
     /// This function will return an error if .
     pub fn parse_from(pos: Position, aspect_ratio: Option<u16>, zero_color: Option<u16>, grid_size: Option<u16>, sixel_data: &[u8]) -> EngineResult<Self> {
-        let (picture_data, width, height) = icy_sixel::sixel_decode_from_dcs(aspect_ratio, zero_color, grid_size, sixel_data)
-            .map_err(|e| anyhow::anyhow!("Sixel decode error: {}", e))?;
+        let (picture_data, width, height) =
+            icy_sixel::sixel_decode_from_dcs(aspect_ratio, zero_color, grid_size, sixel_data).map_err(|e| anyhow::anyhow!("Sixel decode error: {}", e))?;
 
         Ok(Sixel {
             position: pos,

@@ -6,12 +6,13 @@ use crate::compare_output;
 
 #[test]
 pub fn test_igs_lowres() {
+    crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/lowres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ig" {
             continue;
         }
-
+        log::info!("Testing IGS file: {:?}", cur_entry);
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
         let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Low));
@@ -28,6 +29,7 @@ pub fn test_igs_lowres() {
 
 #[test]
 pub fn test_igs_highres() {
+    crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/highres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ig" {

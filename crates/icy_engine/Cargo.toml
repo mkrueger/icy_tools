@@ -40,3 +40,4 @@ libyaff = { workspace = true }
 [dev-dependencies]
 walkdir = { workspace = true }
 pretty_assertions = "1.4.1"
+env_logger = "0.11"

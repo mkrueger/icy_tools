@@ -972,18 +972,13 @@ impl CommandParser for IgsParser {
                                 self.state = State::Default;
                             }
                         }
-                        ':' | '\n' => {
+                        ':' => {
                             // Command terminator
                             self.push_current_param();
                             self.emit_command(cmd_type, sink);
-
-                            if ch == '\n' {
-                                self.state = State::Default;
-                            } else {
-                                self.state = State::GotIgsStart;
-                            }
+                            self.state = State::GotIgsStart;
                         }
-                        ' ' | '>' | '\r' | '_' => {
+                        ' ' | '>' | '\r' | '\n' | '_' => {
                             // Whitespace/formatting - ignore
                             // Special handling: extended command X 4 (DefineZone) starts string after 7 numeric params
                             if let State::ReadParams(IgsCommandType::ExtendedCommand) = self.state {
