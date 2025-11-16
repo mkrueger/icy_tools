@@ -3,6 +3,8 @@
 //! Parses ANSI/VT100 escape sequences into structured commands.
 //! Supports CSI (Control Sequence Introducer), ESC, and OSC sequences.
 
+use std::u16;
+
 use base64::{Engine as _, engine::general_purpose};
 pub mod music;
 mod sgr;
@@ -958,26 +960,24 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     b'r' => {
-                        // Set margins: ESC[={top};{bottom}r
-                        if self.params.len() == 2 {
-                            let top = self.params[0];
-                            let bottom = self.params[1];
-                            sink.emit(TerminalCommand::CsiEqualsSetMargins(top, bottom));
-                        } else {
-                            sink.report_error(ParseError::MalformedSequence {
-                                description: "Invalid parameter count for CSI = r",
-                            });
-                        }
+                        sink.emit(TerminalCommand::ResetMargins);
                         self.reset();
                         i += 1;
                         printable_start = i;
                     }
                     b'm' => {
-                        // Set specific margins: ESC[={top};{bottom}m
+                        // Set specific margins: ESC[={margin_type};{value}m
                         if self.params.len() == 2 {
-                            let top = self.params[0];
-                            let bottom = self.params[1];
-                            sink.emit(TerminalCommand::CsiEqualsSetSpecificMargins(top, bottom));
+                            let margin_type_val = self.params[0];
+                            let value = self.params[1];
+
+                            if let Some(margin_type) = crate::MarginType::from_u16(margin_type_val) {
+                                sink.emit(TerminalCommand::CsiEqualsSetSpecificMargins(margin_type, value));
+                            } else {
+                                sink.report_error(ParseError::MalformedSequence {
+                                    description: "Invalid margin type for CSI = m",
+                                });
+                            }
                         } else {
                             sink.report_error(ParseError::MalformedSequence {
                                 description: "Invalid parameter count for CSI = m",
@@ -1390,11 +1390,29 @@ impl AnsiParser {
                 let params: &[u16] = if self.params.is_empty() { &[0u16] } else { &self.params };
                 sgr::parse_sgr(params, sink);
             }
-            b'r' => {
-                let top = self.params.first().copied().unwrap_or(1);
-                let bottom = self.params.get(1).copied().unwrap_or(0);
-                sink.emit(TerminalCommand::CsiSetScrollingRegion(top as u16, bottom as u16));
-            }
+            b'r' => match self.params.len() {
+                0 => sink.emit(TerminalCommand::ResetMargins),
+                1 => sink.emit(TerminalCommand::SetTopBottomMargin(0, self.params[0])),
+                2 => {
+                    if self.params[0] > self.params[1] {
+                        sink.emit(TerminalCommand::ResetMargins)
+                    } else {
+                        sink.emit(TerminalCommand::SetTopBottomMargin(self.params[0], self.params[1]))
+                    }
+                }
+                3 => sink.emit(TerminalCommand::CsiSetScrollingRegion(self.params[0], self.params[1], self.params[2], u16::MAX)),
+                4 => sink.emit(TerminalCommand::CsiSetScrollingRegion(
+                    self.params[0],
+                    self.params[1],
+                    self.params[2],
+                    self.params[3],
+                )),
+                _ => {
+                    sink.report_error(ParseError::MalformedSequence {
+                        description: "Invalid parameter count for CSI = r",
+                    });
+                }
+            },
             b'@' => {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiInsertCharacter(n as u16));
@@ -1445,7 +1463,11 @@ impl AnsiParser {
                 sink.print(&vec![self.last_char; n as usize]);
             }
             b's' => {
-                sink.emit(TerminalCommand::CsiSaveCursorPosition);
+                if self.params.len() == 2 {
+                    sink.emit(TerminalCommand::ResetLeftAndRightMargin(self.params[0], self.params[1]));
+                } else {
+                    sink.emit(TerminalCommand::CsiSaveCursorPosition);
+                }
             }
             b'u' => {
                 sink.emit(TerminalCommand::CsiRestoreCursorPosition);

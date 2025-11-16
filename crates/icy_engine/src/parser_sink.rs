@@ -379,13 +379,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.apply_sgr(sgr);
             }
 
-            // Scrolling region
-            TerminalCommand::CsiSetScrollingRegion(top, bottom) => {
-                let top = (top as i32).saturating_sub(1).max(0);
-                let bottom = (bottom as i32).saturating_sub(1).max(0);
-                self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
-            }
-
             // Character/Line operations
             TerminalCommand::CsiInsertCharacter(n) => {
                 for _ in 0..n {
@@ -557,17 +550,94 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::CsiFillRectangularArea(_, _, _, _, _) => {}
             TerminalCommand::CsiEraseRectangularArea(_, _, _, _) => {}
             TerminalCommand::CsiSelectiveEraseRectangularArea(_, _, _, _) => {}
-            TerminalCommand::CsiEqualsSetMargins(top, bottom) => {
+            TerminalCommand::CsiSetScrollingRegion(top, bottom, left, right) => {
+                let top = (top as i32).saturating_sub(1).max(0);
+                let bottom = (bottom as i32).saturating_sub(1).max(0);
+                let left = (left as i32).saturating_sub(1).max(0);
+                let right = (right as i32).saturating_sub(1).max(0);
+
+                self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
+                self.screen.terminal_state_mut().set_margins_left_right(left, right);
+                let pos = self.screen.upper_left_position();
+                self.screen.caret_mut().set_position(pos);
+            }
+            TerminalCommand::SetTopBottomMargin(top, bottom) => {
                 // CSI = {top};{bottom}r - Set margins
                 let top = (top as i32).saturating_sub(1).max(0);
                 let bottom = (bottom as i32).saturating_sub(1).max(0);
                 self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
+                let pos = self.screen.upper_left_position();
+                self.screen.caret_mut().set_position(pos);
             }
-            TerminalCommand::CsiEqualsSetSpecificMargins(top, bottom) => {
-                // CSI = {top};{bottom}m - Set specific margins
-                let top = (top as i32).saturating_sub(1).max(0);
-                let bottom = (bottom as i32).saturating_sub(1).max(0);
-                self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
+            TerminalCommand::ResetMargins => {
+                self.screen.terminal_state_mut().clear_margins_left_right();
+                self.screen.terminal_state_mut().clear_margins_top_bottom();
+                self.screen.caret_mut().set_position(Position::default());
+            }
+            TerminalCommand::ResetLeftAndRightMargin(left, right) => {
+                let width = self.screen.get_width();
+
+                let (current_left, current_right) = self.screen.terminal_state().get_margins_left_right().unwrap_or((0, width - 1));
+
+                let mut new_left_1b = left as i32;
+                let mut new_right_1b = right as i32;
+
+                if new_left_1b == 0 {
+                    new_left_1b = current_left + 1;
+                }
+                if new_right_1b == 0 {
+                    new_right_1b = current_right + 1;
+                }
+
+                let new_left = new_left_1b.saturating_sub(1);
+                let new_right = new_right_1b.saturating_sub(1);
+
+                if new_left >= 0 && new_right >= 0 && new_left < width && new_right < width && new_left < new_right {
+                    self.screen.terminal_state_mut().set_margins_left_right(new_left, new_right);
+                    let pos = self.screen.upper_left_position();
+                    self.screen.caret_mut().set_position(pos);
+                }
+            }
+
+            TerminalCommand::CsiEqualsSetSpecificMargins(margin_type, value) => {
+                // CSI = {margin_type};{value}m - Set specific margin
+                let n = (value as i32).saturating_sub(1).max(0);
+
+                use icy_parser_core::MarginType;
+                match margin_type {
+                    MarginType::Top => {
+                        let bottom = if let Some((_, b)) = self.screen.terminal_state().get_margins_top_bottom() {
+                            b
+                        } else {
+                            self.screen.get_height() - 1
+                        };
+                        self.screen.terminal_state_mut().set_margins_top_bottom(n, bottom);
+                    }
+                    MarginType::Bottom => {
+                        let top = if let Some((t, _)) = self.screen.terminal_state().get_margins_top_bottom() {
+                            t
+                        } else {
+                            0
+                        };
+                        self.screen.terminal_state_mut().set_margins_top_bottom(top, n);
+                    }
+                    MarginType::Left => {
+                        let right = if let Some((_, r)) = self.screen.terminal_state().get_margins_left_right() {
+                            r
+                        } else {
+                            self.screen.get_width() - 1
+                        };
+                        self.screen.terminal_state_mut().set_margins_left_right(n, right);
+                    }
+                    MarginType::Right => {
+                        let left = if let Some((l, _)) = self.screen.terminal_state().get_margins_left_right() {
+                            l
+                        } else {
+                            0
+                        };
+                        self.screen.terminal_state_mut().set_margins_left_right(left, n);
+                    }
+                }
             }
             TerminalCommand::ScrollArea {
                 direction,

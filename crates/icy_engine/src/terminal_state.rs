@@ -6,6 +6,7 @@ use crate::Size;
 pub enum TerminalScrolling {
     Smooth,
     Fast,
+    Disabled,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]

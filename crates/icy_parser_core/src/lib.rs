@@ -99,6 +99,32 @@ impl EraseInLineMode {
     }
 }
 
+/// Margin type for Set Specific Margin command (ESC[={type};{value}m)
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarginType {
+    /// Top margin (Ps=0)
+    Top = 0,
+    /// Bottom margin (Ps=1)
+    Bottom = 1,
+    /// Left margin (Ps=2)
+    Left = 2,
+    /// Right margin (Ps=3)
+    Right = 3,
+}
+
+impl MarginType {
+    pub fn from_u16(n: u16) -> Option<Self> {
+        match n {
+            0 => Some(Self::Top),
+            1 => Some(Self::Bottom),
+            2 => Some(Self::Left),
+            3 => Some(Self::Right),
+            _ => None,
+        }
+    }
+}
+
 /// Communication line type for Select Communication Speed command
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -485,8 +511,8 @@ pub enum TerminalCommand {
     /// Emitted once per attribute in a sequence (e.g., ESC[1;31m emits Bold then ForegroundRed)
     CsiSelectGraphicRendition(SgrAttribute),
 
-    /// DECSTBM - Set Scrolling Region: ESC[{top};{bottom}r
-    CsiSetScrollingRegion(u16, u16),
+    /// DECSTBM - Set Scrolling Region: ESC[{top};{bottom};{left};[{right}]r
+    CsiSetScrollingRegion(u16, u16, u16, u16),
 
     /// ICH - Insert Character: ESC[{n}@
     CsiInsertCharacter(u16),
@@ -572,9 +598,9 @@ pub enum TerminalCommand {
 
     // CSI = sequences (extended terminal functions)
     /// Set Margins: ESC[={top};{bottom}r
-    CsiEqualsSetMargins(u16, u16),
-    /// Set Specific Margins: ESC[={top};{bottom}m
-    CsiEqualsSetSpecificMargins(u16, u16),
+    SetTopBottomMargin(u16, u16),
+    /// Set Specific Margins: ESC[={type};{value}m
+    CsiEqualsSetSpecificMargins(MarginType, u16),
 
     // ANSI ESC sequences (non-CSI)
     /// IND - Index: ESC D (move cursor down, scroll if at bottom)
@@ -616,6 +642,8 @@ pub enum TerminalCommand {
     /// ANSI Music sequence
     /// Conflicting CSI M/N commands can trigger music playback
     AnsiMusic(AnsiMusic),
+    ResetMargins,
+    ResetLeftAndRightMargin(u16, u16),
 }
 
 /// Terminal requests that expect a response from the terminal emulator.

@@ -140,6 +140,8 @@ pub struct IgsParser {
     loop_tokens: Vec<String>,
     loop_token_buffer: String,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
+
+    skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,6 +166,7 @@ impl IgsParser {
             loop_tokens: Vec::new(),
             loop_token_buffer: String::new(),
             reading_chain_gang: false,
+            skip_next_lf: false,
         }
     }
 
@@ -900,6 +903,10 @@ impl CommandParser for IgsParser {
                             sink.emit(TerminalCommand::CarriageReturn);
                         }
                         0x0A => {
+                            if self.skip_next_lf {
+                                self.skip_next_lf = false;
+                                continue;
+                            }
                             sink.emit(TerminalCommand::LineFeed);
                         }
                         0x07 => {
@@ -915,6 +922,7 @@ impl CommandParser for IgsParser {
                     }
                 }
                 State::GotG => {
+                    self.skip_next_lf = true;
                     if ch == '#' {
                         self.state = State::GotIgsStart;
                         self.reset_params();

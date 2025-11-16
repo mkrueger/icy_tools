@@ -10,12 +10,13 @@ use crate::compare_output;
 
 #[test]
 pub fn test_ansi() {
+    crate::init_logging();
+
     for entry in fs::read_dir("tests/output/ansi/files").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ans" {
             continue;
         }
-
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 

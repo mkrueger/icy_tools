@@ -403,7 +403,6 @@ impl EditableScreen for TextScreen {
 
         let start_column = self.get_first_editable_column() as usize;
         let end_column = self.get_last_editable_column() as usize;
-
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data right
         for y in start_line..=end_line {

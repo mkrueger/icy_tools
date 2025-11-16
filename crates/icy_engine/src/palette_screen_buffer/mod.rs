@@ -654,12 +654,29 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
+        if line >= self.layer.lines.len() as i32 {
+            return;
+        }
         if line >= 0 && (line as usize) < self.layer.lines.len() {
             self.layer.lines.remove(line as usize);
+        }
+
+        // If we have scroll margins, insert a blank line at the bottom margin
+        if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+            if end < self.layer.lines.len() as i32 {
+                self.layer.lines.insert(end as usize, Line::new());
+            }
         }
     }
 
     fn insert_terminal_line(&mut self, line: i32) {
+        // If we have scroll margins, remove the line at the bottom margin first
+        if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+            if end < self.layer.lines.len() as i32 {
+                self.layer.lines.remove(end as usize);
+            }
+        }
+
         if line >= 0 && (line as usize) <= self.layer.lines.len() {
             self.layer.lines.insert(line as usize, Line::new());
         }

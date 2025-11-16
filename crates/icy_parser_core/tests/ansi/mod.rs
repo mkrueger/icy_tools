@@ -1,3 +1,5 @@
+use std::u16;
+
 use icy_parser_core::{
     AnsiMode, AnsiParser, Blink, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode,
     EraseInLineMode, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
@@ -441,14 +443,44 @@ fn test_dec_private_modes() {
 }
 
 #[test]
-fn test_scrolling_region() {
+fn test_scrolling_clear() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // ESC[5;20r - Set scrolling region from line 5 to 20
+    parser.parse(b"\x1B[r", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    assert_eq!(sink.cmds[0], TerminalCommand::ResetMargins);
+}
+
+#[test]
+fn test_scrolling_top_bottom() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
 
     // ESC[5;20r - Set scrolling region from line 5 to 20
     parser.parse(b"\x1B[5;20r", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiSetScrollingRegion(5, 20));
+    assert_eq!(sink.cmds[0], TerminalCommand::SetTopBottomMargin(5, 20));
+}
+
+#[test]
+fn test_scrolling_region() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // ESC[5;20r - Set scrolling region from line 5 to 20
+    parser.parse(b"\x1B[5;20;3r", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiSetScrollingRegion(5, 20, 3, u16::MAX));
+
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // ESC[5;20r - Set scrolling region from line 5 to 20
+    parser.parse(b"\x1B[5;20;3;34r", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiSetScrollingRegion(5, 20, 3, 34));
 }
 
 #[test]
