@@ -709,29 +709,19 @@ impl<'a> CommandSink for ScreenSink<'a> {
                     }
                 }
             }
-            DeviceControlString::Sixel(vertical_scale, bg_color, sixel_data) => {
+            DeviceControlString::Sixel {
+                aspect_ratio,
+                zero_color,
+                grid_size,
+                sixel_data,
+            } => {
                 // Parse and render sixel graphics
                 let p = self.screen.caret().position();
-                let bg = [0xff, bg_color.0, bg_color.1, bg_color.2];
-
-                // Convert sixel_data to String for parsing
-                if let Ok(sixel_str) = std::str::from_utf8(sixel_data) {
-                    // Spawn thread to parse sixel data (as in original implementation)
-                    let sixel_string = sixel_str.to_string();
-                    let vertical_scale_i32 = vertical_scale as i32;
-                    let handle = std::thread::spawn(move || crate::Sixel::parse_from(p, 1, vertical_scale_i32, bg, &sixel_string));
-
-                    self.screen.push_sixel_thread(handle);
-                    log::debug!(
-                        "Started sixel parsing thread (scale={}, bg=({},{},{}))",
-                        vertical_scale,
-                        bg_color.0,
-                        bg_color.1,
-                        bg_color.2
-                    );
-                } else {
-                    log::error!("Invalid UTF-8 in sixel data");
-                }
+                // Spawn thread to parse sixel data (as in original implementation)
+                let sixel_data = sixel_data.to_vec();
+                let handle: std::thread::JoinHandle<Result<crate::Sixel, anyhow::Error>> =
+                    std::thread::spawn(move || crate::Sixel::parse_from(p, aspect_ratio, zero_color, grid_size, &sixel_data));
+                self.screen.push_sixel_thread(handle);
             }
         }
     }

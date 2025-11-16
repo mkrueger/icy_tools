@@ -173,21 +173,16 @@ impl AnsiParser {
 
         // Check for Sixel graphics: ESC P {params} q {data} ESC \
         if i < self.parse_buffer.len() && self.parse_buffer[i] == b'q' {
-            let vertical_scale = match self.params.first() {
-                Some(0 | 1 | 5 | 6) | None => 2,
-                Some(2) => 5,
-                Some(3 | 4) => 3,
-                _ => 1,
-            };
+            let aspect_ratio = self.params.get(0).copied();
+            let zero_color = self.params.get(1).copied();
+            let grid_size = self.params.get(2).copied();
 
-            // Get background color (param 1: 1 = transparent, otherwise opaque black)
-            let bg_color = if self.params.get(1) == Some(&1) {
-                (0, 0, 0) // Transparent
-            } else {
-                (0, 0, 0) // Opaque black
-            };
-
-            sink.device_control(DeviceControlString::Sixel(vertical_scale, bg_color, &self.parse_buffer[i + 1..]));
+            sink.device_control(DeviceControlString::Sixel {
+                aspect_ratio,
+                zero_color,
+                grid_size,
+                sixel_data: &self.parse_buffer[i + 1..],
+            });
             return;
         }
 

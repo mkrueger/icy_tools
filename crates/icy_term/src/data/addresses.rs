@@ -46,7 +46,7 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
 }
 
 #[must_use]
-pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, _screen_mode: ScreenMode) -> Box<dyn CommandParser + Send> {
+pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, screen_mode: ScreenMode) -> Box<dyn CommandParser + Send> {
     match emulator {
         TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
             let mut parser = icy_parser_core::AnsiParser::new();
@@ -61,7 +61,14 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, _sc
         TerminalEmulation::Mode7 => Box::new(icy_parser_core::Mode7Parser::new()),
         TerminalEmulation::Rip => Box::new(icy_parser_core::RipParser::new()),
         TerminalEmulation::Skypix => Box::new(icy_parser_core::SkypixParser::new()),
-        TerminalEmulation::AtariST => Box::new(icy_parser_core::IgsParser::new()),
+        TerminalEmulation::AtariST => {
+            if let ScreenMode::AtariST(_, igs) = screen_mode {
+                if igs {
+                    return Box::new(icy_parser_core::IgsParser::new());
+                }
+            }
+            Box::new(icy_parser_core::IgsParser::new())
+        }
     }
 }
 

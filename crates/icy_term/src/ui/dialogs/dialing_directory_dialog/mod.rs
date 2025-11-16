@@ -232,7 +232,7 @@ impl DialingDirectoryState {
                             | TerminalEmulation::Avatar
                             | TerminalEmulation::Rip
                             | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
-                            TerminalEmulation::AtariST => ScreenMode::AtariST(40),
+                            TerminalEmulation::AtariST => ScreenMode::AtariST(icy_engine::TerminalResolution::Low, false),
                             TerminalEmulation::PETscii => ScreenMode::Vic,
                             TerminalEmulation::ATAscii => ScreenMode::Atascii(40),
                             TerminalEmulation::ViewData | TerminalEmulation::Mode7 => ScreenMode::Videotex,

@@ -1,6 +1,7 @@
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use icy_parser_core::{CommandParser, CommandSink, PcBoardParser, TerminalCommand};
 use std::fs;
+use std::hint::black_box;
 use std::path::Path;
 
 struct NullSink;

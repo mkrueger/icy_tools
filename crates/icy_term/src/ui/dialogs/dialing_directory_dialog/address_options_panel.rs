@@ -88,6 +88,19 @@ impl fmt::Display for TerminalEmulationWrapper {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalResolutionWrapper(pub icy_engine::TerminalResolution);
+
+impl fmt::Display for TerminalResolutionWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            icy_engine::TerminalResolution::Low => write!(f, "Low (320x200)"),
+            icy_engine::TerminalResolution::Medium => write!(f, "Medium (640x200)"),
+            icy_engine::TerminalResolution::High => write!(f, "High (640x400)"),
+        }
+    }
+}
+
 impl super::DialingDirectoryState {
     pub fn create_option_panel(&self, options: &crate::Options) -> Element<'_, Message> {
         let addr = if let Some(addr_idx) = self.selected_bbs {
@@ -383,7 +396,49 @@ impl super::DialingDirectoryState {
                         .align_y(Alignment::Center),
                 );
             } else if addr.terminal_type == TerminalEmulation::AtariST {
-                // TODO: Add Resolution pick list & enable IGS check box
+                // AtariST: Resolution pick list and IGS checkbox
+                let (current_resolution, current_igs) = match addr.screen_mode {
+                    ScreenMode::AtariST(res, igs) => (res, igs),
+                    _ => (icy_engine::TerminalResolution::Low, false),
+                };
+
+                // Resolution pick list
+                let resolutions = vec![
+                    TerminalResolutionWrapper(icy_engine::TerminalResolution::Low),
+                    TerminalResolutionWrapper(icy_engine::TerminalResolution::Medium),
+                    TerminalResolutionWrapper(icy_engine::TerminalResolution::High),
+                ];
+
+                let resolution_pick = pick_list(
+                    resolutions,
+                    Some(TerminalResolutionWrapper(current_resolution)),
+                    move |wrapper: TerminalResolutionWrapper| {
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::ScreenMode(ScreenMode::AtariST(wrapper.0, current_igs)),
+                        })
+                    },
+                )
+                .width(Length::Fixed(160.0))
+                .text_size(14);
+
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-resolution")), resolution_pick]
+                        .spacing(12)
+                        .align_y(Alignment::Center),
+                );
+
+                // IGS (Interactive Graphics System) checkbox
+                let igs_toggle = iced::widget::checkbox("", current_igs)
+                    .on_toggle(move |checked| {
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::ScreenMode(ScreenMode::AtariST(current_resolution, checked)),
+                        })
+                    })
+                    .text_size(14);
+
+                server_content = server_content.push(row![left_label("Enable IGS".to_string()), igs_toggle].spacing(12).align_y(Alignment::Center));
             }
 
             // Music option row (only for ANSI/UTF8ANSI)

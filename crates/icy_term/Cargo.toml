@@ -14,7 +14,7 @@ icy_net = { path ="../../../icy_board/crates/icy_net" }
 iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 # iced_aw = { workspace = true, features = ["menu"]  }
 
-image = "0.25.8"
+image = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 versions = "7.0.0"
@@ -29,7 +29,6 @@ rmcp = { workspace = true }
 jsonrpc-core = { workspace = true }
 serde_json = { workspace = true }
 base64 = "0.22.1"
-
 #sound
 rodio = { workspace = true }
 icy_engine = { workspace = true }

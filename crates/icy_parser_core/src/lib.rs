@@ -411,7 +411,12 @@ pub enum DeviceControlString<'a> {
     LoadFont(usize, Vec<u8>),
     /// Sixel graphics: ESC P {params} q {data} ESC \
     /// Parameters: vertical_scale, background_color (r, g, b), sixel_data
-    Sixel(u8, (u8, u8, u8), &'a [u8]),
+    Sixel {
+        aspect_ratio: Option<u16>,
+        zero_color: Option<u16>,
+        grid_size: Option<u16>,
+        sixel_data: &'a [u8],
+    },
 }
 
 /// Operating System Command (OSC) sequences: ESC ] ... BEL or ESC \

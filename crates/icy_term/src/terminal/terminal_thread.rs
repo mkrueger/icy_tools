@@ -705,7 +705,12 @@ impl TerminalThread {
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::AtariST => {
-                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(icy_engine::TerminalResolution::Low));
+                    let (res, _igs) = if let ScreenMode::AtariST(res, igs) = config.screen_mode {
+                        (res, igs)
+                    } else {
+                        (icy_engine::TerminalResolution::Low, false)
+                    };
+                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(res));
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
 

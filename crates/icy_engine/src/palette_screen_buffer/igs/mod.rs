@@ -11,7 +11,7 @@ pub mod vdi;
 pub const IGS_VERSION: &str = "2.19";
 
 #[repr(u8)]
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TerminalResolution {
     /// 320x200
     #[default]

@@ -135,8 +135,8 @@ pub struct IgsParser {
 
     loop_command: String,
     loop_parameters: Vec<Vec<String>>,
-    loop_param_count: i32,
-    loop_state: LoopParseState,
+    _loop_param_count: i32,
+    _loop_state: LoopParseState,
     loop_tokens: Vec<String>,
     loop_token_buffer: String,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
@@ -159,8 +159,8 @@ impl IgsParser {
             text_buffer: String::new(),
             loop_command: String::new(),
             loop_parameters: Vec::new(),
-            loop_param_count: 0,
-            loop_state: LoopParseState::ReadingInitialParams,
+            _loop_param_count: 0,
+            _loop_state: LoopParseState::ReadingInitialParams,
             loop_tokens: Vec::new(),
             loop_token_buffer: String::new(),
             reading_chain_gang: false,

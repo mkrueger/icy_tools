@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 use icy_engine::{
     ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437,
-    EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE, igs,
+    EditableScreen, IBM_VGA50_SAUCE, IGS_SYSTEM_PALETTE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE,
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -196,7 +196,7 @@ impl Display for ScreenMode {
             ScreenMode::Rip => write!(f, "RIPscrip"),
             ScreenMode::SkyPix => write!(f, "SkyPix"),
             ScreenMode::AtariST(resolution, igs) => {
-                let igs = if igs { "enabled " } else { "disabled" };
+                let igs = if *igs { "enabled " } else { "disabled" };
                 match resolution {
                     TerminalResolution::Low => write!(f, "Atari ST low, igs {}", igs),
                     TerminalResolution::Medium => write!(f, "Atari ST medium, igs {}", igs),
@@ -283,7 +283,7 @@ impl ScreenMode {
             ScreenMode::SkyPix => {
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
             }
-            ScreenMode::AtariST(_x, igs) => {
+            ScreenMode::AtariST(_x, _igs) => {
                 *screen.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
                 *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
             }
