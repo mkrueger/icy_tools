@@ -10,8 +10,9 @@ pub use igs::TerminalResolution;
 use igs_impl::IgsState;
 
 use crate::{
-    ATARI, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line,
-    Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    ATARI_ST_FONT_8x8, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer,
+    Line, Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState,
+    TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
@@ -83,8 +84,7 @@ impl PaletteScreenBuffer {
                 font_table.insert(4, crate::VGA_16x14.clone());
             }
             GraphicsType::IGS(_) => {
-                let font = BitFont::from_bytes("", ATARI).unwrap();
-                font_table.insert(0, font);
+                font_table.insert(0, ATARI_ST_FONT_8x8.clone());
             }
             GraphicsType::Skypix => {
                 font_table.insert(0, RIP_FONT.clone());
@@ -506,32 +506,119 @@ impl EditableScreen for PaletteScreenBuffer {
         Ok(false)
     }
 
+    /// Scroll the screen up by one line (move content up, clear bottom line)
     fn scroll_up(&mut self) {
+        let font = self.get_font_dimensions();
+        let line_height = font.height as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if line_height == 0 || line_height >= screen_height {
+            return;
+        }
+
+        let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
+        let movable_rows = screen_height - line_height;
+
+        // Shift all rows up using memmove semantics (copy_within handles overlap)
+        self.screen.copy_within(line_height * row_len..screen_height * row_len, 0);
+
+        // Clear the freed bottom region
+        self.screen[movable_rows * row_len..screen_height * row_len].fill(0);
+
+        // Update text layer
         if !self.layer.lines.is_empty() {
             self.layer.lines.remove(0);
             self.layer.lines.push(Line::new());
         }
+
+        self.mark_dirty();
     }
 
+    /// Scroll the screen down by one line (move content down, clear top line)
     fn scroll_down(&mut self) {
+        let font = self.get_font_dimensions();
+        let line_height = font.height as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if line_height == 0 || line_height >= screen_height {
+            return;
+        }
+
+        let row_len = screen_width;
+        let movable_rows = screen_height - line_height;
+
+        // Shift rows down using memmove semantics
+        self.screen.copy_within(0..movable_rows * row_len, line_height * row_len);
+
+        // Clear the freed top region
+        self.screen[0..line_height * row_len].fill(0);
+
+        // Update text layer
         if !self.layer.lines.is_empty() {
             self.layer.lines.pop();
             self.layer.lines.insert(0, Line::new());
         }
+
+        self.mark_dirty();
     }
 
+    /// Scroll the screen left by one column (move content left, clear right column)
     fn scroll_left(&mut self) {
+        let font = self.get_font_dimensions();
+        let char_width = font.width as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if char_width == 0 || char_width >= screen_width {
+            return;
+        }
+
+        for y in 0..screen_height as usize {
+            let row_start = y * screen_width;
+            // Shift row content left
+            self.screen.copy_within(row_start + char_width..row_start + screen_width, row_start);
+            // Clear vacated right area
+            self.screen[row_start + screen_width - char_width..row_start + screen_width].fill(0);
+        }
+
+        // Update text layer (keep existing semantics: remove first char)
         for line in &mut self.layer.lines {
             if !line.chars.is_empty() {
                 line.chars.remove(0);
             }
         }
+
+        self.mark_dirty();
     }
 
+    /// Scroll the screen right by one column (move content right, clear left column)
     fn scroll_right(&mut self) {
+        let font = self.get_font_dimensions();
+        let char_width = font.width as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if char_width == 0 || char_width >= screen_width {
+            return;
+        }
+
+        for y in 0..screen_height as usize {
+            let row_start = y * screen_width;
+            // Shift content right
+            self.screen
+                .copy_within(row_start..row_start + screen_width - char_width, row_start + char_width);
+            // Clear vacated left area
+            self.screen[row_start..row_start + char_width].fill(0);
+        }
+
+        // Update text layer (insert blank char at start)
         for line in &mut self.layer.lines {
             line.chars.insert(0, AttributedChar::default());
         }
+
+        self.mark_dirty();
     }
 
     fn clear_screen(&mut self) {

@@ -264,6 +264,9 @@ const DEFAULT_FONT_NAME: &str = "Codepage 437 English";
 lazy_static::lazy_static! {
     pub static ref ATARI_XEP80: BitFont = BitFont::from_bytes("Atari XEP80", include_bytes!("../data/fonts/Atari/xep80.psf")).unwrap();
     pub static ref ATARI_XEP80_INT: BitFont = BitFont::from_bytes("Atari XEP80 INT", include_bytes!("../data/fonts/Atari/xep80_int.psf")).unwrap();
+
+    pub static ref ATARI_ST_FONT_8x8: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../data/fonts/Atari/atari-st-8x8.yaff")).unwrap();
+
     pub static ref EGA_7x8: BitFont = BitFont::from_bytes("EGA 7x8", include_bytes!("../data/fonts/Rip/Bm437_EverexME_7x8.yaff")).unwrap();
     pub static ref VGA_8x14: BitFont = BitFont::from_bytes("VGA 8x14", include_bytes!("../data/fonts/Rip/IBM_VGA_8x14.yaff")).unwrap();
     pub static ref VGA_7x14: BitFont = {
