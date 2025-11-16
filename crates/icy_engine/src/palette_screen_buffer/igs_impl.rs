@@ -56,7 +56,6 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::PolyLine { points } => {
             if !points.is_empty() {
-                log::info!("PolyLine with {} points, line_color={}", points.len() / 2, state.executor.line_color);
                 state.executor.draw_polyline(buf, state.executor.line_color, &points);
                 if points.len() >= 2 {
                     let last_idx = points.len() - 2;
@@ -67,7 +66,6 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::PolyFill { points } => {
             if !points.is_empty() {
-                log::info!("PolyFill with {} points, fill_color={}", points.len() / 2, state.executor.fill_color);
                 state.executor.fill_poly(buf, &points);
             }
         }
@@ -90,14 +88,19 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::LineStyle { kind, style, value } => {
-            if kind == 2 {
+            if kind == 1 {
+                // Polymarkers
+                if style > 0 {
+                    state.executor.set_polymarker_type(style);
+                }
+                state.executor.set_polymarker_size(value as usize);
+            } else if kind == 2 {
                 // Lines
                 state.executor.set_line_style_pub(style);
                 // Extract thickness (lower bits) and end style (higher bits)
                 let thickness = (value % 50).max(1);
                 state.executor.set_line_thickness(thickness as usize);
             }
-            // kind == 1 for polymarkers - not yet fully implemented
         }
 
         IgsCommand::WriteText { x, y, text } => {

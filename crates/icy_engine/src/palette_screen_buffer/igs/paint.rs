@@ -107,10 +107,10 @@ pub struct DrawExecutor {
     text_size: i32,
     text_rotation: TextRotation,
 
-    _polymaker_type: PolymarkerType,
+    polymaker_type: PolymarkerType,
     line_type: LineType,
     drawing_mode: DrawingMode,
-    _polymarker_size: usize,
+    polymarker_size: usize,
     solidline_size: usize,
     _user_defined_pattern_number: usize,
 
@@ -155,10 +155,10 @@ impl DrawExecutor {
             text_effects: TextEffects::Normal,
             text_size: 9,
             text_rotation: TextRotation::Right,
-            _polymaker_type: PolymarkerType::Point,
+            polymaker_type: PolymarkerType::Point,
             line_type: LineType::Solid,
             drawing_mode: DrawingMode::Replace,
-            _polymarker_size: 1,
+            polymarker_size: 1,
             solidline_size: 1,
             _user_defined_pattern_number: 1,
             font_7px,
@@ -899,7 +899,7 @@ impl DrawExecutor {
     }
 
     pub fn draw_poly_maker(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
-        let points = match self._polymaker_type {
+        let points = match self.polymaker_type {
             PolymarkerType::Point => vec![1i32, 2, 0, 0, 0, 0],
             PolymarkerType::Plus => vec![2, 2, 0, -3, 0, 3, 2, -4, 0, 4, 0],
             PolymarkerType::Star => vec![3, 2, 0, -3, 0, 3, 2, 3, 2, -3, -2, 2, 3, -2, -3, 2],
@@ -1855,5 +1855,21 @@ impl DrawExecutor {
 
     pub fn set_cur_position(&mut self, x: i32, y: i32) {
         self.cur_position = crate::Position::new(x, y);
+    }
+
+    pub fn set_polymarker_type(&mut self, marker_type: u8) {
+        self.polymaker_type = match marker_type {
+            1 => PolymarkerType::Point,
+            2 => PolymarkerType::Plus,
+            3 => PolymarkerType::Star,
+            4 => PolymarkerType::Square,
+            5 => PolymarkerType::DiagonalCross,
+            6 => PolymarkerType::Diamond,
+            _ => PolymarkerType::Point,
+        };
+    }
+
+    pub fn set_polymarker_size(&mut self, size: usize) {
+        self.polymarker_size = size;
     }
 }

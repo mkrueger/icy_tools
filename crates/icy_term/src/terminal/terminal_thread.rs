@@ -770,7 +770,11 @@ impl TerminalThread {
 
         // Decide auto-login (requires BOTH credentials and non-SSH)
         if effective_user.is_some() && effective_pass.is_some() {
-            self.iemsi_auto_login = Some(IEmsiAutoLogin::new(effective_user.clone().unwrap(), effective_pass.clone().unwrap()));
+            let user = effective_user.clone().unwrap();
+            let pass = effective_pass.clone().unwrap();
+            if !user.is_empty() && !pass.is_empty() {
+                self.iemsi_auto_login = Some(IEmsiAutoLogin::new(user, pass));
+            }
         }
     }
 

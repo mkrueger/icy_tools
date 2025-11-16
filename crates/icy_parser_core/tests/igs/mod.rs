@@ -266,3 +266,35 @@ fn test_igs_arc() {
         _ => panic!("Expected Arc command"),
     }
 }
+
+// from spec:
+// ***** NEW !!!!******
+// NOTE: IG218+ when grabbing number values from the serial port or a file ALLOWS
+// a carriage return and line feed character to break the line the _ still works
+// the same too, here is example draws a rectangle and a pyramid:
+#[test]
+fn test_new_lines() {
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // K command: x, y, radius, start_angle, end_angle
+    parser.parse(b"G#K100,\n100,\r\n50,0,\r90:", &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+    match &sink.igs_commands[0] {
+        IgsCommand::Arc {
+            x,
+            y,
+            start_angle,
+            end_angle,
+            radius,
+        } => {
+            assert_eq!(*x, 100);
+            assert_eq!(*y, 100);
+            assert_eq!(*radius, 50);
+            assert_eq!(*start_angle, 0);
+            assert_eq!(*end_angle, 90);
+        }
+        _ => panic!("Expected Arc command"),
+    }
+}
