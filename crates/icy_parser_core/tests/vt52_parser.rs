@@ -1,5 +1,5 @@
 use icy_parser_core::{
-    Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, Vt52Parser,
+    Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, IgsParser, SgrAttribute, TerminalCommand,
 };
 
 struct TestSink {
@@ -29,7 +29,7 @@ impl CommandSink for TestSink {
 // ASCII control codes
 #[test]
 fn test_vt52_bell() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x07", &mut sink);
@@ -40,7 +40,7 @@ fn test_vt52_bell() {
 
 #[test]
 fn test_vt52_tab() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x09", &mut sink);
@@ -51,7 +51,7 @@ fn test_vt52_tab() {
 
 #[test]
 fn test_vt52_linefeed() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x0A", &mut sink);
@@ -63,7 +63,7 @@ fn test_vt52_linefeed() {
 // Cursor movement
 #[test]
 fn test_vt52_cursor_up() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BA", &mut sink);
@@ -74,7 +74,7 @@ fn test_vt52_cursor_up() {
 
 #[test]
 fn test_vt52_cursor_down() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BB", &mut sink);
@@ -85,7 +85,7 @@ fn test_vt52_cursor_down() {
 
 #[test]
 fn test_vt52_cursor_home() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BH", &mut sink);
@@ -96,7 +96,7 @@ fn test_vt52_cursor_home() {
 
 #[test]
 fn test_vt52_set_cursor_position() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     // ESC Y {row+32} {col+32}
@@ -116,7 +116,7 @@ fn test_vt52_set_cursor_position() {
 // Screen clearing
 #[test]
 fn test_vt52_clear_screen() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BE", &mut sink);
@@ -128,7 +128,7 @@ fn test_vt52_clear_screen() {
 
 #[test]
 fn test_vt52_clear_down() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BJ", &mut sink);
@@ -139,7 +139,7 @@ fn test_vt52_clear_down() {
 
 #[test]
 fn test_vt52_clear_end_of_line() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BK", &mut sink);
@@ -150,7 +150,7 @@ fn test_vt52_clear_end_of_line() {
 
 #[test]
 fn test_vt52_clear_line() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bl", &mut sink);
@@ -162,7 +162,7 @@ fn test_vt52_clear_line() {
 // Line operations
 #[test]
 fn test_vt52_insert_line() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BL", &mut sink);
@@ -173,7 +173,7 @@ fn test_vt52_insert_line() {
 
 #[test]
 fn test_vt52_delete_line() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BM", &mut sink);
@@ -185,7 +185,7 @@ fn test_vt52_delete_line() {
 // Colors
 #[test]
 fn test_vt52_set_foreground() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bb\x07", &mut sink);
@@ -201,7 +201,7 @@ fn test_vt52_set_foreground() {
 
 #[test]
 fn test_vt52_set_background() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bc\x01", &mut sink);
@@ -218,7 +218,7 @@ fn test_vt52_set_background() {
 // Cursor save/restore
 #[test]
 fn test_vt52_save_cursor() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bj", &mut sink);
@@ -229,7 +229,7 @@ fn test_vt52_save_cursor() {
 
 #[test]
 fn test_vt52_restore_cursor() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bk", &mut sink);
@@ -241,7 +241,7 @@ fn test_vt52_restore_cursor() {
 // Video modes - VT-52 uses DecPrivateMode::Inverse
 #[test]
 fn test_vt52_reverse_video() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bp", &mut sink);
@@ -252,7 +252,7 @@ fn test_vt52_reverse_video() {
 
 #[test]
 fn test_vt52_normal_video() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bq", &mut sink);
@@ -264,7 +264,7 @@ fn test_vt52_normal_video() {
 // Wrapping
 #[test]
 fn test_vt52_wrap_on() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bv", &mut sink);
@@ -275,7 +275,7 @@ fn test_vt52_wrap_on() {
 
 #[test]
 fn test_vt52_wrap_off() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bw", &mut sink);
@@ -287,7 +287,7 @@ fn test_vt52_wrap_off() {
 // Cursor visibility
 #[test]
 fn test_vt52_show_cursor() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Be", &mut sink);
@@ -298,7 +298,7 @@ fn test_vt52_show_cursor() {
 
 #[test]
 fn test_vt52_hide_cursor() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1Bf", &mut sink);
@@ -313,7 +313,7 @@ fn test_vt52_hide_cursor() {
 // TosWin2 extensions
 #[test]
 fn test_vt52_ansi_foreground() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1B3\x0F", &mut sink);
@@ -329,7 +329,7 @@ fn test_vt52_ansi_foreground() {
 
 #[test]
 fn test_vt52_ansi_background() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1B4\x00", &mut sink);
@@ -346,7 +346,7 @@ fn test_vt52_ansi_background() {
 // Multiple commands
 #[test]
 fn test_vt52_multiple_commands() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1BH\x1BE\x1Bb\x07", &mut sink);
@@ -360,7 +360,7 @@ fn test_vt52_multiple_commands() {
 // Mixed text and commands
 #[test]
 fn test_vt52_text_and_commands() {
-    let mut parser = Vt52Parser::new();
+    let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
     parser.parse(b"Hello \x1BE World", &mut sink);

@@ -3,7 +3,7 @@
 //! IGS is a graphics system developed for Atari ST BBS systems.
 //! Commands start with 'G#' and use single-letter command codes followed by parameters.
 
-use crate::{CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, TerminalCommand};
+use crate::{Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand};
 
 mod types;
 pub use types::*;
@@ -31,7 +31,6 @@ enum State {
     ReadBgColor,
     ReadCursorX,
     ReadCursorY(i32), // row position
-    ReadDeleteLineCount,
     ReadInsertLineCount,
 }
 
@@ -887,11 +886,19 @@ impl CommandParser for IgsParser {
                                 continue;
                             }
                             sink.emit(TerminalCommand::LineFeed);
-                        }
+                        } /*
                         0x07 => {
-                            sink.emit(TerminalCommand::Bell);
-                        }
-                        0x00..=0x06 | 0x0E..=0x1A | 0x1C..=0x1F => {
+                        sink.emit(TerminalCommand::Bell);
+                        }*/
+                        0x00..=0x0F => {
+                            // TOS direct foreground color codes (0x00-0x0F)
+                            // 0x07 (Bell) is excluded to maintain standard ASCII compatibility
+                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(byte))));
+                        } /*
+                        0x09 => {
+                        sink.emit(TerminalCommand::Tab);
+                        }*/
+                        0x0E..=0x1A | 0x1C..=0x1F => {
                             // Ignore control characters
                         }
                         _ => {
@@ -1357,6 +1364,11 @@ impl CommandParser for IgsParser {
                             sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
                             self.state = State::Default;
                         }
+                        'I' => {
+                            // VT52 Reverse line feed (cursor up and insert)
+                            sink.emit(TerminalCommand::EscReverseIndex);
+                            self.state = State::Default;
+                        }
                         'J' => {
                             sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::CursorToEnd));
                             self.state = State::Default;
@@ -1368,10 +1380,10 @@ impl CommandParser for IgsParser {
                         'Y' => {
                             self.state = State::ReadCursorX;
                         }
-                        'b' => {
+                        '3' | 'b' => {
                             self.state = State::ReadFgColor;
                         }
-                        'c' => {
+                        '4' | 'c' => {
                             self.state = State::ReadBgColor;
                         }
                         'e' => {
@@ -1390,9 +1402,45 @@ impl CommandParser for IgsParser {
                             sink.emit(TerminalCommand::CsiRestoreCursorPosition);
                             self.state = State::Default;
                         }
+                        'L' => {
+                            // VT52 Insert Line
+                            sink.emit(TerminalCommand::CsiInsertLine(1));
+                            self.state = State::Default;
+                        }
+                        'M' => {
+                            // VT52 Delete Line
+                            sink.emit(TerminalCommand::CsiDeleteLine(1));
+                            self.state = State::Default;
+                        }
+                        'p' => {
+                            // VT52 Reverse video
+                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::Inverse));
+                            self.state = State::Default;
+                        }
+                        'q' => {
+                            // VT52 Normal video
+                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::Inverse));
+                            self.state = State::Default;
+                        }
+                        'v' => {
+                            // VT52 Wrap on
+                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::AutoWrap));
+                            self.state = State::Default;
+                        }
+                        'w' => {
+                            // VT52 Wrap off
+                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::AutoWrap));
+                            self.state = State::Default;
+                        }
                         'd' => {
-                            // Delete line - next byte is line count
-                            self.state = State::ReadDeleteLineCount;
+                            // VT52 Clear to start of screen
+                            sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::StartToCursor));
+                            self.state = State::Default;
+                        }
+                        'o' => {
+                            // VT52 Clear to start of line
+                            sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::StartToCursor));
+                            self.state = State::Default;
                         }
                         'i' => {
                             // Insert line ESC form: mode implicitly 0, next byte is count
@@ -1408,12 +1456,9 @@ impl CommandParser for IgsParser {
                             sink.emit_igs(IgsCommand::RememberCursor { value: 0 });
                             self.state = State::Default;
                         }
-                        'm' | 'p' | 'v' | 'w' => {
-                            // IGS commands that can be invoked with ESC prefix instead of G#
+                        'm' => {
+                            // IGS command that can be invoked with ESC prefix instead of G#
                             // ESC m x,y:  - cursor motion
-                            // ESC p x,y:  - position cursor
-                            // ESC v n:    - inverse video
-                            // ESC w n:    - line wrap
                             if let Some(cmd_type) = IgsCommandType::from_char(ch) {
                                 self.state = State::ReadParams(cmd_type);
                             } else {
@@ -1428,12 +1473,14 @@ impl CommandParser for IgsParser {
                 }
                 State::ReadFgColor => {
                     let color = byte;
-                    sink.emit_igs(IgsCommand::SetForeground { color });
+                    // VT52 foreground color - convert to SGR attribute
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
                     self.state = State::Default;
                 }
                 State::ReadBgColor => {
                     let color = byte;
-                    sink.emit_igs(IgsCommand::SetBackground { color });
+                    // VT52 background color - convert to SGR attribute
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(color))));
                     self.state = State::Default;
                 }
                 State::ReadCursorX => {
@@ -1442,12 +1489,8 @@ impl CommandParser for IgsParser {
                 }
                 State::ReadCursorY(row) => {
                     let col = (byte.wrapping_sub(32)) as i32;
-                    sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
-                    self.state = State::Default;
-                }
-                State::ReadDeleteLineCount => {
-                    let count = byte;
-                    sink.emit(TerminalCommand::CsiDeleteLine(count as u16));
+                    // VT52 uses 0-based coordinates, but CsiCursorPosition uses 1-based
+                    sink.emit(TerminalCommand::CsiCursorPosition((row + 1) as u16, (col + 1) as u16));
                     self.state = State::Default;
                 }
                 State::ReadInsertLineCount => {

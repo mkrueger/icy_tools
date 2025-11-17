@@ -46,9 +46,6 @@ pub use skypix::{SkypixCommand, SkypixParser};
 mod igs;
 pub use igs::*;
 
-mod vt52;
-pub use vt52::Vt52Parser;
-
 mod tables;
 
 /// Special keys for CSI sequences

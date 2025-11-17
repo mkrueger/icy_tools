@@ -1,6 +1,6 @@
 use icy_parser_core::{
     AnsiParser, AtasciiParser, AvatarParser, CommandParser, CommandSink, CtrlAParser, DeviceControlString, IgsCommand, Mode7Parser, OperatingSystemCommand,
-    ParseError, PcBoardParser, PetsciiParser, RenegadeParser, RipCommand, SkypixCommand, SkypixParser, TerminalCommand, ViewdataParser, Vt52Parser,
+    ParseError, PcBoardParser, PetsciiParser, RenegadeParser, RipCommand, SkypixCommand, SkypixParser, TerminalCommand, ViewdataParser,
 };
 
 /// A no-op sink that just counts calls - perfect for fuzzing
@@ -206,7 +206,6 @@ fuzz_test_parser!(fuzz_petscii_parser, PetsciiParser);
 fuzz_test_parser!(fuzz_viewdata_parser, ViewdataParser);
 fuzz_test_parser!(fuzz_mode7_parser, Mode7Parser);
 fuzz_test_parser!(fuzz_skypix_parser, SkypixParser);
-fuzz_test_parser!(fuzz_vt52_parser, Vt52Parser);
 
 // RIP parser needs special handling since it's more complex
 #[test]
@@ -297,7 +296,6 @@ fn fuzz_all_parsers_with_random() {
         test_parser!(ViewdataParser);
         test_parser!(Mode7Parser);
         test_parser!(SkypixParser);
-        test_parser!(Vt52Parser);
 
         // Special handling for parsers with their own types
         {
@@ -381,7 +379,6 @@ fn fuzz_state_transitions() {
 
         test_parser!(AnsiParser);
         test_parser!(AvatarParser);
-        test_parser!(Vt52Parser);
 
         use icy_parser_core::RipParser;
         let mut rip_parser = RipParser::new();
