@@ -9,7 +9,7 @@ pub fn test_igs_lowres() {
     crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/lowres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
-        if cur_entry.extension().unwrap() != "ig" {
+        if cur_entry.extension().unwrap_or_default() != "ig" {
             continue;
         }
         log::info!("Testing IGS file: {:?}", cur_entry);

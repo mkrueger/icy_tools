@@ -150,13 +150,13 @@ lazy_static::lazy_static! {
     pub static ref ATARI_ST_FONT_16x16: BitFont = {
         ATARI_ST_FONT_8x8.double_size()
     };
-
+/*
     pub static ref ATARI_ST_FONT_7x11: BitFont = {
         ATARI_ST_FONT_8x16.scale_to_height(11).unwrap()
-    };
+    };*/
 
     pub static ref ATARI_ST_FONT_14x22: BitFont = {
-        ATARI_ST_FONT_7x11.double_size()
+        ATARI_ST_FONT_8x16.double_size()
     };
 
     pub static ref ATARI_ST_FONT_8x16: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x16.yaff")).unwrap();
@@ -165,30 +165,85 @@ lazy_static::lazy_static! {
     static ref ATARI_DYNAMIC_FONTS: Mutex<HashMap<i32, &'static BitFont>> = Mutex::new(HashMap::new());
 }
 
-fn load_atari_font(text_size: i32) -> (i32, &'static BitFont) {
+struct FontMetrics {
+    pub y_off: i32,
+    pub underline_pos: i32,
+    pub underline_height: i32,
+    pub underline_width: i32,
+}
+
+fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
     if text_size <= 8 {
-        return (3, &ATARI_ST_FONT_6x6);
+        return (
+            FontMetrics {
+                y_off: 4,
+                underline_pos: 5,
+                underline_height: 1,
+                underline_width: 7,
+            },
+            &ATARI_ST_FONT_6x6,
+        );
     }
     if text_size == 9 {
-        return (6, &ATARI_ST_FONT_8x8);
+        return (
+            FontMetrics {
+                y_off: 6,
+                underline_pos: 7,
+                underline_height: 1,
+                underline_width: 9,
+            },
+            &ATARI_ST_FONT_8x8,
+        );
     }
 
     if text_size <= 15 {
         // 7x11 Font
-        return (11, &ATARI_ST_FONT_7x11);
+        return (
+            FontMetrics {
+                y_off: 13,
+                underline_pos: 15,
+                underline_height: 1,
+                underline_width: 9,
+            },
+            &ATARI_ST_FONT_8x16,
+        );
     }
 
     if text_size <= 17 {
         // 12x12 Font (upscaled 6x6)
-        return (8, &ATARI_ST_FONT_12x12);
+        return (
+            FontMetrics {
+                y_off: 9,
+                underline_pos: 10,
+                underline_height: 2,
+                underline_width: 13,
+            },
+            &ATARI_ST_FONT_12x12,
+        );
     }
 
     if text_size <= 19 {
         // 16x16 Font (upscaled 8x8)
-        return (12, &ATARI_ST_FONT_16x16);
+        return (
+            FontMetrics {
+                y_off: 13,
+                underline_pos: 14,
+                underline_height: 2,
+                underline_width: 17,
+            },
+            &ATARI_ST_FONT_16x16,
+        );
     }
 
-    (28, &ATARI_ST_FONT_14x22)
+    (
+        FontMetrics {
+            y_off: 27,
+            underline_pos: 30,
+            underline_height: 2,
+            underline_width: 17,
+        },
+        &ATARI_ST_FONT_14x22,
+    )
 }
 
 impl DrawExecutor {
@@ -669,10 +724,9 @@ impl DrawExecutor {
 
     pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
-        let (y_off, font) = load_atari_font(self.text_size);
-        pos.y -= y_off;
+        let (metrics, font) = load_atari_font(self.text_size);
+        pos.y -= metrics.y_off;
         // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
-
         let color = self.text_color;
         let font_size = font.size();
         let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
@@ -680,8 +734,8 @@ impl DrawExecutor {
             let glyph = font.get_glyph(ch).unwrap();
             for y in 0..font_size.height {
                 for x in 0..font_size.width {
-                    let iy = y; //(y as f32 / font_size.height as f32 * char_size.height as f32) as i32;
-                    let ix = x; // (x as f32 / font_size.width as f32 * char_size.width as f32) as i32;
+                    let iy = y;
+                    let ix = x;
                     draw_mask = draw_mask.rotate_left(1);
                     // Check pixel in bitmap.pixels[row][col]
                     let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
@@ -691,7 +745,15 @@ impl DrawExecutor {
                     };
                     if pixel_set {
                         if 1 & draw_mask != 0 {
-                            let p = pos + Position::new(x, y);
+                            // For skewed text, add horizontal offset based on vertical position
+                            // Atari VDI style: skew decreases from top to bottom (right-leaning italic)
+                            // Top of character has maximum offset, bottom has zero offset
+                            let skew_offset = if self.text_effects == TextEffects::Skewed {
+                                (font_size.height - 1 - y) / 2 - (y % 2)
+                            } else {
+                                0
+                            };
+                            let p = pos + Position::new(x + skew_offset, y);
                             self.set_pixel(buf, p.x, p.y, color);
                             if self.text_effects == TextEffects::Thickened {
                                 self.set_pixel(buf, p.x + 1, p.y, color);
@@ -702,20 +764,27 @@ impl DrawExecutor {
                 draw_mask = draw_mask.rotate_left(1);
             }
             if self.text_effects == TextEffects::Underlined {
-                let y = font_size.height - 1;
-                for x in 0..font_size.width {
-                    let p = pos + Position::new(x, y);
-                    self.set_pixel(buf, p.x, p.y, color);
-                    if self.text_effects == TextEffects::Thickened {
-                        self.set_pixel(buf, p.x + 1, p.y, color);
+                // Atari VDI: underline is placed above the adjusted position
+                let y_pos = pos.y + metrics.underline_pos;
+
+                for y2 in 0..metrics.underline_height {
+                    for x in 0..metrics.underline_width {
+                        self.set_pixel(buf, pos.x + x, y_pos + y2, color);
                     }
                 }
             }
+            // Calculate character advance width
+            // For skewed text, reduce spacing to compensate for the skew offset
+            let char_width = if self.text_effects == TextEffects::Skewed {
+                font_size.width
+            } else {
+                font_size.width
+            };
             match self.text_rotation {
-                TextRotation::RightReverse | TextRotation::Right => pos.x += font_size.width,
+                TextRotation::RightReverse | TextRotation::Right => pos.x += char_width,
                 TextRotation::Up => pos.y -= font_size.height,
                 TextRotation::Down => pos.y += font_size.height,
-                TextRotation::Left => pos.x -= font_size.width,
+                TextRotation::Left => pos.x -= char_width,
             }
         }
     }
