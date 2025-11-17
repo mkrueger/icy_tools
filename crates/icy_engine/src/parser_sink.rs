@@ -18,8 +18,8 @@
 //! ```
 
 use icy_parser_core::{
-    AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, IgsCommand, Intensity,
-    OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
+    AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel,
+    IgsCommand, Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
 };
 
 use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, XTERM_256_PALETTE};
@@ -530,7 +530,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::SetFontPage(page) => {
                 self.screen.caret_mut().set_font_page(page);
             }
-            TerminalCommand::CsiFontSelection(_slot, font_number) => {
+            TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
                 let nr = font_number as usize;
                 if self.screen().get_font(nr).is_some() {
                     self.set_font_selection_success(nr);
@@ -547,10 +547,10 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 }
             }
             TerminalCommand::CsiSelectCommunicationSpeed(_, _) => {}
-            TerminalCommand::CsiFillRectangularArea(_, _, _, _, _) => {}
-            TerminalCommand::CsiEraseRectangularArea(_, _, _, _) => {}
-            TerminalCommand::CsiSelectiveEraseRectangularArea(_, _, _, _) => {}
-            TerminalCommand::CsiSetScrollingRegion(top, bottom, left, right) => {
+            TerminalCommand::CsiFillRectangularArea { .. } => {}
+            TerminalCommand::CsiEraseRectangularArea { .. } => {}
+            TerminalCommand::CsiSelectiveEraseRectangularArea { .. } => {}
+            TerminalCommand::CsiSetScrollingRegion { top, bottom, left, right } => {
                 let top = (top as i32).saturating_sub(1).max(0);
                 let bottom = (bottom as i32).saturating_sub(1).max(0);
                 let left = (left as i32).saturating_sub(1).max(0);
@@ -561,7 +561,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let pos = self.screen.upper_left_position();
                 self.screen.caret_mut().set_position(pos);
             }
-            TerminalCommand::SetTopBottomMargin(top, bottom) => {
+            TerminalCommand::SetTopBottomMargin { top, bottom } => {
                 // CSI = {top};{bottom}r - Set margins
                 let top = (top as i32).saturating_sub(1).max(0);
                 let bottom = (bottom as i32).saturating_sub(1).max(0);
@@ -574,7 +574,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.terminal_state_mut().clear_margins_top_bottom();
                 self.screen.caret_mut().set_position(Position::default());
             }
-            TerminalCommand::ResetLeftAndRightMargin(left, right) => {
+            TerminalCommand::ResetLeftAndRightMargin { left, right } => {
                 let width = self.screen.get_width();
 
                 let (current_left, current_right) = self.screen.terminal_state().get_margins_left_right().unwrap_or((0, width - 1));
@@ -661,10 +661,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 // Avatar init area
                 let _ = (attr, ch, lines, columns);
                 // TODO: Implement Avatar init area
-            }
-            TerminalCommand::AnsiMusic(music) => {
-                // ANSI music playback
-                self.play_music(music);
             }
         }
     }
@@ -852,7 +848,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
         // Push music playback callback to be handled by application layer
     }
 
-    fn report_error(&mut self, error: ParseError) {
+    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
         log::error!("Parser error: {:?}", error);
     }
 }

@@ -174,16 +174,25 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                         }
                         _ => {
                             // Invalid sub-parameter for 38
-                            sink.report_error(ParseError::InvalidParameter {
-                                command: "CsiSelectGraphicRendition",
-                                value: params[i + 1],
-                            });
+                            sink.report_errror(
+                                ParseError::InvalidParameter {
+                                    command: "CsiSelectGraphicRendition",
+                                    value: params[i + 1],
+                                    expected: Some("5 (256-color) or 2 (RGB)"),
+                                },
+                                crate::ErrorLevel::Error,
+                            );
                             i += 1;
                         }
                     }
                 } else {
                     // Missing sub-parameters
-                    sink.report_error(ParseError::IncompleteSequence);
+                    sink.report_errror(
+                        ParseError::IncompleteSequence {
+                            context: "Extended foreground color requires sub-parameters (38;5;n or 38;2;r;g;b)",
+                        },
+                        crate::ErrorLevel::Error,
+                    );
                     i += 1;
                 }
             }
@@ -209,25 +218,38 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                         }
                         _ => {
                             // Invalid sub-parameter for 48
-                            sink.report_error(ParseError::InvalidParameter {
-                                command: "CsiSelectGraphicRendition",
-                                value: params[i + 1],
-                            });
+                            sink.report_errror(
+                                ParseError::InvalidParameter {
+                                    command: "CsiSelectGraphicRendition",
+                                    value: params[i + 1],
+                                    expected: Some("5 (256-color) or 2 (RGB)"),
+                                },
+                                crate::ErrorLevel::Error,
+                            );
                             i += 1;
                         }
                     }
                 } else {
                     // Missing sub-parameters
-                    sink.report_error(ParseError::IncompleteSequence);
+                    sink.report_errror(
+                        ParseError::IncompleteSequence {
+                            context: "Extended background color requires sub-parameters (48;5;n or 48;2;r;g;b)",
+                        },
+                        crate::ErrorLevel::Error,
+                    );
                     i += 1;
                 }
             }
             SgrLutEntry::Undefined => {
                 // Unrecognized or unsupported SGR code
-                sink.report_error(ParseError::InvalidParameter {
-                    command: "CsiSelectGraphicRendition",
-                    value: code as u16,
-                });
+                sink.report_errror(
+                    ParseError::InvalidParameter {
+                        command: "CsiSelectGraphicRendition",
+                        value: code as u16,
+                        expected: Some("valid SGR attribute code (0-107)"),
+                    },
+                    crate::ErrorLevel::Error,
+                );
                 i += 1;
             }
         }

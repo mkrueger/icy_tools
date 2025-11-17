@@ -1,8 +1,8 @@
 //! Example demonstrating type-safe ANSI command parameters and error reporting
 
 use icy_parser_core::{
-    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecPrivateMode, EraseInDisplayMode, EraseInLineMode, Intensity, ParseError, SgrAttribute,
-    TerminalCommand, Underline,
+    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecPrivateMode, EraseInDisplayMode, EraseInLineMode, ErrorLevel, Intensity, ParseError,
+    SgrAttribute, TerminalCommand, Underline,
 };
 
 struct ExampleSink {
@@ -156,18 +156,32 @@ impl CommandSink for ExampleSink {
         }
     }
 
-    fn report_error(&mut self, error: ParseError) {
+    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
         self.error_count += 1;
         eprintln!("⚠️  Parse Error #{}: {:?}", self.error_count, error);
         match error {
-            ParseError::InvalidParameter { command, value } => {
-                eprintln!("    Command '{}' received invalid parameter: {}", command, value);
+            ParseError::InvalidParameter { command, value, expected } => {
+                if let Some(exp) = expected {
+                    eprintln!("    Command '{}' received invalid parameter: {} (expected: {})", command, value, exp);
+                } else {
+                    eprintln!("    Command '{}' received invalid parameter: {}", command, value);
+                }
             }
-            ParseError::IncompleteSequence => {
-                eprintln!("    Incomplete escape sequence at end of input");
+            ParseError::IncompleteSequence { context } => {
+                eprintln!("    Incomplete escape sequence: {}", context);
             }
-            ParseError::MalformedSequence { description } => {
-                eprintln!("    Malformed sequence: {}", description);
+            ParseError::MalformedSequence { description, sequence } => {
+                if let Some(seq) = sequence {
+                    eprintln!("    Malformed sequence: {} (sequence: {})", description, seq);
+                } else {
+                    eprintln!("    Malformed sequence: {}", description);
+                }
+            }
+            ParseError::UnsupportedFeature { description } => {
+                eprintln!("    Unsupported feature: {}", description);
+            }
+            ParseError::OutOfRange { parameter, value, min, max } => {
+                eprintln!("    Parameter '{}' value {} out of range [{}, {}]", parameter, value, min, max);
             }
         }
     }

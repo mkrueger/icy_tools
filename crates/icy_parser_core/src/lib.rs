@@ -1,9 +1,11 @@
 //! Core parser infrastructure: command emission traits and basic ASCII parser.
 
 mod ascii;
+mod errors;
 use std::fmt::Display;
 
 pub use ascii::AsciiParser;
+pub use errors::{ErrorLevel, ParseError};
 
 mod ansi;
 pub use ansi::AnsiParser;
@@ -48,6 +50,32 @@ mod vt52;
 pub use vt52::Vt52Parser;
 
 mod tables;
+
+/// Special keys for CSI sequences
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpecialKey {
+    Home = 1,
+    Insert = 2,
+    Delete = 3,
+    End = 4,
+    PageUp = 5,
+    PageDown = 6,
+}
+
+impl SpecialKey {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(SpecialKey::Home),
+            2 => Some(SpecialKey::Insert),
+            3 => Some(SpecialKey::Delete),
+            4 => Some(SpecialKey::End),
+            5 => Some(SpecialKey::PageUp),
+            6 => Some(SpecialKey::PageDown),
+            _ => None,
+        }
+    }
+}
 pub use tables::*;
 
 /// Erase in Display mode for ED command (ESC[nJ)
@@ -462,20 +490,8 @@ pub enum OperatingSystemCommand<'a> {
     Hyperlink { params: &'a [u8], uri: &'a [u8] },
 }
 
-/// Parser error types
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParseError {
-    /// Invalid parameter value for a command
-    InvalidParameter { command: &'static str, value: u16 },
-    /// Incomplete sequence (parser state at end of input)
-    IncompleteSequence,
-    /// Malformed escape sequence
-    MalformedSequence { description: &'static str },
-}
-
-#[repr(u8)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalCommand {
     // Basic control characters (C0 controls)
     CarriageReturn,
@@ -512,7 +528,12 @@ pub enum TerminalCommand {
     CsiSelectGraphicRendition(SgrAttribute),
 
     /// DECSTBM - Set Scrolling Region: ESC[{top};{bottom};{left};[{right}]r
-    CsiSetScrollingRegion(u16, u16, u16, u16),
+    CsiSetScrollingRegion {
+        top: u16,
+        bottom: u16,
+        left: u16,
+        right: u16,
+    },
 
     /// ICH - Insert Character: ESC[{n}@
     CsiInsertCharacter(u16),
@@ -552,8 +573,7 @@ pub enum TerminalCommand {
     CsiResizeTerminal(u16, u16),
 
     /// Special keys: ESC[{n}~
-    /// 1=Home, 2=Insert, 3=Delete, 4=End, 5=PageUp, 6=PageDown
-    CsiSpecialKey(u16),
+    CsiSpecialKey(SpecialKey),
 
     /// DECSET - DEC Private Mode Set: ESC[?{n}h
     /// Emitted once per mode (e.g., ESC[?25;1000h emits two commands)
@@ -576,8 +596,10 @@ pub enum TerminalCommand {
     CsiSetCaretStyle(bool, CaretShape),
 
     /// Font Selection: ESC[{Ps1};{Ps2} D
-    /// Ps1 = slot (0-3), Ps2 = font number
-    CsiFontSelection(u16, u16),
+    CsiFontSelection {
+        slot: u16,
+        font_number: u16,
+    },
 
     /// Set Font Page (for PETSCII/ATASCII character set switching)
     /// Direct font page selection without font loading
@@ -587,18 +609,37 @@ pub enum TerminalCommand {
     /// Ps1 = communication line type, Ps2 = baud rate
     CsiSelectCommunicationSpeed(CommunicationLine, BaudEmulation),
 
-    /// DECFRA - Fill Rectangular Area: ESC[{Pchar};{Pt};{Pl};{Pb};{Pr}$x
-    CsiFillRectangularArea(u8, u16, u16, u16, u16),
+    /// DECFRA - Fill Rectangular Area: ESC[{Pchar};{Pt};{Pl};{Pb};{Pr} $x
+    CsiFillRectangularArea {
+        char: u8,
+        top: u16,
+        left: u16,
+        bottom: u16,
+        right: u16,
+    },
 
     /// DECERA - Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}$z
-    CsiEraseRectangularArea(u16, u16, u16, u16),
+    CsiEraseRectangularArea {
+        top: u16,
+        left: u16,
+        bottom: u16,
+        right: u16,
+    },
 
     /// DECSERA - Selective Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}${
-    CsiSelectiveEraseRectangularArea(u16, u16, u16, u16),
+    CsiSelectiveEraseRectangularArea {
+        top: u16,
+        left: u16,
+        bottom: u16,
+        right: u16,
+    },
 
     // CSI = sequences (extended terminal functions)
     /// Set Margins: ESC[={top};{bottom}r
-    SetTopBottomMargin(u16, u16),
+    SetTopBottomMargin {
+        top: u16,
+        bottom: u16,
+    },
     /// Set Specific Margins: ESC[={type};{value}m
     CsiEqualsSetSpecificMargins(MarginType, u16),
 
@@ -641,9 +682,11 @@ pub enum TerminalCommand {
 
     /// ANSI Music sequence
     /// Conflicting CSI M/N commands can trigger music playback
-    AnsiMusic(AnsiMusic),
     ResetMargins,
-    ResetLeftAndRightMargin(u16, u16),
+    ResetLeftAndRightMargin {
+        left: u16,
+        right: u16,
+    },
 }
 
 /// Terminal requests that expect a response from the terminal emulator.
@@ -770,8 +813,23 @@ pub trait CommandSink {
     /// Default implementation does nothing.
     fn request(&mut self, _request: TerminalRequest) {}
 
-    /// Report a parsing error. Default implementation does nothing.
-    fn report_error(&mut self, _error: ParseError) {}
+    /// Report a parsing error with context information.
+    /// The error includes a severity level and detailed diagnostic information.
+    /// Default implementation does nothing.
+    ///
+    /// # Arguments
+    /// * `error` - The parse error with context
+    ///
+    /// # Examples
+    /// Implementers can filter by error level:
+    /// ```ignore
+    /// fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
+    ///     if error.level() >= ErrorLevel::Warning {
+    ///         eprintln!("Parse error: {}", error);
+    ///     }
+    /// }
+    /// ```
+    fn report_errror(&mut self, _error: ParseError, _level: ErrorLevel) {}
 }
 
 pub trait CommandParser {

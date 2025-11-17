@@ -105,7 +105,7 @@ fn test_igs_color_set() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::ColorSet { pen, color } => {
-            assert_eq!(*pen, 1);
+            assert_eq!(*pen as u8, 1);
             assert_eq!(*color, 15);
         }
         _ => panic!("Expected ColorSet command"),

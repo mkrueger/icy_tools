@@ -94,21 +94,50 @@ impl BitFont {
         None
     }
 
-    /// Find a glyph in the YaffFont by character
+    /// Find a glyph definition for the given character
     fn find_glyph_in_font(&self, ch: char) -> Option<GlyphDefinition> {
         use libyaff::Label;
 
-        self.yaff_font
+        eprintln!("DEBUG: find_glyph_in_font for '{}' (U+{:04X}, byte {})", ch, ch as u32, ch as u8);
+        eprintln!("  Font has {} glyphs", self.yaff_font.glyphs.len());
+
+        let result = self
+            .yaff_font
             .glyphs
             .iter()
             .find(|g| {
-                g.labels.iter().any(|label| match label {
-                    Label::Codepoint(codes) => codes.contains(&(ch as u16)),
-                    Label::Unicode(codes) => codes.contains(&(ch as u32)),
+                let matches = g.labels.iter().any(|label| match label {
+                    Label::Codepoint(codes) => {
+                        let match_found = codes.contains(&(ch as u16));
+                        if match_found {
+                            eprintln!("  Found via Codepoint label: {:?}", codes);
+                        }
+                        match_found
+                    }
+                    Label::Unicode(codes) => {
+                        let match_found = codes.contains(&(ch as u32));
+                        if match_found {
+                            eprintln!("  Found via Unicode label: {:?}", codes);
+                        }
+                        match_found
+                    }
                     _ => false,
-                })
+                });
+                matches
             })
-            .cloned()
+            .cloned();
+
+        if result.is_none() {
+            eprintln!("  NO MATCH FOUND!");
+            // Debug: print first few glyphs to see structure
+            for (i, g) in self.yaff_font.glyphs.iter().take(3).enumerate() {
+                eprintln!("  Glyph {}: labels={:?}", i, g.labels);
+            }
+        } else {
+            eprintln!("  Match found!");
+        }
+
+        result
     }
 
     /// Convert font to raw u8 data for legacy formats

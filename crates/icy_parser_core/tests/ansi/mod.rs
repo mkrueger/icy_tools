@@ -2,7 +2,7 @@ use std::u16;
 
 use icy_parser_core::{
     AnsiMode, AnsiParser, Blink, CaretShape, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode,
-    EraseInLineMode, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
+    EraseInLineMode, ErrorLevel, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
 };
 
 mod debug_melody;
@@ -461,7 +461,7 @@ fn test_scrolling_top_bottom() {
     // ESC[5;20r - Set scrolling region from line 5 to 20
     parser.parse(b"\x1B[5;20r", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::SetTopBottomMargin(5, 20));
+    assert_eq!(sink.cmds[0], TerminalCommand::SetTopBottomMargin { top: 5, bottom: 20 });
 }
 
 #[test]
@@ -472,7 +472,15 @@ fn test_scrolling_region() {
     // ESC[5;20r - Set scrolling region from line 5 to 20
     parser.parse(b"\x1B[5;20;3r", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiSetScrollingRegion(5, 20, 3, u16::MAX));
+    assert_eq!(
+        sink.cmds[0],
+        TerminalCommand::CsiSetScrollingRegion {
+            top: 5,
+            bottom: 20,
+            left: 3,
+            right: u16::MAX
+        }
+    );
 
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
@@ -480,7 +488,15 @@ fn test_scrolling_region() {
     // ESC[5;20r - Set scrolling region from line 5 to 20
     parser.parse(b"\x1B[5;20;3;34r", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiSetScrollingRegion(5, 20, 3, 34));
+    assert_eq!(
+        sink.cmds[0],
+        TerminalCommand::CsiSetScrollingRegion {
+            top: 5,
+            bottom: 20,
+            left: 3,
+            right: 34
+        }
+    );
 }
 
 #[test]
@@ -525,7 +541,7 @@ fn test_error_reporting() {
             self.cmds.push(cmd);
         }
 
-        fn report_error(&mut self, error: ParseError) {
+        fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
             self.errors.push(error);
         }
     }
@@ -545,6 +561,7 @@ fn test_error_reporting() {
         ParseError::InvalidParameter {
             command: "CsiEraseInDisplay",
             value: 99,
+            expected: None,
         }
     );
     // Should still emit a default command
@@ -562,6 +579,7 @@ fn test_error_reporting() {
         ParseError::InvalidParameter {
             command: "CsiEraseInLine",
             value: 5,
+            expected: None,
         }
     );
     // Should still emit a default command
@@ -579,6 +597,7 @@ fn test_error_reporting() {
         ParseError::InvalidParameter {
             command: "CsiDeviceStatusReport",
             value: 99,
+            expected: None,
         }
     );
     // Should not emit any commands for invalid parameter
@@ -594,6 +613,7 @@ fn test_error_reporting() {
         ParseError::InvalidParameter {
             command: "CsiDecPrivateModeSet",
             value: 9999,
+            expected: None,
         }
     );
     // Should not emit command for invalid modes
@@ -635,7 +655,7 @@ fn test_ansi_modes() {
             self.cmds.push(cmd);
         }
 
-        fn report_error(&mut self, error: ParseError) {
+        fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
             self.errors.push(error);
         }
     }
@@ -694,6 +714,7 @@ fn test_ansi_modes() {
         ParseError::InvalidParameter {
             command: "CsiSetMode",
             value: 99,
+            expected: None,
         }
     );
     // Should not emit command for invalid modes
@@ -846,7 +867,14 @@ fn test_csi_dollar_sequences() {
     // CSI Pchar;Pt;Pl;Pb;Pr$x - Fill Rectangular Area
     parser.parse(b"\x1B[65;1;1;10;10$x", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiFillRectangularArea(pchar, pt, pl, pb, pr) = sink.cmds[0] {
+    if let TerminalCommand::CsiFillRectangularArea {
+        char: pchar,
+        top: pt,
+        left: pl,
+        bottom: pb,
+        right: pr,
+    } = sink.cmds[0]
+    {
         assert_eq!(pchar, 65); // 'A'
         assert_eq!(pt, 1);
         assert_eq!(pl, 1);
@@ -861,7 +889,13 @@ fn test_csi_dollar_sequences() {
     // CSI Pt;Pl;Pb;Pr$z - Erase Rectangular Area
     parser.parse(b"\x1B[5;5;15;20$z", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiEraseRectangularArea(pt, pl, pb, pr) = sink.cmds[0] {
+    if let TerminalCommand::CsiEraseRectangularArea {
+        top: pt,
+        left: pl,
+        bottom: pb,
+        right: pr,
+    } = sink.cmds[0]
+    {
         assert_eq!(pt, 5);
         assert_eq!(pl, 5);
         assert_eq!(pb, 15);
@@ -875,7 +909,13 @@ fn test_csi_dollar_sequences() {
     // CSI Pt;Pl;Pb;Pr${ - Selective Erase Rectangular Area
     parser.parse(b"\x1B[2;3;12;18${", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSelectiveEraseRectangularArea(pt, pl, pb, pr) = sink.cmds[0] {
+    if let TerminalCommand::CsiSelectiveEraseRectangularArea {
+        top: pt,
+        left: pl,
+        bottom: pb,
+        right: pr,
+    } = sink.cmds[0]
+    {
         assert_eq!(pt, 2);
         assert_eq!(pl, 3);
         assert_eq!(pb, 12);
@@ -929,9 +969,9 @@ fn test_csi_space_sequences() {
     // CSI Ps1;Ps2 D - Font Selection
     parser.parse(b"\x1B[1;5 D", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiFontSelection(ps1, ps2) = sink.cmds[0] {
-        assert_eq!(ps1, 1); // slot
-        assert_eq!(ps2, 5); // font number
+    if let TerminalCommand::CsiFontSelection { slot, font_number } = sink.cmds[0] {
+        assert_eq!(slot, 1); // slot
+        assert_eq!(font_number, 5); // font number
     } else {
         panic!("Expected CsiFontSelection");
     }
@@ -1137,8 +1177,8 @@ fn test_special_keys() {
     // CSI 1 ~ - Home
     parser.parse(b"\x1B[1~", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSpecialKey(n) = sink.cmds[0] {
-        assert_eq!(n, 1);
+    if let TerminalCommand::CsiSpecialKey(key) = sink.cmds[0] {
+        assert_eq!(key, icy_parser_core::SpecialKey::Home);
     } else {
         panic!("Expected CsiSpecialKey");
     }
@@ -1148,8 +1188,8 @@ fn test_special_keys() {
     // CSI 2 ~ - Insert
     parser.parse(b"\x1B[2~", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSpecialKey(n) = sink.cmds[0] {
-        assert_eq!(n, 2);
+    if let TerminalCommand::CsiSpecialKey(key) = sink.cmds[0] {
+        assert_eq!(key, icy_parser_core::SpecialKey::Insert);
     } else {
         panic!("Expected CsiSpecialKey");
     }
@@ -1159,8 +1199,8 @@ fn test_special_keys() {
     // CSI 3 ~ - Delete
     parser.parse(b"\x1B[3~", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSpecialKey(n) = sink.cmds[0] {
-        assert_eq!(n, 3);
+    if let TerminalCommand::CsiSpecialKey(key) = sink.cmds[0] {
+        assert_eq!(key, icy_parser_core::SpecialKey::Delete);
     } else {
         panic!("Expected CsiSpecialKey");
     }
@@ -1170,8 +1210,8 @@ fn test_special_keys() {
     // CSI 5 ~ - Page Up
     parser.parse(b"\x1B[5~", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSpecialKey(n) = sink.cmds[0] {
-        assert_eq!(n, 5);
+    if let TerminalCommand::CsiSpecialKey(key) = sink.cmds[0] {
+        assert_eq!(key, icy_parser_core::SpecialKey::PageUp);
     } else {
         panic!("Expected CsiSpecialKey");
     }
@@ -1181,8 +1221,8 @@ fn test_special_keys() {
     // CSI 6 ~ - Page Down
     parser.parse(b"\x1B[6~", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSpecialKey(n) = sink.cmds[0] {
-        assert_eq!(n, 6);
+    if let TerminalCommand::CsiSpecialKey(key) = sink.cmds[0] {
+        assert_eq!(key, icy_parser_core::SpecialKey::PageDown);
     } else {
         panic!("Expected CsiSpecialKey");
     }

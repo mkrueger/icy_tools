@@ -39,7 +39,7 @@ impl CommandSink for PrintSink {
         println!("EVENT {:?}", cmd);
     }
     
-    fn report_error(&mut self, error: ParseError) {
+    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
         eprintln!("Parse error: {:?}", error);
     }
 }

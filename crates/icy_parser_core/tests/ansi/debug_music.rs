@@ -40,7 +40,7 @@ impl CommandSink for DebugSink {
     fn play_music(&mut self, music: AnsiMusic) {
         self.commands.push(format!("play_music: {} actions", music.music_actions.len()));
     }
-    fn report_error(&mut self, error: icy_parser_core::ParseError) {
+    fn report_errror(&mut self, error: icy_parser_core::ParseError, _level: icy_parser_core::ErrorLevel) {
         self.commands.push(format!("error: {:?}", error));
     }
 }

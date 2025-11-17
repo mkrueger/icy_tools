@@ -1,50 +1,5 @@
+use super::*;
 use std::fmt;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoopTarget {
-    /// Single command identifier, e.g. 'L', 'S', 'G'.
-    Single(char),
-
-    /// Chain-Gang sequence, e.g. ">CL@".
-    ChainGang {
-        /// Raw representation including leading '>' and trailing '@' for roundtrip.
-        raw: String,
-        /// Extracted command identifiers inside the chain.
-        commands: Vec<char>,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct LoopModifiers {
-    /// XOR stepping ("|" after the command identifier).
-    pub xor_stepping: bool,
-    /// For W command: fetch text each iteration ("@" after the command identifier).
-    pub refresh_text_each_iteration: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoopParamToken {
-    /// Plain numeric value.
-    Number(i32),
-    /// Symbolic value, usually 'x' or 'y'.
-    Symbol(char),
-    /// Expression like "+10", "-10", "!99".
-    Expr(String),
-    /// Group separator corresponding to ':' in the text representation.
-    GroupSeparator,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoopCommandData {
-    pub from: i32,
-    pub to: i32,
-    pub step: i32,
-    pub delay: i32,
-    pub target: LoopTarget,
-    pub modifiers: LoopModifiers,
-    pub param_count: u16,
-    pub params: Vec<LoopParamToken>,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum IgsCommand {
@@ -254,14 +209,10 @@ pub enum IgsCommand {
     /// This maps a logical pen to a color palette entry.
     ///
     /// # Parameters
-    /// * `pen` - Screen operation to set:
-    ///   - 0: Polymarker color (for `PolymarkerPlot`)
-    ///   - 1: Line color
-    ///   - 2: Fill color
-    ///   - 3: Text color (for `WriteText`)
+    /// * `pen` - Screen operation to set (see PenType enum)
     /// * `color` - Pen number to use (0-15)
     ColorSet {
-        pen: u8,
+        pen: PenType,
         color: u8,
     },
 
@@ -273,20 +224,10 @@ pub enum IgsCommand {
     /// Controls the fill pattern type, specific pattern, and whether borders are drawn.
     ///
     /// # Parameters
-    /// * `pattern_type` - Fill type:
-    ///   - 0: Hollow (no fill)
-    ///   - 1: Solid color
-    ///   - 2: Pattern (uses pattern_index 1-24)
-    ///   - 3: Hatch (uses pattern_index 1-12)
-    ///   - 4: User defined (uses patterns 0-9)
-    /// * `pattern_index` - Specific pattern within the type:
-    ///   - For type 2: patterns 1-24 (see ST BASIC manual)
-    ///   - For type 3: hatches 1-12
-    ///   - For type 4: user patterns 0-9 (8 sets pattern 0 as random, 9+ as default)
+    /// * `pattern_type` - Fill type (Hollow, Solid, Pattern(1-24), Hatch(1-12), UserDefined(0-9))
     /// * `border` - Draw border around filled areas: `true` for yes, `false` for no
     AttributeForFills {
-        pattern_type: u8,
-        pattern_index: u8,
+        pattern_type: PatternType,
         border: bool,
     },
 
@@ -298,27 +239,15 @@ pub enum IgsCommand {
     /// and end decorations (arrows, rounded ends).
     ///
     /// # Parameters
-    /// * `style` - What to modify:
-    ///   - 1: Polymarkers (affects `PolymarkerPlot`)
-    ///   - 2: Lines (affects `Line` and `LineDrawTo`)
-    /// * `thickness` - Style selection:
-    ///   - For polymarkers: 1=point, 2=plus, 3=star, 4=square, 5=diagonal cross, 6=diamond
-    ///   - For lines: 1=solid, 2=long dash, 3=dotted, 4=dash-dot, 5=dashed, 6=dash-dot-dot, 7=user defined
-    ///
-    /// # Third Parameter Usage
-    /// - For polymarkers: size 1-8
-    /// - For solid lines: thickness 1-41
-    /// - For user defined lines: pattern number 1-32
-    /// - Line end styles (add to size):
-    ///   - 0: Square ends
-    ///   - 50: Arrows both ends
-    ///   - 51: Arrow left, square right
-    ///   - 52: Arrow right, square left
-    ///   - 60: Rounded both ends
+    /// * `kind` - Style kind (Polymarker or Line with specific type)
+    /// * `value` - Third parameter: size/thickness/pattern/end-style composite
+    ///   - For polymarkers: size 1-8
+    ///   - For solid lines: thickness 1-41
+    ///   - For user defined lines: pattern number 1-32
+    ///   - Line end styles (add to size): 0=square, 50=arrows both, 51=arrow left, 52=arrow right, 60=rounded
     LineStyle {
-        kind: u8,   // 1=polymarkers, 2=lines
-        style: u8,  // style code
-        value: u16, // third parameter: size/thickness/pattern/end-style composite
+        kind: LineStyleKind,
+        value: u16,
     },
 
     /// Set pen RGB color command (S)
@@ -348,13 +277,9 @@ pub enum IgsCommand {
     /// effects like XOR drawing for erasable graphics.
     ///
     /// # Parameters
-    /// * `mode` - Drawing mode:
-    ///   - 1: Replace (normal drawing)
-    ///   - 2: Transparent (skip background pixels)
-    ///   - 3: XOR (reversible drawing)
-    ///   - 4: Reverse transparent
+    /// * `mode` - Drawing mode (Replace, Transparent, Xor, or ReverseTransparent)
     DrawingMode {
-        mode: u8,
+        mode: DrawingMode,
     },
 
     /// Hollow/filled toggle command (H)
@@ -392,23 +317,13 @@ pub enum IgsCommand {
     /// style effects, point size, and rotation angle.
     ///
     /// # Parameters
-    /// * `effects` - Bit flags for text effects (can be combined):
-    ///   - 0: Normal
-    ///   - 1: Thickened (bold)
-    ///   - 2: Ghosted
-    ///   - 4: Skewed (italic)
-    ///   - 8: Underlined
-    ///   - 16: Outlined
+    /// * `effects` - Text effect flags (Normal=0, Thickened=1, Ghosted=2, Skewed=4, Underlined=8, Outlined=16)
     /// * `size` - Text size in points (1/72 inch). Common sizes: 8, 9, 10, 16, 18, 20
-    /// * `rotation` - Text angle:
-    ///   - 0: 0 degrees (normal)
-    ///   - 1: 90 degrees
-    ///   - 2: 180 degrees
-    ///   - 3: 270 degrees
+    /// * `rotation` - Text rotation angle (Degrees0, Degrees90, Degrees180, Degrees270)
     TextEffects {
-        effects: u8,
+        effects: u8, // Bit flags, can be combined
         size: u8,
-        rotation: u8,
+        rotation: TextRotation,
     },
 
     // Special commands
@@ -420,39 +335,17 @@ pub enum IgsCommand {
     /// Effects 0-4 are internally looped for extended duration.
     ///
     /// # Parameters
-    /// * `sound_number` - Effect to play:
-    ///   - 0: Alien Invasion
-    ///   - 1: Red Alert
-    ///   - 2: Gunshot
-    ///   - 3: Laser 1
-    ///   - 4: Jackhammer
-    ///   - 5: Teleport
-    ///   - 6: Explosion
-    ///   - 7: Laser 2
-    ///   - 8: Longbell
-    ///   - 9: Surprise
-    ///   - 10: Radio Broadcast
-    ///   - 11: Bounce Ball
-    ///   - 12: Eerie Sound
-    ///   - 13: Harley Motorcycle
-    ///   - 14: Helicopter
-    ///   - 15: Steam Locomotive
-    ///   - 16: Wave
-    ///   - 17: Robot Walk
-    ///   - 18: Passing Plane
-    ///   - 19: Landing
+    /// * `sound_effect` - Effect to play (AlienInvasion, RedAlert, Gunshot, etc.)
     ///
-    /// # Extended Functions
-    /// - 20: Alter sound effect parameters
-    /// - 21: Stop all sounds immediately
-    /// - 22: Restore sound effect to default
-    /// - 23: Set loop count for effects 0-4
+    /// # Note
+    /// Extended functions (20-23) are handled by separate commands:
+    /// - AlterSoundEffect, StopAllSound, RestoreSoundEffect, SetEffectLoops
     BellsAndWhistles {
-        sound_number: u8,
+        sound_effect: SoundEffect,
     },
     AlterSoundEffect {
         play_flag: u8,
-        snd_num: u8,
+        sound_effect: SoundEffect,
         element_num: u8,
         negative_flag: u8,
         thousands: u16,
@@ -460,7 +353,7 @@ pub enum IgsCommand {
     },
     StopAllSound,
     RestoreSoundEffect {
-        snd_num: u8,
+        sound_effect: SoundEffect,
     },
     SetEffectLoops {
         count: u32,
@@ -494,23 +387,11 @@ pub enum IgsCommand {
     /// operations for combining source and destination.
     ///
     /// # Parameters
-    /// * `blit_type` - Operation type:
-    ///   - 0: Screen to screen
-    ///   - 1: Screen to memory
-    ///   - 2: Memory to screen
-    ///   - 3: Piece of memory to screen
-    ///   - 4: Memory to memory
-    /// * `mode` - Logical operation (0-15):
-    ///   - 0: Clear destination
-    ///   - 3: Replace
-    ///   - 6: XOR
-    ///   - 7: Transparent (OR)
-    ///   - 15: Fill destination
-    /// * `params` - Additional coordinates depending on blit_type
+    /// * `operation` - The blit operation with its specific parameters
+    /// * `mode` - Logical operation (Clear, Replace, Xor, Transparent, Fill, etc.)
     GrabScreen {
-        blit_type: u8,
-        mode: u8,
-        params: Vec<i32>,
+        operation: BlitOperation,
+        mode: BlitMode,
     },
 
     /// Initialize command (I)
@@ -522,18 +403,12 @@ pub enum IgsCommand {
     /// for a consistent starting point.
     ///
     /// # Parameters
-    /// * `mode` - Initialization type:
-    ///   - 0: Set desktop palette and attributes
-    ///   - 1: Set desktop palette only
-    ///   - 2: Set desktop attributes only
-    ///   - 3: Set IG default palette
-    ///   - 4: Set VDI default palette
-    ///   - 5: Set desktop resolution and VDI clipping
+    /// * `mode` - Initialization type (see InitializationType enum)
     ///
     /// # Note
-    /// Mode 5 should be used FIRST before any palette commands
+    /// Mode DesktopResolutionAndClipping should be used FIRST before any palette commands
     Initialize {
-        mode: u8,
+        mode: InitializationType,
     },
 
     /// Elliptical arc command (J)
@@ -565,13 +440,9 @@ pub enum IgsCommand {
     /// Controls text cursor visibility and backspace behavior.
     ///
     /// # Parameters
-    /// * `mode` - Cursor mode:
-    ///   - 0: Cursor off
-    ///   - 1: Cursor on
-    ///   - 2: Destructive backspace
-    ///   - 3: Non-destructive backspace
+    /// * `mode` - Cursor mode (see CursorMode enum)
     Cursor {
-        mode: u8,
+        mode: CursorMode,
     },
 
     /// Chip music command (n)
@@ -582,7 +453,7 @@ pub enum IgsCommand {
     /// music with timing control. No flow control during playback.
     ///
     /// # Parameters
-    /// * `effect` - Sound effect to use as instrument (0-19)
+    /// * `sound_effect` - Sound effect to use as instrument (see SoundEffect enum)
     /// * `voice` - Voice channel (0-2)
     /// * `volume` - Volume level (0-15)
     /// * `pitch` - Note pitch (0-255, 0 = no sound but processes timing)
@@ -594,7 +465,7 @@ pub enum IgsCommand {
     ///   - 3: Move all voices to release
     ///   - 4: Stop all voices immediately
     ChipMusic {
-        effect: u8,
+        sound_effect: SoundEffect,
         voice: u8,
         volume: u8,
         pitch: u8,
@@ -1115,10 +986,10 @@ pub enum IgsCommand {
     /// For ESC form store x/y mapping to direction/count internally.
     ///
     /// # Parameters
-    /// * `direction` - 0=up,1=down,2=left,3=right (IG form) or derived from sign of x/y (ESC form)
+    /// * `direction` - Direction to move (Up, Down, Left, Right)
     /// * `count` - Number of positions to move
     CursorMotion {
-        direction: u8,
+        direction: crate::Direction,
         count: i32,
     },
 
@@ -1214,20 +1085,29 @@ impl fmt::Display for IgsCommand {
             }
             IgsCommand::FloodFill { x, y } => write!(f, "G#F>{},{}:", x, y),
             IgsCommand::PolymarkerPlot { x, y } => write!(f, "G#P>{},{}:", x, y),
-            IgsCommand::ColorSet { pen, color } => write!(f, "G#C>{},{}:", pen, color),
-            IgsCommand::AttributeForFills {
-                pattern_type,
-                pattern_index,
-                border,
-            } => {
+            IgsCommand::ColorSet { pen, color } => write!(f, "G#C>{},{}:", *pen as u8, color),
+            IgsCommand::AttributeForFills { pattern_type, border } => {
+                let (type_val, index_val) = match pattern_type {
+                    PatternType::Hollow => (0, 1),
+                    PatternType::Solid => (1, 1),
+                    PatternType::Pattern(idx) => (2, *idx),
+                    PatternType::Hatch(idx) => (3, *idx),
+                    PatternType::UserDefined(idx) => (4, *idx),
+                };
                 let border_val = if *border { 1 } else { 0 };
-                write!(f, "G#A>{},{},{}:", pattern_type, pattern_index, border_val)
+                write!(f, "G#A>{},{},{}:", type_val, index_val, border_val)
             }
-            IgsCommand::LineStyle { kind, style, value } => write!(f, "G#T>{},{},{}:", kind, style, value),
+            IgsCommand::LineStyle { kind, value } => {
+                let (type_val, style_val) = match kind {
+                    LineStyleKind::Polymarker(pk) => (1, *pk as u8),
+                    LineStyleKind::Line(lk) => (2, *lk as u8),
+                };
+                write!(f, "G#T>{},{},{}:", type_val, style_val, value)
+            }
             IgsCommand::SetPenColor { pen, red, green, blue } => {
                 write!(f, "G#S>{},{},{},{}:", pen, red, green, blue)
             }
-            IgsCommand::DrawingMode { mode } => write!(f, "G#M>{}:", mode),
+            IgsCommand::DrawingMode { mode } => write!(f, "G#M>{}:", *mode as u8),
             IgsCommand::HollowSet { enabled } => {
                 let val = if *enabled { 1 } else { 0 };
                 write!(f, "G#H>{}:", val)
@@ -1238,12 +1118,12 @@ impl fmt::Display for IgsCommand {
                 write!(f, "G#W>{},{},{}@", x, y, text)
             }
             IgsCommand::TextEffects { effects, size, rotation } => {
-                write!(f, "G#E>{},{},{}:", effects, size, rotation)
+                write!(f, "G#E>{},{},{}:", effects, size, *rotation as u8)
             }
-            IgsCommand::BellsAndWhistles { sound_number } => write!(f, "G#b>{}:", sound_number),
+            IgsCommand::BellsAndWhistles { sound_effect } => write!(f, "G#b>{}:", *sound_effect as u8),
             IgsCommand::AlterSoundEffect {
                 play_flag,
-                snd_num,
+                sound_effect,
                 element_num,
                 negative_flag,
                 thousands,
@@ -1252,23 +1132,59 @@ impl fmt::Display for IgsCommand {
                 write!(
                     f,
                     "G#b>20,{},{},{},{},{},{}:",
-                    play_flag, snd_num, element_num, negative_flag, thousands, hundreds
+                    play_flag, *sound_effect as u8, element_num, negative_flag, thousands, hundreds
                 )
             }
             IgsCommand::StopAllSound => write!(f, "G#b>21:"),
-            IgsCommand::RestoreSoundEffect { snd_num } => write!(f, "G#b>22,{}:", snd_num),
+            IgsCommand::RestoreSoundEffect { sound_effect } => write!(f, "G#b>22,{}:", *sound_effect as u8),
             IgsCommand::SetEffectLoops { count } => write!(f, "G#b>23,{}:", count),
             IgsCommand::GraphicScaling { mode } => {
                 write!(f, "G#g>{}:", mode)
             }
-            IgsCommand::GrabScreen { blit_type, mode, params } => {
-                write!(f, "G#G>{},{}", blit_type, mode)?;
-                for param in params {
-                    write!(f, ",{}", param)?;
+            IgsCommand::GrabScreen { operation, mode } => match operation {
+                BlitOperation::ScreenToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                } => {
+                    write!(f, "G#G>0,{},{},{},{},{},{},{}:", *mode as u8, src_x1, src_y1, src_x2, src_y2, dest_x, dest_y)
                 }
-                write!(f, ":")
-            }
-            IgsCommand::Initialize { mode } => write!(f, "G#I>{}:", mode),
+                BlitOperation::ScreenToMemory {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                } => {
+                    write!(f, "G#G>1,{},{},{},{},{}:", *mode as u8, src_x1, src_y1, src_x2, src_y2)
+                }
+                BlitOperation::MemoryToScreen { dest_x, dest_y } => {
+                    write!(f, "G#G>2,{},{},{}:", *mode as u8, dest_x, dest_y)
+                }
+                BlitOperation::PieceOfMemoryToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                } => {
+                    write!(f, "G#G>3,{},{},{},{},{},{},{}:", *mode as u8, src_x1, src_y1, src_x2, src_y2, dest_x, dest_y)
+                }
+                BlitOperation::MemoryToMemory {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                } => {
+                    write!(f, "G#G>4,{},{},{},{},{},{},{}:", *mode as u8, src_x1, src_y1, src_x2, src_y2, dest_x, dest_y)
+                }
+            },
+            IgsCommand::Initialize { mode } => write!(f, "G#I>{}:", *mode as u8),
             IgsCommand::EllipticalArc {
                 x,
                 y,
@@ -1279,16 +1195,16 @@ impl fmt::Display for IgsCommand {
             } => {
                 write!(f, "G#J>{},{},{},{},{},{}:", x, y, x_radius, y_radius, start_angle, end_angle)
             }
-            IgsCommand::Cursor { mode } => write!(f, "G#k>{}:", mode),
+            IgsCommand::Cursor { mode } => write!(f, "G#k>{}:", *mode as u8),
             IgsCommand::ChipMusic {
-                effect,
+                sound_effect,
                 voice,
                 volume,
                 pitch,
                 timing,
                 stop_type,
             } => {
-                write!(f, "G#n>{},{},{},{},{},{}:", effect, voice, volume, pitch, timing, stop_type)
+                write!(f, "G#n>{},{},{},{},{},{}:", *sound_effect as u8, voice, volume, pitch, timing, stop_type)
             }
             IgsCommand::Noise { params } => {
                 write!(f, "G#N")?;
@@ -1487,8 +1403,14 @@ impl fmt::Display for IgsCommand {
                 }
             }
             IgsCommand::CursorMotion { direction, count } => {
+                let dir_val = match direction {
+                    crate::Direction::Up => 0,
+                    crate::Direction::Down => 1,
+                    crate::Direction::Left => 2,
+                    crate::Direction::Right => 3,
+                };
                 // Emit VT52 ESC style for round-trip of ESC m sequences
-                write!(f, "\x1bm{},{}", direction, count)
+                write!(f, "\x1bm{},{}", dir_val, count)
             }
             IgsCommand::PositionCursor { x, y } => write!(f, "G#p>{},{}:", x, y),
             IgsCommand::RememberCursor { value } => {

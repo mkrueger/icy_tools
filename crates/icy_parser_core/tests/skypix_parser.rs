@@ -346,7 +346,7 @@ fn test_ansi_cursor_up() {
     parser.parse(b"\x1B[5A", &mut sink);
 
     assert!(sink.ansi_commands.len() > 0);
-    assert!(sink.ansi_commands[0].contains("CursorUp"));
+    assert!(sink.ansi_commands[0].contains("MoveCursor(Up"));
 }
 
 #[test]

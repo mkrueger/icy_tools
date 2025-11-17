@@ -6,12 +6,13 @@
 //! - Attributes: H (bold/high intensity), I (blink), E (high background), N (normal)
 //! - Other: J (clear down), > (clear to EOL), | (CR), A (literal ^A), Z (EOF)
 
-use crate::{CommandParser, CommandSink, Direction, TerminalCommand};
+use crate::{CommandParser, CommandSink, Direction, TerminalCommand, ansi::AnsiParser};
 
 const CTRL_A: u8 = 0x01;
 
 /// Wildcat! CTRL-A parser
 pub struct CtrlAParser {
+    ansi_parser: AnsiParser,
     in_sequence: bool,
     is_bold: bool,
     high_bg: bool,
@@ -31,6 +32,7 @@ impl Default for CtrlAParser {
 impl CtrlAParser {
     pub fn new() -> Self {
         Self {
+            ansi_parser: AnsiParser::new(),
             in_sequence: false,
             is_bold: false,
             high_bg: false,
@@ -50,9 +52,9 @@ impl CommandParser for CtrlAParser {
             if self.in_sequence {
                 self.in_sequence = false;
 
-                // Emit any text before this command
+                // Pass through any text before this command to ANSI parser
                 if i > 0 && start < i - 1 {
-                    sink.print(&input[start..i - 1]);
+                    self.ansi_parser.parse(&input[start..i - 1], sink);
                 }
 
                 match byte {
@@ -63,10 +65,10 @@ impl CommandParser for CtrlAParser {
                     b'>' => sink.emit(TerminalCommand::CsiEraseInLine(crate::EraseInLineMode::CursorToEnd)),
                     b'<' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1)),
                     b']' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1)),
-                    b'|' => sink.print(b"\r"),
+                    b'|' => self.ansi_parser.parse(b"\r", sink),
 
                     // Literal CTRL-A
-                    b'A' => sink.print(&[CTRL_A]),
+                    b'A' => self.ansi_parser.parse(&[CTRL_A], sink),
 
                     // Attributes
                     b'H' => {
@@ -112,25 +114,25 @@ impl CommandParser for CtrlAParser {
                     }
 
                     _ => {
-                        // Unknown CTRL-A sequence, emit as-is
-                        sink.print(&[CTRL_A, byte]);
+                        // Unknown CTRL-A sequence, pass through to ANSI parser
+                        self.ansi_parser.parse(&[CTRL_A, byte], sink);
                     }
                 }
 
                 start = i + 1;
             } else if byte == CTRL_A {
-                // Emit any text before this
+                // Pass through any text before this to ANSI parser
                 if start < i {
-                    sink.print(&input[start..i]);
+                    self.ansi_parser.parse(&input[start..i], sink);
                 }
                 self.in_sequence = true;
                 start = i + 1; // Skip the CTRL_A byte
             }
         }
 
-        // Emit any remaining text
+        // Pass through any remaining text to ANSI parser
         if start < input.len() && !self.in_sequence {
-            sink.print(&input[start..]);
+            self.ansi_parser.parse(&input[start..], sink);
         }
     }
 }

@@ -349,9 +349,13 @@ impl CommandParser for AvatarParser {
                         printable_start = i;
                     }
                     _ => {
-                        sink.report_error(ParseError::MalformedSequence {
-                            description: "Unknown or malformed Avatar command",
-                        });
+                        sink.report_errror(
+                            ParseError::MalformedSequence {
+                                description: "Unknown or malformed Avatar command",
+                                sequence: None,
+                            },
+                            crate::ErrorLevel::Error,
+                        );
                         self.reset();
                         i += 1;
                         printable_start = i;

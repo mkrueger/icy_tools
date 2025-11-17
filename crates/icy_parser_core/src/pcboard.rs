@@ -5,7 +5,7 @@
 //! - Example: `@X0F` = white on black (0x0F = bright white foreground, black background)
 //! - `@@` escapes to literal `@`
 
-use crate::{Color, CommandParser, CommandSink, SgrAttribute, TerminalCommand};
+use crate::{Color, CommandParser, CommandSink, SgrAttribute, TerminalCommand, ansi::AnsiParser};
 
 /// Convert DOS color attribute to SGR commands
 /// DOS attribute byte format:
@@ -28,6 +28,7 @@ fn emit_dos_color_as_sgr(sink: &mut dyn CommandSink, attr: u8) {
 
 /// PCBoard parser state
 pub struct PcBoardParser {
+    ansi_parser: AnsiParser,
     state: State,
     color_pos: u8,
     color_value: u8,
@@ -52,6 +53,7 @@ impl Default for PcBoardParser {
 impl PcBoardParser {
     pub fn new() -> Self {
         Self {
+            ansi_parser: AnsiParser::new(),
             state: State::Normal,
             color_pos: 0,
             color_value: 0,
@@ -82,9 +84,9 @@ impl CommandParser for PcBoardParser {
             match self.state {
                 State::Normal => {
                     if byte == b'@' {
-                        // Emit any accumulated printable text
+                        // Pass through any accumulated printable text to ANSI parser
                         if start < i {
-                            sink.print(&input[start..i]);
+                            self.ansi_parser.parse(&input[start..i], sink);
                         }
                         self.state = State::AtSign;
                         self.accumulated.clear();
@@ -94,8 +96,8 @@ impl CommandParser for PcBoardParser {
                 State::AtSign => {
                     match byte {
                         b'@' => {
-                            // Escaped @ - emit literal @
-                            sink.print(b"@");
+                            // Escaped @ - pass through to ANSI parser
+                            self.ansi_parser.parse(b"@", sink);
                             self.reset_state();
                             start = i + 1;
                         }
@@ -127,8 +129,8 @@ impl CommandParser for PcBoardParser {
                         self.color_value = val;
                         self.state = State::ColorFirstHex;
                     } else {
-                        // Invalid hex char after @X, treat as literal
-                        sink.print(b"@X");
+                        // Invalid hex char after @X, pass through to ANSI parser
+                        self.ansi_parser.parse(b"@X", sink);
                         self.reset_state();
                         start = i; // Re-process this byte
                     }
@@ -143,8 +145,8 @@ impl CommandParser for PcBoardParser {
                         self.reset_state();
                         start = i + 1;
                     } else {
-                        // Invalid second hex digit
-                        sink.print(b"@X");
+                        // Invalid second hex digit, pass through to ANSI parser
+                        self.ansi_parser.parse(b"@X", sink);
                         self.reset_state();
                         start = i; // Re-process this byte
                     }
@@ -152,9 +154,9 @@ impl CommandParser for PcBoardParser {
             }
         }
 
-        // Emit any remaining printable text
+        // Pass through any remaining printable text to ANSI parser
         if start < input.len() && self.state == State::Normal {
-            sink.print(&input[start..]);
+            self.ansi_parser.parse(&input[start..], sink);
         }
     }
 }

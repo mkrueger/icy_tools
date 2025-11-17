@@ -4,10 +4,11 @@
 //! - 00-15: Foreground colors (0=black, 1=blue, ..., 15=white)
 //! - 16-23: Background colors (16=black bg, 17=blue bg, ..., 23=white bg)
 
-use crate::{CommandParser, CommandSink, TerminalCommand};
+use crate::{CommandParser, CommandSink, TerminalCommand, ansi::AnsiParser};
 
 /// Renegade BBS parser
 pub struct RenegadeParser {
+    ansi_parser: AnsiParser,
     state: State,
     first_digit: u8,
 }
@@ -28,6 +29,7 @@ impl Default for RenegadeParser {
 impl RenegadeParser {
     pub fn new() -> Self {
         Self {
+            ansi_parser: AnsiParser::new(),
             state: State::Normal,
             first_digit: 0,
         }
@@ -42,9 +44,9 @@ impl CommandParser for RenegadeParser {
             match self.state {
                 State::Normal => {
                     if byte == b'|' {
-                        // Emit any accumulated text
+                        // Pass through any accumulated text to ANSI parser
                         if start < i {
-                            sink.print(&input[start..i]);
+                            self.ansi_parser.parse(&input[start..i], sink);
                         }
                         self.state = State::Pipe;
                         start = i + 1;
@@ -56,8 +58,8 @@ impl CommandParser for RenegadeParser {
                         self.first_digit = byte - b'0';
                         self.state = State::FirstDigit(self.first_digit);
                     } else {
-                        // Invalid sequence, emit literal pipe and continue
-                        sink.print(b"|");
+                        // Invalid sequence, pass through literal pipe to ANSI parser
+                        self.ansi_parser.parse(b"|", sink);
                         self.state = State::Normal;
                         start = i; // Re-process this byte
                     }
@@ -78,17 +80,17 @@ impl CommandParser for RenegadeParser {
                                 color_code - 16,
                             ))));
                         } else {
-                            // Invalid color code, emit as literal
+                            // Invalid color code, pass through to ANSI parser
                             let literal = format!("|{}{}", tens, ones);
-                            sink.print(literal.as_bytes());
+                            self.ansi_parser.parse(literal.as_bytes(), sink);
                         }
 
                         self.state = State::Normal;
                         start = i + 1;
                     } else {
-                        // Invalid second digit
+                        // Invalid second digit, pass through to ANSI parser
                         let literal = format!("|{}", tens);
-                        sink.print(literal.as_bytes());
+                        self.ansi_parser.parse(literal.as_bytes(), sink);
                         self.state = State::Normal;
                         start = i; // Re-process this byte
                     }
@@ -96,9 +98,9 @@ impl CommandParser for RenegadeParser {
             }
         }
 
-        // Emit any remaining text
+        // Pass through any remaining text to ANSI parser
         if start < input.len() && self.state == State::Normal {
-            sink.print(&input[start..]);
+            self.ansi_parser.parse(&input[start..], sink);
         }
     }
 }

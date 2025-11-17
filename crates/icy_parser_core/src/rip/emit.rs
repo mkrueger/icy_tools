@@ -313,7 +313,15 @@ impl RipParser {
             }
 
             _ => {
-                // Unknown command - don't emit anything
+                // Unknown command - report error
+                sink.report_errror(
+                    crate::ParseError::InvalidParameter {
+                        command: "RIP",
+                        value: self.builder.cmd_char as u16,
+                        expected: Some("valid RIP command character"),
+                    },
+                    crate::ErrorLevel::Error,
+                );
                 return;
             }
         };

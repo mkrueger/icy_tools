@@ -7,20 +7,19 @@ use icy_parser_core::{AnsiMusic, AnsiParser, CommandParser, CommandSink, MusicAc
 /// Test sink that captures emitted commands
 struct TestSink {
     commands: Vec<TerminalCommand>,
+    music: Option<AnsiMusic>,
 }
 
 impl TestSink {
     fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self {
+            commands: Vec::new(),
+            music: None,
+        }
     }
 
     fn get_music(&self) -> Option<&AnsiMusic> {
-        for cmd in &self.commands {
-            if let TerminalCommand::AnsiMusic(music) = cmd {
-                return Some(music);
-            }
-        }
-        None
+        self.music.as_ref()
     }
 }
 
@@ -36,10 +35,9 @@ impl CommandSink for TestSink {
     fn operating_system_command(&mut self, _osc: icy_parser_core::OperatingSystemCommand) {}
     fn aps(&mut self, _data: &[u8]) {}
     fn play_music(&mut self, music: AnsiMusic) {
-        // Convert to TerminalCommand for easier testing
-        self.commands.push(TerminalCommand::AnsiMusic(music));
+        self.music = Some(music);
     }
-    fn report_error(&mut self, _error: icy_parser_core::ParseError) {}
+    fn report_errror(&mut self, _error: icy_parser_core::ParseError, _level: icy_parser_core::ErrorLevel) {}
 }
 
 #[test]

@@ -1,3 +1,5 @@
+use icy_parser_core::ErrorLevel;
+
 #[test]
 fn debug_melody() {
     use icy_parser_core::{
@@ -34,7 +36,7 @@ fn debug_melody() {
                 eprintln!("  Action {}: {:?}", i, action);
             }
         }
-        fn report_error(&mut self, error: ParseError) {
+        fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
             eprintln!("error: {:?}", error);
         }
     }

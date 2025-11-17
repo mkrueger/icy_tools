@@ -167,7 +167,7 @@ impl<'a> CommandSink for TerminalSink<'a> {
         // ignore for now
     }
 
-    fn report_error(&mut self, error: ParseError) {
+    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
         log::error!("Parse Error:{:?}", error);
     }
 

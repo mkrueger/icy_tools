@@ -53,7 +53,7 @@ impl CommandSink for FuzzSink {
         self.command_count += 1;
     }
 
-    fn report_error(&mut self, _error: ParseError) {
+    fn report_errror(&mut self, _error: ParseError, _level: icy_parser_core::ErrorLevel) {
         self.error_count += 1;
     }
 }

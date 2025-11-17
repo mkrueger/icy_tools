@@ -1,6 +1,6 @@
 use super::igs::paint::DrawExecutor;
 use crate::EditableScreen;
-use icy_parser_core::IgsCommand;
+use icy_parser_core::{IgsCommand, LineStyleKind, PatternType};
 
 pub struct IgsState {
     pub executor: DrawExecutor,
@@ -75,31 +75,34 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::ColorSet { pen, color } => {
+            log::info!("IGS ColorSet pen={:?} color={}", pen, color);
             state.executor.set_color(pen, color);
         }
 
-        IgsCommand::AttributeForFills {
-            pattern_type,
-            pattern_index,
-            border,
-        } => {
-            state.executor.set_fill_pattern(pattern_type, pattern_index);
+        IgsCommand::AttributeForFills { pattern_type, border } => {
+            let (type_val, index_val) = match pattern_type {
+                PatternType::Hollow => (0, 1),
+                PatternType::Solid => (1, 1),
+                PatternType::Pattern(idx) => (2, idx),
+                PatternType::Hatch(idx) => (3, idx),
+                PatternType::UserDefined(idx) => (4, idx),
+            };
+            state.executor.set_fill_pattern(type_val, index_val);
             state.executor.set_draw_border(border);
         }
 
-        IgsCommand::LineStyle { kind, style, value } => {
-            if kind == 1 {
-                // Polymarkers
-                if style > 0 {
-                    state.executor.set_polymarker_type(style);
+        IgsCommand::LineStyle { kind, value } => {
+            match kind {
+                LineStyleKind::Polymarker(pk) => {
+                    state.executor.set_polymarker_type(pk as u8);
+                    state.executor.set_polymarker_size(value as usize);
                 }
-                state.executor.set_polymarker_size(value as usize);
-            } else if kind == 2 {
-                // Lines
-                state.executor.set_line_style_pub(style);
-                // Extract thickness (lower bits) and end style (higher bits)
-                let thickness = (value % 50).max(1);
-                state.executor.set_line_thickness(thickness as usize);
+                LineStyleKind::Line(lk) => {
+                    state.executor.set_line_style_pub(lk as u8);
+                    // Extract thickness (lower bits) and end style (higher bits)
+                    let thickness = (value % 50).max(1);
+                    state.executor.set_line_thickness(thickness as usize);
+                }
             }
         }
 
@@ -111,12 +114,12 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         IgsCommand::TextEffects { effects, size, rotation } => {
             state.executor.set_text_effects_pub(effects);
             state.executor.set_text_size(size as i32);
-            state.executor.set_text_rotation_pub(rotation);
+            state.executor.set_text_rotation_pub(rotation as u8);
         }
 
-        IgsCommand::BellsAndWhistles { sound_number } => {
+        IgsCommand::BellsAndWhistles { sound_effect } => {
             // Sound playback not implemented
-            log::info!("IGS BellsAndWhistles sound {} not implemented", sound_number);
+            log::info!("IGS BellsAndWhistles sound {:?} not implemented", sound_effect);
         }
 
         IgsCommand::AlterSoundEffect { .. } => {
@@ -204,16 +207,12 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::DrawingMode { mode } => {
-            use super::igs::paint::DrawingMode;
+            use super::igs::paint::DrawingMode as PaintDrawingMode;
             let drawing_mode = match mode {
-                1 => DrawingMode::Replace,
-                2 => DrawingMode::Transparent,
-                3 => DrawingMode::Xor,
-                4 => DrawingMode::ReverseTransparent,
-                _ => {
-                    log::warn!("IGS DrawingMode unknown mode: {}, using Replace", mode);
-                    DrawingMode::Replace
-                }
+                icy_parser_core::DrawingMode::Replace => PaintDrawingMode::Replace,
+                icy_parser_core::DrawingMode::Transparent => PaintDrawingMode::Transparent,
+                icy_parser_core::DrawingMode::Xor => PaintDrawingMode::Xor,
+                icy_parser_core::DrawingMode::ReverseTransparent => PaintDrawingMode::ReverseTransparent,
             };
             state.executor.set_drawing_mode(drawing_mode);
         }
@@ -224,63 +223,91 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         // Screen and system commands
-        IgsCommand::GrabScreen { blit_type, mode, params } => {
-            match blit_type {
-                0 => {
-                    // Screen to screen
-                    if params.len() >= 6 {
-                        let from_start = crate::Position::new(params[0], params[1]);
-                        let from_end = crate::Position::new(params[2], params[3]);
-                        let dest = crate::Position::new(params[4], params[5]);
-                        state.executor.blit_screen_to_screen(buf, mode as i32, from_start, from_end, dest);
-                    }
+        IgsCommand::GrabScreen { operation, mode } => {
+            use icy_parser_core::BlitOperation;
+            match operation {
+                BlitOperation::ScreenToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                } => {
+                    let from_start = crate::Position::new(src_x1, src_y1);
+                    let from_end = crate::Position::new(src_x2, src_y2);
+                    let dest = crate::Position::new(dest_x, dest_y);
+                    state.executor.blit_screen_to_screen(buf, mode as i32, from_start, from_end, dest);
                 }
-                1 => {
-                    // Screen to memory
-                    if params.len() >= 4 {
-                        let from_start = crate::Position::new(params[0], params[1]);
-                        let from_end = crate::Position::new(params[2], params[3]);
-                        state.executor.blit_screen_to_memory(buf, mode as i32, from_start, from_end);
-                    }
+                BlitOperation::ScreenToMemory {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                } => {
+                    let from_start = crate::Position::new(src_x1, src_y1);
+                    let from_end = crate::Position::new(src_x2, src_y2);
+                    state.executor.blit_screen_to_memory(buf, mode as i32, from_start, from_end);
                 }
-                2 => {
-                    // Memory to screen
-                    if params.len() >= 2 {
-                        let dest = crate::Position::new(params[0], params[1]);
-                        let size = state.executor.get_screen_memory_size();
-                        state.executor.blit_memory_to_screen(
-                            buf,
-                            mode as i32,
-                            crate::Position::new(0, 0),
-                            crate::Position::new(size.width - 1, size.height - 1),
-                            dest,
-                        );
-                    }
+                BlitOperation::MemoryToScreen { dest_x, dest_y } => {
+                    let dest = crate::Position::new(dest_x, dest_y);
+                    let size = state.executor.get_screen_memory_size();
+                    state.executor.blit_memory_to_screen(
+                        buf,
+                        mode as i32,
+                        crate::Position::new(0, 0),
+                        crate::Position::new(size.width - 1, size.height - 1),
+                        dest,
+                    );
                 }
-                3 => {
-                    // Piece of memory to screen
-                    if params.len() >= 6 {
-                        let from_start = crate::Position::new(params[0], params[1]);
-                        let from_end = crate::Position::new(params[2], params[3]);
-                        let dest = crate::Position::new(params[4], params[5]);
-                        state.executor.blit_memory_to_screen(buf, mode as i32, from_start, from_end, dest);
-                    }
+                BlitOperation::PieceOfMemoryToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                } => {
+                    let from_start = crate::Position::new(src_x1, src_y1);
+                    let from_end = crate::Position::new(src_x2, src_y2);
+                    let dest = crate::Position::new(dest_x, dest_y);
+                    state.executor.blit_memory_to_screen(buf, mode as i32, from_start, from_end, dest);
                 }
-                _ => {
-                    log::warn!("IGS GrabScreen unknown blit_type {}", blit_type);
+                BlitOperation::MemoryToMemory {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                } => {
+                    log::warn!(
+                        "IGS GrabScreen MemoryToMemory not implemented: ({},{}) to ({},{}) -> ({},{})",
+                        src_x1,
+                        src_y1,
+                        src_x2,
+                        src_y2,
+                        dest_x,
+                        dest_y
+                    );
                 }
             }
         }
 
         IgsCommand::Initialize { mode } => {
-            log::info!("IGS Initialize mode {} not implemented", mode);
+            log::info!("IGS Initialize mode {:?} not implemented", mode);
         }
 
-        IgsCommand::Cursor { mode } => match mode {
-            0 => buf.caret_mut().visible = false,
-            1 => buf.caret_mut().visible = true,
-            _ => {}
-        },
+        IgsCommand::Cursor { mode } => {
+            use icy_parser_core::CursorMode;
+            match mode {
+                CursorMode::Off => buf.caret_mut().visible = false,
+                CursorMode::On => buf.caret_mut().visible = true,
+                CursorMode::DestructiveBackspace | CursorMode::NonDestructiveBackspace => {
+                    log::info!("IGS Cursor backspace mode {:?} not implemented", mode);
+                }
+            }
+        }
 
         IgsCommand::ChipMusic { .. } => {
             log::info!("IGS ChipMusic not implemented");
@@ -422,13 +449,13 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::CursorMotion { direction, count } => {
+            use icy_parser_core::Direction;
             let pos = buf.caret().position();
             let new_pos = match direction {
-                0 => crate::Position::new(pos.x, pos.y.saturating_sub(count)), // up
-                1 => crate::Position::new(pos.x, pos.y + count),               // down
-                2 => crate::Position::new(pos.x.saturating_sub(count), pos.y), // left
-                3 => crate::Position::new(pos.x + count, pos.y),               // right
-                _ => pos,
+                Direction::Up => crate::Position::new(pos.x, pos.y.saturating_sub(count)),
+                Direction::Down => crate::Position::new(pos.x, pos.y + count),
+                Direction::Left => crate::Position::new(pos.x.saturating_sub(count), pos.y),
+                Direction::Right => crate::Position::new(pos.x + count, pos.y),
             };
             buf.caret_mut().set_position(new_pos);
         }
