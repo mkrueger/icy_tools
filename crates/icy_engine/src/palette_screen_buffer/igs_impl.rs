@@ -1,6 +1,6 @@
 use super::igs::paint::DrawExecutor;
 use crate::EditableScreen;
-use icy_parser_core::{IgsCommand, LineStyleKind, PatternType};
+use icy_parser_core::{IgsCommand, LineStyleKind};
 
 pub struct IgsState {
     pub executor: DrawExecutor,
@@ -80,14 +80,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::AttributeForFills { pattern_type, border } => {
-            let (type_val, index_val) = match pattern_type {
-                PatternType::Hollow => (0, 1),
-                PatternType::Solid => (1, 1),
-                PatternType::Pattern(idx) => (2, idx),
-                PatternType::Hatch(idx) => (3, idx),
-                PatternType::UserDefined(idx) => (4, idx),
-            };
-            state.executor.set_fill_pattern(type_val, index_val);
+            state.executor.set_fill_pattern(pattern_type);
             state.executor.set_draw_border(border);
         }
 
@@ -207,14 +200,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::DrawingMode { mode } => {
-            use super::igs::paint::DrawingMode as PaintDrawingMode;
-            let drawing_mode = match mode {
-                icy_parser_core::DrawingMode::Replace => PaintDrawingMode::Replace,
-                icy_parser_core::DrawingMode::Transparent => PaintDrawingMode::Transparent,
-                icy_parser_core::DrawingMode::Xor => PaintDrawingMode::Xor,
-                icy_parser_core::DrawingMode::ReverseTransparent => PaintDrawingMode::ReverseTransparent,
-            };
-            state.executor.set_drawing_mode(drawing_mode);
+            state.executor.set_drawing_mode(mode);
         }
 
         IgsCommand::HollowSet { enabled } => {

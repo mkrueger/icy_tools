@@ -8,6 +8,9 @@ pub use patterns::*;
 pub mod sound;
 pub mod vdi;
 
+mod fonts;
+pub use fonts::*;
+
 pub const IGS_VERSION: &str = "2.19";
 
 #[repr(u8)]

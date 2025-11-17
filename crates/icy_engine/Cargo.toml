@@ -33,7 +33,8 @@ once_cell = { workspace = true }
 icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
 icy_parser_core = { workspace = true }
-bitflags = "2.10.0"
+bitflags = { workspace = true }
+
 zip = { workspace = true }
 libyaff = { workspace = true }
 

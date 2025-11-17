@@ -1,3 +1,21 @@
+use bitflags::bitflags;
+
+bitflags! {
+    /// Text effect flags for VDI text rendering
+    ///
+    /// These flags can be combined using bitwise OR to apply multiple effects.
+    /// For example: `THICKENED | UNDERLINED` = 9 (1 | 8)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct TextEffects: u8 {
+        const NORMAL = 0;
+        const THICKENED = 1;
+        const GHOSTED = 2;
+        const SKEWED = 4;
+        const UNDERLINED = 8;
+        const OUTLINED = 16;
+    }
+}
+
 /// Text effects (bit flags, can be combined)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextEffect {

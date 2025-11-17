@@ -191,7 +191,7 @@ impl IgsParser {
                 }
             }),
             IgsCommandType::TextEffects => self.check_parameters(sink, "TextEffects", 3, || IgsCommand::TextEffects {
-                effects: self.params[0] as u8,
+                effects: TextEffects::from_bits_truncate(self.params[0] as u8),
                 size: self.params[1] as u8,
                 rotation: self.params[2].into(),
             }),

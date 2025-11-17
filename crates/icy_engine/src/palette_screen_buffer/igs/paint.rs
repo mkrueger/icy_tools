@@ -1,101 +1,33 @@
-use std::collections::HashMap;
 use std::mem::swap;
-use std::sync::Mutex;
 
-use icy_parser_core::PenType;
+use icy_parser_core::{DrawingMode, LineKind, PatternType, PenType, PolymarkerKind, TextEffects, TextRotation};
 
 use super::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN};
 use super::{
     LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
     vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
 };
+use crate::igs::load_atari_font;
 use crate::palette_screen_buffer::igs::TerminalResolution;
-use crate::{BitFont, EditableScreen, Position, Size, palette_screen_buffer::igs::vdi::blit_px};
+use crate::{EditableScreen, Position, Size, palette_screen_buffer::igs::vdi::blit_px};
 
-#[derive(Debug, PartialEq)]
-pub enum TextEffects {
-    Normal,
-    Thickened,
-    Ghosted,
-    Skewed,
-    Underlined,
-    Outlined,
+// Helper trait to get mask index from LineKind
+trait LineKindExt {
+    fn get_mask(self) -> usize;
 }
 
-#[derive(Debug)]
-pub enum TextRotation {
-    /// 0 degree
-    Right,
-    /// 90 degree
-    Up,
-    /// 180 degree
-    Left,
-    /// 270 degree
-    Down,
-    /// 360 degree
-    RightReverse,
-}
-
-#[derive(Debug)]
-pub enum PolymarkerType {
-    Point,
-    Plus,
-    Star,
-    Square,
-    DiagonalCross,
-    Diamond,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum LineType {
-    Solid,
-    LongDash,
-    DottedLine,
-    DashDot,
-    DashedLine,
-    DashedDotDot,
-    UserDefined,
-}
-impl LineType {
+impl LineKindExt for LineKind {
     fn get_mask(self) -> usize {
         match self {
-            LineType::Solid => 0,
-            LineType::LongDash => 1,
-            LineType::DottedLine => 2,
-            LineType::DashDot => 3,
-            LineType::DashedLine => 4,
-            LineType::DashedDotDot => 5,
-            LineType::UserDefined => 6,
+            LineKind::Solid => 0,
+            LineKind::LongDash => 1,
+            LineKind::Dotted => 2,
+            LineKind::DashDot => 3,
+            LineKind::Dashed => 4,
+            LineKind::DashDotDot => 5,
+            LineKind::UserDefined => 6,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrawingMode {
-    /// new = (fore AND mask) OR (back AND NOT mask)
-    Replace,
-
-    /// Transparent mode affects only the pixels where the mask is 1.
-    /// new = (fore AND mask) OR (old AND NOT mask)
-    Transparent,
-
-    /// XOR mode reverses the bits representing the color. T
-    /// new = mask XOR old
-    Xor,
-
-    /// Reverse transparent mode affects only the pixels where the mask is 0,
-    /// changing them to the fore value.
-    /// new = (old AND mask) OR (fore AND NOT mask)
-    ReverseTransparent,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FillPatternType {
-    Hollow,
-    Solid,
-    Pattern,
-    Hatch,
-    UserdDefined,
 }
 
 pub struct DrawExecutor {
@@ -111,14 +43,14 @@ pub struct DrawExecutor {
     text_size: i32,
     text_rotation: TextRotation,
 
-    polymaker_type: PolymarkerType,
-    line_type: LineType,
+    polymaker_type: PolymarkerKind,
+    line_type: LineKind,
     drawing_mode: DrawingMode,
     polymarker_size: usize,
     solidline_size: usize,
     _user_defined_pattern_number: usize,
 
-    fill_pattern_type: FillPatternType,
+    fill_pattern_type: PatternType,
     fill_pattern: &'static [u16],
     pattern_index_number: usize,
     draw_border: bool,
@@ -139,112 +71,6 @@ impl Default for DrawExecutor {
         DrawExecutor::new(TerminalResolution::Low)
     }
 }
-lazy_static::lazy_static! {
-    pub static ref ATARI_ST_FONT_6x6: BitFont = BitFont::from_bytes("Atari ST 6x6", include_bytes!("../../../data/fonts/Atari/atari-st-6x6.yaff")).unwrap();
-    pub static ref ATARI_ST_FONT_8x8: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x8.yaff")).unwrap();
-
-    pub static ref ATARI_ST_FONT_12x12: BitFont = {
-        ATARI_ST_FONT_6x6.double_size()
-    };
-
-    pub static ref ATARI_ST_FONT_16x16: BitFont = {
-        ATARI_ST_FONT_8x8.double_size()
-    };
-/*
-    pub static ref ATARI_ST_FONT_7x11: BitFont = {
-        ATARI_ST_FONT_8x16.scale_to_height(11).unwrap()
-    };*/
-
-    pub static ref ATARI_ST_FONT_14x22: BitFont = {
-        ATARI_ST_FONT_8x16.double_size()
-    };
-
-    pub static ref ATARI_ST_FONT_8x16: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x16.yaff")).unwrap();
-
-
-    static ref ATARI_DYNAMIC_FONTS: Mutex<HashMap<i32, &'static BitFont>> = Mutex::new(HashMap::new());
-}
-
-struct FontMetrics {
-    pub y_off: i32,
-    pub underline_pos: i32,
-    pub underline_height: i32,
-    pub underline_width: i32,
-}
-
-fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
-    if text_size <= 8 {
-        return (
-            FontMetrics {
-                y_off: 4,
-                underline_pos: 5,
-                underline_height: 1,
-                underline_width: 7,
-            },
-            &ATARI_ST_FONT_6x6,
-        );
-    }
-    if text_size == 9 {
-        return (
-            FontMetrics {
-                y_off: 6,
-                underline_pos: 7,
-                underline_height: 1,
-                underline_width: 9,
-            },
-            &ATARI_ST_FONT_8x8,
-        );
-    }
-
-    if text_size <= 15 {
-        // 7x11 Font
-        return (
-            FontMetrics {
-                y_off: 13,
-                underline_pos: 15,
-                underline_height: 1,
-                underline_width: 9,
-            },
-            &ATARI_ST_FONT_8x16,
-        );
-    }
-
-    if text_size <= 17 {
-        // 12x12 Font (upscaled 6x6)
-        return (
-            FontMetrics {
-                y_off: 9,
-                underline_pos: 10,
-                underline_height: 2,
-                underline_width: 13,
-            },
-            &ATARI_ST_FONT_12x12,
-        );
-    }
-
-    if text_size <= 19 {
-        // 16x16 Font (upscaled 8x8)
-        return (
-            FontMetrics {
-                y_off: 13,
-                underline_pos: 14,
-                underline_height: 2,
-                underline_width: 17,
-            },
-            &ATARI_ST_FONT_16x16,
-        );
-    }
-
-    (
-        FontMetrics {
-            y_off: 27,
-            underline_pos: 30,
-            underline_height: 2,
-            underline_width: 17,
-        },
-        &ATARI_ST_FONT_14x22,
-    )
-}
 
 impl DrawExecutor {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
@@ -255,17 +81,17 @@ impl DrawExecutor {
             fill_color: 1,
             text_color: 1,
             cur_position: Position::new(0, 0),
-            text_effects: TextEffects::Normal,
+            text_effects: TextEffects::NORMAL,
             text_size: 9,
-            text_rotation: TextRotation::Right,
-            polymaker_type: PolymarkerType::Point,
-            line_type: LineType::Solid,
+            text_rotation: TextRotation::Degrees0,
+            polymaker_type: PolymarkerKind::Point,
+            line_type: LineKind::Solid,
             drawing_mode: DrawingMode::Replace,
             polymarker_size: 1,
             solidline_size: 1,
             _user_defined_pattern_number: 1,
 
-            fill_pattern_type: FillPatternType::Solid,
+            fill_pattern_type: PatternType::Solid,
             fill_pattern: &SOLID_PATTERN,
             pattern_index_number: 0,
             draw_border: false,
@@ -717,7 +543,7 @@ impl DrawExecutor {
                 }
             }
         }
-        if self.fill_pattern_type == FillPatternType::Solid {
+        if matches!(self.fill_pattern_type, PatternType::Solid) {
             self.draw_poly(buf, &points, self.fill_color, true);
         }
     }
@@ -725,7 +551,7 @@ impl DrawExecutor {
     pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &str) {
         let (metrics, font) = load_atari_font(self.text_size);
 
-        let is_outlined = self.text_effects == TextEffects::Outlined;
+        let is_outlined = self.text_effects.contains(TextEffects::OUTLINED);
         let outline_thickness = if is_outlined { 1 } else { 0 };
 
         // For outlined text, the position represents where the outline starts
@@ -742,18 +568,18 @@ impl DrawExecutor {
         // For 90° rotation, text grows upward, so start at the bottom
         // For 270° rotation, text grows downward from right
         match self.text_rotation {
-            TextRotation::Up => {
+            TextRotation::Degrees90 => {
                 // Text grows upward, so start position needs to be at the bottom of where the char will be
                 pos.y -= font_size.height - 1;
             }
-            TextRotation::Left => {
+            TextRotation::Degrees180 => {
                 // Text grows to the left
                 pos.x -= font_size.width - 1;
             }
             _ => {}
         }
 
-        let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
+        let mut draw_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
 
         for ch in string_parameter.chars() {
             let glyph = font.get_glyph(ch).unwrap();
@@ -777,10 +603,10 @@ impl DrawExecutor {
                             // Apply rotation transformation
                             // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
                             let (rx, ry) = match self.text_rotation {
-                                TextRotation::Right | TextRotation::RightReverse => (x, y),
-                                TextRotation::Up => (font_size.height - 1 - y, font_size.width - 1 - x), // 90° + Y-flip
-                                TextRotation::Left => (font_size.width - 1 - x, font_size.height - 1 - y),
-                                TextRotation::Down => (y, font_size.width - 1 - x), // 270° + Y-flip
+                                TextRotation::Degrees0 => (x, y),
+                                TextRotation::Degrees90 => (font_size.height - 1 - y, font_size.width - 1 - x), // 90° + Y-flip
+                                TextRotation::Degrees180 => (font_size.width - 1 - x, font_size.height - 1 - y),
+                                TextRotation::Degrees270 => (y, font_size.width - 1 - x), // 270° + Y-flip
                             };
                             // Draw outline pixels around this character pixel
                             for dy in -1..=1 {
@@ -808,10 +634,10 @@ impl DrawExecutor {
                             // Apply rotation transformation
                             // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
                             let (rx, ry) = match self.text_rotation {
-                                TextRotation::Right | TextRotation::RightReverse => (x, y),
-                                TextRotation::Up => (y, font_size.width - 1 - x), // 90° + Y-flip
-                                TextRotation::Left => (font_size.width - 1 - x, font_size.height - 1 - y),
-                                TextRotation::Down => (font_size.height - y, x), // 270° + Y-flip
+                                TextRotation::Degrees0 => (x, y),
+                                TextRotation::Degrees90 => (y, font_size.width - 1 - x), // 90° + Y-flip
+                                TextRotation::Degrees180 => (font_size.width - 1 - x, font_size.height - 1 - y),
+                                TextRotation::Degrees270 => (font_size.height - y, x), // 270° + Y-flip
                             };
                             let p = pos + Position::new(rx, ry);
                             self.set_pixel(buf, p.x, p.y, bg_color);
@@ -836,7 +662,7 @@ impl DrawExecutor {
                                 // For skewed text, add horizontal offset based on vertical position
                                 // Atari VDI style: skew decreases from top to bottom (right-leaning italic)
                                 // Top of character has maximum offset, bottom has zero offset
-                                let skew_offset = if self.text_effects == TextEffects::Skewed {
+                                let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
                                     (font_size.height - 1 - y) / 2 - (y % 2)
                                 } else {
                                     0
@@ -845,15 +671,14 @@ impl DrawExecutor {
                                 // Apply rotation transformation
                                 // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
                                 let (rx, ry) = match self.text_rotation {
-                                    TextRotation::Right => (x + skew_offset, y - metrics.y_off),
-                                    TextRotation::RightReverse => (x + skew_offset, y - metrics.y_off),
-                                    TextRotation::Up => (y - metrics.y_off, -1 + 2 * font_size.width - (x + skew_offset)), // 90° + Y-flip
-                                    TextRotation::Left => (font_size.width - (x + skew_offset) - 1, -y + metrics.y_off),
-                                    TextRotation::Down => (-y + metrics.y_off, (x + skew_offset)), // 270° + Y-flip
+                                    TextRotation::Degrees0 => (x + skew_offset, y - metrics.y_off),
+                                    TextRotation::Degrees90 => (y - metrics.y_off, -1 + 2 * font_size.width - (x + skew_offset)), // 90° + Y-flip
+                                    TextRotation::Degrees180 => (font_size.width - (x + skew_offset) - 1, -y + metrics.y_off),
+                                    TextRotation::Degrees270 => (-y + metrics.y_off, (x + skew_offset)), // 270° + Y-flip
                                 };
                                 let p = pos + Position::new(rx, ry);
                                 self.set_pixel(buf, p.x, p.y, color);
-                                if self.text_effects == TextEffects::Thickened {
+                                if self.text_effects.contains(TextEffects::THICKENED) {
                                     self.set_pixel(buf, p.x + 1, p.y, color);
                                 }
                             }
@@ -862,7 +687,7 @@ impl DrawExecutor {
                     draw_mask = draw_mask.rotate_left(1);
                 }
             }
-            if self.text_effects == TextEffects::Underlined {
+            if self.text_effects.contains(TextEffects::UNDERLINED) {
                 // Atari VDI: underline is placed above the adjusted position
                 let y_pos = pos.y + metrics.underline_pos - metrics.y_off;
 
@@ -883,10 +708,10 @@ impl DrawExecutor {
             // Advance position based on rotation
             // When rotated 90° or 270°, width becomes vertical advance
             match self.text_rotation {
-                TextRotation::RightReverse | TextRotation::Right => pos.x += base_width,
-                TextRotation::Up => pos.y -= base_width,   // Width becomes vertical advance
-                TextRotation::Down => pos.y += base_width, // Width becomes vertical advance
-                TextRotation::Left => pos.x -= base_width,
+                TextRotation::Degrees0 => pos.x += base_width,
+                TextRotation::Degrees90 => pos.y -= base_width,  // Width becomes vertical advance
+                TextRotation::Degrees270 => pos.y += base_width, // Width becomes vertical advance
+                TextRotation::Degrees180 => pos.x -= base_width,
             }
         }
     }
@@ -1098,18 +923,18 @@ impl DrawExecutor {
 
     pub fn draw_poly_maker(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
         let points = match self.polymaker_type {
-            PolymarkerType::Point => vec![1i32, 2, 0, 0, 0, 0],
-            PolymarkerType::Plus => vec![2, 2, 0, -3, 0, 3, 2, -4, 0, 4, 0],
-            PolymarkerType::Star => vec![3, 2, 0, -3, 0, 3, 2, 3, 2, -3, -2, 2, 3, -2, -3, 2],
-            PolymarkerType::Square => vec![1, 5, -4, -3, 4, -3, 4, 3, -4, 3, -4, -3],
-            PolymarkerType::DiagonalCross => vec![2, 2, -4, -3, 4, 3, 2, -4, 3, 4, -3],
-            PolymarkerType::Diamond => vec![1, 5, -4, 0, 0, -3, 4, 0, 0, 3, -4, 0],
+            PolymarkerKind::Point => vec![1i32, 2, 0, 0, 0, 0],
+            PolymarkerKind::Plus => vec![2, 2, 0, -3, 0, 3, 2, -4, 0, 4, 0],
+            PolymarkerKind::Star => vec![3, 2, 0, -3, 0, 3, 2, 3, 2, -3, -2, 2, 3, -2, -3, 2],
+            PolymarkerKind::Square => vec![1, 5, -4, -3, 4, -3, 4, 3, -4, 3, -4, -3],
+            PolymarkerKind::DiagonalCross => vec![2, 2, -4, -3, 4, 3, 2, -4, 3, 4, -3],
+            PolymarkerKind::Diamond => vec![1, 5, -4, 0, 0, -3, 4, 0, 0, 3, -4, 0],
         };
         let num_lines = points[0];
         let mut i = 1;
         let old_type = self.line_type;
         let scale = 1;
-        self.line_type = LineType::Solid;
+        self.line_type = LineKind::Solid;
         for _ in 0..num_lines {
             let num_points = points[i] as usize;
             i += 1;
@@ -1215,42 +1040,39 @@ impl DrawExecutor {
         }
     }
 
-    pub fn set_fill_pattern(&mut self, pattern_type: u8, pattern_index: u8) {
-        self.fill_pattern_type = match pattern_type {
-            0 => FillPatternType::Hollow,
-            1 => FillPatternType::Solid,
-            2 => FillPatternType::Pattern,
-            3 => FillPatternType::Hatch,
-            4 => FillPatternType::UserdDefined,
-            _ => FillPatternType::Solid,
-        };
+    pub fn set_fill_pattern(&mut self, pattern_type: PatternType) {
+        self.fill_pattern_type = pattern_type;
 
-        self.fill_pattern = match self.fill_pattern_type {
-            FillPatternType::Hollow => &HOLLOW_PATTERN,
-            FillPatternType::Solid => &SOLID_PATTERN,
-            FillPatternType::Pattern => {
-                if pattern_index == 0 {
+        self.fill_pattern = match pattern_type {
+            PatternType::Hollow => &HOLLOW_PATTERN,
+            PatternType::Solid => &SOLID_PATTERN,
+            PatternType::Pattern(idx) => {
+                if idx == 0 {
                     &RANDOM_PATTERN
-                } else if pattern_index >= 1 && pattern_index <= 24 {
-                    &TYPE_PATTERN[pattern_index as usize - 1]
+                } else if idx >= 1 && idx <= 24 {
+                    &TYPE_PATTERN[idx as usize - 1]
                 } else {
                     &SOLID_PATTERN
                 }
             }
-            FillPatternType::Hatch => {
-                if pattern_index >= 1 && pattern_index <= 6 {
-                    &HATCH_PATTERN[pattern_index as usize - 1]
-                } else if pattern_index >= 7 && pattern_index <= 12 {
-                    &HATCH_WIDE_PATTERN[pattern_index as usize - 7]
+            PatternType::Hatch(idx) => {
+                if idx >= 1 && idx <= 6 {
+                    &HATCH_PATTERN[idx as usize - 1]
+                } else if idx >= 7 && idx <= 12 {
+                    &HATCH_WIDE_PATTERN[idx as usize - 7]
                 } else {
                     &SOLID_PATTERN
                 }
             }
-            FillPatternType::UserdDefined => &RANDOM_PATTERN,
+            PatternType::UserDefined(_) => &RANDOM_PATTERN,
         };
 
+        let pattern_index = match pattern_type {
+            PatternType::Pattern(idx) | PatternType::Hatch(idx) | PatternType::UserDefined(idx) => idx,
+            _ => 0,
+        };
         self.pattern_index_number = pattern_index as usize;
-        self.hollow_set = self.fill_pattern_type == FillPatternType::Hollow;
+        self.hollow_set = matches!(pattern_type, PatternType::Hollow);
     }
 
     pub fn set_draw_border(&mut self, border: bool) {
@@ -1267,13 +1089,13 @@ impl DrawExecutor {
 
     pub fn set_line_style_pub(&mut self, style: u8) {
         self.line_type = match style {
-            0 | 1 => LineType::Solid,
-            2 => LineType::LongDash,
-            3 => LineType::DottedLine,
-            4 => LineType::DashDot,
-            5 => LineType::DashedLine,
-            6 => LineType::DashedDotDot,
-            _ => LineType::UserDefined,
+            0 | 1 => LineKind::Solid,
+            2 => LineKind::LongDash,
+            3 => LineKind::Dotted,
+            4 => LineKind::DashDot,
+            5 => LineKind::Dashed,
+            6 => LineKind::DashDotDot,
+            _ => LineKind::UserDefined,
         };
     }
 
@@ -1281,16 +1103,8 @@ impl DrawExecutor {
         self.solidline_size = thickness;
     }
 
-    pub fn set_text_effects_pub(&mut self, effects: u8) {
-        self.text_effects = match effects {
-            0 => TextEffects::Normal,
-            1 => TextEffects::Thickened,
-            2 => TextEffects::Ghosted,
-            4 => TextEffects::Skewed,
-            8 => TextEffects::Underlined,
-            16 => TextEffects::Outlined,
-            _ => TextEffects::Normal,
-        };
+    pub fn set_text_effects_pub(&mut self, effects: TextEffects) {
+        self.text_effects = effects;
     }
 
     pub fn set_text_size(&mut self, size: i32) {
@@ -1299,11 +1113,11 @@ impl DrawExecutor {
 
     pub fn set_text_rotation_pub(&mut self, rotation: u8) {
         self.text_rotation = match rotation {
-            0 => TextRotation::Right,
-            1 => TextRotation::Up,
-            2 => TextRotation::Left,
-            3 => TextRotation::Down,
-            _ => TextRotation::RightReverse,
+            0 => TextRotation::Degrees0,
+            1 => TextRotation::Degrees90,
+            2 => TextRotation::Degrees180,
+            3 => TextRotation::Degrees270,
+            _ => TextRotation::Degrees0,
         };
     }
 
@@ -1317,13 +1131,13 @@ impl DrawExecutor {
 
     pub fn set_polymarker_type(&mut self, marker_type: u8) {
         self.polymaker_type = match marker_type {
-            1 => PolymarkerType::Point,
-            2 => PolymarkerType::Plus,
-            3 => PolymarkerType::Star,
-            4 => PolymarkerType::Square,
-            5 => PolymarkerType::DiagonalCross,
-            6 => PolymarkerType::Diamond,
-            _ => PolymarkerType::Point,
+            1 => PolymarkerKind::Point,
+            2 => PolymarkerKind::Plus,
+            3 => PolymarkerKind::Star,
+            4 => PolymarkerKind::Square,
+            5 => PolymarkerKind::DiagonalCross,
+            6 => PolymarkerKind::Diamond,
+            _ => PolymarkerKind::Point,
         };
     }
 

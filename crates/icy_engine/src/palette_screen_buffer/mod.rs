@@ -83,7 +83,7 @@ impl PaletteScreenBuffer {
                 font_table.insert(4, crate::VGA_16x14.clone());
             }
             GraphicsType::IGS(_) => {
-                font_table.insert(0, igs::paint::ATARI_ST_FONT_8x8.clone());
+                font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());
             }
             GraphicsType::Skypix => {
                 font_table.insert(0, RIP_FONT.clone());

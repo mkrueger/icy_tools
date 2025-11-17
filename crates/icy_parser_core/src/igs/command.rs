@@ -317,11 +317,11 @@ pub enum IgsCommand {
     /// style effects, point size, and rotation angle.
     ///
     /// # Parameters
-    /// * `effects` - Text effect flags (Normal=0, Thickened=1, Ghosted=2, Skewed=4, Underlined=8, Outlined=16)
+    /// * `effects` - Text effect flags (can be combined: THICKENED=1, GHOSTED=2, SKEWED=4, UNDERLINED=8, OUTLINED=16)
     /// * `size` - Text size in points (1/72 inch). Common sizes: 8, 9, 10, 16, 18, 20
     /// * `rotation` - Text rotation angle (Degrees0, Degrees90, Degrees180, Degrees270)
     TextEffects {
-        effects: u8, // Bit flags, can be combined
+        effects: TextEffects,
         size: u8,
         rotation: TextRotation,
     },
@@ -1118,7 +1118,7 @@ impl fmt::Display for IgsCommand {
                 write!(f, "G#W>{},{},{}@", x, y, text)
             }
             IgsCommand::TextEffects { effects, size, rotation } => {
-                write!(f, "G#E>{},{},{}:", effects, size, *rotation as u8)
+                write!(f, "G#E>{},{},{}:", effects.bits(), size, *rotation as u8)
             }
             IgsCommand::BellsAndWhistles { sound_effect } => write!(f, "G#b>{}:", *sound_effect as u8),
             IgsCommand::AlterSoundEffect {
