@@ -1,26 +1,26 @@
-use icy_engine::{ATARI, BitFont, BufferParser, EditableScreen, IGS_SYSTEM_PALETTE, Palette, PaletteScreenBuffer};
+use icy_engine::{PaletteScreenBuffer, ScreenSink};
+use icy_parser_core::{CommandParser, IgsParser};
 use std::fs::{self};
 
 use crate::compare_output;
 
 #[test]
 pub fn test_igs_lowres() {
+    crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/lowres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
-        if cur_entry.extension().unwrap() != "ig" {
+        if cur_entry.extension().unwrap_or_default() != "ig" {
             continue;
         }
+        log::info!("Testing IGS file: {:?}", cur_entry);
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let data = fs::read_to_string(&cur_entry).expect("Error reading file.");
-        let font = BitFont::from_bytes("", ATARI).unwrap();
-        let res = icy_engine::igs::TerminalResolution::Low.get_resolution();
-        let mut buffer = PaletteScreenBuffer::new(res.width, res.height, font);
-        *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Low));
 
-        let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
-        for c in data.chars() {
-            parser.print_char(&mut buffer, c).unwrap();
-        }
+        let mut parser: IgsParser = IgsParser::new();
+        let mut sink = ScreenSink::new(&mut buffer);
+
+        parser.parse(&data, &mut sink);
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);
@@ -29,22 +29,21 @@ pub fn test_igs_lowres() {
 
 #[test]
 pub fn test_igs_highres() {
+    crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/highres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ig" {
             continue;
         }
 
-        let data = fs::read_to_string(&cur_entry).expect("Error reading file.");
-        let font = BitFont::from_bytes("", ATARI).unwrap();
-        let res = icy_engine::igs::TerminalResolution::High.get_resolution();
-        let mut buffer = PaletteScreenBuffer::new(res.width, res.height, font);
-        *buffer.palette_mut() = Palette::from_slice(&IGS_SYSTEM_PALETTE);
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let mut parser = icy_engine::parsers::igs::Parser::new(icy_engine::igs::TerminalResolution::Low);
-        for c in data.chars() {
-            parser.print_char(&mut buffer, c).unwrap();
-        }
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::High));
+
+        let mut parser: IgsParser = IgsParser::new();
+        let mut sink = ScreenSink::new(&mut buffer);
+
+        parser.parse(&data, &mut sink);
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);

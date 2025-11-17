@@ -1,0 +1,74 @@
+G#I>0:
+G#s>0:
+G#k>0:
+G#S>0,7,6,0:
+G#S>1,0,0,7:
+G#S>2,0,0,0:
+G#S>3,6,0,0:
+G#M>1:
+G#A>1,1,0:
+G#C>2,2:
+G#O>396,117,36:
+G#O>596,60,73:
+G#O>216,62,32:
+G#O>180,121,86:
+G#O>57,29,27:
+G#O>311,126,28:
+G#O>487,129,87:
+G#O>173,35,59:
+G#O>375,50,75:
+G#O>50,160,62:
+G#O>350,165,56:
+G#O>85,85,18:
+G#O>600,175,25:
+G#O>450,30,50:
+G#C>2,1:
+G#A>2,6,1:
+G#O>386,113,36:
+G#O>586,55,73:
+G#O>206,57,32:
+G#O>170,116,86:
+G#O>47,24,27:
+G#O>301,121,28:
+G#O>477,124,87:
+G#O>163,30,59:
+G#O>365,45,75:
+G#O>40,155,62:
+G#O>340,160,56:
+G#O>75,80,18:
+G#O>590,170,25:
+G#O>440,25,50:
+G#E>1,21,0:
+G#M>2:
+G#C>3,2:
+G#W>270,40,Ken-Com@
+G#C>3,3:
+G#W>265,35,Ken-Com@
+G#C>3,2:
+G#W>50,35,@
+G#W>590,35,@
+G#C>3,3:
+G#W>40,30,@
+G#W>580,30,@
+G#C>3,2:
+G#E>1,10,0:
+G#W>180,75,Supporting Ascii, Atascii, ANSI, VT52,@
+G#W>248,95,IGS and CGS graphics!@
+G#C>3,3:
+G#W>175,70,Supporting Ascii, Atascii, ANSI, VT52,@
+G#W>243,90,IGS and CGS graphics!@
+G#C>3,2:
+G#E>1,9,0:
+G#W>150,115,Featuring 60-Megs on-line, 25+ on-line games,@
+G#W>183,125, large message bases and file sigs!@
+G#C>3,3:
+G#W>145,113,Featuring 60-Megs on-line, 25+ on-line games,@
+G#W>177,123, large message bases and file sigs!@
+G#C>3,2:
+G#W>200,160,Your SysOps are Captain Chronos,@
+G#W>200,175,Commander Mym and Lt. Cmdr. Tom.@
+G#C>3,1:
+G#W>195,158,Your SysOps are Captain Chronos,@
+G#W>195,173,Commander Mym and Lt. Cmdr. Tom.@
+G#t>4:
+G#I>0:

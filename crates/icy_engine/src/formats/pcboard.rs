@@ -1,13 +1,10 @@
 use std::path::Path;
 
 use crate::{
-    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen, parse_with_parser,
-    parsers,
+    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen, load_with_parser,
 };
 
 use super::{LoadData, SaveOptions};
-
-pub(crate) const HEX_TABLE: &[u8; 16] = b"0123456789ABCDEF";
 
 #[derive(Default)]
 pub struct PCBoard {}
@@ -150,7 +147,7 @@ impl OutputFormat for PCBoard {
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        parse_with_parser(&mut result, &mut parsers::pcboard::Parser::default(), &text, true)?;
+        load_with_parser(&mut result, &mut icy_parser_core::PcBoardParser::default(), &text, true)?;
         Ok(result.buffer)
     }
 }

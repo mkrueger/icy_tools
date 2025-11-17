@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use icy_parser_core::MusicOption;
 use icy_sauce::prelude::*;
 
 pub mod buffers_rendering;
@@ -23,8 +24,6 @@ pub use layer::*;
 mod buffer_type;
 pub use buffer_type::*;
 
-use crate::ansi::MusicOption;
-use crate::ansi::sound::AnsiMusic;
 use crate::{
     Color, EngineResult, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
     attribute,
@@ -225,8 +224,7 @@ pub struct TextBuffer {
 
     pub show_tags: bool,
     pub tags: Vec<Tag>,
-    pub ansi_music: Vec<AnsiMusic>,
-
+    //    pub ansi_music: Vec<AnsiMusic>,
     /// Scrollback buffer storing lines that scrolled off the top
     pub scrollback_lines: VecDeque<Line>,
 
@@ -593,8 +591,7 @@ impl TextBuffer {
             use_aspect_ratio: false,
             show_tags: true,
             tags: Vec::new(),
-            ansi_music: Vec::new(),
-
+            //            ansi_music: Vec::new(),
             scrollback_lines: VecDeque::new(),
             max_scrollback_lines: 10000, // Reasonable default
 

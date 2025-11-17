@@ -1,13 +1,10 @@
-use crate::auto_login::AutoLoginCommand;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
-use icy_engine::ansi::BaudEmulation;
-use icy_engine::rip::RIP_SCREEN_SIZE;
-use icy_engine::skypix::SKYPIX_SCREEN_SIZE;
-use icy_engine::{ATARI, BitFont, BufferParser, CallbackAction, EditableScreen, PaletteScreenBuffer, TextScreen, rip};
+use icy_engine::{AutoWrapMode, ExtMouseMode, FontSelectionState, IceMode, MouseMode, OriginMode, RIP_TERMINAL_ID};
+use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, TextScreen};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -20,6 +17,9 @@ use icy_net::{
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
 };
+use icy_parser_core::*;
+use icy_parser_core::{AnsiMusic, CommandParser, CommandSink, TerminalCommand as ParserCommand, TerminalRequest};
+use icy_parser_core::{BaudEmulation, MusicOption};
 use log::error;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -50,7 +50,7 @@ pub enum TerminalEvent {
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
     Error(String, String),
-    PlayMusic(icy_engine::ansi::sound::AnsiMusic),
+    PlayMusic(AnsiMusic),
     Beep,
     OpenLineSound,
     OpenDialSound(bool, String),
@@ -80,7 +80,7 @@ pub struct ConnectionConfig {
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
 
-    pub music_option: icy_engine::ansi::MusicOption,
+    pub music_option: MusicOption,
     pub screen_mode: ScreenMode,
 
     pub baud_emulation: BaudEmulation,
@@ -103,13 +103,291 @@ pub struct ModemConfig {
     pub dial_string: String,
 }
 
+/// Custom CommandSink implementation for terminal thread
+struct TerminalSink<'a> {
+    screen_sink: ScreenSink<'a>,
+    event_tx: &'a mpsc::UnboundedSender<TerminalEvent>,
+    output: &'a mut Vec<u8>,
+}
+
+impl<'a> TerminalSink<'a> {
+    fn new(screen: &'a mut dyn EditableScreen, event_tx: &'a mpsc::UnboundedSender<TerminalEvent>, output: &'a mut Vec<u8>) -> Self {
+        Self {
+            screen_sink: ScreenSink::new(screen),
+            event_tx,
+            output,
+        }
+    }
+}
+
+impl<'a> CommandSink for TerminalSink<'a> {
+    fn print(&mut self, text: &[u8]) {
+        self.screen_sink.print(text);
+    }
+
+    fn emit(&mut self, cmd: ParserCommand) {
+        // Handle terminal-specific events
+        match cmd {
+            ParserCommand::Bell => {
+                let _ = self.event_tx.send(TerminalEvent::Beep);
+            }
+            ParserCommand::CsiResizeTerminal(height, width) => {
+                self.screen_sink.screen_mut().set_size(icy_engine::Size::new(width as i32, height as i32));
+            }
+            _ => {
+                // Delegate all other commands to screen_sink
+                self.screen_sink.emit(cmd);
+            }
+        }
+    }
+
+    fn play_music(&mut self, music: AnsiMusic) {
+        let _ = self.event_tx.send(TerminalEvent::PlayMusic(music));
+    }
+
+    fn emit_rip(&mut self, cmd: RipCommand) {
+        self.screen_sink.emit_rip(cmd);
+    }
+    fn emit_skypix(&mut self, cmd: SkypixCommand) {
+        self.screen_sink.emit_skypix(cmd);
+    }
+    fn emit_igs(&mut self, cmd: IgsCommand) {
+        if let IgsCommand::AskIG { query } = cmd {
+            match query {
+                AskQuery::VersionNumber => {
+                    self.output.extend_from_slice(icy_engine::igs::IGS_VERSION.as_bytes());
+                }
+                AskQuery::CursorPositionAndMouseButton { .. } => {}
+                AskQuery::MousePositionAndButton { .. } => {}
+                AskQuery::CurrentResolution => {
+                    if let GraphicsType::IGS(mode) = self.screen_sink.screen().graphics_type() {
+                        self.output.extend_from_slice(format!("{}:", mode as u8).as_bytes());
+                    }
+                }
+            }
+
+            return;
+        }
+
+        self.screen_sink.emit_igs(cmd);
+    }
+    fn device_control(&mut self, dcs: DeviceControlString<'_>) {
+        self.screen_sink.device_control(dcs);
+    }
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand<'_>) {
+        self.screen_sink.operating_system_command(osc);
+    }
+
+    /// Emit an Application Program String (APS) sequence: ESC _ ... ESC \
+    /// Default implementation does nothing.
+    fn aps(&mut self, _data: &[u8]) {
+        // ignore for now
+    }
+
+    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+        log::error!("Parse Error:{:?}", error);
+    }
+
+    fn request(&mut self, request: TerminalRequest) {
+        use icy_parser_core::TerminalRequest;
+
+        match request {
+            TerminalRequest::DeviceAttributes => {
+                // respond with IcyTerm as ASCII followed by the package version.
+                let version = format!(
+                    "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
+                    env!("CARGO_PKG_VERSION_MAJOR"),
+                    env!("CARGO_PKG_VERSION_MINOR"),
+                    env!("CARGO_PKG_VERSION_PATCH")
+                );
+                self.output.extend_from_slice(version.as_bytes());
+            }
+            TerminalRequest::SecondaryDeviceAttributes => {
+                // Terminal type: 65 = VT525-compatible
+                // Version: major * 100 + minor * 10 + patch
+                let major: i32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+                let minor: i32 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+                let patch: i32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
+                let version = major * 100 + minor * 10 + patch;
+
+                // Hardware options: 0 (software terminal, no hardware options)
+                // Could use bit flags here for features:
+                //   1 = 132 columns
+                //   2 = Printer port
+                //   4 = Sixel graphics
+                //   8 = Selective erase
+                //   16 = User-defined keys
+                //   32 = National replacement character sets
+                //   64 = Technical character set
+                //   128 = Locator port (mouse)
+                let hardware_options = 1 | 4 | 8 | 128;
+                let response = format!("\x1b[>65;{};{}c", version, hardware_options);
+                self.output.extend_from_slice(response.as_bytes());
+            }
+            TerminalRequest::ExtendedDeviceAttributes => {
+                // Extended Device Attributes: ESC[<...c response
+                // Report extended terminal capabilities:
+                //   1 - Loadable fonts are available via Device Control Strings
+                //   2 - Bright Background (ie: DECSET 32) is supported
+                //   3 - Palette entries may be modified via an Operating System Command string
+                //   4 - Pixel operations are supported (sixel and PPM graphics)
+                //   5 - The current font may be selected via CSI Ps1 ; Ps2 sp D
+                //   6 - Extended palette is available
+                //   7 - Mouse is available
+                self.output.extend_from_slice(b"\x1B[<1;2;3;4;5;6;7c");
+            }
+            TerminalRequest::DeviceStatusReport => {
+                // Device Status Report - terminal OK
+                self.output.extend_from_slice(b"\x1B[0n");
+            }
+            TerminalRequest::CursorPositionReport => {
+                // Cursor Position Report
+                let screen = self.screen_sink.screen();
+                let y = screen.caret().y.min(screen.terminal_state().get_height() - 1) + 1;
+                let x = screen.caret().x.min(screen.terminal_state().get_width() - 1) + 1;
+                self.output.extend_from_slice(format!("\x1B[{};{}R", y, x).as_bytes());
+            }
+            TerminalRequest::ScreenSizeReport => {
+                // Screen Size Report
+                let screen = self.screen_sink.screen();
+                let height = screen.terminal_state().get_height();
+                let width = screen.terminal_state().get_width();
+                self.output.extend_from_slice(format!("\x1B[{};{}R", height, width).as_bytes());
+            }
+            TerminalRequest::RequestTabStopReport => {
+                // Tab Stop Report in DCS format
+                let screen = self.screen_sink.screen();
+                self.output.extend_from_slice(b"\x1BP2$u");
+                for i in 0..screen.terminal_state().tab_count() {
+                    let tab = screen.terminal_state().get_tabs()[i];
+                    self.output.extend_from_slice((tab + 1).to_string().as_bytes());
+                    if i < screen.terminal_state().tab_count().saturating_sub(1) {
+                        self.output.push(b'/');
+                    }
+                }
+                self.output.extend_from_slice(b"\x1B\\");
+            }
+            TerminalRequest::AnsiModeReport(_mode) => {
+                // ANSI mode report - for now report mode not recognized
+                self.output.extend_from_slice(b"\x1B[?0$y");
+            }
+            TerminalRequest::DecPrivateModeReport(_mode) => {
+                // DEC private mode report - for now report mode not recognized
+                self.output.extend_from_slice(b"\x1B[?0$y");
+            }
+            TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr) => {
+                let checksum = icy_engine::decrqcra_checksum(self.screen_sink.screen(), pt as i32, pl as i32, pb as i32, pr as i32);
+                self.output.extend_from_slice(format!("\x1BP{}!~{checksum:04X}\x1B\\", ppage).as_bytes());
+            }
+            TerminalRequest::FontStateReport => {
+                // Font state report: ESC[=1n response
+                let screen = self.screen_sink.screen();
+                let font_selection_result = match screen.terminal_state().font_selection_state {
+                    FontSelectionState::NoRequest => 99,
+                    FontSelectionState::Success => 0,
+                    FontSelectionState::Failure => 1,
+                };
+
+                let response = format!(
+                    "\x1B[=1;{};{};{};{};{}n",
+                    font_selection_result,
+                    screen.terminal_state().normal_attribute_font_slot,
+                    screen.terminal_state().high_intensity_attribute_font_slot,
+                    screen.terminal_state().blink_attribute_font_slot,
+                    screen.terminal_state().high_intensity_blink_attribute_font_slot
+                );
+                self.output.extend_from_slice(response.as_bytes());
+            }
+            TerminalRequest::FontModeReport => {
+                // Font mode report: ESC[=2n response
+                let screen = self.screen_sink.screen();
+                let mut params = Vec::new();
+
+                if screen.terminal_state().origin_mode == OriginMode::WithinMargins {
+                    params.push("6");
+                }
+                if screen.terminal_state().auto_wrap_mode == AutoWrapMode::AutoWrap {
+                    params.push("7");
+                }
+                if screen.caret().visible {
+                    params.push("25");
+                }
+                if screen.ice_mode() == IceMode::Ice {
+                    params.push("33");
+                }
+                if screen.caret().blinking {
+                    params.push("35");
+                }
+
+                match screen.terminal_state().mouse_mode() {
+                    MouseMode::OFF => {}
+                    MouseMode::X10 => params.push("9"),
+                    MouseMode::VT200 => params.push("1000"),
+                    MouseMode::VT200_Highlight => params.push("1001"),
+                    MouseMode::ButtonEvents => params.push("1002"),
+                    MouseMode::AnyEvents => params.push("1003"),
+                }
+
+                if screen.terminal_state().mouse_state.focus_out_event_enabled {
+                    params.push("1004");
+                }
+
+                if screen.terminal_state().mouse_state.alternate_scroll_enabled {
+                    params.push("1007");
+                }
+
+                match screen.terminal_state().mouse_state.extended_mode {
+                    ExtMouseMode::None => {}
+                    ExtMouseMode::Extended => params.push("1005"),
+                    ExtMouseMode::SGR => params.push("1006"),
+                    ExtMouseMode::URXVT => params.push("1015"),
+                    ExtMouseMode::PixelPosition => params.push("1016"),
+                }
+
+                let mode_report = if params.is_empty() {
+                    "\x1B[=2;n".to_string()
+                } else {
+                    format!("\x1B[=2;{}n", params.join(";"))
+                };
+                self.output.extend_from_slice(mode_report.as_bytes());
+            }
+            TerminalRequest::FontDimensionReport => {
+                // Font dimension report: ESC[=3n response
+                let screen = self.screen_sink.screen();
+                let dim = screen.get_font_dimensions();
+                let response = format!("\x1B[=3;{};{}n", dim.height, dim.width);
+                self.output.extend_from_slice(response.as_bytes());
+            }
+            TerminalRequest::MacroSpaceReport => {
+                // Macro Space Report: ESC[?62n response
+                // Report 32767 bytes available (standard response)
+                self.output.extend_from_slice(b"\x1B[32767*{");
+            }
+            TerminalRequest::MemoryChecksumReport(pid, checksum) => {
+                // Memory Checksum Report: ESC[?63;{Pid}n response
+                // Checksum was calculated by the parser from macro memory
+                let response = format!("\x1BP{}!~{:04X}\x1B\\", pid, checksum);
+                self.output.extend_from_slice(response.as_bytes());
+            }
+
+            TerminalRequest::RipRequestTerminalId => {
+                if self.screen_sink.screen().graphics_type() == icy_engine::GraphicsType::Rip {
+                    self.output.extend_from_slice(RIP_TERMINAL_ID.as_bytes());
+                }
+            }
+            // RIPscrip and IGS requests are not implemented
+            _ => {}
+        }
+    }
+}
+
 pub struct TerminalThread {
     // Shared state with UI
     edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
 
     // Thread-local state
     connection: Option<Box<dyn Connection>>,
-    buffer_parser: Box<dyn BufferParser>,
+    parser: Box<dyn CommandParser + Send>,
     current_transfer: Option<TransferState>,
     connection_time: Option<Instant>,
     baud_emulator: BaudEmulator,
@@ -130,12 +408,14 @@ pub struct TerminalThread {
 
     // Capture state
     capture_writer: Option<std::fs::File>,
+
+    output_buffer: Vec<u8>,
 }
 
 impl TerminalThread {
     pub fn spawn(
         edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
-        buffer_parser: Box<dyn BufferParser>,
+        parser: Box<dyn CommandParser + Send>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -143,7 +423,7 @@ impl TerminalThread {
         let mut thread = Self {
             edit_screen,
             connection: None,
-            buffer_parser,
+            parser,
             current_transfer: None,
             connection_time: None,
             command_rx,
@@ -156,6 +436,7 @@ impl TerminalThread {
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
             capture_writer: None,
+            output_buffer: Vec::new(),
         };
 
         // Spawn the async runtime for the terminal thread
@@ -177,7 +458,6 @@ impl TerminalThread {
         let mut read_buffer = vec![0u8; 64 * 1024];
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(16)); // ~60fps
         let mut poll_interval = 0;
-
         loop {
             tokio::select! {
                 // Handle commands from UI
@@ -433,28 +713,21 @@ impl TerminalThread {
 
             match config.terminal_type {
                 TerminalEmulation::Rip => {
-                    let mut buf = PaletteScreenBuffer::new(RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
-                    rip::setup_rip_text_fonts(&mut buf);
+                    let buf = PaletteScreenBuffer::new(GraphicsType::Rip);
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::Skypix => {
-                    let buf = PaletteScreenBuffer::new(SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height, rip::bgi::DEFAULT_BITFONT.clone());
+                    let buf = PaletteScreenBuffer::new(GraphicsType::Skypix);
                     //   buf.set_size((80, 42).into());
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::AtariST => {
-                    let res = if let ScreenMode::AtariST(cols) = screen_mode {
-                        if cols == 80 {
-                            icy_engine::igs::TerminalResolution::Medium
-                        } else {
-                            icy_engine::igs::TerminalResolution::Low
-                        }
+                    let (res, _igs) = if let ScreenMode::AtariST(res, igs) = config.screen_mode {
+                        (res, igs)
                     } else {
-                        icy_engine::igs::TerminalResolution::Low
-                    }
-                    .get_resolution();
-                    let font = BitFont::from_bytes("", ATARI).unwrap();
-                    let buf = PaletteScreenBuffer::new(res.width, res.height, font);
+                        (icy_engine::TerminalResolution::Low, false)
+                    };
+                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(res));
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
 
@@ -467,12 +740,13 @@ impl TerminalThread {
 
             screen_mode.apply_to_edit_screen(&mut **screen);
         }
-        self.buffer_parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode, PathBuf::from(".cache"));
+        self.parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode);
 
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
 
         self.send_event(TerminalEvent::Connected);
+
         Ok(())
     }
 
@@ -483,7 +757,7 @@ impl TerminalThread {
         }
 
         // Determine effective credentials with clear precedence
-        let mut effective_user = config.user_name.as_ref().filter(|s| !s.is_empty()).cloned().or_else(|| {
+        let mut effective_user = config.user_name.as_ref().filter(|s: &&String| !s.is_empty()).cloned().or_else(|| {
             if config.connection_info.protocol() != ConnectionType::SSH {
                 config.connection_info.user_name()
             } else {
@@ -513,7 +787,11 @@ impl TerminalThread {
 
         // Decide auto-login (requires BOTH credentials and non-SSH)
         if effective_user.is_some() && effective_pass.is_some() {
-            self.iemsi_auto_login = Some(IEmsiAutoLogin::new(effective_user.clone().unwrap(), effective_pass.clone().unwrap()));
+            let user = effective_user.clone().unwrap();
+            let pass = effective_pass.clone().unwrap();
+            if !user.is_empty() && !pass.is_empty() {
+                self.iemsi_auto_login = Some(IEmsiAutoLogin::new(user, pass));
+            }
         }
     }
 
@@ -564,10 +842,35 @@ impl TerminalThread {
 
     #[async_recursion::async_recursion(?Send)]
     async fn process_data(&mut self, data: &[u8]) {
-        let mut actions = Vec::new();
+        // Check for auto-features before parsing
+        for &byte in data {
+            if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(byte) {
+                self.auto_transfer = Some((protocol_type, download, None));
+            }
+
+            let mut logged_in = false;
+            if let Some(autologin) = &mut self.iemsi_auto_login {
+                if let Ok(Some(login_data)) = autologin.try_login(byte) {
+                    if let Some(conn) = &mut self.connection {
+                        let _ = conn.send(&login_data).await;
+                    }
+                    if let Some(isi) = &autologin.iemsi.isi {
+                        let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
+                    }
+                }
+                logged_in = autologin.is_logged_in();
+            }
+            if logged_in {
+                self.iemsi_auto_login = None;
+            }
+        }
+
+        // Vector for collecting terminal query responses
 
         if let Ok(mut screen) = self.edit_screen.lock() {
             {
+                let mut sink = TerminalSink::new(&mut **screen, &self.event_tx, &mut self.output_buffer);
+
                 if self.use_utf8 {
                     // UTF-8 mode: decode multi-byte sequences
                     let mut to_process = Vec::new();
@@ -583,30 +886,21 @@ impl TerminalThread {
                         match std::str::from_utf8(remaining) {
                             Ok(valid_str) => {
                                 // All remaining bytes form valid UTF-8
-                                for ch in valid_str.chars() {
-                                    to_process.push(ch);
-                                }
+                                to_process.extend_from_slice(valid_str.as_bytes());
                                 i = self.utf8_buffer.len(); // Consumed everything
                             }
                             Err(e) => {
                                 // Partial UTF-8 sequence or error
                                 if e.valid_up_to() > 0 {
                                     // Process the valid part
-                                    let valid_str = unsafe {
-                                        // Safe because we know valid_up_to() bytes are valid UTF-8
-                                        std::str::from_utf8_unchecked(&remaining[..e.valid_up_to()])
-                                    };
-                                    for ch in valid_str.chars() {
-                                        to_process.push(ch);
-                                    }
+                                    to_process.extend_from_slice(&remaining[..e.valid_up_to()]);
                                     i += e.valid_up_to();
                                 }
 
                                 // Check if we have an incomplete sequence at the end
                                 if let Some(error_len) = e.error_len() {
-                                    // Invalid UTF-8 sequence, skip these bytes
-                                    // Could also replace with � (U+FFFD)
-                                    to_process.push('\u{FFFD}'); // Replacement character
+                                    // Invalid UTF-8 sequence, replace with replacement character
+                                    to_process.extend_from_slice("�".as_bytes());
                                     i += error_len;
                                 } else {
                                     // Incomplete sequence at end, keep it for next time
@@ -623,63 +917,11 @@ impl TerminalThread {
                         self.utf8_buffer.clear();
                     }
 
-                    // Process all complete characters with auto-features
-                    for ch in to_process {
-                        // Check for auto-file transfer triggers
-                        if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(ch as u8) {
-                            self.auto_transfer = Some((protocol_type, download, None));
-                        }
-
-                        let mut logged_in = false;
-                        if let Some(autologin) = &mut self.iemsi_auto_login {
-                            if let Ok(Some(login_data)) = autologin.try_login(ch as u8) {
-                                if let Some(conn) = &mut self.connection {
-                                    let _ = conn.send(&login_data).await;
-                                }
-                                if let Some(isi) = autologin.iemsi.isi.clone() {
-                                    let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
-                                }
-                            }
-                            logged_in = autologin.is_logged_in();
-                        }
-                        if logged_in {
-                            self.iemsi_auto_login = None;
-                        }
-
-                        match self.buffer_parser.print_char(&mut **screen, ch) {
-                            Ok(action) => actions.push(action),
-                            Err(e) => error!("Parser error: {e}"),
-                        }
-                    }
+                    // Parse the complete UTF-8 data
+                    self.parser.parse(&to_process, &mut sink);
                 } else {
-                    // Legacy mode: treat each byte as a character (CP437 or similar)
-                    for &byte in data {
-                        // Check for auto-file transfer triggers
-                        if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(byte) {
-                            self.auto_transfer = Some((protocol_type, download, None));
-                        }
-
-                        let mut logged_in = false;
-                        if let Some(autologin) = &mut self.iemsi_auto_login {
-                            if let Ok(Some(login_data)) = autologin.try_login(byte) {
-                                if let Some(conn) = &mut self.connection {
-                                    let _ = conn.send(&login_data).await;
-                                }
-                            }
-                            if let Some(isi) = &autologin.iemsi.isi {
-                                let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
-                            }
-                            logged_in = autologin.is_logged_in();
-                        }
-
-                        if logged_in {
-                            self.iemsi_auto_login = None;
-                        }
-                        match self.buffer_parser.print_char(&mut **screen, byte as char) {
-                            Ok(action) => actions.push(action),
-                            Err(e) => error!("Parser error: {e}"),
-                        }
-                    }
+                    // Legacy mode: parse bytes directly
+                    self.parser.parse(data, &mut sink);
                 }
 
                 screen.update_hyperlinks();
@@ -691,36 +933,12 @@ impl TerminalThread {
             }
         }
 
-        for action in actions {
-            self.handle_parser_action(action).await;
-        }
-    }
-
-    async fn handle_parser_action(&mut self, action: CallbackAction) {
-        match action {
-            CallbackAction::SendString(s) => {
-                if let Some(conn) = &mut self.connection {
-                    let _ = conn.send(s.as_bytes()).await;
-                } else {
-                    // Echo locally when disconnected
-                    self.process_data(s.as_bytes()).await;
-                }
+        // Send any terminal query responses collected during parsing
+        if !self.output_buffer.is_empty() {
+            if let Some(conn) = &mut self.connection {
+                let _ = conn.send(&self.output_buffer).await;
             }
-            CallbackAction::PlayMusic(music) => {
-                self.send_event(TerminalEvent::PlayMusic(music));
-            }
-            CallbackAction::Beep => {
-                self.send_event(TerminalEvent::Beep);
-            }
-            CallbackAction::ResizeTerminal(width, height) => {
-                // Avoid async recursion by calling sync helper
-                self.perform_resize(width as u16, height as u16);
-            }
-            CallbackAction::XModemTransfer(file_name) => {
-                // Set up auto-transfer for X-Modem
-                self.auto_transfer = Some((TransferProtocolType::XModem, true, Some(file_name)));
-            }
-            _ => {}
+            self.output_buffer.clear();
         }
     }
 
@@ -856,7 +1074,6 @@ impl TerminalThread {
             let password = password.unwrap_or_default();
 
             for command in commands {
-                println!("run cmd: {:?}", command);
                 match command {
                     AutoLoginCommand::Delay(seconds) => {
                         tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
@@ -886,7 +1103,6 @@ impl TerminalThread {
                         } else {
                             icy_engine::BufferType::CP437 // Default fallback
                         };
-                        println!("wait !!!");
 
                         loop {
                             // Check timeout
@@ -987,13 +1203,8 @@ pub fn create_terminal_thread(
     edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
     terminal_type: TerminalEmulation,
 ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
-    use icy_engine::ansi::MusicOption;
-    let parser = crate::get_parser(
-        &terminal_type,
-        MusicOption::Off,
-        ScreenMode::default(),
-        PathBuf::from(".cache"), // cache directory
-    );
+    use icy_parser_core::MusicOption;
+    let parser = crate::get_parser(&terminal_type, MusicOption::Off, ScreenMode::default());
 
     TerminalThread::spawn(edit_screen, parser)
 }

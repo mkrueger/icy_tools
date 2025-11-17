@@ -1,21 +1,12 @@
 use std::path::Path;
 
+use icy_parser_core::avatar_constants;
+
 use crate::{
-    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen,
-    avatar::AVT_MOVE_CURSOR, parse_with_parser, parsers,
+    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen, load_with_parser,
 };
 
 use super::{LoadData, SaveOptions};
-
-/// Starts Avatar command
-const AVT_CMD: u8 = 22;
-
-/// clear the current window and set current attribute to default.
-const AVT_CLR: u8 = 12;
-
-///  Read two bytes from the modem. Send the first one to the screen as many times as the binary value
-///  of the second one. This is the exception where the two bytes may have their high bit set. Do not reset it here!
-// const AVT_REP: u8 = 25;
 
 pub enum AvtReadState {
     Chars,
@@ -55,11 +46,11 @@ impl OutputFormat for Avatar {
         match options.screen_preparation {
             super::ScreenPreperation::None => {}
             super::ScreenPreperation::ClearScreen => {
-                result.push(AVT_CLR);
+                result.push(avatar_constants::CLEAR_SCREEN);
             }
             super::ScreenPreperation::Home => {
-                result.push(AVT_CMD);
-                result.push(AVT_MOVE_CURSOR); // move caret
+                result.push(avatar_constants::COMMAND);
+                result.push(avatar_constants::GOTO_XY); // move caret
                 result.push(1); // x
                 result.push(1); // y
             }
@@ -141,8 +132,8 @@ impl OutputFormat for Avatar {
                 }
                 end_tags += 1;
 
-                result.push(AVT_CMD);
-                result.push(AVT_MOVE_CURSOR); // move caret
+                result.push(avatar_constants::COMMAND);
+                result.push(avatar_constants::GOTO_XY); // move caret
                 result.push(tag.position.x as u8 + 1); // x
                 result.push(tag.position.y as u8 + 1); // y
                 result.extend(tag.replacement_value.as_bytes());
@@ -173,7 +164,7 @@ impl OutputFormat for Avatar {
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        parse_with_parser(&mut result, &mut parsers::avatar::Parser::default(), &text, true)?;
+        load_with_parser(&mut result, &mut icy_parser_core::AvatarParser::default(), &text, true)?;
         Ok(result.buffer)
     }
 }

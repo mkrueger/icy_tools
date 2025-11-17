@@ -5,8 +5,8 @@ use std::sync::{Mutex, atomic::AtomicU64};
 use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache};
 use iced::Element;
 use iced::widget::shader;
+use icy_engine::MouseField;
 use icy_engine::Position;
-use icy_engine::rip::bgi::MouseField;
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());

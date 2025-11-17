@@ -38,8 +38,19 @@ pub use palette_handling::*;
 mod fonts;
 pub use fonts::*;
 
-pub mod parsers;
-pub use parsers::*;
+mod mouse_handling;
+pub use mouse_handling::*;
+
+// Re-export parsers from icy_parser_core
+pub use icy_parser_core::{IgsParser, MusicOption, SkypixParser};
+
+// Create a parsers module that re-exports from icy_parser_core
+pub mod parsers {
+    pub use icy_parser_core::{
+        AnsiParser as ansi, AsciiParser as ascii, AtasciiParser as atascii, AvatarParser as avatar, CtrlAParser as ctrla, Mode7Parser as mode7,
+        PcBoardParser as pcboard, PetsciiParser as petscii, RenegadeParser as renegade, ViewdataParser as viewdata,
+    };
+}
 
 mod caret;
 pub use caret::*;
@@ -60,6 +71,9 @@ mod selection_mask;
 mod url_scanner;
 pub use selection_mask::*;
 
+mod parser_sink;
+pub use parser_sink::*;
+
 pub type EngineResult<T> = anyhow::Result<T>;
 
 pub mod overlay_mask;
@@ -71,6 +85,8 @@ pub mod clipboard;
 
 pub mod paint;
 pub use paint::*;
+
+pub use palette_screen_buffer::bgi::MouseField;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Size {
@@ -397,4 +413,16 @@ pub trait TextPane {
             }
         }
     }
+}
+
+pub fn decrqcra_checksum(buf: &dyn TextPane, top: i32, left: i32, bottom: i32, right: i32) -> u16 {
+    // Matches the original DEC VT300/VT420 documentation and xterm’s implementation.
+    let mut sum: u32 = 0;
+    for y in top..=bottom {
+        for x in left..=right {
+            let ch = buf.get_char(crate::Position { x, y });
+            sum = sum.wrapping_add(ch.ch as u32);
+        }
+    }
+    (sum & 0xFFFF) as u16
 }

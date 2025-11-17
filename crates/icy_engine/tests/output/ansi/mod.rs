@@ -1,4 +1,5 @@
-use icy_engine::{BufferParser, EditableScreen, TextScreen, ansi};
+use icy_engine::{EditableScreen, TextScreen};
+use icy_parser_core::AnsiParser;
 use std::{
     fs::{self},
     thread,
@@ -9,12 +10,13 @@ use crate::compare_output;
 
 #[test]
 pub fn test_ansi() {
+    crate::init_logging();
+
     for entry in fs::read_dir("tests/output/ansi/files").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ans" {
             continue;
         }
-
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
@@ -22,12 +24,7 @@ pub fn test_ansi() {
         screen.terminal_state_mut().is_terminal_buffer = true;
         *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
 
-        let mut parser = ansi::Parser::default();
-        for c in data {
-            if let Err(err) = parser.print_char(&mut screen, *c as char) {
-                eprintln!("Error parsing char '{}' ({:02X}): {}", c, c, err);
-            }
-        }
+        super::parse_with_parser(&mut screen, &mut AnsiParser::default(), &data).expect("Error parsing file");
         while !screen.buffer.sixel_threads.is_empty() {
             thread::sleep(Duration::from_millis(50));
             let _ = screen.buffer.update_sixel_threads();

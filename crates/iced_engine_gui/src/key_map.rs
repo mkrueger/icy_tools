@@ -305,6 +305,90 @@ pub static MODE7_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key(keyboard::key::Named::F7), &[27]),
 ];
 
+pub static ATARI_ST_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
+    // Function keys (VT52 style)
+    (named_key(keyboard::key::Named::F1), b"\x1bP"), // ESC P
+    (named_key(keyboard::key::Named::F2), b"\x1bQ"), // ESC Q
+    (named_key(keyboard::key::Named::F3), b"\x1bR"), // ESC R
+    // Arrow keys (VT52 cursor movement)
+    (named_key(keyboard::key::Named::ArrowUp), b"\x1bA"),    // ESC A
+    (named_key(keyboard::key::Named::ArrowDown), b"\x1bB"),  // ESC B
+    (named_key(keyboard::key::Named::ArrowRight), b"\x1bC"), // ESC C
+    (named_key(keyboard::key::Named::ArrowLeft), b"\x1bD"),  // ESC D
+    // Shift + Arrows (same codes as unshifted for VT52)
+    (named_key_shift(keyboard::key::Named::ArrowUp), b"\x1bA"),
+    (named_key_shift(keyboard::key::Named::ArrowDown), b"\x1bB"),
+    (named_key_shift(keyboard::key::Named::ArrowRight), b"\x1bC"),
+    (named_key_shift(keyboard::key::Named::ArrowLeft), b"\x1bD"),
+    // Delete key - sends ASCII 127 (DEL)
+    // Note: The C code checks DECBKM flag, but defaults to 0x7f
+    (named_key(keyboard::key::Named::Delete), &[0x7F]),
+    // Backspace - typically sends 0x08 for VT52
+    // Note: C code shows DECBKM flag affects this, defaulting to 0x7F without flag
+    (named_key(keyboard::key::Named::Backspace), &[0x08]),
+    // Standard keys
+    (named_key(keyboard::key::Named::Escape), &[0x1B]), // ESC
+    (named_key(keyboard::key::Named::Enter), &[0x0D]),  // CR
+    (named_key(keyboard::key::Named::Tab), &[0x09]),    // TAB
+    // Home/End - VT52 style
+    (named_key(keyboard::key::Named::Home), b"\x1bH"), // ESC H (cursor home)
+    (named_key(keyboard::key::Named::End), b"\x1bE"),  // ESC E (clear screen)
+    // Insert - VT52 doesn't have standard insert, using ESC @
+    (named_key(keyboard::key::Named::Insert), b"\x1b@"),
+    // Page Up/Down - not standard in VT52, but common extensions
+    (named_key(keyboard::key::Named::PageUp), b"\x1bI"),   // ESC I (reverse line feed)
+    (named_key(keyboard::key::Named::PageDown), b"\x1bJ"), // ESC J (clear to end of screen)
+    // Additional function keys (F4-F10) - common Atari ST extensions
+    (named_key(keyboard::key::Named::F4), b"\x1bS"),
+    (named_key(keyboard::key::Named::F5), b"\x1bT"),
+    (named_key(keyboard::key::Named::F6), b"\x1bU"),
+    (named_key(keyboard::key::Named::F7), b"\x1bV"),
+    (named_key(keyboard::key::Named::F8), b"\x1bW"),
+    (named_key(keyboard::key::Named::F9), b"\x1bX"),
+    (named_key(keyboard::key::Named::F10), b"\x1bY"),
+    // Ctrl+Letter combinations (standard ASCII control codes)
+    (char_key_ctrl('a'), &[0x01]),
+    (char_key_ctrl('b'), &[0x02]),
+    (char_key_ctrl('c'), &[0x03]),
+    (char_key_ctrl('d'), &[0x04]),
+    (char_key_ctrl('e'), &[0x05]),
+    (char_key_ctrl('f'), &[0x06]),
+    (char_key_ctrl('g'), &[0x07]),
+    (char_key_ctrl('h'), &[0x08]),
+    (char_key_ctrl('i'), &[0x09]),
+    (char_key_ctrl('j'), &[0x0A]),
+    (char_key_ctrl('k'), &[0x0B]),
+    (char_key_ctrl('l'), &[0x0C]),
+    (char_key_ctrl('m'), &[0x0D]),
+    (char_key_ctrl('n'), &[0x0E]),
+    (char_key_ctrl('o'), &[0x0F]),
+    (char_key_ctrl('p'), &[0x10]),
+    (char_key_ctrl('q'), &[0x11]),
+    (char_key_ctrl('r'), &[0x12]),
+    (char_key_ctrl('s'), &[0x13]),
+    (char_key_ctrl('t'), &[0x14]),
+    (char_key_ctrl('u'), &[0x15]),
+    (char_key_ctrl('v'), &[0x16]),
+    (char_key_ctrl('w'), &[0x17]),
+    (char_key_ctrl('x'), &[0x18]),
+    (char_key_ctrl('y'), &[0x19]),
+    (char_key_ctrl('z'), &[0x1A]),
+    // Ctrl+[ = ESC, Ctrl+\ = FS, Ctrl+] = GS, Ctrl+^ = RS, Ctrl+_ = US
+    (char_key_ctrl('['), &[0x1B]),
+    (char_key_ctrl('\\'), &[0x1C]),
+    (char_key_ctrl(']'), &[0x1D]),
+    (char_key_ctrl('^'), &[0x1E]),
+    (char_key_ctrl('_'), &[0x1F]),
+    // Ctrl+Number combinations
+    (char_key_ctrl('2'), &[0x00]), // Ctrl+2 = NUL
+    (char_key_ctrl('3'), &[0x1B]), // Ctrl+3 = ESC
+    (char_key_ctrl('4'), &[0x1C]), // Ctrl+4 = FS
+    (char_key_ctrl('5'), &[0x1D]), // Ctrl+5 = GS
+    (char_key_ctrl('6'), &[0x1E]), // Ctrl+6 = RS
+    (char_key_ctrl('7'), &[0x1F]), // Ctrl+7 = US
+    (char_key_ctrl('8'), &[0x7F]), // Ctrl+8 = DEL
+];
+
 pub fn lookup_key(
     key: &keyboard::Key,
     physical: &keyboard::key::Physical,

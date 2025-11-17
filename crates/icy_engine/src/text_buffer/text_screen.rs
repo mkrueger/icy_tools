@@ -1,6 +1,10 @@
+use core::panic;
+
+use icy_parser_core::{RipCommand, SkypixCommand};
+
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions, Screen,
-    Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, clipboard, rip::bgi::MouseField,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions,
+    SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
 };
 
 pub struct TextScreen {
@@ -12,6 +16,9 @@ pub struct TextScreen {
     pub selection_opt: Option<Selection>,
     pub selection_mask: SelectionMask,
     pub mouse_fields: Vec<MouseField>,
+
+    pub saved_caret_pos: Position,
+    pub saved_caret_state: SavedCaretState,
 }
 
 impl TextScreen {
@@ -23,6 +30,8 @@ impl TextScreen {
             selection_opt: None,
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
+            saved_caret_pos: Position::default(),
+            saved_caret_state: SavedCaretState::default(),
         }
     }
 }
@@ -394,7 +403,6 @@ impl EditableScreen for TextScreen {
 
         let start_column = self.get_first_editable_column() as usize;
         let end_column = self.get_last_editable_column() as usize;
-
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data right
         for y in start_line..=end_line {
@@ -531,5 +539,25 @@ impl EditableScreen for TextScreen {
 
     fn mark_dirty(&self) {
         self.buffer.mark_dirty()
+    }
+
+    fn saved_caret_pos(&mut self) -> &mut Position {
+        &mut self.saved_caret_pos
+    }
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
+        &mut self.saved_caret_state
+    }
+
+    fn handle_rip_command(&mut self, _cmd: RipCommand) {
+        panic!("RIP not supported for text screeens.");
+    }
+
+    fn handle_skypix_command(&mut self, _cmd: SkypixCommand) {
+        panic!("SkyPix not supported for text screens.");
+    }
+
+    fn handle_igs_command(&mut self, _cmd: icy_parser_core::IgsCommand) {
+        panic!("IGS not supported for text screens.");
     }
 }

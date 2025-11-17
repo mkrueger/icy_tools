@@ -7,8 +7,8 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced::{Event, keyboard};
-use icy_engine::ansi::{BaudEmulation, MusicOption};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_parser_core::{BaudEmulation, MusicOption};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -232,7 +232,7 @@ impl DialingDirectoryState {
                             | TerminalEmulation::Avatar
                             | TerminalEmulation::Rip
                             | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
-                            TerminalEmulation::AtariST => ScreenMode::AtariST(40),
+                            TerminalEmulation::AtariST => ScreenMode::AtariST(icy_engine::TerminalResolution::Low, false),
                             TerminalEmulation::PETscii => ScreenMode::Vic,
                             TerminalEmulation::ATAscii => ScreenMode::Atascii(40),
                             TerminalEmulation::ViewData | TerminalEmulation::Mode7 => ScreenMode::Videotex,

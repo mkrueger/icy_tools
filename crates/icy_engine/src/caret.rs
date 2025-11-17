@@ -1,12 +1,5 @@
 use super::{Position, TextAttribute};
-
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub enum CaretShape {
-    #[default]
-    Block,
-    Underline,
-    Bar,
-}
+pub use icy_parser_core::CaretShape;
 
 #[derive(Clone)]
 pub struct Caret {

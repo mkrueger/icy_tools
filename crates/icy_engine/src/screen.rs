@@ -1,12 +1,26 @@
 use std::cmp::max;
 
+use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
+
 use crate::{
-    AttributedChar, BitFont, CallbackAction, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
-    TerminalState, TextAttribute, TextPane, caret, rip::bgi::MouseField,
+    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Line, MouseField, Palette, Position, RenderOptions, SaveOptions, Selection, Sixel, Size,
+    TerminalResolution, TerminalState, TextAttribute, TextPane, caret,
 };
+
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum GraphicsType {
+    Text,
+    Rip,
+    IGS(TerminalResolution),
+    Skypix,
+}
 
 pub trait Screen: TextPane + Send {
     fn buffer_type(&self) -> crate::BufferType;
+    fn graphics_type(&self) -> crate::GraphicsType {
+        crate::GraphicsType::Text
+    }
 
     fn ice_mode(&self) -> IceMode;
 
@@ -128,16 +142,14 @@ pub trait EditableScreen: RgbaScreen {
     fn clear_dirty(&self);
     fn mark_dirty(&self);
 
-    fn lf(&mut self) -> CallbackAction {
+    fn lf(&mut self) {
         let _was_ooe = self.caret().y > self.get_last_editable_line();
-        let mut line_inserted = 0;
         self.caret_mut().x = 0;
         let y = self.caret_mut().y;
         self.caret_mut().y = y + 1;
 
         if self.terminal_state().is_terminal_buffer {
             while self.caret().y >= self.get_height() {
-                line_inserted += 1;
                 self.scroll_up();
                 self.caret_mut().y -= 1;
                 continue;
@@ -146,18 +158,11 @@ pub trait EditableScreen: RgbaScreen {
             if self.caret().y + 1 > self.get_height() {
                 self.set_height(self.caret().y + 1);
             }
-            if line_inserted > 0 {
-                return CallbackAction::ScrollDown(1);
-            }
-            return CallbackAction::Update;
+            return;
         }
 
         self.check_scrolling_on_caret_down(false);
         self.limit_caret_pos();
-        if line_inserted > 0 {
-            return CallbackAction::ScrollDown(line_inserted);
-        }
-        CallbackAction::Update
     }
 
     /// (form feed, FF, \f, ^L), to cause a printer to eject paper to the top of the next page, or a video terminal to clear the screen.
@@ -235,94 +240,84 @@ pub trait EditableScreen: RgbaScreen {
 
     /// (backspace, BS, \b, ^H), may overprint the previous character
     fn bs(&mut self) {
-        let x = max(0, self.caret_mut().x - 1);
-        self.caret_mut().x = x;
-        self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
-    }
+        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
+            && self.caret().x == 0
+        {
+            // At column 0: decide if we can wrap to previous line.
+            // Determine the "origin" (first line) depending on origin mode.
+            let origin_line = match self.terminal_state().origin_mode {
+                crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
+                crate::OriginMode::WithinMargins => self.get_first_editable_line(),
+            };
 
-    fn wrapping_bs(&mut self) {
-        // At non-zero column: identical to normal backspace.
-        if self.caret().x > 0 {
-            self.bs();
-            return;
-        }
+            // If already at origin line -> no operation (NOP).
+            if self.caret().y <= origin_line {
+                return;
+            }
 
-        // At column 0: decide if we can wrap to previous line.
-        // Determine the "origin" (first line) depending on origin mode.
-        let origin_line = match self.terminal_state().origin_mode {
-            crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
-            crate::OriginMode::WithinMargins => self.get_first_editable_line(),
-        };
+            // Move to previous line.
+            let prev_y = self.caret().y - 1;
+            self.caret_mut().y = prev_y;
 
-        // If already at origin line -> no operation (NOP).
-        if self.caret().y <= origin_line {
-            return;
-        }
+            // Choose target column: last used character on that line if any, else 0.
+            let last_len = self.get_line_length(prev_y);
+            let target_x = if last_len > 0 {
+                // We delete the last logical character cell.
+                (last_len - 1).min(self.get_width() - 1)
+            } else {
+                0
+            };
+            self.caret_mut().x = target_x;
 
-        // Move to previous line.
-        let prev_y = self.caret().y - 1;
-        self.caret_mut().y = prev_y;
-
-        // Choose target column: last used character on that line if any, else 0.
-        let last_len = self.get_line_length(prev_y);
-        let target_x = if last_len > 0 {
-            // We delete the last logical character cell.
-            (last_len - 1).min(self.get_width() - 1)
+            // Delete (blank) that character.
+            self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
         } else {
-            0
-        };
-        self.caret_mut().x = target_x;
-
-        // Delete (blank) that character.
-        self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
-    }
-
-    fn wrapping_left(&mut self) {
-        // Normal left when not at column 0
-        if self.caret().x > 0 {
-            self.caret_mut().x -= 1;
-            return;
+            let x = max(0, self.caret_mut().x - 1);
+            self.caret_mut().x = x;
+            self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
         }
-
-        // At column 0: wrap to previous line end if above origin line
-        let origin_line = match self.terminal_state().origin_mode {
-            crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
-            crate::OriginMode::WithinMargins => self.get_first_editable_line(),
-        };
-        if self.caret().y <= origin_line {
-            // Already at origin line -> no-op
-            return;
-        }
-        self.caret_mut().y -= 1;
-        self.caret_mut().x = (self.get_width() - 1).max(0);
-        self.limit_caret_pos();
-    }
-
-    fn wrapping_right(&mut self) {
-        let last_col = (self.get_width() - 1).max(0);
-        if self.caret().x < last_col {
-            self.caret_mut().x += 1;
-            return;
-        }
-
-        // At end of line: move to start of next line, scrolling if needed
-        self.caret_mut().x = 0;
-        self.caret_mut().y += 1;
-        // Use existing scrolling logic to handle terminal buffers
-        self.check_scrolling_on_caret_down(true);
-        self.limit_caret_pos();
     }
 
     fn left(&mut self, num: i32) {
-        let x = self.caret().x.saturating_sub(num);
-        self.caret_mut().x = x;
-        self.limit_caret_pos();
+        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
+            && self.caret().x == 0
+        {
+            // At column 0: wrap to previous line end if above origin line
+            let origin_line = match self.terminal_state().origin_mode {
+                crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
+                crate::OriginMode::WithinMargins => self.get_first_editable_line(),
+            };
+            if self.caret().y <= origin_line {
+                // Already at origin line -> no-op
+                return;
+            }
+            self.caret_mut().y -= 1;
+            self.caret_mut().x = (self.get_width() - 1).max(0);
+            self.limit_caret_pos();
+        } else {
+            let x = self.caret().x.saturating_sub(num);
+            self.caret_mut().x = x;
+            self.limit_caret_pos();
+        }
     }
 
     fn right(&mut self, num: i32) {
-        let x = self.caret_mut().x.saturating_add(num);
-        self.caret_mut().x = x;
-        self.limit_caret_pos();
+        let last_col = (self.get_width() - 1).max(0);
+
+        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
+            && self.caret().x >= last_col
+        {
+            // At end of line: move to start of next line, scrolling if needed
+            self.caret_mut().x = 0;
+            self.caret_mut().y += 1;
+            // Use existing scrolling logic to handle terminal buffers
+            self.check_scrolling_on_caret_down(true);
+            self.limit_caret_pos();
+        } else {
+            let x = self.caret_mut().x.saturating_add(num);
+            self.caret_mut().x = x;
+            self.limit_caret_pos();
+        }
     }
 
     fn up(&mut self, num: i32) {
@@ -402,11 +397,12 @@ pub trait EditableScreen: RgbaScreen {
         self.set_char(caret_pos, ch);
         caret_pos.x += 1;
         if caret_pos.x >= buffer_width {
-            if let crate::AutoWrapMode::AutoWrap = self.terminal_state_mut().auto_wrap_mode {
+            if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
+                caret_pos.x = 0;
+                caret_pos.y += 1;
+            } else {
                 self.lf();
                 return;
-            } else {
-                caret_pos.y -= 1;
             }
         }
         self.caret_mut().set_position(caret_pos);
@@ -531,4 +527,21 @@ pub trait EditableScreen: RgbaScreen {
             }
         }
     }
+
+    fn saved_caret_pos(&mut self) -> &mut Position;
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState;
+
+    fn handle_rip_command(&mut self, cmd: RipCommand);
+
+    fn handle_skypix_command(&mut self, cmd: SkypixCommand);
+
+    fn handle_igs_command(&mut self, cmd: IgsCommand);
+}
+
+#[derive(Clone, Default)]
+pub struct SavedCaretState {
+    pub caret: crate::Caret,
+    pub origin_mode: crate::OriginMode,
+    pub auto_wrap_mode: crate::AutoWrapMode,
 }

@@ -1,4 +1,5 @@
-use icy_engine::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferParser, EditableScreen, Palette, TextScreen, atascii};
+use icy_engine::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, EditableScreen, Palette, TextScreen};
+use icy_parser_core::AtasciiParser;
 use std::fs::{self};
 
 use crate::compare_output;
@@ -20,13 +21,8 @@ pub fn test_atascii_40() {
         screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
         *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
         *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
+        super::parse_with_parser(&mut screen, &mut AtasciiParser::default(), &data).expect("Error parsing file");
 
-        let mut parser = atascii::Parser::default();
-        for c in data {
-            if let Err(err) = parser.print_char(&mut screen, *c as char) {
-                eprintln!("Error parsing char '{}' ({:02X}): {}", c, c, err);
-            }
-        }
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);
     }
@@ -50,12 +46,7 @@ pub fn test_atascii_80() {
         *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
         *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
 
-        let mut parser = atascii::Parser::default();
-        for c in data {
-            if let Err(err) = parser.print_char(&mut screen, *c as char) {
-                eprintln!("Error parsing char '{}' ({:02X}): {}", c, c, err);
-            }
-        }
+        super::parse_with_parser(&mut screen, &mut AtasciiParser::default(), &data).expect("Error parsing file");
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);
     }

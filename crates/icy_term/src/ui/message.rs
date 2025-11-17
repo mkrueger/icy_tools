@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use icy_engine::ansi::BaudEmulation;
+use icy_engine::MouseEvent;
 use icy_net::protocol::TransferState;
+use icy_parser_core::BaudEmulation;
 
 use crate::{
     Address,
@@ -62,7 +63,7 @@ pub enum Message {
     QuitIcyTerm,
     ClearScreen,
     SetFocus(bool),
-    SendMouseEvent(icy_engine::ansi::mouse_event::MouseEvent),
+    SendMouseEvent(MouseEvent),
     McpCommand(Arc<crate::mcp::McpCommand>),
 
     FocusNext,

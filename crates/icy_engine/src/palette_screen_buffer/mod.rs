@@ -1,10 +1,25 @@
+use icy_parser_core::{RipCommand, SkypixCommand};
+
+pub mod bgi;
+mod igs_impl;
+mod rip_impl;
+mod skypix_impl;
+
+pub mod igs;
+pub use igs::TerminalResolution;
+use igs_impl::IgsState;
+
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
-    rip::bgi::{DEFAULT_BITFONT, MouseField},
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette,
+    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::thread::JoinHandle;
+
+pub use rip_impl::RIP_TERMINAL_ID;
 
 pub struct PaletteScreenBuffer {
     pub pixel_size: Size,
@@ -27,15 +42,59 @@ pub struct PaletteScreenBuffer {
     // Font dimensions in pixels
     mouse_fields: Vec<MouseField>,
 
+    // BGI graphics handler
+    pub bgi: Bgi,
+
+    // IGS state (only used for IGS graphics)
+    igs_state: Option<IgsState>,
+
+    // Maximum number of colors (for color modulo operation)
+    max_colors: u32,
+
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
     buffer_version: std::sync::atomic::AtomicU64,
+
+    saved_pos: Position,
+    saved_cursor_state: SavedCaretState,
+    graphics_type: GraphicsType,
 }
 
 impl PaletteScreenBuffer {
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
-    pub fn new(px_width: i32, px_height: i32, font: BitFont) -> Self {
+    pub fn new(graphics_type: GraphicsType) -> Self {
+        let (px_width, px_height) = match graphics_type {
+            GraphicsType::Text => {
+                panic!()
+            }
+            GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
+            GraphicsType::IGS(term_res) => {
+                let res = term_res.get_resolution();
+                (res.width, res.height)
+            }
+            GraphicsType::Skypix => (800, 600),
+        };
+
+        let mut font_table: HashMap<usize, BitFont> = HashMap::new();
+        match graphics_type {
+            GraphicsType::Rip => {
+                font_table.insert(0, RIP_FONT.clone());
+                font_table.insert(1, crate::EGA_7x8.clone());
+                font_table.insert(2, crate::VGA_8x14.clone());
+                font_table.insert(3, crate::VGA_7x14.clone());
+                font_table.insert(4, crate::VGA_16x14.clone());
+            }
+            GraphicsType::IGS(_) => {
+                font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());
+            }
+            GraphicsType::Skypix => {
+                font_table.insert(0, RIP_FONT.clone());
+            }
+            GraphicsType::Text => unreachable!(),
+        };
+
+        let font = font_table.get(&0).unwrap();
         // Calculate character grid dimensions from pixel size
         let char_cols = px_width / font.size().width;
         let char_rows = px_height / font.size().height;
@@ -50,8 +109,31 @@ impl PaletteScreenBuffer {
             layer.lines.push(Line::new());
         }
 
-        let mut font_table = HashMap::new();
-        font_table.insert(0, font);
+        // Set appropriate default palette based on graphics type
+        let palette = match graphics_type {
+            GraphicsType::IGS(_) => Palette::from_slice(&crate::IGS_SYSTEM_PALETTE),
+            _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
+        };
+
+        let max_colors = match graphics_type {
+            GraphicsType::IGS(term_res) => term_res.get_max_colors(),
+            _ => 256, // No color limit for other graphics types
+        };
+
+        // Set appropriate default caret colors based on graphics type
+        let mut caret = Caret::default();
+        match graphics_type {
+            GraphicsType::IGS(_) => {
+                // IGS palette: 0=White, 1=Black
+                // Set foreground to white (0) and background to black (1) for proper contrast
+                caret.attribute.set_foreground(0);
+                caret.attribute.set_background(1);
+            }
+            _ => {
+                // Standard VGA: 0=Black, 7=White
+                // Keep default (foreground=7, background=0)
+            }
+        }
 
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
@@ -59,16 +141,22 @@ impl PaletteScreenBuffer {
             screen,
             layer,
             font_table,
-            palette: Palette::from_slice(&DOS_DEFAULT_PALETTE),
-            caret: Caret::default(),
+            palette,
+            caret,
             ice_mode: IceMode::Unlimited,
             terminal_state: TerminalState::from(Size::new(char_cols, char_rows)),
             buffer_type: BufferType::CP437,
             hyperlinks: Vec::new(),
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
+            bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
+            igs_state: None,
+            max_colors,
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
+            saved_pos: Position::default(),
+            saved_cursor_state: SavedCaretState::default(),
+            graphics_type,
         }
     }
 
@@ -91,8 +179,9 @@ impl PaletteScreenBuffer {
         if ch.attribute.is_bold() && fg_color < 8 {
             fg_color += 8;
         }
+        fg_color %= self.max_colors; // Apply color limit
 
-        let bg_color = ch.attribute.get_background() as u32;
+        let bg_color = (ch.attribute.get_background() as u32) % self.max_colors; // Apply color limit
 
         let font = if let Some(font) = self.get_font(ch.get_font_page()) {
             font
@@ -209,6 +298,10 @@ impl Screen for PaletteScreenBuffer {
 
     fn terminal_state(&self) -> &TerminalState {
         &self.terminal_state
+    }
+
+    fn graphics_type(&self) -> crate::GraphicsType {
+        self.graphics_type
     }
 
     fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
@@ -437,32 +530,119 @@ impl EditableScreen for PaletteScreenBuffer {
         Ok(false)
     }
 
+    /// Scroll the screen up by one line (move content up, clear bottom line)
     fn scroll_up(&mut self) {
+        let font = self.get_font_dimensions();
+        let line_height = font.height as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if line_height == 0 || line_height >= screen_height {
+            return;
+        }
+
+        let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
+        let movable_rows = screen_height - line_height;
+
+        // Shift all rows up using memmove semantics (copy_within handles overlap)
+        self.screen.copy_within(line_height * row_len..screen_height * row_len, 0);
+
+        // Clear the freed bottom region
+        self.screen[movable_rows * row_len..screen_height * row_len].fill(0);
+
+        // Update text layer
         if !self.layer.lines.is_empty() {
             self.layer.lines.remove(0);
             self.layer.lines.push(Line::new());
         }
+
+        self.mark_dirty();
     }
 
+    /// Scroll the screen down by one line (move content down, clear top line)
     fn scroll_down(&mut self) {
+        let font = self.get_font_dimensions();
+        let line_height = font.height as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if line_height == 0 || line_height >= screen_height {
+            return;
+        }
+
+        let row_len = screen_width;
+        let movable_rows = screen_height - line_height;
+
+        // Shift rows down using memmove semantics
+        self.screen.copy_within(0..movable_rows * row_len, line_height * row_len);
+
+        // Clear the freed top region
+        self.screen[0..line_height * row_len].fill(0);
+
+        // Update text layer
         if !self.layer.lines.is_empty() {
             self.layer.lines.pop();
             self.layer.lines.insert(0, Line::new());
         }
+
+        self.mark_dirty();
     }
 
+    /// Scroll the screen left by one column (move content left, clear right column)
     fn scroll_left(&mut self) {
+        let font = self.get_font_dimensions();
+        let char_width = font.width as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if char_width == 0 || char_width >= screen_width {
+            return;
+        }
+
+        for y in 0..screen_height as usize {
+            let row_start = y * screen_width;
+            // Shift row content left
+            self.screen.copy_within(row_start + char_width..row_start + screen_width, row_start);
+            // Clear vacated right area
+            self.screen[row_start + screen_width - char_width..row_start + screen_width].fill(0);
+        }
+
+        // Update text layer (keep existing semantics: remove first char)
         for line in &mut self.layer.lines {
             if !line.chars.is_empty() {
                 line.chars.remove(0);
             }
         }
+
+        self.mark_dirty();
     }
 
+    /// Scroll the screen right by one column (move content right, clear left column)
     fn scroll_right(&mut self) {
+        let font = self.get_font_dimensions();
+        let char_width = font.width as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
+
+        if char_width == 0 || char_width >= screen_width {
+            return;
+        }
+
+        for y in 0..screen_height as usize {
+            let row_start = y * screen_width;
+            // Shift content right
+            self.screen
+                .copy_within(row_start..row_start + screen_width - char_width, row_start + char_width);
+            // Clear vacated left area
+            self.screen[row_start..row_start + char_width].fill(0);
+        }
+
+        // Update text layer (insert blank char at start)
         for line in &mut self.layer.lines {
             line.chars.insert(0, AttributedChar::default());
         }
+
+        self.mark_dirty();
     }
 
     fn clear_screen(&mut self) {
@@ -477,7 +657,7 @@ impl EditableScreen for PaletteScreenBuffer {
         }
 
         // Clear pixel buffer
-        self.screen.fill(0);
+        self.screen.fill(self.caret.attribute.get_background() as u8);
         self.mark_dirty();
     }
 
@@ -498,12 +678,29 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
+        if line >= self.layer.lines.len() as i32 {
+            return;
+        }
         if line >= 0 && (line as usize) < self.layer.lines.len() {
             self.layer.lines.remove(line as usize);
+        }
+
+        // If we have scroll margins, insert a blank line at the bottom margin
+        if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+            if end < self.layer.lines.len() as i32 {
+                self.layer.lines.insert(end as usize, Line::new());
+            }
         }
     }
 
     fn insert_terminal_line(&mut self, line: i32) {
+        // If we have scroll margins, remove the line at the bottom margin first
+        if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+            if end < self.layer.lines.len() as i32 {
+                self.layer.lines.remove(end as usize);
+            }
+        }
+
         if line >= 0 && (line as usize) <= self.layer.lines.len() {
             self.layer.lines.insert(line as usize, Line::new());
         }
@@ -572,5 +769,89 @@ impl EditableScreen for PaletteScreenBuffer {
     fn mark_dirty(&self) {
         self.buffer_dirty.store(true, std::sync::atomic::Ordering::Release);
         self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn saved_caret_pos(&mut self) -> &mut Position {
+        &mut self.saved_pos
+    }
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
+        &mut self.saved_cursor_state
+    }
+
+    fn handle_rip_command(&mut self, cmd: RipCommand) {
+        self.handle_rip_command_impl(cmd);
+    }
+
+    fn handle_skypix_command(&mut self, cmd: SkypixCommand) {
+        self.handle_skypix_command_impl(cmd);
+    }
+
+    fn handle_igs_command(&mut self, cmd: icy_parser_core::IgsCommand) {
+        self.handle_igs_command_impl(cmd);
+    }
+
+    fn clear_buffer_down(&mut self) {
+        let pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+
+        for y in pos.y..self.get_last_visible_line() {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
+        }
+    }
+
+    fn clear_buffer_up(&mut self) {
+        let pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+
+        for y in self.get_first_visible_line()..pos.y {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
+        }
+    }
+
+    fn clear_line(&mut self) {
+        let mut pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_line_end(&mut self) {
+        let mut pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in pos.x..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_line_start(&mut self) {
+        let mut pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..pos.x {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
     }
 }

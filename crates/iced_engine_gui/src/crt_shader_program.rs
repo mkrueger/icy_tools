@@ -1,8 +1,7 @@
 use crate::{CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalShader, render_unicode_to_rgba};
 use iced::widget::shader;
 use iced::{Rectangle, mouse};
-use icy_engine::ansi::mouse_event::{KeyModifiers, MouseButton, MouseEventType};
-use icy_engine::{Caret, CaretShape, MouseState, Position};
+use icy_engine::{Caret, CaretShape, KeyModifiers, MouseButton, MouseEvent, MouseEventType, MouseState, Position};
 
 // Program wrapper that renders the terminal and creates the shader
 pub struct CRTShaderProgram<'a> {
@@ -132,9 +131,9 @@ impl<'a> CRTShaderProgram<'a> {
 
                                     let button = if state.dragging { MouseButton::Left } else { MouseButton::None };
 
-                                    let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                    let mouse_event = MouseEvent {
                                         mouse_state: mouse_state.clone(),
-                                        event_type: icy_engine::ansi::mouse_event::MouseEventType::Motion,
+                                        event_type: MouseEventType::Motion,
                                         position: cell,
                                         button,
                                         modifiers,
@@ -220,7 +219,7 @@ impl<'a> CRTShaderProgram<'a> {
                                     meta: false,
                                 };
 
-                                let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                let mouse_event = MouseEvent {
                                     mouse_state: mouse_state.clone(),
                                     event_type: MouseEventType::Press,
                                     position: cell,
@@ -307,7 +306,7 @@ impl<'a> CRTShaderProgram<'a> {
                                     state.dragging = false;
                                 }
 
-                                let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                let mouse_event = MouseEvent {
                                     mouse_state: mouse_state.clone(),
                                     event_type: MouseEventType::Release,
                                     position: cell,
@@ -356,7 +355,7 @@ impl<'a> CRTShaderProgram<'a> {
                                         meta: false,
                                     };
 
-                                    let mouse_event = icy_engine::ansi::mouse_event::MouseEvent {
+                                    let mouse_event = MouseEvent {
                                         mouse_state: mouse_state.clone(),
                                         event_type: MouseEventType::Press,
                                         position: cell,

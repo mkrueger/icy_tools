@@ -20,8 +20,9 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, ansi::BaudEmulation, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_parser_core::BaudEmulation;
 use image::DynamicImage;
 use tokio::sync::mpsc;
 
@@ -961,7 +962,8 @@ impl MainWindow {
             icy_net::telnet::TerminalEmulation::PETscii => iced_engine_gui::key_map::C64_KEY_MAP,
             icy_net::telnet::TerminalEmulation::ViewData => iced_engine_gui::key_map::VIDEOTERM_KEY_MAP,
             icy_net::telnet::TerminalEmulation::Mode7 => iced_engine_gui::key_map::MODE7_KEY_MAP,
-            icy_net::telnet::TerminalEmulation::AtariST | icy_net::telnet::TerminalEmulation::ATAscii => iced_engine_gui::key_map::ATASCII_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::ATAscii => iced_engine_gui::key_map::ATASCII_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::AtariST => iced_engine_gui::key_map::ATARI_ST_KEY_MAP,
             _ => iced_engine_gui::key_map::ANSI_KEY_MAP,
         };
 

@@ -11,7 +11,6 @@ impl TextBuffer {
         let px_height = rect.get_height() * font_size.height;
         let line_bytes = px_width * 4;
         let required_size = (px_width * px_height * 4) as usize;
-
         let mut pixels = vec![0u8; required_size];
 
         self.render_to_rgba_into(options, &mut pixels, font_size, rect, px_width, px_height, line_bytes);

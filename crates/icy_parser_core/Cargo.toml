@@ -1,0 +1,57 @@
+[package]
+name = "icy_parser_core"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mike Krüger <mkrueger@posteo.de>"]
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "icy_parser_core"
+path = "src/lib.rs"
+
+[features]
+default = []
+
+[dependencies]
+log = { workspace = true }
+base64 = "0.22"
+memchr = "2.7"
+lazy_static = { workspace = true }
+serde = { workspace = true }
+bitflags = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.7.0", features = ["html_reports"] }
+pretty_assertions = "1.4.1"
+
+[[bench]]
+name = "ascii"
+harness = false
+
+[[bench]]
+name = "ansi"
+harness = false
+
+[[bench]]
+name = "avatar"
+harness = false
+
+[[bench]]
+name = "pcboard"
+harness = false
+
+[[bench]]
+name = "ctrla"
+harness = false
+
+[[bench]]
+name = "renegade"
+harness = false
+
+[[bench]]
+name = "rip"
+harness = false
+
+[[bench]]
+name = "igs"
+harness = false

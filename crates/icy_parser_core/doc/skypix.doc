@@ -1,0 +1,999 @@
+
+[1mANSI/SkyPix Documentation v1.12 - 01 Sep 1994[0m
+
+
+    »»»»»»»     »»»»    »»»»»   »»»»»»»»»»»  »»»»»         ///
+   »»»   »»»     »»»»    »»»   »»»      »»»   »»»         /// Compiled by:
+  »»»     »»»    »»»»»   »»»   »»»            »»»        ///
+  »»»     »»»    »»»»»»  »»»    »»»»»»»»»»    »»»       ///       ^ ^
+  »»»»»»»»»»»    »»» »»» »»»            »»»   »»»      ///       \// ^
+  »»»     »»»    »»»  »»»»»»            »»»   »»»     ///       --  /^
+  »»»     »»»    »»»   »»»»»   »»»      »»»   »»»    ///         mm(/
+ »»»»     »»»»  »»»»»   »»»»»  »»»»»»»»»»»   »»»»»  ///   [7m  Spiny Norman  [0m
+
+  ®®®®®®®®®®®  ®®®®                         ®®®®®®®®®®    ®®®
+ ®®®      ®®®   ®®®                          ®®®    ®®®
+ ®®®            ®®®  ®®®®  ®®®®   ®®®        ®®®    ®®®  ®®®®®  ®®®®   ®®®®
+  ®®®®®®®®®®    ®®® ®®®     ®®®   ®®®        ®®®    ®®®   ®®®     ®®® ®®®
+          ®®®   ®®®®®®      ®®®   ®®®        ®®®®®®®®®    ®®®      ®®®®®
+          ®®®   ®®® ®®®     ®®®   ®®®        ®®®          ®®®     ®®®®®®®
+ ®®®      ®®®   ®®®  ®®®    ®®®   ®®®        ®®®          ®®®    ®®®   ®®®
+ ®®®®®®®®®®®   ®®®®   ®®®    ®®®®®®®®       ®®®®®        ®®®®®  ®®®     ®®®
+                                  ®®®
+                                  ®®®               v 1 . 1 2
+                            ®®®®®®®®
+
+            SOME USEFUL INFORMATION TO HELP YOU DEAL WITH IT...
+
+                  Original text file       - 03 Jan 1992
+                  Edited and Revised       - 11 Jan 1993
+                  First AmigaGuide version - 01 Jan 1994
+
+      COMING SOON: C-Net MCI for Morons, the Complete AmigaGuide Dox
+
+[7m                            O P E N   M E ! !                             [0m
+
+[1mTable of Contents[0m
+
+######### ######### ####    ## ####### ######## ####    ## ####### ########
+##     ## ##    ### ## ##   ##   ##    ###      ## ##   ##   ##    ##
+##        ##    ### ##  ##  ##   ##    #######  ##  ##  ##   ##    ########
+###       ##     ## ###  ## ##   ###   ##       ###  ## ##   ###        ###
+###    ## ##     ## ###   ####   ###   ##       ###   ####   ###   ##   ###
+######### ######### ###    ###   ###   ######## ###    ###   ###   ########
+
+[7m      Introduction      [0m Words of philosophical enlightenment
+[7m ANSI Command Structure [0m What is this ANSI thing anyway?
+[7m     ANSI Commands      [0m How to make ANSI do household chores
+[7m      'Smart' Code      [0m Optimising commands to save space and time
+[7m    SkyPix Commands     [0m The SkyPix ANSI subset as defined by Michael Cox
+[7m IBM Graphic Characters [0m Those little squigglies and how to generate them
+[7m Programmes to Look For [0m What you need to get started and where to find it
+[7m  Where to Contact Me   [0m Where I can be reached (usually)
+
+[1mA Few Tiresome Words From Yours Truly[0m
+
+        ####
+        ##
+       ##  ==============================================================
+      ##   N T R O D U C T I O N
+     ##  ================================================================
+    ##
+  ####
+
+When this document was first released almost two years ago, the tide of
+SysOps converting their BBS's from Commodore to Amiga was reaching its
+peak.  At that time, SkyLine 1.3 was the hottest Amiga BBS around (because
+of its unique SkyPix protocol.)  Michael Cox, however, decided to release
+Version 2.0 without SkyPix implementation, and some would say that the
+decline of SkyLine's popularity began there.  Fortunately for SkyPix fans
+such as myself, however, C-Net Amiga now supports the protocol, providing
+a viable outlet for it until a better graphic-oriented protocol becomes
+ubiquitous in the Amiga market (such as RIP for instance.)
+
+TO C-NET USERS: the ANSI portion of this document is basically useless to
+you (other than as a technical reference), since C-Net's [M]essage
+[C]ommand [I]nterpreter mirrors all of the standard [7mANSI commands[0m.
+However, SkyPix commands are not covered by MCI, and BBS artists must still
+enter them the old-fashioned way (or with [7mSKYPAINT[0m.)  As of version 2.63,
+the only way to use ANSI/SkyPix while on-line is through the line editor
+(the visual editor will not respond to ESC sequences for some reason, but
+this may have been fixed in CNet/3.)  Also, you must press ESC twice for
+the code to register with the editor (the ESC code will show as a
+tilde ~.)
+
+TO SKYLINE 1.3 USERS: this document contains commands to which SkyLine's
+built-in editor should (I said SHOULD) respond, and since SkyLine has no
+equivalent of MCI, these Escape-commands provide the only method of
+changing colour and adding other various effects from within the BBS.
+
+
+OK, BUT JUST EXACTLY WHAT IS ANSI?
+==================================
+
+ANSI is actually an organisation, the American National Standards
+Institute, which back in the stone ages decided to introduce
+hardware/software standards to make the job of persons in the computer
+industry easier.  Originally, the ANSI protocol governed printer-to-
+computer communications since monitors were rare at that time.
+Eventually, however, someone invented the CRT, and ANSI seemed a logical
+choice to govern text displays on this new device.  When MS-DOS came into
+being in the 1970's, MicroSoft picked up on the ANSI standard (implemented
+in ANSI.SYS) to allow non-graphics-capable machines (this was before CGA)
+to generate pseudo-graphic displays using text and ANSI colour changes.
+Then came the 80's and the era of the modem, and some clever programmer
+grabbed the standard once again to use for data terminal emulations,
+providing SysOps and users with on-line "pictures", colour changes, and
+cursor movement which made BBS'ing more interesting.  The word "ANSI" can
+refer to a variety of standards (such as ANSI C, for instance), but for
+now I will refer to only the data terminal implementation.
+
+The ANSI protocol is functionally similar to Commodore's Pet ASCII in that
+each command is implemented by a series of weird characters that no one in
+their right mind would ever type by mistake.  Also like PetSCII, it is
+designed so that terminal and host should (ideally) respond identically
+to the same command (this is rarely the case, however.)  Since all 16-
+colour ANSI terminals (including ones on the Amiga) are designed to
+emulate the [7mstandard ANSI palette[0m, it is possible to view the
+same graphics using vastly different machines.
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mHow The Stuff's Put Together[0m
+
+        ####
+      ##
+    ##     ==============================================================
+   ##      O M M A N D   S T R U C T U R E
+  ##     ================================================================
+  ##
+  ####
+
+Standard ANSI Commands are structured as Introducer + Command + Terminator
+where the Introducer is almost always the ESC [ key sequence and the
+Terminator is generally a letter (ANSI) or an exclamation point (SkyPix.)
+
+Confused yet?
+
+The ";" key can also be used within a [7mcomplex command[0m to join 2 command
+strings together.  I know this sounds awfully naughty and complex, but
+just study the command charts in the following section and I think you'll
+see where I'm driving.  The key sequences are spelled out key-for-key (they
+must be entered exactly.)
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mThe Section You've All Been Waiting For[0m
+
+         ####
+       ##  ##
+      ##  ## ============================================================
+     ######  N S I   C O M M A N D S
+    ##  ## ==============================================================
+   ##  ##
+  ##  ##
+
+NOTES:
+------
+· [ ]  -  refers to optional parts of a command.
+
+· '[n]' or '[m]'  -  always decimal numbers, containing one or more ASCII
+  digits to express their value.
+
+· Where '[n]' occurs in a command and the value of 'n' is not explicitly
+  defined, it usually defaults to 1.
+
+· 'ESC'  -  an ESCape key press (HEX $1B or DECIMAL 27) - Use CTRL-[ if you
+  don't have an ESCape key (Commodore 64's, for instance) - in some
+  implementations, $DB also works as a command introducer, but ESC is much
+  more widely-used
+
+· Commands involving upper or lower-case letters are always case-sensitive.
+
+· Where applicable, the equivalent C-Net MCI commands (version 2.0 and
+  beyond) have been included for reference.
+
+· All sequences should be entered WITHOUT SPACES - the spaces are included
+  for readability only.
+
+
+[7m Cursor Positioning [0m Making your screen do the tango
+[7m      Text F/X      [0m Italics, Boldface, and international intrigue
+[7m  Changing Colours  [0m Monochrome users may skip this part
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mCursor Positioning Commands, or Watch the Bouncing Letters[0m
+
+CURSOR POSITIONING COMMANDS
+===========================
+
+Backspace                                           Left Arrow Key (CTRL-H)
+Tab                                                 Tab Key        (CTRL-I)
+Line Feed (Down One Line)                           Down Arrow Key (CTRL-J)
+Up (Up One Line)                                    Up Arrow Key   (CTRL-K)
+Clear Screen (Form Feed) [MCI \f1]                  CTRL-L
+Carriage Return (Move To First Column)              Return Key     (CTRL-M)
+
+Insert n Characters [MCI \-n]                       ESC [ [n] @
+Cursor Up n Lines [MCI \^n]                         ESC [ [n] A
+Cursor Down n Lines [MCI \!n]                       ESC [ [n] B
+Cursor Forward n Spaces [MCI \>n]                   ESC [ [n] C
+Cursor Backward n Spaces [MCI \<n]                  ESC [ [n] D
+Cursor Down n Lines And To Column 1                 ESC [ [n] E
+   (Multiple Carriage Return) [MCI \nn]
+Cursor Up n Lines And To Column 1                   ESC [ [n] F
+   (Opposite Effect Of Above)
+Cursor to the beginning of the current line         ESC [     G
+
+Cursor To Row n, Column m [MCI \f0\!n\>m]           ESC [ [n] ; [m] H
+
+Erase To End Of Display                             ESC [ J
+Erase To End Of Line                                ESC [ K
+Insert Line Above Current Line                      ESC [ L
+Delete Current Line                                 ESC [ M
+
+Delete n Chars From Under Cursor Forward            ESC [ [n] P
+Scroll Display Up n Lines                           ESC [ [n] S
+Scroll Display Down n Lines                         ESC [ [n] T
+
+Set Carriage Return Mode (What Is Transmitted
+ Whenever You Hit RETURN)
+ 
+   RETURN = Line Feed + Carriage Return             ESC [ 20 h
+   RETURN = Carriage Return Only                    ESC [ 20 l
+
+    [7m  Next Sub-Section  [0m   [7m'ANSI Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mText F/X, or Emphasis Made Easy[0m
+
+TEXT F/X
+========
+
+Normal Display (clear all F/X)                                    ESC [ 0 m
+
+  (turns off reverse, brightness, and boldface; sets text and background to
+  [7mdefault colours[0m.  In SkyPix, this will also reset the [7mfont[0m to Topaz-8.)
+---------------------------------------------------------------------------
+
+Activate Bright Colours (STANDARD ANSI ONLY)                      ESC [ 1 m
+
+  (forces the next [7mcolour change[0m to use the second 8 colours instead of
+  the first.  This command is ignored in SkyPix mode.)
+---------------------------------------------------------------------------
+
+Activate Italics (STANDARD ANSI ONLY)                             ESC [ 3 m
+
+  (This only worked on a few terminals I tried.)
+---------------------------------------------------------------------------
+
+Activate Boldface (STANDARD ANSI ONLY) [MCI \o1]                  ESC [ 5 m
+
+  (This command is also ignored in SkyPix mode.)
+---------------------------------------------------------------------------
+
+Reverse Display [MCI \r1]                                         ESC [ 7 m
+
+  (interchanges the background and foreground colours.)
+---------------------------------------------------------------------------
+
+FLASHING TEXT AND OTHER STUFF
+=============================
+
+Many of the above commands are dependent upon the terminal used.  For
+instance, on many IBM terminals Boldface text (ESC [ 5 m) appears
+instead as flashing (blinking) characters.  On other terminals, the
+(ESC [ 1 m) command activates flashing text instead of turning on bright
+colours (TERM, for instance, uses flashing text to represent the second
+8 colours on 8-colour (3 bit-plane) screens.)  Still others represent the
+second 8 colours by Boldface text.  You will need to experiment to figure
+out how your terminal implements each of the above commands.
+
+    [7m  Next Sub-Section  [0m   [7m'ANSI Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mChanging Colours, or Chartreuse Your Way to Social Ridicule[0m
+
+CHANGING COLOURS
+================
+
+NOTES:
+------
+· If Reverse Display is activated, the foreground colour becomes the
+  background colour
+
+· In SkyPix mode, the first 8 colours can be accessed with standard ANSI
+  commands (to allow compatibility with ANSI screens), however the second
+  8 SkyPix colours can only be accessed by changing the SkyPix [7mPen Colour[0m,
+  which is discussed later in this text.
+
+· Only the first 8 colours may be used as a background.
+
+· The foreground and background colours can be mixed and matched to achieve
+  128 total colour combinations.
+
+
+TEXT (FOREGROUND) COLOUR  [MCI \cn]
+===================================
+
+         DARK (ESC [ 0 m)   BRIGHT (ESC [ 1 m)   SKYPIX  
+         ----------------   ------------------   ------
+   0  -  Black              Dark Grey            Black           ESC [ 30 m
+   1  -  Red                Bright Red           Bright Red      ESC [ 31 m
+   2  -  Green              Bright Green         Bright Green    ESC [ 32 m
+   3  -  Orange             Yellow               Yellow          ESC [ 33 m
+   4  -  Dark Blue          Bright Blue          Dark Blue       ESC [ 34 m
+   5  -  Violet             Bright Violet        Violet          ESC [ 35 m
+   6  -  Cyan               Bright Cyan          Medium Blue     ESC [ 36 m
+ * 7  -  Light Grey         White                White           ESC [ 37 m
+
+   *  =  default colour
+
+
+BACKGROUND COLOUR [MCI \zn]
+===========================
+
+         DARK (ESC [ 0 m)   BRIGHT (ESC [ 1 m)   SKYPIX  
+         ----------------   ------------------   ------
+ * 0  -  Black              N/A                  Black           ESC [ 40 m
+   1  -  Red                N/A                  Bright Red      ESC [ 41 m
+   2  -  Green              N/A                  Bright Green    ESC [ 42 m
+   3  -  Orange             N/A                  Yellow          ESC [ 43 m
+   4  -  Dark Blue          N/A                  Dark Blue       ESC [ 44 m
+   5  -  Violet             N/A                  Violet          ESC [ 45 m
+   6  -  Cyan               N/A                  Medium Blue     ESC [ 46 m
+   7  -  Light Grey         N/A                  White           ESC [ 47 m
+
+   *  =  default colour
+
+
+AMIGA IMPLEMENTATIONS
+=====================
+
+For Amiga terminals, the accepted standard ANSI palette (which most closely
+approximates the original CGA text colours) is as follows:
+
+        R   G   B    COLOUR          |        R   G   B    COLOUR
+  -----------------------------------+-----------------------------------
+   0 =  00  00  00   Black           |   8 =  06  06  06   Dark Grey
+   1 =  10  00  00   Red             |   9 =  15  00  00   Bright Red
+   2 =  00  10  00   Green           |  10 =  00  15  00   Bright Green
+   3 =  10  06  00   Orange          |  11 =  15  15  00   Yellow
+   4 =  00  00  10   Dark Blue       |  12 =  00  00  15   Bright Blue
+   5 =  10  00  10   Violet          |  13 =  15  00  15   Bright Violet
+   6 =  00  10  10   Cyan            |  14 =  00  15  00   Bright Cyan
+   7 =  11  11  11   Light Grey      |  15 =  15  15  15   White
+
+    [7m    Next Section    [0m   [7m'ANSI Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1m'Smart' Code and What it Can Do For Your Social Life[0m
+
+        ####
+      ##  ##
+     ##     =============================================================
+    ## ###  E N E R A T I N G   ' S M A R T '   C O D E
+   ##  ## ===============================================================
+  ##  ##
+  #####
+
+Often in generating long ANSI screens with many [7mcolour changes[0m, it is
+important to consider the time that the screen will take to display over
+the modem (especially at 2400 baud.)  Programmes like [7mBBS-DRAW[0m will
+automatically generate 'smart' ANSI code which transmits in the least
+amount of time possible, but generating such code by hand takes a little
+bit of ingenuity on the part of the BBS artist.
+
+The first thing to bear in mind when generating 'smart' code is that any
+two (or more) ANSI codes which have the same command [7mterminator[0m may be
+combined into a single command.
+
+Example:  To set the text to bright cyan and the background to violet on an
+          ANSI screen,
+
+either enter     ESC [ 1 m    then    ESC [ 36 m    then    ESC [ 45 m
+    or enter     ESC [ 1; 36 ; 45 m
+
+where the ; is the division character in the combined command, and the "m"
+is the common terminator of the three combined commands.  As you can see,
+the second, 'optimised,' code contains four fewer characters than the first
+(those characters can add up after a while.)
+
+Another thing to consider in optimising your code is that colour,
+background, and text F/X changes remain in effect until they are removed
+in some way (by another change or by resetting to defaults.)  So, if you
+wanted a whole passage of text to have a bright purple foreground but
+wanted to change backgrounds in the middle, it would only be necessary to
+enter something such as:
+
+  ESC [ 1 ; 35 ; 43 m This is a test of the
+  ESC [ 44 m Emergency Broadcast System.
+
+instead of entering
+
+  ESC [ 1 ; 35 ; 43 m This is a test of the
+  ESC [ 1 ; 35 ; 44 m Emergency Broadcast System
+
+However, if for some reason you wanted the text of "Emergency Broadcast
+System" to appear in dark purple instead of bright purple, you would need
+to specify a longer command:
+
+  ESC [ 1 ; 35 ; 43 m This is a test of the
+  ESC [ 0 ; 35 ; 44 m Emergency Broadcast System
+
+This is necessary since ESC [ 0 m not only turns off brightness but resets
+the colour and background as well.
+
+
+COMPLEX DICE
+============
+
+OK, let's take a quantum leap here.  Let's say you wanted to clear the
+screen, jump down 14 lines, jump over 43 columns, change the text colour to
+dark red, change the background colour to yellow, and then make your
+machine quote Monty Python.
+
+   CTRL-L                      clears the display
+   ESC [ 14 B                  jumps down 14 lines
+   ESC [ 43 C                  jumps over 43 lines
+   ESC [ 7 ; 1 ; 33 ; 41 m     the only way to use a bright colour as a
+                               background is through Reverse Mode
+
+   type "I didn't expect a kind of [7mSpanish Inquisition[0m!"
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mExtremely Silly Reference[0m
+
+NOBODY expects the Spanish Inquisition!  Our chief weapon is surprise...
+surprise and fear... fear and surprise....  Our two weapons are fear and
+surprise... and ruthless efficiency...  Our THREE weapons are fear,
+surprise, and ruthless efficiency... and an almost fanatical devotion to
+the Pope...  Our FOUR... no... AMONGST our weapons...  Amongst our
+weaponry... are such elements as fear, surprise...  I'll come in again.
+
+[7m Jane! Stop This Crazy Thing! [0m
+
+[1mSkyPix Commands, or Cox's Folly[0m
+
+        ####
+      ##  ##
+     ###    =============================================================
+     ####   K Y P I X   C O M M A N D S
+      ### ===============================================================
+  ##  ##
+  ####
+
+SkyPix is defined as a sub-set of the ANSI standard, and in fact most ANSI
+commands have the same effect in SkyPix mode.  There are however several
+SkyPix-specific commands (each followed with a characteristic "!" [bang]
+terminator) which can only be used from a terminal equipped to emulate the
+SkyPix protocol (all 2 of 'em ;)
+
+NOTES:
+------
+· All SkyPix graphics are implemented on a default screen of 640x200
+  (8 colours) with the [7mdefault palette[0m described below (unless the palette
+  or number of number of [7mbitplanes[0m is changed.)
+
+· All sequences should be entered WITHOUT SPACES - the spaces are included
+  for readability only.
+
+Commands:
+[7m 1 - SET PIXEL          [0m [7m 9 - PLAY SAMPLE        [0m [7m16 - XMODEM TRANSFER    [0m
+[7m 2 - DRAW LINE          [0m [7m10 - SET FONT           [0m [7m17 - SET DISPLAY MODE   [0m
+[7m 3 - AREA FILL          [0m [7m11 - NEW PALETTE        [0m [7m18 - SET PEN B COLOUR   [0m
+[7m 4 - RECTANGLE FILL     [0m [7m12 - RESET PALETTE      [0m [7m19 - POSITION CURSOR    [0m
+[7m 5 - ELLIPSE            [0m [7m13 - FILLED ELLIPSE     [0m 20 - (NOT IMPLEMENTED)
+[7m 6 - GRAB BRUSH         [0m [7m14 - DELAY (PAUSE)      [0m [7m21 - CONTROLLER RETURN  [0m
+[7m 7 - USE BRUSH (BLIT)   [0m [7m15 - SET PEN A COLOUR   [0m [7m22 - DEFINE GADGET      [0m
+[7m 8 - MOVE PEN           [0m
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mCommand #1[0m
+
+1 - SET PIXEL                                             ESC [ 1 ; x ; y !
+
+    (Sets the pixel at the specified X and Y coordinates to whatever colour
+    is in Pen A)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #2[0m
+
+2 - DRAW LINE                                             ESC [ 2 ; x ; y !
+
+    (Draws a line in the current A pen colour from the existing pen
+    position to the point X,Y)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #3[0m
+
+3 - AREA FILL                                         ESC [ 3 ; m ; x ; y !
+
+    (Floods, in mode m, the area beginning at X,Y)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #4[0m
+
+4 - RECTANGLE FILL                            ESC [ 4 ; x1 ; y1 ; x2 ; y2 !
+
+    (Draws a filled rectangle in the current colour.  Numeric parameters
+    are the top left X and Y coordinates followed by the lower right X and
+    Y coordinates)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #5[0m
+
+5 - ELLIPSE                                       ESC [ 5 ; x ; y ; a ; b !
+
+    (Draws Ellipse with center at X,Y; major [horizontal] axis A pixels,
+    and minor [vertical] axis B pixels)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #6[0m
+
+6 - GRAB BRUSH                                  ESC [ 6 ; x1 ; y1 ; a ; b !
+
+    (Stores a piece of the screen as a brush in memory.  From there it will
+    behave exactly like a brush that has been received remotely.  X1 and Y1
+    define the starting point, A the width and B the height)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #7[0m
+
+7 - USE BRUSH (BLIT)              ESC [ 7 ; a ; b ; c ; d ; e ; f ; g ; h !
+
+    A = upper-left X coord. of the source bitmap
+    B = upper-left Y coord. of the source bitmap
+
+    The above two will usually be 0.  HOWEVER, you can use these to blit
+    parts of a brush to the screen.
+
+    C = upper-left X coord. of the destination (the screen X coord.)
+    D = upper-left Y coord. of the destination (the screen Y coord.)
+    E = horizontal (X) size of brush
+    F = vertical (Y) size of brush
+    G = MINTERM to be supplied to the blitter (commonly 192)
+    H = MASK to be supplied to the blitter (commonly 255)
+
+    The above commands blit what is in the brush buffer (following a
+    [7mCRC Transfer[0m or a [7mGRAB BRUSH[0m command) - if no brush is found, the
+    command aborts.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #8[0m
+
+8 - MOVE PEN                                              ESC [ 8 ; x ; y !
+
+    (Move the drawing pen to X,Y - NOT the cursor)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #9[0m
+
+9 - PLAY SAMPLE                                   ESC [ 9 ; a ; b ; c ; d !
+
+    (Plays a simple sample.  A is the "speed" of the sample, B is the
+    starting point in bytes, C is the ending point in bytes, and D is the
+    number of loops to perform)
+
+    NOTE: Parameters A-C are not yet implemented.
+
+    SPINY'S NOTE: As of C-Net version 2.63, SkySound is not yet
+    implemented.  Hopefully it will be added by the developers in the
+    future.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #10[0m
+
+10- SET FONT                                 ESC [ 10 ; y ! fontname.font !
+
+    (Y is the size of the font, and fontname is the name of the font - the
+    font must be in the fonts: directory of both the BBS and the Remote
+    user for this command to work!)
+
+    SPINY'S NOTE: It's wise to stick to just the basic 7 Workbench fonts,
+    since you know everyone will have them available on their system disk.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #11[0m
+
+11- NEW PALETTE                 ESC [ 11 ; c1 ; c2 ; c3 ; ... ; c15 ; c16 !
+
+    Sets the palette to the sixteen colours C1-C16 [you must enter all 16
+    colours even if you are just in [7m8-colour mode[0m!]  The parameters C1-C16
+    are decimal numbers arrived at in the following way:
+
+    Take a grey, for instance, whose R-G-B value is 12-12-12.  Then convert
+    that to C-C-C (since 12 is hex $0C).  Now take the hex number CCC and
+    convert back into Decimal, which gives you 3276.
+
+    NOTE: Unless you are a massochist, I'd suggest using [7mSKYPAINT[0m since it
+    does all of the above automatically.  Even if you just need to set the
+    palette, load up SKYPAINT and begin recording, go to the palette screen
+    and set it to what you want, then end recording.  You can then look at
+    the tiny file you created and tell what ESC [ 11 command is needed in
+    your final project.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #12[0m
+
+12- RESET PALETTE                                                ESC [ 12 !
+
+    Resets to the SkyPix standard palette, which is
+
+         R   G   B  |       R   G   B  |       R   G   B  |       R   G   B
+    ----------------+------------------+------------------+----------------
+    0 = 00  00  00  |  4 = 00  15  01  |  8 = 00  11  06  | 12 = 00  00  15
+    1 = 01  01  15  |  5 = 03  10  15  |  9 = 00  13  13  | 13 = 07  00  15
+    2 = 13  13  13  |  6 = 15  15  02  | 10 = 00  10  15  | 14 = 12  00  14
+    3 = 15  00  00  |  7 = 12  00  14  | 11 = 00  07  12  | 15 = 12  00  08
+
+    This would have the same effect as entering:
+    ESC [ 11 ; 0 ; 287 ; 3549 ; 3840 ; 241 ; 943 ; 4082 ; 3086 ; 182 ;
+          221 ; 175 ; 124 ; 15 ; 1807 ; 3086 ; 3080 !
+
+    [See also [7mCommand #15[0m for info on the default palette]
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #13[0m
+
+13- FILLED ELLIPSE                               ESC [ 13 ; x ; y ; a ; b !
+
+    (Same as standard Ellipse [[7mCommand #5[0m], except this one is filled-in)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #14[0m
+
+14- DELAY (PAUSE)                                            ESC [ 14 ; a !
+
+    (A is a value in jiffies [60ths of a second])
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #15[0m
+
+15- SET COLOUR OF PEN A                                       ESC [ 15 ; a !
+
+    Sets Pen A to colour a, where a is one of the following (assumes
+    [7mdefault palette[0m)
+
+    0 = black         4 = bright green   8 = dark green    12 = dark blue 2
+    1 = dark blue 1   5 = med. blue 1    9 = cyan          13 = indigo
+    2 = white         6 = yellow        10 = med. blue 2   14 = violet 2
+    3 = bright red    7 = violet 1      11 = grey-blue     15 = magenta
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #16[0m
+
+16- CRC XMODEM TRANSFER                   ESC [ 16 ; m ; a ; b ! filename !
+
+    Files will be sent to whichever directory BRU: is assigned.
+
+    M (MODE)   1 = IFF Brush
+               2 = IFF Sound Sample
+               3 = FutureSound Sample
+              20 = General Purpose (saves to default dir.)
+
+    A & B are the X and Y size of the IFF brush, if that is what is being
+    transmitted.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #17[0m
+
+17- SELECT DISPLAY MODE                                      ESC [ 17 ; m !
+
+    M is 1 for a 3-bitplane display (first 8 colours) or 2 for a 4-bitplane
+    display (all 16 colours allowed).  Note that if M is 1, then the second
+    8 colours (see [7mCommand #15[0m) are disabled.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #18[0m
+
+18- SET B PEN                                                ESC [ 18 ; b !
+
+    (Sets background pen to colour B [see [7mCommand #15[0m] - this is useful
+    for allowing ANSI commands to access more colours)
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #19[0m
+
+19- POSITION CURSOR                                      ESC [ 19 ; x ; y !
+
+    (Moves text cursor to X,Y.  Does NOT affect the position of the
+    drawing pen)
+
+    NOTE: This is not the same as [7mESC [ [n] ; [m] H[0m.  In this case x and y
+    refer to pixels on the screen and not to rows and columns of text.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #21[0m
+
+21- CONTROLLER RETURN                                ESC [ 21 ; c ; x ; y !
+
+    (This is SENT from the terminal every time a controller is activated -
+    c=1 for left button mouse click at coord. x,y ;
+    c=2 for menu selection [x is the menu item #, y is ignored])
+
+    SPINY'S NOTE: Due to a bug in JR-COMM 1.02 (which was fixed in 1.02a),
+    the ESC code is not sent with this command.  This should be taken into
+    consideration when adding mouse control to your own applications.
+
+    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mCommand #22[0m
+
+22- DEFINE A SKYPIX GADGET           ESC [ 22 ; n ; c ; x1 ; y1 ; x2 ; y2 !
+
+    (N is the gadget # (1-20), C is the command # associated with it; X1,Y1
+    defines the top left corner and X2,Y2 the lower right.  The gadget
+    appears in the colour of Pen A [see [7mCommand #15[0m])
+
+    [7m    Next Section    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+
+[1mIBM Graphics, or IBM ASCII's Better Half[0m
+
+        ####
+        ##
+       ##  ==============================================================
+      ##   B M   G R A P H I C S
+     ##  ================================================================
+    ##
+  ####
+
+What is IBM Graphics?  Well, it's yet another throwback to the early IBM
+days (as the name indicates.)  All IBM's and compatibles have a special
+set of graphic characters built into the upper half of their ASCII table
+(128-255) as a way for text-only programmes to make boxes, windows, lines,
+and such.  Use of IBM Graphics found its way into terminals and BBS
+programmes much like ANSI did.
+
+Of course, the Amiga with its ROM-based windows environment had no need for
+such primitive methods of generating graphics, but once Amiga terms started
+emulating IBM ANSI the need for emulating the IBM ASCII table arose as
+well.  Fortunately, all that was required was a special font containing all
+of the necessary characters.
+
+
+THE BBS END
+===========
+
+IBM Graphic characters can be generated easily in most [7mANSI editors[0m using
+point-and-click gadgets, but they can also be generated the old-fashioned
+way by using special key sequences entered in a text editor or terminal
+which has an IBM Graphic font selected as its default.  An IFF-ILBM screen
+showing the most commonly-used IBM Graphic characters and their associated
+key sequences (assumes keymap 'usa0') has been included in this archive for
+your viewing pleasure.  You can display it either by clicking below or by
+using a viewer of your own devising.
+
+[7m Click Here to View! [0m
+
+
+THE TERMINAL END
+================
+
+USING IBM GRAPHICS WITH ANSI: To enable IBM Graphics on any Amiga terminal,
+simply select an IBM Graphic font as the terminal's default text font.
+(a good IBM font has been included in this archive for those who don't have
+one.)  This information is generally entered in a requester somewhere in
+the terminal's configuration.
+
+USING IBM GRAPHICS WITH SKYPIX: This requires a bit more work, but believe
+it or not, it's possible.  JR-COMM uses Pearl rather than Topaz-8 as its
+default font in SkyPix mode, so all you need to do is replace Pearl with
+an IBM Graphic font (such as the included CleanIBM.)  This is accomplished
+simply by copying the '8' file from the FONTS:CleanIBM/ subdirectory into
+the FONTS:Pearl/ subdirectory and running FixFonts (for good measure.)
+
+NOTE: If your terminal has an option for 'High-Bit Stripping' or '8th-Bit
+Stripping', it must be turned off for IBM Graphics to function.
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mKeeping Up With the Joneses[0m
+
+        ##  ##
+       ##  ##
+      ##  ## ============================================================
+     ######  O W   T O   G E T   S T A R T E D
+    ##  ## ==============================================================
+   ##  ##
+  ##  ##
+
+You don't need an intricate understanding of the ANSI protocol to start
+making pretty pictures.  All you really need is a good ANSI editor.  An
+ANSI editor is something of a cross between a paint programme and a text
+editor.  A good one is designed to provide the user with an easy-to-use,
+intuition-based, DPaint-like format for 'drawing' ANSI screens and to do
+most of the nuts-and-bolts ANSI code generation automatically.  For
+instance, the user would simply click on a gadget to change text colours
+rather than entering the full ANSI code.
+
+For non-animated ANSI screens, I would highly recommend using [7mBBS-DRAW[0m.
+It is extremely easy to use and is available through most Public Domain/
+Shareware archives.  I have used this programme for close to a year and
+have found that it generates code very nearly as 'smart' as my own with
+only a very few exceptions (plus working with it is considerably easier
+than pounding out ESC codes blindly in a text editor.)
+
+I'd also highly recommend getting a copy of [7mSKYPAINT[0m.  SKYPAINT has the
+virtue of being the only ANSI editor equipped to interpret and generate
+standard SkyPix code.  It is also relatively versatile and easy to use and
+it implements most of the [7mSkyPix commands[0m automatically using a
+point-and-click gadget box.  At any rate, it's a GREAT DEAL faster than
+trying to enter them by hand and you can see the immediate results of each
+command as you create your file.
+
+For ANSI animations (ANSI-Mations), I generally use [7mDIANE[0m (Digital
+Intelligence Animation Editor.)  This programme also uses an intuition-
+based interface, but it employs a clever device which treats each
+character placed on the screen as a separate 'frame' in the animation,
+allowing the user to move between 'frames,' add, and edit 'frames' much
+like a real animation program.  Backdrops for the entire animation can
+also be loaded.  The only drawback of DIANE is that it is limited to 8
+colours, but it is still my first choice.
+
+For the other end of the line, I would recommend getting [7mTERMINUS[0m v2 or
+[7mTERM[0m v4 (Workbench 2 and above) for emulating IBM ANSI.  If you use
+TERM, I would also recommend using the (included) xemibm.library, since it
+seems to provide better ANSI compliance than TERM's built-in ANSI/VT-102
+routines.  For SkyPix, [7mJR-COMM[0m is still your best bet.  SKYTERM is
+another option, although (surprisingly enough, since Michael Cox wrote it)
+it does not conform as well to the SkyPix standard as JR-COMM.  Most
+SkyPix-supporting BBS's (mine included) are designed to work with JR-COMM
+rather than SKYTERM.
+
+    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+
+[1mWhere to find TERM[0m
+
+                                 TERM v4.0
+                                 =========
+
+     Copyright ©1990-93 by Olaf 'Olsen' Barthel, All Rights Reserved.
+
+     TERM can be downloaded from most Public Domain/Shareware archives
+                       including wuarchive.wustl.edu
+
+      It is freely-redistributable ShareWare with a suggested fee of
+    whatever the user feels is appropriate (it's a great programme, so
+                             don't be stingy!)
+
+                Its author can be reached through E-Mail at
+                           olsen@sourcery.han.de
+
+                         or through Snail-Mail at
+
+                             Brabeckstrasse 35
+                             D-30559 Hannover
+                        Federal Republic of Germany
+
+[1mWhere to find TERMINUS and JR-COMM[0m
+
+                       TERMINUS v2.0d, JR-COMM 1.02a
+                       =============================
+
+         Copyright ©1993 by John P. Radigan, All Rights Reserved.
+
+The unregistered version of TERMINUS (with auto-dialer disabled) is freely-
+      redistributable and can be found in most PD/ShareWare archives
+  (including wuarchive.wustl.edu.)  The registered version can be ordered
+ through the author for a ShareWare fee of $40 or for a $10 upgrade fee if
+                    you are a registered JR-COMM user.
+ 
+  The author can be contacted through E-Mail at the following addresses:
+
+                          GENIE: JRADIGAN
+                     COMPUSERVE: 76545,201
+                            BIX: JRADIGAN
+                       INTERNET: jprad@faatcrl.faa.gov
+                    or bang path ...!rutgers!faatcrl!jprad
+
+                         or through Snail-Mail at
+
+                                 Dynalogic
+                               P.O. Box 444
+                           Ocean City, NJ  08226
+
+                TERMINUS and JR-COMM are also supported on
+
+             Dynalogic Product Support BBS - FidoNet: 1:266/61
+                       (609) 398-7453 (24hrs/7days)
+                   3/12/24/96/14.4/16.8kbps HST/v.32bis
+
+For SkyPix fans, I'm not sure whether Radigan still supports JR-COMM 1.02a
+ or even if it is still available from his BBS.  However, the unregistered
+    version of JR-COMM 1.02 or 1.02a (with the delay screen) is freely-
+      redistributable and can be found in many Amiga archives such as
+          wuarchive.wustl.edu and on most Amiga-supporting BBS's.
+
+   JR-COMM 1.02a (unregistered) can also be found on the [A]miga [U]ser
+ [I]nternational Userdisk #6 (11/91) Magazine Disk, and my BBS carries the
+                   original archive as a free download.
+
+[1mWell, Now Comes the Bad News...[0m
+
+SKYPAINT
+========
+
+SKYPAINT might be a little difficult to obtain.  Unfortunately, Michael Cox
+limited its legal release to Registered SkyLine SysOps only (which is how I
+acquired the programme.)  The legalities are a bit vague since he
+abandonned the protocol, but I would assume that distributing SKYPAINT is
+still technically a no-no.
+
+Perhaps someone more proficient in programming than I could design a
+freely-redistributable SkyPix editor and win my life-long friendship (hint
+hint.)
+
+[1mWhere to find BBS-DRAW[0m
+
+                              BBS-DRAW v4.01
+                              ==============
+
+         Copyright ©1991-92 Henrik Lindqvist, All Rights Reserved.
+
+      BBS-DRAW is freely-redistributable ShareWare with a fee of $10.
+
+              Its author can be reached through Snail-Mail at
+
+                             Henrik Lindqvist
+                             Ullângergatan 19
+                              16228 Vällingby
+                             Stockholm, Sweden
+
+[1mWhere to find DIANE[0m
+
+                   DIGITAL INTELLIGENCE ANIMATION EDITOR
+                   =====================================
+
+                  Written by PER of Digital Intelligence
+        Copyright ©1991 Digital Intelligence, All Rights Reserved.
+
+  DIAne is freely-redistributable ShareWare with a suggested fee of $15.
+
+              Its author can be reached through Snail-Mail at
+
+                                 P-E Raue
+                                Bieslook 92
+                             1422 RS Uithoorn
+                              The Netherlands
+
+[1mWhereabouts I Can Be Found (On Odd Thursdays)[0m
+
+        ##   ##
+       ##   ##
+      ##   ## ===========================================================
+     ## # ##  H E R E   I   C A N   B E   R E A C H E D
+    ####### =============================================================
+   ### ###
+  ##   ##
+
+        I can be reached through E-Mail at the following addresses:
+
+                          drc76795@jetson.uh.edu
+                       or drc76795@tree.egr.uh.edu
+
+                I can also be reached through Snail-Mail at
+
+                           The Flaming Hedgehog
+                                P.O. Box 73
+                          Port Neches, TX  77651
+
+      Alternately, you can reach me on my BBS (The Flaming Hedgehog),
+      Bartertown (1-409-898-4969), or Leisure World (1-713-859-0902).
+   If you'd like to see first-hand the capabilities of SkyPix and C-Net
+  (including full mouse-control), boot up JR-COMM 1.02 or 1.02a and dial
+ 
+                              1-713-661-1930
+
+         I hope this whole mess has been helpful in some tiny way.
+      ________                      _      __
+     / ______/      __             / \    / /
+    / /             \/            / _ \  / / Sr., Electrical Engineering
+   /  \_________  ______  __   __/ / \ \/ /\___  ___________  _____  _____
+   \____  / ___ \/ / __ \/ /  / / /   \  / ___ \/ ___/ _  _ \/ ___ \/ ___ \
+       / / /  / / / / / / /  / / /    / / /  / / /  / // // / /  / / /  / /
+______/ /  \_/ / / / / /  \_/ / / ^ ^/ /  \_/ / /  / // // /  \_/ / /  / /
+\______/\  ___/\/\/  \/\___  /\/ \// \/\_____/\/   \/ \/ \/\___  /\/   \/
+         \ \______  ______/ /   --  /^                         \/
+          \______/  \______/     mm(/ --DINSDALE!
+
+                            [7m Table of Contents [0m

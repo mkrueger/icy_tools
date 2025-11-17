@@ -10,6 +10,7 @@ members = [
 #	"crates/icy_view_gui",
 	"crates/iced_engine_gui",
 	"crates/icy_mail",
+	"crates/icy_parser_core",
 ]
 [workspace.package]
 version = "0.3.0"
@@ -19,10 +20,12 @@ license = "MIT or Apache-2.0"
 
 [workspace.dependencies]
 icy_engine = { path = "crates/icy_engine" }
+icy_parser_core = { path = "crates/icy_parser_core"} 
+
 #icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = "0.3.4"
 #icy_sauce = { path = "../icy_sauce" }
-icy_sixel = "0.1.3"
+icy_sixel = "0.2.0"
 #icy_view_gui = { path = "crates/icy_view_gui" }
 iced_engine_gui = { path = "crates/iced_engine_gui" } 
 #libyaff = { path = "../libyaff" }
@@ -50,6 +53,8 @@ clipboard-rs = "0.3.0"
 rmcp = "0.8.5"
 jsonrpc-core = "18.0"
 serde_json = "1.0"
+image = "0.25.9"
+bitflags = "2.10.0"
 
 regex = "1.11.3"
 directories = "6.0.0"

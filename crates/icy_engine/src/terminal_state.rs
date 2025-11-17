@@ -1,19 +1,24 @@
-use crate::{Size, ansi::BaudEmulation};
+use icy_parser_core::BaudEmulation;
+
+use crate::Size;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalScrolling {
     Smooth,
     Fast,
+    Disabled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum OriginMode {
+    #[default]
     UpperLeftCorner,
     WithinMargins,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum AutoWrapMode {
+    #[default]
     NoWrap,
     AutoWrap,
 }
@@ -25,7 +30,7 @@ pub enum FontSelectionState {
     Failure,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct MouseState {
     pub mouse_mode: MouseMode,
     pub focus_out_event_enabled: bool,

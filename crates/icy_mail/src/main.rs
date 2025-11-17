@@ -141,7 +141,7 @@ fn main() {
 
 fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
     // Add `image = "0.24"` (or latest) to Cargo.toml if not present.
-    let img = iced::advanced::graphics::image::image_rs::load_from_memory(png_bytes)?;
+    let img = image::load_from_memory(png_bytes)?;
     let rgba = img.to_rgba8();
     let w = img.width();
     let h = img.height();
