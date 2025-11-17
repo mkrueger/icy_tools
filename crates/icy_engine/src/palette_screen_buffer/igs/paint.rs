@@ -731,29 +731,28 @@ impl DrawExecutor {
         // For outlined text, the position represents where the outline starts
         // (not the character itself, which is 1 pixel inward)
         let mut pos = text_pos;
-        pos.y -= metrics.y_off;
 
         // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
 
         let color = self.text_color;
         let bg_color = 0; // Background color for outlined text
         let font_size = font.size();
-        
+
         // Adjust starting position for rotated text
         // For 90° rotation, text grows upward, so start at the bottom
-        // For 270° rotation, text grows downward from right  
+        // For 270° rotation, text grows downward from right
         match self.text_rotation {
             TextRotation::Up => {
                 // Text grows upward, so start position needs to be at the bottom of where the char will be
                 pos.y -= font_size.height - 1;
-            },
+            }
             TextRotation::Left => {
                 // Text grows to the left
                 pos.x -= font_size.width - 1;
-            },
+            }
             _ => {}
         }
-        
+
         let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
 
         for ch in string_parameter.chars() {
@@ -779,9 +778,9 @@ impl DrawExecutor {
                             // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
                             let (rx, ry) = match self.text_rotation {
                                 TextRotation::Right | TextRotation::RightReverse => (x, y),
-                                TextRotation::Up => (font_size.height - 1 - y, font_size.width - 1 - x),  // 90° + Y-flip
+                                TextRotation::Up => (font_size.height - 1 - y, font_size.width - 1 - x), // 90° + Y-flip
                                 TextRotation::Left => (font_size.width - 1 - x, font_size.height - 1 - y),
-                                TextRotation::Down => (y, font_size.width - 1 - x),  // 270° + Y-flip
+                                TextRotation::Down => (y, font_size.width - 1 - x), // 270° + Y-flip
                             };
                             // Draw outline pixels around this character pixel
                             for dy in -1..=1 {
@@ -810,9 +809,9 @@ impl DrawExecutor {
                             // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
                             let (rx, ry) = match self.text_rotation {
                                 TextRotation::Right | TextRotation::RightReverse => (x, y),
-                                TextRotation::Up => (y, font_size.width - 1 - x),  // 90° + Y-flip
+                                TextRotation::Up => (y, font_size.width - 1 - x), // 90° + Y-flip
                                 TextRotation::Left => (font_size.width - 1 - x, font_size.height - 1 - y),
-                                TextRotation::Down => (font_size.height - y,  x),  // 270° + Y-flip
+                                TextRotation::Down => (font_size.height - y, x), // 270° + Y-flip
                             };
                             let p = pos + Position::new(rx, ry);
                             self.set_pixel(buf, p.x, p.y, bg_color);
@@ -842,14 +841,15 @@ impl DrawExecutor {
                                 } else {
                                     0
                                 };
-                                
+
                                 // Apply rotation transformation
                                 // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
                                 let (rx, ry) = match self.text_rotation {
-                                    TextRotation::Right | TextRotation::RightReverse => (x + skew_offset, y),
-                                    TextRotation::Up => (y, font_size.width - 1 - (x + skew_offset)),  // 90° + Y-flip
-                                    TextRotation::Left => (font_size.width - 1 - (x + skew_offset), font_size.height - 1 - y),
-                                    TextRotation::Down => (font_size.height - y,  (x + skew_offset)),  // 270° + Y-flip
+                                    TextRotation::Right => (x + skew_offset, y - metrics.y_off),
+                                    TextRotation::RightReverse => (x + skew_offset, y - metrics.y_off),
+                                    TextRotation::Up => (y - metrics.y_off, -1 + 2 * font_size.width - (x + skew_offset)), // 90° + Y-flip
+                                    TextRotation::Left => (font_size.width - (x + skew_offset) - 1, -y + metrics.y_off),
+                                    TextRotation::Down => (-y + metrics.y_off, (x + skew_offset)), // 270° + Y-flip
                                 };
                                 let p = pos + Position::new(rx, ry);
                                 self.set_pixel(buf, p.x, p.y, color);
@@ -864,7 +864,7 @@ impl DrawExecutor {
             }
             if self.text_effects == TextEffects::Underlined {
                 // Atari VDI: underline is placed above the adjusted position
-                let y_pos = pos.y + metrics.underline_pos;
+                let y_pos = pos.y + metrics.underline_pos - metrics.y_off;
 
                 for y2 in 0..metrics.underline_height {
                     for x in 0..metrics.underline_width {
@@ -879,13 +879,13 @@ impl DrawExecutor {
             } else {
                 font_size.width
             };
-            
+
             // Advance position based on rotation
             // When rotated 90° or 270°, width becomes vertical advance
             match self.text_rotation {
                 TextRotation::RightReverse | TextRotation::Right => pos.x += base_width,
-                TextRotation::Up => pos.y -= base_width,  // Width becomes vertical advance
-                TextRotation::Down => pos.y += base_width,  // Width becomes vertical advance
+                TextRotation::Up => pos.y -= base_width,   // Width becomes vertical advance
+                TextRotation::Down => pos.y += base_width, // Width becomes vertical advance
                 TextRotation::Left => pos.x -= base_width,
             }
         }
