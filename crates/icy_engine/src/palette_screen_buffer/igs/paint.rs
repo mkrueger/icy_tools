@@ -738,6 +738,22 @@ impl DrawExecutor {
         let color = self.text_color;
         let bg_color = 0; // Background color for outlined text
         let font_size = font.size();
+        
+        // Adjust starting position for rotated text
+        // For 90° rotation, text grows upward, so start at the bottom
+        // For 270° rotation, text grows downward from right  
+        match self.text_rotation {
+            TextRotation::Up => {
+                // Text grows upward, so start position needs to be at the bottom of where the char will be
+                pos.y -= font_size.height - 1;
+            },
+            TextRotation::Left => {
+                // Text grows to the left
+                pos.x -= font_size.width - 1;
+            },
+            _ => {}
+        }
+        
         let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
 
         for ch in string_parameter.chars() {
@@ -759,10 +775,18 @@ impl DrawExecutor {
                         };
 
                         if pixel_set {
+                            // Apply rotation transformation
+                            // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
+                            let (rx, ry) = match self.text_rotation {
+                                TextRotation::Right | TextRotation::RightReverse => (x, y),
+                                TextRotation::Up => (font_size.height - 1 - y, font_size.width - 1 - x),  // 90° + Y-flip
+                                TextRotation::Left => (font_size.width - 1 - x, font_size.height - 1 - y),
+                                TextRotation::Down => (y, font_size.width - 1 - x),  // 270° + Y-flip
+                            };
                             // Draw outline pixels around this character pixel
                             for dy in -1..=1 {
                                 for dx in -1..=1 {
-                                    let p = pos + Position::new(x + dx, y + dy);
+                                    let p = pos + Position::new(rx + dx, ry + dy);
                                     self.set_pixel(buf, p.x, p.y, color);
                                 }
                             }
@@ -782,7 +806,15 @@ impl DrawExecutor {
                         };
 
                         if pixel_set {
-                            let p = pos + Position::new(x, y);
+                            // Apply rotation transformation
+                            // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
+                            let (rx, ry) = match self.text_rotation {
+                                TextRotation::Right | TextRotation::RightReverse => (x, y),
+                                TextRotation::Up => (y, font_size.width - 1 - x),  // 90° + Y-flip
+                                TextRotation::Left => (font_size.width - 1 - x, font_size.height - 1 - y),
+                                TextRotation::Down => (font_size.height - y,  x),  // 270° + Y-flip
+                            };
+                            let p = pos + Position::new(rx, ry);
                             self.set_pixel(buf, p.x, p.y, bg_color);
                         }
                     }
@@ -810,7 +842,16 @@ impl DrawExecutor {
                                 } else {
                                     0
                                 };
-                                let p = pos + Position::new(x + skew_offset, y);
+                                
+                                // Apply rotation transformation
+                                // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
+                                let (rx, ry) = match self.text_rotation {
+                                    TextRotation::Right | TextRotation::RightReverse => (x + skew_offset, y),
+                                    TextRotation::Up => (y, font_size.width - 1 - (x + skew_offset)),  // 90° + Y-flip
+                                    TextRotation::Left => (font_size.width - 1 - (x + skew_offset), font_size.height - 1 - y),
+                                    TextRotation::Down => (font_size.height - y,  (x + skew_offset)),  // 270° + Y-flip
+                                };
+                                let p = pos + Position::new(rx, ry);
                                 self.set_pixel(buf, p.x, p.y, color);
                                 if self.text_effects == TextEffects::Thickened {
                                     self.set_pixel(buf, p.x + 1, p.y, color);
@@ -831,20 +872,21 @@ impl DrawExecutor {
                     }
                 }
             }
-            // Calculate character advance width
+            // Calculate character advance based on rotation
             // For outlined text, add 2 pixels (1 left + 1 right for the border)
-            let char_width = if is_outlined {
+            let base_width = if is_outlined {
                 font_size.width + 2 * outline_thickness
-            } else if self.text_effects == TextEffects::Skewed {
-                font_size.width
             } else {
                 font_size.width
             };
+            
+            // Advance position based on rotation
+            // When rotated 90° or 270°, width becomes vertical advance
             match self.text_rotation {
-                TextRotation::RightReverse | TextRotation::Right => pos.x += char_width,
-                TextRotation::Up => pos.y -= font_size.height,
-                TextRotation::Down => pos.y += font_size.height,
-                TextRotation::Left => pos.x -= char_width,
+                TextRotation::RightReverse | TextRotation::Right => pos.x += base_width,
+                TextRotation::Up => pos.y -= base_width,  // Width becomes vertical advance
+                TextRotation::Down => pos.y += base_width,  // Width becomes vertical advance
+                TextRotation::Left => pos.x -= base_width,
             }
         }
     }
