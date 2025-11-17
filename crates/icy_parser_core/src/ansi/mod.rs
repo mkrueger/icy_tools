@@ -1572,6 +1572,18 @@ impl AnsiParser {
                     }
                 }
             }
+
+            b'|' => {
+                if self.music_option != music::MusicOption::Off {
+                    if self.params.is_empty() {
+                        self.state = ParserState::AnsiMusic;
+                        self.dotted_note = false;
+                        self.cur_music = Some(music::AnsiMusic::default());
+                        self.music_state = MusicState::ParseMusicStyle;
+                        return;
+                    }
+                }
+            }
             _ => {
                 sink.report_error(ParseError::MalformedSequence {
                     description: "Unknown or malformed escape sequence",

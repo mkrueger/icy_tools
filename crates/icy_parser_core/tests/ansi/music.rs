@@ -375,3 +375,102 @@ fn test_octave_up_down() {
         panic!("Expected first PlayNote");
     }
 }
+
+#[test]
+fn test_pipe_music_command() {
+    // CSI | should trigger music when music is not Off
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Conflicting);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[|C\x0E", &mut sink);
+
+    let music = sink.get_music().expect("Should have music with | command");
+    assert_eq!(1, music.music_actions.len());
+
+    if let MusicAction::PlayNote(freq, _, _) = music.music_actions[0] {
+        assert!((freq - 523.2511).abs() < 0.01); // C5
+    } else {
+        panic!("Expected PlayNote");
+    }
+}
+
+#[test]
+fn test_pipe_music_command_off() {
+    // When MusicOption::Off, CSI | should not trigger music
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Off);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[|C\x0E", &mut sink);
+
+    // Should not emit music when Off
+    assert!(sink.get_music().is_none());
+}
+
+#[test]
+fn test_pipe_music_with_banana() {
+    // CSI | should work with Banana mode
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Banana);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[|T180L4CDEFGAB\x0E", &mut sink);
+
+    let music = sink.get_music().expect("Should have music with | in Banana mode");
+    assert_eq!(7, music.music_actions.len(), "Should have 7 notes (C D E F G A B)");
+}
+
+#[test]
+fn test_pipe_music_with_both() {
+    // CSI | should work with Both mode
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[|O4L8CDEFG\x0E", &mut sink);
+
+    let music = sink.get_music().expect("Should have music with | in Both mode");
+    assert_eq!(5, music.music_actions.len(), "Should have 5 notes");
+}
+
+#[test]
+fn test_pipe_vs_m_vs_n_commands() {
+    // Compare all three music triggers in Both mode
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+
+    // Test CSI M
+    let mut sink_m = TestSink::new();
+    parser.parse(b"\x1B[MC\x0E", &mut sink_m);
+    assert!(sink_m.get_music().is_some(), "CSI M should work");
+
+    // Test CSI N
+    let mut sink_n = TestSink::new();
+    parser.parse(b"\x1B[ND\x0E", &mut sink_n);
+    assert!(sink_n.get_music().is_some(), "CSI N should work");
+
+    // Test CSI |
+    let mut sink_pipe = TestSink::new();
+    parser.parse(b"\x1B[|E\x0E", &mut sink_pipe);
+    assert!(sink_pipe.get_music().is_some(), "CSI | should work");
+}
+
+#[test]
+fn test_pipe_complex_sequence() {
+    // Test a complex music sequence with CSI |
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+    let mut sink = TestSink::new();
+
+    // Complex melody: set tempo, octave, length, play notes with pauses
+    parser.parse(b"\x1B[|T160O4L8CDEP4L16FGL4A\x0E", &mut sink);
+
+    let music = sink.get_music().expect("Should have music");
+    // Should have: C, D, E, Pause, F, G, A = 7 actions
+    assert_eq!(7, music.music_actions.len(), "Should have 7 actions (3 notes + pause + 3 notes)");
+
+    // Verify pause is in the sequence
+    let has_pause = music.music_actions.iter().any(|action| matches!(action, MusicAction::Pause(_)));
+    assert!(has_pause, "Should contain a pause action");
+}
