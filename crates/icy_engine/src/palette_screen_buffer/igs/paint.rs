@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::mem::swap;
+use std::sync::Mutex;
 
 use icy_parser_core::PenType;
 
@@ -8,7 +10,7 @@ use super::{
     vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
 };
 use crate::palette_screen_buffer::igs::TerminalResolution;
-use crate::{BitFont, EditableScreen, Position, Size, load_atari_fonts, palette_screen_buffer::igs::vdi::blit_px};
+use crate::{BitFont, EditableScreen, Position, Size, palette_screen_buffer::igs::vdi::blit_px};
 
 #[derive(Debug, PartialEq)]
 pub enum TextEffects {
@@ -121,9 +123,6 @@ pub struct DrawExecutor {
     pattern_index_number: usize,
     draw_border: bool,
 
-    font_7px: BitFont,
-    font_9px: BitFont,
-    font_16px: BitFont,
     hollow_set: bool,
 
     // Screen memory for blit operations
@@ -140,13 +139,60 @@ impl Default for DrawExecutor {
         DrawExecutor::new(TerminalResolution::Low)
     }
 }
+lazy_static::lazy_static! {
+    pub static ref ATARI_ST_FONT_6x6: BitFont = BitFont::from_bytes("Atari ST 6x6", include_bytes!("../../../data/fonts/Atari/atari-st-6x6.yaff")).unwrap();
+    pub static ref ATARI_ST_FONT_8x8: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x8.yaff")).unwrap();
+
+    pub static ref ATARI_ST_FONT_12x12: BitFont = {
+        ATARI_ST_FONT_6x6.double_size()
+    };
+
+    pub static ref ATARI_ST_FONT_16x16: BitFont = {
+        ATARI_ST_FONT_8x8.double_size()
+    };
+
+    pub static ref ATARI_ST_FONT_7x11: BitFont = {
+        ATARI_ST_FONT_8x16.scale_to_height(11).unwrap()
+    };
+
+    pub static ref ATARI_ST_FONT_14x22: BitFont = {
+        ATARI_ST_FONT_7x11.double_size()
+    };
+
+    pub static ref ATARI_ST_FONT_8x16: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x16.yaff")).unwrap();
+
+
+    static ref ATARI_DYNAMIC_FONTS: Mutex<HashMap<i32, &'static BitFont>> = Mutex::new(HashMap::new());
+}
+
+fn load_atari_font(text_size: i32) -> (i32, &'static BitFont) {
+    if text_size <= 8 {
+        return (3, &ATARI_ST_FONT_6x6);
+    }
+    if text_size == 9 {
+        return (6, &ATARI_ST_FONT_8x8);
+    }
+
+    if text_size <= 15 {
+        // 7x11 Font
+        return (11, &ATARI_ST_FONT_7x11);
+    }
+
+    if text_size <= 17 {
+        // 12x12 Font (upscaled 6x6)
+        return (8, &ATARI_ST_FONT_12x12);
+    }
+
+    if text_size <= 19 {
+        // 16x16 Font (upscaled 8x8)
+        return (12, &ATARI_ST_FONT_16x16);
+    }
+
+    (28, &ATARI_ST_FONT_14x22)
+}
 
 impl DrawExecutor {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
-        let fonts = load_atari_fonts();
-        let font_7px = BitFont::from_bytes(fonts[0].0.as_str(), fonts[0].2.as_bytes()).unwrap();
-        let font_9px = BitFont::from_bytes(fonts[1].0.as_str(), fonts[1].2.as_bytes()).unwrap();
-        let font_16px = BitFont::from_bytes(fonts[2].0.as_str(), fonts[2].2.as_bytes()).unwrap();
         Self {
             terminal_resolution,
             polymarker_color: 1,
@@ -163,9 +209,6 @@ impl DrawExecutor {
             polymarker_size: 1,
             solidline_size: 1,
             _user_defined_pattern_number: 1,
-            font_7px,
-            font_9px,
-            font_16px,
 
             fill_pattern_type: FillPatternType::Solid,
             fill_pattern: &SOLID_PATTERN,
@@ -626,26 +669,8 @@ impl DrawExecutor {
 
     pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &str) {
         let mut pos = text_pos;
-        let y_off;
-        let font = match self.text_size {
-            8 => {
-                y_off = -4;
-                self.font_7px.clone()
-            }
-            9 => {
-                y_off = -6;
-                self.font_9px.clone()
-            }
-            16 => {
-                y_off = -11;
-                self.font_16px.clone()
-            }
-            _ => {
-                y_off = -13;
-                self.font_16px.clone()
-            }
-        };
-        pos.y += y_off;
+        let (y_off, font) = load_atari_font(self.text_size);
+        pos.y -= y_off;
         // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
 
         let color = self.text_color;

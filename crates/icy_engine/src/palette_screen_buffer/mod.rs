@@ -10,9 +10,8 @@ pub use igs::TerminalResolution;
 use igs_impl::IgsState;
 
 use crate::{
-    ATARI_ST_FONT_8x8, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer,
-    Line, Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState,
-    TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette,
+    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
@@ -84,7 +83,7 @@ impl PaletteScreenBuffer {
                 font_table.insert(4, crate::VGA_16x14.clone());
             }
             GraphicsType::IGS(_) => {
-                font_table.insert(0, ATARI_ST_FONT_8x8.clone());
+                font_table.insert(0, igs::paint::ATARI_ST_FONT_8x8.clone());
             }
             GraphicsType::Skypix => {
                 font_table.insert(0, RIP_FONT.clone());

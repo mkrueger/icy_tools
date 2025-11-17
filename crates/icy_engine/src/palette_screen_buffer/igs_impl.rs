@@ -100,7 +100,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                 LineStyleKind::Line(lk) => {
                     state.executor.set_line_style_pub(lk as u8);
                     // Extract thickness (lower bits) and end style (higher bits)
-                    let thickness = (value % 50).max(1);
+                    let thickness: u16 = (value % 50).max(1);
                     state.executor.set_line_thickness(thickness as usize);
                 }
             }

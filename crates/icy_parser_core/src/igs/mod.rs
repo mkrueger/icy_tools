@@ -880,14 +880,16 @@ impl CommandParser for IgsParser {
                         self.state = State::ReadParams(cmd_type);
                     } else {
                         // Unknown command
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "IGS",
-                                value: byte as u16,
-                                expected: Some("valid IGS command character"),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
+                        if !ch.is_control() {
+                            sink.report_errror(
+                                crate::ParseError::InvalidParameter {
+                                    command: "IGS",
+                                    value: byte as u16,
+                                    expected: Some("valid IGS command character"),
+                                },
+                                crate::ErrorLevel::Error,
+                            );
+                        }
                         self.state = State::Default;
                     }
                 }
