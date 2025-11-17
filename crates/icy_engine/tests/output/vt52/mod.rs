@@ -15,7 +15,7 @@ pub fn test_vt52() {
         log::info!("Testing VT52 file: {:?}", cur_entry);
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Low));
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Medium));
 
         let mut parser: IgsParser = IgsParser::new();
         let mut sink = ScreenSink::new(&mut buffer);

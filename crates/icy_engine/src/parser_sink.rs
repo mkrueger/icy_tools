@@ -272,6 +272,7 @@ impl<'a> ScreenSink<'a> {
 
 impl<'a> CommandSink for ScreenSink<'a> {
     fn print(&mut self, text: &[u8]) {
+        println!("Print text: {:?}", String::from_utf8_lossy(text));
         for &byte in text {
             let ch = AttributedChar::new(byte as char, self.screen.caret().attribute);
             self.screen.print_char(ch);
@@ -279,6 +280,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn emit(&mut self, cmd: TerminalCommand) {
+        println!("Emit command: {:?}", cmd);
         match cmd {
             // Basic control characters
             TerminalCommand::CarriageReturn => {

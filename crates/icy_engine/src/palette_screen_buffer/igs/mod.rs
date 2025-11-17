@@ -49,4 +49,12 @@ impl TerminalResolution {
             TerminalResolution::High => Size { width: 80, height: 50 },
         }
     }
+
+    pub fn get_max_colors(&self) -> u32 {
+        match self {
+            TerminalResolution::Low => 16,
+            TerminalResolution::Medium => 4,
+            TerminalResolution::High => 2,
+        }
+    }
 }

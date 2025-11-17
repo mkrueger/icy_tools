@@ -48,6 +48,9 @@ pub struct PaletteScreenBuffer {
     // IGS state (only used for IGS graphics)
     igs_state: Option<IgsState>,
 
+    // Maximum number of colors (for color modulo operation)
+    max_colors: u32,
+
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
     buffer_version: std::sync::atomic::AtomicU64,
@@ -84,6 +87,7 @@ impl PaletteScreenBuffer {
             }
             GraphicsType::IGS(_) => {
                 font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());
+                println!("Inserted IGS font {:?}", igs::ATARI_ST_FONT_8x8.size());
             }
             GraphicsType::Skypix => {
                 font_table.insert(0, RIP_FONT.clone());
@@ -112,6 +116,11 @@ impl PaletteScreenBuffer {
             _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
         };
 
+        let max_colors = match graphics_type {
+            GraphicsType::IGS(term_res) => term_res.get_max_colors(),
+            _ => 256, // No color limit for other graphics types
+        };
+
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
             char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
@@ -128,6 +137,7 @@ impl PaletteScreenBuffer {
             mouse_fields: Vec::new(),
             bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
             igs_state: None,
+            max_colors,
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
             saved_pos: Position::default(),
@@ -155,8 +165,9 @@ impl PaletteScreenBuffer {
         if ch.attribute.is_bold() && fg_color < 8 {
             fg_color += 8;
         }
+        fg_color %= self.max_colors; // Apply color limit
 
-        let bg_color = ch.attribute.get_background() as u32;
+        let bg_color = (ch.attribute.get_background() as u32) % self.max_colors; // Apply color limit
 
         let font = if let Some(font) = self.get_font(ch.get_font_page()) {
             font
@@ -632,7 +643,7 @@ impl EditableScreen for PaletteScreenBuffer {
         }
 
         // Clear pixel buffer
-        self.screen.fill(0);
+        self.screen.fill(self.caret.attribute.get_background() as u8);
         self.mark_dirty();
     }
 
@@ -764,5 +775,69 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn handle_igs_command(&mut self, cmd: icy_parser_core::IgsCommand) {
         self.handle_igs_command_impl(cmd);
+    }
+
+    fn clear_buffer_down(&mut self) {
+        let pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+
+        for y in pos.y..self.get_last_visible_line() {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
+        }
+    }
+
+    fn clear_buffer_up(&mut self) {
+        let pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+
+        for y in self.get_first_visible_line()..pos.y {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
+        }
+    }
+
+    fn clear_line(&mut self) {
+        let mut pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_line_end(&mut self) {
+        let mut pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in pos.x..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_line_start(&mut self) {
+        let mut pos = self.caret().position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..pos.x {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
     }
 }

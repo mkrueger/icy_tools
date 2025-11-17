@@ -51,6 +51,25 @@ pub struct IgsParser {
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
 
+static ATARI_COLOR_MAP: [u8; 16] = [
+    0x01,
+    0x02,
+    0x03,
+    0x06,
+    0x04,
+    0x07,
+    0x05,
+    0x08,
+    0x08 + 0x01,
+    0x08 + 0x02,
+    0x08 + 0x03,
+    0x08 + 0x06,
+    0x08 + 0x04,
+    0x08 + 0x07,
+    0x08 + 0x05,
+    0x00,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoopParseState {
     ReadingInitialParams,
@@ -893,7 +912,9 @@ impl CommandParser for IgsParser {
                         0x00..=0x0F => {
                             // TOS direct foreground color codes (0x00-0x0F)
                             // 0x07 (Bell) is excluded to maintain standard ASCII compatibility
-                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(byte))));
+                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
+                                ATARI_COLOR_MAP[byte as usize],
+                            ))));
                         } /*
                         0x09 => {
                         sink.emit(TerminalCommand::Tab);
@@ -1472,15 +1493,29 @@ impl CommandParser for IgsParser {
                     }
                 }
                 State::ReadFgColor => {
-                    let color = byte;
-                    // VT52 foreground color - convert to SGR attribute
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
+                    // VT52 foreground color uses ASCII digits/hex: '0'-'9' (0-9), 'A'-'F' or 'a'-'f' (10-15)
+                    let color = match byte {
+                        b'0'..=b'9' => byte - b'0',
+                        b'A'..=b'F' => byte - b'A' + 10,
+                        b'a'..=b'f' => byte - b'a' + 10,
+                        _ => byte, // Fallback for non-standard values
+                    };
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
+                        ATARI_COLOR_MAP[color as usize],
+                    ))));
                     self.state = State::Default;
                 }
                 State::ReadBgColor => {
-                    let color = byte;
-                    // VT52 background color - convert to SGR attribute
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(color))));
+                    // VT52 background color uses ASCII digits/hex: '0'-'9' (0-9), 'A'-'F' or 'a'-'f' (10-15)
+                    let color = match byte {
+                        b'0'..=b'9' => byte - b'0',
+                        b'A'..=b'F' => byte - b'A' + 10,
+                        b'a'..=b'f' => byte - b'a' + 10,
+                        _ => byte, // Fallback for non-standard values
+                    };
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
+                        ATARI_COLOR_MAP[color as usize],
+                    ))));
                     self.state = State::Default;
                 }
                 State::ReadCursorX => {

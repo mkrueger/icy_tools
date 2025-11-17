@@ -66,6 +66,8 @@ impl BitFont {
             height = h;
         } else if let Some((_x, y)) = self.yaff_font.bounding_box {
             height = y as i32;
+        } else if let Some((_x, y)) = self.yaff_font.cell_size {
+            height = y as i32;
         }
 
         if let Some(cs) = self.yaff_font.bounding_box {
