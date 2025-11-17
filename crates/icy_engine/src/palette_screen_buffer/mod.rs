@@ -87,7 +87,6 @@ impl PaletteScreenBuffer {
             }
             GraphicsType::IGS(_) => {
                 font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());
-                println!("Inserted IGS font {:?}", igs::ATARI_ST_FONT_8x8.size());
             }
             GraphicsType::Skypix => {
                 font_table.insert(0, RIP_FONT.clone());
@@ -121,6 +120,21 @@ impl PaletteScreenBuffer {
             _ => 256, // No color limit for other graphics types
         };
 
+        // Set appropriate default caret colors based on graphics type
+        let mut caret = Caret::default();
+        match graphics_type {
+            GraphicsType::IGS(_) => {
+                // IGS palette: 0=White, 1=Black
+                // Set foreground to white (0) and background to black (1) for proper contrast
+                caret.attribute.set_foreground(0);
+                caret.attribute.set_background(1);
+            }
+            _ => {
+                // Standard VGA: 0=Black, 7=White
+                // Keep default (foreground=7, background=0)
+            }
+        }
+
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
             char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
@@ -128,7 +142,7 @@ impl PaletteScreenBuffer {
             layer,
             font_table,
             palette,
-            caret: Caret::default(),
+            caret,
             ice_mode: IceMode::Unlimited,
             terminal_state: TerminalState::from(Size::new(char_cols, char_rows)),
             buffer_type: BufferType::CP437,

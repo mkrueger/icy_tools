@@ -9,7 +9,7 @@ pub fn test_vt52() {
     crate::init_logging();
     for entry in fs::read_dir("tests/output/vt52/files").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
-        if cur_entry.extension().unwrap_or_default() != "vt5" {
+        if cur_entry.extension().unwrap_or_default() != "vt52" {
             continue;
         }
         log::info!("Testing VT52 file: {:?}", cur_entry);

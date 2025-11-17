@@ -2065,8 +2065,6 @@ impl Bgi {
         host_command: Option<String>,
         pressed: bool,
     ) {
-        println!("Adding button with label: {} hotkey {} and cmd {:?}", text, hotkey, host_command);
-
         let bg = 0;
         let ch = self.button_style.label_color as u8;
         let cs = self.button_style.dark as u8;
