@@ -829,7 +829,7 @@ pub trait CommandSink {
     fn report_errror(&mut self, _error: ParseError, _level: ErrorLevel) {}
 }
 
-pub trait CommandParser {
+pub trait CommandParser: Send {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink);
 }
 
