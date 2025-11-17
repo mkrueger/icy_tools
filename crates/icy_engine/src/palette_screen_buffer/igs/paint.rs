@@ -723,45 +723,103 @@ impl DrawExecutor {
     }
 
     pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &str) {
-        let mut pos = text_pos;
         let (metrics, font) = load_atari_font(self.text_size);
+
+        let is_outlined = self.text_effects == TextEffects::Outlined;
+        let outline_thickness = if is_outlined { 1 } else { 0 };
+
+        // For outlined text, the position represents where the outline starts
+        // (not the character itself, which is 1 pixel inward)
+        let mut pos = text_pos;
         pos.y -= metrics.y_off;
+
         // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
+
         let color = self.text_color;
+        let bg_color = 0; // Background color for outlined text
         let font_size = font.size();
         let mut draw_mask: u16 = if self.text_effects == TextEffects::Ghosted { 0x5555 } else { 0xFFFF };
+
         for ch in string_parameter.chars() {
             let glyph = font.get_glyph(ch).unwrap();
-            for y in 0..font_size.height {
-                for x in 0..font_size.width {
-                    let iy = y;
-                    let ix = x;
-                    draw_mask = draw_mask.rotate_left(1);
-                    // Check pixel in bitmap.pixels[row][col]
-                    let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
-                        glyph.bitmap.pixels[iy as usize][ix as usize]
-                    } else {
-                        false
-                    };
-                    if pixel_set {
-                        if 1 & draw_mask != 0 {
-                            // For skewed text, add horizontal offset based on vertical position
-                            // Atari VDI style: skew decreases from top to bottom (right-leaning italic)
-                            // Top of character has maximum offset, bottom has zero offset
-                            let skew_offset = if self.text_effects == TextEffects::Skewed {
-                                (font_size.height - 1 - y) / 2 - (y % 2)
-                            } else {
-                                0
-                            };
-                            let p = pos + Position::new(x + skew_offset, y);
-                            self.set_pixel(buf, p.x, p.y, color);
-                            if self.text_effects == TextEffects::Thickened {
-                                self.set_pixel(buf, p.x + 1, p.y, color);
+
+            // For outlined text, we need to:
+            // 1. Draw the outline (border) in text color
+            // 2. Fill the character itself with background color
+            if is_outlined {
+                // First pass: draw the outline border (1 pixel around character)
+                for y in 0..font_size.height {
+                    for x in 0..font_size.width {
+                        let iy = y;
+                        let ix = x;
+                        let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
+                            glyph.bitmap.pixels[iy as usize][ix as usize]
+                        } else {
+                            false
+                        };
+
+                        if pixel_set {
+                            // Draw outline pixels around this character pixel
+                            for dy in -1..=1 {
+                                for dx in -1..=1 {
+                                    let p = pos + Position::new(x + dx, y + dy);
+                                    self.set_pixel(buf, p.x, p.y, color);
+                                }
                             }
                         }
                     }
                 }
-                draw_mask = draw_mask.rotate_left(1);
+
+                // Second pass: fill character interior with background color
+                for y in 0..font_size.height {
+                    for x in 0..font_size.width {
+                        let iy = y;
+                        let ix = x;
+                        let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
+                            glyph.bitmap.pixels[iy as usize][ix as usize]
+                        } else {
+                            false
+                        };
+
+                        if pixel_set {
+                            let p = pos + Position::new(x, y);
+                            self.set_pixel(buf, p.x, p.y, bg_color);
+                        }
+                    }
+                }
+            } else {
+                // Normal text rendering (non-outlined)
+                for y in 0..font_size.height {
+                    for x in 0..font_size.width {
+                        let iy = y;
+                        let ix = x;
+                        draw_mask = draw_mask.rotate_left(1);
+                        // Check pixel in bitmap.pixels[row][col]
+                        let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
+                            glyph.bitmap.pixels[iy as usize][ix as usize]
+                        } else {
+                            false
+                        };
+                        if pixel_set {
+                            if 1 & draw_mask != 0 {
+                                // For skewed text, add horizontal offset based on vertical position
+                                // Atari VDI style: skew decreases from top to bottom (right-leaning italic)
+                                // Top of character has maximum offset, bottom has zero offset
+                                let skew_offset = if self.text_effects == TextEffects::Skewed {
+                                    (font_size.height - 1 - y) / 2 - (y % 2)
+                                } else {
+                                    0
+                                };
+                                let p = pos + Position::new(x + skew_offset, y);
+                                self.set_pixel(buf, p.x, p.y, color);
+                                if self.text_effects == TextEffects::Thickened {
+                                    self.set_pixel(buf, p.x + 1, p.y, color);
+                                }
+                            }
+                        }
+                    }
+                    draw_mask = draw_mask.rotate_left(1);
+                }
             }
             if self.text_effects == TextEffects::Underlined {
                 // Atari VDI: underline is placed above the adjusted position
@@ -774,8 +832,10 @@ impl DrawExecutor {
                 }
             }
             // Calculate character advance width
-            // For skewed text, reduce spacing to compensate for the skew offset
-            let char_width = if self.text_effects == TextEffects::Skewed {
+            // For outlined text, add 2 pixels (1 left + 1 right for the border)
+            let char_width = if is_outlined {
+                font_size.width + 2 * outline_thickness
+            } else if self.text_effects == TextEffects::Skewed {
                 font_size.width
             } else {
                 font_size.width
