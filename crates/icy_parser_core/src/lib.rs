@@ -8,8 +8,9 @@ pub use ascii::AsciiParser;
 pub use errors::{ErrorLevel, ParseError};
 
 mod ansi;
-pub use ansi::AnsiParser;
+
 pub use ansi::music::*;
+pub use ansi::{AnsiParser, sgr::ANSI_COLOR_OFFSETS};
 
 mod avatar;
 pub use avatar::{AvatarParser, constants as avatar_constants};

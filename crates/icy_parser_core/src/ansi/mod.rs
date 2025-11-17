@@ -7,7 +7,7 @@ use std::u16;
 
 use base64::{Engine as _, engine::general_purpose};
 pub mod music;
-mod sgr;
+pub mod sgr;
 use crate::{
     AnsiMode, BaudEmulation, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DecPrivateMode, DeviceControlString, Direction,
     EraseInDisplayMode, EraseInLineMode, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
