@@ -18,11 +18,11 @@ pub const IGS_VERSION: &str = "2.19";
 pub enum TerminalResolution {
     /// 320x200
     #[default]
-    Low,
+    Low = 0,
     /// 640x200
-    Medium,
+    Medium = 1,
     /// 640x400  
-    High,
+    High = 2,
 }
 
 impl TerminalResolution {

@@ -1,5 +1,5 @@
 use super::igs::paint::DrawExecutor;
-use crate::EditableScreen;
+use crate::{AutoWrapMode, EditableScreen};
 use icy_parser_core::{IgsCommand, LineStyleKind};
 
 pub struct IgsState {
@@ -91,7 +91,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                     state.executor.set_polymarker_size(value as usize);
                 }
                 LineStyleKind::Line(lk) => {
-                    state.executor.set_line_style_pub(lk as u8);
+                    state.executor.line_kind = lk;
                     // Extract thickness (lower bits) and end style (higher bits)
                     let thickness: u16 = (value % 50).max(1);
                     state.executor.set_line_thickness(thickness as usize);
@@ -105,9 +105,9 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::TextEffects { effects, size, rotation } => {
-            state.executor.set_text_effects_pub(effects);
-            state.executor.set_text_size(size as i32);
-            state.executor.set_text_rotation_pub(rotation as u8);
+            state.executor.text_effects = effects;
+            state.executor.text_size = size as i32;
+            state.executor.text_rotation = rotation;
         }
 
         IgsCommand::BellsAndWhistles { sound_effect } => {
@@ -308,7 +308,56 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::AskIG { query } => {
-            log::info!("IGS AskIG query {} not implemented", query);
+            use icy_parser_core::AskQuery;
+
+            match query {
+                AskQuery::VersionNumber => {
+                    // Return IGS version number
+                    // Format: "IGS_VERSION\r" where IGS_VERSION is defined in igs/mod.rs
+                    log::info!(
+                        "IGS AskIG: Version query - responding with version {}",
+                        crate::palette_screen_buffer::igs::IGS_VERSION
+                    );
+                    // TODO: Send response back to host: format!("{}\r", IGS_VERSION)
+                }
+                AskQuery::CursorPositionAndMouseButton { pointer_type } => {
+                    // Return cursor position and mouse button state
+                    // Format: Three ASCII characters (add 32 to each value):
+                    //   - COLUMN number (0-79) + 32
+                    //   - ROW (0-24) + 32
+                    //   - BUTTON (0-3) + 32
+                    let caret = buf.caret_mut();
+                    let x = caret.x.min(79);
+                    let y = caret.y.min(24);
+                    log::info!(
+                        "IGS AskIG: Cursor position query (pointer_type={:?}) - column={}, row={}, button=0",
+                        pointer_type,
+                        x,
+                        y
+                    );
+                    // TODO: Send response back to host: format!("{}{}{}",
+                    //   char::from_u32((x + 32) as u32).unwrap(),
+                    //   char::from_u32((y + 32) as u32).unwrap(),
+                    //   char::from_u32(32).unwrap())
+                }
+                AskQuery::MousePositionAndButton { pointer_type } => {
+                    // Return mouse position and button state
+                    // Format: ASCII string like "420,150,1:"
+                    //   - X coordinate (pixels)
+                    //   - Y coordinate (pixels)
+                    //   - Button state (0-3)
+                    // For now, return (0,0,0) as we don't track mouse state
+                    log::info!("IGS AskIG: Mouse position query (pointer_type={:?}) - x=0, y=0, button=0", pointer_type);
+                    // TODO: Send response back to host: "0,0,0:"
+                }
+                AskQuery::CurrentResolution => {
+                    // Return current resolution
+                    // Format: "mode:" where mode: 0=low (320x200), 1=medium (640x200), 2=high (640x400)
+                    let mode = state.executor.get_terminal_resolution().resolution_id();
+                    log::info!("IGS AskIG: Resolution query - mode={}", mode);
+                    // TODO: Send response back to host: format!("{}:", mode)
+                }
+            }
         }
 
         IgsCommand::ScreenClear { mode } => {
@@ -460,8 +509,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::LineWrap { enabled } => {
-            // TODO: Implement line wrap control
-            log::info!("IGS LineWrap {} not implemented", enabled);
+            buf.terminal_state_mut().auto_wrap_mode = if enabled { AutoWrapMode::AutoWrap } else { AutoWrapMode::NoWrap };
         }
 
         // IGS-specific color commands (ESC b/c)

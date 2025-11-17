@@ -796,7 +796,52 @@ impl IgsParser {
                 input_type: self.params[0] as u8,
                 params: self.params[1..].to_vec(),
             }),
-            IgsCommandType::AskIG => self.check_parameters(sink, "AskIG", 1, || IgsCommand::AskIG { query: self.params[0] as u8 }),
+            IgsCommandType::AskIG => {
+                if self.params.is_empty() {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "AskIG",
+                            value: 0,
+                            expected: Some("at least 1 parameter required"),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
+                    None
+                } else {
+                    let query = match self.params[0] {
+                        0 => Some(AskQuery::VersionNumber),
+                        1 => {
+                            let pointer_type = if self.params.len() > 1 {
+                                MousePointerType::from(self.params[1])
+                            } else {
+                                MousePointerType::Immediate
+                            };
+                            Some(AskQuery::CursorPositionAndMouseButton { pointer_type })
+                        }
+                        2 => {
+                            let pointer_type = if self.params.len() > 1 {
+                                MousePointerType::from(self.params[1])
+                            } else {
+                                MousePointerType::Immediate
+                            };
+                            Some(AskQuery::MousePositionAndButton { pointer_type })
+                        }
+                        3 => Some(AskQuery::CurrentResolution),
+                        _ => {
+                            sink.report_errror(
+                                crate::ParseError::InvalidParameter {
+                                    command: "AskIG",
+                                    value: self.params[0] as u16,
+                                    expected: Some("valid query type (0-3)"),
+                                },
+                                crate::ErrorLevel::Error,
+                            );
+                            None
+                        }
+                    };
+                    query.map(|q| IgsCommand::AskIG { query: q })
+                }
+            }
         };
 
         if let Some(cmd) = command {

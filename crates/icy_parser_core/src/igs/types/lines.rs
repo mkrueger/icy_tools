@@ -19,6 +19,21 @@ pub enum LineKind {
     UserDefined = 6,
 }
 
+impl LineKind {
+    /// Get the line style index used in IGS patterns
+    pub fn get_mask(&self, user_mask: u16) -> u16 {
+        match self {
+            LineKind::Solid => 0xFFFF,
+            LineKind::LongDash => 0xFFF0,
+            LineKind::Dotted => 0xC0C0,
+            LineKind::DashDot => 0xFF18,
+            LineKind::Dashed => 0xFF00,
+            LineKind::DashDotDot => 0xF191,
+            LineKind::UserDefined => user_mask,
+        }
+    }
+}
+
 impl From<i32> for LineKind {
     fn from(value: i32) -> Self {
         match value {

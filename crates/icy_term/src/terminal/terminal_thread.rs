@@ -152,6 +152,23 @@ impl<'a> CommandSink for TerminalSink<'a> {
         self.screen_sink.emit_skypix(cmd);
     }
     fn emit_igs(&mut self, cmd: IgsCommand) {
+        if let IgsCommand::AskIG { query } = cmd {
+            match query {
+                AskQuery::VersionNumber => {
+                    self.output.extend_from_slice(icy_engine::igs::IGS_VERSION.as_bytes());
+                }
+                AskQuery::CursorPositionAndMouseButton { .. } => {}
+                AskQuery::MousePositionAndButton { .. } => {}
+                AskQuery::CurrentResolution => {
+                    if let GraphicsType::IGS(mode) = self.screen_sink.screen().graphics_type() {
+                        self.output.extend_from_slice(format!("{}:", mode as u8).as_bytes());
+                    }
+                }
+            }
+
+            return;
+        }
+
         self.screen_sink.emit_igs(cmd);
     }
     fn device_control(&mut self, dcs: DeviceControlString<'_>) {

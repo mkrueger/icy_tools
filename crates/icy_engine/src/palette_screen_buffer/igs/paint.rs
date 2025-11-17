@@ -4,31 +4,12 @@ use icy_parser_core::{DrawingMode, LineKind, PatternType, PenType, PolymarkerKin
 
 use super::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN};
 use super::{
-    LINE_STYLE, RANDOM_PATTERN, SOLID_PATTERN,
+    RANDOM_PATTERN, SOLID_PATTERN,
     vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
 };
 use crate::igs::load_atari_font;
 use crate::palette_screen_buffer::igs::TerminalResolution;
 use crate::{EditableScreen, Position, Size, palette_screen_buffer::igs::vdi::blit_px};
-
-// Helper trait to get mask index from LineKind
-trait LineKindExt {
-    fn get_mask(self) -> usize;
-}
-
-impl LineKindExt for LineKind {
-    fn get_mask(self) -> usize {
-        match self {
-            LineKind::Solid => 0,
-            LineKind::LongDash => 1,
-            LineKind::Dotted => 2,
-            LineKind::DashDot => 3,
-            LineKind::Dashed => 4,
-            LineKind::DashDotDot => 5,
-            LineKind::UserDefined => 6,
-        }
-    }
-}
 
 pub struct DrawExecutor {
     terminal_resolution: TerminalResolution,
@@ -39,20 +20,19 @@ pub struct DrawExecutor {
     pub fill_color: u8,
     pub text_color: u8,
 
-    text_effects: TextEffects,
-    text_size: i32,
-    text_rotation: TextRotation,
+    pub text_effects: TextEffects,
+    pub text_size: i32,
+    pub text_rotation: TextRotation,
 
     polymaker_type: PolymarkerKind,
-    line_type: LineKind,
+    pub line_kind: LineKind,
     drawing_mode: DrawingMode,
     polymarker_size: usize,
     solidline_size: usize,
-    _user_defined_pattern_number: usize,
+    user_mask: u16,
 
     fill_pattern_type: PatternType,
     fill_pattern: &'static [u16],
-    pattern_index_number: usize,
     draw_border: bool,
 
     hollow_set: bool,
@@ -85,15 +65,14 @@ impl DrawExecutor {
             text_size: 9,
             text_rotation: TextRotation::Degrees0,
             polymaker_type: PolymarkerKind::Point,
-            line_type: LineKind::Solid,
+            line_kind: LineKind::Solid,
             drawing_mode: DrawingMode::Replace,
             polymarker_size: 1,
             solidline_size: 1,
-            _user_defined_pattern_number: 1,
+            user_mask: 0b1010_1010_1010_1010,
 
             fill_pattern_type: PatternType::Solid,
             fill_pattern: &SOLID_PATTERN,
-            pattern_index_number: 0,
             draw_border: false,
             hollow_set: false,
             screen_memory: Vec::new(),
@@ -119,6 +98,10 @@ impl DrawExecutor {
         self.terminal_resolution = res;
         // let res = buf.get_resolution();
         // buf.screen_mut() = vec![1; (res.width * res.height) as usize];
+    }
+
+    pub fn get_terminal_resolution(&self) -> TerminalResolution {
+        self.terminal_resolution
     }
 
     pub fn init_resolution(&mut self, buf: &mut dyn EditableScreen) {
@@ -248,11 +231,11 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_vline(&mut self, buf: &mut dyn EditableScreen, x: i32, mut y0: i32, mut y1: i32, color: u8, mask: usize) {
+    fn draw_vline(&mut self, buf: &mut dyn EditableScreen, x: i32, mut y0: i32, mut y1: i32, color: u8, mask: u16) {
         if y1 < y0 {
             swap(&mut y0, &mut y1);
         }
-        let mut line_mask = LINE_STYLE[mask];
+        let mut line_mask = mask;
         for y in y0..=y1 {
             line_mask = line_mask.rotate_left(1);
             if 1 & line_mask != 0 {
@@ -261,8 +244,8 @@ impl DrawExecutor {
         }
     }
 
-    fn draw_hline(&mut self, buf: &mut dyn EditableScreen, y: i32, x0: i32, x1: i32, color: u8, mask: usize) {
-        let mut line_mask = LINE_STYLE[mask];
+    fn draw_hline(&mut self, buf: &mut dyn EditableScreen, y: i32, x0: i32, x1: i32, color: u8, mask: u16) {
+        let mut line_mask = mask;
         line_mask = line_mask.rotate_left((x0 & 0x0f) as u32);
         for x in x0..=x1 {
             line_mask = line_mask.rotate_left(1);
@@ -272,7 +255,7 @@ impl DrawExecutor {
         }
     }
 
-    pub fn draw_line(&mut self, buf: &mut dyn EditableScreen, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32, color: u8, mask: usize) {
+    pub fn draw_line(&mut self, buf: &mut dyn EditableScreen, mut x0: i32, mut y0: i32, mut x1: i32, mut y1: i32, color: u8, mask: u16) {
         if x1 < x0 {
             swap(&mut x0, &mut x1);
             swap(&mut y0, &mut y1);
@@ -285,7 +268,7 @@ impl DrawExecutor {
             self.draw_hline(buf, y0, x0, x1, color, mask);
             return;
         }
-        let mut line_mask = LINE_STYLE[mask];
+        let mut line_mask = mask;
 
         let mut dx = x1 - x0;
         let mut dy = y1 - y0;
@@ -411,7 +394,7 @@ impl DrawExecutor {
     fn draw_poly(&mut self, buf: &mut dyn EditableScreen, parameters: &[i32], color: u8, close: bool) {
         let mut x = parameters[0];
         let mut y = parameters[1];
-        let mask = self.line_type.get_mask();
+        let mask = self.line_kind.get_mask(self.user_mask);
         let mut i = 2;
         while i < parameters.len() {
             let nx = parameters[i];
@@ -430,7 +413,7 @@ impl DrawExecutor {
     pub fn draw_polyline(&mut self, buf: &mut dyn EditableScreen, color: u8, parameters: &[i32]) {
         let mut x = parameters[0];
         let mut y = parameters[1];
-        let mask = self.line_type.get_mask();
+        let mask = self.line_kind.get_mask(self.user_mask);
         let mut i = 2;
         while i < parameters.len() {
             let nx = parameters[i];
@@ -932,9 +915,9 @@ impl DrawExecutor {
         };
         let num_lines = points[0];
         let mut i = 1;
-        let old_type = self.line_type;
+        let old_type = self.line_kind;
         let scale = 1;
-        self.line_type = LineKind::Solid;
+        self.line_kind = LineKind::Solid;
         for _ in 0..num_lines {
             let num_points = points[i] as usize;
             i += 1;
@@ -947,7 +930,7 @@ impl DrawExecutor {
             }
             self.draw_polyline(buf, self.polymarker_color, &p);
         }
-        self.line_type = old_type;
+        self.line_kind = old_type;
     }
 
     fn calc_circle_y_rad(&self, xrad: i32) -> i32 {
@@ -985,7 +968,7 @@ impl DrawExecutor {
 
     pub fn draw_line_pub(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
         let color = self.line_color;
-        let mask = self.line_type.get_mask();
+        let mask = self.line_kind.get_mask(self.user_mask);
         self.draw_line(buf, x1, y1, x2, y2, color, mask);
     }
 
@@ -1066,12 +1049,6 @@ impl DrawExecutor {
             }
             PatternType::UserDefined(_) => &RANDOM_PATTERN,
         };
-
-        let pattern_index = match pattern_type {
-            PatternType::Pattern(idx) | PatternType::Hatch(idx) | PatternType::UserDefined(idx) => idx,
-            _ => 0,
-        };
-        self.pattern_index_number = pattern_index as usize;
         self.hollow_set = matches!(pattern_type, PatternType::Hollow);
     }
 
@@ -1087,38 +1064,8 @@ impl DrawExecutor {
         self.screen_memory_size
     }
 
-    pub fn set_line_style_pub(&mut self, style: u8) {
-        self.line_type = match style {
-            0 | 1 => LineKind::Solid,
-            2 => LineKind::LongDash,
-            3 => LineKind::Dotted,
-            4 => LineKind::DashDot,
-            5 => LineKind::Dashed,
-            6 => LineKind::DashDotDot,
-            _ => LineKind::UserDefined,
-        };
-    }
-
     pub fn set_line_thickness(&mut self, thickness: usize) {
         self.solidline_size = thickness;
-    }
-
-    pub fn set_text_effects_pub(&mut self, effects: TextEffects) {
-        self.text_effects = effects;
-    }
-
-    pub fn set_text_size(&mut self, size: i32) {
-        self.text_size = size;
-    }
-
-    pub fn set_text_rotation_pub(&mut self, rotation: u8) {
-        self.text_rotation = match rotation {
-            0 => TextRotation::Degrees0,
-            1 => TextRotation::Degrees90,
-            2 => TextRotation::Degrees180,
-            3 => TextRotation::Degrees270,
-            _ => TextRotation::Degrees0,
-        };
     }
 
     pub fn get_cur_position(&self) -> crate::Position {

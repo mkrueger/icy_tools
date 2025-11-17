@@ -650,3 +650,45 @@ fn test_inner_loop() {
 fn test_inner_loop2() {
     test_roundtrip("G#&>1,10,1,0,>Gq@,22,0G3,3,0,102,20,107,218,156:1q10:0G3,3,0,109,20,114,218,156:1q10:");
 }
+
+// Query commands
+
+#[test]
+fn test_ask_version() {
+    test_roundtrip("G#?>0:");
+}
+
+#[test]
+fn test_ask_cursor_position_immediate() {
+    test_roundtrip("G#?>1,0:");
+}
+
+#[test]
+fn test_ask_cursor_position_polymarker() {
+    test_roundtrip("G#?>1,1:");
+}
+
+#[test]
+fn test_ask_cursor_position_arrow() {
+    test_roundtrip("G#?>1,3:");
+}
+
+#[test]
+fn test_ask_mouse_position_immediate() {
+    test_roundtrip("G#?>2,0:");
+}
+
+#[test]
+fn test_ask_mouse_position_hourglass() {
+    test_roundtrip("G#?>2,4:");
+}
+
+#[test]
+fn test_ask_mouse_position_crosshair() {
+    test_roundtrip("G#?>2,10:");
+}
+
+#[test]
+fn test_ask_resolution() {
+    test_roundtrip("G#?>3:");
+}

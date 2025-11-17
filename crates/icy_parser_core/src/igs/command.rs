@@ -595,19 +595,21 @@ pub enum IgsCommand {
 
     /// Ask IG command (?)
     ///
-    /// IGS: `G#?>query:`
+    /// IGS: `G#?>query[,param]:`
     ///
     /// Queries the IG terminal for information and transmits the response
     /// back to the host system.
     ///
     /// # Parameters
-    /// * `query` - Information to request:
-    ///   - 0: Version number
-    ///   - 1: Cursor position and mouse button state
-    ///   - 2: Mouse position and button state
-    ///   - 3: Current resolution (0=low, 1=medium, 2=high)
+    /// * `query` - Information to request (see `AskQuery` enum)
+    ///
+    /// # Examples
+    /// - `G#?>0:` - Query version number
+    /// - `G#?>1,0:` - Query cursor position (immediate)
+    /// - `G#?>2,3:` - Query mouse position with arrow pointer
+    /// - `G#?>3:` - Query current resolution
     AskIG {
-        query: u8,
+        query: AskQuery,
     },
 
     /// Screen clear command (s)
@@ -1246,7 +1248,16 @@ impl fmt::Display for IgsCommand {
                 }
                 write!(f, ":")
             }
-            IgsCommand::AskIG { query } => write!(f, "G#?>{}:", query),
+            IgsCommand::AskIG { query } => match query {
+                AskQuery::VersionNumber => write!(f, "G#?>0:"),
+                AskQuery::CursorPositionAndMouseButton { pointer_type } => {
+                    write!(f, "G#?>1,{}:", *pointer_type as i32)
+                }
+                AskQuery::MousePositionAndButton { pointer_type } => {
+                    write!(f, "G#?>2,{}:", *pointer_type as i32)
+                }
+                AskQuery::CurrentResolution => write!(f, "G#?>3:"),
+            },
             IgsCommand::ScreenClear { mode } => write!(f, "G#s>{}:", mode),
             IgsCommand::SetResolution { resolution, palette } => write!(f, "G#R>{},{}:", resolution, palette),
             IgsCommand::PauseSeconds { seconds } => write!(f, "G#t>{}:", seconds),
