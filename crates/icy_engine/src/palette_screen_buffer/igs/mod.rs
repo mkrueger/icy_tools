@@ -11,30 +11,20 @@ pub mod vdi;
 mod fonts;
 pub use fonts::*;
 
+// Re-export TerminalResolution from icy_parser_core
+pub use icy_parser_core::TerminalResolution;
+
 pub const IGS_VERSION: &str = "2.19";
 
-#[repr(u8)]
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TerminalResolution {
-    /// 320x200
-    #[default]
-    Low = 0,
-    /// 640x200
-    Medium = 1,
-    /// 640x400  
-    High = 2,
+/// Extension trait for TerminalResolution with icy_engine-specific functionality
+pub trait TerminalResolutionExt {
+    fn get_resolution(&self) -> Size;
+    fn get_text_resolution(&self) -> Size;
+    fn get_palette(&self) -> &crate::Palette;
 }
 
-impl TerminalResolution {
-    pub fn resolution_id(&self) -> String {
-        match self {
-            TerminalResolution::Low => "0".to_string(),
-            TerminalResolution::Medium => "1".to_string(),
-            TerminalResolution::High => "2".to_string(),
-        }
-    }
-
-    pub fn get_resolution(&self) -> Size {
+impl TerminalResolutionExt for TerminalResolution {
+    fn get_resolution(&self) -> Size {
         match self {
             TerminalResolution::Low => Size { width: 320, height: 200 },
             TerminalResolution::Medium => Size { width: 640, height: 200 },
@@ -42,7 +32,7 @@ impl TerminalResolution {
         }
     }
 
-    pub fn get_text_resolution(&self) -> Size {
+    fn get_text_resolution(&self) -> Size {
         match self {
             TerminalResolution::Low => Size { width: 40, height: 25 },
             TerminalResolution::Medium => Size { width: 80, height: 25 },
@@ -50,15 +40,7 @@ impl TerminalResolution {
         }
     }
 
-    pub fn get_max_colors(&self) -> u32 {
-        match self {
-            TerminalResolution::Low => 16,
-            TerminalResolution::Medium => 4,
-            TerminalResolution::High => 2,
-        }
-    }
-
-    pub fn get_palette(&self) -> &crate::Palette {
+    fn get_palette(&self) -> &crate::Palette {
         match self {
             TerminalResolution::Low => &crate::palette_handling::ATARI_ST_LOW_PALETTE,
             TerminalResolution::Medium => &crate::palette_handling::ATARI_ST_MEDIUM_PALETTE,

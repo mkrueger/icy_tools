@@ -349,10 +349,31 @@ impl IgsParser {
                 })
             }
             IgsCommandType::ScreenClear => self.check_parameters(sink, "ScreenClear", 1, || IgsCommand::ScreenClear { mode: self.params[0] as u8 }),
-            IgsCommandType::SetResolution => self.check_parameters(sink, "SetResolution", 2, || IgsCommand::SetResolution {
-                resolution: self.params[0] as u8,
-                palette: self.params[1] as u8,
-            }),
+            IgsCommandType::SetResolution => {
+                let resolution = TerminalResolution::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "SetResolution",
+                            value: self.params.get(0).copied().unwrap_or(0) as u16,
+                            expected: Some("resolution (0=Low, 1=Medium, 2=High)"),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
+                    TerminalResolution::default()
+                });
+                let palette = PaletteMode::try_from(self.params.get(1).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "SetResolution",
+                            value: self.params.get(1).copied().unwrap_or(0) as u16,
+                            expected: Some("palette (0=NoChange, 1=Desktop, 2=IgDefault, 3=VdiDefault)"),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
+                    PaletteMode::default()
+                });
+                self.check_parameters(sink, "SetResolution", 2, || IgsCommand::SetResolution { resolution, palette })
+            }
             IgsCommandType::LineType => {
                 let param1 = self.params.get(1).copied().unwrap_or(1);
                 let kind = if self.params.get(0).copied().unwrap_or(0) == 1 {

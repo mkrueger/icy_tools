@@ -6,7 +6,7 @@ mod rip_impl;
 mod skypix_impl;
 
 pub mod igs;
-pub use igs::TerminalResolution;
+pub use igs::{TerminalResolution, TerminalResolutionExt};
 use igs_impl::IgsState;
 
 use crate::{
@@ -14,7 +14,6 @@ use crate::{
     Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
-    terminal_state,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -49,9 +48,6 @@ pub struct PaletteScreenBuffer {
     // IGS state (only used for IGS graphics)
     igs_state: Option<IgsState>,
 
-    // Maximum number of colors (for color modulo operation)
-    max_colors: u32,
-
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
     buffer_version: std::sync::atomic::AtomicU64,
@@ -59,6 +55,9 @@ pub struct PaletteScreenBuffer {
     saved_pos: Position,
     saved_cursor_state: SavedCaretState,
     graphics_type: GraphicsType,
+    
+    // Scan lines for Atari ST Medium resolution (doubles line height)
+    scan_lines: bool,
 }
 
 impl PaletteScreenBuffer {
@@ -116,11 +115,6 @@ impl PaletteScreenBuffer {
             _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
         };
 
-        let max_colors = match graphics_type {
-            GraphicsType::IGS(term_res) => term_res.get_max_colors(),
-            _ => 256, // No color limit for other graphics types
-        };
-
         let mut terminal_state = TerminalState::from(Size::new(char_cols, char_rows));
 
         // Set appropriate default caret colors based on graphics type
@@ -136,6 +130,11 @@ impl PaletteScreenBuffer {
                 // Keep default (foreground=7, background=0)
             }
         }
+
+        let scan_lines = match graphics_type {
+            GraphicsType::IGS(term_res) => term_res.use_scanlines(),
+            _ => false,
+        };
 
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
@@ -153,12 +152,12 @@ impl PaletteScreenBuffer {
             mouse_fields: Vec::new(),
             bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
             igs_state: None,
-            max_colors,
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
             saved_pos: Position::default(),
             saved_cursor_state: SavedCaretState::default(),
             graphics_type,
+            scan_lines,
         }
     }
 
@@ -306,18 +305,70 @@ impl Screen for PaletteScreenBuffer {
         self.graphics_type
     }
 
-    fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
-        // Screen is already in RGBA format, return a
-        let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * self.pixel_size.height as usize * 4);
-        let pal = self.palette().clone();
-        for i in &self.screen {
-            let (r, g, b) = pal.get_rgb((*i as u32) % self.max_colors);
-            pixels.push(r);
-            pixels.push(g);
-            pixels.push(b);
-            pixels.push(255);
+    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType)  {
+        self.graphics_type = graphics_type;
+        
+        self.scan_lines = match graphics_type {
+            GraphicsType::IGS(term_res) => term_res.use_scanlines(),
+            _ => false,
+        };
+        
+        match graphics_type {
+            GraphicsType::IGS(_) => {
+                self.caret.attribute.set_foreground(1);
+                self.caret.attribute.set_background(0);
+                self.terminal_state.cr_is_if = true;
+            }
+            _ => {
+                // Keep current caret settings
+            }
         }
-        (self.pixel_size, pixels)
+        
+        self.buffer_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+
+    fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
+        let pal = self.palette().clone();
+        
+        if self.scan_lines {
+            // Double the height for scan lines (Atari ST Medium resolution)
+            let doubled_height = self.pixel_size.height * 2;
+            let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * doubled_height as usize * 4);
+            
+            for y in 0..self.pixel_size.height {
+                let row_start = (y * self.pixel_size.width) as usize;
+                let row_end = row_start + self.pixel_size.width as usize;
+                
+                // Render the line once
+                let start_pos = pixels.len();
+                for i in row_start..row_end {
+                    let (r, g, b) = pal.get_rgb(self.screen[i] as u32);
+                    pixels.push(r);
+                    pixels.push(g);
+                    pixels.push(b);
+                    pixels.push(255);
+                }
+                
+                // Copy the rendered line
+                let end_pos = pixels.len();
+                pixels.extend_from_within(start_pos..end_pos);
+            }
+            
+            (Size::new(self.pixel_size.width, doubled_height), pixels)
+        } else {
+            // Standard rendering without scan lines
+            let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * self.pixel_size.height as usize * 4);
+            for i in &self.screen {
+                let (r, g, b) = pal.get_rgb(*i as u32);
+                pixels.push(r);
+                pixels.push(g);
+                pixels.push(b);
+                pixels.push(255);
+            }
+            (self.pixel_size, pixels)
+        }
     }
 
     fn get_first_visible_line(&self) -> i32 {

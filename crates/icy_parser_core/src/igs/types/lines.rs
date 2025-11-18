@@ -28,7 +28,6 @@ impl Default for LineKind {
 impl LineKind {
     /// Get the line style index used in IGS patterns
     pub fn get_mask(&self, user_mask: u16) -> u16 {
-        println!("Getting mask for line kind {:?} with user mask {:04X}", self, user_mask);
         match self {
             LineKind::Solid => 0xFFFF,
             LineKind::LongDash => 0xFFF0,

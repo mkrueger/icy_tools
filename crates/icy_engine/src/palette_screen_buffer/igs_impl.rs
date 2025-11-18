@@ -1,4 +1,5 @@
-use super::igs::paint::DrawExecutor;
+use super::igs::{paint::DrawExecutor, TerminalResolutionExt};
+use super::bgi::{ButtonStyle2, MouseField};
 use crate::{AutoWrapMode, EditableScreen, GraphicsType};
 use icy_parser_core::{IgsCommand, LineStyleKind};
 
@@ -15,9 +16,23 @@ impl IgsState {
 }
 
 static IGS_LOW_COLOR_MAP: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
+// For Medium (4 colors) and High (2 colors), use direct mapping - palette changes via SetPenColor
+static IGS_MEDIUM_COLOR_MAP: [u8; 16] = [0, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3];
+static IGS_HIGH_COLOR_MAP: [u8; 16] = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+
+fn get_color_map(buf: &dyn EditableScreen) -> &'static [u8; 16] {
+    if let GraphicsType::IGS(term_res) = buf.graphics_type() {
+        match term_res {
+            icy_parser_core::TerminalResolution::Low => &IGS_LOW_COLOR_MAP,
+            icy_parser_core::TerminalResolution::Medium => &IGS_MEDIUM_COLOR_MAP,
+            icy_parser_core::TerminalResolution::High => &IGS_HIGH_COLOR_MAP,
+        }
+    } else {
+        &IGS_LOW_COLOR_MAP
+    }
+}
 
 fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: IgsCommand) {
-    println!("Executing IGS command: {:?}", cmd);
     match cmd {
         IgsCommand::Box { x1, y1, x2, y2, rounded } => {
             if rounded {
@@ -79,7 +94,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::ColorSet { pen, color } => {
             log::info!("IGS ColorSet pen={:?} color={}", pen, color);
-            let color = IGS_LOW_COLOR_MAP[color as usize % IGS_LOW_COLOR_MAP.len()];
+            let color_map = get_color_map(buf);
+            let color = color_map[color as usize % color_map.len()];
             println!("Mapped color index: {}", color);
             state.executor.set_color(pen, color);
         }
@@ -196,12 +212,15 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // Style and appearance commands
         IgsCommand::SetPenColor { pen, red, green, blue } => {
+            println!("SET PEN COLOR!: {:?}", cmd);
+
             // Convert 3-bit RGB (0-7) to 8-bit (0-255)
             // Using value * 34 to match Atari ST convention: 0->0, 7->238
             let r = (red * 34) as u8;
             let g = (green * 34) as u8;
             let b = (blue * 34) as u8;
-            let pen = IGS_LOW_COLOR_MAP[pen as usize % IGS_LOW_COLOR_MAP.len()];
+            let color_map = get_color_map(buf);
+            let pen = color_map[pen as usize % color_map.len()];
             buf.palette_mut().set_color(pen as u32, crate::Color::new(r, g, b));
         }
 
@@ -226,7 +245,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                     dest_x,
                     dest_y,
                 } => {
-                    let from_start = crate::Position::new(src_x1, src_y1);
+                    let from_start: crate::Position = crate::Position::new(src_x1, src_y1);
                     let from_end = crate::Position::new(src_x2, src_y2);
                     let dest = crate::Position::new(dest_x, dest_y);
                     state.executor.blit_screen_to_screen(buf, mode as i32, from_start, from_end, dest);
@@ -382,7 +401,22 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::SetResolution { resolution, palette } => {
-            log::info!("IGS SetResolution {} palette {} not implemented", resolution, palette);
+            use icy_parser_core::PaletteMode;
+            
+            // Update executor's terminal resolution
+            state.executor.set_resolution(resolution);
+            
+            buf.set_graphics_type(GraphicsType::IGS(resolution));
+            // Apply palette mode if requested
+            match palette {
+                PaletteMode::NoChange => {
+                    // Keep current palette
+                }
+                PaletteMode::Desktop | PaletteMode::IgDefault | PaletteMode::VdiDefault => {
+                    // All three modes use the same palette for now (from resolution)
+                    *buf.palette_mut() = resolution.get_palette().clone();
+                }
+            }
         }
 
         IgsCommand::PauseSeconds { seconds: _ } => {
@@ -416,8 +450,40 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             log::info!("IGS RightMouseMacro not implemented");
         }
 
-        IgsCommand::DefineZone { .. } => {
-            log::info!("IGS DefineZone not implemented");
+        IgsCommand::DefineZone {
+            zone_id,
+            x1,
+            y1,
+            x2,
+            y2,
+            length: _,
+            string,
+        } => {
+            // Special zone IDs for clearing
+            match zone_id {
+                9999 => {
+                    // Clear all mouse zones
+                    buf.clear_mouse_fields();
+                }
+                9998 => {
+                    // Loopback toggle (not implemented)
+                    log::info!("IGS DefineZone: Loopback toggle (9998) not implemented");
+                }
+                9997 => {
+                    // Clear specific zone (not implemented - would need zone tracking)
+                    log::info!("IGS DefineZone: Clear specific zone (9997) not implemented");
+                }
+                _ => {
+                    // Define a new mouse zone with clickable region
+                    let host_command = if !string.is_empty() { Some(string.clone()) } else { None };
+                    
+                    // Create a default button style (similar to RIP)
+                    let mut style = ButtonStyle2::default();
+                    style.flags |= 1024; // Set IGS zone flag
+                    
+                    buf.add_mouse_field(MouseField::new(x1, y1, x2, y2, host_command, style));
+                }
+            }
         }
 
         IgsCommand::FlowControl { .. } => {
@@ -453,12 +519,12 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         // Additional VT52 commands
-        IgsCommand::DeleteLine { .. } => {
-            log::info!("IGS DeleteLine not implemented");
+        IgsCommand::DeleteLine { count } => {
+            buf.remove_terminal_line(count as i32);
         }
 
-        IgsCommand::InsertLine { .. } => {
-            log::info!("IGS InsertLine not implemented");
+        IgsCommand::InsertLine {  count, .. } => {
+            buf.insert_terminal_line(count as i32);
         }
 
         IgsCommand::ClearLine { .. } => {
@@ -496,13 +562,15 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // IGS-specific color commands (ESC b/c)
         IgsCommand::SetForeground { color } => {
+            let color_map = get_color_map(buf);
             buf.caret_mut()
-                .set_foreground(IGS_LOW_COLOR_MAP[color as usize % IGS_LOW_COLOR_MAP.len()] as u32);
+                .set_foreground(color_map[color as usize % color_map.len()] as u32);
         }
 
         IgsCommand::SetBackground { color } => {
+            let color_map = get_color_map(buf);
             buf.caret_mut()
-                .set_background(IGS_LOW_COLOR_MAP[color as usize % IGS_LOW_COLOR_MAP.len()] as u32);
+                .set_background(color_map[color as usize % color_map.len()] as u32);
         }
     }
 }

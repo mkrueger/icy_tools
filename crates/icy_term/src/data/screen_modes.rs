@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 
 use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, ATARI_ST_LOW_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED,
+    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED,
     C64_UNSHIFTED, CP437, EditableScreen, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE,
 };
 use serde::{
@@ -218,7 +218,10 @@ impl ScreenMode {
             // ScreenMode::Cga(w, h) | ScreenMode::Ega(w, h) |
             ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => Size::new(*w, *h),
             ScreenMode::Vic | ScreenMode::Mode7 => Size::new(40, 25),
-            ScreenMode::AtariST(res, _igs) => res.get_text_resolution(),
+            ScreenMode::AtariST(res, _igs) => {
+                let (w, h) = res.get_text_resolution();
+                Size::new(w, h)
+            }
             ScreenMode::Atascii(i) => {
                 if *i == 80 {
                     ATASCII_XEP80_SCREEN_SIZE

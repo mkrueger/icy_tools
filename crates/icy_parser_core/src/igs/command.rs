@@ -642,13 +642,25 @@ pub enum IgsCommand {
     ///   - 0: Low resolution (320x200, 16 colors)
     ///   - 1: Medium resolution (640x200, 4 colors)
     /// * `palette` - Palette to load:
-    ///   - 0: No change
-    ///   - 1: Desktop colors
-    ///   - 2: IG default palette
-    ///   - 3: VDI default palette
+    /// Set resolution and palette (R)
+    ///
+    /// IGS: `G#R>resolution,palette:`
+    ///
+    /// Changes terminal resolution and optionally loads a palette.
+    ///
+    /// # Parameters
+    /// * `resolution` - Terminal resolution mode:
+    ///   - Low: 320×200, 16 colors
+    ///   - Medium: 640×200, 4 colors
+    ///   - High: 640×400, 2 colors
+    /// * `palette` - Palette mode:
+    ///   - NoChange: No palette change
+    ///   - Desktop: Desktop colors
+    ///   - IgDefault: IG default palette
+    ///   - VdiDefault: VDI default palette
     SetResolution {
-        resolution: u8,
-        palette: u8,
+        resolution: TerminalResolution,
+        palette: PaletteMode,
     },
 
     /// Quick pause command (t/q)
@@ -1259,7 +1271,7 @@ impl fmt::Display for IgsCommand {
                 AskQuery::CurrentResolution => write!(f, "G#?>3:"),
             },
             IgsCommand::ScreenClear { mode } => write!(f, "G#s>{}:", mode),
-            IgsCommand::SetResolution { resolution, palette } => write!(f, "G#R>{},{}:", resolution, palette),
+            IgsCommand::SetResolution { resolution, palette } => write!(f, "G#R>{},{}:", *resolution as u8, *palette as u8),
             IgsCommand::PauseSeconds { seconds } => write!(f, "G#t>{}:", seconds),
             IgsCommand::VsyncPause { vsyncs } => write!(f, "G#q>{}:", vsyncs),
             IgsCommand::Loop(data) => {

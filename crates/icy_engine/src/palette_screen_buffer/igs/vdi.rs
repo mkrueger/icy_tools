@@ -114,7 +114,7 @@ pub fn clc_arc(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: 
     points
 }
 
-pub fn color_idx_to_pixel_val(colors: usize, c: u8) -> u8 {
+pub fn color_idx_to_pixel_val(_colors: usize, c: u8) -> u8 {
     return c; /* 
     const COLOR_TO_PIX_TABLE: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
 
@@ -134,7 +134,7 @@ pub fn color_idx_to_pixel_val(colors: usize, c: u8) -> u8 {
     return c;*/
 }
 
-pub fn pixel_val_to_color_idx(colors: usize, c: u8) -> u8 {
+pub fn pixel_val_to_color_idx(_colors: usize, c: u8) -> u8 {
     return c; /* 
     const PIX_TO_COLOR_TABLE: [u8; 16] = [0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 15, 13, 1];
     if colors == 16 {

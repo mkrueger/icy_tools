@@ -21,6 +21,9 @@ pub trait Screen: TextPane + Send {
     fn graphics_type(&self) -> crate::GraphicsType {
         crate::GraphicsType::Text
     }
+    fn set_graphics_type(&mut self, _graphics_type: crate::GraphicsType)  {
+        panic!("graphics_type_mut not implemented for this Screen type");
+    }
 
     fn ice_mode(&self) -> IceMode;
 

@@ -54,12 +54,13 @@ impl Default for DrawExecutor {
 
 impl DrawExecutor {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
+        let default_color = terminal_resolution.default_color();
         Self {
             terminal_resolution,
-            polymarker_color: 0xFF,
-            line_color: 0xFF,
-            fill_color: 0xFF,
-            text_color: 0xFF,
+            polymarker_color: default_color,
+            line_color: default_color,
+            fill_color: default_color,
+            text_color: default_color,
             cur_position: Position::new(0, 0),
             text_effects: TextEffects::NORMAL,
             text_size: 9,
@@ -102,6 +103,27 @@ impl DrawExecutor {
 
     pub fn get_terminal_resolution(&self) -> TerminalResolution {
         self.terminal_resolution
+    }
+
+    /// Apply rotation transformation to character pixel coordinates
+    /// For 90° and 270° rotations, also flip in Y direction (in char coordinates)
+    #[inline]
+    fn apply_rotation(&self, x: i32, y: i32, font_size: Size, skew_offset: i32, y_offset: i32) -> (i32, i32) {
+        match self.text_rotation {
+            TextRotation::Degrees0 => (x + skew_offset, y - y_offset),
+            TextRotation::Degrees90 => (y - y_offset, -1 + font_size.width - (x + skew_offset)),
+            TextRotation::Degrees180 => (font_size.width - (x + skew_offset) - 1, -y + y_offset),
+            TextRotation::Degrees270 => (-y + y_offset, x + skew_offset),
+        }
+    }
+    #[inline]
+    fn apply_underline_rotation(&self, x: i32, y: i32, font_size: Size, skew_offset: i32, y_offset: i32) -> (i32, i32) {
+        match self.text_rotation {
+            TextRotation::Degrees0 => (x + skew_offset, y - y_offset),
+            TextRotation::Degrees90 => (y - y_offset, font_size.width - (x + skew_offset)),
+            TextRotation::Degrees180 => (font_size.width - (x + skew_offset) - 1, -y + y_offset),
+            TextRotation::Degrees270 => (-y + y_offset - 1, (x + skew_offset) - 1),
+        }
     }
 
     pub fn init_resolution(&mut self, buf: &mut dyn EditableScreen) {
@@ -203,9 +225,18 @@ impl DrawExecutor {
     }
 
     fn fill_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32) {
-        let w = self.fill_pattern[(y as usize) % self.fill_pattern.len()];
+        let res = buf.get_resolution();
+        let px = x;
+        // In IGS medium/high Auflösungen sind die Pattern immer 16‑Pixel breit
+        // und werden unabhängig von der aktuellen X‑Position wiederholt.
+        // Damit das Brick‑Muster in CARD.ig sichtbar wird, verwenden wir
+        // x modulo 16 statt der absoluten X‑Koordinate.
+        if px < 0 || px >= res.width {
+            return;
+        }
 
-        let mask = w & (0x8000 >> (x as usize % 16)) != 0;
+        let w = self.fill_pattern[(y as usize) % self.fill_pattern.len()];
+        let mask = w & (0x8000 >> (px as usize % 16)) != 0;
         match self.drawing_mode {
             DrawingMode::Replace => {
                 if mask {
@@ -426,6 +457,8 @@ impl DrawExecutor {
     }
 
     pub fn fill_poly(&mut self, buf: &mut dyn EditableScreen, points: &[i32]) {
+        println!("DEBUG fill_poly: hollow_set={} fill_color={} points.len()={}",
+                 self.hollow_set, self.fill_color, points.len());
         if self.hollow_set {
             self.draw_poly(buf, points, self.fill_color, true);
             return;
@@ -511,6 +544,10 @@ impl DrawExecutor {
             // Sort the X-coordinates, so they are arranged left to right.
             // There are almost always exactly 2, except for weird shapes.
             edge_buffer.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            if cfg!(debug_assertions) {
+                println!("DEBUG fill_poly: y={} intersections={:?}", y, edge_buffer);
+            }
             // Loop through all edges in pairs, filling the pixels in between.
             let mut j = 0;
             while j < edge_buffer.len() {
@@ -521,6 +558,9 @@ impl DrawExecutor {
                 j += 1;
 
                 // Fill in all pixels horizontally from (x1, y) to (x2, y)
+                if cfg!(debug_assertions) && y >= 24 && y <= 32 {
+                    println!("DEBUG fill_poly: span y={} x1={} x2={}", y, x1, x2);
+                }
                 for k in x1..=x2 {
                     self.fill_pixel(buf, k, y);
                 }
@@ -541,7 +581,7 @@ impl DrawExecutor {
         // (not the character itself, which is 1 pixel inward)
         let mut pos = text_pos;
 
-        // println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
+        //println!("write_text {string_parameter} {text_pos} size:{} effect:{:?} rot:{:?}", self.text_size, self.text_effects, self.text_rotation);
 
         let color = self.text_color;
         let bg_color = 0; // Background color for outlined text
@@ -583,14 +623,8 @@ impl DrawExecutor {
                         };
 
                         if pixel_set {
-                            // Apply rotation transformation
-                            // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
-                            let (rx, ry) = match self.text_rotation {
-                                TextRotation::Degrees0 => (x, y),
-                                TextRotation::Degrees90 => (font_size.height - 1 - y, font_size.width - 1 - x), // 90° + Y-flip
-                                TextRotation::Degrees180 => (font_size.width - 1 - x, font_size.height - 1 - y),
-                                TextRotation::Degrees270 => (y, font_size.width - 1 - x), // 270° + Y-flip
-                            };
+                            // Apply rotation transformation for outline first pass
+                            let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
                             // Draw outline pixels around this character pixel
                             for dy in -1..=1 {
                                 for dx in -1..=1 {
@@ -614,14 +648,8 @@ impl DrawExecutor {
                         };
 
                         if pixel_set {
-                            // Apply rotation transformation
-                            // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
-                            let (rx, ry) = match self.text_rotation {
-                                TextRotation::Degrees0 => (x, y),
-                                TextRotation::Degrees90 => (y, font_size.width - 1 - x), // 90° + Y-flip
-                                TextRotation::Degrees180 => (font_size.width - 1 - x, font_size.height - 1 - y),
-                                TextRotation::Degrees270 => (font_size.height - y, x), // 270° + Y-flip
-                            };
+                            // Apply rotation transformation for outline second pass
+                            let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
                             let p = pos + Position::new(rx, ry);
                             self.set_pixel(buf, p.x, p.y, bg_color);
                         }
@@ -651,14 +679,8 @@ impl DrawExecutor {
                                     0
                                 };
 
-                                // Apply rotation transformation
-                                // For 90° and 270° rotations, also flip in Y direction (in char coordinates)
-                                let (rx, ry) = match self.text_rotation {
-                                    TextRotation::Degrees0 => (x + skew_offset, y - metrics.y_off),
-                                    TextRotation::Degrees90 => (y - metrics.y_off, -1 + 2 * font_size.width - (x + skew_offset)), // 90° + Y-flip
-                                    TextRotation::Degrees180 => (font_size.width - (x + skew_offset) - 1, -y + metrics.y_off),
-                                    TextRotation::Degrees270 => (-y + metrics.y_off, (x + skew_offset)), // 270° + Y-flip
-                                };
+                                // Apply rotation transformation for normal text
+                                let (rx, ry) = self.apply_rotation(x, y, font_size, skew_offset, metrics.y_off);
                                 let p = pos + Position::new(rx, ry);
                                 self.set_pixel(buf, p.x, p.y, color);
                                 if self.text_effects.contains(TextEffects::THICKENED) {
@@ -671,13 +693,34 @@ impl DrawExecutor {
                 }
             }
             if self.text_effects.contains(TextEffects::UNDERLINED) {
-                // Atari VDI: underline is placed above the adjusted position
-                let y_pos = pos.y + metrics.underline_pos - metrics.y_off;
-
+                // Atari VDI: underline with rotation support
+                // Continue using the same draw_mask pattern from text rendering
+                let mut underline_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
+                let underline_width = if is_outlined {
+                    metrics.underline_width + 2 * outline_thickness
+                } else {
+                    metrics.underline_width
+                };
                 for y2 in 0..metrics.underline_height {
-                    for x in 0..metrics.underline_width {
-                        self.set_pixel(buf, pos.x + x, y_pos + y2, color);
+                    for x in 0..underline_width {
+                        underline_mask = underline_mask.rotate_left(1);
+
+                        if 1 & underline_mask != 0 {
+                            // Calculate skew offset for underline position (same logic as text)
+                            let underline_y = metrics.underline_pos + y2;
+                            let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
+                                (font_size.height - 1 - underline_y) / 2 - (underline_y % 2)
+                            } else {
+                                0
+                            };
+
+                            // Apply rotation to underline coordinates
+                            let (rx, ry) = self.apply_underline_rotation(x, underline_y, font_size, skew_offset, metrics.y_off);
+                            let p = pos + Position::new(rx, ry);
+                            self.set_pixel(buf, p.x, p.y, color);
+                        }
                     }
+                    // Note: No extra rotate_left at end of underline row, unlike character rows
                 }
             }
             // Calculate character advance based on rotation
@@ -840,8 +883,8 @@ impl DrawExecutor {
             swap(&mut y1, &mut y2);
         }
 
-        let x_radius = (buf.get_resolution().width >> 6).min((x2 - x1) / 2) - 1;
-        let y_radius = self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2);
+        let x_radius = ((buf.get_resolution().width >> 6).min((x2 - x1) / 2) - 1).max(0);
+        let y_radius = self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2).max(0);
 
         const ISIN225: i32 = 12539;
         const ISIN450: i32 = 23170;
@@ -949,6 +992,8 @@ pub const REGISTER_TO_PEN: &[usize; 17] = &[0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 1
 // Public wrapper methods for IGS command handling
 impl DrawExecutor {
     pub fn draw_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
+        println!("DEBUG: draw_rect({}, {}, {}, {}) fill_color={} line_color={} draw_border={}", 
+                 x1, y1, x2, y2, self.fill_color, self.line_color, self.draw_border);
         self.fill_rect(buf, x1, y1, x2, y2);
         if self.draw_border {
             let color = self.line_color;
@@ -960,6 +1005,8 @@ impl DrawExecutor {
     }
 
     pub fn draw_rounded_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
+        println!("DEBUG: draw_rounded_rect({}, {}, {}, {}) fill_color={} line_color={} draw_border={}", 
+                 x1, y1, x2, y2, self.fill_color, self.line_color, self.draw_border);
         self.round_rect(buf, x1, y1, x2, y2, true);
         if self.draw_border {
             self.round_rect(buf, x1, y1, x2, y2, false);
@@ -1015,7 +1062,6 @@ impl DrawExecutor {
     }
 
     pub fn set_color(&mut self, pen: PenType, color: u8) {
-        println!("Set color {:?} to {}", pen, color);
         match pen {
             PenType::Polymarker => self.polymarker_color = color,
             PenType::Line => self.line_color = color,
