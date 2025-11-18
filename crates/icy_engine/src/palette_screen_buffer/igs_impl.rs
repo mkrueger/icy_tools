@@ -225,8 +225,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::HollowSet { enabled } => {
-            // TODO: Toggle hollow/filled mode
-            log::info!("IGS HollowSet {} not implemented", enabled);
+            state.executor.hollow_set = enabled;
         }
 
         // Screen and system commands

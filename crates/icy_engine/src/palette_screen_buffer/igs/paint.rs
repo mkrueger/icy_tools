@@ -36,7 +36,7 @@ pub struct DrawExecutor {
     fill_pattern: &'static [u16],
     draw_border: bool,
 
-    hollow_set: bool,
+    pub hollow_set: bool,
 
     // Screen memory for blit operations
     screen_memory: Vec<u8>,
@@ -413,6 +413,11 @@ impl DrawExecutor {
             std::mem::swap(&mut x0, &mut x1);
         }
 
+        // If hollow pattern is set, don't fill the rectangle
+        if self.hollow_set {
+            return;
+        }
+
         for y in y0..=y1 {
             for x in x0..=x1 {
                 self.fill_pixel(buf, x, y);
@@ -580,10 +585,13 @@ impl DrawExecutor {
 
     pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &str) {
         let (metrics, font) = load_atari_font(self.text_size);
-
         let is_outlined = self.text_effects.contains(TextEffects::OUTLINED);
         let outline_thickness = if is_outlined { 1 } else { 0 };
 
+        println!(
+            "write_text: pos=({},{}) text='{}' size:{} effects:{:?} rotation:{:?}",
+            text_pos.x, text_pos.y, string_parameter, self.text_size, self.text_effects, self.text_rotation
+        );
         // For outlined text, the position represents where the outline starts
         // (not the character itself, which is 1 pixel inward)
         let mut pos = text_pos;
@@ -691,7 +699,7 @@ impl DrawExecutor {
                                 let p = pos + Position::new(rx, ry);
                                 self.set_pixel(buf, p.x, p.y, color);
                                 if self.text_effects.contains(TextEffects::THICKENED) {
-                                    self.set_pixel(buf, p.x + 1, p.y, color);
+                                    self.set_pixel(buf, p.x + metrics.thicken, p.y, color);
                                 }
                             }
                         }
@@ -1002,10 +1010,11 @@ impl DrawExecutor {
         self.fill_rect(buf, x1, y1, x2, y2);
         if self.draw_border {
             let color = self.line_color;
-            self.draw_line(buf, x1, y1, x1, y2, color, 0);
-            self.draw_line(buf, x2, y1, x2, y2, color, 0);
-            self.draw_line(buf, x1, y1, x2, y1, color, 0);
-            self.draw_line(buf, x1, y2, x2, y2, color, 0);
+            let mask = self.line_kind.get_mask(self.user_mask);
+            self.draw_line(buf, x1, y1, x1, y2, color, mask);
+            self.draw_line(buf, x2, y1, x2, y2, color, mask);
+            self.draw_line(buf, x1, y1, x2, y1, color, mask);
+            self.draw_line(buf, x1, y2, x2, y2, color, mask);
         }
     }
 
@@ -1099,10 +1108,6 @@ impl DrawExecutor {
             PatternType::UserDefined(_) => &RANDOM_PATTERN,
         };
         self.hollow_set = matches!(pattern_type, PatternType::Hollow);
-        println!(
-            "set_fill_pattern: {:?} hollow_set={} pattern:{:?}",
-            pattern_type, self.hollow_set, self.fill_pattern
-        );
     }
 
     pub fn set_draw_border(&mut self, border: bool) {

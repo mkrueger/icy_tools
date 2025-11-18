@@ -25,6 +25,7 @@ pub struct FontMetrics {
     pub underline_pos: i32,
     pub underline_height: i32,
     pub underline_width: i32,
+    pub thicken: i32,
 }
 
 pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
@@ -35,6 +36,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_pos: 5,
                 underline_height: 1,
                 underline_width: 7,
+                thicken: 1,
             },
             &ATARI_ST_FONT_6x6,
         );
@@ -46,6 +48,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_pos: 7,
                 underline_height: 1,
                 underline_width: 9,
+                thicken: 1,
             },
             &ATARI_ST_FONT_8x8,
         );
@@ -59,6 +62,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_pos: 15,
                 underline_height: 1,
                 underline_width: 9,
+                thicken: 1,
             },
             &ATARI_ST_FONT_8x16,
         );
@@ -72,6 +76,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_pos: 10,
                 underline_height: 2,
                 underline_width: 13,
+                thicken: 1,
             },
             &ATARI_ST_FONT_12x12,
         );
@@ -85,6 +90,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_pos: 14,
                 underline_height: 2,
                 underline_width: 17,
+                thicken: 2,
             },
             &ATARI_ST_FONT_16x16,
         );
@@ -96,6 +102,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
             underline_pos: 30,
             underline_height: 2,
             underline_width: 17,
+            thicken: 2,
         },
         &ATARI_ST_FONT_16x32,
     )
