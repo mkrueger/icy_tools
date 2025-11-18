@@ -1,4 +1,4 @@
-use icy_engine::{PaletteScreenBuffer, ScreenSink};
+use icy_engine::{PaletteScreenBuffer, RgbaScreen, ScreenSink};
 use icy_parser_core::{CommandParser, IgsParser};
 use std::fs::{self};
 
@@ -27,7 +27,6 @@ pub fn test_igs_lowres() {
     }
 }
 
-
 #[test]
 pub fn test_igs_midres() {
     crate::init_logging();
@@ -38,7 +37,7 @@ pub fn test_igs_midres() {
         }
 
         if cur_entry.file_name().unwrap() != "XMAS.ig" {
-            continue
+            continue;
         }
 
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
@@ -55,7 +54,6 @@ pub fn test_igs_midres() {
     }
 }
 
-
 #[test]
 pub fn test_igs_palette() {
     crate::init_logging();
@@ -71,9 +69,9 @@ pub fn test_igs_palette() {
 
         let mut parser: IgsParser = IgsParser::new();
         let mut sink = ScreenSink::new(&mut buffer);
-
         parser.parse(&data, &mut sink);
 
+        println!("scan lines: {} res : {} ", buffer.scan_lines, buffer.get_resolution());
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);
     }

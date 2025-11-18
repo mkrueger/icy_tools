@@ -55,9 +55,9 @@ pub struct PaletteScreenBuffer {
     saved_pos: Position,
     saved_cursor_state: SavedCaretState,
     graphics_type: GraphicsType,
-    
+
     // Scan lines for Atari ST Medium resolution (doubles line height)
-    scan_lines: bool,
+    pub scan_lines: bool,
 }
 
 impl PaletteScreenBuffer {
@@ -99,7 +99,7 @@ impl PaletteScreenBuffer {
         let char_cols = px_width / font.size().width;
         let char_rows = px_height / font.size().height;
 
-        // Allocate RGBA pixel buffer (4 bytes per pixel)
+        // Allocate pixel buffer and fill with background color (0)
         let screen = vec![0u8; px_width as usize * px_height as usize];
 
         // Create text layer with character dimensions
@@ -305,42 +305,42 @@ impl Screen for PaletteScreenBuffer {
         self.graphics_type
     }
 
-    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType)  {
+    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType) {
         self.graphics_type = graphics_type;
-        
+
         self.scan_lines = match graphics_type {
             GraphicsType::IGS(term_res) => term_res.use_scanlines(),
             _ => false,
         };
-        
+
         match graphics_type {
-            GraphicsType::IGS(_) => {
+            GraphicsType::IGS(res) => {
                 self.caret.attribute.set_foreground(1);
                 self.caret.attribute.set_background(0);
                 self.terminal_state.cr_is_if = true;
+                self.set_resolution(res.get_resolution());
             }
             _ => {
                 // Keep current caret settings
             }
         }
-        
+
         self.buffer_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
         self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-
     fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
         let pal = self.palette().clone();
-        
+
         if self.scan_lines {
             // Double the height for scan lines (Atari ST Medium resolution)
             let doubled_height = self.pixel_size.height * 2;
             let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * doubled_height as usize * 4);
-            
+
             for y in 0..self.pixel_size.height {
                 let row_start = (y * self.pixel_size.width) as usize;
                 let row_end = row_start + self.pixel_size.width as usize;
-                
+
                 // Render the line once
                 let start_pos = pixels.len();
                 for i in row_start..row_end {
@@ -350,12 +350,12 @@ impl Screen for PaletteScreenBuffer {
                     pixels.push(b);
                     pixels.push(255);
                 }
-                
+
                 // Copy the rendered line
                 let end_pos = pixels.len();
                 pixels.extend_from_within(start_pos..end_pos);
             }
-            
+
             (Size::new(self.pixel_size.width, doubled_height), pixels)
         } else {
             // Standard rendering without scan lines
@@ -495,9 +495,13 @@ impl RgbaScreen for PaletteScreenBuffer {
 
     fn set_resolution(&mut self, size: Size) {
         self.pixel_size = size;
-        let size = self.get_font(0).unwrap().size();
-        self.char_screen_size = Size::new(size.width / size.width, size.height / size.height);
-        self.screen.resize((size.width as usize) * (size.height as usize), 0);
+        let font_size = self.get_font(0).unwrap().size();
+        self.char_screen_size = Size::new(self.pixel_size.width / font_size.width, self.pixel_size.height / font_size.height);
+        // Fill with background color from caret (0 for white in most palettes)
+        let bg_color = self.caret.attribute.get_background();
+        self.screen.clear();
+        self.screen
+            .resize((self.pixel_size.width as usize) * (self.pixel_size.height as usize), bg_color as u8);
     }
 
     fn screen(&self) -> &[u8] {

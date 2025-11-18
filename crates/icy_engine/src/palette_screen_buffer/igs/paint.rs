@@ -97,8 +97,6 @@ impl DrawExecutor {
 
     pub fn set_resolution(&mut self, res: TerminalResolution) {
         self.terminal_resolution = res;
-        // let res = buf.get_resolution();
-        // buf.screen_mut() = vec![1; (res.width * res.height) as usize];
     }
 
     pub fn get_terminal_resolution(&self) -> TerminalResolution {
@@ -457,8 +455,12 @@ impl DrawExecutor {
     }
 
     pub fn fill_poly(&mut self, buf: &mut dyn EditableScreen, points: &[i32]) {
-        println!("DEBUG fill_poly: hollow_set={} fill_color={} points.len()={}",
-                 self.hollow_set, self.fill_color, points.len());
+        println!(
+            "DEBUG fill_poly: hollow_set={} fill_color={} points.len()={}",
+            self.hollow_set,
+            self.fill_color,
+            points.len()
+        );
         if self.hollow_set {
             self.draw_poly(buf, points, self.fill_color, true);
             return;
@@ -992,8 +994,10 @@ pub const REGISTER_TO_PEN: &[usize; 17] = &[0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 1
 // Public wrapper methods for IGS command handling
 impl DrawExecutor {
     pub fn draw_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
-        println!("DEBUG: draw_rect({}, {}, {}, {}) fill_color={} line_color={} draw_border={}", 
-                 x1, y1, x2, y2, self.fill_color, self.line_color, self.draw_border);
+        println!(
+            "DEBUG: draw_rect({}, {}, {}, {}) fill_color={} line_color={} draw_border={}",
+            x1, y1, x2, y2, self.fill_color, self.line_color, self.draw_border
+        );
         self.fill_rect(buf, x1, y1, x2, y2);
         if self.draw_border {
             let color = self.line_color;
@@ -1005,8 +1009,10 @@ impl DrawExecutor {
     }
 
     pub fn draw_rounded_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
-        println!("DEBUG: draw_rounded_rect({}, {}, {}, {}) fill_color={} line_color={} draw_border={}", 
-                 x1, y1, x2, y2, self.fill_color, self.line_color, self.draw_border);
+        println!(
+            "DEBUG: draw_rounded_rect({}, {}, {}, {}) fill_color={} line_color={} draw_border={}",
+            x1, y1, x2, y2, self.fill_color, self.line_color, self.draw_border
+        );
         self.round_rect(buf, x1, y1, x2, y2, true);
         if self.draw_border {
             self.round_rect(buf, x1, y1, x2, y2, false);
@@ -1062,6 +1068,12 @@ impl DrawExecutor {
     }
 
     pub fn set_color(&mut self, pen: PenType, color: u8) {
+        assert!(
+            color < self.terminal_resolution.get_max_colors() as u8,
+            "Color {} out of range for terminal resolution {:?}",
+            color,
+            self.terminal_resolution
+        );
         match pen {
             PenType::Polymarker => self.polymarker_color = color,
             PenType::Line => self.line_color = color,

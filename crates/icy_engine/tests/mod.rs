@@ -69,11 +69,21 @@ pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
         (info.width as usize, info.height as usize, info.color_type)
     };
 
+    // Get absolute paths for easier opening
+    let absolute_output_path = output_path.canonicalize().unwrap_or_else(|_| output_path.to_path_buf());
+    let absolute_png_path = png_file.canonicalize().unwrap_or_else(|_| png_file.to_path_buf());
+
     // Check resolution
     if width != rendered_size.width as usize || height != rendered_size.height as usize {
         panic!(
-            "Test failed for: {}\nResolution mismatch!\nExpected: {}x{}\nGot: {}x{}",
-            filename, width, height, rendered_size.width, rendered_size.height
+            "Test failed for: {}\nResolution mismatch!\nExpected: {}x{}\nGot: {}x{}\nOutput saved to: file://{}\nShould look like: file://{}",
+            filename,
+            width,
+            height,
+            rendered_size.width,
+            rendered_size.height,
+            absolute_output_path.display(),
+            absolute_png_path.display()
         );
     }
 
@@ -92,8 +102,10 @@ pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
             rgba_buf.push(255); // A
         }
         rgba_buf
-    } else {
+    } else if color_type == png::ColorType::Rgba {
         img_buf
+    } else {
+        panic!("Unsupported PNG color type: {:?} in {}", color_type, absolute_png_path.display());
     };
 
     // Compare
@@ -124,13 +136,9 @@ pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(&rendered_data).unwrap();
 
-        // Get absolute paths for easier opening
-        let absolute_output_path = output_path.canonicalize().unwrap_or_else(|_| output_path.to_path_buf());
-        let absolute_png_path = png_file.canonicalize().unwrap_or_else(|_| png_file.to_path_buf());
-
         let (x, y, expected, got) = mismatch.unwrap();
         panic!(
-            "Test failed for: {}\nMismatch pixel at x: {}, y: {}.\nExpected: {:?}\nGot: {:?}\nOutput saved to: file://{}\nShould look like: file://{}",
+            "Test failed for: {}\nMismatch pixel at x: {}, y: {}.\nExpected: {:?}\nGot: {:?}\nOutput saved to: file://{}\nShould look like: file://{}\n",
             filename,
             x,
             y,
