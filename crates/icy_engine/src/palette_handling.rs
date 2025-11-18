@@ -1310,112 +1310,6 @@ pub const IGS_SYSTEM_PALETTE: [Color; 16] = [
     },
 ];
 
-pub const IGS_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xEE,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        // Black 2 ? (from atari emulator)
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        // Yellow
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0x00,
-    },
-    Color {
-        // light purple
-        name: None,
-        r: 0xAA,
-        g: 0x88,
-        b: 0xCC,
-    },
-    Color {
-        // light brown
-        name: None,
-        r: 0xAA,
-        g: 0x66,
-        b: 0x44,
-    },
-    Color {
-        // skin color
-        name: None,
-        r: 0xEE,
-        g: 0x88,
-        b: 0x66,
-    },
-    Color {
-        // sea green
-        name: None,
-        r: 0x00,
-        g: 0x88,
-        b: 0x66,
-    },
-    Color {
-        // mid gray
-        name: None,
-        r: 0x66,
-        g: 0x66,
-        b: 0x66,
-    },
-    Color {
-        // blueish
-        name: None,
-        r: 0x22,
-        g: 0x66,
-        b: 0x88,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x66,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x44,
-        g: 0x22,
-        b: 0x00,
-    },
-];
 
 pub const EGA_PALETTE: [Color; 64] = [
     Color {
@@ -4210,105 +4104,28 @@ pub const VIEWDATA_PALETTE: [Color; 16] = [
     }, // white
 ];
 
-pub const ATARI_ST_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xEE,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x00,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0x66,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x66,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0xEE,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0x66,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x66,
-        b: 0xEE,
-    },
-];
-
+lazy_static::lazy_static! {
+    #[rustfmt::skip]
+    pub static ref ATARI_ST_PALETTE: Palette = Palette::from_slice(&[
+        //  Name                R     G     B      RGB Values
+        Color { name: Some("White".to_string()),         r: 0xEE, g: 0xEE, b: 0xEE }, //  0: White         (7,7,7)
+        Color { name: Some("Red".to_string()),           r: 0xEE, g: 0x00, b: 0x00 }, //  1: Red           (7,0,0)
+        Color { name: Some("Green".to_string()),         r: 0x00, g: 0xEE, b: 0x00 }, //  2: Green         (0,7,0)
+        Color { name: Some("Yellow".to_string()),        r: 0xEE, g: 0xEE, b: 0x00 }, //  3: Yellow        (7,7,0)
+        Color { name: Some("Blue".to_string()),          r: 0x00, g: 0x00, b: 0xEE }, //  4: Blue          (0,0,7)
+        Color { name: Some("Magenta".to_string()),       r: 0xEE, g: 0x00, b: 0xEE }, //  5: Magenta       (7,0,7)
+        Color { name: Some("Cyan".to_string()),          r: 0x00, g: 0xEE, b: 0xEE }, //  6: Cyan          (0,7,7)
+        Color { name: Some("Light Gray".to_string()),    r: 0xAA, g: 0xAA, b: 0xAA }, //  7: Light Gray    (5,5,5)
+        Color { name: Some("Dark Gray".to_string()),     r: 0x66, g: 0x66, b: 0x66 }, //  8: Dark Gray     (3,3,3)
+        Color { name: Some("Light Red".to_string()),     r: 0xEE, g: 0x66, b: 0x66 }, //  9: Light Red     (7,3,3)
+        Color { name: Some("Light Green".to_string()),   r: 0x66, g: 0xEE, b: 0x66 }, // 10: Light Green   (3,7,3)
+        Color { name: Some("Light Yellow".to_string()),  r: 0xEE, g: 0xEE, b: 0x66 }, // 11: Light Yellow  (7,7,3)
+        Color { name: Some("Light Blue".to_string()),    r: 0x66, g: 0x66, b: 0xEE }, // 12: Light Blue    (3,3,7)
+        Color { name: Some("Light Magenta".to_string()), r: 0xEE, g: 0x66, b: 0xEE }, // 13: Light Magenta (7,3,7)
+        Color { name: Some("Light Cyan".to_string()),    r: 0x66, g: 0xEE, b: 0xEE }, // 14: Light Cyan    (3,7,7)
+        Color { name: Some("Black".to_string()),         r: 0x00, g: 0x00, b: 0x00 }, // 15: Black         (0,0,0)
+    ]);
+}
 macro_rules! amiga_color {
     ($r:expr, $g:expr, $b:expr) => {
         crate::Color {

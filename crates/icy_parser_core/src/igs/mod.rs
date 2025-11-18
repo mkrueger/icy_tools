@@ -50,8 +50,42 @@ pub struct IgsParser {
 
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
+/*
+static ANSI_TO_ATARAI_COLOR_MAP: [u8; 16] = [
+    0x00, 
+    0x0F, 
+    0x01, 
+    0x02,
+    0x04, 
+    0x06,
+    0x03,
+    0x05,
+    0x07,
+    0x08,
+    0x09,
+    0x0A, 
+    0x0C,
+    0x0E,
+    0x0B,
+    0x0E];*/
 
-static ATARI_COLOR_MAP: [u8; 16] = [0x00, 0x02, 0x03, 0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
+static ANSI_TO_ATARAI_COLOR_MAP: [u8; 16] = [
+    0x00, 
+    0x01, 
+    0x02, 
+    0x03,
+    0x04, 
+    0x05,
+    0x06,
+    0x07,
+    0x08,
+    0x09,
+    0x0A,
+    0x0B, 
+    0x0C,
+    0x0D,
+    0x0E,
+    0x0F];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoopParseState {
@@ -896,7 +930,7 @@ impl CommandParser for IgsParser {
                             // TOS direct foreground color codes (0x00-0x0F)
                             // 0x07 (Bell) is excluded to maintain standard ASCII compatibility
                             sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
-                                ATARI_COLOR_MAP[byte as usize],
+                                ANSI_TO_ATARAI_COLOR_MAP[byte as usize],
                             ))));
                         } /*
                         0x09 => {
@@ -1484,7 +1518,7 @@ impl CommandParser for IgsParser {
                         _ => byte, // Fallback for non-standard values
                     };
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
-                        ATARI_COLOR_MAP[color as usize],
+                        ANSI_TO_ATARAI_COLOR_MAP[(color as usize) % ANSI_TO_ATARAI_COLOR_MAP.len()],
                     ))));
                     self.state = State::Default;
                 }
@@ -1497,7 +1531,7 @@ impl CommandParser for IgsParser {
                         _ => byte, // Fallback for non-standard values
                     };
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
-                        ATARI_COLOR_MAP[color as usize],
+                        ANSI_TO_ATARAI_COLOR_MAP[(color as usize) % ANSI_TO_ATARAI_COLOR_MAP.len()],
                     ))));
                     self.state = State::Default;
                 }

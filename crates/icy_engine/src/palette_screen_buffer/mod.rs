@@ -10,10 +10,7 @@ pub use igs::TerminalResolution;
 use igs_impl::IgsState;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette,
-    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
-    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
-    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    ATARI_ST_PALETTE, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane, bgi::{Bgi, DEFAULT_BITFONT, MouseField}, palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE}
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -111,7 +108,7 @@ impl PaletteScreenBuffer {
 
         // Set appropriate default palette based on graphics type
         let palette = match graphics_type {
-            GraphicsType::IGS(_) => Palette::from_slice(&crate::IGS_SYSTEM_PALETTE),
+            GraphicsType::IGS(_) => ATARI_ST_PALETTE.clone(),
             _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
         };
 
