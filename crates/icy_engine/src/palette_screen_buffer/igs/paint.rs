@@ -6,7 +6,7 @@ use icy_parser_core::{DrawingMode, LineKind, PatternType, PenType, PolymarkerKin
 use super::{HATCH_PATTERN, HATCH_WIDE_PATTERN, HOLLOW_PATTERN, TYPE_PATTERN};
 use super::{
     RANDOM_PATTERN, SOLID_PATTERN,
-    vdi::{TWOPI, color_idx_to_pixel_val, gdp_curve, pixel_val_to_color_idx},
+    vdi::{TWOPI, gdp_curve},
 };
 use crate::igs::load_atari_font;
 use crate::palette_screen_buffer::igs::TerminalResolution;
@@ -253,8 +253,8 @@ impl DrawExecutor {
             }
             DrawingMode::Xor => {
                 let s = if mask { 0xFF } else { 0x00 };
-                let d = color_idx_to_pixel_val(buf.palette().len(), self.get_pixel(buf, x, y));
-                let new_color = pixel_val_to_color_idx(buf.palette().len(), (s ^ d) & 0x0F);
+                let d = self.get_pixel(buf, x, y);
+                let new_color = (s ^ d) & 0x0F;
                 self.set_pixel(buf, x, y, new_color);
             }
             DrawingMode::ReverseTransparent => {
@@ -698,8 +698,32 @@ impl DrawExecutor {
                                 let (rx, ry) = self.apply_rotation(x, y, font_size, skew_offset, metrics.y_off);
                                 let p = pos + Position::new(rx, ry);
                                 self.set_pixel(buf, p.x, p.y, color);
+
+                                // THICKENED: Draw additional pixels to the right
+                                // Only for Degrees0 rotation (horizontal text)
                                 if self.text_effects.contains(TextEffects::THICKENED) {
-                                    self.set_pixel(buf, p.x + metrics.thicken, p.y, color);
+                                    match self.text_rotation {
+                                        TextRotation::Degrees0 => {
+                                            for t in 1..=metrics.thicken {
+                                                self.set_pixel(buf, p.x + t, p.y, color);
+                                            }
+                                        }
+                                        TextRotation::Degrees90 => {
+                                            for t in 1..=metrics.thicken {
+                                                self.set_pixel(buf, p.x, p.y - t, color);
+                                            }
+                                        }
+                                        TextRotation::Degrees180 => {
+                                            for t in 1..=metrics.thicken {
+                                                self.set_pixel(buf, p.x - t, p.y, color);
+                                            }
+                                        }
+                                        TextRotation::Degrees270 => {
+                                            for t in 1..=metrics.thicken {
+                                                self.set_pixel(buf, p.x, p.y + t, color);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -740,19 +764,24 @@ impl DrawExecutor {
             }
             // Calculate character advance based on rotation
             // For outlined text, add 2 pixels (1 left + 1 right for the border)
+            // For thickened text, do NOT extend character width - thickening overlaps into next cell
             let base_width = if is_outlined {
                 font_size.width + 2 * outline_thickness
             } else {
                 font_size.width
             };
 
+            // Note: Character width stays the same even for THICKENED text
+            // The thickening pixels extend into the spacing between characters
+            let char_width = base_width;
+
             // Advance position based on rotation
             // When rotated 90° or 270°, width becomes vertical advance
             match self.text_rotation {
-                TextRotation::Degrees0 => pos.x += base_width,
-                TextRotation::Degrees90 => pos.y -= base_width,  // Width becomes vertical advance
-                TextRotation::Degrees270 => pos.y += base_width, // Width becomes vertical advance
-                TextRotation::Degrees180 => pos.x -= base_width,
+                TextRotation::Degrees0 => pos.x += char_width,
+                TextRotation::Degrees90 => pos.y -= char_width,  // Width becomes vertical advance
+                TextRotation::Degrees270 => pos.y += char_width, // Width becomes vertical advance
+                TextRotation::Degrees180 => pos.x -= char_width,
             }
         }
     }

@@ -114,49 +114,7 @@ pub fn clc_arc(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: 
     points
 }
 
-pub fn color_idx_to_pixel_val(colors: usize, c: u8) -> u8 {
-    return c; /*
-    const COLOR_TO_PIX_TABLE: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
-
-    if colors == 16 {
-    return COLOR_TO_PIX_TABLE[c as usize];
-    }
-
-    if colors == 4 {
-    return match c {
-    0 => 0,
-    1 => 3,
-    2 => 1,
-    3 => 2,
-    _ => c,
-    };
-    }
-    return c;*/
-}
-
-pub fn pixel_val_to_color_idx(colors: usize, c: u8) -> u8 {
-    return c; /* 
-    const PIX_TO_COLOR_TABLE: [u8; 16] = [0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 15, 13, 1];
-    if colors == 16 {
-    return PIX_TO_COLOR_TABLE[c as usize];
-    }
-    // THIS IS A GUESS. THE REFERENCE BOOKS ONLY GIVE TABLES FOR 8-bit and 16-bit PALETTES.
-    // NEED TO DOUBLE-CHECK ON REAL ATARI.
-    if colors == 4 {
-    return match c {
-    0 => 0,
-    1 => 2,
-    2 => 3,
-    3 => 1,
-    _ => c,
-    };
-    }
-    return c;*/
-}
-
-pub fn blit_px(write_mode: i32, colors: usize, s: u8, d: u8) -> u8 {
-    let s = color_idx_to_pixel_val(colors, s);
-    let d = color_idx_to_pixel_val(colors, d);
+pub fn blit_px(write_mode: i32, _colors: usize, s: u8, d: u8) -> u8 {
     let dest = match write_mode {
         0 => 0,
         1 => s & d,
@@ -176,5 +134,6 @@ pub fn blit_px(write_mode: i32, colors: usize, s: u8, d: u8) -> u8 {
         15 => 1,
         _ => 2,
     } & 0xF;
-    pixel_val_to_color_idx(colors, dest)
+
+    dest
 }
