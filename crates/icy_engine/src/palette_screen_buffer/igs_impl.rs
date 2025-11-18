@@ -106,7 +106,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         IgsCommand::LineStyle { kind, value } => {
             match kind {
                 LineStyleKind::Polymarker(pk) => {
-                    state.executor.set_polymarker_type(pk as u8);
+                    state.executor.polymarker_type = pk;
                     state.executor.set_polymarker_size(value as usize);
                 }
                 LineStyleKind::Line(lk) => {
@@ -210,8 +210,6 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // Style and appearance commands
         IgsCommand::SetPenColor { pen, red, green, blue } => {
-            println!("SET PEN COLOR!: {:?}", cmd);
-
             // Convert 3-bit RGB (0-7) to 8-bit (0-255)
             // Using value * 34 to match Atari ST convention: 0->0, 7->238
             let r = (red * 34) as u8;

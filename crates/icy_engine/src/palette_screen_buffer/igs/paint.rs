@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::mem::swap;
 
 use icy_parser_core::{DrawingMode, LineKind, PatternType, PenType, PolymarkerKind, TextEffects, TextRotation};
@@ -24,7 +25,7 @@ pub struct DrawExecutor {
     pub text_size: i32,
     pub text_rotation: TextRotation,
 
-    polymaker_type: PolymarkerKind,
+    pub polymarker_type: PolymarkerKind,
     pub line_kind: LineKind,
     drawing_mode: DrawingMode,
     polymarker_size: usize,
@@ -54,7 +55,7 @@ impl Default for DrawExecutor {
 
 impl DrawExecutor {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
-        let default_color = terminal_resolution.default_color();
+        let default_color = terminal_resolution.default_fg_color();
         Self {
             terminal_resolution,
             polymarker_color: default_color,
@@ -65,7 +66,7 @@ impl DrawExecutor {
             text_effects: TextEffects::NORMAL,
             text_size: 9,
             text_rotation: TextRotation::Degrees0,
-            polymaker_type: PolymarkerKind::Point,
+            polymarker_type: PolymarkerKind::Point,
             line_kind: LineKind::Solid,
             drawing_mode: DrawingMode::Replace,
             polymarker_size: 1,
@@ -146,23 +147,27 @@ impl DrawExecutor {
         if old_px == col {
             return;
         }
-
+        let tmp = self.fill_color;
+        self.fill_color = col;
+        let mut visited = HashSet::new();
         while let Some(pos) = vec.pop() {
             if pos.x < 0 || pos.y < 0 || pos.x >= res.width || pos.y >= res.height {
                 continue;
             }
 
             let cp = self.get_pixel(buf, pos.x, pos.y);
-            if cp != old_px {
+            if cp != old_px || visited.contains(&pos) {
                 continue;
             }
-            self.set_pixel(buf, pos.x, pos.y, col);
+            self.fill_pixel(buf, pos.x, pos.y);
+            visited.insert(pos);
 
             vec.push(Position::new(pos.x - 1, pos.y));
             vec.push(Position::new(pos.x + 1, pos.y));
             vec.push(Position::new(pos.x, pos.y - 1));
             vec.push(Position::new(pos.x, pos.y + 1));
         }
+        self.fill_color = tmp;
     }
 
     /*
@@ -950,7 +955,7 @@ impl DrawExecutor {
     }
 
     pub fn draw_poly_maker(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32) {
-        let points = match self.polymaker_type {
+        let points = match self.polymarker_type {
             PolymarkerKind::Point => vec![1i32, 2, 0, 0, 0, 0],
             PolymarkerKind::Plus => vec![2, 2, 0, -3, 0, 3, 2, -4, 0, 4, 0],
             PolymarkerKind::Star => vec![3, 2, 0, -3, 0, 3, 2, 3, 2, -3, -2, 2, 3, -2, -3, 2],
@@ -1070,7 +1075,6 @@ impl DrawExecutor {
 
     pub fn set_fill_pattern(&mut self, pattern_type: PatternType) {
         self.fill_pattern_type = pattern_type;
-
         self.fill_pattern = match pattern_type {
             PatternType::Hollow => &HOLLOW_PATTERN,
             PatternType::Solid => &SOLID_PATTERN,
@@ -1095,6 +1099,10 @@ impl DrawExecutor {
             PatternType::UserDefined(_) => &RANDOM_PATTERN,
         };
         self.hollow_set = matches!(pattern_type, PatternType::Hollow);
+        println!(
+            "set_fill_pattern: {:?} hollow_set={} pattern:{:?}",
+            pattern_type, self.hollow_set, self.fill_pattern
+        );
     }
 
     pub fn set_draw_border(&mut self, border: bool) {
@@ -1119,18 +1127,6 @@ impl DrawExecutor {
 
     pub fn set_cur_position(&mut self, x: i32, y: i32) {
         self.cur_position = crate::Position::new(x, y);
-    }
-
-    pub fn set_polymarker_type(&mut self, marker_type: u8) {
-        self.polymaker_type = match marker_type {
-            1 => PolymarkerKind::Point,
-            2 => PolymarkerKind::Plus,
-            3 => PolymarkerKind::Star,
-            4 => PolymarkerKind::Square,
-            5 => PolymarkerKind::DiagonalCross,
-            6 => PolymarkerKind::Diamond,
-            _ => PolymarkerKind::Point,
-        };
     }
 
     pub fn set_polymarker_size(&mut self, size: usize) {

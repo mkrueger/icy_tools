@@ -100,11 +100,11 @@ impl TerminalResolution {
         }
     }
 
-    pub fn default_color(&self) -> u8 {
+    pub fn default_fg_color(&self) -> u8 {
         match self {
-            TerminalResolution::Low => 0,
-            TerminalResolution::Medium => 0,
-            TerminalResolution::High => 0,
+            TerminalResolution::Low => 15,
+            TerminalResolution::Medium => 3,
+            TerminalResolution::High => 1,
         }
     }
 
