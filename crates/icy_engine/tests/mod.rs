@@ -75,6 +75,16 @@ pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
 
     // Check resolution
     if width != rendered_size.width as usize || height != rendered_size.height as usize {
+        // Save the rendered output as PNG for comparison
+        let file = File::create(&output_path).unwrap();
+        let w = BufWriter::new(file);
+
+        let mut encoder = png::Encoder::new(w, rendered_size.width as u32, rendered_size.height as u32);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&rendered_data).unwrap();
+
         panic!(
             "Test failed for: {}\nResolution mismatch!\nExpected: {}x{}\nGot: {}x{}\nOutput saved to: file://{}\nShould look like: file://{}",
             filename,

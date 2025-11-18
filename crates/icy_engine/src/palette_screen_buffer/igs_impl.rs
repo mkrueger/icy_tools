@@ -1,8 +1,7 @@
 use super::bgi::{ButtonStyle2, MouseField};
 use super::igs::{TerminalResolutionExt, paint::DrawExecutor};
-use crate::{AutoWrapMode, EditableScreen, GraphicsType, IGS_PALETTE, Palette};
+use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE};
 use icy_parser_core::{IgsCommand, LineStyleKind};
-use rayon::iter::ParallelBridge;
 
 pub struct IgsState {
     pub executor: DrawExecutor,
@@ -94,7 +93,6 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::ColorSet { pen, color } => {
-            log::info!("IGS ColorSet pen={:?} color={}", pen, color);
             let color_map = get_color_map(buf);
             let color = color_map[color as usize % color_map.len()];
             state.executor.set_color(pen, color);
@@ -311,22 +309,33 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             } else {
                 icy_parser_core::TerminalResolution::Low
             };
-            match mode {
-                icy_parser_core::InitializationType::DesktopPaletteAndAttributes => {
-                    *buf.palette_mut() = resolution.get_palette().clone();
+
+            if resolution == icy_parser_core::TerminalResolution::Low {
+                match mode {
+                    icy_parser_core::InitializationType::DesktopPaletteAndAttributes => {
+                        *buf.palette_mut() = IGS_PALETTE.clone();
+                    }
+
+                    icy_parser_core::InitializationType::DesktopPaletteOnly => {
+                        *buf.palette_mut() = IGS_DESKTOP_PALETTE.clone();
+                    }
+
+                    icy_parser_core::InitializationType::DesktopAttributesOnly => {
+                        // TODO
+                    }
+
+                    icy_parser_core::InitializationType::IgDefaultPalette => {
+                        *buf.palette_mut() = IGS_PALETTE.clone();
+                    }
+
+                    icy_parser_core::InitializationType::VdiDefaultPalette => {
+                        *buf.palette_mut() = resolution.get_palette().clone();
+                    }
+
+                    icy_parser_core::InitializationType::DesktopResolutionAndClipping => {
+                        // TODO
+                    }
                 }
-                icy_parser_core::InitializationType::DesktopPaletteOnly => {
-                    *buf.palette_mut() = resolution.get_palette().clone();
-                }
-                icy_parser_core::InitializationType::DesktopAttributesOnly => {}
-                icy_parser_core::InitializationType::IgDefaultPalette => {
-                    *buf.palette_mut() = Palette::from_slice(&IGS_PALETTE);
-                }
-                icy_parser_core::InitializationType::VdiDefaultPalette => {
-                    // TODO?
-                    *buf.palette_mut() = resolution.get_palette().clone();
-                }
-                icy_parser_core::InitializationType::DesktopResolutionAndClipping => {}
             }
         }
 
@@ -353,57 +362,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             log::info!("IGS InputCommand not implemented");
         }
 
-        IgsCommand::AskIG { query } => {
-            use icy_parser_core::AskQuery;
-
-            match query {
-                AskQuery::VersionNumber => {
-                    // Return IGS version number
-                    // Format: "IGS_VERSION\r" where IGS_VERSION is defined in igs/mod.rs
-                    log::info!(
-                        "IGS AskIG: Version query - responding with version {}",
-                        crate::palette_screen_buffer::igs::IGS_VERSION
-                    );
-                    // TODO: Send response back to host: format!("{}\r", IGS_VERSION)
-                }
-                AskQuery::CursorPositionAndMouseButton { pointer_type } => {
-                    // Return cursor position and mouse button state
-                    // Format: Three ASCII characters (add 32 to each value):
-                    //   - COLUMN number (0-79) + 32
-                    //   - ROW (0-24) + 32
-                    //   - BUTTON (0-3) + 32
-                    let caret = buf.caret_mut();
-                    let x = caret.x.min(79);
-                    let y = caret.y.min(24);
-                    log::info!(
-                        "IGS AskIG: Cursor position query (pointer_type={:?}) - column={}, row={}, button=0",
-                        pointer_type,
-                        x,
-                        y
-                    );
-                    // TODO: Send response back to host: format!("{}{}{}",
-                    //   char::from_u32((x + 32) as u32).unwrap(),
-                    //   char::from_u32((y + 32) as u32).unwrap(),
-                    //   char::from_u32(32).unwrap())
-                }
-                AskQuery::MousePositionAndButton { pointer_type } => {
-                    // Return mouse position and button state
-                    // Format: ASCII string like "420,150,1:"
-                    //   - X coordinate (pixels)
-                    //   - Y coordinate (pixels)
-                    //   - Button state (0-3)
-                    // For now, return (0,0,0) as we don't track mouse state
-                    log::info!("IGS AskIG: Mouse position query (pointer_type={:?}) - x=0, y=0, button=0", pointer_type);
-                    // TODO: Send response back to host: "0,0,0:"
-                }
-                AskQuery::CurrentResolution => {
-                    // Return current resolution
-                    // Format: "mode:" where mode: 0=low (320x200), 1=medium (640x200), 2=high (640x400)
-                    let mode = state.executor.get_terminal_resolution().resolution_id();
-                    log::info!("IGS AskIG: Resolution query - mode={}", mode);
-                    // TODO: Send response back to host: format!("{}:", mode)
-                }
-            }
+        IgsCommand::AskIG { .. } => {
+            unreachable!("Handled in terminal");
         }
 
         IgsCommand::ScreenClear { mode } => {
@@ -429,15 +389,29 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             // Update executor's terminal resolution
             state.executor.set_resolution(resolution);
 
-            // Apply palette mode if requested
-            match palette {
-                PaletteMode::NoChange => {
-                    // Keep current palette
+            if resolution == icy_parser_core::TerminalResolution::Low {
+                // Apply palette mode if requested
+                match palette {
+                    PaletteMode::NoChange => {
+                        // Keep current palette
+                    }
+                    PaletteMode::Desktop => {
+                        *buf.palette_mut() = IGS_DESKTOP_PALETTE.clone();
+                    }
+                    PaletteMode::IgDefault => {
+                        *buf.palette_mut() = IGS_PALETTE.clone();
+                    }
+                    PaletteMode::VdiDefault => {
+                        // All three modes use the same palette for now (from resolution)
+                        *buf.palette_mut() = resolution.get_palette().clone();
+                    }
                 }
-                PaletteMode::Desktop | PaletteMode::IgDefault | PaletteMode::VdiDefault => {
-                    // All three modes use the same palette for now (from resolution)
-                    *buf.palette_mut() = resolution.get_palette().clone();
-                }
+            } else if resolution == icy_parser_core::TerminalResolution::Medium {
+                // Medium resolution uses IG default palette
+                *buf.palette_mut() = ATARI_ST_MEDIUM_PALETTE.clone();
+            } else if resolution == icy_parser_core::TerminalResolution::High {
+                // High resolution uses IG default palette
+                *buf.palette_mut() = ATARI_ST_HIGH_PALETTE.clone();
             }
         }
 

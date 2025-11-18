@@ -36,10 +36,6 @@ pub fn test_igs_midres() {
             continue;
         }
 
-        if cur_entry.file_name().unwrap() != "XMAS.ig" {
-            continue;
-        }
-
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
         let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Medium));
