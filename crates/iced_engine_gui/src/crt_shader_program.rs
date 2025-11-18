@@ -396,11 +396,12 @@ impl<'a> CRTShaderProgram<'a> {
         let size: (u32, u32);
         let mut font_w = 0usize;
         let mut font_h = 0usize;
-
+        let scan_lines;
         // Check if we need to re-render based on buffer version and blink state
         let mut needs_full_render = false;
 
         if let Ok(screen) = self.term.screen.lock() {
+            scan_lines = screen.scan_lines();
             if let Some(font) = screen.get_font(0) {
                 font_w = font.size().width as usize;
                 font_h = font.size().height as usize;
@@ -527,7 +528,7 @@ impl<'a> CRTShaderProgram<'a> {
             // Always overlay the caret if visible and blinking is on
             // Caret is just an inversion overlay, no need to track changes
             if state.caret_blink.is_on() {
-                self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h);
+                self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h, scan_lines);
             }
         } else {
             // Fallback minimal buffer
@@ -551,7 +552,7 @@ impl<'a> CRTShaderProgram<'a> {
         }
     }
 
-    pub fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize) {
+    pub fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize, scan_lines: bool) {
         // Check both the caret's is_blinking property and the blink timer state
         let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
 
@@ -561,15 +562,22 @@ impl<'a> CRTShaderProgram<'a> {
                 let line_bytes = (size.0 as usize) * 4;
                 let cell_x = caret_pos.x;
                 let cell_y = caret_pos.y;
+
                 if cell_x >= 0 && cell_y >= 0 {
                     let px_x = (cell_x as usize) * font_w;
-                    let px_y = (cell_y as usize) * font_h;
-                    if px_x + font_w <= size.0 as usize && px_y + font_h <= size.1 as usize {
+                    // In scanline mode, y-position and height are doubled
+                    let px_y = if scan_lines {
+                        (cell_y as usize) * font_h * 2
+                    } else {
+                        (cell_y as usize) * font_h
+                    };
+                    let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
+                    if px_x + font_w <= size.0 as usize && px_y + actual_font_h <= size.1 as usize {
                         match caret.shape {
                             CaretShape::Bar => {
                                 // Draw a vertical bar on the left edge of the character cell
                                 let bar_width = 2.min(font_w); // 2 pixels wide or font width if smaller
-                                for row in 0..font_h {
+                                for row in 0..actual_font_h {
                                     let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                     let slice = &mut rgba_data[row_offset..row_offset + bar_width * 4];
                                     for p in slice.chunks_exact_mut(4) {
@@ -580,7 +588,7 @@ impl<'a> CRTShaderProgram<'a> {
                                 }
                             }
                             CaretShape::Block => {
-                                for row in 0..font_h {
+                                for row in 0..actual_font_h {
                                     let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                     let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
                                     for p in slice.chunks_exact_mut(4) {
@@ -591,8 +599,8 @@ impl<'a> CRTShaderProgram<'a> {
                                 }
                             }
                             CaretShape::Underline => {
-                                let start_row = font_h - 2;
-                                for row in start_row..font_h {
+                                let start_row = actual_font_h.saturating_sub(2);
+                                for row in start_row..actual_font_h {
                                     let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                     let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
                                     for p in slice.chunks_exact_mut(4) {
@@ -664,7 +672,12 @@ fn map_mouse_to_xy(
 
     let resolution = screen.get_resolution();
     let resolution_x = resolution.width as f32;
-    let resolution_y = resolution.height as f32;
+    let mut resolution_y = resolution.height as f32;
+
+    // In scanline mode, the output height is doubled
+    if screen.scan_lines() {
+        resolution_y *= 2.0;
+    }
     // 4. Aspect-fit scale in PHYSICAL space (match render())
     let avail_w = bounds.width.max(1.0);
     let avail_h = bounds.height.max(1.0);
@@ -721,7 +734,13 @@ fn map_mouse_to_cell(
     }
 
     let term_px_w = screen.get_width() as f32 * font_w;
-    let term_px_h = screen.get_height() as f32 * font_h;
+    let mut term_px_h = screen.get_height() as f32 * font_h;
+
+    // In scanline mode, each line is doubled
+    if screen.scan_lines() {
+        term_px_h *= 2.0;
+    }
+
     if term_px_w <= 0.0 || term_px_h <= 0.0 {
         return None;
     }
@@ -755,11 +774,19 @@ fn map_mouse_to_cell(
 
     // 8. Undo scaling using display_scale, not viewport width ratios
     let local_px_x = (mx - vp_x) / display_scale;
-    let local_px_y = (my - vp_y) / display_scale;
+    let mut local_px_y = (my - vp_y) / display_scale;
+
+    // In scanline mode, we need to divide y by 2 to get the actual cell position
+    let actual_font_h = if screen.scan_lines() {
+        local_px_y /= 2.0;
+        font_h
+    } else {
+        font_h
+    };
 
     // 9. Convert to cell indices
     let cx = (local_px_x / font_w).floor() as i32;
-    let cy = (local_px_y / font_h).floor() as i32;
+    let cy = (local_px_y / actual_font_h).floor() as i32;
 
     if cx < 0 || cy < 0 || cx >= screen.get_width() as i32 || cy >= screen.get_height() as i32 {
         return None;

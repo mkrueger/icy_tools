@@ -380,6 +380,7 @@ impl OutputFormat for IcyDraw {
                     size: Size::new(buf.get_width(), last_line - first_line),
                 }
                 .into(),
+                false,
             );
             writer.write_image_data(&data).unwrap();
         }

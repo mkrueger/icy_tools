@@ -3,19 +3,44 @@ use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane};
 use super::Size;
 
 impl TextBuffer {
-    pub fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+    pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         let font_size = self.get_font(0).unwrap().size();
 
         let rect = options.rect.as_rectangle_with_width(self.get_width());
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;
         let line_bytes = px_width * 4;
-        let required_size = (px_width * px_height * 4) as usize;
-        let mut pixels = vec![0u8; required_size];
+        let base_size = (px_width * px_height * 4) as usize;
 
-        self.render_to_rgba_into(options, &mut pixels, font_size, rect, px_width, px_height, line_bytes);
+        if scan_lines {
+            // Render to temporary buffer first
+            let mut pixels = vec![0u8; base_size];
+            self.render_to_rgba_into(options, &mut pixels, font_size, rect, px_width, px_height, line_bytes);
 
-        (Size::new(px_width, px_height), pixels)
+            // Double the height by copying each scanline
+            let doubled_size = base_size * 2;
+            let mut doubled_pixels = Vec::with_capacity(doubled_size);
+
+            // Process line by line for fast memory copy
+            for y in 0..px_height {
+                let row_start = (y * line_bytes) as usize;
+                let row_end = row_start + line_bytes as usize;
+
+                // Render the line once
+                let start_pos = doubled_pixels.len();
+                doubled_pixels.extend_from_slice(&pixels[row_start..row_end]);
+
+                // Copy the rendered line immediately for scanline effect
+                let end_pos = doubled_pixels.len();
+                doubled_pixels.extend_from_within(start_pos..end_pos);
+            }
+
+            (Size::new(px_width, px_height * 2), doubled_pixels)
+        } else {
+            let mut pixels = vec![0u8; base_size];
+            self.render_to_rgba_into(options, &mut pixels, font_size, rect, px_width, px_height, line_bytes);
+            (Size::new(px_width, px_height), pixels)
+        }
     }
 
     pub fn render_to_rgba_into(

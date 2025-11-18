@@ -19,6 +19,7 @@ pub struct TextScreen {
 
     pub saved_caret_pos: Position,
     pub saved_caret_state: SavedCaretState,
+    pub scan_lines: bool,
 }
 
 impl TextScreen {
@@ -32,6 +33,7 @@ impl TextScreen {
             mouse_fields: Vec::new(),
             saved_caret_pos: Position::default(),
             saved_caret_state: SavedCaretState::default(),
+            scan_lines: false,
         }
     }
 }
@@ -71,6 +73,10 @@ impl Screen for TextScreen {
         self.buffer.buffer_type
     }
 
+    fn scan_lines(&self) -> bool {
+        self.scan_lines
+    }
+
     fn ice_mode(&self) -> IceMode {
         self.buffer.ice_mode
     }
@@ -88,7 +94,7 @@ impl Screen for TextScreen {
     }
 
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
-        self.buffer.render_to_rgba(options)
+        self.buffer.render_to_rgba(options, self.scan_lines)
     }
 
     fn get_first_visible_line(&self) -> i32 {

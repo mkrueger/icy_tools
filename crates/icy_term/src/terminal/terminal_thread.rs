@@ -730,7 +730,6 @@ impl TerminalThread {
                     let buf = PaletteScreenBuffer::new(GraphicsType::IGS(res));
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
-
                 _ => {
                     *screen = Box::new(TextScreen::new(screen_mode.get_window_size())) as Box<dyn icy_engine::EditableScreen>;
                 }

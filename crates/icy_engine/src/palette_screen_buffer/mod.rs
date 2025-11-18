@@ -305,6 +305,10 @@ impl Screen for PaletteScreenBuffer {
         self.graphics_type
     }
 
+    fn scan_lines(&self) -> bool {
+        self.scan_lines
+    }
+
     fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType) {
         self.graphics_type = graphics_type;
 
