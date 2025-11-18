@@ -15,16 +15,24 @@ pub enum InitializationType {
     DesktopResolutionAndClipping = 5,
 }
 
-impl From<i32> for InitializationType {
-    fn from(value: i32) -> Self {
+impl Default for InitializationType {
+    fn default() -> Self {
+        Self::DesktopPaletteAndAttributes
+    }
+}
+
+impl TryFrom<i32> for InitializationType {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::DesktopPaletteAndAttributes,
-            1 => Self::DesktopPaletteOnly,
-            2 => Self::DesktopAttributesOnly,
-            3 => Self::IgDefaultPalette,
-            4 => Self::VdiDefaultPalette,
-            5 => Self::DesktopResolutionAndClipping,
-            _ => Self::DesktopPaletteAndAttributes,
+            0 => Ok(Self::DesktopPaletteAndAttributes),
+            1 => Ok(Self::DesktopPaletteOnly),
+            2 => Ok(Self::DesktopAttributesOnly),
+            3 => Ok(Self::IgDefaultPalette),
+            4 => Ok(Self::VdiDefaultPalette),
+            5 => Ok(Self::DesktopResolutionAndClipping),
+            _ => Err(format!("Invalid InitializationType value: {}", value)),
         }
     }
 }

@@ -25,21 +25,29 @@ pub enum MousePointerType {
     OutlinedCrossHair = 10,
 }
 
-impl From<i32> for MousePointerType {
-    fn from(value: i32) -> Self {
+impl Default for MousePointerType {
+    fn default() -> Self {
+        Self::Immediate
+    }
+}
+
+impl TryFrom<i32> for MousePointerType {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Immediate,
-            1 => Self::Polymarker,
-            2 => Self::Polymarker2,
-            3 => Self::Arrow,
-            4 => Self::HourGlass,
-            5 => Self::BumbleBee,
-            6 => Self::PointingFinger,
-            7 => Self::FlatHand,
-            8 => Self::ThinCrossHair,
-            9 => Self::ThickCrossHair,
-            10 => Self::OutlinedCrossHair,
-            _ => Self::Immediate,
+            0 => Ok(Self::Immediate),
+            1 => Ok(Self::Polymarker),
+            2 => Ok(Self::Polymarker2),
+            3 => Ok(Self::Arrow),
+            4 => Ok(Self::HourGlass),
+            5 => Ok(Self::BumbleBee),
+            6 => Ok(Self::PointingFinger),
+            7 => Ok(Self::FlatHand),
+            8 => Ok(Self::ThinCrossHair),
+            9 => Ok(Self::ThickCrossHair),
+            10 => Ok(Self::OutlinedCrossHair),
+            _ => Err(format!("Invalid MousePointerType value: {}", value)),
         }
     }
 }

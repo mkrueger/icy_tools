@@ -29,8 +29,8 @@ enum State {
     Escape,
     ReadFgColor,
     ReadBgColor,
-    ReadCursorX,
-    ReadCursorY(i32), // row position
+    ReadCursorLine,
+    ReadCursorRow(i32), // row position
     ReadInsertLineCount,
 }
 
@@ -48,44 +48,9 @@ pub struct IgsParser {
     loop_token_buffer: String,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
 
+    reverse_video: bool,
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
-/*
-static ANSI_TO_ATARAI_COLOR_MAP: [u8; 16] = [
-    0x00, 
-    0x0F, 
-    0x01, 
-    0x02,
-    0x04, 
-    0x06,
-    0x03,
-    0x05,
-    0x07,
-    0x08,
-    0x09,
-    0x0A, 
-    0x0C,
-    0x0E,
-    0x0B,
-    0x0E];*/
-
-static ANSI_TO_ATARAI_COLOR_MAP: [u8; 16] = [
-    0x00, 
-    0x01, 
-    0x02, 
-    0x03,
-    0x04, 
-    0x05,
-    0x06,
-    0x07,
-    0x08,
-    0x09,
-    0x0A,
-    0x0B, 
-    0x0C,
-    0x0D,
-    0x0E,
-    0x0F];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoopParseState {
@@ -110,6 +75,7 @@ impl IgsParser {
             loop_token_buffer: String::new(),
             reading_chain_gang: false,
             skip_next_lf: false,
+            reverse_video: false,
         }
     }
 
@@ -117,6 +83,46 @@ impl IgsParser {
         self.params.clear();
         self.current_param = 0;
         self.text_buffer.clear();
+    }
+
+    /// Parse VT52 hex color code from ASCII byte
+    #[inline]
+    fn parse_vt52_color(byte: u8) -> Option<Color> {
+        if byte <= 0x0F {
+            // ATARI ST extension
+            Some(Color::Base(byte as u8))
+        } else if byte >= b'0' && byte <= b'0' + 15 {
+            // Support for backwards compatibilility with VT52
+            let index = byte.wrapping_sub(b'0');
+            Some(Color::Base(index as u8))
+        } else {
+            None
+        }
+    }
+
+    /// Parse VT52 cursor row position from ASCII byte (1 based)
+    #[inline]
+    fn parse_cursor_row(byte: u8) -> Option<i32> {
+        /* ATARI:
+        if byte > 0 && byte <= 132 { // 132 is the max rows for ATARI ST VT52
+            Some(byte as i32)
+        } else {
+            None
+        }*/
+        // Original VT-52 would be :
+        if byte >= b' ' && byte <= b'p' { Some((byte - b' ') as i32 + 1) } else { None }
+    }
+
+    /// Parse ATARI cursor line position from ASCII byte (1 based)
+    #[inline]
+    fn parse_cursor_line(byte: u8) -> Option<i32> {
+        // ATARI:
+        /*if byte > 0 && byte <= 25 {
+            Some(byte as i32)
+        } else */
+
+        // Original VT-52 would be :
+        if byte >= b' ' && byte <= b'8' { Some((byte - b' ') as i32 + 1) } else { None }
     }
 
     fn push_current_param(&mut self) {
@@ -207,10 +213,23 @@ impl IgsParser {
                 start_angle: self.params[3],
                 end_angle: self.params[4],
             }),
-            IgsCommandType::ColorSet => self.check_parameters(sink, "ColorSet", 2, || IgsCommand::ColorSet {
-                pen: self.params[0].into(),
-                color: self.params[1] as u8,
-            }),
+            IgsCommandType::ColorSet => {
+                let pen = PenType::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "ColorSet",
+                            value: self.params.get(0).copied().unwrap_or(0) as u16,
+                            expected: Some("valid PenType (0-3)"),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    PenType::default()
+                });
+                self.check_parameters(sink, "ColorSet", 2, || IgsCommand::ColorSet {
+                    pen,
+                    color: self.params[1] as u8,
+                })
+            }
             IgsCommandType::AttributeForFills => self.check_parameters(sink, "AttributeForFills", 3, || {
                 let pattern_type = match self.params[0] {
                     0 => PatternType::Hollow,
@@ -225,11 +244,24 @@ impl IgsParser {
                     border: self.params[2] != 0,
                 }
             }),
-            IgsCommandType::TextEffects => self.check_parameters(sink, "TextEffects", 3, || IgsCommand::TextEffects {
-                effects: TextEffects::from_bits_truncate(self.params[0] as u8),
-                size: self.params[1] as u8,
-                rotation: self.params[2].into(),
-            }),
+            IgsCommandType::TextEffects => {
+                let rotation = TextRotation::try_from(self.params.get(2).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "TextEffects",
+                            value: self.params.get(2).copied().unwrap_or(0) as u16,
+                            expected: Some("valid TextRotation (0-3)"),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    TextRotation::default()
+                });
+                self.check_parameters(sink, "TextEffects", 3, || IgsCommand::TextEffects {
+                    effects: TextEffects::from_bits_truncate(self.params[0] as u8),
+                    size: self.params[1] as u8,
+                    rotation,
+                })
+            }
             IgsCommandType::FloodFill => self.check_parameters(sink, "FloodFill", 2, || IgsCommand::FloodFill {
                 x: self.params[0],
                 y: self.params[1],
@@ -244,9 +276,35 @@ impl IgsParser {
                 green: self.params[2] as u8,
                 blue: self.params[3] as u8,
             }),
-            IgsCommandType::DrawingMode => self.check_parameters(sink, "DrawingMode", 1, || IgsCommand::DrawingMode { mode: self.params[0].into() }),
+            IgsCommandType::DrawingMode => {
+                let mode = DrawingMode::try_from(self.params.get(0).copied().unwrap_or(1)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "DrawingMode",
+                            value: self.params.get(0).copied().unwrap_or(1) as u16,
+                            expected: Some("valid DrawingMode (1-4)"),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    DrawingMode::default()
+                });
+                self.check_parameters(sink, "DrawingMode", 1, || IgsCommand::DrawingMode { mode })
+            }
             IgsCommandType::HollowSet => self.check_parameters(sink, "HollowSet", 1, || IgsCommand::HollowSet { enabled: self.params[0] != 0 }),
-            IgsCommandType::Initialize => self.check_parameters(sink, "Initialize", 1, || IgsCommand::Initialize { mode: self.params[0].into() }),
+            IgsCommandType::Initialize => {
+                let mode = InitializationType::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "Initialize",
+                            value: self.params.get(0).copied().unwrap_or(0) as u16,
+                            expected: Some("valid InitializationType (0-5)"),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    InitializationType::default()
+                });
+                self.check_parameters(sink, "Initialize", 1, || IgsCommand::Initialize { mode })
+            }
             IgsCommandType::EllipticalArc => self.check_parameters(sink, "EllipticalArc", 6, || IgsCommand::EllipticalArc {
                 x: self.params[0],
                 y: self.params[1],
@@ -255,31 +313,78 @@ impl IgsParser {
                 start_angle: self.params[4],
                 end_angle: self.params[5],
             }),
-            IgsCommandType::Cursor => self.check_parameters(sink, "Cursor", 1, || IgsCommand::Cursor { mode: self.params[0].into() }),
-            IgsCommandType::ChipMusic => self.check_parameters(sink, "ChipMusic", 6, || IgsCommand::ChipMusic {
-                sound_effect: self.params[0].into(),
-                voice: self.params[1] as u8,
-                volume: self.params[2] as u8,
-                pitch: self.params[3] as u8,
-                timing: self.params[4],
-                stop_type: self.params[5] as u8,
-            }),
+            IgsCommandType::Cursor => {
+                let mode = CursorMode::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "Cursor",
+                            value: self.params.get(0).copied().unwrap_or(0) as u16,
+                            expected: Some("valid CursorMode (0-3)"),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    CursorMode::default()
+                });
+                self.check_parameters(sink, "Cursor", 1, || IgsCommand::Cursor { mode })
+            }
+            IgsCommandType::ChipMusic => {
+                let sound_effect = SoundEffect::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "ChipMusic",
+                            value: self.params.get(0).copied().unwrap_or(0) as u16,
+                            expected: Some("valid SoundEffect (0-19)"),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    SoundEffect::default()
+                });
+                self.check_parameters(sink, "ChipMusic", 6, || IgsCommand::ChipMusic {
+                    sound_effect,
+                    voice: self.params[1] as u8,
+                    volume: self.params[2] as u8,
+                    pitch: self.params[3] as u8,
+                    timing: self.params[4],
+                    stop_type: self.params[5] as u8,
+                })
+            }
             IgsCommandType::ScreenClear => self.check_parameters(sink, "ScreenClear", 1, || IgsCommand::ScreenClear { mode: self.params[0] as u8 }),
             IgsCommandType::SetResolution => self.check_parameters(sink, "SetResolution", 2, || IgsCommand::SetResolution {
                 resolution: self.params[0] as u8,
                 palette: self.params[1] as u8,
             }),
-            IgsCommandType::LineType => self.check_parameters(sink, "LineType", 3, || {
-                let kind = if self.params[0] == 1 {
-                    LineStyleKind::Polymarker(self.params[1].into())
+            IgsCommandType::LineType => {
+                let param1 = self.params.get(1).copied().unwrap_or(1);
+                let kind = if self.params.get(0).copied().unwrap_or(0) == 1 {
+                    LineStyleKind::Polymarker(PolymarkerKind::try_from(param1).unwrap_or_else(|_| {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "LineType",
+                                value: param1 as u16,
+                                expected: Some("valid PolymarkerKind (1-6)"),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        PolymarkerKind::default()
+                    }))
                 } else {
-                    LineStyleKind::Line(self.params[1].into())
+                    LineStyleKind::Line(LineKind::try_from(param1).unwrap_or_else(|_| {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "LineType",
+                                value: param1 as u16,
+                                expected: Some("valid LineKind (1-7)"),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        LineKind::default()
+                    }))
                 };
-                IgsCommand::LineStyle {
+                self.check_parameters(sink, "LineType", 3, || IgsCommand::LineStyle {
                     kind,
                     value: self.params[2] as u16,
-                }
-            }),
+                })
+            }
             IgsCommandType::PauseSeconds => self.check_parameters(sink, "PauseSeconds", 1, || IgsCommand::PauseSeconds { seconds: self.params[0] as u8 }),
             IgsCommandType::VsyncPause => self.check_parameters(sink, "VsyncPause", 1, || IgsCommand::VsyncPause { vsyncs: self.params[0] }),
             IgsCommandType::PolyLine | IgsCommandType::PolyFill => {
@@ -365,7 +470,17 @@ impl IgsParser {
                                 }
                                 Some(IgsCommand::AlterSoundEffect {
                                     play_flag: self.params[1] as u8,
-                                    sound_effect: self.params[2].into(),
+                                    sound_effect: SoundEffect::try_from(self.params[2]).unwrap_or_else(|_| {
+                                        sink.report_errror(
+                                            crate::ParseError::InvalidParameter {
+                                                command: "BellsAndWhistles:AlterSoundEffect",
+                                                value: self.params[2] as u16,
+                                                expected: Some("valid SoundEffect (0-19)"),
+                                            },
+                                            crate::ErrorLevel::Warning,
+                                        );
+                                        SoundEffect::default()
+                                    }),
                                     element_num: self.params[3] as u8,
                                     negative_flag: self.params[4] as u8,
                                     thousands: self.params[5] as u16,
@@ -401,7 +516,17 @@ impl IgsParser {
                                     );
                                 }
                                 Some(IgsCommand::RestoreSoundEffect {
-                                    sound_effect: self.params[1].into(),
+                                    sound_effect: SoundEffect::try_from(self.params[1]).unwrap_or_else(|_| {
+                                        sink.report_errror(
+                                            crate::ParseError::InvalidParameter {
+                                                command: "BellsAndWhistles:RestoreSoundEffect",
+                                                value: self.params[1] as u16,
+                                                expected: Some("valid SoundEffect (0-19)"),
+                                            },
+                                            crate::ErrorLevel::Warning,
+                                        );
+                                        SoundEffect::default()
+                                    }),
                                 })
                             }
                         }
@@ -433,7 +558,19 @@ impl IgsParser {
                         }
                         _ => {
                             // b>0-19: - Play sound effect
-                            Some(IgsCommand::BellsAndWhistles { sound_effect: cmd_id.into() })
+                            Some(IgsCommand::BellsAndWhistles {
+                                sound_effect: SoundEffect::try_from(cmd_id).unwrap_or_else(|_| {
+                                    sink.report_errror(
+                                        crate::ParseError::InvalidParameter {
+                                            command: "BellsAndWhistles",
+                                            value: cmd_id as u16,
+                                            expected: Some("valid SoundEffect (0-19)"),
+                                        },
+                                        crate::ErrorLevel::Warning,
+                                    );
+                                    SoundEffect::default()
+                                }),
+                            })
                         }
                     }
                 }
@@ -847,7 +984,20 @@ impl IgsParser {
                         0 => Some(AskQuery::VersionNumber),
                         1 => {
                             let pointer_type = if self.params.len() > 1 {
-                                MousePointerType::from(self.params[1])
+                                match MousePointerType::try_from(self.params[1]) {
+                                    Ok(pt) => pt,
+                                    Err(_) => {
+                                        sink.report_errror(
+                                            crate::ParseError::InvalidParameter {
+                                                command: "AskIG",
+                                                value: self.params[1] as u16,
+                                                expected: Some("valid MousePointerType (0-10)"),
+                                            },
+                                            crate::ErrorLevel::Warning,
+                                        );
+                                        MousePointerType::default()
+                                    }
+                                }
                             } else {
                                 MousePointerType::Immediate
                             };
@@ -855,7 +1005,20 @@ impl IgsParser {
                         }
                         2 => {
                             let pointer_type = if self.params.len() > 1 {
-                                MousePointerType::from(self.params[1])
+                                match MousePointerType::try_from(self.params[1]) {
+                                    Ok(pt) => pt,
+                                    Err(_) => {
+                                        sink.report_errror(
+                                            crate::ParseError::InvalidParameter {
+                                                command: "AskIG",
+                                                value: self.params[1] as u16,
+                                                expected: Some("valid MousePointerType (0-10)"),
+                                            },
+                                            crate::ErrorLevel::Warning,
+                                        );
+                                        MousePointerType::default()
+                                    }
+                                }
                             } else {
                                 MousePointerType::Immediate
                             };
@@ -929,9 +1092,13 @@ impl CommandParser for IgsParser {
                         0x00..=0x0F => {
                             // TOS direct foreground color codes (0x00-0x0F)
                             // 0x07 (Bell) is excluded to maintain standard ASCII compatibility
-                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
-                                ANSI_TO_ATARAI_COLOR_MAP[byte as usize],
-                            ))));
+                            let color = Color::Base(byte % 16);
+                            let sgr: SgrAttribute = if self.reverse_video {
+                                SgrAttribute::Background(color)
+                            } else {
+                                SgrAttribute::Foreground(color)
+                            };
+                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
                         } /*
                         0x09 => {
                         sink.emit(TerminalCommand::Tab);
@@ -1416,7 +1583,7 @@ impl CommandParser for IgsParser {
                             self.state = State::Default;
                         }
                         'Y' => {
-                            self.state = State::ReadCursorX;
+                            self.state = State::ReadCursorLine;
                         }
                         '3' | 'b' => {
                             self.state = State::ReadFgColor;
@@ -1452,12 +1619,12 @@ impl CommandParser for IgsParser {
                         }
                         'p' => {
                             // VT52 Reverse video
-                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::Inverse));
+                            self.reverse_video = true;
                             self.state = State::Default;
                         }
                         'q' => {
                             // VT52 Normal video
-                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::Inverse));
+                            self.reverse_video = false;
                             self.state = State::Default;
                         }
                         'v' => {
@@ -1510,39 +1677,75 @@ impl CommandParser for IgsParser {
                     }
                 }
                 State::ReadFgColor => {
-                    // VT52 foreground color uses ASCII digits/hex: '0'-'9' (0-9), 'A'-'F' or 'a'-'f' (10-15)
-                    let color = match byte {
-                        b'0'..=b'9' => byte - b'0',
-                        b'A'..=b'F' => byte - b'A' + 10,
-                        b'a'..=b'f' => byte - b'a' + 10,
-                        _ => byte, // Fallback for non-standard values
-                    };
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
-                        ANSI_TO_ATARAI_COLOR_MAP[(color as usize) % ANSI_TO_ATARAI_COLOR_MAP.len()],
-                    ))));
+                    if let Some(color) = Self::parse_vt52_color(byte) {
+                        let sgr = if self.reverse_video {
+                            SgrAttribute::Background(color)
+                        } else {
+                            SgrAttribute::Foreground(color)
+                        };
+                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
+                    } else {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "VT52 Foreground Color",
+                                value: byte as u16,
+                                expected: Some("valid color code (0x00-0x0F)"),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                    }
                     self.state = State::Default;
                 }
+
                 State::ReadBgColor => {
-                    // VT52 background color uses ASCII digits/hex: '0'-'9' (0-9), 'A'-'F' or 'a'-'f' (10-15)
-                    let color = match byte {
-                        b'0'..=b'9' => byte - b'0',
-                        b'A'..=b'F' => byte - b'A' + 10,
-                        b'a'..=b'f' => byte - b'a' + 10,
-                        _ => byte, // Fallback for non-standard values
-                    };
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
-                        ANSI_TO_ATARAI_COLOR_MAP[(color as usize) % ANSI_TO_ATARAI_COLOR_MAP.len()],
-                    ))));
+                    if let Some(color) = Self::parse_vt52_color(byte) {
+                        let sgr = if self.reverse_video {
+                            SgrAttribute::Foreground(color)
+                        } else {
+                            SgrAttribute::Background(color)
+                        };
+                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
+                    } else {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "VT52 Background Color",
+                                value: byte as u16,
+                                expected: Some("valid color code (0x00-0x0F)"),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                    }
                     self.state = State::Default;
                 }
-                State::ReadCursorX => {
-                    let row = (byte.wrapping_sub(32)) as i32;
-                    self.state = State::ReadCursorY(row);
+
+                State::ReadCursorLine => {
+                    if let Some(line) = Self::parse_cursor_line(byte) {
+                        self.state = State::ReadCursorRow(line);
+                    } else {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "VT52 Cursor Position (Column)",
+                                value: byte as u16,
+                                expected: Some("valid position byte (>= 32)"),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        self.state = State::Default;
+                    }
                 }
-                State::ReadCursorY(row) => {
-                    let col = (byte.wrapping_sub(32)) as i32;
-                    // VT52 uses 0-based coordinates, but CsiCursorPosition uses 1-based
-                    sink.emit(TerminalCommand::CsiCursorPosition((row + 1) as u16, (col + 1) as u16));
+                State::ReadCursorRow(row) => {
+                    if let Some(col) = Self::parse_cursor_row(byte) {
+                        sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
+                    } else {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "VT52 Cursor Position (Row)",
+                                value: byte as u16,
+                                expected: Some("valid position byte (>= 32)"),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                    }
                     self.state = State::Default;
                 }
                 State::ReadInsertLineCount => {

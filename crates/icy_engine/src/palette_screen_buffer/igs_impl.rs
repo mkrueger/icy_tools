@@ -1,5 +1,5 @@
 use super::igs::paint::DrawExecutor;
-use crate::{AutoWrapMode, EditableScreen};
+use crate::{AutoWrapMode, EditableScreen, GraphicsType};
 use icy_parser_core::{IgsCommand, LineStyleKind};
 
 pub struct IgsState {
@@ -14,7 +14,10 @@ impl IgsState {
     }
 }
 
+static IGS_LOW_COLOR_MAP: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
+
 fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: IgsCommand) {
+    println!("Executing IGS command: {:?}", cmd);
     match cmd {
         IgsCommand::Box { x1, y1, x2, y2, rounded } => {
             if rounded {
@@ -76,6 +79,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::ColorSet { pen, color } => {
             log::info!("IGS ColorSet pen={:?} color={}", pen, color);
+            let color = IGS_LOW_COLOR_MAP[color as usize % IGS_LOW_COLOR_MAP.len()];
+            println!("Mapped color index: {}", color);
             state.executor.set_color(pen, color);
         }
 
@@ -196,6 +201,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             let r = (red * 34) as u8;
             let g = (green * 34) as u8;
             let b = (blue * 34) as u8;
+            let pen = IGS_LOW_COLOR_MAP[pen as usize % IGS_LOW_COLOR_MAP.len()];
             buf.palette_mut().set_color(pen as u32, crate::Color::new(r, g, b));
         }
 
@@ -363,32 +369,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         IgsCommand::ScreenClear { mode } => {
             // Mode 5 is "Quick VT52 reset" which should reset colors to default
             if mode == 5 {
-                // Set default Atari ST palette (16 colors, 3-bit RGB)
-                // Standard ST palette: White, Black, Red, Green, Blue, Cyan, Black, Yellow, ...
-                let default_colors: [(i32, i32, i32); 16] = [
-                    (7, 7, 7), // 0: White
-                    (0, 0, 0), // 1: Black
-                    (7, 0, 0), // 2: Red
-                    (0, 7, 0), // 3: Green
-                    (0, 0, 7), // 4: Blue
-                    (0, 7, 7), // 5: Cyan
-                    (7, 0, 7), // 6: Magenta
-                    (7, 7, 0), // 7: Yellow
-                    (5, 5, 5), // 8: Light Gray
-                    (3, 3, 3), // 9: Dark Gray
-                    (7, 3, 3), // 10: Light Red
-                    (3, 7, 3), // 11: Light Green
-                    (3, 3, 7), // 12: Light Blue
-                    (3, 7, 7), // 13: Light Cyan
-                    (7, 3, 7), // 14: Light Magenta
-                    (7, 7, 3), // 15: Light Yellow
-                ];
-
-                for (i, (r, g, b)) in default_colors.iter().enumerate() {
-                    let r8 = (r * 34) as u8;
-                    let g8 = (g * 34) as u8;
-                    let b8 = (b * 34) as u8;
-                    buf.palette_mut().set_color(i as u32, crate::Color::new(r8, g8, b8));
+                if let GraphicsType::IGS(term) = buf.graphics_type() {
+                    *buf.palette_mut() = term.get_palette().clone();
                 }
             }
 
@@ -514,11 +496,13 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // IGS-specific color commands (ESC b/c)
         IgsCommand::SetForeground { color } => {
-            buf.caret_mut().set_foreground(color as u32);
+            buf.caret_mut()
+                .set_foreground(IGS_LOW_COLOR_MAP[color as usize % IGS_LOW_COLOR_MAP.len()] as u32);
         }
 
         IgsCommand::SetBackground { color } => {
-            buf.caret_mut().set_background(color as u32);
+            buf.caret_mut()
+                .set_background(IGS_LOW_COLOR_MAP[color as usize % IGS_LOW_COLOR_MAP.len()] as u32);
         }
     }
 }

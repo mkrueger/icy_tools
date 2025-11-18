@@ -46,14 +46,22 @@ pub enum TextRotation {
     Degrees270 = 3,
 }
 
-impl From<i32> for TextRotation {
-    fn from(value: i32) -> Self {
+impl Default for TextRotation {
+    fn default() -> Self {
+        Self::Degrees0
+    }
+}
+
+impl TryFrom<i32> for TextRotation {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Degrees0,
-            1 => Self::Degrees90,
-            2 => Self::Degrees180,
-            3 => Self::Degrees270,
-            _ => Self::Degrees0,
+            0 => Ok(Self::Degrees0),
+            1 => Ok(Self::Degrees90),
+            2 => Ok(Self::Degrees180),
+            3 => Ok(Self::Degrees270),
+            _ => Err(format!("Invalid TextRotation value: {}", value)),
         }
     }
 }

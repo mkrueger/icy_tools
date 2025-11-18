@@ -26,29 +26,6 @@ impl CommandSink for TestSink {
     }
 }
 
-// ASCII control codes
-#[test]
-fn test_vt52_bell() {
-    let mut parser = IgsParser::new();
-    let mut sink = TestSink::new();
-
-    parser.parse(b"\x07", &mut sink);
-
-    assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::Bell));
-}
-
-#[test]
-fn test_vt52_tab() {
-    let mut parser = IgsParser::new();
-    let mut sink = TestSink::new();
-
-    parser.parse(b"\x09", &mut sink);
-
-    assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::Tab));
-}
-
 #[test]
 fn test_vt52_linefeed() {
     let mut parser = IgsParser::new();
@@ -236,29 +213,6 @@ fn test_vt52_restore_cursor() {
 
     assert_eq!(sink.commands.len(), 1);
     assert!(matches!(sink.commands[0], TerminalCommand::CsiRestoreCursorPosition));
-}
-
-// Video modes - VT-52 uses DecPrivateMode::Inverse
-#[test]
-fn test_vt52_reverse_video() {
-    let mut parser = IgsParser::new();
-    let mut sink = TestSink::new();
-
-    parser.parse(b"\x1Bp", &mut sink);
-
-    assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::Inverse)));
-}
-
-#[test]
-fn test_vt52_normal_video() {
-    let mut parser = IgsParser::new();
-    let mut sink = TestSink::new();
-
-    parser.parse(b"\x1Bq", &mut sink);
-
-    assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::Inverse)));
 }
 
 // Wrapping

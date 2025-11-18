@@ -65,6 +65,7 @@ pub struct TerminalState {
     pub blink_attribute_font_slot: usize,
     pub high_intensity_blink_attribute_font_slot: usize,
     pub cleared_screen: bool,
+    pub cr_is_if: bool, // that basically skips /r
     tab_stops: Vec<i32>,
     baud_rate: BaudEmulation,
 }
@@ -116,6 +117,7 @@ impl TerminalState {
             blink_attribute_font_slot: 0,
             high_intensity_blink_attribute_font_slot: 0,
             cleared_screen: false,
+            cr_is_if: false,
         };
         ret.reset_tabs();
         ret

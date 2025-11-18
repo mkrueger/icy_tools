@@ -4,24 +4,31 @@ use super::PolymarkerKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineKind {
     /// Solid line
-    Solid = 0,
+    Solid = 1,
     /// Long dash line
-    LongDash = 1,
+    LongDash = 2,
     /// Dotted line
-    Dotted = 2,
+    Dotted = 3,
     /// Dash-dot line
-    DashDot = 3,
+    DashDot = 4,
     /// Dashed line
-    Dashed = 4,
+    Dashed = 5,
     /// Dash-dot-dot line
-    DashDotDot = 5,
+    DashDotDot = 6,
     /// User defined line
-    UserDefined = 6,
+    UserDefined = 7,
+}
+
+impl Default for LineKind {
+    fn default() -> Self {
+        Self::Solid
+    }
 }
 
 impl LineKind {
     /// Get the line style index used in IGS patterns
     pub fn get_mask(&self, user_mask: u16) -> u16 {
+        println!("Getting mask for line kind {:?} with user mask {:04X}", self, user_mask);
         match self {
             LineKind::Solid => 0xFFFF,
             LineKind::LongDash => 0xFFF0,
@@ -34,17 +41,19 @@ impl LineKind {
     }
 }
 
-impl From<i32> for LineKind {
-    fn from(value: i32) -> Self {
+impl TryFrom<i32> for LineKind {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Solid,
-            1 => Self::LongDash,
-            2 => Self::Dotted,
-            3 => Self::DashDot,
-            4 => Self::Dashed,
-            5 => Self::DashDotDot,
-            6 => Self::UserDefined,
-            _ => Self::Solid,
+            1 => Ok(Self::Solid),
+            2 => Ok(Self::LongDash),
+            3 => Ok(Self::Dotted),
+            4 => Ok(Self::DashDot),
+            5 => Ok(Self::Dashed),
+            6 => Ok(Self::DashDotDot),
+            7 => Ok(Self::UserDefined),
+            _ => Err(format!("Invalid LineKind value: {}", value)),
         }
     }
 }

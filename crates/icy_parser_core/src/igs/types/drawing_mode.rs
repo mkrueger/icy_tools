@@ -11,14 +11,22 @@ pub enum DrawingMode {
     ReverseTransparent = 4,
 }
 
-impl From<i32> for DrawingMode {
-    fn from(value: i32) -> Self {
+impl Default for DrawingMode {
+    fn default() -> Self {
+        Self::Replace
+    }
+}
+
+impl TryFrom<i32> for DrawingMode {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            1 => Self::Replace,
-            2 => Self::Transparent,
-            3 => Self::Xor,
-            4 => Self::ReverseTransparent,
-            _ => Self::Replace,
+            1 => Ok(Self::Replace),
+            2 => Ok(Self::Transparent),
+            3 => Ok(Self::Xor),
+            4 => Ok(Self::ReverseTransparent),
+            _ => Err(format!("Invalid DrawingMode value: {}", value)),
         }
     }
 }

@@ -57,4 +57,12 @@ impl TerminalResolution {
             TerminalResolution::High => 2,
         }
     }
+
+    pub fn get_palette(&self) -> &crate::Palette {
+        match self {
+            TerminalResolution::Low => &crate::palette_handling::ATARI_ST_LOW_PALETTE,
+            TerminalResolution::Medium => &crate::palette_handling::ATARI_ST_MEDIUM_PALETTE,
+            TerminalResolution::High => &crate::palette_handling::ATARI_ST_HIGH_PALETTE,
+        }
+    }
 }

@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, IgsCommand, IgsParser, TerminalCommand};
+use icy_parser_core::{Color, CommandParser, CommandSink, IgsCommand, IgsParser, SgrAttribute, TerminalCommand};
 
 mod load;
 
@@ -176,14 +176,17 @@ fn test_igs_vt52_set_foreground_color() {
     let mut parser = IgsParser::new();
     let mut sink = TestSink::new();
 
-    parser.parse(b"\x1Bb\x07", &mut sink);
+    parser.parse(b"\x1Bb\x01", &mut sink);
 
-    assert_eq!(sink.igs_commands.len(), 1);
-    match &sink.igs_commands[0] {
-        IgsCommand::SetForeground { color } => {
-            assert_eq!(*color, 7);
+    assert_eq!(sink.terminal_commands.len(), 1);
+    match &sink.terminal_commands[0] {
+        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(color)) => {
+            assert_eq!(*color, Color::Base(1));
         }
-        _ => panic!("Expected SetForeground command"),
+        _ => panic!(
+            "Expected CsiSelectGraphicRendition with Foreground attribute, got {:?}",
+            sink.terminal_commands[0]
+        ),
     }
 }
 

@@ -56,10 +56,10 @@ impl DrawExecutor {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
         Self {
             terminal_resolution,
-            polymarker_color: 1,
-            line_color: 1,
-            fill_color: 1,
-            text_color: 1,
+            polymarker_color: 0xFF,
+            line_color: 0xFF,
+            fill_color: 0xFF,
+            text_color: 0xFF,
             cur_position: Position::new(0, 0),
             text_effects: TextEffects::NORMAL,
             text_size: 9,
@@ -822,10 +822,10 @@ impl DrawExecutor {
 
         self.screen_memory_size = Size::new(width, height);
         self.screen_memory.clear();
-
+        let max_colors = self.terminal_resolution.get_max_colors();
         for y in 0..height {
             for x in 0..width {
-                let color = self.get_pixel(buf, start_x + x, start_y + y);
+                let color = self.get_pixel(buf, start_x + x, start_y + y) % max_colors as u8;
                 self.screen_memory.push(color);
             }
         }
@@ -1015,6 +1015,7 @@ impl DrawExecutor {
     }
 
     pub fn set_color(&mut self, pen: PenType, color: u8) {
+        println!("Set color {:?} to {}", pen, color);
         match pen {
             PenType::Polymarker => self.polymarker_color = color,
             PenType::Line => self.line_color = color,

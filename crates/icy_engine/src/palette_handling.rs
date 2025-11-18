@@ -1211,106 +1211,6 @@ pub const ATARI_XEP80_PALETTE: [Color; 16] = [
     }, // unused
 ];
 
-pub const IGS_SYSTEM_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xEE,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x00,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0x66,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x66,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0xEE,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0x66,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0x66,
-        g: 0xEE,
-        b: 0xEE,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0xEE,
-        b: 0x66,
-    },
-    Color {
-        name: None,
-        r: 0xEE,
-        g: 0x66,
-        b: 0xEE,
-    },
-];
-
-
 pub const EGA_PALETTE: [Color; 64] = [
     Color {
         name: None,
@@ -4106,8 +4006,8 @@ pub const VIEWDATA_PALETTE: [Color; 16] = [
 
 lazy_static::lazy_static! {
     #[rustfmt::skip]
-    pub static ref ATARI_ST_PALETTE: Palette = Palette::from_slice(&[
-        //  Name                R     G     B      RGB Values
+    pub static ref ATARI_ST_LOW_PALETTE: Palette = Palette::from_slice(&[
+        //                 Name                          R        G        B          RGB Values
         Color { name: Some("White".to_string()),         r: 0xEE, g: 0xEE, b: 0xEE }, //  0: White         (7,7,7)
         Color { name: Some("Red".to_string()),           r: 0xEE, g: 0x00, b: 0x00 }, //  1: Red           (7,0,0)
         Color { name: Some("Green".to_string()),         r: 0x00, g: 0xEE, b: 0x00 }, //  2: Green         (0,7,0)
@@ -4125,6 +4025,23 @@ lazy_static::lazy_static! {
         Color { name: Some("Light Cyan".to_string()),    r: 0x66, g: 0xEE, b: 0xEE }, // 14: Light Cyan    (3,7,7)
         Color { name: Some("Black".to_string()),         r: 0x00, g: 0x00, b: 0x00 }, // 15: Black         (0,0,0)
     ]);
+
+    #[rustfmt::skip]
+    pub static ref ATARI_ST_MEDIUM_PALETTE: Palette = Palette::from_slice(&[
+        //                 Name                          R        G        B          RGB Values
+        Color { name: Some("White".to_string()),         r: 0xEE, g: 0xEE, b: 0xEE }, //  0: White         (7,7,7)
+        Color { name: Some("Red".to_string()),           r: 0xEE, g: 0x00, b: 0x00 }, //  1: Red           (7,0,0)
+        Color { name: Some("Green".to_string()),         r: 0x00, g: 0xEE, b: 0x00 }, //  2: Green         (0,7,0)
+        Color { name: Some("Black".to_string()),         r: 0x00, g: 0x00, b: 0x00 }, //  3: Black         (0,0,0)
+    ]);
+
+    #[rustfmt::skip]
+    pub static ref ATARI_ST_HIGH_PALETTE: Palette = Palette::from_slice(&[
+        //                 Name                          R        G        B          RGB Values
+        Color { name: Some("White".to_string()),         r: 0xEE, g: 0xEE, b: 0xEE }, //  0: White         (7,7,7)
+        Color { name: Some("Black".to_string()),         r: 0x00, g: 0x00, b: 0x00 }, //  1: Black         (0,0,0)
+    ]);
+
 }
 macro_rules! amiga_color {
     ($r:expr, $g:expr, $b:expr) => {

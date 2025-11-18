@@ -11,14 +11,22 @@ pub enum PenType {
     Text = 3,
 }
 
-impl From<i32> for PenType {
-    fn from(value: i32) -> Self {
+impl Default for PenType {
+    fn default() -> Self {
+        Self::Polymarker
+    }
+}
+
+impl TryFrom<i32> for PenType {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Polymarker,
-            1 => Self::Line,
-            2 => Self::Fill,
-            3 => Self::Text,
-            _ => Self::Polymarker,
+            0 => Ok(Self::Polymarker),
+            1 => Ok(Self::Line),
+            2 => Ok(Self::Fill),
+            3 => Ok(Self::Text),
+            _ => Err(format!("Invalid PenType value: {}", value)),
         }
     }
 }

@@ -1,6 +1,9 @@
 use icy_engine::{PaletteScreenBuffer, ScreenSink};
 use icy_parser_core::{CommandParser, IgsParser};
-use std::{fs::{self}, path::Path};
+use std::{
+    fs::{self},
+    path::Path,
+};
 
 use crate::compare_output;
 
@@ -15,6 +18,7 @@ pub fn test_vt52() {
         log::info!("Testing VT52 file: {:?}", cur_entry);
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
+        // Use Low resolution (40x25, 16 colors) for VT52 files as they were designed for Atari ST Low mode
         let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Medium));
 
         let mut parser: IgsParser = IgsParser::new();
@@ -30,7 +34,7 @@ pub fn test_vt52() {
 #[test]
 pub fn color_test() {
     crate::init_logging();
-    
+
     let data = fs::read("tests/output/vt52/2st.st").unwrap();
 
     // Test Low resolution

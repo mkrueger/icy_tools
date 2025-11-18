@@ -43,30 +43,38 @@ pub enum SoundEffect {
     Landing = 19,
 }
 
-impl From<i32> for SoundEffect {
-    fn from(value: i32) -> Self {
+impl Default for SoundEffect {
+    fn default() -> Self {
+        Self::AlienInvasion
+    }
+}
+
+impl TryFrom<i32> for SoundEffect {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => SoundEffect::AlienInvasion,
-            1 => SoundEffect::RedAlert,
-            2 => SoundEffect::Gunshot,
-            3 => SoundEffect::Laser1,
-            4 => SoundEffect::Jackhammer,
-            5 => SoundEffect::Teleport,
-            6 => SoundEffect::Explosion,
-            7 => SoundEffect::Laser2,
-            8 => SoundEffect::Longbell,
-            9 => SoundEffect::Surprise,
-            10 => SoundEffect::RadioBroadcast,
-            11 => SoundEffect::BounceBall,
-            12 => SoundEffect::EerieSound,
-            13 => SoundEffect::HarleyMotorcycle,
-            14 => SoundEffect::Helicopter,
-            15 => SoundEffect::SteamLocomotive,
-            16 => SoundEffect::Wave,
-            17 => SoundEffect::RobotWalk,
-            18 => SoundEffect::PassingPlane,
-            19 => SoundEffect::Landing,
-            _ => SoundEffect::AlienInvasion, // Default fallback for invalid values
+            0 => Ok(SoundEffect::AlienInvasion),
+            1 => Ok(SoundEffect::RedAlert),
+            2 => Ok(SoundEffect::Gunshot),
+            3 => Ok(SoundEffect::Laser1),
+            4 => Ok(SoundEffect::Jackhammer),
+            5 => Ok(SoundEffect::Teleport),
+            6 => Ok(SoundEffect::Explosion),
+            7 => Ok(SoundEffect::Laser2),
+            8 => Ok(SoundEffect::Longbell),
+            9 => Ok(SoundEffect::Surprise),
+            10 => Ok(SoundEffect::RadioBroadcast),
+            11 => Ok(SoundEffect::BounceBall),
+            12 => Ok(SoundEffect::EerieSound),
+            13 => Ok(SoundEffect::HarleyMotorcycle),
+            14 => Ok(SoundEffect::Helicopter),
+            15 => Ok(SoundEffect::SteamLocomotive),
+            16 => Ok(SoundEffect::Wave),
+            17 => Ok(SoundEffect::RobotWalk),
+            18 => Ok(SoundEffect::PassingPlane),
+            19 => Ok(SoundEffect::Landing),
+            _ => Err(format!("Invalid SoundEffect value: {}", value)),
         }
     }
 }

@@ -10,7 +10,11 @@ pub use igs::TerminalResolution;
 use igs_impl::IgsState;
 
 use crate::{
-    ATARI_ST_PALETTE, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane, bgi::{Bgi, DEFAULT_BITFONT, MouseField}, palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE}
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette,
+    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    terminal_state,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -108,7 +112,7 @@ impl PaletteScreenBuffer {
 
         // Set appropriate default palette based on graphics type
         let palette = match graphics_type {
-            GraphicsType::IGS(_) => ATARI_ST_PALETTE.clone(),
+            GraphicsType::IGS(res) => res.get_palette().clone(),
             _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
         };
 
@@ -117,14 +121,15 @@ impl PaletteScreenBuffer {
             _ => 256, // No color limit for other graphics types
         };
 
+        let mut terminal_state = TerminalState::from(Size::new(char_cols, char_rows));
+
         // Set appropriate default caret colors based on graphics type
         let mut caret = Caret::default();
         match graphics_type {
             GraphicsType::IGS(_) => {
-                // IGS palette: 0=White, 1=Black
-                // Set foreground to white (0) and background to black (1) for proper contrast
-                caret.attribute.set_foreground(0);
-                caret.attribute.set_background(1);
+                caret.attribute.set_foreground(1);
+                caret.attribute.set_background(0);
+                terminal_state.cr_is_if = true;
             }
             _ => {
                 // Standard VGA: 0=Black, 7=White
@@ -141,7 +146,7 @@ impl PaletteScreenBuffer {
             palette,
             caret,
             ice_mode: IceMode::Unlimited,
-            terminal_state: TerminalState::from(Size::new(char_cols, char_rows)),
+            terminal_state,
             buffer_type: BufferType::CP437,
             hyperlinks: Vec::new(),
             selection_mask: SelectionMask::default(),
@@ -176,9 +181,8 @@ impl PaletteScreenBuffer {
         if ch.attribute.is_bold() && fg_color < 8 {
             fg_color += 8;
         }
-        fg_color %= self.max_colors; // Apply color limit
 
-        let bg_color = (ch.attribute.get_background() as u32) % self.max_colors; // Apply color limit
+        let bg_color = ch.attribute.get_background() as u32; // Apply color limit
 
         let font = if let Some(font) = self.get_font(ch.get_font_page()) {
             font
@@ -194,9 +198,9 @@ impl PaletteScreenBuffer {
 
         // Get glyph data from font
         let glyph = font.get_glyph(ch.ch);
-
         // Render the character
         let font_size = font.size();
+
         // let glyph_size = self.font.size();
         for row in 0..font_size.height {
             for col in 0..font_size.width {
@@ -216,6 +220,7 @@ impl PaletteScreenBuffer {
                         false
                     }
                 } else {
+                    log::error!("NO GLYPH for char '{}'", ch.ch);
                     false
                 };
 
@@ -306,7 +311,7 @@ impl Screen for PaletteScreenBuffer {
         let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * self.pixel_size.height as usize * 4);
         let pal = self.palette().clone();
         for i in &self.screen {
-            let (r, g, b) = pal.get_rgb(*i as u32);
+            let (r, g, b) = pal.get_rgb((*i as u32) % self.max_colors);
             pixels.push(r);
             pixels.push(g);
             pixels.push(b);

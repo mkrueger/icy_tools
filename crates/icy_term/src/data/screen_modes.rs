@@ -1,7 +1,8 @@
 use std::fmt::{self, Display};
 
 use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, ATARI_ST_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, EditableScreen, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE
+    ATARI, ATARI_DEFAULT_PALETTE, ATARI_ST_LOW_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED,
+    C64_UNSHIFTED, CP437, EditableScreen, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE,
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -283,7 +284,6 @@ impl ScreenMode {
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
             }
             ScreenMode::AtariST(_x, _igs) => {
-                *screen.palette_mut() = ATARI_ST_PALETTE.clone();
                 *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
             }
         }

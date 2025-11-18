@@ -282,10 +282,16 @@ impl<'a> CommandSink for ScreenSink<'a> {
         match cmd {
             // Basic control characters
             TerminalCommand::CarriageReturn => {
-                self.screen.cr();
+                if self.screen.terminal_state().cr_is_if {
+                    self.screen.lf();
+                } else {
+                    self.screen.cr();
+                }
             }
             TerminalCommand::LineFeed => {
-                self.screen.lf();
+                if !self.screen.terminal_state().cr_is_if {
+                    self.screen.lf();
+                }
             }
             TerminalCommand::Backspace => {
                 self.screen.bs();

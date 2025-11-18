@@ -11,14 +11,22 @@ pub enum CursorMode {
     NonDestructiveBackspace = 3,
 }
 
-impl From<i32> for CursorMode {
-    fn from(value: i32) -> Self {
+impl Default for CursorMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+impl TryFrom<i32> for CursorMode {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Off,
-            1 => Self::On,
-            2 => Self::DestructiveBackspace,
-            3 => Self::NonDestructiveBackspace,
-            _ => Self::Off,
+            0 => Ok(Self::Off),
+            1 => Ok(Self::On),
+            2 => Ok(Self::DestructiveBackspace),
+            3 => Ok(Self::NonDestructiveBackspace),
+            _ => Err(format!("Invalid CursorMode value: {}", value)),
         }
     }
 }
