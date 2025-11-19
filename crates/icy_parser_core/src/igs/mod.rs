@@ -42,22 +42,12 @@ pub struct IgsParser {
 
     loop_command: String,
     loop_parameters: Vec<Vec<String>>,
-    _loop_param_count: i32,
-    _loop_state: LoopParseState,
     loop_tokens: Vec<String>,
     loop_token_buffer: String,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
 
     reverse_video: bool,
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LoopParseState {
-    ReadingInitialParams,
-    _ReadingCommand,
-    _ReadingCount,
-    _ReadingParameters,
 }
 
 impl IgsParser {
@@ -69,8 +59,6 @@ impl IgsParser {
             text_buffer: String::new(),
             loop_command: String::new(),
             loop_parameters: Vec::new(),
-            _loop_param_count: 0,
-            _loop_state: LoopParseState::ReadingInitialParams,
             loop_tokens: Vec::new(),
             loop_token_buffer: String::new(),
             reading_chain_gang: false,
@@ -130,937 +118,98 @@ impl IgsParser {
         self.current_param = 0;
     }
 
-    #[inline(always)]
-    const fn get_parameter_name(expected: i32) -> Option<&'static str> {
-        match expected {
-            0 => Some("No parameters"),
-            1 => Some("1 parameter"),
-            2 => Some("2 parameter"),
-            3 => Some("3 parameter"),
-            4 => Some("4 parameter"),
-            5 => Some("5 parameter"),
-            6 => Some("6 parameter"),
-            7 => Some("7 parameter"),
-            8 => Some("8 parameter"),
-            _ => None,
-        }
-    }
-
-    #[inline(always)]
-    fn check_parameters<F, T>(&self, sink: &mut dyn CommandSink, command: &'static str, expected: usize, cmd: F) -> Option<T>
-    where
-        F: FnOnce() -> T,
-    {
-        if self.params.len() < expected {
+    fn create_loop_command(&mut self, sink: &mut dyn CommandSink) -> Option<IgsCommand> {
+        // & from,to,step,delay,cmd,param_count,(params...)
+        if self.params.len() < 6 {
             sink.report_errror(
                 crate::ParseError::InvalidParameter {
-                    command,
+                    command: "LoopCommand",
                     value: self.params.len() as u16,
-                    expected: Self::get_parameter_name(expected as i32),
+                    expected: Some("6 parameter"),
                 },
                 crate::ErrorLevel::Error,
             );
             None
         } else {
-            if self.params.len() > expected {
-                sink.report_errror(
-                    crate::ParseError::InvalidParameter {
-                        command,
-                        value: self.params.len() as u16,
-                        expected: Self::get_parameter_name(expected as i32),
-                    },
-                    crate::ErrorLevel::Warning,
-                );
+            let from = self.params[0];
+            let to = self.params[1];
+            let step = self.params[2];
+            let delay = self.params[3];
+            let command_identifier = self.loop_command.clone();
+            let param_count = self.params[4] as u16;
+
+            let mut params_tokens: Vec<LoopParamToken> = Vec::new();
+            // Remaining numeric params are converted to tokens unless already substituted tokens in loop_parameters
+            if self.params.len() > 5 {
+                for p in &self.params[5..] {
+                    params_tokens.push(LoopParamToken::Number(*p));
+                }
             }
-            Some(cmd())
+            // Add any textual parameter tokens captured (x,y,+n etc.)
+            for token_group in &self.loop_parameters {
+                for token in token_group {
+                    match token.as_str() {
+                        ":" => params_tokens.push(LoopParamToken::GroupSeparator),
+                        "x" | "y" => params_tokens.push(LoopParamToken::Symbol(token.chars().next().unwrap())),
+                        _ => {
+                            // Check if token starts with a prefix operator (+, -, !)
+                            let has_prefix = token.starts_with('+') || token.starts_with('-') || token.starts_with('!');
+                            if !has_prefix && token.parse::<i32>().is_ok() {
+                                params_tokens.push(LoopParamToken::Number(token.parse::<i32>().unwrap()));
+                            } else {
+                                params_tokens.push(LoopParamToken::Expr(token.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut modifiers = LoopModifiers::default();
+            let original_ident = command_identifier.as_str();
+            let mut base_ident = original_ident;
+            if let Some(pos) = base_ident.find(|c| c == '|' || c == '@') {
+                let (ident_part, mod_part) = base_ident.split_at(pos);
+                base_ident = ident_part;
+                for ch in mod_part.chars() {
+                    match ch {
+                        '|' => modifiers.xor_stepping = true,
+                        '@' => modifiers.refresh_text_each_iteration = true,
+                        _ => {}
+                    }
+                }
+            }
+
+            let target = if base_ident.starts_with('>') && original_ident.ends_with('@') {
+                let inner: String = base_ident.chars().skip(1).collect();
+                let commands: Vec<char> = inner.chars().collect();
+                LoopTarget::ChainGang {
+                    raw: original_ident.to_string(),
+                    commands,
+                }
+            } else {
+                let ch = base_ident.chars().next().unwrap_or(' ');
+                LoopTarget::Single(ch)
+            };
+
+            Some(IgsCommand::Loop(LoopCommandData {
+                from,
+                to,
+                step,
+                delay,
+                target,
+                modifiers,
+                param_count,
+                params: params_tokens,
+            }))
         }
     }
 
     fn emit_command(&mut self, cmd_type: IgsCommandType, sink: &mut dyn CommandSink) {
-        let command = match cmd_type {
-            IgsCommandType::Box => self.check_parameters(sink, "Box", 5, || IgsCommand::Box {
-                x1: self.params[0],
-                y1: self.params[1],
-                x2: self.params[2],
-                y2: self.params[3],
-                rounded: self.params[4] != 0,
-            }),
-            IgsCommandType::Line => self.check_parameters(sink, "Line", 4, || IgsCommand::Line {
-                x1: self.params[0],
-                y1: self.params[1],
-                x2: self.params[2],
-                y2: self.params[3],
-            }),
-            IgsCommandType::LineDrawTo => self.check_parameters(sink, "LineDrawTo", 2, || IgsCommand::LineDrawTo {
-                x: self.params[0],
-                y: self.params[1],
-            }),
-            IgsCommandType::Circle => self.check_parameters(sink, "Circle", 3, || IgsCommand::Circle {
-                x: self.params[0],
-                y: self.params[1],
-                radius: self.params[2],
-            }),
-            IgsCommandType::Ellipse => self.check_parameters(sink, "Ellipse", 4, || IgsCommand::Ellipse {
-                x: self.params[0],
-                y: self.params[1],
-                x_radius: self.params[2],
-                y_radius: self.params[3],
-            }),
-            IgsCommandType::Arc => self.check_parameters(sink, "Arc", 5, || IgsCommand::Arc {
-                x: self.params[0],
-                y: self.params[1],
-                radius: self.params[2],
-                start_angle: self.params[3],
-                end_angle: self.params[4],
-            }),
-            IgsCommandType::ColorSet => {
-                let pen = PenType::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "ColorSet",
-                            value: self.params.get(0).copied().unwrap_or(0) as u16,
-                            expected: Some("valid PenType (0-3)"),
-                        },
-                        crate::ErrorLevel::Warning,
-                    );
-                    PenType::default()
-                });
-                self.check_parameters(sink, "ColorSet", 2, || IgsCommand::ColorSet {
-                    pen,
-                    color: self.params[1] as u8,
-                })
-            }
-            IgsCommandType::AttributeForFills => self.check_parameters(sink, "AttributeForFills", 3, || {
-                let pattern_type = match self.params[0] {
-                    0 => PatternType::Hollow,
-                    1 => PatternType::Solid,
-                    2 => PatternType::Pattern(self.params[1] as u8),
-                    3 => PatternType::Hatch(self.params[1] as u8),
-                    4 => PatternType::UserDefined(self.params[1] as u8),
-                    _ => PatternType::Solid,
-                };
-                IgsCommand::AttributeForFills {
-                    pattern_type,
-                    border: self.params[2] != 0,
-                }
-            }),
-            IgsCommandType::TextEffects => {
-                let rotation = TextRotation::try_from(self.params.get(2).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "TextEffects",
-                            value: self.params.get(2).copied().unwrap_or(0) as u16,
-                            expected: Some("valid TextRotation (0-3)"),
-                        },
-                        crate::ErrorLevel::Warning,
-                    );
-                    TextRotation::default()
-                });
-                self.check_parameters(sink, "TextEffects", 3, || IgsCommand::TextEffects {
-                    effects: TextEffects::from_bits_truncate(self.params[0] as u8),
-                    size: self.params[1] as u8,
-                    rotation,
-                })
-            }
-            IgsCommandType::FloodFill => self.check_parameters(sink, "FloodFill", 2, || IgsCommand::FloodFill {
-                x: self.params[0],
-                y: self.params[1],
-            }),
-            IgsCommandType::PolyMarker => self.check_parameters(sink, "PolyMarker", 2, || IgsCommand::PolymarkerPlot {
-                x: self.params[0],
-                y: self.params[1],
-            }),
-            IgsCommandType::SetPenColor => self.check_parameters(sink, "SetPenColor", 4, || IgsCommand::SetPenColor {
-                pen: self.params[0] as u8,
-                red: self.params[1] as u8,
-                green: self.params[2] as u8,
-                blue: self.params[3] as u8,
-            }),
-            IgsCommandType::DrawingMode => {
-                let mode = DrawingMode::try_from(self.params.get(0).copied().unwrap_or(1)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "DrawingMode",
-                            value: self.params.get(0).copied().unwrap_or(1) as u16,
-                            expected: Some("valid DrawingMode (1-4)"),
-                        },
-                        crate::ErrorLevel::Warning,
-                    );
-                    DrawingMode::default()
-                });
-                self.check_parameters(sink, "DrawingMode", 1, || IgsCommand::DrawingMode { mode })
-            }
-            IgsCommandType::HollowSet => self.check_parameters(sink, "HollowSet", 1, || IgsCommand::HollowSet { enabled: self.params[0] != 0 }),
-            IgsCommandType::Initialize => {
-                let mode = InitializationType::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "Initialize",
-                            value: self.params.get(0).copied().unwrap_or(0) as u16,
-                            expected: Some("valid InitializationType (0-5)"),
-                        },
-                        crate::ErrorLevel::Warning,
-                    );
-                    InitializationType::default()
-                });
-                self.check_parameters(sink, "Initialize", 1, || IgsCommand::Initialize { mode })
-            }
-            IgsCommandType::EllipticalArc => self.check_parameters(sink, "EllipticalArc", 6, || IgsCommand::EllipticalArc {
-                x: self.params[0],
-                y: self.params[1],
-                x_radius: self.params[2],
-                y_radius: self.params[3],
-                start_angle: self.params[4],
-                end_angle: self.params[5],
-            }),
-            IgsCommandType::Cursor => {
-                let mode = CursorMode::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "Cursor",
-                            value: self.params.get(0).copied().unwrap_or(0) as u16,
-                            expected: Some("valid CursorMode (0-3)"),
-                        },
-                        crate::ErrorLevel::Warning,
-                    );
-                    CursorMode::default()
-                });
-                self.check_parameters(sink, "Cursor", 1, || IgsCommand::Cursor { mode })
-            }
-            IgsCommandType::ChipMusic => {
-                let sound_effect = SoundEffect::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "ChipMusic",
-                            value: self.params.get(0).copied().unwrap_or(0) as u16,
-                            expected: Some("valid SoundEffect (0-19)"),
-                        },
-                        crate::ErrorLevel::Warning,
-                    );
-                    SoundEffect::default()
-                });
-                self.check_parameters(sink, "ChipMusic", 6, || IgsCommand::ChipMusic {
-                    sound_effect,
-                    voice: self.params[1] as u8,
-                    volume: self.params[2] as u8,
-                    pitch: self.params[3] as u8,
-                    timing: self.params[4],
-                    stop_type: self.params[5] as u8,
-                })
-            }
-            IgsCommandType::ScreenClear => self.check_parameters(sink, "ScreenClear", 1, || IgsCommand::ScreenClear { mode: self.params[0] as u8 }),
-            IgsCommandType::SetResolution => {
-                let resolution = TerminalResolution::try_from(self.params.get(0).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "SetResolution",
-                            value: self.params.get(0).copied().unwrap_or(0) as u16,
-                            expected: Some("resolution (0=Low, 1=Medium, 2=High)"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    TerminalResolution::default()
-                });
-                let palette = PaletteMode::try_from(self.params.get(1).copied().unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "SetResolution",
-                            value: self.params.get(1).copied().unwrap_or(0) as u16,
-                            expected: Some("palette (0=NoChange, 1=Desktop, 2=IgDefault, 3=VdiDefault)"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    PaletteMode::default()
-                });
-                self.check_parameters(sink, "SetResolution", 2, || IgsCommand::SetResolution { resolution, palette })
-            }
-            IgsCommandType::LineType => {
-                let param1 = self.params.get(1).copied().unwrap_or(1);
-                let kind = if self.params.get(0).copied().unwrap_or(0) == 1 {
-                    LineStyleKind::Polymarker(PolymarkerKind::try_from(param1).unwrap_or_else(|_| {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "LineType",
-                                value: param1 as u16,
-                                expected: Some("valid PolymarkerKind (1-6)"),
-                            },
-                            crate::ErrorLevel::Warning,
-                        );
-                        PolymarkerKind::default()
-                    }))
-                } else {
-                    LineStyleKind::Line(LineKind::try_from(param1).unwrap_or_else(|_| {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "LineType",
-                                value: param1 as u16,
-                                expected: Some("valid LineKind (1-7)"),
-                            },
-                            crate::ErrorLevel::Warning,
-                        );
-                        LineKind::default()
-                    }))
-                };
-                self.check_parameters(sink, "LineType", 3, || IgsCommand::LineStyle {
-                    kind,
-                    value: self.params[2] as u16,
-                })
-            }
-            IgsCommandType::PauseSeconds => self.check_parameters(sink, "PauseSeconds", 1, || IgsCommand::PauseSeconds { seconds: self.params[0] as u8 }),
-            IgsCommandType::VsyncPause => self.check_parameters(sink, "VsyncPause", 1, || IgsCommand::VsyncPause { vsyncs: self.params[0] }),
-            IgsCommandType::PolyLine | IgsCommandType::PolyFill => {
-                if self.params.is_empty() {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: if cmd_type == IgsCommandType::PolyLine { "PolyLine" } else { "PolyFill" },
-                            value: 0,
-                            expected: Some("1 parameter"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let count = self.params[0] as usize;
-                    let expected = 1 + count * 2;
-                    if self.params.len() < expected {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: if cmd_type == IgsCommandType::PolyLine { "PolyLine" } else { "PolyFill" },
-                                value: self.params.len() as u16,
-                                expected: None,
-                            },
-                            crate::ErrorLevel::Error,
-                        );
-                        None
-                    } else {
-                        if self.params.len() > expected {
-                            sink.report_errror(
-                                crate::ParseError::InvalidParameter {
-                                    command: if cmd_type == IgsCommandType::PolyLine { "PolyLine" } else { "PolyFill" },
-                                    value: self.params.len() as u16,
-                                    expected: None,
-                                },
-                                crate::ErrorLevel::Warning,
-                            );
-                        }
-                        let points = self.params[1..].to_vec();
-                        if cmd_type == IgsCommandType::PolyLine {
-                            Some(IgsCommand::PolyLine { points })
-                        } else {
-                            Some(IgsCommand::PolyFill { points })
-                        }
-                    }
-                }
-            }
-            IgsCommandType::BellsAndWhistles => {
-                if self.params.is_empty() {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "BellsAndWhistles",
-                            value: 0,
-                            expected: Some("1 parameter"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let cmd_id = self.params[0];
-                    match cmd_id {
-                        20 => {
-                            // b>20,play_flag,snd_num,element_num,negative_flag,thousands,hundreds:
-                            if self.params.len() < 7 {
-                                sink.report_errror(
-                                    crate::ParseError::InvalidParameter {
-                                        command: "BellsAndWhistles:AlterSoundEffect",
-                                        value: self.params.len() as u16,
-                                        expected: Some("7 parameter"),
-                                    },
-                                    crate::ErrorLevel::Error,
-                                );
-                                None
-                            } else {
-                                if self.params.len() > 7 {
-                                    sink.report_errror(
-                                        crate::ParseError::InvalidParameter {
-                                            command: "BellsAndWhistles:AlterSoundEffect",
-                                            value: self.params.len() as u16,
-                                            expected: Some("7 parameter"),
-                                        },
-                                        crate::ErrorLevel::Warning,
-                                    );
-                                }
-                                Some(IgsCommand::AlterSoundEffect {
-                                    play_flag: self.params[1] as u8,
-                                    sound_effect: SoundEffect::try_from(self.params[2]).unwrap_or_else(|_| {
-                                        sink.report_errror(
-                                            crate::ParseError::InvalidParameter {
-                                                command: "BellsAndWhistles:AlterSoundEffect",
-                                                value: self.params[2] as u16,
-                                                expected: Some("valid SoundEffect (0-19)"),
-                                            },
-                                            crate::ErrorLevel::Warning,
-                                        );
-                                        SoundEffect::default()
-                                    }),
-                                    element_num: self.params[3] as u8,
-                                    negative_flag: self.params[4] as u8,
-                                    thousands: self.params[5] as u16,
-                                    hundreds: self.params[6] as u16,
-                                })
-                            }
-                        }
-                        21 => {
-                            // b>21: - Stop all sounds
-                            Some(IgsCommand::StopAllSound)
-                        }
-                        22 => {
-                            // b>22,snd_num: - Restore sound effect
-                            if self.params.len() < 2 {
-                                sink.report_errror(
-                                    crate::ParseError::InvalidParameter {
-                                        command: "BellsAndWhistles:RestoreSoundEffect",
-                                        value: self.params.len() as u16,
-                                        expected: Some("2 parameter"),
-                                    },
-                                    crate::ErrorLevel::Error,
-                                );
-                                None
-                            } else {
-                                if self.params.len() > 2 {
-                                    sink.report_errror(
-                                        crate::ParseError::InvalidParameter {
-                                            command: "BellsAndWhistles:RestoreSoundEffect",
-                                            value: self.params.len() as u16,
-                                            expected: Some("2 parameter"),
-                                        },
-                                        crate::ErrorLevel::Warning,
-                                    );
-                                }
-                                Some(IgsCommand::RestoreSoundEffect {
-                                    sound_effect: SoundEffect::try_from(self.params[1]).unwrap_or_else(|_| {
-                                        sink.report_errror(
-                                            crate::ParseError::InvalidParameter {
-                                                command: "BellsAndWhistles:RestoreSoundEffect",
-                                                value: self.params[1] as u16,
-                                                expected: Some("valid SoundEffect (0-19)"),
-                                            },
-                                            crate::ErrorLevel::Warning,
-                                        );
-                                        SoundEffect::default()
-                                    }),
-                                })
-                            }
-                        }
-                        23 => {
-                            // b>23,count: - Set effect loops
-                            if self.params.len() < 2 {
-                                sink.report_errror(
-                                    crate::ParseError::InvalidParameter {
-                                        command: "BellsAndWhistles:SetEffectLoops",
-                                        value: self.params.len() as u16,
-                                        expected: Some("2 parameter"),
-                                    },
-                                    crate::ErrorLevel::Error,
-                                );
-                                None
-                            } else {
-                                if self.params.len() > 2 {
-                                    sink.report_errror(
-                                        crate::ParseError::InvalidParameter {
-                                            command: "BellsAndWhistles:SetEffectLoops",
-                                            value: self.params.len() as u16,
-                                            expected: Some("2 parameter"),
-                                        },
-                                        crate::ErrorLevel::Warning,
-                                    );
-                                }
-                                Some(IgsCommand::SetEffectLoops { count: self.params[1] as u32 })
-                            }
-                        }
-                        _ => {
-                            // b>0-19: - Play sound effect
-                            Some(IgsCommand::BellsAndWhistles {
-                                sound_effect: SoundEffect::try_from(cmd_id).unwrap_or_else(|_| {
-                                    sink.report_errror(
-                                        crate::ParseError::InvalidParameter {
-                                            command: "BellsAndWhistles",
-                                            value: cmd_id as u16,
-                                            expected: Some("valid SoundEffect (0-19)"),
-                                        },
-                                        crate::ErrorLevel::Warning,
-                                    );
-                                    SoundEffect::default()
-                                }),
-                            })
-                        }
-                    }
-                }
-            }
-            IgsCommandType::GraphicScaling => self.check_parameters(sink, "GraphicScaling", 1, || IgsCommand::GraphicScaling { mode: self.params[0] as u8 }),
-            IgsCommandType::GrabScreen => {
-                if self.params.len() < 2 {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "GrabScreen",
-                            value: self.params.len() as u16,
-                            expected: Some("2 parameter"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let blit_type_id = self.params[0];
-                    let mode: BlitMode = self.params[1].into();
-
-                    let operation = match blit_type_id {
-                        0 => {
-                            // Screen to screen: needs 6 params
-                            self.check_parameters(sink, "GrabScreen:ScreenToScreen", 8, || BlitOperation::ScreenToScreen {
-                                src_x1: self.params[2],
-                                src_y1: self.params[3],
-                                src_x2: self.params[4],
-                                src_y2: self.params[5],
-                                dest_x: self.params[6],
-                                dest_y: self.params[7],
-                            })
-                        }
-                        1 => {
-                            // Screen to memory: needs 4 params (6 total with blit_type_id and mode)
-                            self.check_parameters(sink, "GrabScreen:ScreenToMemory", 6, || BlitOperation::ScreenToMemory {
-                                src_x1: self.params[2],
-                                src_y1: self.params[3],
-                                src_x2: self.params[4],
-                                src_y2: self.params[5],
-                            })
-                        }
-                        2 => {
-                            // Memory to screen: needs 2 params (4 total with blit_type_id and mode)
-                            self.check_parameters(sink, "GrabScreen:MemoryToScreen", 4, || BlitOperation::MemoryToScreen {
-                                dest_x: self.params[2],
-                                dest_y: self.params[3],
-                            })
-                        }
-                        3 => {
-                            // Piece of memory to screen: needs 6 params (8 total with blit_type_id and mode)
-                            self.check_parameters(sink, "GrabScreen:PieceOfMemoryToScreen", 8, || BlitOperation::PieceOfMemoryToScreen {
-                                src_x1: self.params[2],
-                                src_y1: self.params[3],
-                                src_x2: self.params[4],
-                                src_y2: self.params[5],
-                                dest_x: self.params[6],
-                                dest_y: self.params[7],
-                            })
-                        }
-                        4 => {
-                            // Memory to memory: needs 6 params (8 total with blit_type_id and mode)
-                            self.check_parameters(sink, "GrabScreen:MemoryToMemory", 8, || BlitOperation::MemoryToMemory {
-                                src_x1: self.params[2],
-                                src_y1: self.params[3],
-                                src_x2: self.params[4],
-                                src_y2: self.params[5],
-                                dest_x: self.params[6],
-                                dest_y: self.params[7],
-                            })
-                        }
-                        _ => {
-                            sink.report_errror(
-                                crate::ParseError::InvalidParameter {
-                                    command: "GrabScreen",
-                                    value: blit_type_id as u16,
-                                    expected: Some("valid blit_type_id (0-4)"),
-                                },
-                                crate::ErrorLevel::Error,
-                            );
-                            None
-                        }
-                    };
-
-                    operation.map(|op| IgsCommand::GrabScreen { operation: op, mode })
-                }
-            }
-            IgsCommandType::WriteText => self.check_parameters(sink, "WriteText", 2, || IgsCommand::WriteText {
-                x: self.params[0],
-                y: self.params[1],
-                text: self.text_buffer.clone(),
-            }),
-            IgsCommandType::LoopCommand => {
-                // & from,to,step,delay,cmd,param_count,(params...)
-                if self.params.len() < 6 {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "LoopCommand",
-                            value: self.params.len() as u16,
-                            expected: Some("6 parameter"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let from = self.params[0];
-                    let to = self.params[1];
-                    let step = self.params[2];
-                    let delay = self.params[3];
-                    let command_identifier = self.loop_command.clone();
-                    let param_count = self.params[4] as u16;
-
-                    let mut params_tokens: Vec<LoopParamToken> = Vec::new();
-                    // Remaining numeric params are converted to tokens unless already substituted tokens in loop_parameters
-                    if self.params.len() > 5 {
-                        for p in &self.params[5..] {
-                            params_tokens.push(LoopParamToken::Number(*p));
-                        }
-                    }
-                    // Add any textual parameter tokens captured (x,y,+n etc.)
-                    for token_group in &self.loop_parameters {
-                        for token in token_group {
-                            match token.as_str() {
-                                ":" => params_tokens.push(LoopParamToken::GroupSeparator),
-                                "x" | "y" => params_tokens.push(LoopParamToken::Symbol(token.chars().next().unwrap())),
-                                _ => {
-                                    // Check if token starts with a prefix operator (+, -, !)
-                                    let has_prefix = token.starts_with('+') || token.starts_with('-') || token.starts_with('!');
-                                    if !has_prefix && token.parse::<i32>().is_ok() {
-                                        params_tokens.push(LoopParamToken::Number(token.parse::<i32>().unwrap()));
-                                    } else {
-                                        params_tokens.push(LoopParamToken::Expr(token.clone()));
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    let mut modifiers = LoopModifiers::default();
-                    let original_ident = command_identifier.as_str();
-                    let mut base_ident = original_ident;
-                    if let Some(pos) = base_ident.find(|c| c == '|' || c == '@') {
-                        let (ident_part, mod_part) = base_ident.split_at(pos);
-                        base_ident = ident_part;
-                        for ch in mod_part.chars() {
-                            match ch {
-                                '|' => modifiers.xor_stepping = true,
-                                '@' => modifiers.refresh_text_each_iteration = true,
-                                _ => {}
-                            }
-                        }
-                    }
-
-                    let target = if base_ident.starts_with('>') && original_ident.ends_with('@') {
-                        let inner: String = base_ident.chars().skip(1).collect();
-                        let commands: Vec<char> = inner.chars().collect();
-                        LoopTarget::ChainGang {
-                            raw: original_ident.to_string(),
-                            commands,
-                        }
-                    } else {
-                        let ch = base_ident.chars().next().unwrap_or(' ');
-                        LoopTarget::Single(ch)
-                    };
-
-                    Some(IgsCommand::Loop(LoopCommandData {
-                        from,
-                        to,
-                        step,
-                        delay,
-                        target,
-                        modifiers,
-                        param_count,
-                        params: params_tokens,
-                    }))
-                }
-            }
-            IgsCommandType::Noise => Some(IgsCommand::Noise { params: self.params.clone() }),
-            IgsCommandType::RoundedRectangles => self.check_parameters(sink, "RoundedRectangles", 5, || IgsCommand::RoundedRectangles {
-                x1: self.params[0],
-                y1: self.params[1],
-                x2: self.params[2],
-                y2: self.params[3],
-                fill: self.params[4] != 0,
-            }),
-            IgsCommandType::PieSlice => self.check_parameters(sink, "PieSlice", 5, || IgsCommand::PieSlice {
-                x: self.params[0],
-                y: self.params[1],
-                radius: self.params[2],
-                start_angle: self.params[3],
-                end_angle: self.params[4],
-            }),
-            IgsCommandType::ExtendedCommand => {
-                // X - Extended commands
-                if self.params.is_empty() {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "ExtendedCommand",
-                            value: 0,
-                            expected: Some("1 parameter"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let cmd_id = self.params[0];
-                    match cmd_id {
-                        0 => {
-                            // SprayPaint (id,x,y,width,height,density)
-                            self.check_parameters(sink, "ExtendedCommand:SprayPaint", 6, || IgsCommand::SprayPaint {
-                                x: self.params[1],
-                                y: self.params[2],
-                                width: self.params[3],
-                                height: self.params[4],
-                                density: self.params[5],
-                            })
-                        }
-                        1 => {
-                            // SetColorRegister
-                            self.check_parameters(sink, "ExtendedCommand:SetColorRegister", 3, || IgsCommand::SetColorRegister {
-                                register: self.params[1] as u8,
-                                value: self.params[2],
-                            })
-                        }
-                        2 => {
-                            // SetRandomRange
-                            Some(IgsCommand::SetRandomRange {
-                                params: self.params[1..].to_vec(),
-                            })
-                        }
-                        3 => {
-                            // RightMouseMacro
-                            Some(IgsCommand::RightMouseMacro {
-                                params: self.params[1..].to_vec(),
-                            })
-                        }
-                        4 => {
-                            // DefineZone: Special handling for clear (9999-9997)
-                            if self.params.len() == 2 && (9997..=9999).contains(&self.params[1]) {
-                                // Clear command or loopback toggle - no additional params needed
-                                Some(IgsCommand::DefineZone {
-                                    zone_id: self.params[1],
-                                    x1: 0,
-                                    y1: 0,
-                                    x2: 0,
-                                    y2: 0,
-                                    length: 0,
-                                    string: String::new(),
-                                })
-                            } else if self.params.len() >= 8 && !self.text_buffer.is_empty() {
-                                Some(IgsCommand::DefineZone {
-                                    zone_id: self.params[1],
-                                    x1: self.params[2],
-                                    y1: self.params[3],
-                                    x2: self.params[4],
-                                    y2: self.params[5],
-                                    length: self.params[6] as u16,
-                                    string: self.text_buffer.clone(),
-                                })
-                            } else {
-                                sink.report_errror(
-                                    crate::ParseError::InvalidParameter {
-                                        command: "ExtendedCommand:DefineZone",
-                                        value: self.params.len() as u16,
-                                        expected: Some("2 parameter (9997-9999) or 8+ parameter with text"),
-                                    },
-                                    crate::ErrorLevel::Error,
-                                );
-                                None
-                            }
-                        }
-                        5 => {
-                            // FlowControl
-                            self.check_parameters(sink, "ExtendedCommand:FlowControl", 2, || IgsCommand::FlowControl {
-                                mode: self.params[1] as u8,
-                                params: self.params[2..].to_vec(),
-                            })
-                        }
-                        6 => {
-                            // LeftMouseButton
-                            self.check_parameters(sink, "ExtendedCommand:LeftMouseButton", 2, || IgsCommand::LeftMouseButton {
-                                mode: self.params[1] as u8,
-                            })
-                        }
-                        7 => {
-                            // LoadFillPattern
-                            self.check_parameters(sink, "ExtendedCommand:LoadFillPattern", 2, || IgsCommand::LoadFillPattern {
-                                pattern: self.params[1] as u8,
-                                data: self.text_buffer.clone(),
-                            })
-                        }
-                        8 => {
-                            // RotateColorRegisters
-                            self.check_parameters(sink, "ExtendedCommand:RotateColorRegisters", 5, || IgsCommand::RotateColorRegisters {
-                                start_reg: self.params[1] as u8,
-                                end_reg: self.params[2] as u8,
-                                count: self.params[3],
-                                delay: self.params[4],
-                            })
-                        }
-                        9 => {
-                            // LoadMidiBuffer
-                            Some(IgsCommand::LoadMidiBuffer {
-                                params: self.params[1..].to_vec(),
-                            })
-                        }
-                        10 => {
-                            // SetDrawtoBegin
-                            self.check_parameters(sink, "ExtendedCommand:SetDrawtoBegin", 3, || IgsCommand::SetDrawtoBegin {
-                                x: self.params[1],
-                                y: self.params[2],
-                            })
-                        }
-                        11 => {
-                            // LoadBitblitMemory
-                            Some(IgsCommand::LoadBitblitMemory {
-                                params: self.params[1..].to_vec(),
-                            })
-                        }
-                        12 => {
-                            // LoadColorPalette
-                            Some(IgsCommand::LoadColorPalette {
-                                params: self.params[1..].to_vec(),
-                            })
-                        }
-                        _ => {
-                            sink.report_errror(
-                                crate::ParseError::InvalidParameter {
-                                    command: "ExtendedCommand",
-                                    value: cmd_id as u16,
-                                    expected: Some("valid cmd_id (0-12)"),
-                                },
-                                crate::ErrorLevel::Error,
-                            );
-                            None
-                        }
-                    }
-                }
-            }
-            IgsCommandType::EllipticalPieSlice => self.check_parameters(sink, "EllipticalPieSlice", 6, || IgsCommand::EllipticalPieSlice {
-                x: self.params[0],
-                y: self.params[1],
-                x_radius: self.params[2],
-                y_radius: self.params[3],
-                start_angle: self.params[4],
-                end_angle: self.params[5],
-            }),
-            IgsCommandType::FilledRectangle => self.check_parameters(sink, "FilledRectangle", 4, || IgsCommand::FilledRectangle {
-                x1: self.params[0],
-                y1: self.params[1],
-                x2: self.params[2],
-                y2: self.params[3],
-            }),
-            IgsCommandType::CursorMotion => {
-                // m - cursor motion
-                // IG form: direction,count
-                // ESC form previously provided x,y; map to direction/count
-                if self.params.len() < 2 {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "CursorMotion",
-                            value: self.params.len() as u16,
-                            expected: Some("2 parameter"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let a = self.params[0];
-                    let b = self.params[1];
-                    // Heuristic: if both non-zero prefer horizontal if y==0 else vertical
-                    let (direction, count) = if a != 0 && b == 0 {
-                        if a > 0 { (Direction::Right, a) } else { (Direction::Left, -a) }
-                    } else if b != 0 && a == 0 {
-                        if b > 0 { (Direction::Down, b) } else { (Direction::Up, -b) }
-                    } else {
-                        // Assume IG form already direction,count
-                        let dir = match a {
-                            0 => Direction::Up,
-                            1 => Direction::Down,
-                            2 => Direction::Left,
-                            _ => Direction::Right,
-                        };
-                        (dir, b)
-                    };
-                    Some(IgsCommand::CursorMotion { direction, count })
-                }
-            }
-            IgsCommandType::PositionCursor => self.check_parameters(sink, "PositionCursor", 2, || IgsCommand::PositionCursor {
-                x: self.params[0],
-                y: self.params[1],
-            }),
-            IgsCommandType::InverseVideo => self.check_parameters(sink, "InverseVideo", 1, || IgsCommand::InverseVideo { enabled: self.params[0] != 0 }),
-            IgsCommandType::LineWrap => self.check_parameters(sink, "LineWrap", 1, || IgsCommand::LineWrap { enabled: self.params[0] != 0 }),
-            IgsCommandType::InputCommand => self.check_parameters(sink, "InputCommand", 1, || IgsCommand::InputCommand {
-                input_type: self.params[0] as u8,
-                params: self.params[1..].to_vec(),
-            }),
-            IgsCommandType::AskIG => {
-                if self.params.is_empty() {
-                    sink.report_errror(
-                        crate::ParseError::InvalidParameter {
-                            command: "AskIG",
-                            value: 0,
-                            expected: Some("at least 1 parameter required"),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    None
-                } else {
-                    let query = match self.params[0] {
-                        0 => Some(AskQuery::VersionNumber),
-                        1 => {
-                            let pointer_type = if self.params.len() > 1 {
-                                match MousePointerType::try_from(self.params[1]) {
-                                    Ok(pt) => pt,
-                                    Err(_) => {
-                                        sink.report_errror(
-                                            crate::ParseError::InvalidParameter {
-                                                command: "AskIG",
-                                                value: self.params[1] as u16,
-                                                expected: Some("valid MousePointerType (0-10)"),
-                                            },
-                                            crate::ErrorLevel::Warning,
-                                        );
-                                        MousePointerType::default()
-                                    }
-                                }
-                            } else {
-                                MousePointerType::Immediate
-                            };
-                            Some(AskQuery::CursorPositionAndMouseButton { pointer_type })
-                        }
-                        2 => {
-                            let pointer_type = if self.params.len() > 1 {
-                                match MousePointerType::try_from(self.params[1]) {
-                                    Ok(pt) => pt,
-                                    Err(_) => {
-                                        sink.report_errror(
-                                            crate::ParseError::InvalidParameter {
-                                                command: "AskIG",
-                                                value: self.params[1] as u16,
-                                                expected: Some("valid MousePointerType (0-10)"),
-                                            },
-                                            crate::ErrorLevel::Warning,
-                                        );
-                                        MousePointerType::default()
-                                    }
-                                }
-                            } else {
-                                MousePointerType::Immediate
-                            };
-                            Some(AskQuery::MousePositionAndButton { pointer_type })
-                        }
-                        3 => Some(AskQuery::CurrentResolution),
-                        _ => {
-                            sink.report_errror(
-                                crate::ParseError::InvalidParameter {
-                                    command: "AskIG",
-                                    value: self.params[0] as u16,
-                                    expected: Some("valid query type (0-3)"),
-                                },
-                                crate::ErrorLevel::Error,
-                            );
-                            None
-                        }
-                    };
-                    query.map(|q| IgsCommand::AskIG { query: q })
-                }
-            }
+        let command = if cmd_type == IgsCommandType::LoopCommand {
+            // Special handling for Loop command to use collected tokens
+            self.create_loop_command(sink)
+        } else {
+            cmd_type.create_command(sink, &self.params, &self.text_buffer)
         };
 
         if let Some(cmd) = command {
