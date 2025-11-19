@@ -926,34 +926,25 @@ pub enum IgsCommand {
     },
 
     // IGS-specific color commands (ESC b/c are IGS extensions, not standard VT52)
-    /// Set text foreground color (ESC b)
+    /// Set text color (ESC b/c or G#c)
     ///
-    /// IGS: `\x1bb[color]` or `G#c>1,color:`
+    /// IGS: `G#c>layer,color:` where layer is 0 (background) or 1 (foreground)
+    /// VT52: `\x1bb[color]` (foreground) or `\x1bc[color]` (background)
     ///
-    /// Sets the foreground color for VT52 text.
-    ///
-    /// # Parameters
-    /// * `color` - Color register (0-15)
-    SetForeground {
-        color: u8,
-    },
-
-    /// Set text background color (ESC c)
-    ///
-    /// IGS: `\x1bc[color]` or `G#c>0,color:`
-    ///
-    /// Sets the background color for VT52 text.
+    /// Sets either the foreground or background color for VT52 text.
     ///
     /// # Parameters
+    /// * `layer` - Which color layer to modify (Background or Foreground)
     /// * `color` - Color register (0-15)
-    SetBackground {
+    SetTextColor {
+        layer: TextColorLayer,
         color: u8,
     },
 
     // VT52 additional IGS commands (not removed because they have IGS G# equivalents)
     /// Delete lines (ESC d)
     ///
-    /// IGS: `G#d>count:` or `\x1bd[count]`
+    /// IGS: `G#d>count:`
     ///
     /// Deletes specified number of lines starting at cursor.
     /// Lines below scroll up to fill the gap.
@@ -966,7 +957,7 @@ pub enum IgsCommand {
 
     /// Insert lines (ESC i)
     ///
-    /// IGS: `G#i>mode,count:` or `\x1bi[count]`
+    /// IGS: `G#i>mode,count:`
     ///
     /// Inserts blank lines at cursor position.
     /// Mode parameter is only present in IG form; ESC form omits it.
@@ -993,7 +984,7 @@ pub enum IgsCommand {
 
     /// Cursor motion (ESC m)
     ///
-    /// IGS: `G#m>direction,count:` or `\x1bm[x],[y]`
+    /// IGS: `G#m>direction,count:`
     ///
     /// Moves cursor by specified amount in given direction.
     /// Two encodings exist; unified here. For IG form use direction/count.
@@ -1458,8 +1449,13 @@ impl fmt::Display for IgsCommand {
                 }
                 write!(f, ":")
             }
-            IgsCommand::SetForeground { color } => write!(f, "\x1bb{}", *color as u8 as char),
-            IgsCommand::SetBackground { color } => write!(f, "\x1bc{}", *color as u8 as char),
+            IgsCommand::SetTextColor { layer, color } => {
+                let escape_char = match layer {
+                    TextColorLayer::Foreground => 'b',
+                    TextColorLayer::Background => 'c',
+                };
+                write!(f, "\x1b{}{}", escape_char, *color as u8 as char)
+            }
             IgsCommand::DeleteLine { count } => write!(f, "\x1bd{}", *count as u8 as char),
             IgsCommand::InsertLine { mode: _, count } => {
                 // Emit VT52 ESC form to match input format

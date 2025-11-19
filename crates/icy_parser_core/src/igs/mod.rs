@@ -40,6 +40,7 @@ pub struct IgsParser {
     loop_token_buffer: Vec<u8>,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
 
+    param_bounds: ParameterBounds,
     vt52_parser: Vt52Parser,
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
@@ -59,6 +60,7 @@ impl IgsParser {
             reading_chain_gang: false,
             vt52_parser: Vt52Parser::new(crate::vt52::VT52Mode::Mixed),
             skip_next_lf: false,
+            param_bounds: ParameterBounds::default(),
         }
     }
 
@@ -109,7 +111,7 @@ impl IgsParser {
             // Remaining numeric params are converted to tokens unless already substituted tokens in loop_parameters
             if self.params.len() > 5 {
                 for p in &self.params[5..] {
-                    params_tokens.push(LoopParamToken::Number(p.value()));
+                    params_tokens.push(LoopParamToken::Number(*p));
                 }
             }
             // Add any textual parameter tokens captured (x,y,+n etc.)
@@ -133,13 +135,13 @@ impl IgsParser {
                                 _ => unreachable!(),
                             };
                             let value = Self::parse_i32_from_bytes(&token[1..]);
-                            params_tokens.push(LoopParamToken::Expr(operator, value));
+                            params_tokens.push(LoopParamToken::Expr(operator, value.into()));
                         } else {
                             let value = Self::parse_i32_from_bytes(token);
-                            params_tokens.push(LoopParamToken::Number(value));
+                            params_tokens.push(LoopParamToken::Number(value.into()));
                         }
                     } else {
-                        params_tokens.push(LoopParamToken::Number(0));
+                        params_tokens.push(LoopParamToken::Number(0.into()));
                     }
                 }
             }
@@ -286,13 +288,13 @@ impl IgsParser {
                             _ => unreachable!(),
                         };
                         let value = Self::parse_i32_from_bytes(&token[1..]);
-                        params.push(LoopParamToken::Expr(operator, value));
+                        params.push(LoopParamToken::Expr(operator, value.into()));
                     } else {
                         let value = Self::parse_i32_from_bytes(token);
-                        params.push(LoopParamToken::Number(value));
+                        params.push(LoopParamToken::Number(value.into()));
                     }
                 } else {
-                    params.push(LoopParamToken::Number(0));
+                    params.push(LoopParamToken::Number(0.into()));
                 }
             }
         }
@@ -317,10 +319,17 @@ impl IgsParser {
     fn emit_command(&mut self, cmd_type: IgsCommandType, sink: &mut dyn CommandSink) {
         let command = if cmd_type == IgsCommandType::LoopCommand {
             // Special handling for Loop command to use collected tokens
-            self.create_loop_command(sink)
+            if let Some(IgsCommand::Loop(data)) = self.create_loop_command(sink) {
+                data.run(sink, &self.param_bounds);
+            }
+            None
         } else {
             cmd_type.create_command(sink, &self.params, &self.text_buffer)
         };
+
+        if let Some(IgsCommand::SetRandomRange { range_type }) = &command {
+            self.param_bounds.update(range_type);
+        }
 
         if let Some(cmd) = command {
             sink.emit_igs(cmd);
@@ -683,13 +692,13 @@ impl CommandParser for IgsParser {
                                                     _ => unreachable!(),
                                                 };
                                                 let value = Self::parse_i32_from_bytes(&token[1..]);
-                                                params.push(LoopParamToken::Expr(operator, value));
+                                                params.push(LoopParamToken::Expr(operator, value.into()));
                                             } else {
                                                 let value = Self::parse_i32_from_bytes(token);
-                                                params.push(LoopParamToken::Number(value));
+                                                params.push(LoopParamToken::Number(value.into()));
                                             }
                                         } else {
-                                            params.push(LoopParamToken::Number(0));
+                                            params.push(LoopParamToken::Number(0.into()));
                                         }
                                     }
 
@@ -816,13 +825,13 @@ impl CommandParser for IgsParser {
                                                 _ => unreachable!(),
                                             };
                                             let value = Self::parse_i32_from_bytes(&token[1..]);
-                                            params.push(LoopParamToken::Expr(operator, value));
+                                            params.push(LoopParamToken::Expr(operator, value.into()));
                                         } else {
                                             let value = Self::parse_i32_from_bytes(token);
-                                            params.push(LoopParamToken::Number(value));
+                                            params.push(LoopParamToken::Number(value.into()));
                                         }
                                     } else {
-                                        params.push(LoopParamToken::Number(0));
+                                        params.push(LoopParamToken::Number(0.into()));
                                     }
                                 }
 

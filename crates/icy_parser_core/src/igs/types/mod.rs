@@ -45,6 +45,27 @@ pub enum IgsParameter {
     BigRandom,
 }
 
+/// Specifies which text color layer to modify.
+///
+/// IGS command `G#c>layer,color:` uses this to select between
+/// foreground (1) and background (0) text colors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextColorLayer {
+    /// Background text color (layer 0)
+    Background,
+    /// Foreground text color (layer 1)
+    Foreground,
+}
+
+impl fmt::Display for TextColorLayer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TextColorLayer::Background => write!(f, "0"),
+            TextColorLayer::Foreground => write!(f, "1"),
+        }
+    }
+}
+
 /// Manages random number generation ranges for 'r' and 'R' parameters.
 ///
 /// Default ranges:
@@ -108,6 +129,16 @@ impl IgsParameter {
                 let (min, max) = bounds.big_range();
                 fastrand::i32(min..=max)
             }
+        }
+    }
+
+    /// Evaluates the parameter with explicit min/max range.
+    /// For fixed values, returns the value directly.
+    /// For random values (both 'r' and 'R'), uses the provided range.
+    pub fn value_with_range(&self, min: i32, max: i32) -> i32 {
+        match self {
+            IgsParameter::Value(v) => *v,
+            IgsParameter::Random | IgsParameter::BigRandom => fastrand::i32(min..=max),
         }
     }
 

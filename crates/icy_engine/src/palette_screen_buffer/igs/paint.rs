@@ -242,11 +242,19 @@ impl DrawExecutor {
         let mask = w & (0x8000 >> (px as usize % 16)) != 0;
         match self.drawing_mode {
             DrawingMode::Replace => {
+                // In Replace mode, pattern 0-bits are filled with palette index 0 (background color)
+                // Pattern 1-bits are filled with fill_color
+                // This creates a proper pattern effect where the gaps show the background
                 if mask {
                     self.set_pixel(buf, x, y, self.fill_color);
+                } else {
+                    // Use palette index 0 as background for pattern gaps
+                    self.set_pixel(buf, x, y, 0);
                 }
             }
             DrawingMode::Transparent => {
+                // In Transparent mode, only pattern 1-bits are drawn
+                // Pattern 0-bits leave the existing pixels unchanged (transparent)
                 if mask {
                     self.set_pixel(buf, x, y, self.fill_color);
                 }
@@ -363,21 +371,21 @@ impl DrawExecutor {
         self.fill_ellipse(buf, xm, ym, r, y_rad);
     }
 
-    pub fn draw_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32) {
+    pub fn draw_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32, color: u8) {
         let y_rad = self.calc_circle_y_rad(r);
         let points: Vec<i32> = gdp_curve(xm, ym, r, y_rad, 0, TWOPI as i32);
-        self.draw_poly(buf, &points, self.line_color, false);
+        self.draw_poly(buf, &points, color, false);
     }
 
-    pub fn draw_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
+    pub fn draw_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32, color: u8) {
         let points: Vec<i32> = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
-        self.draw_poly(buf, &points, self.line_color, false);
+        self.draw_poly(buf, &points, color, false);
     }
 
     pub fn draw_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
         let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
         points.extend_from_slice(&[xm, ym]);
-        self.draw_poly(buf, &points, self.line_color, true);
+        self.draw_poly(buf, &points, self.fill_color, true);
     }
 
     pub fn fill_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
@@ -390,7 +398,7 @@ impl DrawExecutor {
         let yr = self.calc_circle_y_rad(radius);
         let mut points = gdp_curve(xm, ym, radius, yr, beg_ang * 10, end_ang * 10);
         points.extend_from_slice(&[xm, ym]);
-        self.draw_poly(buf, &points, self.line_color, true);
+        self.draw_poly(buf, &points, self.fill_color, true);
     }
 
     pub fn fill_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, radius: i32, beg_ang: i32, end_ang: i32) {
@@ -619,8 +627,8 @@ impl DrawExecutor {
                         } else {
                             false
                         };
-
-                        if pixel_set {
+                        draw_mask = draw_mask.rotate_left(1);
+                        if pixel_set && (1 & draw_mask) != 0 {
                             // Apply rotation transformation for outline first pass
                             let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
                             // Draw outline pixels around this character pixel
@@ -633,6 +641,7 @@ impl DrawExecutor {
                         }
                     }
                 }
+                let mut draw_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
 
                 // Second pass: fill character interior with background color
                 for y in 0..font_size.height {
@@ -644,8 +653,9 @@ impl DrawExecutor {
                         } else {
                             false
                         };
+                        draw_mask = draw_mask.rotate_left(1);
 
-                        if pixel_set {
+                        if pixel_set && (1 & draw_mask) != 0 {
                             // Apply rotation transformation for outline second pass
                             let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
                             let p = pos + Position::new(rx, ry);
@@ -656,10 +666,11 @@ impl DrawExecutor {
             } else {
                 // Normal text rendering (non-outlined)
                 for y in 0..font_size.height {
+                    draw_mask = draw_mask.rotate_left(1);
+
                     for x in 0..font_size.width {
                         let iy = y;
                         let ix = x;
-                        draw_mask = draw_mask.rotate_left(1);
                         // Check pixel in bitmap.pixels[row][col]
                         let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
                             glyph.bitmap.pixels[iy as usize][ix as usize]
@@ -710,8 +721,8 @@ impl DrawExecutor {
                                 }
                             }
                         }
+                        draw_mask = draw_mask.rotate_left(1);
                     }
-                    draw_mask = draw_mask.rotate_left(1);
                 }
             }
             if self.text_effects.contains(TextEffects::UNDERLINED) {
@@ -970,7 +981,7 @@ impl DrawExecutor {
         if filled {
             self.fill_poly(buf, &points);
         } else {
-            self.draw_poly(buf, &points, self.line_color, false);
+            self.draw_poly(buf, &points, self.fill_color, false);
         }
     }
 
@@ -1004,10 +1015,12 @@ impl DrawExecutor {
     }
 
     fn calc_circle_y_rad(&self, xrad: i32) -> i32 {
-        // st med 169, st low 338, st high 372, height == 372
+        // Calculate Y radius to compensate for non-square pixels
+        // The values are empirically determined for Atari ST displays
+        // to make circles appear round on 4:3 monitors
         let x_size = match self.terminal_resolution {
             TerminalResolution::Low => 338,
-            TerminalResolution::Medium => 169,
+            TerminalResolution::Medium => 338, // Was 169, but that made circles too flat
             TerminalResolution::High => 372,
         };
         xrad * x_size / 372
@@ -1021,7 +1034,8 @@ impl DrawExecutor {
     pub fn draw_rect(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
         self.fill_rect(buf, x1, y1, x2, y2);
         if self.draw_border {
-            let color = self.line_color;
+            // Use fill_color for borders on filled rectangles (GEM VDI behavior)
+            let color = self.fill_color;
             let mask = self.line_kind.get_mask(self.user_mask);
             self.draw_line(buf, x1, y1, x1, y2, color, mask);
             self.draw_line(buf, x2, y1, x2, y2, color, mask);
@@ -1046,14 +1060,14 @@ impl DrawExecutor {
     pub fn draw_circle_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, radius: i32) {
         self.fill_circle(buf, x, y, radius);
         if self.draw_border {
-            self.draw_circle(buf, x, y, radius);
+            self.draw_circle(buf, x, y, radius, self.fill_color);
         }
     }
 
     pub fn draw_ellipse_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, x_radius: i32, y_radius: i32) {
         self.fill_ellipse(buf, x, y, x_radius, y_radius);
         if self.draw_border {
-            self.draw_ellipse(buf, x, y, x_radius, y_radius);
+            self.draw_ellipse(buf, x, y, x_radius, y_radius, self.fill_color);
         }
     }
 

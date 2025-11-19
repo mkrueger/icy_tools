@@ -1,6 +1,7 @@
 use crate::{
     AskQuery, BlitMode, BlitOperation, CommandSink, CursorMode, Direction, DrawingMode, IgsCommand, IgsParameter, InitializationType, LineKind, LineStyleKind,
-    MousePointerType, PaletteMode, PatternType, PenType, PolymarkerKind, RandomRangeType, SoundEffect, TerminalResolution, TextEffects, TextRotation,
+    MousePointerType, PaletteMode, PatternType, PenType, PolymarkerKind, RandomRangeType, SoundEffect, TerminalResolution, TextColorLayer, TextEffects,
+    TextRotation,
 };
 
 #[repr(u8)]
@@ -50,6 +51,11 @@ pub enum IgsCommandType {
     LoopCommand          = b'&',
     InputCommand         = b'<',
     AskIG                = b'?',
+    SetTextColor         = b'c',  // IGS extension: G#c>0/1,color: for fg/bg color
+    DeleteLines          = b'd',  // IGS extension: G#d>count: to delete lines
+    InsertLine           = b'i',  // IGS/VT52: G#i>mode,count: to insert lines
+    ClearLine            = b'l',  // IGS/VT52: G#l>mode: to clear line
+    RememberCursor       = b'r',  // IGS/VT52: G#r>value: to remember cursor position
 }
 
 impl TryFrom<u8> for IgsCommandType {
@@ -99,6 +105,11 @@ impl TryFrom<u8> for IgsCommandType {
             b'&' => Ok(Self::LoopCommand),
             b'<' => Ok(Self::InputCommand),
             b'?' => Ok(Self::AskIG),
+            b'c' => Ok(Self::SetTextColor),
+            b'd' => Ok(Self::DeleteLines),
+            b'i' => Ok(Self::InsertLine),
+            b'l' => Ok(Self::ClearLine),
+            b'r' => Ok(Self::RememberCursor),
             _ => Err(()),
         }
     }
@@ -973,6 +984,78 @@ impl IgsCommandType {
                     };
                     query.map(|q| IgsCommand::AskIG { query: q })
                 }
+            }
+            IgsCommandType::SetTextColor => {
+                // G#c>layer,color: where layer is 0 (background) or 1 (foreground)
+                if params.len() < 2 {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "SetTextColor",
+                            value: format!("{}", params.len()),
+                            expected: Some("2 parameters (layer, color)".to_string()),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
+                    None
+                } else {
+                    let layer_value = params[0].value();
+                    let color = params[1].value() as u8;
+                    let layer = if layer_value == 0 {
+                        TextColorLayer::Background
+                    } else if layer_value == 1 {
+                        TextColorLayer::Foreground
+                    } else {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "SetTextColor",
+                                value: format!("{}", layer_value),
+                                expected: Some("0 (background) or 1 (foreground)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return None;
+                    };
+                    Some(IgsCommand::SetTextColor { layer, color })
+                }
+            }
+            IgsCommandType::DeleteLines => Self::check_parameters(params, sink, "DeleteLines", 1, || IgsCommand::DeleteLine {
+                count: params[0].value() as u8,
+            }),
+            IgsCommandType::InsertLine => {
+                // G#i>mode,count: - mode is optional, defaults to 0
+                if params.is_empty() {
+                    sink.report_errror(
+                        crate::ParseError::InvalidParameter {
+                            command: "InsertLine",
+                            value: format!("{}", 0),
+                            expected: Some("1 or 2 parameters (count or mode,count)".to_string()),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
+                    None
+                } else if params.len() == 1 {
+                    // ESC i form: just count, mode defaults to 0
+                    Some(IgsCommand::InsertLine {
+                        mode: 0,
+                        count: params[0].value() as u8,
+                    })
+                } else {
+                    // G# form: mode,count
+                    Some(IgsCommand::InsertLine {
+                        mode: params[0].value() as u8,
+                        count: params[1].value() as u8,
+                    })
+                }
+            }
+            IgsCommandType::ClearLine => {
+                // G#l>mode: - mode defaults to 0 if not provided
+                let mode = params.get(0).map(|p| p.value() as u8).unwrap_or(0);
+                Some(IgsCommand::ClearLine { mode })
+            }
+            IgsCommandType::RememberCursor => {
+                // G#r>value: - value defaults to 0 if not provided
+                let value = params.get(0).map(|p| p.value() as u8).unwrap_or(0);
+                Some(IgsCommand::RememberCursor { value })
             }
             IgsCommandType::LoopCommand => {
                 // Handled in parser (No inner loops allowed)

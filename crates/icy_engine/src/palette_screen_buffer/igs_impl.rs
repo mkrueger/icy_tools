@@ -130,8 +130,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::ColorSet { pen, color } => {
             let (_, color_map) = get_color_map(buf);
-            let color = color_map[color as usize % color_map.len()];
-            state.executor.set_color(pen, color);
+            let mapped_color = color_map[color as usize % color_map.len()];
+            state.executor.set_color(pen, mapped_color);
         }
 
         IgsCommand::AttributeForFills { pattern_type, border } => {
@@ -283,14 +283,12 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // Style and appearance commands
         IgsCommand::SetPenColor { pen, red, green, blue } => {
-            // Convert 3-bit RGB (0-7) to 8-bit (0-255)
-            // Using value * 34 to match Atari ST convention: 0->0, 7->238
             let r = (red * 34) as u8;
             let g = (green * 34) as u8;
             let b = (blue * 34) as u8;
             let (_, color_map) = get_color_map(buf);
-            let pen = color_map[pen as usize % color_map.len()];
-            buf.palette_mut().set_color(pen as u32, crate::Color::new(r, g, b));
+            let mapped_pen = color_map[pen as usize % color_map.len()];
+            buf.palette_mut().set_color(mapped_pen as u32, crate::Color::new(r, g, b));
         }
 
         IgsCommand::DrawingMode { mode } => {
@@ -485,12 +483,12 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             }
         }
 
-        IgsCommand::PauseSeconds { seconds: _ } => {
-            // Pauses are typically ignored in non-real-time rendering
+        IgsCommand::PauseSeconds { .. } => {
+            // Pauses are typically ignored in non-real-time rendering, handled on viewer/terminal level
         }
 
-        IgsCommand::VsyncPause { vsyncs: _ } => {
-            // Pauses are typically ignored in non-real-time rendering
+        IgsCommand::VsyncPause { .. } => {
+            // Pauses are typically ignored in non-real-time rendering, handled on viewer/terminal level
         }
 
         // Extended X commands
@@ -642,14 +640,17 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         // IGS-specific color commands (ESC b/c)
-        IgsCommand::SetForeground { color } => {
-            let (_, color_map) = get_color_map(buf);
-            buf.caret_mut().set_foreground(color_map[color as usize] as u32);
-        }
-
-        IgsCommand::SetBackground { color } => {
-            let (_, color_map) = get_color_map(buf);
-            buf.caret_mut().set_background(color_map[color as usize] as u32);
+        IgsCommand::SetTextColor { layer, color } => {
+            // SetTextColor uses direct palette indices, NOT color_map
+            // This is for ANSI-style text rendering, not IGS graphics
+            match layer {
+                icy_parser_core::TextColorLayer::Foreground => {
+                    buf.caret_mut().set_foreground(color as u32);
+                }
+                icy_parser_core::TextColorLayer::Background => {
+                    buf.caret_mut().set_background(color as u32);
+                }
+            }
         }
     }
 }

@@ -6,6 +6,8 @@ mod roundtrip;
 
 mod vt52;
 
+mod loop_run_tests;
+
 // mod loop_tests;
 
 pub struct TestSink {

@@ -9,7 +9,7 @@ pub fn test_igs_lowres() {
     crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/lowres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
-        if cur_entry.extension().unwrap_or_default() != "ig" {
+        if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("ig") {
             continue;
         }
         log::info!("Testing IGS file: {:?}", cur_entry);
@@ -32,7 +32,7 @@ pub fn test_igs_midres() {
     crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/midres").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
-        if cur_entry.extension().unwrap() != "ig" {
+        if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("ig") {
             continue;
         }
 
@@ -55,7 +55,7 @@ pub fn test_igs_palette() {
     crate::init_logging();
     for entry in fs::read_dir("tests/output/igs/palette").expect("Error reading test_data directory.") {
         let cur_entry = entry.unwrap().path();
-        if cur_entry.extension().unwrap_or_default() != "ig" {
+        if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("ig") {
             continue;
         }
         log::info!("Testing IGS file: {:?}", cur_entry);
@@ -68,6 +68,29 @@ pub fn test_igs_palette() {
         parser.parse(&data, &mut sink);
 
         println!("scan lines: {} res : {} ", buffer.scan_lines, buffer.get_resolution());
+        // Pass filenames for loading expected PNG and saving output
+        compare_output(&buffer, &cur_entry);
+    }
+}
+
+#[test]
+pub fn test_igs_text_effects() {
+    crate::init_logging();
+    for entry in fs::read_dir("tests/output/igs/text_effect").expect("Error reading test_data directory.") {
+        let cur_entry = entry.unwrap().path();
+        if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("ig") {
+            continue;
+        }
+        log::info!("Testing IGS file: {:?}", cur_entry);
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
+
+        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Low));
+
+        let mut parser: IgsParser = IgsParser::new();
+        let mut sink = ScreenSink::new(&mut buffer);
+
+        parser.parse(&data, &mut sink);
+
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);
     }

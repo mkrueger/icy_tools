@@ -63,10 +63,13 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, scr
         TerminalEmulation::Skypix => Box::new(icy_parser_core::SkypixParser::new()),
         TerminalEmulation::AtariST => {
             if let ScreenMode::AtariST(_, igs) = screen_mode {
-                if igs {
-                    return Box::new(icy_parser_core::IgsParser::new());
-                }
+                return if igs {
+                    Box::new(icy_parser_core::IgsParser::new())
+                } else {
+                    Box::new(icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed))
+                };
             }
+            log::warn!("ScreenMode is wrong for AtariST {:?}, fall back to IGS.", screen_mode);
             Box::new(icy_parser_core::IgsParser::new())
         }
     }

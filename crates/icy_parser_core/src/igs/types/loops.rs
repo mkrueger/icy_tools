@@ -1,4 +1,4 @@
-use crate::{CommandSink, IgsCommand, IgsCommandType};
+use crate::{CommandSink, IgsCommand, IgsCommandType, IgsParameter, ParameterBounds};
 
 /// Describes what command the loop executes each iteration.
 ///
@@ -87,7 +87,8 @@ pub enum LoopParamToken {
     /// Constant numeric value that never changes across iterations.
     ///
     /// Example: In `G#&>0,10,1,0,L,4,5,10,x,y:`, the `5` and `10` are constants.
-    Number(i32),
+    /// Can also be `IgsParameter::Random` for random values in loops.
+    Number(IgsParameter),
 
     /// `x` – stepping variable: varies from `from` to `to` in `step` increments.
     ///
@@ -119,7 +120,8 @@ pub enum LoopParamToken {
     /// - `Expr(SubtractStep, 99)` for `!99`: 99 - current step
     ///
     /// Useful for offset coordinates or other computed values.
-    Expr(ParamOperator, i32),
+    /// Can also use `IgsParameter::Random` for the value.
+    Expr(ParamOperator, IgsParameter),
 
     /// Group separator `:` in the parameter stream.
     ///
@@ -221,7 +223,7 @@ impl LoopCommandData {
         (self.to < self.from && self.step > 0) || (self.to > self.from && self.step < 0)
     }
 
-    pub fn run(&self, sink: &mut dyn CommandSink, rnd_min: i32, rnd_max: i32) {
+    pub fn run(&self, sink: &mut dyn CommandSink, bounds: &ParameterBounds) {
         if self.step == 0 {
             return;
         }
@@ -230,7 +232,7 @@ impl LoopCommandData {
         let step_value = if forward { self.step.abs() } else { -self.step.abs() };
 
         let mut current = self.from;
-        let mut param_index = 0;
+        let (rnd_min, rnd_max) = bounds.small_range();
 
         loop {
             // Check loop termination
@@ -244,6 +246,7 @@ impl LoopCommandData {
             // Collect parameters for this iteration
             let mut iteration_params = Vec::new();
             let reverse_value = self.to + self.from - current; // y = from + to - x
+            let mut param_index = 0;
 
             for _ in 0..self.param_count {
                 if param_index >= self.params.len() {
@@ -254,7 +257,7 @@ impl LoopCommandData {
                 param_index += 1;
 
                 let value = match token {
-                    LoopParamToken::Number(n) => *n,
+                    LoopParamToken::Number(param) => param.evaluate(bounds),
                     LoopParamToken::StepForward => current,
                     LoopParamToken::StepReverse => reverse_value,
                     LoopParamToken::Random => {
@@ -262,11 +265,14 @@ impl LoopCommandData {
                         // In a real execution environment, this would generate an actual random value
                         rnd_min + (rnd_max - rnd_min) / 2
                     }
-                    LoopParamToken::Expr(op, constant) => match op {
-                        ParamOperator::Add => current + constant,
-                        ParamOperator::Subtract => current - constant,
-                        ParamOperator::SubtractStep => constant - current,
-                    },
+                    LoopParamToken::Expr(op, param) => {
+                        let constant = param.evaluate(bounds);
+                        match op {
+                            ParamOperator::Add => current + constant,
+                            ParamOperator::Subtract => current - constant,
+                            ParamOperator::SubtractStep => constant - current,
+                        }
+                    }
                     LoopParamToken::GroupSeparator => {
                         // Skip group separators, don't count toward param_count
                         continue;
@@ -369,6 +375,33 @@ impl LoopCommandData {
                     Some(IgsCommand::PolymarkerPlot {
                         x: params[0].into(),
                         y: params[1].into(),
+                    })
+                } else {
+                    None
+                }
+            }
+            ColorSet => {
+                if params.len() >= 2 {
+                    let pen = match params[0] {
+                        0 => crate::PenType::Polymarker,
+                        1 => crate::PenType::Line,
+                        2 => crate::PenType::Fill,
+                        3 => crate::PenType::Text,
+                        _ => crate::PenType::Polymarker,
+                    };
+                    Some(IgsCommand::ColorSet { pen, color: params[1] as u8 })
+                } else {
+                    None
+                }
+            }
+            Arc => {
+                if params.len() >= 5 {
+                    Some(IgsCommand::Arc {
+                        x: params[0].into(),
+                        y: params[1].into(),
+                        radius: params[2].into(),
+                        start_angle: params[3].into(),
+                        end_angle: params[4].into(),
                     })
                 } else {
                     None

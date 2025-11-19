@@ -23,6 +23,7 @@ use icy_parser_core::{BaudEmulation, MusicOption};
 use log::error;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
 
@@ -152,24 +153,34 @@ impl<'a> CommandSink for TerminalSink<'a> {
         self.screen_sink.emit_skypix(cmd);
     }
     fn emit_igs(&mut self, cmd: IgsCommand) {
-        if let IgsCommand::AskIG { query } = cmd {
-            match query {
-                AskQuery::VersionNumber => {
-                    self.output.extend_from_slice(icy_engine::igs::IGS_VERSION.as_bytes());
-                }
-                AskQuery::CursorPositionAndMouseButton { .. } => {}
-                AskQuery::MousePositionAndButton { .. } => {}
-                AskQuery::CurrentResolution => {
-                    if let GraphicsType::IGS(mode) = self.screen_sink.screen().graphics_type() {
-                        self.output.extend_from_slice(format!("{}:", mode as u8).as_bytes());
+        match cmd {
+            IgsCommand::AskIG { query } => {
+                match query {
+                    AskQuery::VersionNumber => {
+                        self.output.extend_from_slice(icy_engine::igs::IGS_VERSION.as_bytes());
+                    }
+                    AskQuery::CursorPositionAndMouseButton { .. } => {}
+                    AskQuery::MousePositionAndButton { .. } => {}
+                    AskQuery::CurrentResolution => {
+                        if let GraphicsType::IGS(mode) = self.screen_sink.screen().graphics_type() {
+                            self.output.extend_from_slice(format!("{}:", mode as u8).as_bytes());
+                        }
                     }
                 }
+
+                return;
             }
 
-            return;
+        IgsCommand::PauseSeconds { seconds } => {
+            thread::sleep(Duration::from_secs(seconds.into()));
         }
 
-        self.screen_sink.emit_igs(cmd);
+        IgsCommand::VsyncPause { vsyncs } => {
+            // Pauses are typically ignored in non-real-time rendering, handled on viewer/terminal level
+        }
+
+            _ => self.screen_sink.emit_igs(cmd)
+        }
     }
     fn device_control(&mut self, dcs: DeviceControlString<'_>) {
         self.screen_sink.device_control(dcs);
