@@ -54,6 +54,16 @@ settings-keybinds-show-find = Najít:
 
 settings-modem-category = Modem
 settings-modem-name = Název
+
+settings-paths-category = Cesty
+settings-paths-header = Systémové cesty
+settings-paths-config-dir = Adresář konfigurace
+settings-paths-config-file = Konfigurační soubor
+settings-paths-phonebook = Telefonní seznam
+settings-paths-editable-header = Uživatelské cesty
+settings-paths-download-dir = Stahování
+settings-paths-capture-path = Cesta pro záznam
+
 settings-modem-device = Zařízení
 settings-modem-baud_rate = Baudrate
 settings-modem-init_string = Iniciační řetězec

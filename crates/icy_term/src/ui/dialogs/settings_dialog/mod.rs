@@ -12,6 +12,7 @@ use crate::{Options, ui::MainWindowMode};
 
 mod iemsi_settings;
 mod modem_settings;
+mod paths_settings;
 mod terminal_settings;
 
 // Constants for sizing
@@ -26,6 +27,7 @@ pub enum SettingsCategory {
     Terminal,
     Keybinds,
     Modem,
+    Paths,
 }
 
 impl SettingsCategory {
@@ -36,11 +38,12 @@ impl SettingsCategory {
             Self::Terminal => fl!(crate::LANGUAGE_LOADER, "settings-terminal-category"),
             Self::Keybinds => fl!(crate::LANGUAGE_LOADER, "settings-keybinds-category"),
             Self::Modem => fl!(crate::LANGUAGE_LOADER, "settings-modem-category"),
+            Self::Paths => fl!(crate::LANGUAGE_LOADER, "settings-paths-category"),
         }
     }
 
     fn all() -> Vec<Self> {
-        vec![Self::Monitor, Self::IEMSI, Self::Terminal, /*Self::Keybinds,*/ Self::Modem]
+        vec![Self::Monitor, Self::IEMSI, Self::Terminal, /*Self::Keybinds,*/ Self::Modem, Self::Paths]
     }
 }
 
@@ -54,6 +57,11 @@ pub enum SettingsMsg {
     SelectModem(usize),
     AddModem,
     RemoveModem(usize),
+    UpdateDownloadPath(String),
+    UpdateCapturePath(String),
+    BrowseDownloadPath,
+    BrowseCapturePath,
+    ResetPaths,
     Save,
     Cancel,
     Noop,
@@ -90,6 +98,11 @@ impl SettingsDialogState {
                 match category {
                     SettingsCategory::Monitor => {
                         self.temp_options.lock().unwrap().reset_monitor_settings();
+                    }
+                    SettingsCategory::Paths => {
+                        let mut options = self.temp_options.lock().unwrap();
+                        options.download_path = String::new();
+                        options.capture_path = String::new();
                     }
                     SettingsCategory::Keybinds => {
                         // self.temp_options.reset_keybindings();
@@ -150,6 +163,64 @@ impl SettingsDialogState {
             }
             SettingsMsg::MonitorSettings(settings) => {
                 update_monitor_settings(&mut self.temp_options.lock().unwrap().monitor_settings, settings);
+                None
+            }
+            SettingsMsg::UpdateDownloadPath(path) => {
+                self.temp_options.lock().unwrap().download_path = path;
+                None
+            }
+            SettingsMsg::UpdateCapturePath(path) => {
+                self.temp_options.lock().unwrap().capture_path = path;
+                None
+            }
+            SettingsMsg::BrowseDownloadPath => {
+                let current_path = self.temp_options.lock().unwrap().download_path();
+                let initial_dir = if std::path::Path::new(&current_path).exists() {
+                    Some(std::path::PathBuf::from(&current_path))
+                } else {
+                    std::env::current_dir().ok()
+                };
+
+                let mut dialog = rfd::FileDialog::new();
+                if let Some(dir) = initial_dir {
+                    dialog = dialog.set_directory(dir);
+                }
+
+                if let Some(path) = dialog.pick_folder() {
+                    if let Some(path_str) = path.to_str() {
+                        self.temp_options.lock().unwrap().download_path = path_str.to_string();
+                    }
+                }
+                None
+            }
+            SettingsMsg::BrowseCapturePath => {
+                let current_path = self.temp_options.lock().unwrap().capture_path();
+                let initial_path = std::path::Path::new(&current_path);
+                let initial_dir = if initial_path.exists() {
+                    initial_path.parent().map(|p| p.to_path_buf())
+                } else {
+                    std::env::current_dir().ok()
+                };
+
+                let mut dialog = rfd::FileDialog::new();
+                if let Some(dir) = initial_dir {
+                    dialog = dialog.set_directory(dir);
+                }
+                if let Some(file_name) = initial_path.file_name() {
+                    dialog = dialog.set_directory(file_name.to_string_lossy().as_ref());
+                }
+
+                if let Some(path) = dialog.save_file() {
+                    if let Some(path_str) = path.to_str() {
+                        self.temp_options.lock().unwrap().capture_path = path_str.to_string();
+                    }
+                }
+                None
+            }
+            SettingsMsg::ResetPaths => {
+                let mut options = self.temp_options.lock().unwrap();
+                options.download_path = String::new();
+                options.capture_path = String::new();
                 None
             }
             SettingsMsg::Noop => None,
@@ -223,6 +294,13 @@ impl SettingsDialogState {
             SettingsCategory::Terminal => self.terminal_settings_content(),
             SettingsCategory::Keybinds => self.keybinds_settings_content(),
             SettingsCategory::Modem => self.modem_settings_content(),
+            SettingsCategory::Paths => {
+                let options = self.temp_options.lock().unwrap();
+                let download_path = options.download_path();
+                let capture_path = options.capture_path();
+                drop(options);
+                paths_settings::paths_settings_content(download_path, capture_path)
+            }
         };
 
         // Buttons
@@ -243,6 +321,18 @@ impl SettingsDialogState {
                     .padding([8, 16])
                     .style(button::danger),
             ),
+            SettingsCategory::Paths => {
+                let options = self.temp_options.lock().unwrap();
+                let is_default = options.download_path.is_empty() && options.capture_path.is_empty();
+                drop(options);
+                let mut btn = button(text(fl!(crate::LANGUAGE_LOADER, "settings-reset-button")))
+                    .padding([8, 16])
+                    .style(button::danger);
+                if !is_default {
+                    btn = btn.on_press(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())));
+                }
+                Some(btn)
+            }
             _ => None,
         };
 

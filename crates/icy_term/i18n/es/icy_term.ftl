@@ -54,6 +54,16 @@ settings-keybinds-show-find = Buscar:
 
 settings-modem-category = Módem
 settings-modem-name = Nombre
+
+settings-paths-category = Rutas
+settings-paths-header = Rutas del sistema
+settings-paths-config-dir = Directorio de configuración
+settings-paths-config-file = Archivo de configuración
+settings-paths-phonebook = Agenda
+settings-paths-editable-header = Rutas de usuario
+settings-paths-download-dir = Descargas
+settings-paths-capture-path = Ruta de captura
+
 settings-modem-device = Dispositivo
 settings-modem-baud_rate = Velocidad en baudios
 settings-modem-init_string = Cadena de inicialización

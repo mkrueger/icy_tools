@@ -1,6 +1,6 @@
 use super::bgi::{ButtonStyle2, MouseField};
 use super::igs::{TerminalResolutionExt, paint::DrawExecutor};
-use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE, screen};
+use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE};
 use icy_parser_core::{IgsCommand, LineStyleKind, ParameterBounds};
 
 pub struct IgsState {

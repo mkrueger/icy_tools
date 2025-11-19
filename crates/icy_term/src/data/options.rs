@@ -1,8 +1,11 @@
 use std::{
     fs::{self},
+    path::PathBuf,
     time::Duration,
 };
 
+use directories::UserDirs;
+use iced::widget::canvas::Path;
 use iced_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
 
@@ -99,6 +102,12 @@ pub struct Options {
     #[serde(default)]
     pub dial_tone: DialTone,
 
+    #[serde(default)]
+    pub capture_path: String,
+
+    #[serde(default)]
+    pub download_path: String,
+
     // pub window_rect: Option<Rect>,
     #[serde(default)]
     pub modems: Vec<Modem>,
@@ -142,6 +151,8 @@ impl Default for Options {
             //            window_rect: None,
             modems: Vec::new(),
             dial_tone: DialTone::default(),
+            capture_path: String::new(),
+            download_path: String::new(),
         }
     }
 }
@@ -163,6 +174,38 @@ impl Options {
         }
         Ok(Options::default())
     }
+
+    pub fn capture_path(&self) -> String {
+        if self.capture_path.is_empty() {
+            Self::default_capture_path().to_string_lossy().to_string()
+        } else {
+            self.capture_path.clone()
+        }
+    }
+
+    pub fn download_path(&self) -> String {
+        if self.download_path.is_empty() {
+            Self::download_directory().to_string_lossy().to_string()
+        } else {
+            self.download_path.clone()
+        }
+    }
+
+    pub fn default_capture_path() -> PathBuf {
+        directories::UserDirs::new()
+            .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+    }
+
+    pub fn download_directory() -> PathBuf {
+        if let Some(dirs) = UserDirs::new() {
+            if let Some(upload_location) = dirs.download_dir() {
+                return upload_location.to_path_buf();
+            }
+        }
+        PathBuf::from(".")
+    }
+
     /*
     pub(crate) fn get_theme(&self) -> egui::ThemePreference {
         if let Some(dark_mode) = self.is_dark_mode {

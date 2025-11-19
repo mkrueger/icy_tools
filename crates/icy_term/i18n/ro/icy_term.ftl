@@ -53,7 +53,17 @@ settings-keybinds-quit = Ieșire:
 settings-keybinds-show-find = Găsește:
 
 settings-modem-category = Modem
-settings-modem-name = Nume:
+settings-modem-name = Nume
+
+settings-paths-category = Căi
+settings-paths-header = Căi de sistem
+settings-paths-config-dir = Director de configurare
+settings-paths-config-file = Fișier de configurare
+settings-paths-phonebook = Agendă
+settings-paths-editable-header = Căi utilizator
+settings-paths-download-dir = Descărcări
+settings-paths-capture-path = Cale de captură
+
 settings-modem-device = Dispozitiv
 settings-modem-baud_rate = Baudrate
 settings-modem-init_string = Șir de inițializare

@@ -103,7 +103,7 @@ impl MainWindow {
         options: Arc<Mutex<Options>>,
         temp_options: Arc<Mutex<Options>>,
     ) -> Self {
-        let default_capture_path = directories::UserDirs::new()
+        let default_capture_path: PathBuf = directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
             .join("capture.ans");
@@ -432,6 +432,9 @@ impl MainWindow {
             }
             Message::ShowCaptureDialog => {
                 self.switch_to_terminal_screen();
+                // Update capture dialog with current capture path from options
+                let capture_path = self.settings_dialog.original_options.lock().unwrap().capture_path();
+                self.capture_dialog.reset(&capture_path, self.capture_dialog.is_capturing());
                 self.state.mode = MainWindowMode::ShowCaptureDialog;
                 Task::none()
             }
@@ -787,6 +790,9 @@ impl MainWindow {
 
     fn initiate_file_transfer(&mut self, protocol: icy_net::protocol::TransferProtocolType, is_download: bool) {
         if is_download {
+            // Set download directory from options
+            let download_path = self.settings_dialog.original_options.lock().unwrap().download_path();
+            let _ = self.terminal_tx.send(TerminalCommand::SetDownloadDirectory(PathBuf::from(download_path)));
             let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
         } else {
             let files = rfd::FileDialog::new()

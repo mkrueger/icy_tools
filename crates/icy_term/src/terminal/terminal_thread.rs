@@ -40,6 +40,7 @@ pub enum TerminalCommand {
     SetBaudEmulation(BaudEmulation),
     StartCapture(String),
     StopCapture,
+    SetDownloadDirectory(PathBuf),
 }
 
 /// Messages sent from the terminal thread to the UI
@@ -244,6 +245,9 @@ pub struct TerminalThread {
 
     // Command queue for granular locking
     queueing_sink: QueueingSink,
+
+    // Download directory
+    download_directory: Option<PathBuf>,
 }
 
 impl TerminalThread {
@@ -272,6 +276,7 @@ impl TerminalThread {
             capture_writer: None,
             output_buffer: Vec::new(),
             queueing_sink: QueueingSink::new(),
+            download_directory: None,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -454,6 +459,9 @@ impl TerminalThread {
             TerminalCommand::StopCapture => {
                 self.capture_writer = None;
                 log::info!("Stopped capturing");
+            }
+            TerminalCommand::SetDownloadDirectory(dir) => {
+                self.download_directory = Some(dir);
             }
         }
     }
@@ -1054,7 +1062,7 @@ impl TerminalThread {
         }
 
         // Copy downloaded files to the download directory
-        copy_downloaded_files(&mut transfer_state)?;
+        copy_downloaded_files(&mut transfer_state, self.download_directory.as_ref())?;
 
         self.current_transfer = Some(transfer_state.clone());
         self.send_event(TerminalEvent::TransferCompleted(transfer_state));
@@ -1224,37 +1232,41 @@ pub fn create_terminal_thread(
     TerminalThread::spawn(edit_screen, parser)
 }
 
-fn copy_downloaded_files(transfer_state: &mut TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(dirs) = UserDirs::new() {
-        if let Some(upload_location) = dirs.download_dir() {
-            let mut lines = Vec::new();
-            for (name, path) in &transfer_state.recieve_state.finished_files {
-                let mut dest = upload_location.join(name);
-
-                let mut i = 1;
-                let new_name = PathBuf::from(name);
-                while dest.exists() {
-                    if let Some(stem) = new_name.file_stem() {
-                        if let Some(ext) = new_name.extension() {
-                            dest = dest.with_file_name(format!("{}.{}.{}", stem.to_string_lossy(), i, ext.to_string_lossy()));
-                        } else {
-                            dest = dest.with_file_name(format!("{}.{}", stem.to_string_lossy(), i));
-                        }
-                    }
-                    i += 1;
-                }
-                std::fs::copy(&path, &dest)?;
-                std::fs::remove_file(&path)?;
-                lines.push(format!("File copied to: {}", dest.display()));
-            }
-            for line in lines {
-                transfer_state.recieve_state.log_info(line);
-            }
+fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let upload_location = if let Some(dir) = download_dir {
+        dir.clone()
+    } else if let Some(dirs) = UserDirs::new() {
+        if let Some(default_dir) = dirs.download_dir() {
+            default_dir.to_path_buf()
         } else {
-            error!("Failed to get user download directory");
+            return Err("Failed to get user download directory".into());
         }
     } else {
-        error!("Failed to get user directories");
+        return Err("Failed to get user directories".into());
+    };
+
+    let mut lines = Vec::new();
+    for (name, path) in &transfer_state.recieve_state.finished_files {
+        let mut dest = upload_location.join(name);
+
+        let mut i = 1;
+        let new_name = PathBuf::from(name);
+        while dest.exists() {
+            if let Some(stem) = new_name.file_stem() {
+                if let Some(ext) = new_name.extension() {
+                    dest = dest.with_file_name(format!("{}.{}.{}", stem.to_string_lossy(), i, ext.to_string_lossy()));
+                } else {
+                    dest = dest.with_file_name(format!("{}.{}", stem.to_string_lossy(), i));
+                }
+            }
+            i += 1;
+        }
+        std::fs::copy(&path, &dest)?;
+        std::fs::remove_file(&path)?;
+        lines.push(format!("File copied to: {}", dest.display()));
+    }
+    for line in lines {
+        transfer_state.recieve_state.log_info(line);
     }
 
     Ok(())

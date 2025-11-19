@@ -53,7 +53,17 @@ settings-keybinds-quit = Sortir:
 settings-keybinds-show-find = Cercar:
 
 settings-modem-category = Mòdem
-settings-modem-name = Nom:
+settings-modem-name = Nom
+
+settings-paths-category = Camins
+settings-paths-header = Camins del sistema
+settings-paths-config-dir = Directori de configuració
+settings-paths-config-file = Fitxer de configuració
+settings-paths-phonebook = Agenda
+settings-paths-editable-header = Camins d'usuari
+settings-paths-download-dir = Descàrregues
+settings-paths-capture-path = Camí de captura
+
 settings-modem-device = Dispositiu
 settings-modem-baud_rate = Baudrate
 settings-modem-init_string = Cadena d'inicialització

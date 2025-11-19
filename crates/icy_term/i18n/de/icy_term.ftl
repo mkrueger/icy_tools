@@ -55,6 +55,16 @@ settings-keybinds-show-find = Suchen:
 
 settings-modem-category = Modem
 settings-modem-name = Name
+
+settings-paths-category = Pfade
+settings-paths-header = Systempfade
+settings-paths-config-dir = Konfigurationsverzeichnis
+settings-paths-config-file = Konfigurationsdatei
+settings-paths-phonebook = Telefonbuch
+settings-paths-editable-header = Benutzerpfade
+settings-paths-download-dir = Downloads
+settings-paths-capture-path = Aufnahmepfad
+
 settings-modem-device = Gerät
 settings-modem-baud_rate = Baudrate
 settings-modem-init_string = Init-String

@@ -90,15 +90,6 @@ impl SettingsDialogState {
                 .spacing(12)
                 .align_y(Alignment::Center),
                 Space::new().height(12.0),
-                // Open Settings Directory button
-                row![
-                    Space::new().width(Length::Fixed(LABEL_WIDTH)),
-                    button(text(fl!(crate::LANGUAGE_LOADER, "settings-terminal-open-settings-dir-button")).size(14))
-                        .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::OpenSettingsFolder))
-                        .padding([6, 12]),
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
             ]
             .spacing(INPUT_SPACING)
             .into()
