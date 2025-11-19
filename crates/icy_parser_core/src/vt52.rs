@@ -13,7 +13,7 @@ enum State {
     ReadFgColor,
     ReadBgColor,
     ReadCursorLine,
-    ReadCursorRow(i32), // row position
+    ReadCursorRow(u8),
     ReadInsertLineCount,
 }
 
@@ -39,6 +39,9 @@ impl Vt52Parser {
             reverse_video: false,
         }
     }
+    pub fn is_default_state(&self) -> bool {
+        self.state == State::Default
+    }
 
     /// Parse VT52 hex color code from ASCII byte
     #[inline]
@@ -49,6 +52,14 @@ impl Vt52Parser {
         } else if byte >= b'0' && byte <= b'0' + 15 {
             // Support for backwards compatibility with VT52
             let index = byte.wrapping_sub(b'0');
+            Some(Color::Base(index as u8))
+        } else if byte >= b'a' && byte <= b'f' {
+            // Support for backwards compatibility with VT52
+            let index = byte.wrapping_sub(b'a');
+            Some(Color::Base(index as u8))
+        } else if byte >= b'A' && byte <= b'F' {
+            // Support for backwards compatibility with VT52
+            let index = byte.wrapping_sub(b'A');
             Some(Color::Base(index as u8))
         } else {
             None
@@ -77,32 +88,45 @@ impl Vt52Parser {
         }
     }
 
-    /// Parse VT52 cursor row position from ASCII byte (1 based)
+    /// Parse cursor position for Mixed mode (auto-detect format)
+    /// Returns (line, column) as 1-based coordinates
     #[inline]
-    fn parse_cursor_row(byte: u8) -> Option<i32> {
-        // Original VT-52:
-        if byte >= b' ' && byte <= b'p' { Some((byte - b' ') as i32 + 1) } else { None }
+    fn read_cursor_position_mixed(line_byte: u8, row_byte: u8) -> Option<(u16, u16)> {
+        // Auto-detect format: if line_byte >= b' ' it's standard space-based format
+        if let Some(pos) = Self::read_cursor_position_standard(line_byte, row_byte) {
+            return Some(pos);
+        } else {
+            // Atari format: direct byte values (0-25 for line, 0-132 for row)
+            Self::read_cursor_position_atari(line_byte, row_byte)
+        }
     }
 
-    /// Parse ATARI cursor line position from ASCII byte (1 based)
+    /// Parse cursor position for Standard mode
+    /// Returns (line, column) as 1-based coordinates
     #[inline]
-    fn parse_cursor_line(byte: u8) -> Option<i32> {
-        // Original VT-52:
-        if byte >= b' ' && byte <= b'8' { Some((byte - b' ') as i32 + 1) } else { None }
+    fn read_cursor_position_standard(line_byte: u8, row_byte: u8) -> Option<(u16, u16)> {
+        // Original VT-52: space-based encoding
+        if line_byte >= b' ' && line_byte <= b'8' && row_byte >= b' ' && row_byte <= b'p' {
+            let line = (line_byte - b' ') as u16 + 1;
+            let row = (row_byte - b' ') as u16 + 1;
+            Some((line, row))
+        } else {
+            None
+        }
     }
 
-    /// Parse VT52 cursor row position from ASCII byte (1 based)
+    /// Parse cursor position for Atari mode
+    /// Returns (line, column) as 1-based coordinates
     #[inline]
-    fn parse_cursor_row_atari(byte: u8) -> Option<i32> {
-        // Original VT-52:
-        if byte <= 132 { Some(byte as i32 + 1) } else { None }
-    }
-
-    /// Parse ATARI cursor line position from ASCII byte (1 based)
-    #[inline]
-    fn parse_cursor_line_atari(byte: u8) -> Option<i32> {
-        // Original VT-52:
-        if byte <= 25 { Some(byte as i32 + 1) } else { None }
+    fn read_cursor_position_atari(line_byte: u8, row_byte: u8) -> Option<(u16, u16)> {
+        // Atari ST: direct byte values
+        if line_byte <= 25 && row_byte <= 132 {
+            let line = line_byte as u16 + 1;
+            let row = row_byte as u16 + 1;
+            Some((line, row))
+        } else {
+            None
+        }
     }
 
     /// Helper function to emit color commands with proper mode and reverse video handling
@@ -121,6 +145,16 @@ impl Vt52Parser {
                 SgrAttribute::Background(color)
             };
             sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
+        } else {
+            let color_type = if get_foreground { "foreground" } else { "background" };
+            sink.report_errror(
+                crate::ParseError::InvalidParameter {
+                    command: "VT52 color",
+                    value: format!("0x{:02X}", byte),
+                    expected: Some(format!("valid {} color code (mode: {:?})", color_type, self.vt52)),
+                },
+                crate::ErrorLevel::Warning,
+            );
         }
     }
 }
@@ -154,19 +188,14 @@ impl CommandParser for Vt52Parser {
                     }
                     0x00..=0x0F => {
                         if self.vt52 != VT52Mode::Standard {
-                            if let Some(color) = match self.vt52 {
-                                VT52Mode::Mixed => Self::parse_vt52_color_mixed(byte),
-                                VT52Mode::Atari => Self::parse_vt52_color_atari(byte),
-                                VT52Mode::Standard => None,
-                            } {
-                                // ATARI ST extension - direct foreground color codes (0x00-0x0F)
-                                let sgr: SgrAttribute = if self.reverse_video {
-                                    SgrAttribute::Background(color)
-                                } else {
-                                    SgrAttribute::Foreground(color)
-                                };
-                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
-                            }
+                            let color = Color::Base(byte);
+                            // ATARI ST extension - direct foreground color codes (0x00-0x0F)
+                            let sgr: SgrAttribute = if self.reverse_video {
+                                SgrAttribute::Background(color)
+                            } else {
+                                SgrAttribute::Foreground(color)
+                            };
+                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
                         }
                     }
                     0x0E..=0x1A | 0x1C..=0x1F => {
@@ -294,49 +323,98 @@ impl CommandParser for Vt52Parser {
                             self.state = State::Default;
                         }
                         _ => {
-                            // Unknown escape sequence, ignore
+                            // Unknown escape sequence, report warning
+                            sink.report_errror(
+                                crate::ParseError::InvalidParameter {
+                                    command: "VT52 escape sequence",
+                                    value: format!("ESC {}", ch),
+                                    expected: Some("valid VT52 command character".to_string()),
+                                },
+                                crate::ErrorLevel::Warning,
+                            );
                             self.state = State::Default;
                         }
                     }
                 }
 
                 State::ReadFgColor => {
-                    self.emit_color_command(byte, true, sink);
-                    self.state = State::Default;
+                    if byte == 0x1B {
+                        // ESC starts new escape sequence
+                        self.state = State::Escape;
+                    } else {
+                        self.emit_color_command(byte, true, sink);
+                        self.state = State::Default;
+                    }
                 }
 
                 State::ReadBgColor => {
-                    self.emit_color_command(byte, false, sink);
-                    self.state = State::Default;
+                    if byte == 0x1B {
+                        // ESC starts new escape sequence
+                        self.state = State::Escape;
+                    } else {
+                        self.emit_color_command(byte, false, sink);
+                        self.state = State::Default;
+                    }
                 }
 
                 State::ReadCursorLine => {
-                    if self.vt52 == VT52Mode::Atari {
-                        if let Some(line) = Self::parse_cursor_line_atari(byte) {
-                            self.state = State::ReadCursorRow(line);
-                        } else {
-                            self.state = State::Default;
-                        }
+                    // Check if we got an ESC character - this means incomplete sequence
+                    if byte == 0x1B {
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "VT52 cursor position",
+                                value: "incomplete sequence (got ESC instead of line)".to_string(),
+                                expected: Some("line coordinate after ESC Y".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.state = State::Escape;
                     } else {
-                        if let Some(line) = Self::parse_cursor_line(byte) {
-                            self.state = State::ReadCursorRow(line);
-                        } else {
-                            self.state = State::Default;
-                        }
+                        self.state = State::ReadCursorRow(byte);
                     }
                 }
 
-                State::ReadCursorRow(line) => {
-                    if self.vt52 == VT52Mode::Atari {
-                        if let Some(row) = Self::parse_cursor_row_atari(byte) {
-                            sink.emit(TerminalCommand::CsiCursorPosition(line as u16, row as u16));
-                        }
+                State::ReadCursorRow(line_byte) => {
+                    // Check if we got an ESC character - this means incomplete cursor position sequence
+                    if byte == 0x1B {
+                        // Incomplete cursor position - treat as error and start new escape sequence
+                        sink.report_errror(
+                            crate::ParseError::InvalidParameter {
+                                command: "VT52 cursor position",
+                                value: format!("line=0x{:02X}, incomplete sequence (got ESC)", line_byte),
+                                expected: Some("complete cursor position sequence (ESC Y line row)".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.state = State::Escape; // ← Nur hier bei ESC
                     } else {
-                        if let Some(row) = Self::parse_cursor_row(byte) {
-                            sink.emit(TerminalCommand::CsiCursorPosition(line as u16, row as u16));
+                        let position = if self.vt52 == VT52Mode::Mixed {
+                            Self::read_cursor_position_mixed(line_byte, byte)
+                        } else if self.vt52 == VT52Mode::Standard {
+                            Self::read_cursor_position_standard(line_byte, byte)
+                        } else {
+                            Self::read_cursor_position_atari(line_byte, byte)
+                        };
+
+                        if let Some((line, row)) = position {
+                            sink.emit(TerminalCommand::CsiCursorPosition(line, row));
+                        } else {
+                            let mode_desc = match self.vt52 {
+                                VT52Mode::Standard => "standard mode: line 0x20-0x38, row 0x20-0x70",
+                                VT52Mode::Atari => "Atari mode: line 0-25, row 0-132",
+                                VT52Mode::Mixed => "mixed mode: space-based (≥0x20) or direct byte values",
+                            };
+                            sink.report_errror(
+                                crate::ParseError::InvalidParameter {
+                                    command: "VT52 cursor position",
+                                    value: format!("line=0x{:02X}, row=0x{:02X}", line_byte, byte),
+                                    expected: Some(format!("valid cursor position for {}", mode_desc)),
+                                },
+                                crate::ErrorLevel::Warning,
+                            );
                         }
+                        self.state = State::Default; // ← Zurück zu Default nach der Verarbeitung
                     }
-                    self.state = State::Default;
                 }
 
                 State::ReadInsertLineCount => {

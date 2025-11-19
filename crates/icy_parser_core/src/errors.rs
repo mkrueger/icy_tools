@@ -38,9 +38,9 @@ pub enum ParseError {
     /// Invalid parameter value for a command
     InvalidParameter {
         command: &'static str,
-        value: u16,
+        value: String,
         /// Expected range or valid values (optional)
-        expected: Option<&'static str>,
+        expected: Option<String>,
     },
     /// Incomplete sequence (parser state at end of input)
     IncompleteSequence {
@@ -76,9 +76,9 @@ impl ParseError {
         match self {
             Self::InvalidParameter { command, value, expected } => {
                 if let Some(exp) = expected {
-                    format!("Invalid parameter value {} for command '{}' (expected: {})", value, command, exp)
+                    format!("Invalid parameter value '{}' for command '{}' (expected: {})", value, command, exp)
                 } else {
-                    format!("Invalid parameter value {} for command '{}'", value, command)
+                    format!("Invalid parameter value '{}' for command '{}'", value, command)
                 }
             }
             Self::IncompleteSequence { context } => {

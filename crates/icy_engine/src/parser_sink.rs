@@ -62,7 +62,6 @@ impl<'a> ScreenSink<'a> {
 
     fn apply_sgr(&mut self, sgr: SgrAttribute) {
         let attr = &mut self.screen.caret_mut().attribute;
-
         match sgr {
             SgrAttribute::Reset => {
                 self.screen.caret_default_colors();
@@ -122,7 +121,12 @@ impl<'a> ScreenSink<'a> {
             SgrAttribute::Foreground(color) => {
                 match color {
                     Color::Base(c) => {
-                        attr.set_foreground(c as u32);
+                        let col = {
+                            let _ = attr;
+                            (c as u32) % self.screen.max_base_colors()
+                        };
+                        self.screen.caret_mut().attribute.set_foreground(col);
+                        return;
                     }
                     Color::Extended(c) => {
                         let color_val = {
@@ -152,7 +156,11 @@ impl<'a> ScreenSink<'a> {
             SgrAttribute::Background(color) => {
                 match color {
                     Color::Base(c) => {
-                        attr.set_background(c as u32);
+                        let col = {
+                            let _ = attr;
+                            (c as u32) % self.screen.max_base_colors()
+                        };
+                        self.screen.caret_mut().attribute.set_background(col);
                     }
                     Color::Extended(c) => {
                         let color_val = {

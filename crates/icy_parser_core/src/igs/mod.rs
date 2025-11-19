@@ -29,8 +29,9 @@ enum State {
 
 pub struct IgsParser {
     state: State,
-    params: Vec<i32>,
+    params: Vec<IgsParameter>,
     current_param: i32,
+    is_current_param_random: bool,
     text_buffer: Vec<u8>,
 
     loop_command: Vec<u8>,
@@ -49,6 +50,7 @@ impl IgsParser {
             state: State::Default,
             params: Vec::new(),
             current_param: 0,
+            is_current_param_random: false,
             text_buffer: Vec::new(),
             loop_command: Vec::new(),
             loop_parameters: Vec::new(),
@@ -73,8 +75,14 @@ impl IgsParser {
     }
 
     fn push_current_param(&mut self) {
-        self.params.push(self.current_param);
+        let param = if self.is_current_param_random {
+            IgsParameter::Random
+        } else {
+            IgsParameter::Value(self.current_param)
+        };
+        self.params.push(param);
         self.current_param = 0;
+        self.is_current_param_random = false;
     }
 
     fn create_loop_command(&mut self, sink: &mut dyn CommandSink) -> Option<IgsCommand> {
@@ -83,8 +91,8 @@ impl IgsParser {
             sink.report_errror(
                 crate::ParseError::InvalidParameter {
                     command: "LoopCommand",
-                    value: self.params.len() as u16,
-                    expected: Some("6 parameter"),
+                    value: format!("{}", self.params.len()),
+                    expected: Some("6 parameter".to_string()),
                 },
                 crate::ErrorLevel::Error,
             );
@@ -95,13 +103,13 @@ impl IgsParser {
             let step = self.params[2];
             let delay = self.params[3];
             let command_identifier = self.loop_command.clone();
-            let param_count = self.params[4] as u16;
+            let param_count = self.params[4].value() as u16;
 
             let mut params_tokens: Vec<LoopParamToken> = Vec::new();
             // Remaining numeric params are converted to tokens unless already substituted tokens in loop_parameters
             if self.params.len() > 5 {
                 for p in &self.params[5..] {
-                    params_tokens.push(LoopParamToken::Number(*p));
+                    params_tokens.push(LoopParamToken::Number(p.value()));
                 }
             }
             // Add any textual parameter tokens captured (x,y,+n etc.)
@@ -162,10 +170,10 @@ impl IgsParser {
             };
 
             Some(IgsCommand::Loop(LoopCommandData {
-                from,
-                to,
-                step,
-                delay,
+                from: from.value(),
+                to: to.value(),
+                step: step.value(),
+                delay: delay.value(),
                 target,
                 modifiers,
                 param_count,
@@ -335,7 +343,11 @@ impl CommandParser for IgsParser {
                 State::Default => {
                     match byte {
                         b'G' => {
-                            self.state = State::GotG;
+                            if self.vt52_parser.is_default_state() {
+                                self.state = State::GotG;
+                            } else {
+                                self.vt52_parser.parse(&[byte], sink);
+                            }
                         }
                         _ => {
                             // Delegate all other bytes to VT52 parser
@@ -350,10 +362,7 @@ impl CommandParser for IgsParser {
                         self.reset_params();
                     } else {
                         // False alarm, just 'G' followed by something else
-                        sink.print(b"G");
-                        if byte >= 0x20 {
-                            sink.print(&[byte]);
-                        }
+                        sink.print(&[b'G', byte]);
                         self.state = State::Default;
                     }
                 }
@@ -372,8 +381,8 @@ impl CommandParser for IgsParser {
                             sink.report_errror(
                                 crate::ParseError::InvalidParameter {
                                     command: "IGS",
-                                    value: byte as u16,
-                                    expected: Some("valid IGS command character"),
+                                    value: format!("{}", byte).to_string(),
+                                    expected: Some("valid IGS command character".to_string()),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -383,6 +392,13 @@ impl CommandParser for IgsParser {
                 }
                 State::ReadParams(cmd_type) => {
                     match byte {
+                        b'r' => {
+                            self.is_current_param_random = true;
+                        }
+                        b'R' => {
+                            // Big random - für jetzt als Random behandeln, kann später erweitert werden
+                            self.is_current_param_random = true;
+                        }
                         b'0'..=b'9' => {
                             self.current_param = self.current_param.wrapping_mul(10).wrapping_add((byte - b'0') as i32);
                         }
@@ -391,7 +407,7 @@ impl CommandParser for IgsParser {
                             // For WriteText: after 2 params (x, y), next non-separator char starts text
                             if cmd_type == IgsCommandType::WriteText && self.params.len() == 2 {
                                 // W>x,y,text@ - text follows immediately after second comma
-                                self.state = State::ReadTextString(self.params[0], self.params[1], 0);
+                                self.state = State::ReadTextString(self.params[0].value(), self.params[1].value(), 0);
                                 self.text_buffer.clear();
                             }
                         }
@@ -400,7 +416,7 @@ impl CommandParser for IgsParser {
                             self.push_current_param();
                             if self.params.len() == 2 {
                                 // W>x,y@text@ format
-                                self.state = State::ReadTextString(self.params[0], self.params[1], 0);
+                                self.state = State::ReadTextString(self.params[0].value(), self.params[1].value(), 0);
                                 self.text_buffer.clear();
                             } else {
                                 // Invalid - WriteText needs exactly 2 params before @
@@ -418,13 +434,14 @@ impl CommandParser for IgsParser {
                             // Whitespace/formatting - ignore
                             // Special handling: extended command X 4 (DefineZone) starts string after 7 numeric params
                             if let State::ReadParams(IgsCommandType::ExtendedCommand) = self.state {
-                                if !self.params.is_empty() && self.params[0] == 4 && self.params.len() == 7 {
+                                if !self.params.is_empty() && self.params[0].value() == 4 && self.params.len() == 7 {
                                     // Switch into zone string reading state (length already captured)
-                                    self.state = State::ReadZoneString(self.params.clone());
+                                    let int_params: Vec<i32> = self.params.iter().map(|p| p.value()).collect();
+                                    self.state = State::ReadZoneString(int_params);
                                     self.text_buffer.clear();
-                                } else if !self.params.is_empty() && self.params[0] == 7 && self.params.len() == 2 {
+                                } else if !self.params.is_empty() && self.params[0].value() == 7 && self.params.len() == 2 {
                                     // Switch to fill pattern reading state
-                                    let pattern = self.params[1];
+                                    let pattern = self.params[1].value();
                                     self.state = State::ReadFillPattern(pattern);
                                     self.text_buffer.clear();
                                 }
@@ -433,12 +450,13 @@ impl CommandParser for IgsParser {
                         _ => {
                             // Extended command X 4 zone string may contain arbitrary characters until ':'
                             if let State::ReadParams(IgsCommandType::ExtendedCommand) = self.state {
-                                if !self.params.is_empty() && self.params[0] == 4 && self.params.len() == 7 {
-                                    self.state = State::ReadZoneString(self.params.clone());
+                                if !self.params.is_empty() && self.params[0].value() == 4 && self.params.len() == 7 {
+                                    let int_params: Vec<i32> = self.params.iter().map(|p| p.value()).collect();
+                                    self.state = State::ReadZoneString(int_params);
                                     self.text_buffer.clear();
                                     self.text_buffer.push(byte);
-                                } else if !self.params.is_empty() && self.params[0] == 7 && self.params.len() == 2 {
-                                    let pattern = self.params[1];
+                                } else if !self.params.is_empty() && self.params[0].value() == 7 && self.params.len() == 2 {
+                                    let pattern = self.params[1].value();
                                     self.state = State::ReadFillPattern(pattern);
                                     self.text_buffer.clear();
                                     self.text_buffer.push(byte);
@@ -447,8 +465,8 @@ impl CommandParser for IgsParser {
                                     sink.report_errror(
                                         crate::ParseError::InvalidParameter {
                                             command: "ExtendedCommand",
-                                            value: byte as u16,
-                                            expected: Some("digit, ',', ':' oder gültiger Text für X4/X7"),
+                                            value: format!("{}", byte).to_string(),
+                                            expected: Some("digit, ',', ':' oder gültiger Text für X4/X7".to_string()),
                                         },
                                         crate::ErrorLevel::Error,
                                     );
@@ -460,8 +478,8 @@ impl CommandParser for IgsParser {
                                 sink.report_errror(
                                     crate::ParseError::InvalidParameter {
                                         command: "IGS:ReadParams",
-                                        value: byte as u16,
-                                        expected: Some("Ziffer, ',', ':' oder Whitespace"),
+                                        value: format!("{}", byte).to_string(),
+                                        expected: Some("Ziffer, ',', ':' oder Whitespace".to_string()),
                                     },
                                     crate::ErrorLevel::Error,
                                 );
@@ -477,10 +495,10 @@ impl CommandParser for IgsParser {
                             // Terminator: build DefineZone command (X 4)
                             if zone_params.len() == 7 {
                                 let zone_id = zone_params[1];
-                                let x1 = zone_params[2];
-                                let y1 = zone_params[3];
-                                let x2 = zone_params[4];
-                                let y2 = zone_params[5];
+                                let x1 = zone_params[2].into();
+                                let y1 = zone_params[3].into();
+                                let x2 = zone_params[4].into();
+                                let y2 = zone_params[5].into();
                                 let length = zone_params[6] as u16;
                                 let string = self.text_buffer.clone();
                                 sink.emit_igs(IgsCommand::DefineZone {

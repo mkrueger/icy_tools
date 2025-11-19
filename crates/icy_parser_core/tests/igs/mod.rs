@@ -49,10 +49,10 @@ fn test_igs_box_command() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::Box { x1, y1, x2, y2, rounded } => {
-            assert_eq!(*x1, 10);
-            assert_eq!(*y1, 20);
-            assert_eq!(*x2, 100);
-            assert_eq!(*y2, 200);
+            assert_eq!(*x1, 10.into());
+            assert_eq!(*y1, 20.into());
+            assert_eq!(*x2, 100.into());
+            assert_eq!(*y2, 200.into());
             assert_eq!(*rounded, false);
         }
         _ => panic!("Expected Box command"),
@@ -70,10 +70,10 @@ fn test_igs_line_command() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::Line { x1, y1, x2, y2 } => {
-            assert_eq!(*x1, 0);
-            assert_eq!(*y1, 0);
-            assert_eq!(*x2, 100);
-            assert_eq!(*y2, 100);
+            assert_eq!(*x1, 0.into());
+            assert_eq!(*y1, 0.into());
+            assert_eq!(*x2, 100.into());
+            assert_eq!(*y2, 100.into());
         }
         _ => panic!("Expected Line command"),
     }
@@ -90,9 +90,9 @@ fn test_igs_circle_command() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::Circle { x, y, radius } => {
-            assert_eq!(*x, 50);
-            assert_eq!(*y, 50);
-            assert_eq!(*radius, 25);
+            assert_eq!(*x, 50.into());
+            assert_eq!(*y, 50.into());
+            assert_eq!(*radius, 25.into());
         }
         _ => panic!("Expected Circle command"),
     }
@@ -110,7 +110,7 @@ fn test_igs_color_set() {
     match &sink.igs_commands[0] {
         IgsCommand::ColorSet { pen, color } => {
             assert_eq!(*pen as u8, 1);
-            assert_eq!(*color, 15);
+            assert_eq!(*color, 15.into());
         }
         _ => panic!("Expected ColorSet command"),
     }
@@ -127,8 +127,8 @@ fn test_igs_write_text() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::WriteText { x, y, text } => {
-            assert_eq!(*x, 10);
-            assert_eq!(*y, 20);
+            assert_eq!(*x, 10.into());
+            assert_eq!(*y, 20.into());
             assert_eq!(text, b"Hello World");
         }
         _ => panic!("Expected WriteText command"),
@@ -216,8 +216,8 @@ fn test_igs_flood_fill() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::FloodFill { x, y } => {
-            assert_eq!(*x, 100);
-            assert_eq!(*y, 100);
+            assert_eq!(*x, 100.into());
+            assert_eq!(*y, 100.into());
         }
         _ => panic!("Expected FloodFill command"),
     }
@@ -234,10 +234,10 @@ fn test_igs_ellipse() {
     assert_eq!(sink.igs_commands.len(), 1);
     match &sink.igs_commands[0] {
         IgsCommand::Ellipse { x, y, x_radius, y_radius } => {
-            assert_eq!(*x, 100);
-            assert_eq!(*y, 100);
-            assert_eq!(*x_radius, 50);
-            assert_eq!(*y_radius, 30);
+            assert_eq!(*x, 100.into());
+            assert_eq!(*y, 100.into());
+            assert_eq!(*x_radius, 50.into());
+            assert_eq!(*y_radius, 30.into());
         }
         _ => panic!("Expected Ellipse command"),
     }
@@ -260,11 +260,11 @@ fn test_igs_arc() {
             end_angle,
             radius,
         } => {
-            assert_eq!(*x, 100);
-            assert_eq!(*y, 100);
-            assert_eq!(*radius, 50);
-            assert_eq!(*start_angle, 0);
-            assert_eq!(*end_angle, 90);
+            assert_eq!(*x, 100.into());
+            assert_eq!(*y, 100.into());
+            assert_eq!(*radius, 50.into());
+            assert_eq!(*start_angle, 0.into());
+            assert_eq!(*end_angle, 90.into());
         }
         _ => panic!("Expected Arc command"),
     }
@@ -292,12 +292,72 @@ fn test_new_lines() {
             end_angle,
             radius,
         } => {
-            assert_eq!(*x, 100);
-            assert_eq!(*y, 100);
-            assert_eq!(*radius, 50);
-            assert_eq!(*start_angle, 0);
-            assert_eq!(*end_angle, 90);
+            assert_eq!(*x, 100.into());
+            assert_eq!(*y, 100.into());
+            assert_eq!(*radius, 50.into());
+            assert_eq!(*start_angle, 0.into());
+            assert_eq!(*end_angle, 90.into());
         }
         _ => panic!("Expected Arc command"),
     }
+}
+
+#[test]
+fn test_igs_random_parameters() {
+    use icy_parser_core::IgsParameter;
+
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Test 'r' (lowercase random) - should parse as Random parameter
+    parser.parse(b"G#L>10,20,r,r:", &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+    match &sink.igs_commands[0] {
+        IgsCommand::Line { x1, y1, x2, y2 } => {
+            assert_eq!(*x1, IgsParameter::Value(10));
+            assert_eq!(*y1, IgsParameter::Value(20));
+            assert!(x2.is_random(), "x2 should be random parameter");
+            assert!(y2.is_random(), "y2 should be random parameter");
+        }
+        _ => panic!("Expected Line command with random parameters"),
+    }
+}
+
+#[test]
+fn test_igs_random_parameters_big() {
+    use icy_parser_core::IgsParameter;
+
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Test 'R' (uppercase random) - should parse as BigRandom parameter
+    parser.parse(b"G#L>R,R,100,200:", &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+    match &sink.igs_commands[0] {
+        IgsCommand::Line { x1, y1, x2, y2 } => {
+            assert!(x1.is_random(), "x1 should be random parameter");
+            assert!(y1.is_random(), "y1 should be random parameter");
+            assert_eq!(*x2, IgsParameter::Value(100));
+            assert_eq!(*y2, IgsParameter::Value(200));
+        }
+        _ => panic!("Expected Line command with big random parameters"),
+    }
+}
+
+#[test]
+fn test_igs_random_parameters_roundtrip() {
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Test roundtrip: parse → display → parse should preserve 'r'
+    let original = b"G#L>10,20,r,r:";
+    parser.parse(original, &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+    let displayed = format!("{}", sink.igs_commands[0]);
+
+    // The displayed format should contain 'r' for random parameters
+    assert_eq!(displayed, "G#L>10,20,r,r:", "Roundtrip should preserve 'r' random parameters");
 }

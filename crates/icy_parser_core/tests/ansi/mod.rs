@@ -560,7 +560,7 @@ fn test_error_reporting() {
         sink.errors[0],
         ParseError::InvalidParameter {
             command: "CsiEraseInDisplay",
-            value: 99,
+            value: 99.to_string(),
             expected: None,
         }
     );
@@ -578,7 +578,7 @@ fn test_error_reporting() {
         sink.errors[0],
         ParseError::InvalidParameter {
             command: "CsiEraseInLine",
-            value: 5,
+            value: 5.to_string(),
             expected: None,
         }
     );
@@ -596,7 +596,7 @@ fn test_error_reporting() {
         sink.errors[0],
         ParseError::InvalidParameter {
             command: "CsiDeviceStatusReport",
-            value: 99,
+            value: 99.to_string(),
             expected: None,
         }
     );
@@ -612,7 +612,7 @@ fn test_error_reporting() {
         sink.errors[0],
         ParseError::InvalidParameter {
             command: "CsiDecPrivateModeSet",
-            value: 9999,
+            value: 9999.to_string(),
             expected: None,
         }
     );
@@ -713,7 +713,7 @@ fn test_ansi_modes() {
         sink.errors[0],
         ParseError::InvalidParameter {
             command: "CsiSetMode",
-            value: 99,
+            value: 99.to_string(),
             expected: None,
         }
     );

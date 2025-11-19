@@ -493,6 +493,14 @@ impl Screen for PaletteScreenBuffer {
 }
 
 impl RgbaScreen for PaletteScreenBuffer {
+    fn max_base_colors(&self) -> u32 {
+        if let GraphicsType::IGS(t) = self.graphics_type {
+            t.get_max_colors()
+        } else {
+            self.palette.len() as u32
+        }
+    }
+
     fn get_resolution(&self) -> Size {
         self.pixel_size
     }

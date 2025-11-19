@@ -1,10 +1,12 @@
 use icy_parser_core::{
-    Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, IgsParser, SgrAttribute, TerminalCommand,
+    Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsParser, ParseError, SgrAttribute,
+    TerminalCommand,
 };
 
 struct TestSink {
     text: Vec<String>,
     commands: Vec<TerminalCommand>,
+    errors: Vec<(ParseError, ErrorLevel)>,
 }
 
 impl TestSink {
@@ -12,6 +14,7 @@ impl TestSink {
         Self {
             text: Vec::new(),
             commands: Vec::new(),
+            errors: Vec::new(),
         }
     }
 }
@@ -23,6 +26,10 @@ impl CommandSink for TestSink {
 
     fn emit(&mut self, cmd: TerminalCommand) {
         self.commands.push(cmd);
+    }
+
+    fn report_errror(&mut self, error: ParseError, level: ErrorLevel) {
+        self.errors.push((error, level));
     }
 }
 
@@ -324,4 +331,62 @@ fn test_vt52_text_and_commands() {
     let combined_text = sink.text.join("");
     assert!(combined_text.contains("Hello"));
     assert!(combined_text.contains("World"));
+}
+
+#[test]
+fn test_vt52_invalid_cursor_position_warning() {
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Invalid cursor position: line=0xFF (too high), row=0xFF (too high)
+    // ESC Y {line} {row} - both bytes outside valid range
+    parser.parse(b"\x1BY\xFF\xFF", &mut sink);
+
+    // Should emit a warning but not crash
+    assert_eq!(sink.errors.len(), 1);
+    match &sink.errors[0] {
+        (ParseError::InvalidParameter { command, .. }, ErrorLevel::Warning) => {
+            assert_eq!(*command, "VT52 cursor position");
+        }
+        _ => panic!("Expected InvalidParameter warning"),
+    }
+    // Should not emit cursor position command due to invalid input
+    assert_eq!(sink.commands.len(), 0);
+}
+
+#[test]
+fn test_vt52_invalid_color_warning() {
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Invalid foreground color: ESC b {invalid_color}
+    // Using byte 0xFF which is outside valid range
+    parser.parse(b"\x1Bb\xFF", &mut sink);
+
+    // Should emit a warning
+    assert_eq!(sink.errors.len(), 1);
+    match &sink.errors[0] {
+        (ParseError::InvalidParameter { command, .. }, ErrorLevel::Warning) => {
+            assert_eq!(*command, "VT52 color");
+        }
+        _ => panic!("Expected InvalidParameter warning for color"),
+    }
+}
+
+#[test]
+fn test_vt52_unknown_escape_sequence_warning() {
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Unknown escape sequence: ESC Z (not a valid VT52 command)
+    parser.parse(b"\x1BZ", &mut sink);
+
+    // Should emit a warning
+    assert_eq!(sink.errors.len(), 1);
+    match &sink.errors[0] {
+        (ParseError::InvalidParameter { command, .. }, ErrorLevel::Warning) => {
+            assert_eq!(*command, "VT52 escape sequence");
+        }
+        _ => panic!("Expected InvalidParameter warning for unknown escape"),
+    }
 }

@@ -92,6 +92,7 @@ pub trait Screen: TextPane + Send {
 }
 
 pub trait RgbaScreen: Screen {
+    fn max_base_colors(&self) -> u32;
     fn get_resolution(&self) -> Size;
     fn set_resolution(&mut self, size: Size);
 

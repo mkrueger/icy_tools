@@ -95,7 +95,7 @@ impl TerminalResolution {
     pub fn get_max_colors(&self) -> u32 {
         match self {
             TerminalResolution::Low => 16,
-            TerminalResolution::Medium => 16,
+            TerminalResolution::Medium => 4,
             TerminalResolution::High => 2,
         }
     }

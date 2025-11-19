@@ -1,4 +1,6 @@
 mod loops;
+use std::fmt;
+
 pub use loops::*;
 
 mod polymarker_kind;
@@ -33,3 +35,128 @@ pub use cursor_mode::*;
 
 mod ask_query;
 pub use ask_query::*;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IgsParameter {
+    Value(i32),
+    /// 'r' for random value (0-999)
+    Random,
+    /// 'R' for big random value (0-9999)
+    BigRandom,
+}
+
+/// Manages random number generation ranges for 'r' and 'R' parameters.
+///
+/// Default ranges:
+/// - 'r' (Small): 0-199
+/// - 'R' (Big): 0-199
+pub struct ParameterBounds {
+    small_range: (i32, i32), // Range for 'r'
+    big_range: (i32, i32),   // Range for 'R'
+}
+
+impl Default for ParameterBounds {
+    fn default() -> Self {
+        Self {
+            small_range: (0, 199),
+            big_range: (0, 199),
+        }
+    }
+}
+
+impl ParameterBounds {
+    /// Creates new parameter bounds with default ranges (0-199 for both)
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Updates the random ranges based on RandomRangeType from SetRandomRange command
+    pub fn update(&mut self, range_type: &RandomRangeType) {
+        match range_type {
+            RandomRangeType::Small { min, max } => {
+                self.small_range = (min.value(), max.value());
+            }
+            RandomRangeType::Big { min, max } => {
+                self.big_range = (min.value(), max.value());
+            }
+        }
+    }
+
+    /// Gets the range for 'r' (small random) parameters
+    pub fn small_range(&self) -> (i32, i32) {
+        self.small_range
+    }
+
+    /// Gets the range for 'R' (big random) parameters
+    pub fn big_range(&self) -> (i32, i32) {
+        self.big_range
+    }
+}
+
+impl IgsParameter {
+    /// Evaluates the parameter to a concrete value.
+    /// For fixed values, returns the value directly.
+    /// For random values, generates a random number within the configured range.
+    pub fn evaluate(&self, bounds: &ParameterBounds) -> i32 {
+        match self {
+            IgsParameter::Value(v) => *v,
+            IgsParameter::Random => {
+                let (min, max) = bounds.small_range();
+                fastrand::i32(min..=max)
+            }
+            IgsParameter::BigRandom => {
+                let (min, max) = bounds.big_range();
+                fastrand::i32(min..=max)
+            }
+        }
+    }
+
+    /// Returns the value if this is a fixed value, panics otherwise.
+    /// Use this only when you know the parameter is not random.
+    pub fn value(&self) -> i32 {
+        match self {
+            IgsParameter::Value(v) => *v,
+            IgsParameter::Random => panic!("Cannot get fixed value from random parameter 'r'"),
+            IgsParameter::BigRandom => panic!("Cannot get fixed value from random parameter 'R'"),
+        }
+    }
+
+    /// Returns true if this parameter requires random number generation
+    pub fn is_random(&self) -> bool {
+        matches!(self, IgsParameter::Random | IgsParameter::BigRandom)
+    }
+}
+
+impl From<i32> for IgsParameter {
+    fn from(value: i32) -> Self {
+        IgsParameter::Value(value)
+    }
+}
+
+impl fmt::Display for IgsParameter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IgsParameter::Value(v) => write!(f, "{}", v),
+            IgsParameter::Random => write!(f, "r"),
+            IgsParameter::BigRandom => write!(f, "R"),
+        }
+    }
+}
+
+/// Random range configuration for 'r' and 'R' parameters
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RandomRangeType {
+    /// Range for 'r' (lowercase random): min to max
+    Small { min: IgsParameter, max: IgsParameter },
+    /// Range for 'R' (uppercase random): min to max  
+    Big { min: IgsParameter, max: IgsParameter },
+}
+
+impl fmt::Display for RandomRangeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RandomRangeType::Small { min, max } => write!(f, "{},{}", min, max),
+            RandomRangeType::Big { min, max } => write!(f, "{},{},{}", min, min, max),
+        }
+    }
+}

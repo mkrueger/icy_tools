@@ -465,12 +465,6 @@ impl DrawExecutor {
     }
 
     pub fn fill_poly(&mut self, buf: &mut dyn EditableScreen, points: &[i32]) {
-        println!(
-            "DEBUG fill_poly: hollow_set={} fill_color={} points.len()={}",
-            self.hollow_set,
-            self.fill_color,
-            points.len()
-        );
         if self.hollow_set {
             self.draw_poly(buf, points, self.fill_color, true);
             return;
@@ -557,9 +551,6 @@ impl DrawExecutor {
             // There are almost always exactly 2, except for weird shapes.
             edge_buffer.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            if cfg!(debug_assertions) {
-                println!("DEBUG fill_poly: y={} intersections={:?}", y, edge_buffer);
-            }
             // Loop through all edges in pairs, filling the pixels in between.
             let mut j = 0;
             while j < edge_buffer.len() {
@@ -569,10 +560,6 @@ impl DrawExecutor {
                 let x2 = edge_buffer[j] as i32;
                 j += 1;
 
-                // Fill in all pixels horizontally from (x1, y) to (x2, y)
-                if cfg!(debug_assertions) && y >= 24 && y <= 32 {
-                    println!("DEBUG fill_poly: span y={} x1={} x2={}", y, x1, x2);
-                }
                 for k in x1..=x2 {
                     self.fill_pixel(buf, k, y);
                 }

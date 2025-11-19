@@ -1475,7 +1475,7 @@ impl AnsiParser {
                         sink.report_errror(
                             ParseError::InvalidParameter {
                                 command: "CsiEraseInDisplay",
-                                value: n,
+                                value: format!("{}", n).to_string(),
                                 expected: None,
                             },
                             crate::ErrorLevel::Error,
@@ -1492,7 +1492,7 @@ impl AnsiParser {
                         sink.report_errror(
                             ParseError::InvalidParameter {
                                 command: "CsiEraseInLine",
-                                value: n,
+                                value: format!("{}", n).to_string(),
                                 expected: None,
                             },
                             crate::ErrorLevel::Error,
@@ -1697,7 +1697,7 @@ impl AnsiParser {
                         sink.report_errror(
                             ParseError::InvalidParameter {
                                 command: "CsiDeviceStatusReport",
-                                value: n,
+                                value: format!("{}", n).to_string(),
                                 expected: None,
                             },
                             crate::ErrorLevel::Error,
@@ -1715,7 +1715,7 @@ impl AnsiParser {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "CsiSetMode",
-                                    value: param,
+                                    value: format!("{}", param).to_string(),
                                     expected: None,
                                 },
                                 crate::ErrorLevel::Error,
@@ -1734,7 +1734,7 @@ impl AnsiParser {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "CsiResetMode",
-                                    value: param,
+                                    value: format!("{}", param).to_string(),
                                     expected: None,
                                 },
                                 crate::ErrorLevel::Error,
@@ -1780,7 +1780,7 @@ impl AnsiParser {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "CsiDecPrivateModeSet",
-                                    value: param,
+                                    value: format!("{}", param).to_string(),
                                     expected: None,
                                 },
                                 crate::ErrorLevel::Error,
@@ -1799,7 +1799,7 @@ impl AnsiParser {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "CsiDecPrivateModeReset",
-                                    value: param,
+                                    value: format!("{}", param).to_string(),
                                     expected: None,
                                 },
                                 crate::ErrorLevel::Error,
@@ -1821,7 +1821,7 @@ impl AnsiParser {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "DECCKSR",
-                                    value: 63,
+                                    value: format!("{}", 63).to_string(),
                                     expected: None,
                                 },
                                 crate::ErrorLevel::Error,
@@ -1831,7 +1831,7 @@ impl AnsiParser {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "DEC DSR",
-                                    value: self.params[0],
+                                    value: self.params[0].to_string(),
                                     expected: None,
                                 },
                                 crate::ErrorLevel::Error,

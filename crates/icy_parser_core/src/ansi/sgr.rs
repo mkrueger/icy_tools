@@ -177,8 +177,8 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "CsiSelectGraphicRendition",
-                                    value: params[i + 1],
-                                    expected: Some("5 (256-color) or 2 (RGB)"),
+                                    value: params[i + 1].to_string(),
+                                    expected: Some("5 (256-color) or 2 (RGB)".to_string()),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -221,8 +221,8 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                             sink.report_errror(
                                 ParseError::InvalidParameter {
                                     command: "CsiSelectGraphicRendition",
-                                    value: params[i + 1],
-                                    expected: Some("5 (256-color) or 2 (RGB)"),
+                                    value: params[i + 1].to_string(),
+                                    expected: Some("5 (256-color) or 2 (RGB)".to_string()),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -245,8 +245,8 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                 sink.report_errror(
                     ParseError::InvalidParameter {
                         command: "CsiSelectGraphicRendition",
-                        value: code as u16,
-                        expected: Some("valid SGR attribute code (0-107)"),
+                        value: format!("{}", code).to_string(),
+                        expected: Some("valid SGR attribute code (0-107)".to_string()),
                     },
                     crate::ErrorLevel::Error,
                 );

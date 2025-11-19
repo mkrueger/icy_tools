@@ -22,10 +22,10 @@ pub enum IgsCommand {
     /// # Example
     /// `G#B>0,0,100,100,0:` - Draws a square box from (0,0) to (100,100)
     Box {
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
+        x1: IgsParameter,
+        y1: IgsParameter,
+        x2: IgsParameter,
+        y2: IgsParameter,
         rounded: bool,
     },
 
@@ -48,10 +48,10 @@ pub enum IgsCommand {
     /// * `ColorSet` - Sets line color
     /// * `LineDrawTo` - Draws from last endpoint
     Line {
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
+        x1: IgsParameter,
+        y1: IgsParameter,
+        x2: IgsParameter,
+        y2: IgsParameter,
     },
 
     /// Draw line from last position (D)
@@ -69,8 +69,8 @@ pub enum IgsCommand {
     /// # Note
     /// If no starting point has been established, behavior is undefined.
     LineDrawTo {
-        x: i32,
-        y: i32,
+        x: IgsParameter,
+        y: IgsParameter,
     },
 
     /// Circle drawing command (O)
@@ -86,9 +86,9 @@ pub enum IgsCommand {
     /// * `y` - Center Y coordinate
     /// * `radius` - Circle radius in pixels
     Circle {
-        x: i32,
-        y: i32,
-        radius: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        radius: IgsParameter,
     },
 
     /// Ellipse/Oval drawing command (Q)
@@ -105,10 +105,10 @@ pub enum IgsCommand {
     /// * `x_radius` - Horizontal radius
     /// * `y_radius` - Vertical radius
     Ellipse {
-        x: i32,
-        y: i32,
-        x_radius: i32,
-        y_radius: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        x_radius: IgsParameter,
+        y_radius: IgsParameter,
     },
 
     /// Circular arc drawing command (K)
@@ -126,11 +126,11 @@ pub enum IgsCommand {
     /// * `start_angle` - Starting angle in degrees (0-360)
     /// * `end_angle` - Ending angle in degrees (0-360)
     Arc {
-        x: i32,
-        y: i32,
-        radius: i32,
-        start_angle: i32,
-        end_angle: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        radius: IgsParameter,
+        start_angle: IgsParameter,
+        end_angle: IgsParameter,
     },
 
     /// Polyline drawing command (z)
@@ -147,7 +147,7 @@ pub enum IgsCommand {
     /// # Example
     /// `G#z>3,100,0,150,100,50,100:` - Triangle with 3 points
     PolyLine {
-        points: Vec<i32>,
+        points: Vec<IgsParameter>,
     },
 
     /// Polygon fill command (f)
@@ -164,7 +164,7 @@ pub enum IgsCommand {
     /// # Note
     /// Passing 1 or 2 points draws a point or line respectively
     PolyFill {
-        points: Vec<i32>,
+        points: Vec<IgsParameter>,
     },
 
     /// Flood fill command (F)
@@ -179,8 +179,8 @@ pub enum IgsCommand {
     /// * `x` - Starting X coordinate
     /// * `y` - Starting Y coordinate
     FloodFill {
-        x: i32,
-        y: i32,
+        x: IgsParameter,
+        y: IgsParameter,
     },
 
     /// Polymarker plot command (P)
@@ -196,8 +196,8 @@ pub enum IgsCommand {
     /// * `x` - X coordinate
     /// * `y` - Y coordinate
     PolymarkerPlot {
-        x: i32,
-        y: i32,
+        x: IgsParameter,
+        y: IgsParameter,
     },
 
     // Color/Style commands
@@ -304,8 +304,8 @@ pub enum IgsCommand {
     /// A justification parameter is not documented; older files may include an
     /// extra numeric which we intentionally omit for spec conformity.
     WriteText {
-        x: i32,
-        y: i32,
+        x: IgsParameter,
+        y: IgsParameter,
         text: Vec<u8>,
     },
 
@@ -425,12 +425,12 @@ pub enum IgsCommand {
     /// * `start_angle` - Starting angle in degrees
     /// * `end_angle` - Ending angle in degrees
     EllipticalArc {
-        x: i32,
-        y: i32,
-        x_radius: i32,
-        y_radius: i32,
-        start_angle: i32,
-        end_angle: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        x_radius: IgsParameter,
+        y_radius: IgsParameter,
+        start_angle: IgsParameter,
+        end_angle: IgsParameter,
     },
 
     /// Cursor control command (k)
@@ -490,7 +490,7 @@ pub enum IgsCommand {
     ///   - First param 5: Execute loaded sound chip buffer
     ///   - First param 6: Execute buffer from position x to y
     Noise {
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     /// Rounded rectangles command (U)
@@ -506,10 +506,10 @@ pub enum IgsCommand {
     /// * `y2` - Lower right Y coordinate
     /// * `fill` - `false` for filled with no border, `true` for outline affected by attributes
     RoundedRectangles {
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
+        x1: IgsParameter,
+        y1: IgsParameter,
+        x2: IgsParameter,
+        y2: IgsParameter,
         fill: bool,
     },
 
@@ -526,11 +526,11 @@ pub enum IgsCommand {
     /// * `start_angle` - Starting angle in degrees
     /// * `end_angle` - Ending angle in degrees
     PieSlice {
-        x: i32,
-        y: i32,
-        radius: i32,
-        start_angle: i32,
-        end_angle: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        radius: IgsParameter,
+        start_angle: IgsParameter,
+        end_angle: IgsParameter,
     },
 
     /// Elliptical pie slice command (Y)
@@ -547,12 +547,12 @@ pub enum IgsCommand {
     /// * `start_angle` - Starting angle in degrees
     /// * `end_angle` - Ending angle in degrees
     EllipticalPieSlice {
-        x: i32,
-        y: i32,
-        x_radius: i32,
-        y_radius: i32,
-        start_angle: i32,
-        end_angle: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        x_radius: IgsParameter,
+        y_radius: IgsParameter,
+        start_angle: IgsParameter,
+        end_angle: IgsParameter,
     },
 
     /// Filled rectangle command (Z)
@@ -568,10 +568,10 @@ pub enum IgsCommand {
     /// * `x2` - Lower right X coordinate
     /// * `y2` - Lower right Y coordinate
     FilledRectangle {
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
+        x1: IgsParameter,
+        y1: IgsParameter,
+        x2: IgsParameter,
+        y2: IgsParameter,
     },
 
     /// Input command (<)
@@ -590,7 +590,7 @@ pub enum IgsCommand {
     ///   - Param 3: 0=don't echo, 1=echo, 2=echo but discard, 3=don't echo and discard
     InputCommand {
         input_type: u8,
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     /// Ask IG command (?)
@@ -708,11 +708,11 @@ pub enum IgsCommand {
     /// * `height` - Height of spray area (max 255)
     /// * `density` - Number of points to plot (max 9999)
     SprayPaint {
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-        density: i32,
+        x: IgsParameter,
+        y: IgsParameter,
+        width: IgsParameter,
+        height: IgsParameter,
+        density: IgsParameter,
     },
 
     /// Set color register (X 1)
@@ -738,9 +738,9 @@ pub enum IgsCommand {
     /// command parameters. Default range is 0-199.
     ///
     /// # Parameters
-    /// * `params` - [min, max] for 'r', or [min, min, max] for 'R'
+    /// * `range_type` - Small for 'r' [min,max] or Big for 'R' [min,min,max]
     SetRandomRange {
-        params: Vec<i32>,
+        range_type: RandomRangeType,
     },
 
     /// Right mouse button macro (X 3)
@@ -756,7 +756,7 @@ pub enum IgsCommand {
     ///   - [1, cr]: Reactivate (cr: 0=no CR, 1=add CR)
     ///   - [2, on, cr, len, ...]: Load and configure macro
     RightMouseMacro {
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     /// Define mouse click zones (X 4)
@@ -775,10 +775,10 @@ pub enum IgsCommand {
     /// * `string` - Data transmitted when zone is activated
     DefineZone {
         zone_id: i32,
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
+        x1: IgsParameter,
+        y1: IgsParameter,
+        x2: IgsParameter,
+        y2: IgsParameter,
         length: u16,
         string: Vec<u8>,
     },
@@ -800,7 +800,7 @@ pub enum IgsCommand {
     /// * `params` - Additional parameters for custom settings
     FlowControl {
         mode: u8,
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     /// Left mouse button behavior (X 6)
@@ -870,7 +870,7 @@ pub enum IgsCommand {
     ///   - [1]: Execute loaded commands
     ///   - [2]: Clear buffer
     LoadMidiBuffer {
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     /// Set DrawTo begin point (X 10)
@@ -884,8 +884,8 @@ pub enum IgsCommand {
     /// * `x` - Starting X coordinate
     /// * `y` - Starting Y coordinate
     SetDrawtoBegin {
-        x: i32,
-        y: i32,
+        x: IgsParameter,
+        y: IgsParameter,
     },
 
     /// Load BitBlit memory (X 11)
@@ -905,7 +905,7 @@ pub enum IgsCommand {
     /// - 0: Entire 32KB buffer
     /// - 1-8: 4KB horizontal bands (1=top, 8=bottom)
     LoadBitblitMemory {
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     /// Load color palette (X 12)
@@ -922,7 +922,7 @@ pub enum IgsCommand {
     ///   - [2, ...]: Registers 8-11
     ///   - [3, ...]: Registers 12-15
     LoadColorPalette {
-        params: Vec<i32>,
+        params: Vec<IgsParameter>,
     },
 
     // IGS-specific color commands (ESC b/c are IGS extensions, not standard VT52)
@@ -1017,13 +1017,13 @@ pub enum IgsCommand {
     /// * `x` - Column (0-79)
     /// * `y` - Row (0-24)
     PositionCursor {
-        x: i32,
-        y: i32,
+        x: IgsParameter,
+        y: IgsParameter,
     },
 
     /// Remember cursor position (ESC r)
     ///
-    /// IGS: `G#r>value:` or `\x1br`
+    /// IGS: `G#r>value:`
     ///
     /// Remembers current cursor position for recall.
     /// Different from save/restore cursor commands. Value only present in IG form.
@@ -1377,12 +1377,8 @@ impl fmt::Display for IgsCommand {
             IgsCommand::SetColorRegister { register, value } => {
                 write!(f, "G#X>1,{},{}:", register, value)
             }
-            IgsCommand::SetRandomRange { params } => {
-                write!(f, "G#X>2")?;
-                for param in params {
-                    write!(f, ",{}", param)?;
-                }
-                write!(f, ":")
+            IgsCommand::SetRandomRange { range_type } => {
+                write!(f, "G#X>2,{}:", range_type)
             }
             IgsCommand::RightMouseMacro { params } => {
                 write!(f, "G#X>3")?;

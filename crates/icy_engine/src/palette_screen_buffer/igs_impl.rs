@@ -1,16 +1,18 @@
 use super::bgi::{ButtonStyle2, MouseField};
 use super::igs::{TerminalResolutionExt, paint::DrawExecutor};
 use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE};
-use icy_parser_core::{IgsCommand, LineStyleKind};
+use icy_parser_core::{IgsCommand, LineStyleKind, ParameterBounds};
 
 pub struct IgsState {
     pub executor: DrawExecutor,
+    pub random_bounds: ParameterBounds,
 }
 
 impl IgsState {
     pub fn new() -> Self {
         Self {
             executor: DrawExecutor::default(),
+            random_bounds: ParameterBounds::default(),
         }
     }
 }
@@ -20,21 +22,27 @@ static IGS_LOW_COLOR_MAP: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 
 static IGS_MEDIUM_COLOR_MAP: [u8; 16] = [0, 3, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3];
 static IGS_HIGH_COLOR_MAP: [u8; 16] = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
-fn get_color_map(buf: &dyn EditableScreen) -> &'static [u8; 16] {
+fn get_color_map(buf: &dyn EditableScreen) -> (usize, &'static [u8; 16]) {
     if let GraphicsType::IGS(term_res) = buf.graphics_type() {
         match term_res {
-            icy_parser_core::TerminalResolution::Low => &IGS_LOW_COLOR_MAP,
-            icy_parser_core::TerminalResolution::Medium => &IGS_MEDIUM_COLOR_MAP,
-            icy_parser_core::TerminalResolution::High => &IGS_HIGH_COLOR_MAP,
+            icy_parser_core::TerminalResolution::Low => (16, &IGS_LOW_COLOR_MAP),
+            icy_parser_core::TerminalResolution::Medium => (4, &IGS_MEDIUM_COLOR_MAP),
+            icy_parser_core::TerminalResolution::High => (2, &IGS_HIGH_COLOR_MAP),
         }
     } else {
-        &IGS_LOW_COLOR_MAP
+        (16, &IGS_LOW_COLOR_MAP)
     }
 }
 
 fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: IgsCommand) {
     match cmd {
         IgsCommand::Box { x1, y1, x2, y2, rounded } => {
+            let (x1, y1, x2, y2) = (
+                x1.evaluate(&state.random_bounds),
+                y1.evaluate(&state.random_bounds),
+                x2.evaluate(&state.random_bounds),
+                y2.evaluate(&state.random_bounds),
+            );
             if rounded {
                 // Rounded box - use polyline to approximate
                 state.executor.draw_rounded_rect(buf, x1, y1, x2, y2);
@@ -44,21 +52,39 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::Line { x1, y1, x2, y2 } => {
+            let (x1, y1, x2, y2) = (
+                x1.evaluate(&state.random_bounds),
+                y1.evaluate(&state.random_bounds),
+                x2.evaluate(&state.random_bounds),
+                y2.evaluate(&state.random_bounds),
+            );
             state.executor.draw_line_pub(buf, x1, y1, x2, y2);
             state.executor.set_cur_position(x2, y2);
         }
 
         IgsCommand::LineDrawTo { x, y } => {
+            let (x, y) = (x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds));
             let pos = state.executor.get_cur_position();
             state.executor.draw_line_pub(buf, pos.x, pos.y, x, y);
             state.executor.set_cur_position(x, y);
         }
 
         IgsCommand::Circle { x, y, radius } => {
+            let (x, y, radius) = (
+                x.evaluate(&state.random_bounds),
+                y.evaluate(&state.random_bounds),
+                radius.evaluate(&state.random_bounds),
+            );
             state.executor.draw_circle_pub(buf, x, y, radius);
         }
 
         IgsCommand::Ellipse { x, y, x_radius, y_radius } => {
+            let (x, y, x_radius, y_radius) = (
+                x.evaluate(&state.random_bounds),
+                y.evaluate(&state.random_bounds),
+                x_radius.evaluate(&state.random_bounds),
+                y_radius.evaluate(&state.random_bounds),
+            );
             state.executor.draw_ellipse_pub(buf, x, y, x_radius, y_radius);
         }
 
@@ -69,31 +95,41 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             end_angle,
             radius,
         } => {
+            let (x, y, radius, start_angle, end_angle) = (
+                x.evaluate(&state.random_bounds),
+                y.evaluate(&state.random_bounds),
+                radius.evaluate(&state.random_bounds),
+                start_angle.evaluate(&state.random_bounds),
+                end_angle.evaluate(&state.random_bounds),
+            );
             state.executor.draw_arc_pub(buf, x, y, start_angle, end_angle, radius);
         }
 
         IgsCommand::PolyLine { points } => {
             if !points.is_empty() {
-                state.executor.draw_polyline(buf, state.executor.line_color, &points);
-                if points.len() >= 2 {
-                    let last_idx = points.len() - 2;
-                    state.executor.set_cur_position(points[last_idx], points[last_idx + 1]);
+                let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&state.random_bounds)).collect();
+                state.executor.draw_polyline(buf, state.executor.line_color, &int_points);
+                if int_points.len() >= 2 {
+                    let last_idx = int_points.len() - 2;
+                    state.executor.set_cur_position(int_points[last_idx], int_points[last_idx + 1]);
                 }
             }
         }
 
         IgsCommand::PolyFill { points } => {
             if !points.is_empty() {
-                state.executor.fill_poly(buf, &points);
+                let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&state.random_bounds)).collect();
+                state.executor.fill_poly(buf, &int_points);
             }
         }
 
         IgsCommand::FloodFill { x, y } => {
+            let (x, y) = (x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds));
             state.executor.flood_fill(buf, x, y);
         }
 
         IgsCommand::ColorSet { pen, color } => {
-            let color_map = get_color_map(buf);
+            let (_, color_map) = get_color_map(buf);
             let color = color_map[color as usize % color_map.len()];
             state.executor.set_color(pen, color);
         }
@@ -119,6 +155,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::WriteText { x, y, text } => {
+            let (x, y) = (x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds));
             let pos = crate::Position::new(x, y);
             state.executor.write_text(buf, pos, &text);
         }
@@ -162,6 +199,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // Additional drawing commands
         IgsCommand::PolymarkerPlot { x, y } => {
+            let (x, y) = (x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds));
             state.executor.draw_poly_maker(buf, x, y);
             state.executor.set_cur_position(x, y);
         }
@@ -173,6 +211,13 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             start_angle,
             end_angle,
         } => {
+            let (x, y, radius, start_angle, end_angle) = (
+                x.evaluate(&state.random_bounds),
+                y.evaluate(&state.random_bounds),
+                radius.evaluate(&state.random_bounds),
+                start_angle.evaluate(&state.random_bounds),
+                end_angle.evaluate(&state.random_bounds),
+            );
             state.executor.draw_pieslice_pub(buf, x, y, radius, start_angle, end_angle);
         }
 
@@ -184,6 +229,14 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             start_angle,
             end_angle,
         } => {
+            let (x, y, x_radius, y_radius, start_angle, end_angle) = (
+                x.evaluate(&state.random_bounds),
+                y.evaluate(&state.random_bounds),
+                x_radius.evaluate(&state.random_bounds),
+                y_radius.evaluate(&state.random_bounds),
+                start_angle.evaluate(&state.random_bounds),
+                end_angle.evaluate(&state.random_bounds),
+            );
             state.executor.draw_arc(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
 
@@ -195,16 +248,36 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             start_angle,
             end_angle,
         } => {
+            let (x, y, x_radius, y_radius, start_angle, end_angle) = (
+                x.evaluate(&state.random_bounds),
+                y.evaluate(&state.random_bounds),
+                x_radius.evaluate(&state.random_bounds),
+                y_radius.evaluate(&state.random_bounds),
+                start_angle.evaluate(&state.random_bounds),
+                end_angle.evaluate(&state.random_bounds),
+            );
             state
                 .executor
                 .draw_elliptical_pieslice_pub(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
 
         IgsCommand::RoundedRectangles { x1, y1, x2, y2, fill: _ } => {
+            let (x1, y1, x2, y2) = (
+                x1.evaluate(&state.random_bounds),
+                y1.evaluate(&state.random_bounds),
+                x2.evaluate(&state.random_bounds),
+                y2.evaluate(&state.random_bounds),
+            );
             state.executor.draw_rounded_rect(buf, x1, y1, x2, y2);
         }
 
         IgsCommand::FilledRectangle { x1, y1, x2, y2 } => {
+            let (x1, y1, x2, y2) = (
+                x1.evaluate(&state.random_bounds),
+                y1.evaluate(&state.random_bounds),
+                x2.evaluate(&state.random_bounds),
+                y2.evaluate(&state.random_bounds),
+            );
             state.executor.fill_rect(buf, x1, y1, x2, y2);
         }
 
@@ -215,7 +288,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             let r = (red * 34) as u8;
             let g = (green * 34) as u8;
             let b = (blue * 34) as u8;
-            let color_map = get_color_map(buf);
+            let (_, color_map) = get_color_map(buf);
             let pen = color_map[pen as usize % color_map.len()];
             buf.palette_mut().set_color(pen as u32, crate::Color::new(r, g, b));
         }
@@ -435,8 +508,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
             log::info!("IGS SetColorRegister {} = {} not implemented", register, value);
         }
 
-        IgsCommand::SetRandomRange { .. } => {
-            log::info!("IGS SetRandomRange not implemented");
+        IgsCommand::SetRandomRange { range_type } => {
+            state.random_bounds.update(&range_type);
         }
 
         IgsCommand::RightMouseMacro { .. } => {
@@ -469,6 +542,12 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                 _ => {
                     // Define a new mouse zone with clickable region
                     let host_command = if !string.is_empty() { Some(string.clone()) } else { None };
+                    let (x1, y1, x2, y2) = (
+                        x1.evaluate(&state.random_bounds),
+                        y1.evaluate(&state.random_bounds),
+                        x2.evaluate(&state.random_bounds),
+                        y2.evaluate(&state.random_bounds),
+                    );
 
                     // Create a default button style (similar to RIP)
                     let mut style = ButtonStyle2::default();
@@ -507,6 +586,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::SetDrawtoBegin { x, y } => {
+            let (x, y) = (x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds));
             state.executor.set_cur_position(x, y);
         }
 
@@ -544,7 +624,8 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::PositionCursor { x, y } => {
-            buf.caret_mut().set_position(crate::Position::new(x, y));
+            buf.caret_mut()
+                .set_position(crate::Position::new(x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds)));
         }
 
         IgsCommand::RememberCursor { .. } => {
@@ -562,13 +643,13 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         // IGS-specific color commands (ESC b/c)
         IgsCommand::SetForeground { color } => {
-            let color_map = get_color_map(buf);
-            buf.caret_mut().set_foreground(color_map[color as usize % color_map.len()] as u32);
+            let (_, color_map) = get_color_map(buf);
+            buf.caret_mut().set_foreground(color_map[color as usize] as u32);
         }
 
         IgsCommand::SetBackground { color } => {
-            let color_map = get_color_map(buf);
-            buf.caret_mut().set_background(color_map[color as usize % color_map.len()] as u32);
+            let (_, color_map) = get_color_map(buf);
+            buf.caret_mut().set_background(color_map[color as usize] as u32);
         }
     }
 }

@@ -317,8 +317,8 @@ impl RipParser {
                 sink.report_errror(
                     crate::ParseError::InvalidParameter {
                         command: "RIP",
-                        value: self.builder.cmd_char as u16,
-                        expected: Some("valid RIP command character"),
+                        value: (self.builder.cmd_char as u16).to_string(),
+                        expected: Some("valid RIP command character".to_string()),
                     },
                     crate::ErrorLevel::Error,
                 );

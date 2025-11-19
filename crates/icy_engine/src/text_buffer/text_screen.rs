@@ -1,4 +1,5 @@
 use core::panic;
+use std::u32;
 
 use icy_parser_core::{RipCommand, SkypixCommand};
 
@@ -204,6 +205,10 @@ impl Screen for TextScreen {
 }
 
 impl RgbaScreen for TextScreen {
+    fn max_base_colors(&self) -> u32 {
+        u32::MAX
+    }
+
     fn get_resolution(&self) -> Size {
         let font_size = self.get_font(0).unwrap().size();
         let rect = self.get_size();

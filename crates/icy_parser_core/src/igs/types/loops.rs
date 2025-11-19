@@ -1,4 +1,4 @@
-use crate::IgsCommandType;
+use crate::{CommandSink, IgsCommand, IgsCommandType};
 
 /// Describes what command the loop executes each iteration.
 ///
@@ -219,5 +219,164 @@ impl LoopCommandData {
 
     pub fn is_reverse(&self) -> bool {
         (self.to < self.from && self.step > 0) || (self.to > self.from && self.step < 0)
+    }
+
+    pub fn run(&self, sink: &mut dyn CommandSink, rnd_min: i32, rnd_max: i32) {
+        if self.step == 0 {
+            return;
+        }
+
+        let forward = self.from <= self.to;
+        let step_value = if forward { self.step.abs() } else { -self.step.abs() };
+
+        let mut current = self.from;
+        let mut param_index = 0;
+
+        loop {
+            // Check loop termination
+            if forward && current > self.to {
+                break;
+            }
+            if !forward && current < self.to {
+                break;
+            }
+
+            // Collect parameters for this iteration
+            let mut iteration_params = Vec::new();
+            let reverse_value = self.to + self.from - current; // y = from + to - x
+
+            for _ in 0..self.param_count {
+                if param_index >= self.params.len() {
+                    break;
+                }
+
+                let token = &self.params[param_index];
+                param_index += 1;
+
+                let value = match token {
+                    LoopParamToken::Number(n) => *n,
+                    LoopParamToken::StepForward => current,
+                    LoopParamToken::StepReverse => reverse_value,
+                    LoopParamToken::Random => {
+                        // Use the midpoint of the random range as a placeholder
+                        // In a real execution environment, this would generate an actual random value
+                        rnd_min + (rnd_max - rnd_min) / 2
+                    }
+                    LoopParamToken::Expr(op, constant) => match op {
+                        ParamOperator::Add => current + constant,
+                        ParamOperator::Subtract => current - constant,
+                        ParamOperator::SubtractStep => constant - current,
+                    },
+                    LoopParamToken::GroupSeparator => {
+                        // Skip group separators, don't count toward param_count
+                        continue;
+                    }
+                    LoopParamToken::Text(_) => {
+                        // Text tokens are handled specially for W@ commands
+                        // For now, skip in regular parameter collection
+                        continue;
+                    }
+                };
+
+                iteration_params.push(value);
+            }
+
+            // Build and emit the command based on target
+            match &self.target {
+                LoopTarget::Single(cmd_type) => {
+                    if let Some(cmd) = Self::build_command(*cmd_type, &iteration_params) {
+                        sink.emit_igs(cmd);
+                    }
+                }
+                LoopTarget::ChainGang { commands } => {
+                    // Use current value to index into the chain
+                    let index = (current.abs() as usize) % commands.len();
+                    let cmd_type = commands[index];
+
+                    if let Some(cmd) = Self::build_command(cmd_type, &iteration_params) {
+                        sink.emit_igs(cmd);
+                    }
+                }
+            }
+
+            // Apply delay if specified (delay is in 1/200 seconds)
+            if self.delay > 0 {
+                // In a real implementation, this would pause execution
+                // For parsing/serialization, we just note the delay
+                // The actual delay implementation would be in the rendering layer
+            }
+
+            // Advance to next iteration
+            current += step_value;
+        }
+    }
+
+    /// Helper method to construct an IgsCommand from a command type and parameters.
+    /// This is a simplified implementation - a full implementation would need to
+    /// match all command types and their specific parameter requirements.
+    fn build_command(cmd_type: IgsCommandType, params: &[i32]) -> Option<IgsCommand> {
+        use IgsCommandType::*;
+
+        match cmd_type {
+            Line => {
+                if params.len() >= 4 {
+                    Some(IgsCommand::Line {
+                        x1: params[0].into(),
+                        y1: params[1].into(),
+                        x2: params[2].into(),
+                        y2: params[3].into(),
+                    })
+                } else {
+                    None
+                }
+            }
+            LineDrawTo => {
+                if params.len() >= 2 {
+                    Some(IgsCommand::LineDrawTo {
+                        x: params[0].into(),
+                        y: params[1].into(),
+                    })
+                } else {
+                    None
+                }
+            }
+            Circle => {
+                if params.len() >= 3 {
+                    Some(IgsCommand::Circle {
+                        x: params[0].into(),
+                        y: params[1].into(),
+                        radius: params[2].into(),
+                    })
+                } else {
+                    None
+                }
+            }
+            Box => {
+                if params.len() >= 5 {
+                    Some(IgsCommand::Box {
+                        x1: params[0].into(),
+                        y1: params[1].into(),
+                        x2: params[2].into(),
+                        y2: params[3].into(),
+                        rounded: params[4] != 0,
+                    })
+                } else {
+                    None
+                }
+            }
+            PolyMarker => {
+                if params.len() >= 2 {
+                    Some(IgsCommand::PolymarkerPlot {
+                        x: params[0].into(),
+                        y: params[1].into(),
+                    })
+                } else {
+                    None
+                }
+            }
+            // Add more command types as needed
+            // For now, return None for unimplemented types
+            _ => None,
+        }
     }
 }
