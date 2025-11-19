@@ -1,6 +1,6 @@
 use super::bgi::{ButtonStyle2, MouseField};
 use super::igs::{TerminalResolutionExt, paint::DrawExecutor};
-use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE};
+use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE, screen};
 use icy_parser_core::{IgsCommand, LineStyleKind, ParameterBounds};
 
 pub struct IgsState {
@@ -382,6 +382,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                 match mode {
                     icy_parser_core::InitializationType::DesktopPaletteAndAttributes => {
                         *buf.palette_mut() = IGS_PALETTE.clone();
+                        buf.reset_resolution();
                     }
 
                     icy_parser_core::InitializationType::DesktopPaletteOnly => {
@@ -389,7 +390,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                     }
 
                     icy_parser_core::InitializationType::DesktopAttributesOnly => {
-                        // TODO
+                        buf.reset_resolution();
                     }
 
                     icy_parser_core::InitializationType::IgDefaultPalette => {

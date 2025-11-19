@@ -526,6 +526,26 @@ impl RgbaScreen for PaletteScreenBuffer {
 }
 
 impl EditableScreen for PaletteScreenBuffer {
+    fn reset_resolution(&mut self) {
+        // Get original resolution from graphics_type
+        let (px_width, px_height) = match self.graphics_type {
+            GraphicsType::Text => {
+                return; // No reset for text mode
+            }
+            GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
+            GraphicsType::IGS(term_res) => {
+                let res = term_res.get_resolution();
+                (res.width, res.height)
+            }
+            GraphicsType::Skypix => (800, 600),
+        };
+
+        println!("reset to original mode! {px_width}x{px_height}");
+        // Reset to original resolution
+        let original_size = Size::new(px_width, px_height);
+        self.set_resolution(original_size);
+    }
+
     fn clear_mouse_fields(&mut self) {
         self.mouse_fields.clear();
     }

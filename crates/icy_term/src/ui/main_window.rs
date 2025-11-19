@@ -22,7 +22,7 @@ use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
-use icy_parser_core::BaudEmulation;
+use icy_parser_core::{BaudEmulation, IgsCommand};
 use image::DynamicImage;
 use tokio::sync::mpsc;
 
@@ -91,6 +91,7 @@ pub struct MainWindow {
 
     pub mcp_rx: McpHandler,
     pub title: String,
+    pub effect: i32,
 }
 
 impl MainWindow {
@@ -119,6 +120,7 @@ impl MainWindow {
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), icy_net::telnet::TerminalEmulation::Ansi);
 
         Self {
+            effect: 0,
             id,
             title: format!("iCY TERM {}", *crate::VERSION),
             state: MainWindowState {
@@ -319,7 +321,16 @@ impl MainWindow {
             }
             Message::ShowHelpDialog => {
                 self.switch_to_terminal_screen();
-                self.state.mode = MainWindowMode::ShowHelpDialog;
+                let r = self.sound_thread.lock().unwrap().play_igs(Box::new(IgsCommand::BellsAndWhistles {
+                    sound_effect: icy_parser_core::SoundEffect::try_from(self.effect).unwrap(),
+                }));
+                self.effect = (self.effect + 1) % 20;
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::PlayMusic: {r}");
+                }
+
+                //   self.state.mode = MainWindowMode::ShowHelpDialog;
+
                 Task::none()
             }
             Message::ShowAboutDialog => {

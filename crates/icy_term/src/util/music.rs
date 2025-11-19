@@ -570,7 +570,7 @@ impl SoundBackgroundThreadData {
                 log::info!("todo ChipMusic");
             }
             IgsCommand::Noise { .. } => {
-                   log::info!("todo Noise");
+                log::info!("todo Noise");
             }
             IgsCommand::LoadMidiBuffer { .. } => {
                 log::info!("todo LoadMidiBuffer");

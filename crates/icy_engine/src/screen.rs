@@ -108,6 +108,8 @@ pub trait EditableScreen: RgbaScreen {
 
     fn caret_mut(&mut self) -> &mut caret::Caret;
 
+    fn reset_resolution(&mut self) {}
+
     fn caret_default_colors(&mut self) {
         let font_page = self.caret_mut().font_page();
         self.caret_mut().attribute = TextAttribute {

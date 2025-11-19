@@ -68,10 +68,7 @@ pub enum IgsCommand {
     ///
     /// # Note
     /// If no starting point has been established, behavior is undefined.
-    LineDrawTo {
-        x: IgsParameter,
-        y: IgsParameter,
-    },
+    LineDrawTo { x: IgsParameter, y: IgsParameter },
 
     /// Circle drawing command (O)
     ///
@@ -85,11 +82,7 @@ pub enum IgsCommand {
     /// * `x` - Center X coordinate
     /// * `y` - Center Y coordinate
     /// * `radius` - Circle radius in pixels
-    Circle {
-        x: IgsParameter,
-        y: IgsParameter,
-        radius: IgsParameter,
-    },
+    Circle { x: IgsParameter, y: IgsParameter, radius: IgsParameter },
 
     /// Ellipse/Oval drawing command (Q)
     ///
@@ -146,9 +139,7 @@ pub enum IgsCommand {
     ///
     /// # Example
     /// `G#z>3,100,0,150,100,50,100:` - Triangle with 3 points
-    PolyLine {
-        points: Vec<IgsParameter>,
-    },
+    PolyLine { points: Vec<IgsParameter> },
 
     /// Polygon fill command (f)
     ///
@@ -163,9 +154,7 @@ pub enum IgsCommand {
     ///
     /// # Note
     /// Passing 1 or 2 points draws a point or line respectively
-    PolyFill {
-        points: Vec<IgsParameter>,
-    },
+    PolyFill { points: Vec<IgsParameter> },
 
     /// Flood fill command (F)
     ///
@@ -178,10 +167,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `x` - Starting X coordinate
     /// * `y` - Starting Y coordinate
-    FloodFill {
-        x: IgsParameter,
-        y: IgsParameter,
-    },
+    FloodFill { x: IgsParameter, y: IgsParameter },
 
     /// Polymarker plot command (P)
     ///
@@ -195,10 +181,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `x` - X coordinate
     /// * `y` - Y coordinate
-    PolymarkerPlot {
-        x: IgsParameter,
-        y: IgsParameter,
-    },
+    PolymarkerPlot { x: IgsParameter, y: IgsParameter },
 
     // Color/Style commands
     /// Color selection command (C)
@@ -211,10 +194,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `pen` - Screen operation to set (see PenType enum)
     /// * `color` - Pen number to use (0-15)
-    ColorSet {
-        pen: PenType,
-        color: u8,
-    },
+    ColorSet { pen: PenType, color: u8 },
 
     /// Fill attributes command (A)
     ///
@@ -226,10 +206,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `pattern_type` - Fill type (Hollow, Solid, Pattern(1-24), Hatch(1-12), UserDefined(0-9))
     /// * `border` - Draw border around filled areas: `true` for yes, `false` for no
-    AttributeForFills {
-        pattern_type: PatternType,
-        border: bool,
-    },
+    AttributeForFills { pattern_type: PatternType, border: bool },
 
     /// Line and marker style command (T)
     ///
@@ -245,10 +222,7 @@ pub enum IgsCommand {
     ///   - For solid lines: thickness 1-41
     ///   - For user defined lines: pattern number 1-32
     ///   - Line end styles (add to size): 0=square, 50=arrows both, 51=arrow left, 52=arrow right, 60=rounded
-    LineStyle {
-        kind: LineStyleKind,
-        value: u16,
-    },
+    LineStyle { kind: LineStyleKind, value: u16 },
 
     /// Set pen RGB color command (S)
     ///
@@ -262,12 +236,7 @@ pub enum IgsCommand {
     /// * `red` - Red component (0-7)
     /// * `green` - Green component (0-7)
     /// * `blue` - Blue component (0-7)
-    SetPenColor {
-        pen: u8,
-        red: u8,
-        green: u8,
-        blue: u8,
-    },
+    SetPenColor { pen: u8, red: u8, green: u8, blue: u8 },
 
     /// Drawing mode command (M)
     ///
@@ -278,9 +247,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `mode` - Drawing mode (Replace, Transparent, Xor, or ReverseTransparent)
-    DrawingMode {
-        mode: DrawingMode,
-    },
+    DrawingMode { mode: DrawingMode },
 
     /// Hollow/filled toggle command (H)
     ///
@@ -291,9 +258,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `enabled` - `true` for hollow (outline only), `false` for filled
-    HollowSet {
-        enabled: bool,
-    },
+    HollowSet { enabled: bool },
 
     // Text commands
     /// Write text command (W)
@@ -303,11 +268,7 @@ pub enum IgsCommand {
     /// Spec (IG220) shows only X, Y and a text string terminated with `@`.
     /// A justification parameter is not documented; older files may include an
     /// extra numeric which we intentionally omit for spec conformity.
-    WriteText {
-        x: IgsParameter,
-        y: IgsParameter,
-        text: Vec<u8>,
-    },
+    WriteText { x: IgsParameter, y: IgsParameter, text: Vec<u8> },
 
     /// Text effects command (E)
     ///
@@ -320,11 +281,7 @@ pub enum IgsCommand {
     /// * `effects` - Text effect flags (can be combined: THICKENED=1, GHOSTED=2, SKEWED=4, UNDERLINED=8, OUTLINED=16)
     /// * `size` - Text size in points (1/72 inch). Common sizes: 8, 9, 10, 16, 18, 20
     /// * `rotation` - Text rotation angle (Degrees0, Degrees90, Degrees180, Degrees270)
-    TextEffects {
-        effects: TextEffects,
-        size: u8,
-        rotation: TextRotation,
-    },
+    TextEffects { effects: TextEffects, size: u8, rotation: TextRotation },
 
     // Special commands
     /// Sound effects command (b)
@@ -332,17 +289,54 @@ pub enum IgsCommand {
     /// IGS: `G#b>sound_number:`
     ///
     /// Plays predefined sound effects using the ST's sound chip.
-    /// Effects 0-4 are internally looped for extended duration.
+    /// Effects 0-4 are internally looped 5*200 times by default (settable via b 23).
+    ///
+    /// # Sound Effects (0-19)
+    /// * 0: Alien Invasion
+    /// * 1: Red Alert
+    /// * 2: Gunshot
+    /// * 3: Laser 1
+    /// * 4: Jackhammer
+    /// * 5: Teleport
+    /// * 6: Explosion
+    /// * 7: Laser 2
+    /// * 8: Long Bell
+    /// * 9: Surprise
+    /// * 10: Radio Broadcast
+    /// * 11: Bounce Ball
+    /// * 12: Eerie Sound
+    /// * 13: Harley Motorcycle
+    /// * 14: Helicopter
+    /// * 15: Steam Locomotive
+    /// * 16: Wave
+    /// * 17: Robot Walk
+    /// * 18: Passing Plane
+    /// * 19: Landing
+    ///
+    /// # Extended Commands (handled separately)
+    /// * 20: AlterSoundEffect - Modifies sound effect parameters
+    /// * 21: StopAllSound - Stops all playing effects immediately
+    /// * 22: RestoreSoundEffect - Restores altered effect to original
+    /// * 23: SetEffectLoops - Sets loop count for effects 0-4
+    BellsAndWhistles { sound_effect: SoundEffect },
+
+    /// Alter sound effect command (b 20)
+    ///
+    /// IGS: `G#b>20,play_flag,sound_num,element_num,negative_flag,thousands,hundreds:`
+    ///
+    /// Modifies parameters of sound effects 0-19. Allows customizing pitch, duration,
+    /// and other characteristics. Changes persist until RestoreSoundEffect is called.
     ///
     /// # Parameters
-    /// * `sound_effect` - Effect to play (AlienInvasion, RedAlert, Gunshot, etc.)
+    /// * `play_flag` - 0=don't play after altering, 1=play immediately
+    /// * `sound_effect` - Sound effect number to alter (0-19)
+    /// * `element_num` - Which parameter to modify (effect-specific)
+    /// * `negative_flag` - 0=positive value, 1=negative value
+    /// * `thousands` - Thousands digit of value
+    /// * `hundreds` - Last 3 digits of value (0-999)
     ///
-    /// # Note
-    /// Extended functions (20-23) are handled by separate commands:
-    /// - AlterSoundEffect, StopAllSound, RestoreSoundEffect, SetEffectLoops
-    BellsAndWhistles {
-        sound_effect: SoundEffect,
-    },
+    /// # Example
+    /// `G#b>20,1,0,0,0,1,500:` - Alters element 0 of Alien Invasion to 1500, then plays
     AlterSoundEffect {
         play_flag: u8,
         sound_effect: SoundEffect,
@@ -351,13 +345,39 @@ pub enum IgsCommand {
         thousands: u16,
         hundreds: u16,
     },
+
+    /// Stop all sound command (b 21)
+    ///
+    /// IGS: `G#b>21:`
+    ///
+    /// Immediately stops all currently playing sound effects and music.
+    /// Useful for silencing overlapping effects or canceling long-running sounds.
     StopAllSound,
-    RestoreSoundEffect {
-        sound_effect: SoundEffect,
-    },
-    SetEffectLoops {
-        count: u32,
-    },
+
+    /// Restore sound effect command (b 22)
+    ///
+    /// IGS: `G#b>22,sound_num:`
+    ///
+    /// Restores a sound effect to its original parameters after being altered
+    /// by the AlterSoundEffect command. Only affects the specified effect.
+    ///
+    /// # Parameters
+    /// * `sound_effect` - Sound effect number to restore (0-19)
+    RestoreSoundEffect { sound_effect: SoundEffect },
+
+    /// Set effect loops command (b 23)
+    ///
+    /// IGS: `G#b>23,count:`
+    ///
+    /// Sets how many times sound effects 0-4 are looped when played.
+    /// Default is 5*200 (1000) loops. Change persists until reset or program exit.
+    ///
+    /// # Parameters
+    /// * `count` - Number of times to loop effects 0-4
+    ///
+    /// # Note
+    /// Only affects effects 0-4: Alien Invasion, Red Alert, Gunshot, Laser 1, Jackhammer
+    SetEffectLoops { count: u32 },
 
     /// Graphic scaling command (g)
     ///
@@ -374,9 +394,7 @@ pub enum IgsCommand {
     ///
     /// # Special Mode
     /// Value 2 doubles Y coordinates in monochrome mode for aspect correction
-    GraphicScaling {
-        mode: u8,
-    },
+    GraphicScaling { mode: u8 },
 
     /// Screen grab/BitBlit command (G)
     ///
@@ -389,10 +407,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `operation` - The blit operation with its specific parameters
     /// * `mode` - Logical operation (Clear, Replace, Xor, Transparent, Fill, etc.)
-    GrabScreen {
-        operation: BlitOperation,
-        mode: BlitMode,
-    },
+    GrabScreen { operation: BlitOperation, mode: BlitMode },
 
     /// Initialize command (I)
     ///
@@ -407,9 +422,7 @@ pub enum IgsCommand {
     ///
     /// # Note
     /// Mode DesktopResolutionAndClipping should be used FIRST before any palette commands
-    Initialize {
-        mode: InitializationType,
-    },
+    Initialize { mode: InitializationType },
 
     /// Elliptical arc command (J)
     ///
@@ -441,9 +454,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `mode` - Cursor mode (see CursorMode enum)
-    Cursor {
-        mode: CursorMode,
-    },
+    Cursor { mode: CursorMode },
 
     /// Chip music command (n)
     ///
@@ -489,9 +500,7 @@ pub enum IgsCommand {
     ///   - First param 4: Load and execute sound chip
     ///   - First param 5: Execute loaded sound chip buffer
     ///   - First param 6: Execute buffer from position x to y
-    Noise {
-        params: Vec<IgsParameter>,
-    },
+    Noise { params: Vec<IgsParameter> },
 
     /// Rounded rectangles command (U)
     ///
@@ -588,10 +597,7 @@ pub enum IgsCommand {
     /// * `params` - Additional parameters:
     ///   - Param 2: 0=single key, 1=string, 2-10=mouse zones with different pointers
     ///   - Param 3: 0=don't echo, 1=echo, 2=echo but discard, 3=don't echo and discard
-    InputCommand {
-        input_type: u8,
-        params: Vec<IgsParameter>,
-    },
+    InputCommand { input_type: u8, params: Vec<IgsParameter> },
 
     /// Ask IG command (?)
     ///
@@ -608,9 +614,7 @@ pub enum IgsCommand {
     /// - `G#?>1,0:` - Query cursor position (immediate)
     /// - `G#?>2,3:` - Query mouse position with arrow pointer
     /// - `G#?>3:` - Query current resolution
-    AskIG {
-        query: AskQuery,
-    },
+    AskIG { query: AskQuery },
 
     /// Screen clear command (s)
     ///
@@ -626,9 +630,7 @@ pub enum IgsCommand {
     ///   - 3: Clear whole screen with VDI
     ///   - 4: Clear with VDI and home cursor
     ///   - 5: Quick VT52 reset (clear, home, reverse off, reset colors)
-    ScreenClear {
-        mode: u8,
-    },
+    ScreenClear { mode: u8 },
 
     /// Set resolution command (R)
     ///
@@ -658,40 +660,43 @@ pub enum IgsCommand {
     ///   - Desktop: Desktop colors
     ///   - IgDefault: IG default palette
     ///   - VdiDefault: VDI default palette
-    SetResolution {
-        resolution: TerminalResolution,
-        palette: PaletteMode,
-    },
+    SetResolution { resolution: TerminalResolution, palette: PaletteMode },
 
-    /// Quick pause command (t/q)
+    /// Time pause command (t)
     ///
-    /// IGS: `G#t>vsyncs:` or `G#q>vsyncs:`
+    /// IGS: `G#t>seconds:`
     ///
-    /// Pauses execution for a specified number of vertical syncs (1/60th second each).
-    /// Also used to control double-stepping for BitBlit operations.
+    /// Sends ^S (XOFF), waits for specified seconds, then sends ^Q (XON).
+    /// Any key press aborts the pause prematurely. Used to prevent BBS timeouts
+    /// during graphics display. Maximum 30 seconds; chain multiple for longer pauses.
     ///
     /// # Parameters
-    /// * `vsyncs` - Number of vsyncs to wait (max 180), or special values:
-    ///   - 9995: Double-step with 3 vsyncs
-    ///   - 9996: Double-step with 2 vsyncs
-    ///   - 9997: Double-step with 1 vsync
-    ///   - 9998: Double-step with 0 vsyncs
-    ///   - 9999: Turn double-step off
-    PauseSeconds {
-        seconds: u8,
-    },
+    /// * `seconds` - Number of seconds to pause (max 30)
+    ///
+    /// # Example
+    /// `G#t>30:t>5:` - Pauses for 35 seconds total (30 + 5)
+    PauseSeconds { seconds: u8 },
 
     /// Vsync pause command (q)
     ///
     /// IGS: `G#q>vsyncs:`
     ///
-    /// Pauses execution for a specified number of vertical syncs (1/60th of a second).
+    /// Pauses execution for specified vertical syncs (1/60th second each).
+    /// Vsync() waits until the screen's next vertical blank, ensuring smooth animations.
+    /// Also controls internal double-stepping for BitBlit's GrabScreen command.
     ///
     /// # Parameters
-    /// * `vsyncs` - Number of vertical syncs to wait
-    VsyncPause {
-        vsyncs: i32,
-    },
+    /// * `vsyncs` - Number of vertical syncs to wait, or special values:
+    ///   - 0-9994: Normal pause for N vsyncs (max ~180 recommended)
+    ///   - 9995: Enable double-step with 3 vsync delay
+    ///   - 9996: Enable double-step with 2 vsync delay
+    ///   - 9997: Enable double-step with 1 vsync delay
+    ///   - 9998: Enable double-step with 0 vsync delay
+    ///   - 9999: Disable double-stepping
+    ///
+    /// # Note
+    /// Double-step mode makes GrabScreen command internally step by 2 for XOR operations
+    VsyncPause { vsyncs: i32 },
 
     /// Loop command (&)
     ///
@@ -734,10 +739,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `register` - Color register number (0-15)
     /// * `value` - Color value (0-1911 for ST, higher for STE)
-    SetColorRegister {
-        register: u8,
-        value: i32,
-    },
+    SetColorRegister { register: u8, value: i32 },
 
     /// Set random number range (X 2)
     ///
@@ -748,9 +750,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `range_type` - Small for 'r' [min,max] or Big for 'R' [min,min,max]
-    SetRandomRange {
-        range_type: RandomRangeType,
-    },
+    SetRandomRange { range_type: RandomRangeType },
 
     /// Right mouse button macro (X 3)
     ///
@@ -764,9 +764,7 @@ pub enum IgsCommand {
     ///   - [0]: Deactivate macro
     ///   - [1, cr]: Reactivate (cr: 0=no CR, 1=add CR)
     ///   - [2, on, cr, len, ...]: Load and configure macro
-    RightMouseMacro {
-        params: Vec<IgsParameter>,
-    },
+    RightMouseMacro { params: Vec<IgsParameter> },
 
     /// Define mouse click zones (X 4)
     ///
@@ -807,10 +805,7 @@ pub enum IgsCommand {
     ///   - 3: On with custom XOFF settings
     ///   - 4: Reset to IG defaults
     /// * `params` - Additional parameters for custom settings
-    FlowControl {
-        mode: u8,
-        params: Vec<IgsParameter>,
-    },
+    FlowControl { mode: u8, params: Vec<IgsParameter> },
 
     /// Left mouse button behavior (X 6)
     ///
@@ -823,9 +818,7 @@ pub enum IgsCommand {
     ///   - 0: Normal (default)
     ///   - 1: Send CR on click
     ///   - 2: Send CR+LF on click
-    LeftMouseButton {
-        mode: u8,
-    },
+    LeftMouseButton { mode: u8 },
 
     /// Load fill pattern (X 7)
     ///
@@ -840,10 +833,7 @@ pub enum IgsCommand {
     ///
     /// # Example
     /// Each row ends with '@', use 'X' for 1 bits, anything else for 0
-    LoadFillPattern {
-        pattern: u8,
-        data: Vec<u8>,
-    },
+    LoadFillPattern { pattern: u8, data: Vec<u8> },
 
     /// Rotate color registers (X 8)
     ///
@@ -859,12 +849,7 @@ pub enum IgsCommand {
     /// * `delay` - number of 200 hundredths of a second between each color shift.  range 0-9999.
     /// # Note
     /// If start < end, rotates right. If start > end, rotates left.
-    RotateColorRegisters {
-        start_reg: u8,
-        end_reg: u8,
-        count: i32,
-        delay: i32,
-    },
+    RotateColorRegisters { start_reg: u8, end_reg: u8, count: i32, delay: i32 },
 
     /// Load/execute MIDI or IG commands (X 9)
     ///
@@ -878,9 +863,7 @@ pub enum IgsCommand {
     ///   - [0, ...]: Load commands until ||} marker
     ///   - [1]: Execute loaded commands
     ///   - [2]: Clear buffer
-    LoadMidiBuffer {
-        params: Vec<IgsParameter>,
-    },
+    LoadMidiBuffer { params: Vec<IgsParameter> },
 
     /// Set DrawTo begin point (X 10)
     ///
@@ -892,10 +875,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `x` - Starting X coordinate
     /// * `y` - Starting Y coordinate
-    SetDrawtoBegin {
-        x: IgsParameter,
-        y: IgsParameter,
-    },
+    SetDrawtoBegin { x: IgsParameter, y: IgsParameter },
 
     /// Load BitBlit memory (X 11)
     ///
@@ -913,9 +893,7 @@ pub enum IgsCommand {
     /// # Sections
     /// - 0: Entire 32KB buffer
     /// - 1-8: 4KB horizontal bands (1=top, 8=bottom)
-    LoadBitblitMemory {
-        params: Vec<IgsParameter>,
-    },
+    LoadBitblitMemory { params: Vec<IgsParameter> },
 
     /// Load color palette (X 12)
     ///
@@ -930,9 +908,7 @@ pub enum IgsCommand {
     ///   - [1, ...]: Registers 4-7
     ///   - [2, ...]: Registers 8-11
     ///   - [3, ...]: Registers 12-15
-    LoadColorPalette {
-        params: Vec<IgsParameter>,
-    },
+    LoadColorPalette { params: Vec<IgsParameter> },
 
     // IGS-specific color commands (ESC b/c are IGS extensions, not standard VT52)
     /// Set text color (ESC b/c or G#c)
@@ -945,10 +921,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `layer` - Which color layer to modify (Background or Foreground)
     /// * `color` - Color register (0-15)
-    SetTextColor {
-        layer: TextColorLayer,
-        color: u8,
-    },
+    SetTextColor { layer: TextColorLayer, color: u8 },
 
     // VT52 additional IGS commands (not removed because they have IGS G# equivalents)
     /// Delete lines (ESC d)
@@ -960,9 +933,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `count` - Number of lines to delete
-    DeleteLine {
-        count: u8,
-    },
+    DeleteLine { count: u8 },
 
     /// Insert lines (ESC i)
     ///
@@ -974,10 +945,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `mode` - Insertion mode (0 = normal). If absent (ESC form) use 0.
     /// * `count` - Number of lines to insert
-    InsertLine {
-        mode: u8,
-        count: u8,
-    },
+    InsertLine { mode: u8, count: u8 },
 
     /// Clear line (ESC l)
     ///
@@ -987,9 +955,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `mode` - 0 = clear line & keep cursor column, other modes reserved
-    ClearLine {
-        mode: u8,
-    },
+    ClearLine { mode: u8 },
 
     /// Cursor motion (ESC m)
     ///
@@ -1002,10 +968,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `direction` - Direction to move (Up, Down, Left, Right)
     /// * `count` - Number of positions to move
-    CursorMotion {
-        direction: crate::Direction,
-        count: i32,
-    },
+    CursorMotion { direction: crate::Direction, count: i32 },
 
     /// Position cursor (p)
     ///
@@ -1016,10 +979,7 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `x` - Column (0-79)
     /// * `y` - Row (0-24)
-    PositionCursor {
-        x: IgsParameter,
-        y: IgsParameter,
-    },
+    PositionCursor { x: IgsParameter, y: IgsParameter },
 
     /// Remember cursor position (ESC r)
     ///
@@ -1030,9 +990,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `value` - Usually 0; reserved for future use.
-    RememberCursor {
-        value: u8,
-    },
+    RememberCursor { value: u8 },
 
     /// Inverse video toggle (v)
     ///
@@ -1043,9 +1001,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `enabled` - `true` for inverse, `false` for normal
-    InverseVideo {
-        enabled: bool,
-    },
+    InverseVideo { enabled: bool },
 
     /// Line wrap toggle (w)
     ///
@@ -1055,9 +1011,7 @@ pub enum IgsCommand {
     ///
     /// # Parameters
     /// * `enabled` - `true` for wrap enabled, `false` for disabled
-    LineWrap {
-        enabled: bool,
-    },
+    LineWrap { enabled: bool },
 }
 
 impl fmt::Display for IgsCommand {
