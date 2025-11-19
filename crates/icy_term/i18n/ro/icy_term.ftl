@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Te implor
 toolbar-stop-playing5 = Milă
 toolbar-stop-playing6 = Destul
 
-capture-dialog-capture-folder = Director:
-capture-dialog-capture-file = Fișier:
+capture-dialog-capture-folder = Director
+capture-dialog-capture-file = Fișier
 capture-dialog-capture-title=Captură
 capture-dialog-capture-button=Începe
+capture-dialog-dir-not-exist = Directorul nu există
+capture-dialog-not-directory = Calea nu este un director
+capture-dialog-file-exists = Fișierul există și va fi extins
 
 export-dialog-title = Exportă buffer în fișier
 export-dialog-export-button = Exportă

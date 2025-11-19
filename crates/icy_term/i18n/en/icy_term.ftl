@@ -187,10 +187,13 @@ toolbar-stop-playing4 = I'm begging you
 toolbar-stop-playing5 = MERCY
 toolbar-stop-playing6 = Enough already
 
-capture-dialog-capture-folder=Folder:
-capture-dialog-capture-file=File:
+capture-dialog-capture-folder=Folder
+capture-dialog-capture-file=File
 capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Start
+capture-dialog-dir-not-exist=Directory does not exist
+capture-dialog-not-directory=Path is not a directory
+capture-dialog-file-exists=File exists and will be appended to
 
 export-dialog-title = Export Buffer to File
 export-dialog-export-button = Export

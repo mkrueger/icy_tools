@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Prosím tě
 toolbar-stop-playing5 = Milost
 toolbar-stop-playing6 = Dost už
 
-capture-dialog-capture-folder = Složka:
-capture-dialog-capture-file = Soubor:
+capture-dialog-capture-folder = Složka
+capture-dialog-capture-file = Soubor
 capture-dialog-capture-title=Záznam
 capture-dialog-capture-button=Start
+capture-dialog-dir-not-exist = Adresář neexistuje
+capture-dialog-not-directory = Cesta není adresář
+capture-dialog-file-exists = Soubor existuje a bude rozšířen
 
 export-dialog-title = Exportovat buffer do souboru
 export-dialog-export-button = Exportovat

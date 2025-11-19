@@ -195,9 +195,8 @@ impl SettingsDialogState {
             }
             SettingsMsg::BrowseCapturePath => {
                 let current_path = self.temp_options.lock().unwrap().capture_path();
-                let initial_path = std::path::Path::new(&current_path);
-                let initial_dir = if initial_path.exists() {
-                    initial_path.parent().map(|p| p.to_path_buf())
+                let initial_dir = if std::path::Path::new(&current_path).exists() {
+                    Some(std::path::PathBuf::from(&current_path))
                 } else {
                     std::env::current_dir().ok()
                 };
@@ -205,9 +204,6 @@ impl SettingsDialogState {
                 let mut dialog = rfd::FileDialog::new();
                 if let Some(dir) = initial_dir {
                     dialog = dialog.set_directory(dir);
-                }
-                if let Some(file_name) = initial_path.file_name() {
-                    dialog = dialog.set_directory(file_name.to_string_lossy().as_ref());
                 }
 
                 if let Some(path) = dialog.save_file() {

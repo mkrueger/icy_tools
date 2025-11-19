@@ -105,8 +105,7 @@ impl MainWindow {
     ) -> Self {
         let default_capture_path: PathBuf = directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-            .join("capture.ans");
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         let default_export_path = directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
@@ -321,15 +320,16 @@ impl MainWindow {
             }
             Message::ShowHelpDialog => {
                 self.switch_to_terminal_screen();
+                /*
                 let r = self.sound_thread.lock().unwrap().play_igs(Box::new(IgsCommand::BellsAndWhistles {
                     sound_effect: icy_parser_core::SoundEffect::try_from(self.effect).unwrap(),
                 }));
                 self.effect = (self.effect + 1) % 20;
                 if let Err(r) = r {
                     log::error!("TerminalEvent::PlayMusic: {r}");
-                }
+                }*/
 
-                //   self.state.mode = MainWindowMode::ShowHelpDialog;
+                self.state.mode = MainWindowMode::ShowHelpDialog;
 
                 Task::none()
             }
@@ -449,6 +449,7 @@ impl MainWindow {
                 self.capture_dialog.capture_session = false;
                 self.terminal_window.is_capturing = false;
                 let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
+                self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
             Message::ShowFindDialog => {
@@ -1052,6 +1053,7 @@ impl MainWindow {
             MainWindowMode::ShowCaptureDialog => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::Cancel)),
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::StartCapture)),
                     _ => self.dialing_directory.handle_event(event),
                 },
                 _ => None,

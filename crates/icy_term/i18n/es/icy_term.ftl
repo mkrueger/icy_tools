@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Te lo suplico
 toolbar-stop-playing5 = PIEDAD
 toolbar-stop-playing6 = Ya es suficiente
 
-capture-dialog-capture-folder = Carpeta:
-capture-dialog-capture-file = Archivo:
-capture-dialog-capture-title=Captura
-capture-dialog-capture-button=Iniciar
+capture-dialog-capture-folder = Carpeta
+capture-dialog-capture-file = Archivo
+capture-dialog-capture-title = Captura
+capture-dialog-capture-button = Iniciar
+capture-dialog-dir-not-exist = El directorio no existe
+capture-dialog-not-directory = La ruta no es un directorio
+capture-dialog-file-exists = El archivo existe y se añadirá contenido
 
 export-dialog-title = Exportar búfer a archivo
 export-dialog-export-button = Exportar

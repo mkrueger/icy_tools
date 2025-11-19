@@ -186,10 +186,13 @@ toolbar-stop-playing4 = RUHE!!!
 toolbar-stop-playing5 = GNADE
 toolbar-stop-playing6 = Genug
 
-capture-dialog-capture-folder = Verzeichnis: 
-capture-dialog-capture-file = Datei:
-capture-dialog-capture-title=Aufnahme
-capture-dialog-capture-button=Start
+capture-dialog-capture-folder = Verzeichnis
+capture-dialog-capture-file = Datei
+capture-dialog-capture-title = Aufnahme
+capture-dialog-capture-button = Start
+capture-dialog-dir-not-exist = Verzeichnis existiert nicht
+capture-dialog-not-directory = Pfad ist kein Verzeichnis
+capture-dialog-file-exists = Datei existiert und wird erweitert
 
 export-dialog-title = Buffer in Datei exportieren
 export-dialog-export-button = Exportieren

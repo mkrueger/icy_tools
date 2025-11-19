@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Ti prego
 toolbar-stop-playing5 = Pietà
 toolbar-stop-playing6 = Basta così
 
-capture-dialog-capture-folder = Cartella:
-capture-dialog-capture-file = File:
+capture-dialog-capture-folder = Cartella
+capture-dialog-capture-file = File
 capture-dialog-capture-title=Cattura
 capture-dialog-capture-button=Inizia
+capture-dialog-dir-not-exist = La directory non esiste
+capture-dialog-not-directory = Il percorso non è una directory
+capture-dialog-file-exists = Il file esiste e verrà esteso
 
 export-dialog-title = Esporta buffer in file
 export-dialog-export-button = Esporta

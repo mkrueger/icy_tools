@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Je vous en prie
 toolbar-stop-playing5 = PITIÉ
 toolbar-stop-playing6 = Ça suffit
 
-capture-dialog-capture-folder = Dossier :
-capture-dialog-capture-file = Fichier :
+capture-dialog-capture-folder = Dossier
+capture-dialog-capture-file = Fichier
 capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Commencer
+capture-dialog-dir-not-exist = Le répertoire n'existe pas
+capture-dialog-not-directory = Le chemin n'est pas un répertoire
+capture-dialog-file-exists = Le fichier existe et sera complété
 
 export-dialog-title = Exporter le tampon vers un fichier
 export-dialog-export-button = Exporter

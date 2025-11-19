@@ -1,15 +1,17 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, text, text_input},
+    widget::{Space, button, column, container, row, text, text_input, tooltip},
 };
+use iced_engine_gui::settings::effect_box;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::ui::MainWindowMode;
 
-const MODAL_WIDTH: f32 = 500.0;
-const MODAL_HEIGHT: f32 = 200.0;
+const MODAL_WIDTH: f32 = 550.0;
+const MODAL_HEIGHT: f32 = 224.0;
+const DIALOG_LABEL_WIDTH: f32 = 100.0;
 
 #[derive(Debug, Clone)]
 pub enum CaptureMsg {
@@ -18,6 +20,7 @@ pub enum CaptureMsg {
     ChangeDirectory(String),
     ChangeFileName(String),
     BrowseDirectory,
+    ResetDirectory,
     Cancel,
 }
 
@@ -31,21 +34,17 @@ pub struct CaptureDialogState {
 
 impl CaptureDialogState {
     pub fn new(initial_path: String) -> Self {
-        let path: &Path = Path::new(&initial_path);
-        let (dir, file) = if path.is_absolute() {
-            (
-                path.parent().and_then(|p| p.to_str()).unwrap_or("").to_string(),
-                path.file_name().and_then(|f| f.to_str()).unwrap_or("capture.txt").to_string(),
-            )
+        // initial_path is now just a directory, not a full file path
+        let dir = if initial_path.is_empty() {
+            std::env::current_dir()
+                .ok()
+                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| ".".to_string())
         } else {
-            (
-                std::env::current_dir()
-                    .ok()
-                    .and_then(|p| p.to_str().map(|s| s.to_string()))
-                    .unwrap_or_else(|| ".".to_string()),
-                initial_path.clone(),
-            )
+            initial_path
         };
+
+        let file = "capture.txt".to_string();
 
         Self {
             capture_session: false,
@@ -56,23 +55,18 @@ impl CaptureDialogState {
         }
     }
 
-    pub fn reset(&mut self, full_path: &str, is_capturing: bool) {
-        let path = Path::new(full_path);
-        let (dir, file) = if path.is_absolute() {
-            (
-                path.parent().and_then(|p| p.to_str()).unwrap_or(&self.capture_directory).to_string(),
-                path.file_name().and_then(|f| f.to_str()).unwrap_or(&self.capture_filename).to_string(),
-            )
-        } else if !full_path.is_empty() {
-            (self.capture_directory.clone(), full_path.to_string())
+    pub fn reset(&mut self, capture_dir: &str, is_capturing: bool) {
+        // capture_dir is now just a directory path, not a full file path
+        let dir = if capture_dir.is_empty() {
+            self.capture_directory.clone()
         } else {
-            (self.capture_directory.clone(), self.capture_filename.clone())
+            capture_dir.to_string()
         };
 
         self.temp_directory = dir.clone();
-        self.temp_filename = file.clone();
         self.capture_directory = dir;
-        self.capture_filename = file;
+        // Keep existing filename
+        self.temp_filename = self.capture_filename.clone();
         self.capture_session = is_capturing;
     }
 
@@ -117,8 +111,9 @@ impl CaptureDialogState {
                 }
             }
             CaptureMsg::StopCapture => {
+                // This message is no longer used - use Message::StopCapture directly
                 self.capture_session = false;
-                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
+                Some(crate::ui::Message::StopCapture)
             }
             CaptureMsg::ChangeDirectory(dir) => {
                 self.temp_directory = dir;
@@ -147,6 +142,13 @@ impl CaptureDialogState {
                 }
                 None
             }
+            CaptureMsg::ResetDirectory => {
+                let default_dir = crate::data::Options::default_capture_directory();
+                if let Some(path_str) = default_dir.to_str() {
+                    self.temp_directory = path_str.to_string();
+                }
+                None
+            }
             CaptureMsg::Cancel => {
                 // Don't save changes, just close
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
@@ -160,89 +162,156 @@ impl CaptureDialogState {
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
-        let title = if self.capture_session {
-            text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture"))
+        let title = text(if self.capture_session {
+            fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")
         } else {
-            text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-title"))
-        }
-        .size(20)
-        .width(Length::Fill)
-        .align_x(Alignment::Center);
+            fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-title")
+        })
+        .size(18)
+        .font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..iced::Font::default()
+        });
+
+        // Check directory validity
+        let dir_path = Path::new(&self.temp_directory);
+        let dir_valid = !self.temp_directory.is_empty() && dir_path.exists();
+        let dir_error = if self.temp_directory.is_empty() {
+            None
+        } else if !dir_path.exists() {
+            Some(fl!(crate::LANGUAGE_LOADER, "capture-dialog-dir-not-exist"))
+        } else if !dir_path.is_dir() {
+            Some(fl!(crate::LANGUAGE_LOADER, "capture-dialog-not-directory"))
+        } else {
+            None
+        };
 
         // Directory input with browse button
         let dir_input = text_input("", &self.temp_directory)
             .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeDirectory(s)))
-            .padding(6)
+            .size(14)
             .width(Length::Fill);
 
-        let browse_button = button(text("📁").size(14))
+        let browse_button = button(text("…").size(14))
             .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::BrowseDirectory))
             .padding([6, 12]);
 
-        let mut dir_row = row![
+        // Check if directory is different from default
+        let default_dir = crate::data::Options::default_capture_directory();
+        let is_default = default_dir.to_str().map(|s| s == self.temp_directory).unwrap_or(true);
+
+        let mut dir_input_row = row![dir_input, Space::new().width(4.0), browse_button];
+
+        if !is_default {
+            let reset_button = button(text("↻").size(14))
+                .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::ResetDirectory))
+                .padding([6, 12])
+                .style(button::secondary);
+            dir_input_row = dir_input_row.push(Space::new().width(4.0)).push(reset_button);
+        }
+
+        dir_input_row = dir_input_row.align_y(Alignment::Center);
+
+        if let Some(error) = dir_error {
+            let warning_icon = tooltip(
+                text("⚠").size(16).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().danger.weak.color),
+                }),
+                container(text(error)).style(container::rounded_box),
+                tooltip::Position::Top,
+            );
+            dir_input_row = dir_input_row.push(Space::new().width(4.0)).push(warning_icon);
+        }
+
+        let dir_row = row![
             container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-folder")).size(14))
-                .width(Length::Fixed(80.0))
-                .align_x(Alignment::End),
-            Space::new().width(8.0),
-            dir_input,
-            Space::new().width(4.0),
-            browse_button,
+                .width(Length::Fixed(DIALOG_LABEL_WIDTH))
+                .align_x(iced::alignment::Horizontal::Right),
+            dir_input_row,
         ]
+        .spacing(8)
         .align_y(Alignment::Center);
 
-        if !self.temp_directory.is_empty() && !Path::new(&self.temp_directory).exists() {
-            dir_row = dir_row.push(
-                container(text("⚠").size(18).style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
-                }))
-                .padding([0, 4]),
-            );
-        }
+        // Check if file exists
+        let full_path = Path::new(&self.temp_directory).join(&self.temp_filename);
+        let file_exists = full_path.exists();
 
         // Filename input
         let file_input = text_input("", &self.temp_filename)
             .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeFileName(s)))
-            .padding(6)
+            .size(14)
             .width(Length::Fill);
 
         let file_row = row![
             container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")).size(14))
-                .width(Length::Fixed(80.0))
-                .align_x(Alignment::End),
-            Space::new().width(8.0),
+                .width(Length::Fixed(DIALOG_LABEL_WIDTH))
+                .align_x(iced::alignment::Horizontal::Right),
             file_input,
         ]
+        .spacing(8)
         .align_y(Alignment::Center);
+
+        // File exists warning
+        let file_warning = row![
+            Space::new().width(DIALOG_LABEL_WIDTH + 8.0),
+            if file_exists && !self.capture_session {
+                text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-file-exists"))
+                    .size(12)
+                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().warning.base.color),
+                    })
+            } else {
+                text(String::new()).size(12)
+            }
+        ];
 
         // Action buttons
         let action_button: button::Button<'_, crate::ui::Message> = if self.capture_session {
             button(text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")))
-                .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::StopCapture))
-                .padding([8, 16])
+                .on_press(crate::ui::Message::StopCapture)
+                .padding([6, 12])
                 .style(button::danger)
         } else {
-            button(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-button")))
-                .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::StartCapture))
-                .padding([8, 16])
-                .style(button::primary)
+            let mut btn = button(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-button")))
+                .padding([6, 12])
+                .style(button::primary);
+            if dir_valid {
+                btn = btn.on_press(crate::ui::Message::CaptureDialog(CaptureMsg::StartCapture));
+            }
+            btn
         };
 
         let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
             .on_press(crate::ui::Message::CaptureDialog(CaptureMsg::Cancel))
-            .padding([8, 16])
+            .padding([6, 12])
             .style(button::secondary);
 
         let button_row = row![Space::new().width(Length::Fill), cancel_button, Space::new().width(8.0), action_button,];
 
-        // Main content
+        // Visual separator
+        let separator = container(Space::new())
+            .width(Length::Fill)
+            .height(1.0)
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.palette().text.scale_alpha(0.06))),
+                ..Default::default()
+            });
+
+        // Main content wrapped in effect_box
+        let mut content_column = column![dir_row, Space::new().height(8.0), file_row];
+
+        content_column = content_column.push(Space::new().height(8.0)).push(file_warning);
+
+        let content_box = effect_box(content_column.spacing(0).into());
+
         let modal_content = container(
             column![
                 title,
-                Space::new().height(12.0),
-                dir_row,
                 Space::new().height(8.0),
-                file_row,
-                Space::new().height(Length::Fill),
+                content_box,
+                Space::new().height(8.0),
+                separator,
+                Space::new().height(8.0),
                 button_row,
             ]
             .padding(10),

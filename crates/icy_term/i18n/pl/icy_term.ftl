@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Błagam cię
 toolbar-stop-playing5 = Litość
 toolbar-stop-playing6 = Wystarczy
 
-capture-dialog-capture-folder = Katalog:
-capture-dialog-capture-file = Plik:
-capture-dialog-capture-title=Przechwytywanie
-capture-dialog-capture-button=Start
+capture-dialog-capture-folder = Katalog
+capture-dialog-capture-file = Plik
+capture-dialog-capture-title = Przechwytywanie
+capture-dialog-capture-button = Start
+capture-dialog-dir-not-exist = Katalog nie istnieje
+capture-dialog-not-directory = Ścieżka nie jest katalogiem
+capture-dialog-file-exists = Plik istnieje i zostanie rozszerzony
 
 export-dialog-title = Eksportuj bufor do pliku
 export-dialog-export-button = Eksportuj

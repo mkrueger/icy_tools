@@ -177,7 +177,7 @@ impl Options {
 
     pub fn capture_path(&self) -> String {
         if self.capture_path.is_empty() {
-            Self::default_capture_path().to_string_lossy().to_string()
+            Self::default_capture_directory().to_string_lossy().to_string()
         } else {
             self.capture_path.clone()
         }
@@ -191,7 +191,7 @@ impl Options {
         }
     }
 
-    pub fn default_capture_path() -> PathBuf {
+    pub fn default_capture_directory() -> PathBuf {
         directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))

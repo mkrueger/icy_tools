@@ -187,10 +187,13 @@ toolbar-stop-playing4 = T'ho prego
 toolbar-stop-playing5 = Pietat
 toolbar-stop-playing6 = Ja n'hi ha prou
 
-capture-dialog-capture-folder = Carpeta: 
-capture-dialog-capture-file = Fitxer:
-capture-dialog-capture-title=Captura
-capture-dialog-capture-button=Iniciar
+capture-dialog-capture-folder = Carpeta
+capture-dialog-capture-file = Fitxer
+capture-dialog-capture-title = Captura
+capture-dialog-capture-button = Iniciar
+capture-dialog-dir-not-exist = El directori no existeix
+capture-dialog-not-directory = El camí no és un directori
+capture-dialog-file-exists = El fitxer existeix i s'hi afegirà contingut
 
 export-dialog-title = Exportar memòria intermèdia a fitxer
 export-dialog-export-button = Exportar

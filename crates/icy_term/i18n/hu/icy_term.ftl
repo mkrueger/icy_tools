@@ -185,10 +185,13 @@ toolbar-stop-playing4 = Könyörgöm
 toolbar-stop-playing5 = Kegyelem
 toolbar-stop-playing6 = Elég már
 
-capture-dialog-capture-folder = Könyvtár:
-capture-dialog-capture-file = Fájl:
-capture-dialog-capture-title=Rögzítés
-capture-dialog-capture-button=Indítás
+capture-dialog-capture-folder = Könyvtár
+capture-dialog-capture-file = Fájl
+capture-dialog-capture-title = Rögzítés
+capture-dialog-capture-button = Indítás
+capture-dialog-dir-not-exist = A könyvtár nem létezik
+capture-dialog-not-directory = Az útvonal nem könyvtár
+capture-dialog-file-exists = A fájl létezik és bővítve lesz
 
 export-dialog-title = Puffer exportálása fájlba
 export-dialog-export-button = Exportálás
