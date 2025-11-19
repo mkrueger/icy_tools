@@ -3,7 +3,7 @@
 //! IGS is a graphics system developed for Atari ST BBS systems.
 //! Commands start with 'G#' and use single-letter command codes followed by parameters.
 
-use crate::{Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand};
+use crate::{CommandParser, CommandSink, Vt52Parser};
 
 mod types;
 pub use types::*;
@@ -25,14 +25,6 @@ enum State {
     ReadLoopTextStrings,          // reading text strings for W@ loops after numeric params, terminated by @
     ReadZoneString(Vec<i32>),     // extended command X 4 zone string reading after numeric params
     ReadFillPattern(i32),         // extended command X 7 pattern data reading after id,pattern
-
-    // VT52 states
-    Escape,
-    ReadFgColor,
-    ReadBgColor,
-    ReadCursorLine,
-    ReadCursorRow(i32), // row position
-    ReadInsertLineCount,
 }
 
 pub struct IgsParser {
@@ -47,7 +39,7 @@ pub struct IgsParser {
     loop_token_buffer: Vec<u8>,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
 
-    reverse_video: bool,
+    vt52_parser: Vt52Parser,
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
 
@@ -63,8 +55,8 @@ impl IgsParser {
             loop_tokens: Vec::new(),
             loop_token_buffer: Vec::new(),
             reading_chain_gang: false,
+            vt52_parser: Vt52Parser::new(crate::vt52::VT52Mode::Mixed),
             skip_next_lf: false,
-            reverse_video: false,
         }
     }
 
@@ -78,46 +70,6 @@ impl IgsParser {
     #[inline]
     fn parse_i32_from_bytes(bytes: &[u8]) -> i32 {
         std::str::from_utf8(bytes).ok().and_then(|s| s.parse::<i32>().ok()).unwrap_or(0)
-    }
-
-    /// Parse VT52 hex color code from ASCII byte
-    #[inline]
-    fn parse_vt52_color(byte: u8) -> Option<Color> {
-        if byte <= 0x0F {
-            // ATARI ST extension
-            Some(Color::Base(byte as u8))
-        } else if byte >= b'0' && byte <= b'0' + 15 {
-            // Support for backwards compatibilility with VT52
-            let index = byte.wrapping_sub(b'0');
-            Some(Color::Base(index as u8))
-        } else {
-            None
-        }
-    }
-
-    /// Parse VT52 cursor row position from ASCII byte (1 based)
-    #[inline]
-    fn parse_cursor_row(byte: u8) -> Option<i32> {
-        /* ATARI:
-        if byte > 0 && byte <= 132 { // 132 is the max rows for ATARI ST VT52
-            Some(byte as i32)
-        } else {
-            None
-        }*/
-        // Original VT-52 would be :
-        if byte >= b' ' && byte <= b'p' { Some((byte - b' ') as i32 + 1) } else { None }
-    }
-
-    /// Parse ATARI cursor line position from ASCII byte (1 based)
-    #[inline]
-    fn parse_cursor_line(byte: u8) -> Option<i32> {
-        // ATARI:
-        /*if byte > 0 && byte <= 25 {
-            Some(byte as i32)
-        } else */
-
-        // Original VT-52 would be :
-        if byte >= b' ' && byte <= b'8' { Some((byte - b' ') as i32 + 1) } else { None }
     }
 
     fn push_current_param(&mut self) {
@@ -385,48 +337,9 @@ impl CommandParser for IgsParser {
                         b'G' => {
                             self.state = State::GotG;
                         }
-                        0x1B => {
-                            // ESC - VT52 escape sequence
-                            self.state = State::Escape;
-                        }
-                        0x08 | 0x0B | 0x0C => {
-                            // Backspace
-                            sink.emit(TerminalCommand::Backspace);
-                        }
-                        0x0D => {
-                            // Carriage return / Line feed
-                            sink.emit(TerminalCommand::CarriageReturn);
-                        }
-                        0x0A => {
-                            if self.skip_next_lf {
-                                self.skip_next_lf = false;
-                                continue;
-                            }
-                            sink.emit(TerminalCommand::LineFeed);
-                        } /*
-                        0x07 => {
-                        sink.emit(TerminalCommand::Bell);
-                        }*/
-                        0x00..=0x0F => {
-                            // TOS direct foreground color codes (0x00-0x0F)
-                            // 0x07 (Bell) is excluded to maintain standard ASCII compatibility
-                            let color = Color::Base(byte % 16);
-                            let sgr: SgrAttribute = if self.reverse_video {
-                                SgrAttribute::Background(color)
-                            } else {
-                                SgrAttribute::Foreground(color)
-                            };
-                            sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
-                        } /*
-                        0x09 => {
-                        sink.emit(TerminalCommand::Tab);
-                        }*/
-                        0x0E..=0x1A | 0x1C..=0x1F => {
-                            // Ignore control characters
-                        }
                         _ => {
-                            // Regular character
-                            sink.print(&[byte]);
+                            // Delegate all other bytes to VT52 parser
+                            self.vt52_parser.parse(&[byte], sink);
                         }
                     }
                 }
@@ -1127,220 +1040,6 @@ impl CommandParser for IgsParser {
                     } else {
                         self.text_buffer.push(byte);
                     }
-                }
-
-                // VT52 escape sequences
-                State::Escape => {
-                    let ch = byte as char;
-                    match ch {
-                        'A' => {
-                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
-                            self.state = State::Default;
-                        }
-                        'B' => {
-                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
-                            self.state = State::Default;
-                        }
-                        'C' => {
-                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
-                            self.state = State::Default;
-                        }
-                        'D' => {
-                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
-                            self.state = State::Default;
-                        }
-                        'E' => {
-                            sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All));
-                            sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
-                            self.state = State::Default;
-                        }
-                        'H' => {
-                            sink.emit(TerminalCommand::CsiCursorPosition(1, 1));
-                            self.state = State::Default;
-                        }
-                        'I' => {
-                            // VT52 Reverse line feed (cursor up and insert)
-                            sink.emit(TerminalCommand::EscReverseIndex);
-                            self.state = State::Default;
-                        }
-                        'J' => {
-                            sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::CursorToEnd));
-                            self.state = State::Default;
-                        }
-                        'K' => {
-                            sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::CursorToEnd));
-                            self.state = State::Default;
-                        }
-                        'Y' => {
-                            self.state = State::ReadCursorLine;
-                        }
-                        '3' | 'b' => {
-                            self.state = State::ReadFgColor;
-                        }
-                        '4' | 'c' => {
-                            self.state = State::ReadBgColor;
-                        }
-                        'e' => {
-                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::CursorVisible));
-                            self.state = State::Default;
-                        }
-                        'f' => {
-                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::CursorVisible));
-                            self.state = State::Default;
-                        }
-                        'j' => {
-                            sink.emit(TerminalCommand::CsiSaveCursorPosition);
-                            self.state = State::Default;
-                        }
-                        'k' => {
-                            sink.emit(TerminalCommand::CsiRestoreCursorPosition);
-                            self.state = State::Default;
-                        }
-                        'L' => {
-                            // VT52 Insert Line
-                            sink.emit(TerminalCommand::CsiInsertLine(1));
-                            self.state = State::Default;
-                        }
-                        'M' => {
-                            // VT52 Delete Line
-                            sink.emit(TerminalCommand::CsiDeleteLine(1));
-                            self.state = State::Default;
-                        }
-                        'p' => {
-                            // VT52 Reverse video
-                            self.reverse_video = true;
-                            self.state = State::Default;
-                        }
-                        'q' => {
-                            // VT52 Normal video
-                            self.reverse_video = false;
-                            self.state = State::Default;
-                        }
-                        'v' => {
-                            // VT52 Wrap on
-                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::AutoWrap));
-                            self.state = State::Default;
-                        }
-                        'w' => {
-                            // VT52 Wrap off
-                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::AutoWrap));
-                            self.state = State::Default;
-                        }
-                        'd' => {
-                            // VT52 Clear to start of screen
-                            sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::StartToCursor));
-                            self.state = State::Default;
-                        }
-                        'o' => {
-                            // VT52 Clear to start of line
-                            sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::StartToCursor));
-                            self.state = State::Default;
-                        }
-                        'i' => {
-                            // Insert line ESC form: mode implicitly 0, next byte is count
-                            self.state = State::ReadInsertLineCount;
-                        }
-                        'l' => {
-                            // Clear line ESC form: mode implicitly 0
-                            sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::All));
-                            self.state = State::Default;
-                        }
-                        'r' => {
-                            // Remember cursor ESC form: value implicitly 0
-                            sink.emit_igs(IgsCommand::RememberCursor { value: 0 });
-                            self.state = State::Default;
-                        }
-                        'm' => {
-                            // IGS command that can be invoked with ESC prefix instead of G#
-                            // ESC m x,y:  - cursor motion
-                            if let Ok(cmd_type) = IgsCommandType::try_from(byte) {
-                                self.state = State::ReadParams(cmd_type);
-                            } else {
-                                self.state = State::Default;
-                            }
-                        }
-                        _ => {
-                            // Unknown escape sequence, ignore
-                            self.state = State::Default;
-                        }
-                    }
-                }
-                State::ReadFgColor => {
-                    if let Some(color) = Self::parse_vt52_color(byte) {
-                        let sgr = if self.reverse_video {
-                            SgrAttribute::Background(color)
-                        } else {
-                            SgrAttribute::Foreground(color)
-                        };
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
-                    } else {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "VT52 Foreground Color",
-                                value: byte as u16,
-                                expected: Some("valid color code (0x00-0x0F)"),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
-                    }
-                    self.state = State::Default;
-                }
-
-                State::ReadBgColor => {
-                    if let Some(color) = Self::parse_vt52_color(byte) {
-                        let sgr = if self.reverse_video {
-                            SgrAttribute::Foreground(color)
-                        } else {
-                            SgrAttribute::Background(color)
-                        };
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
-                    } else {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "VT52 Background Color",
-                                value: byte as u16,
-                                expected: Some("valid color code (0x00-0x0F)"),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
-                    }
-                    self.state = State::Default;
-                }
-
-                State::ReadCursorLine => {
-                    if let Some(line) = Self::parse_cursor_line(byte) {
-                        self.state = State::ReadCursorRow(line);
-                    } else {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "VT52 Cursor Position (Column)",
-                                value: byte as u16,
-                                expected: Some("valid position byte (>= 32)"),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
-                        self.state = State::Default;
-                    }
-                }
-                State::ReadCursorRow(row) => {
-                    if let Some(col) = Self::parse_cursor_row(byte) {
-                        sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
-                    } else {
-                        sink.report_errror(
-                            crate::ParseError::InvalidParameter {
-                                command: "VT52 Cursor Position (Row)",
-                                value: byte as u16,
-                                expected: Some("valid position byte (>= 32)"),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
-                    }
-                    self.state = State::Default;
-                }
-                State::ReadInsertLineCount => {
-                    let count = byte;
-                    sink.emit(TerminalCommand::CsiInsertLine(count as u16));
-                    self.state = State::Default;
                 }
             }
         }

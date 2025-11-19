@@ -44,6 +44,9 @@ pub use rip::{BlockTransferMode, FileQueryMode, ImagePasteMode, QueryMode, RipCo
 mod skypix;
 pub use skypix::{SkypixCommand, SkypixParser};
 
+mod vt52;
+pub use vt52::Vt52Parser;
+
 mod igs;
 pub use igs::*;
 

@@ -4,6 +4,8 @@ mod load;
 
 mod roundtrip;
 
+mod vt52;
+
 // mod loop_tests;
 
 pub struct TestSink {

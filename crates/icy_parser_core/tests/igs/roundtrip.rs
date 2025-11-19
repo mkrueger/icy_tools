@@ -505,18 +505,8 @@ fn test_clear_line() {
 */
 
 #[test]
-fn test_cursor_motion() {
-    test_roundtrip("\x1bm1,20");
-}
-
-#[test]
 fn test_position_cursor() {
     test_roundtrip("G#p>70,19:");
-}
-
-#[test]
-fn test_remember_cursor() {
-    test_roundtrip("\x1br");
 }
 
 #[test]
