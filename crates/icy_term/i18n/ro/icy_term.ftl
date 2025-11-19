@@ -86,6 +86,8 @@ dialing_directory-generate = Genereaz
 dialing_directory-screen_mode = Mod ecran
 dialing_directory-terminal_type = Tip terminal
 dialing_directory-resolution = Cols×Linii
+dialing_directory-resolution-info = {$width}×{$height}, {$cols} cols,
+ {$colors} culori
 dialing_directory-music-option = Muzică Ansi
 dialing_directory-baud-emulation = Emulare baud
 dialing_directory-autologin = Șir autologin

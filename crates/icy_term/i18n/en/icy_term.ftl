@@ -86,6 +86,8 @@ dialing_directory-password = Password
 dialing_directory-generate = Generat
 dialing_directory-screen_mode = Screen
 dialing_directory-resolution = Columns×Lines
+dialing_directory-resolution-info = {$width}×{$height}, {$cols} cols,
+ {$colors} colors
 dialing_directory-terminal_type = Terminal
 dialing_directory-music-option = Music
 dialing_directory-baud-emulation = Baud emulation

@@ -87,6 +87,8 @@ dialing_directory-screen_mode = Režim obrazovky
 dialing_directory-terminal_type = Typ terminálu
 dialing_directory-music-option = Ansi hudba
 dialing_directory-resolution = Sloupce×Řádky
+dialing_directory-resolution-info = {$width}×{$height}, {$cols} sloupců,
+ {$colors} barev
 dialing_directory-baud-emulation = Emulace baud
 dialing_directory-autologin = Autologin řetězec
 dialing_directory-comment = Komentář

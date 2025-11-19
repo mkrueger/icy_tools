@@ -87,6 +87,8 @@ dialing_directory-screen_mode = Mode de pantalla
 dialing_directory-terminal_type = Tipus de terminal
 dialing_directory-music-option = Música Ansi
 dialing_directory-resolution = Cols×Files
+dialing_directory-resolution-info = {$width}×{$height}, {$cols} cols,
+ {$colors} colors
 dialing_directory-baud-emulation = Emulació de baud
 dialing_directory-autologin = Cadena d'autologin
 dialing_directory-comment = Comentari

@@ -124,12 +124,13 @@ impl<'de> Deserialize<'de> for ScreenMode {
                         }
                         "AtariST" => {
                             if params.len() != 2 {
-                                return Err(E::custom("Vga expects two integer parameters"));
+                                return Err(E::custom("AtariST expects two parameters"));
                             }
                             let term_res = match params[0] {
-                                "high" => TerminalResolution::High,
-                                "medium" => TerminalResolution::Medium,
-                                _ => TerminalResolution::Low,
+                                "High" => TerminalResolution::High,
+                                "Medium" => TerminalResolution::Medium,
+                                "Low" => TerminalResolution::Low,
+                                _ => TerminalResolution::Medium, // Default to Medium if unrecognized
                             };
                             let has_igs = params[1] == "true";
                             Ok(ScreenMode::AtariST(term_res, has_igs))

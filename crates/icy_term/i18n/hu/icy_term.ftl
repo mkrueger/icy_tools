@@ -86,6 +86,8 @@ dialing_directory-generate = Generálá
 dialing_directory-screen_mode = Képernyő mód
 dialing_directory-terminal_type = Terminál típus
 dialing_directory-resolution = Oszlopok×Sorok
+dialing_directory-resolution-info = {$width}×{$height}, {$cols} oszlop,
+ {$colors} szín
 dialing_directory-music-option = Ansi zene
 dialing_directory-baud-emulation = Baud emuláció
 dialing_directory-autologin = Autologin karakterlánc

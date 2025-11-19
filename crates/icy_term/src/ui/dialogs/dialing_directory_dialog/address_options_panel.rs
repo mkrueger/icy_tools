@@ -9,6 +9,7 @@ use iced::{
     widget::{Space, button, column, container, pick_list, row, scrollable, svg, text, text_input},
 };
 use iced_engine_gui::settings::{SECTION_SPACING, effect_box, left_label, section_header};
+use icy_engine::TerminalResolutionExt;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use once_cell::sync::Lazy;
@@ -94,9 +95,9 @@ pub struct TerminalResolutionWrapper(pub icy_engine::TerminalResolution);
 impl fmt::Display for TerminalResolutionWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            icy_engine::TerminalResolution::Low => write!(f, "Low (320x200)"),
-            icy_engine::TerminalResolution::Medium => write!(f, "Medium (640x200)"),
-            icy_engine::TerminalResolution::High => write!(f, "High (640x400)"),
+            icy_engine::TerminalResolution::Low => write!(f, "Low"),
+            icy_engine::TerminalResolution::Medium => write!(f, "Medium"),
+            icy_engine::TerminalResolution::High => write!(f, "High"),
         }
     }
 }
@@ -399,7 +400,7 @@ impl super::DialingDirectoryState {
                 // AtariST: Resolution pick list and IGS checkbox
                 let (current_resolution, current_igs) = match addr.screen_mode {
                     ScreenMode::AtariST(res, igs) => (res, igs),
-                    _ => (icy_engine::TerminalResolution::Low, false),
+                    _ => (icy_engine::TerminalResolution::Medium, false),
                 };
 
                 // Resolution pick list
@@ -419,13 +420,30 @@ impl super::DialingDirectoryState {
                         })
                     },
                 )
-                .width(Length::Fixed(160.0))
+                .width(Length::Fixed(100.0))
                 .text_size(14);
 
+                // Resolution info label
+                let size = current_resolution.get_resolution();
+                let (cols, _rows) = current_resolution.get_text_resolution();
+                let colors = current_resolution.get_max_colors();
+                let info_text = fl!(
+                    crate::LANGUAGE_LOADER,
+                    "dialing_directory-resolution-info",
+                    width = size.width,
+                    height = size.height,
+                    cols = cols,
+                    colors = colors
+                );
+                let info_label = text(info_text).size(12).style(text::secondary);
                 server_content = server_content.push(
-                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-resolution")), resolution_pick]
-                        .spacing(12)
-                        .align_y(Alignment::Center),
+                    row![
+                        left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-resolution")),
+                        resolution_pick,
+                        info_label
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
                 );
 
                 // IGS (Interactive Graphics System) checkbox
@@ -438,7 +456,31 @@ impl super::DialingDirectoryState {
                     })
                     .text_size(14);
 
-                server_content = server_content.push(row![left_label("Enable IGS".to_string()), igs_toggle].spacing(12).align_y(Alignment::Center));
+                let igs_link = button(text("Enable IGS").size(14))
+                    .on_press(Message::OpenLink(
+                        "https://breakintochat.com/blog/category/instant-graphics-and-sound".to_string(),
+                    ))
+                    .style(|theme: &iced::Theme, status| {
+                        let palette = theme.extended_palette();
+                        let base = button::Style {
+                            background: None,
+                            text_color: palette.primary.strong.color,
+                            border: iced::Border::default(),
+                            shadow: iced::Shadow::default(),
+                            snap: false,
+                        };
+                        match status {
+                            button::Status::Hovered => button::Style {
+                                text_color: palette.primary.base.color,
+                                ..base
+                            },
+                            _ => base,
+                        }
+                    })
+                    .width(Length::Fixed(iced_engine_gui::settings::LABEL_WIDTH))
+                    .padding(0);
+
+                server_content = server_content.push(row![igs_link, igs_toggle].spacing(12).align_y(Alignment::Center));
             }
 
             // Music option row (only for ANSI/UTF8ANSI)

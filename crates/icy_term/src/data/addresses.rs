@@ -482,7 +482,7 @@ impl Address {
             TerminalEmulation::Skypix => ScreenMode::SkyPix,
             TerminalEmulation::AtariST => match self.screen_mode {
                 ScreenMode::AtariST(res, igs) => ScreenMode::AtariST(res, igs),
-                _ => ScreenMode::AtariST(icy_engine::TerminalResolution::Low, false),
+                _ => ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false),
             },
         }
     }

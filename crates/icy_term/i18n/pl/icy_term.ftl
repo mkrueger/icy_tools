@@ -86,6 +86,8 @@ dialing_directory-generate = Generu
 dialing_directory-screen_mode = Tryb ekranu
 dialing_directory-terminal_type = Typ terminala
 dialing_directory-resolution = Kolumny×Wiersze
+dialing_directory-resolution-info = {$width}×{$height}, {$cols} kol,
+ {$colors} kolorów
 dialing_directory-music-option = Muzyka Ansi
 dialing_directory-baud-emulation = Emulacja baud
 dialing_directory-autologin = Ciąg autologowania
