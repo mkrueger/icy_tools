@@ -195,6 +195,8 @@ capture-dialog-file-exists = El archivo existe y se añadirá contenido
 
 export-dialog-title = Exportar búfer a archivo
 export-dialog-export-button = Exportar
+export-dialog-dir-not-exist = El directorio no existe
+export-dialog-not-directory = La ruta no es un directorio
 
 show-iemsi-dialog-heading=Información del servidor IEMSI
 show-iemsi-dialog-name=Nombre

@@ -1,9 +1,9 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, button, checkbox, column, pick_list, row, text},
+    widget::{Space, checkbox, column, pick_list, row},
 };
-use iced_engine_gui::settings::{LABEL_WIDTH, SECTION_PADDING, effect_box, left_label};
+use iced_engine_gui::settings::{SECTION_PADDING, effect_box, left_label};
 
 use crate::{
     data::options::DialTone,

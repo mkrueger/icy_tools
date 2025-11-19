@@ -195,6 +195,8 @@ capture-dialog-file-exists = A fájl létezik és bővítve lesz
 
 export-dialog-title = Puffer exportálása fájlba
 export-dialog-export-button = Exportálás
+export-dialog-dir-not-exist = A könyvtár nem létezik
+export-dialog-not-directory = Az elérési út nem könyvtár
 
 show-iemsi-dialog-heading=IEMSI szerver információk
 show-iemsi-dialog-name=Név

@@ -195,6 +195,8 @@ capture-dialog-file-exists = Plik istnieje i zostanie rozszerzony
 
 export-dialog-title = Eksportuj bufor do pliku
 export-dialog-export-button = Eksportuj
+export-dialog-dir-not-exist = Katalog nie istnieje
+export-dialog-not-directory = Ścieżka nie jest katalogiem
 
 show-iemsi-dialog-heading=Informacje o serwerze IEMSI
 show-iemsi-dialog-name=Nazwa

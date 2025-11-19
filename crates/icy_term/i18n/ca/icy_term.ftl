@@ -197,6 +197,8 @@ capture-dialog-file-exists = El fitxer existeix i s'hi afegirà contingut
 
 export-dialog-title = Exportar memòria intermèdia a fitxer
 export-dialog-export-button = Exportar
+export-dialog-dir-not-exist = El directori no existeix
+export-dialog-not-directory = El camí no és un directori
 
 show-iemsi-dialog-heading=Informació del servidor IEMSI
 show-iemsi-dialog-name=Nom

@@ -1,16 +1,18 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, pick_list, row, text, text_input},
+    widget::{Space, button, column, container, pick_list, row, text, text_input, tooltip},
 };
+use iced_engine_gui::settings::effect_box;
 use icy_engine::{EditableScreen, SaveOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::ui::MainWindowMode;
 
-const MODAL_WIDTH: f32 = 500.0;
-const MODAL_HEIGHT: f32 = 200.0;
+const MODAL_WIDTH: f32 = 550.0;
+const MODAL_HEIGHT: f32 = 224.0;
+const DIALOG_LABEL_WIDTH: f32 = 100.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -200,46 +202,60 @@ impl ExportScreenDialogState {
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
-        let title = text(fl!(crate::LANGUAGE_LOADER, "export-dialog-title"))
-            .size(20)
-            .width(Length::Fill)
-            .align_x(Alignment::Center);
+        let title = text(fl!(crate::LANGUAGE_LOADER, "export-dialog-title")).size(16).font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..iced::Font::default()
+        });
+
+        // Check directory validity
+        let dir_path = Path::new(&self.temp_directory);
+        let dir_valid = !self.temp_directory.is_empty() && dir_path.exists();
+        let dir_error = if self.temp_directory.is_empty() {
+            None
+        } else if !dir_path.exists() {
+            Some(fl!(crate::LANGUAGE_LOADER, "export-dialog-dir-not-exist"))
+        } else if !dir_path.is_dir() {
+            Some(fl!(crate::LANGUAGE_LOADER, "export-dialog-not-directory"))
+        } else {
+            None
+        };
 
         // Directory input with browse button
         let dir_input = text_input("", &self.temp_directory)
             .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeDirectory(s)))
-            .padding(6)
+            .size(14)
             .width(Length::Fill);
 
-        let browse_button = button(text("📁").size(14))
+        let browse_button = button(text("…").size(14))
             .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::BrowseDirectory))
             .padding([6, 12]);
 
-        let mut dir_row = row![
-            container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-folder")).size(14))
-                .width(Length::Fixed(80.0))
-                .align_x(Alignment::End),
-            Space::new().width(8.0),
-            dir_input,
-            Space::new().width(4.0),
-            browse_button,
-        ]
-        .align_y(Alignment::Center);
+        let mut dir_input_row = row![dir_input, Space::new().width(4.0), browse_button].align_y(Alignment::Center);
 
-        // Add warning if directory doesn't exist
-        if !self.temp_directory.is_empty() && !Path::new(&self.temp_directory).exists() {
-            dir_row = dir_row.push(
-                container(text("⚠").size(18).style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
-                }))
-                .padding([0, 4]),
+        if let Some(error) = dir_error {
+            let warning_icon = tooltip(
+                text("⚠").size(16).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().danger.weak.color),
+                }),
+                container(text(error)).style(container::rounded_box),
+                tooltip::Position::Top,
             );
+            dir_input_row = dir_input_row.push(Space::new().width(4.0)).push(warning_icon);
         }
+
+        let dir_row = row![
+            container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-folder")).size(14))
+                .width(Length::Fixed(DIALOG_LABEL_WIDTH))
+                .align_x(iced::alignment::Horizontal::Right),
+            dir_input_row,
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
 
         // Filename input with format picker
         let file_input = text_input("", &self.temp_filename)
             .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeFileName(s)))
-            .padding(6)
+            .size(14)
             .width(Length::Fill);
 
         let format_picker = pick_list(&ExportFormat::ALL[..], Some(self.temp_format), |format| {
@@ -250,13 +266,13 @@ impl ExportScreenDialogState {
 
         let file_row = row![
             container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")).size(14))
-                .width(Length::Fixed(80.0))
-                .align_x(Alignment::End),
-            Space::new().width(8.0),
+                .width(Length::Fixed(DIALOG_LABEL_WIDTH))
+                .align_x(iced::alignment::Horizontal::Right),
             file_input,
             Space::new().width(4.0),
             format_picker,
         ]
+        .spacing(8)
         .align_y(Alignment::Center);
 
         // Display the full path that will be saved
@@ -266,13 +282,13 @@ impl ExportScreenDialogState {
                 color: Some(theme.extended_palette().secondary.base.color),
             });
 
-        let preview_row = row![Space::new().width(88.0), full_path_preview,];
+        let preview_row = row![Space::new().width(DIALOG_LABEL_WIDTH + 8.0), full_path_preview,];
 
         // Action buttons
-        let export_enabled = !self.temp_directory.is_empty() && !self.temp_filename.is_empty() && Path::new(&self.temp_directory).exists();
+        let export_enabled = !self.temp_directory.is_empty() && !self.temp_filename.is_empty() && dir_valid;
 
         let mut export_button = button(text(fl!(crate::LANGUAGE_LOADER, "export-dialog-export-button")))
-            .padding([8, 16])
+            .padding([6, 12])
             .style(button::primary);
 
         if export_enabled {
@@ -281,22 +297,36 @@ impl ExportScreenDialogState {
 
         let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
             .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel))
-            .padding([8, 16])
+            .padding([6, 12])
             .style(button::secondary);
 
         let button_row = row![Space::new().width(Length::Fill), cancel_button, Space::new().width(8.0), export_button,];
+
+        // Visual separator
+        let separator = container(Space::new())
+            .width(Length::Fill)
+            .height(1.0)
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.palette().text.scale_alpha(0.06))),
+                ..Default::default()
+            });
+
+        // Main content wrapped in effect_box
+        let content_box = effect_box(
+            column![dir_row, Space::new().height(8.0), file_row, Space::new().height(8.0), preview_row,]
+                .spacing(0)
+                .into(),
+        );
 
         // Main content
         let modal_content = container(
             column![
                 title,
-                Space::new().height(12.0),
-                dir_row,
                 Space::new().height(8.0),
-                file_row,
-                Space::new().height(4.0),
-                preview_row,
-                Space::new().height(Length::Fill),
+                content_box,
+                Space::new().height(8.0),
+                separator,
+                Space::new().height(8.0),
                 button_row,
             ]
             .padding(10),
