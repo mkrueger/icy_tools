@@ -1,45 +1,223 @@
+use crate::IgsCommandType;
+
+/// Describes what command the loop executes each iteration.
+///
+/// This maps to the 5th parameter of the IGS `&` loop command.
+/// According to the spec:
+///
+/// - Either a single command identifier like `L`, `G`, `W`, etc.
+/// - Or a "Chain Gang" specification using `>...@`, where the position
+///   of the command in the chain (0..127) is selected by a stepping parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopTarget {
-    /// Single command identifier, e.g. 'L', 'S', 'G'.
-    Single(char),
+    /// Single command identifier executed each iteration.
+    ///
+    /// Example: `G#&>0,100,1,0,L,2,0,0,x,y:` loops the `L` (line) command
+    /// with parameters stepping from 0 to 100.
+    Single(IgsCommandType),
 
-    /// Chain-Gang sequence, e.g. ">CL@".
+    /// Chain-Gang: a sequence of commands indexed by a loop parameter.
+    ///
+    /// The spec allows `>...@` as parameter 5, where each position in the
+    /// string (0 to 127) represents a command. The loop parameter `x` or `y`
+    /// selects which position in the chain to execute.
+    ///
+    /// Example: `G#&>0,3,1,0,>CL@,6,0,0,x,y:` executes:
+    ///   - iteration 0: `C` (color set)
+    ///   - iteration 1: `L` (line)
+    ///   - iteration 2: `C` again
+    ///   - iteration 3: `L` again
     ChainGang {
-        /// Raw representation including leading '>' and trailing '@' for roundtrip.
-        raw: String,
-        /// Extracted command identifiers inside the chain.
-        commands: Vec<char>,
+        /// Command identifiers extracted from the chain.
+        commands: Vec<IgsCommandType>,
     },
 }
 
+/// Optional modifiers that customize loop behavior.
+///
+/// These flags are parsed from suffixes on the command identifier in the `&` header,
+/// e.g., `G#&>...,W|@,...` where `|` enables XOR stepping and `@` enables refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LoopModifiers {
-    /// XOR stepping ("|" after the command identifier).
+    /// XOR stepping: combines loop iterations using XOR drawing mode.
+    ///
+    /// The spec mentions: "XOR stepping example: G#G 1,3,0,0,50,50:
+    /// G#&>198,0,2,0,G|4,2,6,x,x:" This allows overlaying shapes
+    /// in XOR mode for animation effects.
     pub xor_stepping: bool,
-    /// For W command: fetch text each iteration ("@" after the command identifier).
+
+    /// For `W` (write text) command: re-read text from stream each iteration.
+    ///
+    /// Without this flag, the last `W` text is reused. With the flag,
+    /// IG reads a new text value from the parameter stream for each iteration.
+    /// Useful for building dynamic text lists in loops.
     pub refresh_text_each_iteration: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoopParamToken {
-    /// Plain numeric value.
-    Number(i32),
-    /// Symbolic value, usually 'x' or 'y'.
-    Symbol(char),
-    /// Expression like "+10", "-10", "!99".
-    Expr(String),
-    /// Group separator corresponding to ':' in the text representation.
-    GroupSeparator,
+/// Binary operator for arithmetic loop parameter expressions.
+///
+/// The IGS spec allows loop parameters to be computed expressions:
+/// - `+N` adds N to the current step value
+/// - `-N` subtracts N from the current step value
+/// - `!N` subtracts the step value from N (reverse subtraction)
+///
+/// Example: `G#&>0,10,1,0,L,4,x,y,+5,x:` uses `x` (step from 0 to 10)
+/// and `+5` (step + 5) as parameters to the line command.
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum ParamOperator {
+    /// `+CONST` – add the constant to the current step value.
+    Add = b'+',
+    /// `-CONST` – subtract the constant from the current step value.
+    Subtract = b'-',
+    /// `!CONST` – subtract the step value from the constant (reverse subtraction).
+    SubtractStep = b'!',
 }
 
+/// A single parameter value or placeholder in a loop's READ/DATA-like section.
+///
+/// The spec describes the loop as having 6 fixed parameters, then a stream
+/// of parameter values for the target command. These tokens represent what
+/// gets passed to the target command each iteration.
+///
+/// Example: `G#&>0,100,10,0,L,4,10,20,x,y:` has param_count=4 and four tokens:
+/// `Number(10)`, `Number(20)`, `StepForward`, `StepReverse`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoopParamToken {
+    /// Constant numeric value that never changes across iterations.
+    ///
+    /// Example: In `G#&>0,10,1,0,L,4,5,10,x,y:`, the `5` and `10` are constants.
+    Number(i32),
+
+    /// `x` – stepping variable: varies from `from` to `to` in `step` increments.
+    ///
+    /// From the spec: "if you use a `x` as a parameter it will be stepped
+    /// in the direction of the FROM TO values". In the loop
+    /// `G#&>10,20,2,0,L,4,x,y,100,200:`, the first parameter (x) steps
+    /// as 10, 12, 14, 16, 18, 20.
+    StepForward,
+
+    /// `y` – reverse stepping variable: varies opposite to the FROM→TO direction.
+    ///
+    /// From the spec: "if you use a `y` the loop will step the value in a
+    /// reverse direction". In `G#&>10,20,2,0,L,4,x,y,100,200:`, the second
+    /// parameter (y) steps as 20, 18, 16, 14, 12, 10.
+    StepReverse,
+
+    /// `r` – random value within the range set by the `X 2` command.
+    ///
+    /// The spec describes: `X 2,0,50:` sets random range to 0–50.
+    /// Using `r` in a loop then produces random values in that range
+    /// for each iteration.
+    Random,
+
+    /// Arithmetic expression combining a step variable with a constant.
+    ///
+    /// Examples:
+    /// - `Expr(Add, 5)` for `+5`: current step + 5
+    /// - `Expr(Subtract, 10)` for `-10`: current step - 10
+    /// - `Expr(SubtractStep, 99)` for `!99`: 99 - current step
+    ///
+    /// Useful for offset coordinates or other computed values.
+    Expr(ParamOperator, i32),
+
+    /// Group separator `:` in the parameter stream.
+    ///
+    /// The spec uses `:` to logically separate parameter groups,
+    /// similar to BASIC's `READ`/`DATA` structure. Useful for readability
+    /// and future extensions but typically ignored during execution.
+    GroupSeparator,
+
+    /// Text string for `W@` (write text with refresh) command.
+    ///
+    /// When the loop target is `W` with the `@` modifier (refresh_text_each_iteration),
+    /// the parameter stream contains text strings terminated by `@` that are cycled
+    /// through on each iteration.
+    ///
+    /// Example: `G#&>20,140,20,0,W@,2,0,x,A. Item 1@B. Item 2@C. Item 3@`
+    /// The texts "A. Item 1", "B. Item 2", "C. Item 3" are stored as `Text` tokens
+    /// and displayed sequentially as the loop progresses.
+    Text(Vec<u8>),
+}
+
+/// Complete parsed representation of an IGS `G#&` loop command.
+///
+/// The `&` loop command allows executing a target command repeatedly with
+/// stepping parameters. The spec defines it as:
+///
+/// ```text
+/// G#&>FROM,TO,STEP,DELAY,TARGET_COMMAND,PARAM_COUNT,<param values...>
+/// ```
+///
+/// Where:
+/// - **Parameter 1 (FROM)**: Start value for stepping (inclusive).
+/// - **Parameter 2 (TO)**: End value for stepping (inclusive).
+/// - **Parameter 3 (STEP)**: Step size (always positive; direction from FROM/TO).
+/// - **Parameter 4 (DELAY)**: Pause between iterations in 1/200 seconds.
+/// - **Parameter 5 (TARGET_COMMAND)**: Either a single command or a chain gang.
+/// - **Parameter 6 (PARAM_COUNT)**: Number of parameter values for the target.
+/// - **Remaining**: The parameter stream (READ/DATA-like section).
+///
+/// The loop executes roughly as:
+/// ```pseudocode
+/// current = from
+/// while (from <= to ? current <= to : current >= to):
+///     compute parameters from the stream (x→current, y→opposite, etc.)
+///     execute target_command with these parameters
+///     delay for DELAY * (1/200) seconds
+///     current += (from <= to ? step : -step)
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopCommandData {
+    /// Start value for the stepping variable (inclusive).
     pub from: i32,
+
+    /// End value for the stepping variable (inclusive).
     pub to: i32,
+
+    /// Step increment (always positive; direction determined by from/to relation).
+    ///
+    /// From spec: "3rd parameter = step value, positive number only."
+    /// If from < to, the step value is added each iteration (forward).
+    /// If from > to, the step value is subtracted each iteration (backward).
     pub step: i32,
+
+    /// Delay between iterations in units of 1/200 seconds.
+    ///
+    /// From spec: "4th parameter = DELAY in 200 hundredths of a between each step."
+    /// A delay of 200 pauses for 1 second.
     pub delay: i32,
+
+    /// Command or chain of commands to execute each iteration.
     pub target: LoopTarget,
+
+    /// Modifiers affecting loop behavior (XOR stepping, text refresh, etc.).
     pub modifiers: LoopModifiers,
+
+    /// Number of parameter values expected for the target command.
+    ///
+    /// From spec: "6th parameter = number of parameters command that [the loop]
+    /// requires". If the target command needs 4 parameters, param_count=4.
+    /// The loop will consume that many tokens from the `params` vector per iteration.
     pub param_count: u16,
+
+    /// The parameter stream: stepping variables, constants, expressions, etc.
+    ///
+    /// Each iteration, the loop extracts param_count tokens, evaluates them
+    /// (replacing `x`/`y` with the current step value), and passes them
+    /// to the target command.
     pub params: Vec<LoopParamToken>,
+}
+
+impl LoopCommandData {
+    pub fn iteration_count(&self) -> u32 {
+        if self.step == 0 {
+            return 0;
+        }
+        ((self.to - self.from).abs() / self.step.abs() + 1) as u32
+    }
+
+    pub fn is_reverse(&self) -> bool {
+        (self.to < self.from && self.step > 0) || (self.to > self.from && self.step < 0)
+    }
 }

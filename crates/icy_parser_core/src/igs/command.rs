@@ -306,7 +306,7 @@ pub enum IgsCommand {
     WriteText {
         x: i32,
         y: i32,
-        text: String,
+        text: Vec<u8>,
     },
 
     /// Text effects command (E)
@@ -780,7 +780,7 @@ pub enum IgsCommand {
         x2: i32,
         y2: i32,
         length: u16,
-        string: String,
+        string: Vec<u8>,
     },
 
     /// Flow control settings (X 5)
@@ -833,7 +833,7 @@ pub enum IgsCommand {
     /// Each row ends with '@', use 'X' for 1 bits, anything else for 0
     LoadFillPattern {
         pattern: u8,
-        data: String,
+        data: Vec<u8>,
     },
 
     /// Rotate color registers (X 8)
@@ -1129,7 +1129,7 @@ impl fmt::Display for IgsCommand {
             IgsCommand::WriteText { x, y, text } => {
                 // Spec-compliant format: G#W>x,y,text@ (no justification parameter)
                 // The text follows directly after the second parameter separator
-                write!(f, "G#W>{},{},{}@", x, y, text)
+                write!(f, "G#W>{},{},{}@", x, y, String::from_utf8_lossy(text))
             }
             IgsCommand::TextEffects { effects, size, rotation } => {
                 write!(f, "G#E>{},{},{}:", effects.bits(), size, *rotation as u8)
@@ -1279,29 +1279,41 @@ impl fmt::Display for IgsCommand {
 
                 // Render target + modifiers
                 match &data.target {
-                    LoopTarget::Single(ch) => {
-                        write!(f, ",{}", ch)?;
+                    LoopTarget::Single(cmd_type) => {
+                        write!(f, ",{}", cmd_type.to_char())?;
                     }
-                    LoopTarget::ChainGang { raw, .. } => {
-                        write!(f, ",{}", raw)?;
+                    LoopTarget::ChainGang { commands } => {
+                        write!(f, ",>")?;
+                        for cmd in commands {
+                            write!(f, "{}", cmd.to_char())?;
+                        }
+                        write!(f, "@")?;
                     }
                 }
 
                 if data.modifiers.xor_stepping {
                     write!(f, "|")?;
                 }
+                let has_modifiers = data.modifiers.xor_stepping || data.modifiers.refresh_text_each_iteration;
                 if data.modifiers.refresh_text_each_iteration {
                     write!(f, "@")?;
                 }
 
-                write!(f, ",{}", data.param_count)?;
+                // No comma before param_count if command has modifiers (| or @)
+                // Spec format: W@2 not W@,2
+                if !has_modifiers {
+                    write!(f, ",")?;
+                }
+                write!(f, "{}", data.param_count)?;
 
                 let mut last_was_colon = false;
+                let mut last_was_text = false;
                 for token in &data.params {
                     match token {
                         LoopParamToken::GroupSeparator => {
                             write!(f, ":")?;
                             last_was_colon = true;
+                            last_was_text = false;
                         }
                         LoopParamToken::Number(n) => {
                             if !last_was_colon {
@@ -1309,20 +1321,50 @@ impl fmt::Display for IgsCommand {
                             }
                             write!(f, "{}", n)?;
                             last_was_colon = false;
+                            last_was_text = false;
                         }
-                        LoopParamToken::Symbol(c) => {
+                        LoopParamToken::StepForward => {
                             if !last_was_colon {
                                 write!(f, ",")?;
                             }
-                            write!(f, "{}", c)?;
+                            write!(f, "x")?;
                             last_was_colon = false;
+                            last_was_text = false;
                         }
-                        LoopParamToken::Expr(s) => {
+                        LoopParamToken::StepReverse => {
                             if !last_was_colon {
                                 write!(f, ",")?;
                             }
-                            write!(f, "{}", s)?;
+                            write!(f, "y")?;
                             last_was_colon = false;
+                            last_was_text = false;
+                        }
+                        LoopParamToken::Random => {
+                            if !last_was_colon {
+                                write!(f, ",")?;
+                            }
+                            write!(f, "r")?;
+                            last_was_colon = false;
+                            last_was_text = false;
+                        }
+                        LoopParamToken::Expr(op, val) => {
+                            if !last_was_colon {
+                                write!(f, ",")?;
+                            }
+                            write!(f, "{}{}", (*op as u8) as char, val)?;
+                            last_was_colon = false;
+                            last_was_text = false;
+                        }
+                        LoopParamToken::Text(bytes) => {
+                            // Text strings: only add comma before first text (after numeric params)
+                            // Text strings are separated by their @ terminators, no comma between them
+                            if !last_was_colon && !last_was_text {
+                                write!(f, ",")?;
+                            }
+                            write!(f, "{}", String::from_utf8_lossy(bytes))?;
+                            write!(f, "@")?;
+                            last_was_colon = false;
+                            last_was_text = true;
                         }
                     }
                 }
@@ -1362,7 +1404,17 @@ impl fmt::Display for IgsCommand {
                 if (9997..=9999).contains(zone_id) {
                     write!(f, "G#X>4,{}:", zone_id)
                 } else {
-                    write!(f, "G#X>4,{},{},{},{},{},{},{}:", zone_id, x1, y1, x2, y2, length, string)
+                    write!(
+                        f,
+                        "G#X>4,{},{},{},{},{},{},{}:",
+                        zone_id,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        length,
+                        String::from_utf8_lossy(string)
+                    )
                 }
             }
             IgsCommand::FlowControl { mode, params } => {
@@ -1376,7 +1428,7 @@ impl fmt::Display for IgsCommand {
                 write!(f, "G#X>6,{}:", mode)
             }
             IgsCommand::LoadFillPattern { pattern, data } => {
-                write!(f, "G#X>7,{},{}:", pattern, data)
+                write!(f, "G#X>7,{},{}:", pattern, String::from_utf8_lossy(data))
             }
             IgsCommand::RotateColorRegisters {
                 start_reg,

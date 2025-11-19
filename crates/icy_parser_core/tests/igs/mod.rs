@@ -4,7 +4,9 @@ mod load;
 
 mod roundtrip;
 
-struct TestSink {
+// mod loop_tests;
+
+pub struct TestSink {
     pub igs_commands: Vec<IgsCommand>,
     text: Vec<String>,
     terminal_commands: Vec<TerminalCommand>,
@@ -125,7 +127,7 @@ fn test_igs_write_text() {
         IgsCommand::WriteText { x, y, text } => {
             assert_eq!(*x, 10);
             assert_eq!(*y, 20);
-            assert_eq!(text, "Hello World");
+            assert_eq!(text, b"Hello World");
         }
         _ => panic!("Expected WriteText command"),
     }

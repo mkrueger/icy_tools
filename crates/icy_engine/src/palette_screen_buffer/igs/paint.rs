@@ -583,15 +583,11 @@ impl DrawExecutor {
         }
     }
 
-    pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &str) {
+    pub fn write_text(&mut self, buf: &mut dyn EditableScreen, text_pos: Position, string_parameter: &[u8]) {
         let (metrics, font) = load_atari_font(self.text_size);
         let is_outlined = self.text_effects.contains(TextEffects::OUTLINED);
         let outline_thickness = if is_outlined { 1 } else { 0 };
 
-        println!(
-            "write_text: pos=({},{}) text='{}' size:{} effects:{:?} rotation:{:?}",
-            text_pos.x, text_pos.y, string_parameter, self.text_size, self.text_effects, self.text_rotation
-        );
         // For outlined text, the position represents where the outline starts
         // (not the character itself, which is 1 pixel inward)
         let mut pos = text_pos;
@@ -619,8 +615,8 @@ impl DrawExecutor {
 
         let mut draw_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
 
-        for ch in string_parameter.chars() {
-            let glyph = font.get_glyph(ch).unwrap();
+        for ch in string_parameter {
+            let glyph = font.get_glyph(*ch as char).unwrap();
 
             // For outlined text, we need to:
             // 1. Draw the outline (border) in text color

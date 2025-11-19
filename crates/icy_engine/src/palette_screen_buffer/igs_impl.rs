@@ -474,7 +474,14 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
                     let mut style = ButtonStyle2::default();
                     style.flags |= 1024; // Set IGS zone flag
 
-                    buf.add_mouse_field(MouseField::new(x1, y1, x2, y2, host_command, style));
+                    buf.add_mouse_field(MouseField::new(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        host_command.map(|s| String::from_utf8_lossy(&s).to_string()),
+                        style,
+                    ));
                 }
             }
         }

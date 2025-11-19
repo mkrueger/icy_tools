@@ -5,98 +5,108 @@ use crate::{
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[rustfmt::skip]
 pub enum IgsCommandType {
-    AttributeForFills,  // A
-    BellsAndWhistles,   // b
-    Box,                // B
-    ColorSet,           // C
-    LineDrawTo,         // D
-    TextEffects,        // E
-    FloodFill,          // F
-    PolyFill,           // f
-    GraphicScaling,     // g
-    GrabScreen,         // G
-    HollowSet,          // H
-    Initialize,         // I
-    EllipticalArc,      // J
-    Cursor,             // k
-    Arc,                // K (Arc for circle)
-    Line,               // L
-    DrawingMode,        // M
-    CursorMotion,       // m (VT52 cursor motion)
-    ChipMusic,          // n
-    Noise,              // N
-    Circle,             // O (Circle/Disk)
-    PolyMarker,         // P
-    PositionCursor,     // p (VT52 position cursor)
-    Ellipse,            // Q (Ellipse/Oval)
-    SetResolution,      // R
-    ScreenClear,        // s
-    SetPenColor,        // S
-    LineType,           // T
-    PauseSeconds,       // t (seconds pause)
-    VsyncPause,         // q (vsync pause)
-    RoundedRectangles,  // U
-    PieSlice,           // V
-    InverseVideo,       // v (VT52 inverse video)
-    WriteText,          // W
-    LineWrap,           // w (VT52 line wrap)
-    ExtendedCommand,    // X
-    EllipticalPieSlice, // Y
-    FilledRectangle,    // Z
-    PolyLine,           // z
-    LoopCommand,        // &
-    InputCommand,       // <
-    AskIG,              // ?
+    // Command           ASCII
+    AttributeForFills    = b'A',
+    Box                  = b'B',
+    ColorSet             = b'C',
+    LineDrawTo           = b'D',
+    TextEffects          = b'E',
+    FloodFill            = b'F',
+    GrabScreen           = b'G',
+    HollowSet            = b'H',
+    Initialize           = b'I',
+    EllipticalArc        = b'J',
+    Arc                  = b'K',
+    Line                 = b'L',
+    DrawingMode          = b'M',
+    Noise                = b'N',
+    Circle               = b'O',
+    PolyMarker           = b'P',
+    Ellipse              = b'Q',
+    SetResolution        = b'R',
+    SetPenColor          = b'S',
+    LineType             = b'T',
+    RoundedRectangles    = b'U',
+    PieSlice             = b'V',
+    WriteText            = b'W',
+    ExtendedCommand      = b'X',
+    EllipticalPieSlice   = b'Y',
+    FilledRectangle      = b'Z',
+    BellsAndWhistles     = b'b',
+    PolyFill             = b'f',
+    GraphicScaling       = b'g',
+    Cursor               = b'k',
+    CursorMotion         = b'm',
+    ChipMusic            = b'n',
+    PositionCursor       = b'p',
+    VsyncPause           = b'q',
+    ScreenClear          = b's',
+    PauseSeconds         = b't',
+    InverseVideo         = b'v',
+    LineWrap             = b'w',
+    PolyLine             = b'z',
+    LoopCommand          = b'&',
+    InputCommand         = b'<',
+    AskIG                = b'?',
+}
+
+impl TryFrom<u8> for IgsCommandType {
+    type Error = ();
+
+    fn try_from(byte: u8) -> Result<Self, Self::Error> {
+        match byte {
+            b'A' => Ok(Self::AttributeForFills),
+            b'b' => Ok(Self::BellsAndWhistles),
+            b'B' => Ok(Self::Box),
+            b'C' => Ok(Self::ColorSet),
+            b'D' => Ok(Self::LineDrawTo),
+            b'E' => Ok(Self::TextEffects),
+            b'F' => Ok(Self::FloodFill),
+            b'f' => Ok(Self::PolyFill),
+            b'g' => Ok(Self::GraphicScaling),
+            b'G' => Ok(Self::GrabScreen),
+            b'H' => Ok(Self::HollowSet),
+            b'I' => Ok(Self::Initialize),
+            b'J' => Ok(Self::EllipticalArc),
+            b'k' => Ok(Self::Cursor),
+            b'K' => Ok(Self::Arc),
+            b'L' => Ok(Self::Line),
+            b'M' => Ok(Self::DrawingMode),
+            b'm' => Ok(Self::CursorMotion),
+            b'n' => Ok(Self::ChipMusic),
+            b'N' => Ok(Self::Noise),
+            b'O' => Ok(Self::Circle),
+            b'P' => Ok(Self::PolyMarker),
+            b'p' => Ok(Self::PositionCursor),
+            b'Q' => Ok(Self::Ellipse),
+            b'R' => Ok(Self::SetResolution),
+            b's' => Ok(Self::ScreenClear),
+            b'S' => Ok(Self::SetPenColor),
+            b'T' => Ok(Self::LineType),
+            b't' => Ok(Self::PauseSeconds),
+            b'q' => Ok(Self::VsyncPause),
+            b'U' => Ok(Self::RoundedRectangles),
+            b'V' => Ok(Self::PieSlice),
+            b'v' => Ok(Self::InverseVideo),
+            b'W' => Ok(Self::WriteText),
+            b'w' => Ok(Self::LineWrap),
+            b'X' => Ok(Self::ExtendedCommand),
+            b'Y' => Ok(Self::EllipticalPieSlice),
+            b'z' => Ok(Self::PolyLine),
+            b'Z' => Ok(Self::FilledRectangle),
+            b'&' => Ok(Self::LoopCommand),
+            b'<' => Ok(Self::InputCommand),
+            b'?' => Ok(Self::AskIG),
+            _ => Err(()),
+        }
+    }
 }
 
 impl IgsCommandType {
-    pub fn from_char(ch: char) -> Option<Self> {
-        match ch {
-            'A' => Some(Self::AttributeForFills),
-            'b' => Some(Self::BellsAndWhistles),
-            'B' => Some(Self::Box),
-            'C' => Some(Self::ColorSet),
-            'D' => Some(Self::LineDrawTo),
-            'E' => Some(Self::TextEffects),
-            'F' => Some(Self::FloodFill),
-            'f' => Some(Self::PolyFill),
-            'g' => Some(Self::GraphicScaling),
-            'G' => Some(Self::GrabScreen),
-            'H' => Some(Self::HollowSet),
-            'I' => Some(Self::Initialize),
-            'J' => Some(Self::EllipticalArc),
-            'k' => Some(Self::Cursor),
-            'K' => Some(Self::Arc),
-            'L' => Some(Self::Line),
-            'M' => Some(Self::DrawingMode),
-            'm' => Some(Self::CursorMotion),
-            'n' => Some(Self::ChipMusic),
-            'N' => Some(Self::Noise),
-            'O' => Some(Self::Circle),
-            'P' => Some(Self::PolyMarker),
-            'p' => Some(Self::PositionCursor),
-            'Q' => Some(Self::Ellipse),
-            'R' => Some(Self::SetResolution),
-            's' => Some(Self::ScreenClear),
-            'S' => Some(Self::SetPenColor),
-            'T' => Some(Self::LineType),
-            't' => Some(Self::PauseSeconds),
-            'q' => Some(Self::VsyncPause),
-            'U' => Some(Self::RoundedRectangles),
-            'V' => Some(Self::PieSlice),
-            'v' => Some(Self::InverseVideo),
-            'W' => Some(Self::WriteText),
-            'w' => Some(Self::LineWrap),
-            'X' => Some(Self::ExtendedCommand),
-            'Y' => Some(Self::EllipticalPieSlice),
-            'z' => Some(Self::PolyLine),
-            'Z' => Some(Self::FilledRectangle),
-            '&' => Some(Self::LoopCommand),
-            '<' => Some(Self::InputCommand),
-            '?' => Some(Self::AskIG),
-            _ => None,
-        }
+    pub fn to_char(self) -> char {
+        self as u8 as char
     }
 
     #[inline(always)]
@@ -145,7 +155,7 @@ impl IgsCommandType {
         }
     }
 
-    pub fn create_command(self, sink: &mut dyn CommandSink, params: &[i32], text_buffer: &String) -> Option<IgsCommand> {
+    pub fn create_command(self, sink: &mut dyn CommandSink, params: &[i32], text_buffer: &[u8]) -> Option<IgsCommand> {
         match self {
             IgsCommandType::Box => Self::check_parameters(params, sink, "Box", 5, || IgsCommand::Box {
                 x1: params[0],
@@ -637,7 +647,7 @@ impl IgsCommandType {
             IgsCommandType::WriteText => Self::check_parameters(params, sink, "WriteText", 2, || IgsCommand::WriteText {
                 x: params[0],
                 y: params[1],
-                text: text_buffer.clone(),
+                text: text_buffer.to_vec(),
             }),
 
             IgsCommandType::Noise => Some(IgsCommand::Noise { params: params.to_vec() }),
@@ -706,7 +716,7 @@ impl IgsCommandType {
                                     x2: 0,
                                     y2: 0,
                                     length: 0,
-                                    string: String::new(),
+                                    string: Vec::new(),
                                 })
                             } else if params.len() >= 8 && !text_buffer.is_empty() {
                                 Some(IgsCommand::DefineZone {
@@ -716,7 +726,7 @@ impl IgsCommandType {
                                     x2: params[4],
                                     y2: params[5],
                                     length: params[6] as u16,
-                                    string: text_buffer.clone(),
+                                    string: text_buffer.to_vec(),
                                 })
                             } else {
                                 sink.report_errror(
@@ -747,7 +757,7 @@ impl IgsCommandType {
                             // LoadFillPattern
                             Self::check_parameters(params, sink, "ExtendedCommand:LoadFillPattern", 2, || IgsCommand::LoadFillPattern {
                                 pattern: params[1] as u8,
-                                data: text_buffer.clone(),
+                                data: text_buffer.to_vec(),
                             })
                         }
                         8 => {
