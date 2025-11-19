@@ -9,7 +9,7 @@ use std::thread;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
 
-use icy_parser_core::{AnsiMusic, MusicAction, MusicStyle};
+use icy_parser_core::{AnsiMusic, IgsCommand, MusicAction, MusicStyle};
 use rodio::{
     Source,
     source::{Function, SignalGenerator, SineWave},
@@ -58,6 +58,7 @@ pub enum SoundData {
 
     StartPlay,
     StopPlay,
+    PlayIgs(Box<IgsCommand>),
 }
 
 pub struct SoundThread {
@@ -142,8 +143,12 @@ impl SoundThread {
         self.send_data(SoundData::PlayDialSound(tone_dial, tone, phone_number.to_string()))
     }
 
-    pub(crate) fn play_music(&mut self, music: AnsiMusic) -> TerminalResult<()> {
+    pub fn play_music(&mut self, music: AnsiMusic) -> TerminalResult<()> {
         self.send_data(SoundData::PlayMusic(music))
+    }
+
+    pub fn play_igs(&mut self, music: Box<IgsCommand>) -> TerminalResult<()> {
+        self.send_data(SoundData::PlayIgs(music))
     }
 
     fn send_data(&mut self, data: SoundData) -> TerminalResult<()> {
@@ -226,6 +231,10 @@ impl SoundBackgroundThreadData {
                         self.line_sound_playing = false;
                         self.music.push_back(SoundData::PlayMusic(m));
                     }
+                    SoundData::PlayIgs(igs) => {
+                        self.line_sound_playing = false;
+                        self.music.push_back(SoundData::PlayIgs(igs));
+                    }
                     SoundData::Beep => {
                         self.line_sound_playing = false;
                         self.music.push_back(SoundData::Beep);
@@ -275,6 +284,7 @@ impl SoundBackgroundThreadData {
         };
         match data {
             SoundData::PlayMusic(music) => self.play_music(&music),
+            SoundData::PlayIgs(music) => self.play_igs(&music),
             SoundData::Beep => self.beep(),
             SoundData::LineSound(tone) => self.play_line_sound(tone),
             SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
@@ -537,6 +547,38 @@ impl SoundBackgroundThreadData {
         }
 
         let _ = self.tx.send(SoundData::StopPlay);
+    }
+
+    fn play_igs(&self, music: &IgsCommand) {
+        match music {
+            IgsCommand::BellsAndWhistles { .. } => {
+                log::info!("todo BellsAndWhistles");
+            }
+            IgsCommand::AlterSoundEffect { .. } => {
+                log::info!("todo AlterSoundEffect");
+            }
+            IgsCommand::StopAllSound => {
+                log::info!("todo StopAllSound");
+            }
+            IgsCommand::RestoreSoundEffect { .. } => {
+                log::info!("todo RestoreSoundEffect");
+            }
+            IgsCommand::SetEffectLoops { .. } => {
+                log::info!("todo SetEffectLoops");
+            }
+            IgsCommand::ChipMusic { .. } => {
+                log::info!("todo ChipMusic");
+            }
+            IgsCommand::Noise { .. } => {
+                   log::info!("todo Noise");
+            }
+            IgsCommand::LoadMidiBuffer { .. } => {
+                log::info!("todo LoadMidiBuffer");
+            }
+            _ => {
+                log::warn!("Unsupported IGS command for music playback: {:?}", music);
+            }
+        }
     }
 }
 

@@ -61,6 +61,7 @@ pub enum TerminalEvent {
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
+    PlayIgs(Box<IgsCommand>),
 }
 
 #[derive(Debug, Clone)]
@@ -171,15 +172,25 @@ impl<'a> CommandSink for TerminalSink<'a> {
                 return;
             }
 
-        IgsCommand::PauseSeconds { seconds } => {
-            thread::sleep(Duration::from_secs(seconds.into()));
-        }
+            IgsCommand::PauseSeconds { seconds } => {
+                thread::sleep(Duration::from_secs(seconds.into()));
+            }
 
-        IgsCommand::VsyncPause { vsyncs } => {
-            // Pauses are typically ignored in non-real-time rendering, handled on viewer/terminal level
-        }
+            IgsCommand::VsyncPause { vsyncs } => {
+                thread::sleep(Duration::from_millis(1000 * vsyncs as u64 / 60));
+            }
 
-            _ => self.screen_sink.emit_igs(cmd)
+            IgsCommand::BellsAndWhistles { .. }
+            | IgsCommand::AlterSoundEffect { .. }
+            | IgsCommand::StopAllSound
+            | IgsCommand::RestoreSoundEffect { .. }
+            | IgsCommand::SetEffectLoops { .. }
+            | IgsCommand::ChipMusic { .. }
+            | IgsCommand::Noise { .. }
+            | IgsCommand::LoadMidiBuffer { .. } => {
+                let _ = self.event_tx.send(TerminalEvent::PlayIgs(Box::new(cmd)));
+            }
+            _ => self.screen_sink.emit_igs(cmd),
         }
     }
     fn device_control(&mut self, dcs: DeviceControlString<'_>) {

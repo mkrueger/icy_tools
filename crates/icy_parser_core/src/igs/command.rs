@@ -680,6 +680,15 @@ pub enum IgsCommand {
     PauseSeconds {
         seconds: u8,
     },
+
+    /// Vsync pause command (q)
+    ///
+    /// IGS: `G#q>vsyncs:`
+    ///
+    /// Pauses execution for a specified number of vertical syncs (1/60th of a second).
+    ///
+    /// # Parameters
+    /// * `vsyncs` - Number of vertical syncs to wait
     VsyncPause {
         vsyncs: i32,
     },

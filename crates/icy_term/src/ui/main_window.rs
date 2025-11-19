@@ -843,6 +843,13 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            TerminalEvent::PlayIgs(music) => {
+                let r = self.sound_thread.lock().unwrap().play_igs(music);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::PlayMusic: {r}");
+                }
+                Task::none()
+            }
             TerminalEvent::Beep => {
                 let r = self.sound_thread.lock().unwrap().beep();
                 if let Err(r) = r {
