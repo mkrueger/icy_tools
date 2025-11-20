@@ -1,7 +1,6 @@
 use icy_parser_core::{
     AnsiParser, AtasciiParser, AvatarParser, CommandParser, CommandSink, CtrlAParser, DeviceControlString, IgsCommand, Mode7Parser, OperatingSystemCommand,
-    ParseError, PcBoardParser, PetsciiParser, RenegadeParser, RipCommand, SkypixCommand, SkypixParser, TerminalCommand, VT52Mode, ViewdataParser,
-    Vt52Parser,
+    ParseError, PcBoardParser, PetsciiParser, RenegadeParser, RipCommand, SkypixCommand, SkypixParser, TerminalCommand, VT52Mode, ViewdataParser, Vt52Parser,
 };
 
 /// A no-op sink that just counts calls - perfect for fuzzing

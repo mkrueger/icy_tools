@@ -5,7 +5,7 @@ mod errors;
 use std::fmt::Display;
 
 pub use ascii::AsciiParser;
-pub use errors::{ErrorLevel, ParseError};
+pub use errors::{ErrorLevel, ParseError, print_char_value};
 
 mod ansi;
 
@@ -893,4 +893,11 @@ pub enum ViewDataCommand {
 
     SetBgToFg,
     SetChar(u8),
+}
+
+#[inline(always)]
+pub(crate) fn flush_input(input: &[u8], sink: &mut dyn CommandSink, i: usize, start: usize) {
+    if i > start {
+        sink.print(&input[start..i]);
+    }
 }

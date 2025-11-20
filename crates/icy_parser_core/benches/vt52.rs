@@ -1,5 +1,5 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use icy_parser_core::{CommandParser, CommandSink, Vt52Parser, VT52Mode, TerminalCommand};
+use icy_parser_core::{CommandParser, CommandSink, TerminalCommand, VT52Mode, Vt52Parser};
 use std::fs;
 use std::hint::black_box;
 use std::path::Path;

@@ -68,6 +68,7 @@ pub struct TerminalState {
     pub cr_is_if: bool, // that basically skips /r
     tab_stops: Vec<i32>,
     baud_rate: BaudEmulation,
+    pub(crate) inverse_video: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -118,6 +119,7 @@ impl TerminalState {
             high_intensity_blink_attribute_font_slot: 0,
             cleared_screen: false,
             cr_is_if: false,
+            inverse_video: false,
         };
         ret.reset_tabs();
         ret

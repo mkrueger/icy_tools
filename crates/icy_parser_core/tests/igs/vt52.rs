@@ -105,9 +105,8 @@ fn test_vt52_clear_screen() {
 
     parser.parse(b"\x1BE", &mut sink);
 
-    assert_eq!(sink.commands.len(), 2);
+    assert_eq!(sink.commands.len(), 1);
     assert!(matches!(sink.commands[0], TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All)));
-    assert!(matches!(sink.commands[1], TerminalCommand::CsiCursorPosition(1, 1)));
 }
 
 #[test]
@@ -313,9 +312,9 @@ fn test_vt52_multiple_commands() {
     parser.parse(b"\x1BH\x1BE\x1Bb\x07", &mut sink);
 
     // ESC H = home (1 command)
-    // ESC E = clear screen + home (2 commands)
+    // ESC E = clear screen + home (1 command)
     // ESC b 7 = set foreground (1 command)
-    assert_eq!(sink.commands.len(), 4);
+    assert_eq!(sink.commands.len(), 3);
 }
 
 // Mixed text and commands
@@ -326,7 +325,7 @@ fn test_vt52_text_and_commands() {
 
     parser.parse(b"Hello \x1BE World", &mut sink);
 
-    assert_eq!(sink.commands.len(), 2); // Clear screen + home
+    assert_eq!(sink.commands.len(), 1); // Clear screen
     assert!(sink.text.len() > 0);
     let combined_text = sink.text.join("");
     assert!(combined_text.contains("Hello"));

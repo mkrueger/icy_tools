@@ -45,6 +45,20 @@ impl<'a> ScreenSink<'a> {
         self.screen
     }
 
+    /// Get the current caret attribute with inverse_video applied if active
+    fn get_display_attribute(&self) -> crate::TextAttribute {
+        if self.screen.terminal_state().inverse_video {
+            let mut attr = self.screen.caret().attribute;
+            let fg = attr.get_foreground();
+            let bg = attr.get_background();
+            attr.set_foreground(bg);
+            attr.set_background(fg);
+            attr
+        } else {
+            self.screen.caret().attribute
+        }
+    }
+
     fn set_font_selection_success(&mut self, slot: usize) {
         self.screen.terminal_state_mut().font_selection_state = FontSelectionState::Success;
         self.screen.caret_mut().set_font_page(slot);
@@ -96,12 +110,7 @@ impl<'a> ScreenSink<'a> {
             },
             SgrAttribute::Inverse(on) => {
                 // Inverse video: swap foreground and background colors
-                if on {
-                    let fg = attr.get_foreground();
-                    let bg = attr.get_background();
-                    attr.set_foreground(bg);
-                    attr.set_background(fg);
-                }
+                self.screen.terminal_state_mut().inverse_video = on;
                 // Note: turning off inverse would require saving the original colors
                 // This is a limitation of the current attribute system
             }
@@ -281,7 +290,7 @@ impl<'a> ScreenSink<'a> {
 impl<'a> CommandSink for ScreenSink<'a> {
     fn print(&mut self, text: &[u8]) {
         for &byte in text {
-            let ch = AttributedChar::new(byte as char, self.screen.caret().attribute);
+            let ch = AttributedChar::new(byte as char, self.get_display_attribute());
             self.screen.print_char(ch);
         }
     }
@@ -406,7 +415,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::CsiEraseCharacter(n) => {
                 let pos = self.screen.caret().position();
-                let blank = AttributedChar::new(' ', self.screen.caret().attribute);
+                let blank = AttributedChar::new(' ', self.get_display_attribute());
                 for i in 0..n as i32 {
                     let x = pos.x + i;
                     if x < self.screen.get_width() {
@@ -767,7 +776,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.caret_mut().attribute.set_background(fg);
             }
             ViewDataCommand::SetChar(ch) => {
-                let ch = AttributedChar::new(ch as char, self.screen.caret().attribute);
+                let ch = AttributedChar::new(ch as char, self.get_display_attribute());
                 self.screen.set_char(self.screen.caret().position(), ch);
             }
         }
