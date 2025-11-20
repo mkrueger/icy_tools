@@ -166,13 +166,13 @@ impl StringGenerator {
         let cur_fore_color = buf.palette.get_color(fg);
         let cur_fore_rgb = cur_fore_color.get_rgb();
 
-        let mut bg = if self.use_ice_colors && attr.is_blinking() {
+        let bg = if self.use_ice_colors && attr.is_blinking() {
             attr.get_background() + 8
         } else {
             attr.get_background()
         };
-        let mut cur_back_color = buf.palette.get_color(bg);
-        let mut cur_back_rgb = cur_back_color.get_rgb();
+        let cur_back_color = buf.palette.get_color(bg);
+        let cur_back_rgb = cur_back_color.get_rgb();
 
         let mut fore_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_fore_rgb);
         let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_back_rgb);

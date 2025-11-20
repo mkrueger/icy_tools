@@ -162,6 +162,9 @@ enum QueuedCommand {
     Bell,
     ResizeTerminal(u16, u16),
     TerminalRequest(TerminalRequest),
+    DeviceControl(DeviceControlString),
+    OperatingSystemCommand(OperatingSystemCommand),
+    Aps(Vec<u8>),
 }
 
 /// Custom CommandSink that queues commands instead of executing them immediately
@@ -232,18 +235,22 @@ impl CommandSink for QueueingSink {
         }
     }
 
-    fn device_control(&mut self, _dcs: DeviceControlString) {
-        // Device control commands are rare - we'll process them directly when needed
-        // For now, ignore to simplify queue implementation
+    fn device_control(&mut self, dcs: DeviceControlString) {
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::DeviceControl(dcs));
+        }
     }
 
-    fn operating_system_command(&mut self, _osc: OperatingSystemCommand) {
-        // OSC commands are processed directly in the old sink
-        // For now, ignore to simplify queue implementation
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::OperatingSystemCommand(osc));
+        }
     }
 
-    fn aps(&mut self, _data: &[u8]) {
-        // ignore for now
+    fn aps(&mut self, data: &[u8]) {
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::Aps(data.to_vec()));
+        }
     }
 
     fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
@@ -949,6 +956,15 @@ impl TerminalThread {
                     QueuedCommand::Igs(igs_cmd) => {
                         screen_sink.emit_igs(igs_cmd);
                     }
+                    QueuedCommand::DeviceControl(dcs) => {
+                        screen_sink.device_control(dcs);
+                    }
+                    QueuedCommand::OperatingSystemCommand(osc) => {
+                        screen_sink.operating_system_command(osc);
+                    }
+                    QueuedCommand::Aps(data) => {
+                        screen_sink.aps(&data);
+                    }
                     _ => {}
                 }
 
@@ -1059,6 +1075,15 @@ impl TerminalThread {
                             QueuedCommand::Igs(igs_cmd) => {
                                 screen_sink.emit_igs(igs_cmd);
                             }
+                            QueuedCommand::DeviceControl(dcs) => {
+                                screen_sink.device_control(dcs);
+                            }
+                            QueuedCommand::OperatingSystemCommand(osc) => {
+                                screen_sink.operating_system_command(osc);
+                            }
+                            QueuedCommand::Aps(data) => {
+                                screen_sink.aps(&data);
+                            }
                             _ => {
                                 unreachable!("command {:?} not handled", next_cmd);
                             }
@@ -1072,8 +1097,7 @@ impl TerminalThread {
                 screen.update_hyperlinks();
 
                 // Process sixel threads if needed
-                while screen.sixel_threads_runnning() {
-                    let _ = screen.update_sixel_threads();
+                if let Ok(true) = screen.update_sixel_threads() {
                     tokio::task::yield_now().await;
                 }
             }

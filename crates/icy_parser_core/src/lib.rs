@@ -459,7 +459,7 @@ pub enum CaretShape {
 
 /// Device Control String (DCS) sequences: ESC P ... ESC \
 #[repr(u8)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DeviceControlString {
     /// Load custom font: ESC P CTerm:Font:{slot}:{base64_data} ESC \
     /// Parameters: font slot number, decoded font data (already base64-decoded by parser)
@@ -476,7 +476,7 @@ pub enum DeviceControlString {
 
 /// Operating System Command (OSC) sequences: ESC ] ... BEL or ESC \
 #[repr(u8)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OperatingSystemCommand {
     /// OSC 0 - Set Icon Name and Window Title: ESC]0;{text}BEL or ESC]0;{text}ESC\
     SetTitle(Vec<u8>),
