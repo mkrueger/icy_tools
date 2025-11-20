@@ -62,7 +62,6 @@ impl<'a> ScreenSink<'a> {
             attr.set_is_blinking(false);
             attr.background_color += 8;
         }
-        println!("get display attribute: {}", attr);
         attr
     }
 

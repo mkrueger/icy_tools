@@ -630,9 +630,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     }
 
     fn update(&self, state: &mut CRTShaderState, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
-        // let start = std::time::Instant::now();
         let res = self.internal_update(state, event, bounds, cursor);
-        // println!("CRTShaderProgram::update took {:?} ({:?})", start.elapsed(), res);
         res
     }
 

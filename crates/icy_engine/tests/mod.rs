@@ -158,5 +158,4 @@ pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
             absolute_png_path.display()
         );
     }
-    println!("Test passed for: {}", filename);
 }

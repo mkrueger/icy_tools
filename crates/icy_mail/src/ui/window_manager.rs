@@ -144,7 +144,6 @@ impl WindowManager {
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // println!("Key pressed: {:?} with modifiers: {:?}", key, modifiers);
                         if modifiers.shift() {
                             if modifiers.command() {
                                 match &key {

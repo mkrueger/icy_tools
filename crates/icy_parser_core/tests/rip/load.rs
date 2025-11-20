@@ -33,8 +33,8 @@ pub fn test_rip_load() {
         let expected_lines: Vec<&str> = expected.trim().lines().collect();
 
         if output_lines != expected_lines {
-            println!("\n=== Mismatch in file: {} ===", filename);
-            println!("Expected {} lines, got {} lines\n", expected_lines.len(), output_lines.len());
+            eprintln!("\n=== Mismatch in file: {} ===", filename);
+            eprintln!("Expected {} lines, got {} lines\n", expected_lines.len(), output_lines.len());
 
             let max_lines = output_lines.len().max(expected_lines.len());
             for i in 0..max_lines {
@@ -42,12 +42,12 @@ pub fn test_rip_load() {
                 let out = output_lines.get(i).unwrap_or(&"<MISSING>");
 
                 if exp != out {
-                    println!("Line {}: MISMATCH", i + 1);
-                    println!("  Expected: {}", exp);
-                    println!("  Got:      {}", out);
+                    eprintln!("Line {}: MISMATCH", i + 1);
+                    eprintln!("  Expected: {}", exp);
+                    eprintln!("  Got:      {}", out);
                 } else if i < 10 || (i >= max_lines.saturating_sub(10)) {
                     // Show first and last 10 matching lines for context
-                    println!("Line {}: OK - {}", i + 1, exp);
+                    eprintln!("Line {}: OK - {}", i + 1, exp);
                 }
             }
             panic!("RIP command output mismatch for file: {:?}", cur_entry.file_name().unwrap());
