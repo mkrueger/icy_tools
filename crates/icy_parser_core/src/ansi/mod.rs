@@ -10,7 +10,7 @@ pub mod music;
 pub mod sgr;
 use crate::{
     AnsiMode, BaudEmulation, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DecPrivateMode, DeviceControlString, Direction,
-    EraseInDisplayMode, EraseInLineMode, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
+    EraseInDisplayMode, EraseInLineMode, MusicState, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
 };
 
 pub struct AnsiParser {
@@ -22,7 +22,7 @@ pub struct AnsiParser {
 
     // ANSI Music support
     pub music_option: music::MusicOption,
-    music_state: MusicState,
+    music_state: music::MusicState,
     cur_music: Option<music::AnsiMusic>,
     cur_octave: usize,
     cur_length: i32,
@@ -33,13 +33,13 @@ pub struct AnsiParser {
 impl Default for AnsiParser {
     fn default() -> Self {
         Self {
-            state: ParserState::Ground,
+            state: ParserState::Default,
             params: Vec::new(),
             parse_buffer: Vec::new(),
             last_char: 0,
             macros: std::collections::HashMap::new(),
             music_option: music::MusicOption::Off,
-            music_state: MusicState::Default,
+            music_state: music::MusicState::Default,
             cur_music: None,
             cur_octave: 5,
             cur_length: 4,
@@ -52,7 +52,7 @@ impl Default for AnsiParser {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum ParserState {
-    Ground = 0,
+    Default = 0,
     Escape = 1,
     CsiEntry = 2,
     CsiParam = 3,
@@ -74,21 +74,9 @@ enum ParserState {
     AnsiMusic = 11, // ANSI Music parsing
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum MusicState {
-    Default,
-    ParseMusicStyle,
-    SetTempo(u16),
-    Pause(i32),
-    SetOctave,
-    Note(usize, i32),
-    PlayNoteByNumber(usize),
-    SetLength(i32),
-}
-
 impl Default for ParserState {
     fn default() -> Self {
-        ParserState::Ground
+        ParserState::Default
     }
 }
 
@@ -109,7 +97,7 @@ impl AnsiParser {
 
     fn reset(&mut self) {
         self.params.clear();
-        self.state = ParserState::Ground;
+        self.state = ParserState::Default;
     }
 
     fn parse_dcs(&mut self, sink: &mut dyn CommandSink) {
@@ -129,7 +117,7 @@ impl AnsiParser {
                                 return;
                             }
                             Err(_) => {
-                                sink.report_errror(
+                                sink.report_error(
                                     ParseError::MalformedSequence {
                                         description: "Invalid base64 in DCS font data",
                                         sequence: None,
@@ -143,7 +131,7 @@ impl AnsiParser {
                 }
             }
             // If parsing failed, report error
-            sink.report_errror(
+            sink.report_error(
                 ParseError::MalformedSequence {
                     description: "Unknown or malformed DCS sequence",
                     sequence: None,
@@ -197,7 +185,7 @@ impl AnsiParser {
         }
 
         // Unknown DCS - emit as Unknown
-        sink.report_errror(
+        sink.report_error(
             ParseError::MalformedSequence {
                 description: "Unknown or malformed escape sequence",
                 sequence: None,
@@ -297,6 +285,14 @@ impl AnsiParser {
             self.parse(&macro_data, sink);
         }
     }
+
+    #[inline(always)]
+    fn flush_printable(&mut self, sink: &mut dyn CommandSink, input: &[u8], printable_start: usize, i: usize) {
+        if i > printable_start {
+            self.last_char = input[i - 1];
+            sink.print(&input[printable_start..i]);
+        }
+    }
 }
 
 impl CommandParser for AnsiParser {
@@ -306,84 +302,60 @@ impl CommandParser for AnsiParser {
         while i < input.len() {
             let byte = input[i];
             match self.state {
-                ParserState::Ground => {
+                ParserState::Default => {
                     match byte {
                         0x1B => {
                             // ESC - start escape sequence
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             self.state = ParserState::Escape;
                             i += 1;
                             printable_start = i;
                         }
                         0x07 => {
                             // BEL
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Bell);
                             i += 1;
                             printable_start = i;
                         }
                         0x08 => {
                             // BS
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Backspace);
                             i += 1;
                             printable_start = i;
                         }
                         0x09 => {
                             // HT
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Tab);
                             i += 1;
                             printable_start = i;
                         }
                         0x0A => {
                             // LF
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::LineFeed);
                             i += 1;
                             printable_start = i;
                         }
                         0x0C => {
                             // FF
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::FormFeed);
                             i += 1;
                             printable_start = i;
                         }
                         0x0D => {
                             // CR
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::CarriageReturn);
                             i += 1;
                             printable_start = i;
                         }
                         0x7F => {
                             // DEL
-                            if i > printable_start {
-                                self.last_char = input[i - 1];
-                                sink.print(&input[printable_start..i]);
-                            }
+                            self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Delete);
                             i += 1;
                             printable_start = i;
@@ -484,7 +456,7 @@ impl CommandParser for AnsiParser {
                         }
                         _ => {
                             // Unknown escape sequence
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Unknown or malformed escape sequence",
                                     sequence: None,
@@ -699,7 +671,7 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     _ => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
                                 sequence: None,
@@ -785,7 +757,7 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     _ => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
                                 sequence: None,
@@ -871,7 +843,7 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     _ => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
                                 sequence: None,
@@ -907,7 +879,7 @@ impl CommandParser for AnsiParser {
                                 sink.request(TerminalRequest::SecondaryDeviceAttributes);
                             }
                             _ => {
-                                sink.report_errror(
+                                sink.report_error(
                                     ParseError::MalformedSequence {
                                         description: "Unsupported CSI > sequence",
                                         sequence: None,
@@ -946,7 +918,7 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     _ => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unsupported CSI < sequence",
                                 sequence: None,
@@ -976,7 +948,7 @@ impl CommandParser for AnsiParser {
                     }
                     _ => {
                         // No specific commands implemented for CSI ! sequences
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unsupported CSI ! sequence",
                                 sequence: None,
@@ -1012,7 +984,7 @@ impl CommandParser for AnsiParser {
                                 Some(2) => sink.request(TerminalRequest::FontModeReport),
                                 Some(3) => sink.request(TerminalRequest::FontDimensionReport),
                                 _ => {
-                                    sink.report_errror(
+                                    sink.report_error(
                                         ParseError::MalformedSequence {
                                             description: "Unsupported CSI = n sequence",
                                             sequence: None,
@@ -1022,7 +994,7 @@ impl CommandParser for AnsiParser {
                                 }
                             }
                         } else {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Invalid parameter count for CSI = n",
                                     sequence: None,
@@ -1049,7 +1021,7 @@ impl CommandParser for AnsiParser {
                             if let Some(margin_type) = crate::MarginType::from_u16(margin_type_val) {
                                 sink.emit(TerminalCommand::CsiEqualsSetSpecificMargins(margin_type, value));
                             } else {
-                                sink.report_errror(
+                                sink.report_error(
                                     ParseError::MalformedSequence {
                                         description: "Invalid margin type for CSI = m",
                                         sequence: None,
@@ -1058,7 +1030,7 @@ impl CommandParser for AnsiParser {
                                 );
                             }
                         } else {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Invalid parameter count for CSI = m",
                                     sequence: None,
@@ -1072,7 +1044,7 @@ impl CommandParser for AnsiParser {
                     }
                     _ => {
                         // No specific commands implemented for CSI = sequences
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unsupported CSI = sequence",
                                 sequence: None,
@@ -1226,7 +1198,7 @@ impl CommandParser for AnsiParser {
         }
 
         // Emit any remaining printable bytes
-        if i > printable_start && self.state == ParserState::Ground {
+        if i > printable_start && self.state == ParserState::Default {
             self.last_char = input[i - 1];
             sink.print(&input[printable_start..i]);
         }
@@ -1279,7 +1251,7 @@ impl AnsiParser {
                         }
                         _ => {
                             // Unknown OSC command
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Unknown or malformed escape sequence",
                                     sequence: None,
@@ -1294,7 +1266,7 @@ impl AnsiParser {
         }
 
         // Malformed OSC
-        sink.report_errror(
+        sink.report_error(
             ParseError::MalformedSequence {
                 description: "Unknown or malformed escape sequence",
                 sequence: None,
@@ -1311,7 +1283,7 @@ impl AnsiParser {
         let data_str = match std::str::from_utf8(data) {
             Ok(s) => s,
             Err(_) => {
-                sink.report_errror(
+                sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Invalid UTF-8 in OSC 4 palette sequence",
                         sequence: None,
@@ -1331,7 +1303,7 @@ impl AnsiParser {
             let index = match parts[i].parse::<u32>() {
                 Ok(idx) if idx <= 255 => idx as u8,
                 _ => {
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid color index in OSC 4",
                             sequence: None,
@@ -1356,7 +1328,7 @@ impl AnsiParser {
                     if let (Some(r), Some(g), Some(b)) = (r, g, b) {
                         sink.operating_system_command(OperatingSystemCommand::SetPaletteColor(index, r, g, b));
                     } else {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Invalid RGB values in OSC 4",
                                 sequence: None,
@@ -1365,7 +1337,7 @@ impl AnsiParser {
                         );
                     }
                 } else {
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid RGB format in OSC 4",
                             sequence: None,
@@ -1374,7 +1346,7 @@ impl AnsiParser {
                     );
                 }
             } else {
-                sink.report_errror(
+                sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Missing 'rgb:' prefix in OSC 4",
                         sequence: None,
@@ -1472,7 +1444,7 @@ impl AnsiParser {
                 match EraseInDisplayMode::from_u16(n) {
                     Some(mode) => sink.emit(TerminalCommand::CsiEraseInDisplay(mode)),
                     None => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::InvalidParameter {
                                 command: "CsiEraseInDisplay",
                                 value: format!("{}", n).to_string(),
@@ -1489,7 +1461,7 @@ impl AnsiParser {
                 match EraseInLineMode::from_u16(n) {
                     Some(mode) => sink.emit(TerminalCommand::CsiEraseInLine(mode)),
                     None => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::InvalidParameter {
                                 command: "CsiEraseInLine",
                                 value: format!("{}", n).to_string(),
@@ -1542,7 +1514,7 @@ impl AnsiParser {
                     right: self.params[3],
                 }),
                 _ => {
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid parameter count for CSI = r",
                             sequence: None,
@@ -1592,7 +1564,7 @@ impl AnsiParser {
                     return; // Don't reset - stay in AnsiMusic state
                 }
                 // Otherwise, unknown command - ignore
-                sink.report_errror(
+                sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Unknown CSI N command",
                         sequence: None,
@@ -1641,7 +1613,7 @@ impl AnsiParser {
                         let width = self.params.get(2).copied().unwrap_or(1).max(1).min(132) as u16;
                         sink.emit(TerminalCommand::CsiResizeTerminal(height, width));
                     } else {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
                                 sequence: None,
@@ -1659,7 +1631,7 @@ impl AnsiParser {
                     match fg_or_bg {
                         0 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(color))),
                         1 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(color))),
-                        _ => sink.report_errror(
+                        _ => sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
                                 sequence: None,
@@ -1669,7 +1641,7 @@ impl AnsiParser {
                     }
                 }
                 _ => {
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Unknown or malformed escape sequence",
                             sequence: None,
@@ -1694,7 +1666,7 @@ impl AnsiParser {
                     6 => sink.request(TerminalRequest::CursorPositionReport),
                     255 => sink.request(TerminalRequest::ScreenSizeReport),
                     _ => {
-                        sink.report_errror(
+                        sink.report_error(
                             ParseError::InvalidParameter {
                                 command: "CsiDeviceStatusReport",
                                 value: format!("{}", n).to_string(),
@@ -1712,7 +1684,7 @@ impl AnsiParser {
                             sink.emit(TerminalCommand::CsiSetMode(mode));
                         }
                         None => {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "CsiSetMode",
                                     value: format!("{}", param).to_string(),
@@ -1731,7 +1703,7 @@ impl AnsiParser {
                             sink.emit(TerminalCommand::CsiResetMode(mode));
                         }
                         None => {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "CsiResetMode",
                                     value: format!("{}", param).to_string(),
@@ -1756,7 +1728,7 @@ impl AnsiParser {
                 }
             }
             _ => {
-                sink.report_errror(
+                sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Unknown or malformed escape sequence",
                         sequence: None,
@@ -1777,7 +1749,7 @@ impl AnsiParser {
                             sink.emit(TerminalCommand::CsiDecPrivateModeSet(mode));
                         }
                         None => {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "CsiDecPrivateModeSet",
                                     value: format!("{}", param).to_string(),
@@ -1796,7 +1768,7 @@ impl AnsiParser {
                             sink.emit(TerminalCommand::CsiDecPrivateModeReset(mode));
                         }
                         None => {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "CsiDecPrivateModeReset",
                                     value: format!("{}", param).to_string(),
@@ -1818,7 +1790,7 @@ impl AnsiParser {
                         }
                         Some(63) => {
                             // Memory Checksum Report (DECCKSR) - needs 2 params
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "DECCKSR",
                                     value: format!("{}", 63).to_string(),
@@ -1828,7 +1800,7 @@ impl AnsiParser {
                             );
                         }
                         _ => {
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "DEC DSR",
                                     value: self.params[0].to_string(),
@@ -1853,7 +1825,7 @@ impl AnsiParser {
                     let checksum: u16 = (sum & 0xFFFF) as u16;
                     sink.request(TerminalRequest::MemoryChecksumReport(pid, checksum));
                 } else {
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid parameter count for DEC DSR",
                             sequence: None,
@@ -1863,217 +1835,13 @@ impl AnsiParser {
                 }
             }
             _ => {
-                sink.report_errror(
+                sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Unknown or malformed escape sequence",
                         sequence: None,
                     },
                     crate::ErrorLevel::Error,
                 );
-            }
-        }
-    }
-
-    // ANSI Music parsing methods
-    fn parse_ansi_music(&mut self, byte: u8, sink: &mut dyn CommandSink) {
-        match self.music_state {
-            MusicState::ParseMusicStyle => {
-                self.music_state = MusicState::Default;
-                match byte {
-                    b'F' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::SetStyle(music::MusicStyle::Foreground)),
-                    b'B' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::SetStyle(music::MusicStyle::Background)),
-                    b'N' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::SetStyle(music::MusicStyle::Normal)),
-                    b'L' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::SetStyle(music::MusicStyle::Legato)),
-                    b'S' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::SetStyle(music::MusicStyle::Staccato)),
-                    _ => self.parse_default_ansi_music(byte, sink),
-                }
-            }
-            MusicState::SetTempo(x) => {
-                if byte.is_ascii_digit() {
-                    let x = (x as i32).saturating_mul(10).saturating_add((byte - b'0') as i32) as u16;
-                    self.music_state = MusicState::SetTempo(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    self.cur_tempo = (x.clamp(32, 255)) as i32;
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::SetOctave => {
-                if (b'0'..=b'6').contains(&byte) {
-                    self.cur_octave = (byte - b'0') as usize;
-                    self.music_state = MusicState::Default;
-                } else {
-                    sink.report_errror(
-                        ParseError::MalformedSequence {
-                            description: "Invalid octave in ANSI music",
-                            sequence: None,
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    self.music_state = MusicState::Default;
-                }
-            }
-            MusicState::Note(n, len) => {
-                self.music_state = MusicState::Default;
-                match byte {
-                    b'+' | b'#' => {
-                        if n + 1 < music::FREQ.len() {
-                            self.music_state = MusicState::Note(n + 1, len);
-                        }
-                    }
-                    b'-' => {
-                        if n > 0 {
-                            self.music_state = MusicState::Note(n - 1, len);
-                        }
-                    }
-                    b'0'..=b'9' => {
-                        let len = len.saturating_mul(10).saturating_add((byte - b'0') as i32);
-                        self.music_state = MusicState::Note(n, len);
-                    }
-                    b'.' => {
-                        let len = len * 3 / 2;
-                        self.music_state = MusicState::Note(n, len);
-                        self.dotted_note = true;
-                    }
-                    _ => {
-                        self.music_state = MusicState::Default;
-                        let len = if len == 0 { self.cur_length } else { len };
-                        // Calculate frequency index: ANSI octave offset by 2 (O4 = array octave 2)
-                        // O4C = (4-2)*12 + 0 = 24 (C4 = 261.63 Hz)
-                        let freq_index = n + ((self.cur_octave.saturating_sub(2)) * 12);
-                        let freq_index = freq_index.clamp(0, music::FREQ.len() - 1);
-                        self.cur_music.as_mut().unwrap().music_actions.push(music::MusicAction::PlayNote(
-                            music::FREQ[freq_index],
-                            self.cur_tempo * len,
-                            self.dotted_note,
-                        ));
-                        self.dotted_note = false;
-                        self.parse_default_ansi_music(byte, sink);
-                    }
-                }
-            }
-            MusicState::SetLength(x) => {
-                if byte.is_ascii_digit() {
-                    let x = x.saturating_mul(10).saturating_add((byte - b'0') as i32);
-                    self.music_state = MusicState::SetLength(x);
-                } else if byte == b'.' {
-                    let x = x * 3 / 2;
-                    self.music_state = MusicState::SetLength(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    self.cur_length = x.clamp(1, 64);
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::PlayNoteByNumber(x) => {
-                if byte.is_ascii_digit() {
-                    let x = (x as i32).saturating_mul(10).saturating_add((byte - b'0') as i32) as usize;
-                    self.music_state = MusicState::PlayNoteByNumber(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    let len = self.cur_length;
-                    // QBASIC N notation: N0 starts at C0, but FREQ table starts at C1 (index 0)
-                    // So there's an offset of 16 semitones: index = note_number - 16
-                    // N49 = A4 (440Hz) = index 33
-                    let note_index = if x >= 16 { x - 16 } else { 0 };
-                    let note_index = note_index.clamp(0, music::FREQ.len() - 1);
-                    self.cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::PlayNote(music::FREQ[note_index], self.cur_tempo * len, false));
-                    self.dotted_note = false;
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::Pause(x) => {
-                if byte.is_ascii_digit() {
-                    let x = x.saturating_mul(10).saturating_add((byte - b'0') as i32);
-                    self.music_state = MusicState::Pause(x);
-                } else if byte == b'.' {
-                    let x = x * 3 / 2;
-                    self.music_state = MusicState::Pause(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    let pause = x.clamp(1, 64);
-                    self.cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(music::MusicAction::Pause(self.cur_tempo * pause));
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::Default => {
-                self.parse_default_ansi_music(byte, sink);
-            }
-        }
-    }
-
-    fn parse_default_ansi_music(&mut self, byte: u8, sink: &mut dyn CommandSink) {
-        match byte {
-            0x0E => {
-                // End of ANSI music sequence
-                self.state = ParserState::Ground;
-                self.cur_octave = 5;
-                if let Some(music) = self.cur_music.take() {
-                    sink.play_music(music);
-                }
-            }
-            b'T' => self.music_state = MusicState::SetTempo(0),
-            b'L' => self.music_state = MusicState::SetLength(0),
-            b'O' => self.music_state = MusicState::SetOctave,
-            b'C' => self.music_state = MusicState::Note(0, 0),
-            b'D' => self.music_state = MusicState::Note(2, 0),
-            b'E' => self.music_state = MusicState::Note(4, 0),
-            b'F' => self.music_state = MusicState::Note(5, 0),
-            b'G' => self.music_state = MusicState::Note(7, 0),
-            b'A' => self.music_state = MusicState::Note(9, 0),
-            b'B' => self.music_state = MusicState::Note(11, 0),
-            b'M' => self.music_state = MusicState::ParseMusicStyle,
-            b'N' => self.music_state = MusicState::PlayNoteByNumber(0),
-            b'<' => {
-                if self.cur_octave > 0 {
-                    self.cur_octave -= 1;
-                }
-            }
-            b'>' => {
-                if self.cur_octave < 6 {
-                    self.cur_octave += 1;
-                }
-            }
-            b'P' => {
-                self.music_state = MusicState::Pause(0);
-            }
-            _ => {
-                // Unknown music command - reset state and return to ground
-                self.music_state = MusicState::Default;
-                self.state = ParserState::Ground;
             }
         }
     }

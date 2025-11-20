@@ -28,7 +28,7 @@ impl CommandSink for TestSink {
         self.commands.push(cmd);
     }
 
-    fn report_errror(&mut self, error: ParseError, level: ErrorLevel) {
+    fn report_error(&mut self, error: ParseError, level: ErrorLevel) {
         self.errors.push((error, level));
     }
 }

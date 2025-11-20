@@ -1,6 +1,7 @@
 use icy_parser_core::{
     AnsiParser, AtasciiParser, AvatarParser, CommandParser, CommandSink, CtrlAParser, DeviceControlString, IgsCommand, Mode7Parser, OperatingSystemCommand,
-    ParseError, PcBoardParser, PetsciiParser, RenegadeParser, RipCommand, SkypixCommand, SkypixParser, TerminalCommand, ViewdataParser,
+    ParseError, PcBoardParser, PetsciiParser, RenegadeParser, RipCommand, SkypixCommand, SkypixParser, TerminalCommand, VT52Mode, ViewdataParser,
+    Vt52Parser,
 };
 
 /// A no-op sink that just counts calls - perfect for fuzzing
@@ -53,7 +54,7 @@ impl CommandSink for FuzzSink {
         self.command_count += 1;
     }
 
-    fn report_errror(&mut self, _error: ParseError, _level: icy_parser_core::ErrorLevel) {
+    fn report_error(&mut self, _error: ParseError, _level: icy_parser_core::ErrorLevel) {
         self.error_count += 1;
     }
 }
@@ -193,6 +194,38 @@ macro_rules! fuzz_test_parser {
             }
         }
     };
+    ($test_name:ident, $parser_type:ty, $mode:expr) => {
+        #[test]
+        fn $test_name() {
+            let patterns = generate_fuzz_patterns();
+
+            for (idx, pattern) in patterns.iter().enumerate() {
+                let mut parser = <$parser_type>::new($mode);
+                let mut sink = FuzzSink::new();
+
+                // Should not panic regardless of input
+                parser.parse(pattern, &mut sink);
+
+                // Test parsing in small chunks
+                let mut parser2 = <$parser_type>::new($mode);
+                let mut sink2 = FuzzSink::new();
+                for chunk in pattern.chunks(3) {
+                    parser2.parse(chunk, &mut sink2);
+                }
+
+                // Test single byte at a time
+                let mut parser3 = <$parser_type>::new($mode);
+                let mut sink3 = FuzzSink::new();
+                for &byte in pattern.iter() {
+                    parser3.parse(&[byte], &mut sink3);
+                }
+
+                // If we got here without panicking, the test passed
+                // We don't care about correctness in fuzzing, just no crashes
+                assert!(true, "Parser survived pattern {}", idx);
+            }
+        }
+    };
 }
 
 // Generate fuzz tests for all parsers
@@ -206,6 +239,7 @@ fuzz_test_parser!(fuzz_petscii_parser, PetsciiParser);
 fuzz_test_parser!(fuzz_viewdata_parser, ViewdataParser);
 fuzz_test_parser!(fuzz_mode7_parser, Mode7Parser);
 fuzz_test_parser!(fuzz_skypix_parser, SkypixParser);
+fuzz_test_parser!(fuzz_vt52_parser, Vt52Parser, VT52Mode::Mixed);
 
 // RIP parser needs special handling since it's more complex
 #[test]
@@ -284,6 +318,11 @@ fn fuzz_all_parsers_with_random() {
                 let mut sink = FuzzSink::new();
                 parser.parse(&random_bytes, &mut sink);
             }};
+            ($parser_type:ty, $mode:expr) => {{
+                let mut parser = <$parser_type>::new($mode);
+                let mut sink = FuzzSink::new();
+                parser.parse(&random_bytes, &mut sink);
+            }};
         }
 
         test_parser!(AnsiParser);
@@ -296,6 +335,7 @@ fn fuzz_all_parsers_with_random() {
         test_parser!(ViewdataParser);
         test_parser!(Mode7Parser);
         test_parser!(SkypixParser);
+        test_parser!(Vt52Parser, VT52Mode::Mixed);
 
         // Special handling for parsers with their own types
         {

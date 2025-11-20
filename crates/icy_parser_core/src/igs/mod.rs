@@ -90,7 +90,7 @@ impl IgsParser {
     fn create_loop_command(&mut self, sink: &mut dyn CommandSink) -> Option<IgsCommand> {
         // & from,to,step,delay,cmd,param_count,(params...)
         if self.params.len() < 6 {
-            sink.report_errror(
+            sink.report_error(
                 crate::ParseError::InvalidParameter {
                     command: "LoopCommand",
                     value: format!("{}", self.params.len()),
@@ -387,7 +387,7 @@ impl CommandParser for IgsParser {
                     } else {
                         // Unknown command
                         if !(byte < 0x20 || byte == 0x7F) {
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "IGS",
                                     value: format!("{}", byte).to_string(),
@@ -471,7 +471,7 @@ impl CommandParser for IgsParser {
                                     self.text_buffer.push(byte);
                                 } else {
                                     // Invalid for other extended commands
-                                    sink.report_errror(
+                                    sink.report_error(
                                         crate::ParseError::InvalidParameter {
                                             command: "ExtendedCommand",
                                             value: format!("{}", byte).to_string(),
@@ -484,7 +484,7 @@ impl CommandParser for IgsParser {
                                 }
                             } else {
                                 // Invalid character in numeric parameter phase for non-extended commands
-                                sink.report_errror(
+                                sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "IGS:ReadParams",
                                         value: format!("{}", byte).to_string(),

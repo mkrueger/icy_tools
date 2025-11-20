@@ -38,7 +38,7 @@ impl CommandSink for TestSink {
         }
     }
 
-    fn report_errror(&mut self, _error: icy_parser_core::ParseError, _level: icy_parser_core::ErrorLevel) {}
+    fn report_error(&mut self, _error: icy_parser_core::ParseError, _level: icy_parser_core::ErrorLevel) {}
 }
 
 #[test]

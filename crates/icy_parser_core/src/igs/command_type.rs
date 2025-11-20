@@ -142,7 +142,7 @@ impl IgsCommandType {
         F: FnOnce() -> T,
     {
         if params.len() < expected {
-            sink.report_errror(
+            sink.report_error(
                 crate::ParseError::InvalidParameter {
                     command,
                     value: format!("{}", params.len()),
@@ -153,7 +153,7 @@ impl IgsCommandType {
             None
         } else {
             if params.len() > expected {
-                sink.report_errror(
+                sink.report_error(
                     crate::ParseError::InvalidParameter {
                         command,
                         value: format!("{}", params.len()),
@@ -202,7 +202,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::ColorSet => {
                 let pen = PenType::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "ColorSet",
                             value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
@@ -233,7 +233,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::TextEffects => {
                 let rotation = TextRotation::try_from(params.get(2).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "TextEffects",
                             value: format!("{}", params.get(2).map(|p| p.value()).unwrap_or(0)),
@@ -259,7 +259,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::DrawingMode => {
                 let mode = DrawingMode::try_from(params.get(0).map(|p| p.value()).unwrap_or(1)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "DrawingMode",
                             value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(1)),
@@ -276,7 +276,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::Initialize => {
                 let mode = InitializationType::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "Initialize",
                             value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
@@ -298,7 +298,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::Cursor => {
                 let mode = CursorMode::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "Cursor",
                             value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
@@ -312,7 +312,7 @@ impl IgsCommandType {
             }
             IgsCommandType::ChipMusic => {
                 let sound_effect = SoundEffect::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "ChipMusic",
                             value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
@@ -334,7 +334,7 @@ impl IgsCommandType {
             IgsCommandType::ScreenClear => Self::check_parameters(params, sink, "ScreenClear", 1, || IgsCommand::ScreenClear { mode: params[0].value() as u8 }),
             IgsCommandType::SetResolution => {
                 let resolution = TerminalResolution::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "SetResolution",
                             value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
@@ -345,7 +345,7 @@ impl IgsCommandType {
                     TerminalResolution::default()
                 });
                 let palette = PaletteMode::try_from(params.get(1).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "SetResolution",
                             value: format!("{}", params.get(1).map(|p| p.value()).unwrap_or(0)),
@@ -361,7 +361,7 @@ impl IgsCommandType {
                 let param1 = params.get(1).map(|p| p.value()).unwrap_or(1);
                 let kind = if params.get(0).map(|p| p.value()).unwrap_or(0) == 1 {
                     LineStyleKind::Polymarker(PolymarkerKind::try_from(param1).unwrap_or_else(|_| {
-                        sink.report_errror(
+                        sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
                                 value: format!("{}", param1).to_string(),
@@ -373,7 +373,7 @@ impl IgsCommandType {
                     }))
                 } else {
                     LineStyleKind::Line(LineKind::try_from(param1).unwrap_or_else(|_| {
-                        sink.report_errror(
+                        sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
                                 value: format!("{}", param1).to_string(),
@@ -395,7 +395,7 @@ impl IgsCommandType {
             IgsCommandType::VsyncPause => Self::check_parameters(params, sink, "VsyncPause", 1, || IgsCommand::VsyncPause { vsyncs: params[0].value() }),
             IgsCommandType::PolyLine | IgsCommandType::PolyFill => {
                 if params.is_empty() {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: if self == IgsCommandType::PolyLine { "PolyLine" } else { "PolyFill" },
                             value: format!("{}", 0).to_string(),
@@ -408,7 +408,7 @@ impl IgsCommandType {
                     let count = params[0].value() as usize;
                     let expected = 1 + count * 2;
                     if params.len() < expected {
-                        sink.report_errror(
+                        sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: if self == IgsCommandType::PolyLine { "PolyLine" } else { "PolyFill" },
                                 value: format!("{}", params.len()),
@@ -419,7 +419,7 @@ impl IgsCommandType {
                         None
                     } else {
                         if params.len() > expected {
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: if self == IgsCommandType::PolyLine { "PolyLine" } else { "PolyFill" },
                                     value: format!("{}", params.len()),
@@ -439,7 +439,7 @@ impl IgsCommandType {
             }
             IgsCommandType::BellsAndWhistles => {
                 if params.is_empty() {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "BellsAndWhistles",
                             value: format!("{}", 0).to_string(),
@@ -454,7 +454,7 @@ impl IgsCommandType {
                         20 => {
                             // b>20,play_flag,snd_num,element_num,negative_flag,thousands,hundreds:
                             if params.len() < 7 {
-                                sink.report_errror(
+                                sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "BellsAndWhistles:AlterSoundEffect",
                                         value: format!("{}", params.len()),
@@ -465,7 +465,7 @@ impl IgsCommandType {
                                 None
                             } else {
                                 if params.len() > 7 {
-                                    sink.report_errror(
+                                    sink.report_error(
                                         crate::ParseError::InvalidParameter {
                                             command: "BellsAndWhistles:AlterSoundEffect",
                                             value: format!("{}", params.len()),
@@ -477,7 +477,7 @@ impl IgsCommandType {
                                 Some(IgsCommand::AlterSoundEffect {
                                     play_flag: params[1].value() as u8,
                                     sound_effect: SoundEffect::try_from(params[2].value()).unwrap_or_else(|_| {
-                                        sink.report_errror(
+                                        sink.report_error(
                                             crate::ParseError::InvalidParameter {
                                                 command: "BellsAndWhistles:AlterSoundEffect",
                                                 value: format!("{}", params[2].value()),
@@ -501,7 +501,7 @@ impl IgsCommandType {
                         22 => {
                             // b>22,snd_num: - Restore sound effect
                             if params.len() < 2 {
-                                sink.report_errror(
+                                sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "BellsAndWhistles:RestoreSoundEffect",
                                         value: format!("{}", params.len()),
@@ -512,7 +512,7 @@ impl IgsCommandType {
                                 None
                             } else {
                                 if params.len() > 2 {
-                                    sink.report_errror(
+                                    sink.report_error(
                                         crate::ParseError::InvalidParameter {
                                             command: "BellsAndWhistles:RestoreSoundEffect",
                                             value: format!("{}", params.len()),
@@ -523,7 +523,7 @@ impl IgsCommandType {
                                 }
                                 Some(IgsCommand::RestoreSoundEffect {
                                     sound_effect: SoundEffect::try_from(params[1].value()).unwrap_or_else(|_| {
-                                        sink.report_errror(
+                                        sink.report_error(
                                             crate::ParseError::InvalidParameter {
                                                 command: "BellsAndWhistles:RestoreSoundEffect",
                                                 value: format!("{}", params[1].value()),
@@ -539,7 +539,7 @@ impl IgsCommandType {
                         23 => {
                             // b>23,count: - Set effect loops
                             if params.len() < 2 {
-                                sink.report_errror(
+                                sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "BellsAndWhistles:SetEffectLoops",
                                         value: format!("{}", params.len()),
@@ -550,7 +550,7 @@ impl IgsCommandType {
                                 None
                             } else {
                                 if params.len() > 2 {
-                                    sink.report_errror(
+                                    sink.report_error(
                                         crate::ParseError::InvalidParameter {
                                             command: "BellsAndWhistles:SetEffectLoops",
                                             value: format!("{}", params.len()),
@@ -568,7 +568,7 @@ impl IgsCommandType {
                             // b>0-19: - Play sound effect
                             Some(IgsCommand::BellsAndWhistles {
                                 sound_effect: SoundEffect::try_from(cmd_id).unwrap_or_else(|_| {
-                                    sink.report_errror(
+                                    sink.report_error(
                                         crate::ParseError::InvalidParameter {
                                             command: "BellsAndWhistles",
                                             value: format!("{}", cmd_id).to_string(),
@@ -588,7 +588,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::GrabScreen => {
                 if params.len() < 2 {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "GrabScreen",
                             value: format!("{}", params.len()),
@@ -652,7 +652,7 @@ impl IgsCommandType {
                             })
                         }
                         _ => {
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "GrabScreen",
                                     value: format!("{}", blit_type_id).to_string(),
@@ -691,7 +691,7 @@ impl IgsCommandType {
             IgsCommandType::ExtendedCommand => {
                 // X - Extended commands
                 if params.is_empty() {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "ExtendedCommand",
                             value: format!("{}", 0).to_string(),
@@ -739,7 +739,7 @@ impl IgsCommandType {
                                     },
                                 })
                             } else {
-                                sink.report_errror(
+                                sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "SetRandomRange",
                                         value: format!("{}", params.len()),
@@ -778,7 +778,7 @@ impl IgsCommandType {
                                     string: text_buffer.to_vec(),
                                 })
                             } else {
-                                sink.report_errror(
+                                sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "ExtendedCommand:DefineZone",
                                         value: format!("{}", params.len()),
@@ -838,7 +838,7 @@ impl IgsCommandType {
                             Some(IgsCommand::LoadColorPalette { params: params[1..].to_vec() })
                         }
                         _ => {
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "ExtendedCommand",
                                     value: format!("{}", cmd_id).to_string(),
@@ -870,7 +870,7 @@ impl IgsCommandType {
                 // IG form: direction,count
                 // ESC form previously provided x,y; map to direction/count
                 if params.len() < 2 {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "CursorMotion",
                             value: format!("{}", params.len()),
@@ -915,7 +915,7 @@ impl IgsCommandType {
             }),
             IgsCommandType::AskIG => {
                 if params.is_empty() {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "AskIG",
                             value: format!("{}", 0).to_string(),
@@ -932,7 +932,7 @@ impl IgsCommandType {
                                 match MousePointerType::try_from(params[1].value()) {
                                     Ok(pt) => pt,
                                     Err(_) => {
-                                        sink.report_errror(
+                                        sink.report_error(
                                             crate::ParseError::InvalidParameter {
                                                 command: "AskIG",
                                                 value: format!("{}", params[1].value()),
@@ -953,7 +953,7 @@ impl IgsCommandType {
                                 match MousePointerType::try_from(params[1].value()) {
                                     Ok(pt) => pt,
                                     Err(_) => {
-                                        sink.report_errror(
+                                        sink.report_error(
                                             crate::ParseError::InvalidParameter {
                                                 command: "AskIG",
                                                 value: format!("{}", params[1].value()),
@@ -971,7 +971,7 @@ impl IgsCommandType {
                         }
                         3 => Some(AskQuery::CurrentResolution),
                         _ => {
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "AskIG",
                                     value: format!("{}", params[0].value()),
@@ -988,7 +988,7 @@ impl IgsCommandType {
             IgsCommandType::SetTextColor => {
                 // G#c>layer,color: where layer is 0 (background) or 1 (foreground)
                 if params.len() < 2 {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "SetTextColor",
                             value: format!("{}", params.len()),
@@ -1005,7 +1005,7 @@ impl IgsCommandType {
                     } else if layer_value == 1 {
                         TextColorLayer::Foreground
                     } else {
-                        sink.report_errror(
+                        sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "SetTextColor",
                                 value: format!("{}", layer_value),
@@ -1024,7 +1024,7 @@ impl IgsCommandType {
             IgsCommandType::InsertLine => {
                 // G#i>mode,count: - mode is optional, defaults to 0
                 if params.is_empty() {
-                    sink.report_errror(
+                    sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "InsertLine",
                             value: format!("{}", 0),

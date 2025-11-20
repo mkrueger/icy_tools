@@ -174,7 +174,7 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                         }
                         _ => {
                             // Invalid sub-parameter for 38
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "CsiSelectGraphicRendition",
                                     value: params[i + 1].to_string(),
@@ -187,7 +187,7 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                     }
                 } else {
                     // Missing sub-parameters
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::IncompleteSequence {
                             context: "Extended foreground color requires sub-parameters (38;5;n or 38;2;r;g;b)",
                         },
@@ -218,7 +218,7 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                         }
                         _ => {
                             // Invalid sub-parameter for 48
-                            sink.report_errror(
+                            sink.report_error(
                                 ParseError::InvalidParameter {
                                     command: "CsiSelectGraphicRendition",
                                     value: params[i + 1].to_string(),
@@ -231,7 +231,7 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
                     }
                 } else {
                     // Missing sub-parameters
-                    sink.report_errror(
+                    sink.report_error(
                         ParseError::IncompleteSequence {
                             context: "Extended background color requires sub-parameters (48;5;n or 48;2;r;g;b)",
                         },
@@ -242,7 +242,7 @@ pub(crate) fn parse_sgr(params: &[u16], sink: &mut dyn CommandSink) {
             }
             SgrLutEntry::Undefined => {
                 // Unrecognized or unsupported SGR code
-                sink.report_errror(
+                sink.report_error(
                     ParseError::InvalidParameter {
                         command: "CsiSelectGraphicRendition",
                         value: format!("{}", code).to_string(),

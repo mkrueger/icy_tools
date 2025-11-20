@@ -188,7 +188,7 @@ impl CommandSink for QueueingSink {
         // ignore for now
     }
 
-    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
         log::error!("Parse Error:{:?}", error);
     }
 

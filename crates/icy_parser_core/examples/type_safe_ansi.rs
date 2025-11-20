@@ -156,7 +156,7 @@ impl CommandSink for ExampleSink {
         }
     }
 
-    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
         self.error_count += 1;
         eprintln!("⚠️  Parse Error #{}: {:?}", self.error_count, error);
         match error {

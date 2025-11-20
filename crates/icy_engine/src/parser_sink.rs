@@ -862,7 +862,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
         // Push music playback callback to be handled by application layer
     }
 
-    fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
         log::error!("Parser error: {:?}", error);
     }
 }

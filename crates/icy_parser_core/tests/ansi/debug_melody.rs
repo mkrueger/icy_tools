@@ -36,7 +36,7 @@ fn debug_melody() {
                 eprintln!("  Action {}: {:?}", i, action);
             }
         }
-        fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+        fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
             eprintln!("error: {:?}", error);
         }
     }

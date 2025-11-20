@@ -147,7 +147,7 @@ impl Vt52Parser {
             sink.emit(TerminalCommand::CsiSelectGraphicRendition(sgr));
         } else {
             let color_type = if get_foreground { "foreground" } else { "background" };
-            sink.report_errror(
+            sink.report_error(
                 crate::ParseError::InvalidParameter {
                     command: "VT52 color",
                     value: format!("0x{:02X}", byte),
@@ -324,7 +324,7 @@ impl CommandParser for Vt52Parser {
                         }
                         _ => {
                             // Unknown escape sequence, report warning
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "VT52 escape sequence",
                                     value: format!("ESC {}", ch),
@@ -360,7 +360,7 @@ impl CommandParser for Vt52Parser {
                 State::ReadCursorLine => {
                     // Check if we got an ESC character - this means incomplete sequence
                     if byte == 0x1B {
-                        sink.report_errror(
+                        sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "VT52 cursor position",
                                 value: "incomplete sequence (got ESC instead of line)".to_string(),
@@ -378,7 +378,7 @@ impl CommandParser for Vt52Parser {
                     // Check if we got an ESC character - this means incomplete cursor position sequence
                     if byte == 0x1B {
                         // Incomplete cursor position - treat as error and start new escape sequence
-                        sink.report_errror(
+                        sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "VT52 cursor position",
                                 value: format!("line=0x{:02X}, incomplete sequence (got ESC)", line_byte),
@@ -404,7 +404,7 @@ impl CommandParser for Vt52Parser {
                                 VT52Mode::Atari => "Atari mode: line 0-25, row 0-132",
                                 VT52Mode::Mixed => "mixed mode: space-based (≥0x20) or direct byte values",
                             };
-                            sink.report_errror(
+                            sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "VT52 cursor position",
                                     value: format!("line=0x{:02X}, row=0x{:02X}", line_byte, byte),

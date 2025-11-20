@@ -314,7 +314,7 @@ impl RipParser {
 
             _ => {
                 // Unknown command - report error
-                sink.report_errror(
+                sink.report_error(
                     crate::ParseError::InvalidParameter {
                         command: "RIP",
                         value: (self.builder.cmd_char as u16).to_string(),

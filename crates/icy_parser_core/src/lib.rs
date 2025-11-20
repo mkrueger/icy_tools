@@ -830,7 +830,7 @@ pub trait CommandSink {
     ///     }
     /// }
     /// ```
-    fn report_errror(&mut self, _error: ParseError, _level: ErrorLevel) {}
+    fn report_error(&mut self, _error: ParseError, _level: ErrorLevel) {}
 }
 
 pub trait CommandParser: Send {

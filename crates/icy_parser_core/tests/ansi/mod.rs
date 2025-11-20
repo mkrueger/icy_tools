@@ -541,7 +541,7 @@ fn test_error_reporting() {
             self.cmds.push(cmd);
         }
 
-        fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+        fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
             self.errors.push(error);
         }
     }
@@ -655,7 +655,7 @@ fn test_ansi_modes() {
             self.cmds.push(cmd);
         }
 
-        fn report_errror(&mut self, error: ParseError, _level: ErrorLevel) {
+        fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
             self.errors.push(error);
         }
     }

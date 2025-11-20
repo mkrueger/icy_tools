@@ -37,7 +37,7 @@ impl CommandSink for TestSink {
     fn play_music(&mut self, music: AnsiMusic) {
         self.music = Some(music);
     }
-    fn report_errror(&mut self, _error: icy_parser_core::ParseError, _level: icy_parser_core::ErrorLevel) {}
+    fn report_error(&mut self, _error: icy_parser_core::ParseError, _level: icy_parser_core::ErrorLevel) {}
 }
 
 #[test]
