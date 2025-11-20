@@ -41,11 +41,11 @@ impl CommandSink for FuzzSink {
         self.command_count += 1;
     }
 
-    fn device_control(&mut self, _dcs: DeviceControlString<'_>) {
+    fn device_control(&mut self, _dcs: DeviceControlString) {
         self.command_count += 1;
     }
 
-    fn operating_system_command(&mut self, _osc: OperatingSystemCommand<'_>) {
+    fn operating_system_command(&mut self, _osc: OperatingSystemCommand) {
         self.command_count += 1;
     }
 

@@ -68,7 +68,10 @@ pub struct TerminalState {
     pub cr_is_if: bool, // that basically skips /r
     tab_stops: Vec<i32>,
     baud_rate: BaudEmulation,
+
+    // Attributes used for determining the real current device attribute:
     pub(crate) inverse_video: bool,
+    pub(crate) ice_colors: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -120,6 +123,7 @@ impl TerminalState {
             cleared_screen: false,
             cr_is_if: false,
             inverse_video: false,
+            ice_colors: false,
         };
         ret.reset_tabs();
         ret

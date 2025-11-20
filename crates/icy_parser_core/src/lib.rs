@@ -460,7 +460,7 @@ pub enum CaretShape {
 /// Device Control String (DCS) sequences: ESC P ... ESC \
 #[repr(u8)]
 #[derive(Debug, PartialEq)]
-pub enum DeviceControlString<'a> {
+pub enum DeviceControlString {
     /// Load custom font: ESC P CTerm:Font:{slot}:{base64_data} ESC \
     /// Parameters: font slot number, decoded font data (already base64-decoded by parser)
     LoadFont(usize, Vec<u8>),
@@ -470,25 +470,25 @@ pub enum DeviceControlString<'a> {
         aspect_ratio: Option<u16>,
         zero_color: Option<u16>,
         grid_size: Option<u16>,
-        sixel_data: &'a [u8],
+        sixel_data: Vec<u8>,
     },
 }
 
 /// Operating System Command (OSC) sequences: ESC ] ... BEL or ESC \
 #[repr(u8)]
 #[derive(Debug, PartialEq)]
-pub enum OperatingSystemCommand<'a> {
+pub enum OperatingSystemCommand {
     /// OSC 0 - Set Icon Name and Window Title: ESC]0;{text}BEL or ESC]0;{text}ESC\
-    SetTitle(&'a [u8]),
+    SetTitle(Vec<u8>),
     /// OSC 1 - Set Icon Name: ESC]1;{text}BEL
-    SetIconName(&'a [u8]),
+    SetIconName(Vec<u8>),
     /// OSC 2 - Set Window Title: ESC]2;{text}BEL
-    SetWindowTitle(&'a [u8]),
+    SetWindowTitle(Vec<u8>),
     /// OSC 4 - Set Palette Color: ESC]4;{index};rgb:{rr}/{gg}/{bb}BEL
     /// Parameters: color_index, r, g, b
     SetPaletteColor(u8, u8, u8, u8),
     /// OSC 8 - Hyperlink: ESC]8;{params};{uri}BEL
-    Hyperlink { params: &'a [u8], uri: &'a [u8] },
+    Hyperlink { params: Vec<u8>, uri: Vec<u8> },
 }
 
 #[repr(u8)]
@@ -771,9 +771,6 @@ pub enum TerminalRequest {
 
     /// RIPscrip: Read file data
     RipReadFile(String),
-
-    /// IGS: Query version (0) or resolution (3)
-    IgsQuery(u8),
 }
 
 pub trait CommandSink {
@@ -797,10 +794,10 @@ pub trait CommandSink {
     }
 
     /// Emit a Device Control String (DCS) sequence. Default implementation does nothing.
-    fn device_control(&mut self, _dcs: DeviceControlString<'_>) {}
+    fn device_control(&mut self, _dcs: DeviceControlString) {}
 
     /// Emit an Operating System Command (OSC) sequence. Default implementation does nothing.
-    fn operating_system_command(&mut self, _osc: OperatingSystemCommand<'_>) {}
+    fn operating_system_command(&mut self, _osc: OperatingSystemCommand) {}
 
     /// Emit an Application Program String (APS) sequence: ESC _ ... ESC \
     /// Default implementation does nothing.

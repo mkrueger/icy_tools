@@ -179,7 +179,7 @@ impl AnsiParser {
                 aspect_ratio,
                 zero_color,
                 grid_size,
-                sixel_data: &self.parse_buffer[i + 1..],
+                sixel_data: self.parse_buffer[i + 1..].to_vec(),
             });
             return;
         }
@@ -1226,15 +1226,15 @@ impl AnsiParser {
                     match ps {
                         0 => {
                             // Set icon name and window title
-                            sink.operating_system_command(OperatingSystemCommand::SetTitle(pt_bytes));
+                            sink.operating_system_command(OperatingSystemCommand::SetTitle(pt_bytes.to_vec()));
                         }
                         1 => {
                             // Set icon name
-                            sink.operating_system_command(OperatingSystemCommand::SetIconName(pt_bytes));
+                            sink.operating_system_command(OperatingSystemCommand::SetIconName(pt_bytes.to_vec()));
                         }
                         2 => {
                             // Set window title
-                            sink.operating_system_command(OperatingSystemCommand::SetWindowTitle(pt_bytes));
+                            sink.operating_system_command(OperatingSystemCommand::SetWindowTitle(pt_bytes.to_vec()));
                         }
                         4 => {
                             // Set Palette Color: OSC 4 ; index ; rgb:rr/gg/bb BEL
@@ -1244,8 +1244,8 @@ impl AnsiParser {
                         8 => {
                             // Hyperlink: OSC 8 ; params ; URI BEL
                             if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
-                                let params = &pt_bytes[..uri_pos];
-                                let uri = &pt_bytes[uri_pos + 1..];
+                                let params = pt_bytes[..uri_pos].to_vec();
+                                let uri = pt_bytes[uri_pos + 1..].to_vec();
                                 sink.operating_system_command(OperatingSystemCommand::Hyperlink { params, uri });
                             }
                         }

@@ -14,8 +14,8 @@ struct CollectSink {
     pub cmds: Vec<TerminalCommand>,
     pub requests: Vec<TerminalRequest>,
     pub aps_data: Vec<Vec<u8>>,
-    pub dcs_commands: Vec<DeviceControlString<'static>>,
-    pub osc_commands: Vec<OperatingSystemCommand<'static>>,
+    pub dcs_commands: Vec<DeviceControlString>,
+    pub osc_commands: Vec<OperatingSystemCommand>,
 }
 
 impl CollectSink {
@@ -44,60 +44,12 @@ impl CommandSink for CollectSink {
         self.requests.push(request);
     }
 
-    fn device_control(&mut self, dcs: DeviceControlString<'_>) {
-        match dcs {
-            DeviceControlString::LoadFont(slot, data) => {
-                self.dcs_commands.push(DeviceControlString::LoadFont(slot, data));
-            }
-            DeviceControlString::Sixel {
-                aspect_ratio,
-                zero_color,
-                grid_size,
-                sixel_data,
-            } => {
-                let owned = sixel_data.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.dcs_commands.push(DeviceControlString::Sixel {
-                    aspect_ratio,
-                    zero_color,
-                    grid_size,
-                    sixel_data: leaked,
-                });
-            }
-        }
+    fn device_control(&mut self, dcs: DeviceControlString) {
+        self.dcs_commands.push(dcs);
     }
 
-    fn operating_system_command(&mut self, osc: OperatingSystemCommand<'_>) {
-        match osc {
-            OperatingSystemCommand::SetTitle(data) => {
-                let owned = data.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.osc_commands.push(OperatingSystemCommand::SetTitle(leaked));
-            }
-            OperatingSystemCommand::SetIconName(data) => {
-                let owned = data.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.osc_commands.push(OperatingSystemCommand::SetIconName(leaked));
-            }
-            OperatingSystemCommand::SetWindowTitle(data) => {
-                let owned = data.to_vec();
-                let leaked: &'static [u8] = Box::leak(owned.into_boxed_slice());
-                self.osc_commands.push(OperatingSystemCommand::SetWindowTitle(leaked));
-            }
-            OperatingSystemCommand::SetPaletteColor(index, r, g, b) => {
-                self.osc_commands.push(OperatingSystemCommand::SetPaletteColor(index, r, g, b));
-            }
-            OperatingSystemCommand::Hyperlink { params, uri } => {
-                let params_owned = params.to_vec();
-                let uri_owned = uri.to_vec();
-                let params_leaked: &'static [u8] = Box::leak(params_owned.into_boxed_slice());
-                let uri_leaked: &'static [u8] = Box::leak(uri_owned.into_boxed_slice());
-                self.osc_commands.push(OperatingSystemCommand::Hyperlink {
-                    params: params_leaked,
-                    uri: uri_leaked,
-                });
-            }
-        }
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
+        self.osc_commands.push(osc);
     }
 
     fn aps(&mut self, data: &[u8]) {
@@ -765,7 +717,7 @@ fn test_dcs_sequences() {
         zero_color: _,
         grid_size: _,
         sixel_data,
-    } = sink.dcs_commands[0]
+    } = &sink.dcs_commands[0]
     {
         // TODO: Update these assertions based on actual parameter parsing
         assert!(sixel_data.starts_with(b"\"1;1;80;80"));
@@ -780,7 +732,7 @@ fn test_dcs_sequences() {
     parser.parse(b"\x1BPCTerm:Font:5:dGVzdGRhdGE=\x1B\\", &mut sink);
     assert_eq!(sink.dcs_commands.len(), 1);
     if let DeviceControlString::LoadFont(slot, data) = &sink.dcs_commands[0] {
-        assert_eq!(*slot, 5);
+        assert_eq!(slot, &5);
         assert_eq!(data, b"testdata");
     } else {
         panic!("Expected LoadFont");

@@ -106,10 +106,54 @@ pub struct ModemConfig {
     pub dial_string: String,
 }
 
+/// Buffered capture writer for better I/O performance
+struct CaptureWriter {
+    file: std::fs::File,
+    buffer: Vec<u8>,
+    last_flush: Instant,
+}
+
+impl CaptureWriter {
+    fn new(file: std::fs::File) -> Self {
+        Self {
+            file,
+            buffer: Vec::with_capacity(4096), // 4KB buffer
+            last_flush: Instant::now(),
+        }
+    }
+
+    fn write(&mut self, data: &[u8]) -> std::io::Result<()> {
+        self.buffer.extend_from_slice(data);
+
+        // Auto-flush if buffer is full or 100ms elapsed
+        if self.buffer.len() >= 4096 || self.last_flush.elapsed() >= Duration::from_millis(100) {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if !self.buffer.is_empty() {
+            use std::io::Write;
+            self.file.write_all(&self.buffer)?;
+            self.file.flush()?;
+            self.buffer.clear();
+            self.last_flush = Instant::now();
+        }
+        Ok(())
+    }
+}
+
+impl Drop for CaptureWriter {
+    fn drop(&mut self) {
+        let _ = self.flush(); // Final flush on drop
+    }
+}
+
 /// Queued command for processing
 #[derive(Debug, Clone)]
 enum QueuedCommand {
-    Print(Vec<u8>),
+    Print(Vec<u8>, bool), // text, inverse_video
     Command(ParserCommand),
     Music(AnsiMusic),
     Rip(RipCommand),
@@ -117,69 +161,83 @@ enum QueuedCommand {
     Igs(IgsCommand),
     Bell,
     ResizeTerminal(u16, u16),
+    TerminalRequest(TerminalRequest),
 }
 
 /// Custom CommandSink that queues commands instead of executing them immediately
 struct QueueingSink {
-    command_queue: VecDeque<QueuedCommand>,
-    output: Vec<u8>,
+    command_queue: Arc<Mutex<VecDeque<QueuedCommand>>>,
+    inverse_video: bool,
 }
 
 impl QueueingSink {
     fn new() -> Self {
         Self {
-            command_queue: VecDeque::new(),
-            output: Vec::new(),
+            command_queue: Arc::new(Mutex::new(VecDeque::new())),
+            inverse_video: false,
         }
-    }
-
-    fn take_output(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.output)
     }
 }
 
 impl CommandSink for QueueingSink {
     fn print(&mut self, text: &[u8]) {
-        self.command_queue.push_back(QueuedCommand::Print(text.to_vec()));
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::Print(text.to_vec(), self.inverse_video));
+        }
     }
 
     fn emit(&mut self, cmd: ParserCommand) {
+        // Track inverse video state for SGR commands
+        if let ParserCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(on)) = &cmd {
+            self.inverse_video = *on;
+        }
+
         // Handle special commands that need immediate processing
-        match &cmd {
-            ParserCommand::Bell => {
-                self.command_queue.push_back(QueuedCommand::Bell);
-            }
-            ParserCommand::CsiResizeTerminal(height, width) => {
-                self.command_queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
-            }
-            _ => {
-                self.command_queue.push_back(QueuedCommand::Command(cmd));
+        if let Ok(mut queue) = self.command_queue.lock() {
+            match &cmd {
+                ParserCommand::Bell => {
+                    queue.push_back(QueuedCommand::Bell);
+                }
+                ParserCommand::CsiResizeTerminal(height, width) => {
+                    queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
+                }
+                _ => {
+                    queue.push_back(QueuedCommand::Command(cmd));
+                }
             }
         }
     }
 
     fn play_music(&mut self, music: AnsiMusic) {
-        self.command_queue.push_back(QueuedCommand::Music(music));
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::Music(music));
+        }
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
-        self.command_queue.push_back(QueuedCommand::Rip(cmd));
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::Rip(cmd));
+        }
     }
 
     fn emit_skypix(&mut self, cmd: SkypixCommand) {
-        self.command_queue.push_back(QueuedCommand::Skypix(cmd));
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::Skypix(cmd));
+        }
     }
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
-        self.command_queue.push_back(QueuedCommand::Igs(cmd));
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::Igs(cmd));
+        }
     }
 
-    fn device_control(&mut self, _dcs: DeviceControlString<'_>) {
+    fn device_control(&mut self, _dcs: DeviceControlString) {
         // Device control commands are rare - we'll process them directly when needed
         // For now, ignore to simplify queue implementation
     }
 
-    fn operating_system_command(&mut self, _osc: OperatingSystemCommand<'_>) {
+    fn operating_system_command(&mut self, _osc: OperatingSystemCommand) {
         // OSC commands are processed directly in the old sink
         // For now, ignore to simplify queue implementation
     }
@@ -193,22 +251,8 @@ impl CommandSink for QueueingSink {
     }
 
     fn request(&mut self, request: TerminalRequest) {
-        use icy_parser_core::TerminalRequest;
-
-        match request {
-            TerminalRequest::DeviceAttributes => {
-                let version = format!(
-                    "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
-                    env!("CARGO_PKG_VERSION_MAJOR"),
-                    env!("CARGO_PKG_VERSION_MINOR"),
-                    env!("CARGO_PKG_VERSION_PATCH")
-                );
-                self.output.extend_from_slice(version.as_bytes());
-            }
-            TerminalRequest::SecondaryDeviceAttributes => {
-                self.output.extend_from_slice(b"\x1b[>0;10;1c");
-            }
-            _ => {}
+        if let Ok(mut queue) = self.command_queue.lock() {
+            queue.push_back(QueuedCommand::TerminalRequest(request));
         }
     }
 }
@@ -238,10 +282,8 @@ pub struct TerminalThread {
     iemsi_auto_login: Option<IEmsiAutoLogin>,
     auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>, // For pending auto-transfers
 
-    // Capture state
-    capture_writer: Option<std::fs::File>,
-
-    output_buffer: Vec<u8>,
+    // Capture state with buffering
+    capture_writer: Option<CaptureWriter>,
 
     // Command queue for granular locking
     queueing_sink: QueueingSink,
@@ -274,7 +316,6 @@ impl TerminalThread {
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
             capture_writer: None,
-            output_buffer: Vec::new(),
             queueing_sink: QueueingSink::new(),
             download_directory: None,
         };
@@ -335,7 +376,7 @@ impl TerminalThread {
                             }
                         }
 
-                        if poll_interval >= 10 {
+                        if poll_interval >= 3 {  // Poll every ~48ms (3 * 16ms) instead of 160ms
                             poll_interval = 0;
                             if let Some(conn) = &mut self.connection {
                                 match conn.poll().await {
@@ -448,7 +489,7 @@ impl TerminalThread {
             }
             TerminalCommand::StartCapture(file_name) => match std::fs::File::create(&file_name) {
                 Ok(file) => {
-                    self.capture_writer = Some(file);
+                    self.capture_writer = Some(CaptureWriter::new(file));
                     log::info!("Started capturing to {}", file_name);
                 }
                 Err(e) => {
@@ -457,7 +498,9 @@ impl TerminalThread {
                 }
             },
             TerminalCommand::StopCapture => {
-                self.capture_writer = None;
+                if let Some(mut writer) = self.capture_writer.take() {
+                    let _ = writer.flush(); // Ensure final flush
+                }
                 log::info!("Stopped capturing");
             }
             TerminalCommand::SetDownloadDirectory(dir) => {
@@ -736,8 +779,13 @@ impl TerminalThread {
 
                         // Check if we have an incomplete sequence at the end
                         if let Some(error_len) = e.error_len() {
-                            // Invalid UTF-8 sequence, replace with replacement character
-                            to_process.extend_from_slice("�".as_bytes());
+                            // Invalid UTF-8 sequence - but it might be intentional high-ASCII!
+                            // In BBS/ANSI context, bytes 128-255 are often CP437 characters
+                            // not UTF-8. Only replace if we're sure it's supposed to be UTF-8.
+
+                            // For now, pass through the raw bytes instead of replacing
+                            // This preserves box-drawing and other high-ASCII characters
+                            to_process.extend_from_slice(&remaining[..error_len]);
                             i += error_len;
                         } else {
                             // Incomplete sequence at end, keep it for next time
@@ -757,14 +805,8 @@ impl TerminalThread {
             // Parse the complete UTF-8 data
             self.parser.parse(&to_process, &mut self.queueing_sink);
         } else {
-            // Legacy mode: parse bytes directly
+            // Legacy mode: parse bytes directly - this preserves high-ASCII
             self.parser.parse(data, &mut self.queueing_sink);
-        }
-
-        // Get any output generated during parsing
-        let output = self.queueing_sink.take_output();
-        if !output.is_empty() {
-            self.output_buffer.extend_from_slice(&output);
         }
 
         // Process the command queue with granular locking
@@ -777,7 +819,20 @@ impl TerminalThread {
     async fn process_command_queue(&mut self) {
         const MAX_LOCK_DURATION_MS: u64 = 10;
 
-        while let Some(cmd) = self.queueing_sink.command_queue.pop_front() {
+        loop {
+            // Get next command with queue lock
+            let cmd = {
+                if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
+                    queue.pop_front()
+                } else {
+                    None
+                }
+            };
+
+            // Exit loop if no more commands
+            let Some(cmd) = cmd else {
+                break;
+            };
             // Check if this is a delay command that should be processed outside lock
             match &cmd {
                 QueuedCommand::Igs(IgsCommand::PauseSeconds { seconds }) => {
@@ -810,6 +865,12 @@ impl TerminalThread {
                     let _ = self.event_tx.send(TerminalEvent::Beep);
                     continue;
                 }
+
+                QueuedCommand::TerminalRequest(request) => {
+                    // Handle terminal request and store response in output buffer
+                    self.handle_terminal_request(request.clone()).await;
+                    continue;
+                }
                 _ => {}
             }
 
@@ -822,11 +883,15 @@ impl TerminalThread {
                     QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
                         match query {
                             AskQuery::VersionNumber => {
-                                self.output_buffer.extend_from_slice(icy_engine::igs::IGS_VERSION.as_bytes());
+                                if let Some(conn) = &mut self.connection {
+                                    let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
+                                }
                             }
                             AskQuery::CurrentResolution => {
                                 if let GraphicsType::IGS(mode) = screen.graphics_type() {
-                                    self.output_buffer.extend_from_slice(format!("{}:", mode as u8).as_bytes());
+                                    if let Some(conn) = &mut self.connection {
+                                        let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
+                                    }
                                 }
                             }
                             _ => {}
@@ -848,8 +913,29 @@ impl TerminalThread {
 
                 // Process this command
                 match cmd {
-                    QueuedCommand::Print(text) => {
-                        screen_sink.print(&text);
+                    QueuedCommand::Print(text, inverse_video) => {
+                        if inverse_video {
+                            // Drop sink to get direct mutable access
+                            drop(screen_sink);
+
+                            // Apply inverse video: swap fg/bg in the attribute
+                            let mut attr = screen.caret().attribute;
+                            let fg = attr.get_foreground();
+                            let bg = attr.get_background();
+                            attr.set_foreground(bg);
+                            attr.set_background(fg);
+
+                            // Print each character with swapped colors
+                            for &byte in &text {
+                                let ch = icy_engine::AttributedChar::new(byte as char, attr);
+                                screen.print_char(ch);
+                            }
+
+                            // Recreate sink for following commands
+                            screen_sink = ScreenSink::new(&mut **screen);
+                        } else {
+                            screen_sink.print(&text);
+                        }
                     }
                     QueuedCommand::Command(parser_cmd) => {
                         screen_sink.emit(parser_cmd);
@@ -868,7 +954,14 @@ impl TerminalThread {
 
                 // Process more commands if we haven't exceeded max lock time
                 while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
-                    if let Some(next_cmd) = self.queueing_sink.command_queue.pop_front() {
+                    let next_cmd = {
+                        if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
+                            queue.pop_front()
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some(next_cmd) = next_cmd {
                         // Check if next command needs to be outside lock
                         match &next_cmd {
                             QueuedCommand::Igs(IgsCommand::PauseSeconds { .. })
@@ -882,9 +975,12 @@ impl TerminalThread {
                             | QueuedCommand::Igs(IgsCommand::Noise { .. })
                             | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
                             | QueuedCommand::Music(_)
-                            | QueuedCommand::Bell => {
+                            | QueuedCommand::Bell
+                            | QueuedCommand::TerminalRequest(_) => {
                                 // Put it back and break to process outside lock
-                                self.queueing_sink.command_queue.push_front(next_cmd);
+                                if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
+                                    queue.push_front(next_cmd);
+                                }
                                 break;
                             }
                             _ => {}
@@ -897,11 +993,15 @@ impl TerminalThread {
                                 drop(screen_sink);
                                 match query {
                                     AskQuery::VersionNumber => {
-                                        self.output_buffer.extend_from_slice(icy_engine::igs::IGS_VERSION.as_bytes());
+                                        if let Some(conn) = &mut self.connection {
+                                            let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
+                                        }
                                     }
                                     AskQuery::CurrentResolution => {
                                         if let GraphicsType::IGS(mode) = screen.graphics_type() {
-                                            self.output_buffer.extend_from_slice(format!("{}:", mode as u8).as_bytes());
+                                            if let Some(conn) = &mut self.connection {
+                                                let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -923,8 +1023,29 @@ impl TerminalThread {
 
                         // Process normal command
                         match next_cmd {
-                            QueuedCommand::Print(text) => {
-                                screen_sink.print(&text);
+                            QueuedCommand::Print(text, inverse_video) => {
+                                if inverse_video {
+                                    // Drop sink for direct screen access
+                                    drop(screen_sink);
+
+                                    // Apply inverse video
+                                    let mut attr = screen.caret().attribute;
+                                    let fg = attr.get_foreground();
+                                    let bg = attr.get_background();
+                                    attr.set_foreground(bg);
+                                    attr.set_background(fg);
+
+                                    // Print each character with swapped colors
+                                    for &byte in &text {
+                                        let ch = icy_engine::AttributedChar::new(byte as char, attr);
+                                        screen.print_char(ch);
+                                    }
+
+                                    // Recreate sink
+                                    screen_sink = ScreenSink::new(&mut **screen);
+                                } else {
+                                    screen_sink.print(&text);
+                                }
                             }
                             QueuedCommand::Command(parser_cmd) => {
                                 screen_sink.emit(parser_cmd);
@@ -938,7 +1059,9 @@ impl TerminalThread {
                             QueuedCommand::Igs(igs_cmd) => {
                                 screen_sink.emit_igs(igs_cmd);
                             }
-                            _ => {}
+                            _ => {
+                                unreachable!("command {:?} not handled", next_cmd);
+                            }
                         }
                     } else {
                         break;
@@ -954,15 +1077,7 @@ impl TerminalThread {
                     tokio::task::yield_now().await;
                 }
             }
-        }
-
-        // Send any terminal query responses collected during parsing
-        if !self.output_buffer.is_empty() {
-            if let Some(conn) = &mut self.connection {
-                let _ = conn.send(&self.output_buffer).await;
-            }
-            self.output_buffer.clear();
-        }
+        } // End of main command processing loop
     }
 
     async fn start_upload(&mut self, protocol: TransferProtocolType, files: Vec<PathBuf>) {
@@ -1079,14 +1194,235 @@ impl TerminalThread {
 
     fn write_to_capture(&mut self, data: &[u8]) {
         if let Some(writer) = &mut self.capture_writer {
-            use std::io::Write;
-            if let Err(e) = writer.write_all(data) {
+            if let Err(e) = writer.write(data) {
                 log::error!("Failed to write to capture file: {}", e);
                 // Close the capture file on error
                 self.capture_writer = None;
             }
         }
     }
+
+    async fn handle_terminal_request(&mut self, request: TerminalRequest) {
+        let response: Option<Vec<u8>> = match &request {
+            TerminalRequest::DeviceAttributes => {
+                // respond with IcyTerm as ASCII followed by the package version.
+                let version = format!(
+                    "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
+                    env!("CARGO_PKG_VERSION_MAJOR"),
+                    env!("CARGO_PKG_VERSION_MINOR"),
+                    env!("CARGO_PKG_VERSION_PATCH")
+                );
+                Some(version.into_bytes())
+            }
+            TerminalRequest::SecondaryDeviceAttributes => {
+                let major: i32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+                let minor: i32 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+                let patch: i32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
+                let version = major * 100 + minor * 10 + patch;
+                let hardware_options = 1 | 4 | 8 | 128;
+                Some(format!("\x1b[>65;{};{}c", version, hardware_options).into_bytes())
+            }
+            TerminalRequest::ExtendedDeviceAttributes => {
+                /*
+                    1 - Loadable fonts are availabe via Device Control Strings
+                    2 - Bright Background (ie: DECSET 32) is supported
+                    3 - Palette entries may be modified via an Operating System Command
+                        string
+                    4 - Pixel operations are supported (currently, sixel and PPM
+                        graphics)
+                    5 - The current font may be selected via CSI Ps1 ; Ps2 sp D
+                    6 - Extended palette is available
+                    7 - Mouse is available
+                */
+
+                Some(b"\x1B[<1;2;3;4;5;6;7c".to_vec())
+            }
+            TerminalRequest::DeviceStatusReport => Some(b"\x1B[0n".to_vec()),
+            TerminalRequest::CursorPositionReport => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let y = screen.caret().y.min(screen.get_height() as i32 - 1) + 1;
+                    let x = screen.caret().x.min(screen.get_width() as i32 - 1) + 1;
+                    Some(format!("\x1B[{};{}R", y, x).into_bytes())
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::ScreenSizeReport => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let height = screen.get_height();
+                    let width = screen.get_width();
+                    Some(format!("\x1B[{};{}R", height, width).into_bytes())
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::RequestTabStopReport => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let mut response = b"\x1BP2$u".to_vec();
+                    let tab_count = screen.terminal_state().tab_count();
+                    for i in 0..tab_count {
+                        let tab = screen.terminal_state().get_tabs()[i];
+                        response.extend_from_slice((tab + 1).to_string().as_bytes());
+                        if i < tab_count.saturating_sub(1) {
+                            response.push(b'/');
+                        }
+                    }
+                    response.extend_from_slice(b"\x1B\\");
+                    Some(response)
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::AnsiModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
+            TerminalRequest::DecPrivateModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
+            TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr) => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let checksum = icy_engine::decrqcra_checksum(&**screen, *pt as i32, *pl as i32, *pb as i32, *pr as i32);
+                    Some(format!("\x1BP{}!~{:04X}\x1B\\", ppage, checksum).into_bytes())
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::FontStateReport => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let state = screen.terminal_state();
+                    let font_selection_result = match state.font_selection_state {
+                        icy_engine::FontSelectionState::NoRequest => 99,
+                        icy_engine::FontSelectionState::Success => 0,
+                        icy_engine::FontSelectionState::Failure => 1,
+                    };
+                    Some(
+                        format!(
+                            "\x1B[=1;{};{};{};{};{}n",
+                            font_selection_result,
+                            state.normal_attribute_font_slot,
+                            state.high_intensity_attribute_font_slot,
+                            state.blink_attribute_font_slot,
+                            state.high_intensity_blink_attribute_font_slot
+                        )
+                        .into_bytes(),
+                    )
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::FontModeReport => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let state = screen.terminal_state();
+                    let mut params = Vec::new();
+
+                    if state.origin_mode == icy_engine::OriginMode::WithinMargins {
+                        params.push("6");
+                    }
+                    if state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap {
+                        params.push("7");
+                    }
+                    if screen.caret().visible {
+                        params.push("25");
+                    }
+                    if screen.ice_mode() == icy_engine::IceMode::Ice {
+                        params.push("33");
+                    }
+                    if screen.caret().blinking {
+                        params.push("35");
+                    }
+
+                    match state.mouse_mode() {
+                        icy_engine::MouseMode::OFF => {}
+                        icy_engine::MouseMode::X10 => params.push("9"),
+                        icy_engine::MouseMode::VT200 => params.push("1000"),
+                        icy_engine::MouseMode::VT200_Highlight => params.push("1001"),
+                        icy_engine::MouseMode::ButtonEvents => params.push("1002"),
+                        icy_engine::MouseMode::AnyEvents => params.push("1003"),
+                    }
+
+                    if state.mouse_state.focus_out_event_enabled {
+                        params.push("1004");
+                    }
+                    if state.mouse_state.alternate_scroll_enabled {
+                        params.push("1007");
+                    }
+
+                    match state.mouse_state.extended_mode {
+                        icy_engine::ExtMouseMode::None => {}
+                        icy_engine::ExtMouseMode::Extended => params.push("1005"),
+                        icy_engine::ExtMouseMode::SGR => params.push("1006"),
+                        icy_engine::ExtMouseMode::URXVT => params.push("1015"),
+                        icy_engine::ExtMouseMode::PixelPosition => params.push("1016"),
+                    }
+
+                    let mode_report = if params.is_empty() {
+                        "\x1B[=2;n".to_string()
+                    } else {
+                        format!("\x1B[=2;{}n", params.join(";"))
+                    };
+                    Some(mode_report.into_bytes())
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::FontDimensionReport => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    let dim = screen.get_font_dimensions();
+                    Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::MacroSpaceReport => Some(b"\x1B[32767*{".to_vec()),
+            TerminalRequest::MemoryChecksumReport(pid, checksum) => Some(format!("\x1BP{}!~{:04X}\x1B\\", pid, checksum).into_bytes()),
+            TerminalRequest::RipRequestTerminalId => {
+                if let Ok(screen) = self.edit_screen.lock() {
+                    if screen.graphics_type() == GraphicsType::Rip {
+                        Some(icy_engine::RIP_TERMINAL_ID.as_bytes().to_vec())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            TerminalRequest::RipQueryFile(_) => {
+                // TODO
+                None
+            }
+            TerminalRequest::RipQueryFileSize(_) => {
+                // TODO
+                None
+            }
+            TerminalRequest::RipQueryFileDate(_) => {
+                // TODO
+                None
+            }
+            TerminalRequest::RipReadFile(_) => {
+                // TODO
+                None
+            }
+        };
+
+        // Send response directly if available
+        if let Some(data) = response {
+            if let Some(conn) = &mut self.connection {
+                // Debug output with filtered control chars
+                let debug_str = data
+                    .iter()
+                    .map(|&b| {
+                        match b {
+                            0x1B => "<ESC>".to_string(),
+                            0x00..=0x1F => format!("<{:02X}>", b),
+                            0x7F => "<DEL>".to_string(),
+                            0x80..=0xFF => format!("[{:02X}]", b), // High ASCII
+                            _ => (b as char).to_string(),
+                        }
+                    })
+                    .collect::<String>();
+                println!("Sending response: {}", debug_str);
+
+                let _ = conn.send(&data).await;
+            }
+        }
+    }
+
     /*
         async fn auto_login(&mut self, commands: &[AutoLoginCommand], user_name: Option<String>, password: Option<String>) {
             // Extract user name parts

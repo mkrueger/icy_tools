@@ -47,7 +47,7 @@ impl<'a> ScreenSink<'a> {
 
     /// Get the current caret attribute with inverse_video applied if active
     fn get_display_attribute(&self) -> crate::TextAttribute {
-        if self.screen.terminal_state().inverse_video {
+        let mut attr = if self.screen.terminal_state().inverse_video {
             let mut attr = self.screen.caret().attribute;
             let fg = attr.get_foreground();
             let bg = attr.get_background();
@@ -56,7 +56,13 @@ impl<'a> ScreenSink<'a> {
             attr
         } else {
             self.screen.caret().attribute
+        };
+
+        if self.screen.terminal_state().ice_colors && attr.is_blinking() && attr.background_color < 8 {
+            attr.set_is_blinking(false);
+            attr.background_color += 8;
         }
+        attr
     }
 
     fn set_font_selection_success(&mut self, slot: usize) {
@@ -239,7 +245,7 @@ impl<'a> ScreenSink<'a> {
                 }
             }
             DecPrivateMode::IceColors => {
-                *self.screen.ice_mode_mut() = if enabled { crate::IceMode::Ice } else { crate::IceMode::Blink };
+                self.screen.terminal_state_mut().ice_colors = enabled;
             }
             DecPrivateMode::CursorBlinking => {
                 // Caret doesn't have a blinking field currently
@@ -783,7 +789,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
         false
     }
 
-    fn device_control(&mut self, dcs: DeviceControlString<'_>) {
+    fn device_control(&mut self, dcs: DeviceControlString) {
         // DCS handling for font loading and sixel
         match dcs {
             DeviceControlString::LoadFont(slot, data) => {
@@ -806,8 +812,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
             } => {
                 // Parse and render sixel graphics
                 let p = self.screen.caret().position();
-                // Spawn thread to parse sixel data (as in original implementation)
-                let sixel_data = sixel_data.to_vec();
                 let handle: std::thread::JoinHandle<Result<crate::Sixel, anyhow::Error>> =
                     std::thread::spawn(move || crate::Sixel::parse_from(p, aspect_ratio, zero_color, grid_size, &sixel_data));
                 self.screen.push_sixel_thread(handle);
@@ -815,22 +819,22 @@ impl<'a> CommandSink for ScreenSink<'a> {
         }
     }
 
-    fn operating_system_command(&mut self, osc: OperatingSystemCommand<'_>) {
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
         // OSC handling - typically for window title, hyperlinks, etc.
         match osc {
             OperatingSystemCommand::SetTitle(title) => {
-                if let Ok(title_str) = std::str::from_utf8(title) {
+                if let Ok(title_str) = std::str::from_utf8(&title) {
                     log::debug!("OSC: Set title to '{}'", title_str);
                     // TODO: Add SetTitle callback variant
                 }
             }
             OperatingSystemCommand::SetIconName(name) => {
-                if let Ok(name_str) = std::str::from_utf8(name) {
+                if let Ok(name_str) = std::str::from_utf8(&name) {
                     log::debug!("OSC: Set icon name to '{}'", name_str);
                 }
             }
             OperatingSystemCommand::SetWindowTitle(title) => {
-                if let Ok(title_str) = std::str::from_utf8(title) {
+                if let Ok(title_str) = std::str::from_utf8(&title) {
                     log::debug!("OSC: Set window title to '{}'", title_str);
                 }
             }
@@ -840,7 +844,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 log::debug!("OSC: Set palette color {} to RGB({}, {}, {})", index, r, g, b);
             }
             OperatingSystemCommand::Hyperlink { params, uri } => {
-                if let (Ok(_params_str), Ok(uri_str)) = (std::str::from_utf8(params), std::str::from_utf8(uri)) {
+                if let (Ok(_params_str), Ok(uri_str)) = (std::str::from_utf8(&params), std::str::from_utf8(&uri)) {
                     /*
                     if uri_str.is_empty() {
                         self.screen.caret_mut().attribute.set_is_underlined(false);
