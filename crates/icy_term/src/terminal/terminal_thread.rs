@@ -1403,21 +1403,22 @@ impl TerminalThread {
         // Send response directly if available
         if let Some(data) = response {
             if let Some(conn) = &mut self.connection {
-                // Debug output with filtered control chars
-                let debug_str = data
-                    .iter()
-                    .map(|&b| {
-                        match b {
-                            0x1B => "<ESC>".to_string(),
-                            0x00..=0x1F => format!("<{:02X}>", b),
-                            0x7F => "<DEL>".to_string(),
-                            0x80..=0xFF => format!("[{:02X}]", b), // High ASCII
-                            _ => (b as char).to_string(),
-                        }
-                    })
-                    .collect::<String>();
-                println!("Sending response: {}", debug_str);
-
+                /*
+                                // Debug output with filtered control chars
+                                let debug_str = data
+                                    .iter()
+                                    .map(|&b| {
+                                        match b {
+                                            0x1B => "<ESC>".to_string(),
+                                            0x00..=0x1F => format!("<{:02X}>", b),
+                                            0x7F => "<DEL>".to_string(),
+                                            0x80..=0xFF => format!("[{:02X}]", b), // High ASCII
+                                            _ => (b as char).to_string(),
+                                        }
+                                    })
+                                    .collect::<String>();
+                                println!("Sending response: {}", debug_str);
+                */
                 let _ = conn.send(&data).await;
             }
         }

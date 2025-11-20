@@ -125,7 +125,6 @@ fn test_viewdata_all_byte_mappings() {
 
     // Check we got commands (there should be many)
     assert!(!sink.commands.is_empty(), "No commands generated from 256 bytes");
-    println!("Generated {} commands from 256 bytes", sink.commands.len());
 
     // VIEWDATA parser: bytes 0x00-0x07 are control codes that don't generate output
     // The first actual commands are from cursor movements starting at 0x08
@@ -155,10 +154,7 @@ fn test_viewdata_all_byte_mappings() {
         }
     }
 
-    println!("Found {} text commands", text_count);
     assert!(text_count > 0, "Expected some text commands for printable characters");
-
-    println!("All control codes verified successfully");
 }
 
 #[test]

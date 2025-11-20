@@ -1,4 +1,4 @@
-use icy_engine::{PaletteScreenBuffer, RgbaScreen, ScreenSink};
+use icy_engine::{PaletteScreenBuffer, ScreenSink};
 use icy_parser_core::{CommandParser, IgsParser};
 use std::fs::{self};
 
@@ -67,7 +67,6 @@ pub fn test_igs_palette() {
         let mut sink = ScreenSink::new(&mut buffer);
         parser.parse(&data, &mut sink);
 
-        println!("scan lines: {} res : {} ", buffer.scan_lines, buffer.get_resolution());
         // Pass filenames for loading expected PNG and saving output
         compare_output(&buffer, &cur_entry);
     }

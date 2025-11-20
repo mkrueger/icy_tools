@@ -540,7 +540,6 @@ impl EditableScreen for PaletteScreenBuffer {
             GraphicsType::Skypix => (800, 600),
         };
 
-        println!("reset to original mode! {px_width}x{px_height}");
         // Reset to original resolution
         let original_size = Size::new(px_width, px_height);
         self.set_resolution(original_size);

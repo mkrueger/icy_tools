@@ -206,13 +206,11 @@ impl AnsiParser {
 
         match encoding {
             0 => {
-                println!("insert macro {} normal", pid);
                 // Text encoding - store as-is
                 self.macros.insert(pid, self.parse_buffer[start_index..].to_vec());
             }
             1 => {
                 // Hex encoding - decode it
-                println!("insert macro {} hex", pid);
                 if let Ok(decoded) = self.parse_hex_macro(&self.parse_buffer[start_index..]) {
                     self.macros.insert(pid, decoded);
                 }

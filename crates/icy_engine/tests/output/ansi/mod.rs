@@ -9,7 +9,7 @@ use std::{
 use crate::compare_output;
 
 #[test]
-pub fn test_ansi() {
+pub fn test_ansi_output() {
     crate::init_logging();
 
     for entry in fs::read_dir("tests/output/ansi/files").expect("Error reading test_data directory.") {

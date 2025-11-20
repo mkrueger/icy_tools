@@ -254,9 +254,6 @@ fn test_atascii_all_byte_mappings() {
         }
     }
     assert!(found_space_from_ff, "Expected space character from 0xFF insert");
-
-    println!("\n✓ All ATASCII byte mappings verified successfully!");
-    println!("Total commands generated: {}", all_commands.len());
 }
 
 #[test]
@@ -323,8 +320,6 @@ fn test_atascii_control_codes() {
     let mut sink = MappingTestSink::new();
     parser.parse(&[0xFF], &mut sink); // Insert blank (space)
     assert_eq!(sink.commands.last(), Some(&MappingCommand::Text(vec![b' '])));
-
-    println!("✓ ATASCII control codes tests passed!");
 }
 
 #[test]
@@ -345,8 +340,6 @@ fn test_atascii_escape_sequence() {
     parser.parse(&[0x1B, 0x7D], &mut sink); // ESC + Clear screen -> literal 0x7D
     assert_eq!(sink.commands.len(), 1);
     assert_eq!(sink.commands[0], MappingCommand::Text(vec![0x7D]));
-
-    println!("✓ ATASCII escape sequence tests passed!");
 }
 
 #[test]
@@ -373,8 +366,6 @@ fn test_atascii_inverse_video() {
 
     assert!(found_inverse.len() > 0, "Expected inverse video characters to be printed");
     assert!(found_inverse.contains(&0x80), "Expected 0x80 inverse character");
-
-    println!("✓ ATASCII inverse video tests passed!");
 }
 
 #[test]
@@ -395,6 +386,4 @@ fn test_atascii_printable_range() {
     }
 
     assert_eq!(collected_text, printable.to_vec(), "Printable characters should pass through unchanged");
-
-    println!("✓ ATASCII printable range tests passed!");
 }

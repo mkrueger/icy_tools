@@ -16,6 +16,21 @@ use super::{LoadData, SaveOptions};
 #[derive(Default)]
 pub(crate) struct Ansi {}
 
+fn uses_ice_colors(buf: &mut crate::TextBuffer) -> bool {
+    for layer in &buf.layers {
+        for y in 0..layer.get_height() {
+            for x in 0..layer.get_width() {
+                let ch = layer.get_char((x, y).into());
+                let bg = ch.attribute.get_background();
+                if bg >= 8 && bg < 16 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 impl OutputFormat for Ansi {
     fn get_file_extension(&self) -> &str {
         "ans"
@@ -34,11 +49,11 @@ impl OutputFormat for Ansi {
     }
 
     fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
-        let mut result = Vec::new();
+        let mut result: Vec<u8> = Vec::new();
 
         let mut str_gen = StringGenerator::new(options.clone());
+        str_gen.use_ice_colors = uses_ice_colors(buf);
         str_gen.tags = buf.tags.clone();
-
         str_gen.screen_prep(buf);
         let state = str_gen.generate(buf, buf);
         str_gen.screen_end(buf, state);
@@ -92,6 +107,7 @@ pub struct StringGenerator {
 
     pub line_offsets: Vec<usize>,
     pub tags: Vec<Tag>,
+    use_ice_colors: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +153,7 @@ impl StringGenerator {
             extended_color_hash,
             line_offsets: Vec::new(),
             tags: Vec::new(),
+            use_ice_colors: false,
         }
     }
 
@@ -149,21 +166,25 @@ impl StringGenerator {
         let cur_fore_color = buf.palette.get_color(fg);
         let cur_fore_rgb = cur_fore_color.get_rgb();
 
-        let bg = attr.get_background();
-        let cur_back_color = buf.palette.get_color(bg);
-        let cur_back_rgb = cur_back_color.get_rgb();
+        let mut bg = if self.use_ice_colors && attr.is_blinking() {
+            attr.get_background() + 8
+        } else {
+            attr.get_background()
+        };
+        let mut cur_back_color = buf.palette.get_color(bg);
+        let mut cur_back_rgb = cur_back_color.get_rgb();
 
-        let mut fore_idx = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_fore_rgb);
+        let mut fore_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_fore_rgb);
         let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_back_rgb);
 
-        let mut is_bold = attr.is_bold();
+        let mut is_bold: bool = attr.is_bold();
         let mut is_blink = attr.is_blinking();
         let is_faint = attr.is_faint();
         let is_italic = attr.is_italic();
         let is_underlined = attr.is_underlined();
         let is_double_underlined = attr.is_double_underlined();
         let is_crossed_out = attr.is_crossed_out();
-        let is_concealed = attr.is_concealed();
+        let is_concealed: bool = attr.is_concealed();
 
         if let Some(idx) = fore_idx {
             if idx < 8 {
@@ -259,6 +280,11 @@ impl StringGenerator {
         if is_blink && !state.is_blink {
             sgr.push(5);
             state.is_blink = true;
+            // when switching to blink in ice mode bg automatically changes to high.
+            if self.use_ice_colors && state.bg_idx < 8 {
+                state.bg_idx += 8;
+                state.bg = buf.palette.get_color(bg);
+            }
         }
 
         if is_concealed && !state.is_concealed {
@@ -324,6 +350,7 @@ impl StringGenerator {
 
     fn generate_cells<T: TextPane>(&self, buf: &TextBuffer, layer: &T, area: Rectangle, font_map: &HashMap<usize, usize>) -> (AnsiState, Vec<Vec<CharCell>>) {
         let mut result: Vec<Vec<CharCell>> = Vec::new();
+
         let mut state = AnsiState {
             is_bold: false,
             is_blink: false,
@@ -459,8 +486,8 @@ impl StringGenerator {
         font_map
     }
 
-    pub fn screen_prep(&mut self, buf: &TextBuffer) {
-        if matches!(buf.ice_mode, crate::IceMode::Ice) {
+    pub fn screen_prep(&mut self, _buf: &TextBuffer) {
+        if self.use_ice_colors {
             self.push_result(&mut b"\x1b[?33h".to_vec());
         }
 
@@ -504,7 +531,7 @@ impl StringGenerator {
             self.output.extend_from_slice(b"\x1b[u");
         }
 
-        if matches!(buf.ice_mode, crate::IceMode::Ice) {
+        if self.use_ice_colors {
             self.output.extend_from_slice(&mut b"\x1b[?33l".to_vec());
         }
     }

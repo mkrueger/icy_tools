@@ -221,9 +221,6 @@ fn test_petscii_all_byte_mappings() {
         }
     }
     assert!(found_pi, "Expected PI character (byte 94) from 0xFF");
-
-    println!("\n✓ All PETSCII byte mappings verified successfully!");
-    println!("Total commands generated: {}", sink.commands.len());
 }
 
 #[test]
@@ -259,6 +256,4 @@ fn test_petscii_character_mapping() {
     let mut sink = MappingTestSink::new();
     parser.parse(&[0x7A], &mut sink);
     assert_eq!(sink.commands.last(), Some(&MappingCommand::Text(vec![0x5A])));
-
-    println!("✓ Character mapping tests passed!");
 }
