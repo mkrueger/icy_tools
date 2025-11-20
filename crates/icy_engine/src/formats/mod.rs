@@ -1,6 +1,6 @@
 mod ansi;
 
-use std::{error::Error, path::Path, thread, time::Duration};
+use std::{error::Error, path::Path};
 
 pub use ansi::*;
 
@@ -218,11 +218,6 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
 
     // transform sixels to layers for non terminal buffers (makes sense in icy_draw for example)
     if !result.terminal_state().is_terminal_buffer {
-        while !result.buffer.sixel_threads.is_empty() {
-            thread::sleep(Duration::from_millis(50));
-            result.buffer.update_sixel_threads()?;
-        }
-
         let mut num = 0;
         while !result.buffer.layers[0].sixels.is_empty() {
             if let Some(mut sixel) = result.buffer.layers[0].sixels.pop() {

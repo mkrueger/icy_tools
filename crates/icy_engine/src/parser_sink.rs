@@ -22,7 +22,7 @@ use icy_parser_core::{
     IgsCommand, Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
 };
 
-use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, XTERM_256_PALETTE};
+use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
@@ -809,13 +809,15 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 zero_color,
                 grid_size,
                 sixel_data,
-            } => {
-                // Parse and render sixel graphics
-                let p = self.screen.caret().position();
-                let handle: std::thread::JoinHandle<Result<crate::Sixel, anyhow::Error>> =
-                    std::thread::spawn(move || crate::Sixel::parse_from(p, aspect_ratio, zero_color, grid_size, &sixel_data));
-                self.screen.push_sixel_thread(handle);
-            }
+            } => match Sixel::parse_from(aspect_ratio, zero_color, grid_size, &sixel_data) {
+                Ok(sixel) => {
+                    let pos = self.screen.caret().position();
+                    self.screen.add_sixel(pos, sixel);
+                }
+                Err(err) => {
+                    log::error!("Error loading sixel: {}", err);
+                }
+            },
         }
     }
 

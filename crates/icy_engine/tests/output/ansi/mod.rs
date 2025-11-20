@@ -1,10 +1,6 @@
 use icy_engine::{EditableScreen, TextScreen};
 use icy_parser_core::AnsiParser;
-use std::{
-    fs::{self},
-    thread,
-    time::Duration,
-};
+use std::fs::{self};
 
 use crate::compare_output;
 
@@ -25,10 +21,6 @@ pub fn test_ansi_output() {
         *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
 
         super::parse_with_parser(&mut screen, &mut AnsiParser::default(), &data).expect("Error parsing file");
-        while !screen.buffer.sixel_threads.is_empty() {
-            thread::sleep(Duration::from_millis(50));
-            let _ = screen.buffer.update_sixel_threads();
-        }
 
         // Pass filenames for loading expected PNG and saving output
         compare_output(&screen, &cur_entry);

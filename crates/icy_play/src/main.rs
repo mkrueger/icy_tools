@@ -88,7 +88,7 @@ fn main() {
         let parent = Some(path.parent().unwrap().to_path_buf());
 
         let Some(ext) = path.extension() else {
-            println!("Error: File extension not found.");
+            eprintln!("Error: File extension not found.");
             return;
         };
         let ext = ext.to_string_lossy().to_ascii_lowercase();
@@ -163,7 +163,7 @@ fn main() {
                     }
                 }
                 Err(e) => {
-                    println!("Error opening file: {e}");
+                    eprintln!("Error opening file: {e}");
                 }
             },
             _ => {

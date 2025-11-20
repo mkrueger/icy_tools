@@ -136,14 +136,6 @@ pub trait EditableScreen: RgbaScreen {
 
     fn set_size(&mut self, size: Size);
 
-    fn stop_sixel_threads(&mut self);
-
-    fn push_sixel_thread(&mut self, handle: std::thread::JoinHandle<EngineResult<Sixel>>);
-
-    fn sixel_threads_runnning(&self) -> bool;
-
-    fn update_sixel_threads(&mut self) -> EngineResult<bool>;
-
     // Dirty tracking for rendering optimization
     fn get_version(&self) -> u64;
     fn is_dirty(&self) -> bool;
@@ -173,9 +165,10 @@ pub trait EditableScreen: RgbaScreen {
         self.limit_caret_pos();
     }
 
+    fn add_sixel(&mut self, pos: Position, sixel: Sixel);
+
     /// (form feed, FF, \f, ^L), to cause a printer to eject paper to the top of the next page, or a video terminal to clear the screen.
     fn ff(&mut self) {
-        self.stop_sixel_threads();
         self.reset_terminal();
         self.clear_screen();
     }

@@ -25,8 +25,7 @@ mod buffer_type;
 pub use buffer_type::*;
 
 use crate::{
-    Color, EngineResult, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, Sixel, TerminalState, TextAttribute, TextPane,
-    attribute,
+    Color, EngineResult, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, TerminalState, TextAttribute, TextPane, attribute,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
@@ -217,7 +216,6 @@ pub struct TextBuffer {
     is_font_table_dirty: bool,
     pub layers: Vec<Layer>,
 
-    pub sixel_threads: VecDeque<std::thread::JoinHandle<EngineResult<Sixel>>>, // pub undo_stack: Vec<Box<dyn UndoOperation>>,
     // pub redo_stack: Vec<Box<dyn UndoOperation>>,
     use_letter_spacing: bool,
     use_aspect_ratio: bool,
@@ -586,7 +584,6 @@ impl TextBuffer {
             overlay_index: 0,
             overlay_layer: None,
             layers: vec![Layer::new("Background", size)],
-            sixel_threads: VecDeque::new(), // file_name_changed: Box::new(|| {}),
             use_letter_spacing: false,
             use_aspect_ratio: false,
             show_tags: true,
@@ -621,49 +618,6 @@ impl TextBuffer {
     /// Used for cache invalidation
     pub fn get_version(&self) -> u64 {
         self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Returns the update sixel threads of this [`Buffer`].
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn update_sixel_threads(&mut self) -> EngineResult<bool> {
-        let mut updated_sixel = false;
-        while let Some(handle) = self.sixel_threads.front() {
-            if !handle.is_finished() {
-                return Ok(false);
-            }
-            let Some(handle) = self.sixel_threads.pop_front() else {
-                continue;
-            };
-            let Ok(result) = handle.join() else {
-                continue;
-            };
-
-            let sixel = result?;
-
-            updated_sixel = true;
-
-            let font_dims = self.get_font_dimensions();
-            let screen_rect = sixel.get_screen_rect(font_dims);
-
-            let vec = &mut self.layers[0].sixels;
-            let mut sixel_count = vec.len();
-            // remove old sixel that are shadowed by the new one
-            let mut i = 0;
-            while i < sixel_count {
-                let old_rect = vec[i].get_screen_rect(font_dims);
-                if screen_rect.contains_rect(&old_rect) {
-                    vec.remove(i);
-                    sixel_count -= 1;
-                } else {
-                    i += 1;
-                }
-            }
-            vec.push(sixel);
-        }
-        Ok(updated_sixel)
     }
 
     pub fn clear_font_table(&mut self) {
@@ -780,15 +734,6 @@ impl TextBuffer {
 
     pub fn set_height(&mut self, height: i32) {
         self.size.height = height;
-    }
-
-    /// Returns the clear of this [`Buffer`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
-    pub fn stop_sixel_threads(&mut self) {
-        self.sixel_threads.clear();
     }
 
     /// terminal buffers have a viewport on the bottom of the buffer

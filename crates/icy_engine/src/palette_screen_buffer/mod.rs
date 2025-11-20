@@ -17,7 +17,6 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::thread::JoinHandle;
 
 pub use rip_impl::RIP_TERMINAL_ID;
 
@@ -545,6 +544,10 @@ impl EditableScreen for PaletteScreenBuffer {
         self.set_resolution(original_size);
     }
 
+    fn add_sixel(&mut self, _pos: Position, _sixel: crate::Sixel) {
+        // TODO: implement me? Are there sixels here?
+    }
+
     fn clear_mouse_fields(&mut self) {
         self.mouse_fields.clear();
     }
@@ -600,22 +603,6 @@ impl EditableScreen for PaletteScreenBuffer {
         self.char_screen_size = size;
         self.layer.set_size(size);
         self.layer.lines.resize_with(size.height as usize, Line::new);
-    }
-
-    fn stop_sixel_threads(&mut self) {
-        // No-op for this implementation
-    }
-
-    fn push_sixel_thread(&mut self, _thread: JoinHandle<EngineResult<crate::Sixel>>) {
-        // No-op for this implementation
-    }
-
-    fn sixel_threads_runnning(&self) -> bool {
-        false
-    }
-
-    fn update_sixel_threads(&mut self) -> EngineResult<bool> {
-        Ok(false)
     }
 
     /// Scroll the screen up by one line (move content up, clear bottom line)
@@ -735,7 +722,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn clear_screen(&mut self) {
         self.caret_mut().set_position(Position::default());
-        self.stop_sixel_threads();
         self.layer.clear();
         self.terminal_state_mut().cleared_screen = true;
 

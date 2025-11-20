@@ -3,7 +3,7 @@ use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
-use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, TextScreen};
+use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, Sixel, TextScreen};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -872,6 +872,32 @@ impl TerminalThread {
                     let _ = self.event_tx.send(TerminalEvent::Beep);
                     continue;
                 }
+                QueuedCommand::DeviceControl(dcs) => {
+                    match dcs {
+                        DeviceControlString::Sixel {
+                            aspect_ratio,
+                            zero_color,
+                            grid_size,
+                            sixel_data,
+                        } => {
+                            match Sixel::parse_from(aspect_ratio.clone(), zero_color.clone(), grid_size.clone(), sixel_data) {
+                                Ok(sixel) => {
+                                    if let Ok(mut screen) = self.edit_screen.lock() {
+                                        let pos = screen.caret().position();
+                                        screen.add_sixel(pos, sixel);
+                                    }
+                                    // let the sixel update.
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+                                }
+                                Err(err) => {
+                                    log::error!("Error loading sixel: {}", err);
+                                }
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
 
                 QueuedCommand::TerminalRequest(request) => {
                     // Handle terminal request and store response in output buffer
@@ -1095,11 +1121,6 @@ impl TerminalThread {
 
                 // Update hyperlinks before releasing lock
                 screen.update_hyperlinks();
-
-                // Process sixel threads if needed
-                if let Ok(true) = screen.update_sixel_threads() {
-                    tokio::task::yield_now().await;
-                }
             }
         } // End of main command processing loop
     }

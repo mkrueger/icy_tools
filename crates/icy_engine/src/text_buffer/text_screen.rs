@@ -446,6 +446,28 @@ impl EditableScreen for TextScreen {
         }
     }
 
+    fn add_sixel(&mut self, pos: Position, mut sixel: Sixel) {
+        sixel.position = pos;
+        let font_dims = self.buffer.get_font_dimensions();
+        let vec = &mut self.buffer.layers[0].sixels;
+
+        let screen_rect = sixel.get_screen_rect(font_dims);
+        let mut sixel_count = vec.len();
+        // remove old sixel that are shadowed by the new one
+        let mut i = 0;
+        while i < sixel_count {
+            let old_rect = vec[i].get_screen_rect(font_dims);
+            if screen_rect.contains_rect(&old_rect) {
+                vec.remove(i);
+                sixel_count -= 1;
+            } else {
+                i += 1;
+            }
+        }
+        vec.push(sixel);
+        self.buffer.mark_dirty();
+    }
+
     fn insert_line(&mut self, line: usize, new_line: crate::Line) {
         self.buffer.layers[self.current_layer].lines.insert(line as usize, new_line);
     }
@@ -471,22 +493,6 @@ impl EditableScreen for TextScreen {
 
     fn clear_font_table(&mut self) {
         self.buffer.clear_font_table();
-    }
-
-    fn stop_sixel_threads(&mut self) {
-        self.buffer.stop_sixel_threads();
-    }
-
-    fn push_sixel_thread(&mut self, handle: std::thread::JoinHandle<EngineResult<Sixel>>) {
-        self.buffer.sixel_threads.push_back(handle);
-    }
-
-    fn sixel_threads_runnning(&self) -> bool {
-        !self.buffer.sixel_threads.is_empty()
-    }
-
-    fn update_sixel_threads(&mut self) -> EngineResult<bool> {
-        self.buffer.update_sixel_threads()
     }
 
     fn clear_scrollback(&mut self) {
@@ -527,7 +533,6 @@ impl EditableScreen for TextScreen {
 
     fn clear_screen(&mut self) {
         self.caret_mut().set_position(Position::default());
-        self.stop_sixel_threads();
         let layer = &mut self.buffer.layers[self.current_layer];
         layer.clear();
         if self.terminal_state().is_terminal_buffer {
