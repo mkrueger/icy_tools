@@ -6,6 +6,7 @@ use iced::{
     widget::{Space, button, column, container, row, scrollable, text},
 };
 use iced_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
+use iced_engine_gui::ui::*;
 use icy_net::serial::{CharSize, Parity, StopBits};
 
 use crate::{Options, ui::MainWindowMode};
@@ -15,10 +16,8 @@ mod modem_settings;
 mod paths_settings;
 mod terminal_settings;
 
-// Constants for sizing
-const MODAL_WIDTH: f32 = 680.0;
-const MODAL_HEIGHT: f32 = 470.0;
-const INPUT_SPACING: f32 = 8.0;
+// Settings-specific constants
+const SETTINGS_CONTENT_HEIGHT: f32 = 410.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsCategory {
@@ -98,6 +97,16 @@ impl SettingsDialogState {
                 match category {
                     SettingsCategory::Monitor => {
                         self.temp_options.lock().unwrap().reset_monitor_settings();
+                    }
+                    SettingsCategory::Terminal => {
+                        let mut options = self.temp_options.lock().unwrap();
+                        let default_options = crate::data::Options::default();
+                        options.console_beep = default_options.console_beep;
+                        options.dial_tone = default_options.dial_tone;
+                    }
+                    SettingsCategory::IEMSI => {
+                        let mut options = self.temp_options.lock().unwrap();
+                        options.iemsi = crate::data::IEMSISettings::default();
                     }
                     SettingsCategory::Paths => {
                         let mut options = self.temp_options.lock().unwrap();
@@ -230,11 +239,11 @@ impl SettingsDialogState {
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
         // Category tabs
-        let mut category_row = row![].spacing(8);
+        let mut category_row = row![].spacing(DIALOG_SPACING);
         for category in SettingsCategory::all() {
             let is_selected = self.current_category == category;
             let cat = category.clone();
-            let cat_button = button(text(category.name()).size(14))
+            let cat_button = button(text(category.name()).size(14).wrapping(text::Wrapping::None))
                 .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::SwitchCategory(cat)))
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
@@ -300,95 +309,106 @@ impl SettingsDialogState {
         };
 
         // Buttons
-        let ok_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")))
-            .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::Save))
-            .padding([8, 16])
-            .style(button::primary);
+        let ok_button = primary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"),
+            Some(crate::ui::Message::SettingsDialog(SettingsMsg::Save)),
+        );
 
-        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
-            .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::Cancel))
-            .padding([8, 16])
-            .style(button::secondary);
+        let cancel_button = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            Some(crate::ui::Message::SettingsDialog(SettingsMsg::Cancel)),
+        );
 
         let reset_button = match self.current_category {
-            SettingsCategory::Monitor | SettingsCategory::Keybinds => Some(
-                button(text(fl!(crate::LANGUAGE_LOADER, "settings-reset-button")))
-                    .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
-                    .padding([8, 16])
-                    .style(button::danger),
-            ),
+            SettingsCategory::Monitor => {
+                let current_settings = self.temp_options.lock().unwrap().monitor_settings.clone();
+                let default_settings = iced_engine_gui::MonitorSettings::default();
+                let is_default = current_settings == default_settings;
+                let msg = if !is_default {
+                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
+                } else {
+                    None
+                };
+                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))
+            }
+            SettingsCategory::Terminal => {
+                let options = self.temp_options.lock().unwrap();
+                // let default_options = crate::data::Options::default();
+                // let is_default = options.console_beep == default_options.console_beep && options.dial_tone == default_options.dial_tone;
+                drop(options);
+                /*let msg = if !is_default {
+                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
+                } else {
+                    None
+                };
+                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))*/
+                None
+            }
+            SettingsCategory::IEMSI => {
+                let options = self.temp_options.lock().unwrap();
+                // let current_iemsi = options.iemsi.clone();
+                // let default_iemsi = crate::data::IEMSISettings::default();
+                // let is_default = current_iemsi == default_iemsi;
+                drop(options);
+                /*
+                let msg = if !is_default {
+                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
+                } else {
+                    None
+                };
+                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))*/
+                None
+            }
+            SettingsCategory::Keybinds => {
+                // TODO: Add default keybindings check when implemented
+                Some(secondary_button(
+                    fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"),
+                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone()))),
+                ))
+            }
             SettingsCategory::Paths => {
                 let options = self.temp_options.lock().unwrap();
                 let is_default = options.download_path.is_empty() && options.capture_path.is_empty();
                 drop(options);
-                let mut btn = button(text(fl!(crate::LANGUAGE_LOADER, "settings-reset-button")))
-                    .padding([8, 16])
-                    .style(button::danger);
-                if !is_default {
-                    btn = btn.on_press(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())));
-                }
-                Some(btn)
+                let msg = if !is_default {
+                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
+                } else {
+                    None
+                };
+                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))
             }
             _ => None,
         };
 
-        let mut button_row = row![Space::new().width(Length::Fill),];
-
+        let mut buttons_left = vec![];
         if let Some(reset_btn) = reset_button {
-            button_row = button_row.push(reset_btn).push(Space::new().width(8.0));
+            buttons_left.push(reset_btn.into());
         }
 
-        button_row = button_row.push(cancel_button).push(Space::new().width(8.0)).push(ok_button);
+        let buttons_right = vec![cancel_button.into(), ok_button.into()];
+
+        let button_area_row = button_row_with_left(buttons_left, buttons_right);
 
         // For modem settings, don't wrap in scrollable since it has its own layout
         let content_container = if matches!(self.current_category, SettingsCategory::Modem) {
-            container(settings_content).height(Length::Fixed(330.0)).width(Length::Fill)
+            container(settings_content).height(Length::Fixed(SETTINGS_CONTENT_HEIGHT)).width(Length::Fill)
         } else {
             container(scrollable(settings_content).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
-                .height(Length::Fixed(330.0))
+                .height(Length::Fixed(SETTINGS_CONTENT_HEIGHT))
                 .width(Length::Fill)
                 .padding(0.0)
         };
 
-        let modal_content = container(
-            column![
-                category_row,
-                container(Space::new())
-                    .height(Length::Fixed(1.0))
-                    .width(Length::Fill)
-                    .style(|theme: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(theme.extended_palette().background.strong.color)),
-                        ..Default::default()
-                    }),
-                content_container,
-                Space::new().height(Length::Fixed(12.0)),
-                button_row,
-            ]
-            .padding(10)
-            .spacing(8),
-        )
-        .width(Length::Fixed(MODAL_WIDTH))
-        .height(Length::Fixed(MODAL_HEIGHT))
-        .style(|theme: &iced::Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background)),
-                border: Border {
-                    color: palette.text,
-                    width: 1.0,
-                    radius: 8.0.into(),
-                },
-                text_color: Some(palette.text),
-                shadow: iced::Shadow {
-                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
-                    offset: iced::Vector::new(0.0, 4.0),
-                    blur_radius: 16.0,
-                },
-                snap: false,
-            }
-        });
+        let dialog_content = dialog_area(column![category_row, Space::new().height(DIALOG_SPACING), content_container,].into());
 
-        container(modal_content)
+        let button_area_wrapped = dialog_area(button_area_row.into());
+
+        let modal = modal_container(
+            column![container(dialog_content).height(Length::Fill), separator(), button_area_wrapped,].into(),
+            DIALOG_WIDTH_XARGLE,
+        );
+
+        container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

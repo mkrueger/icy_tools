@@ -3,8 +3,9 @@ use crate::ui::dialing_directory_dialog::DialingDirectoryMsg;
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, button, column, container, row, rule, text},
+    widget::{Space, column, container, row, rule, text},
 };
+use iced_engine_gui::ui::{danger_button, secondary_button};
 
 impl super::DialingDirectoryState {
     pub fn delete_confirmation_modal(&self, idx: usize) -> Element<'_, Message> {
@@ -20,45 +21,16 @@ impl super::DialingDirectoryState {
             .wrapping(text::Wrapping::WordOrGlyph)
             .size(16);
 
-        let delete_btn = button(
-            text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-delete-button")).style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
-                ..Default::default()
-            }),
+        let delete_btn = danger_button(
+            fl!(crate::LANGUAGE_LOADER, "delete-bbs-delete-button"),
+            Some(Message::from(DialingDirectoryMsg::ConfirmDelete(idx))),
         )
-        .on_press(Message::from(DialingDirectoryMsg::ConfirmDelete(idx)))
-        .style(|theme: &iced::Theme, status| {
-            let palette = theme.extended_palette();
-            let base = button::Style {
-                background: Some(iced::Background::Color(palette.background.base.color)),
-                border: iced::Border {
-                    color: palette.danger.base.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                text_color: palette.danger.base.color,
-                shadow: Default::default(),
-                snap: false,
-            };
+        .padding([6, 12]);
 
-            match status {
-                button::Status::Hovered => button::Style {
-                    background: Some(iced::Background::Color(palette.danger.weak.color)),
-                    text_color: palette.background.base.color,
-                    ..base
-                },
-                button::Status::Pressed => button::Style {
-                    background: Some(iced::Background::Color(palette.danger.strong.color)),
-                    text_color: palette.background.base.color,
-                    ..base
-                },
-                _ => base,
-            }
-        });
-
-        let cancel_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
-            .on_press(Message::from(DialingDirectoryMsg::Close))
-            .style(button::secondary);
+        let cancel_btn = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            Some(Message::from(DialingDirectoryMsg::Close)),
+        );
 
         let modal_content = container(
             column![

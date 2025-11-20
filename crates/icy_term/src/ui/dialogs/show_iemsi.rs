@@ -1,8 +1,9 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, scrollable, text, text_input},
+    widget::{Space, column, container, row, scrollable, text, text_input},
 };
+use iced_engine_gui::ui::primary_button;
 use icy_net::iemsi::EmsiISI;
 
 use crate::ui::MainWindowMode;
@@ -202,34 +203,11 @@ impl ShowIemsiDialog {
         ];
 
         // Styled OK button
-        let ok_button = button(container(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")).size(14)).center_x(Length::Fixed(60.0)))
-            .on_press(crate::ui::Message::ShowIemsi(IemsiMsg::Close))
-            .padding(10.0)
-            .style(|theme: &iced::Theme, status| {
-                let palette = theme.extended_palette();
-                button::Style {
-                    background: Some(match status {
-                        button::Status::Hovered => iced::Background::Color(palette.primary.strong.color),
-                        button::Status::Pressed => iced::Background::Color(palette.primary.base.color.scale_alpha(0.8)),
-                        _ => iced::Background::Color(palette.primary.base.color),
-                    }),
-                    text_color: Color::WHITE,
-                    border: Border {
-                        color: Color::TRANSPARENT,
-                        width: 0.0,
-                        radius: 6.0.into(),
-                    },
-                    shadow: match status {
-                        button::Status::Hovered => iced::Shadow {
-                            color: palette.primary.base.color.scale_alpha(0.3),
-                            offset: iced::Vector::new(0.0, 2.0),
-                            blur_radius: 8.0,
-                        },
-                        _ => iced::Shadow::default(),
-                    },
-                    snap: false,
-                }
-            });
+        let ok_button = primary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"),
+            Some(crate::ui::Message::ShowIemsi(IemsiMsg::Close)),
+        )
+        .padding(10.0);
 
         let button_row = row![Space::new().width(Length::Fill), ok_button,].padding([12, 0]);
 

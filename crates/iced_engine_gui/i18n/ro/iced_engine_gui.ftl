@@ -1,7 +1,7 @@
 settings-heading = Setări
 settings-scaling = Scalare
 settings-monitor-type = Monitor
-settings-reset-button = Resetare
+settings-restore-defaults-button = Restabilește valorile implicite
 settings-monitor-category = Monitor
 settings-monitor-use-crt-filter-checkbox = Utilizați filtrul CRT
 settings-monitor-brightness = Luminozitate

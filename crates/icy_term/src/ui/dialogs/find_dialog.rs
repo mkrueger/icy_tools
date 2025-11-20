@@ -6,6 +6,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     widget::{Id, button, column, container, row, text, text_input},
 };
+use iced_engine_gui::ui::{BUTTON_FONT_SIZE, danger_button_style, primary_button_style, secondary_button_style};
 use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Selection};
 
 use crate::ui::{MainWindowMode, Message};
@@ -284,31 +285,39 @@ impl DialogState {
             .padding(6)
             .width(Length::Fixed(200.0));
 
-        let prev_button = button(text("↑").size(16))
+        let prev_button = button(text("↑").size(BUTTON_FONT_SIZE).wrapping(text::Wrapping::None))
             .on_press(Message::FindDialog(FindDialogMsg::FindPrev))
             .padding([4, 8])
-            .style(if self.results.is_empty() { button::secondary } else { button::primary });
+            .style(if self.results.is_empty() {
+                secondary_button_style
+            } else {
+                primary_button_style
+            });
 
-        let next_button = button(text("↓").size(16))
+        let next_button = button(text("↓").size(BUTTON_FONT_SIZE).wrapping(text::Wrapping::None))
             .on_press(Message::FindDialog(FindDialogMsg::FindNext))
             .padding([4, 8])
-            .style(if self.results.is_empty() { button::secondary } else { button::primary });
+            .style(if self.results.is_empty() {
+                secondary_button_style
+            } else {
+                primary_button_style
+            });
 
-        let close_button = button(text("✕").size(14))
+        let close_button = button(text("✕").size(BUTTON_FONT_SIZE).wrapping(text::Wrapping::None))
             .on_press(Message::FindDialog(FindDialogMsg::CloseDialog))
             .padding([4, 8])
-            .style(button::danger);
+            .style(danger_button_style);
 
         let case_button = if self.case_sensitive {
-            button(text("🗛").size(12))
+            button(text("🗛").size(12).wrapping(text::Wrapping::None))
                 .on_press(Message::FindDialog(FindDialogMsg::SetCasing(false)))
                 .padding([2, 4])
-                .style(button::primary)
+                .style(primary_button_style)
         } else {
-            button(text("🗛").size(12))
+            button(text("🗛").size(12).wrapping(text::Wrapping::None))
                 .on_press(Message::FindDialog(FindDialogMsg::SetCasing(true)))
                 .padding([2, 4])
-                .style(button::secondary)
+                .style(secondary_button_style)
         };
 
         let results_label = if self.results.is_empty() {

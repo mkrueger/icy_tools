@@ -1,14 +1,12 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, radio, row, scrollable, text, text_input},
+    widget::{Space, column, container, radio, row, scrollable, text, text_input},
 };
+use iced_engine_gui::ui::*;
 use icy_parser_core::BaudEmulation;
 
 use crate::ui::MainWindowMode;
-
-const MODAL_WIDTH: f32 = 340.0;
-const MODAL_HEIGHT: f32 = 440.0;
 
 // Standard baud rates - index 0 is Off, 1-12 are rates, 13 is custom
 pub const STANDARD_RATES: [Option<u32>; 13] = [
@@ -117,22 +115,7 @@ impl SelectBpsDialog {
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
-        let header = container(
-            row![
-                text("🔌").size(22),
-                Space::new().width(6),
-                text(fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-heading"))
-                    .size(18)
-                    .style(|theme: &iced::Theme| {
-                        text::Style {
-                            color: Some(theme.extended_palette().primary.base.color),
-                        }
-                    }),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([8, 12])
-        .width(Length::Fill);
+        let title = dialog_title(fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-heading"));
 
         let mut list = column![].spacing(4);
 
@@ -251,76 +234,28 @@ impl SelectBpsDialog {
             row![radio_custom, input, text("BPS").size(14)].spacing(8).align_y(Alignment::Center)
         };
 
-        let scrollable_list = scrollable(column![list, Space::new().height(4), custom_row,].spacing(6).padding([4, 8])).height(Length::Fill);
+        let scrollable_list = scrollable(column![list, Space::new().height(4), custom_row,].spacing(6).padding([4, 8])).height(Length::Fixed(280.0));
 
         // Buttons
-        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")).size(14))
-            .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
-            .padding([6, 14])
-            .style(|theme: &iced::Theme, _| {
-                let p = theme.extended_palette();
-                button::Style {
-                    background: Some(iced::Background::Color(p.secondary.base.color)),
-                    text_color: Color::WHITE,
-                    border: Border {
-                        color: Color::TRANSPARENT,
-                        width: 0.0,
-                        radius: 4.0.into(),
-                    },
-                    shadow: Default::default(),
-                    snap: false,
-                }
-            });
+        let cancel_button = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+        );
 
-        let ok_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")).size(14))
-            .on_press(crate::ui::Message::ApplyBaudEmulation)
-            .padding([6, 14])
-            .style(|theme: &iced::Theme, status| {
-                let p = theme.extended_palette();
-                let base = p.primary.base.color;
-                let col = match status {
-                    button::Status::Hovered => base.scale_alpha(0.85),
-                    button::Status::Pressed => base.scale_alpha(0.7),
-                    _ => base,
-                };
-                button::Style {
-                    background: Some(iced::Background::Color(col)),
-                    text_color: Color::WHITE,
-                    border: Border {
-                        color: Color::TRANSPARENT,
-                        width: 0.0,
-                        radius: 4.0.into(),
-                    },
-                    shadow: Default::default(),
-                    snap: false,
-                }
-            });
+        let ok_button = primary_button(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"), Some(crate::ui::Message::ApplyBaudEmulation));
 
-        let footer = row![Space::new().width(Length::Fill), cancel_button, ok_button].spacing(8).padding([4, 8]);
+        let buttons = button_row(vec![cancel_button.into(), ok_button.into()]);
 
-        let modal_content = container(column![header, scrollable_list, footer,].spacing(8).padding([8, 12]))
-            .width(Length::Fixed(MODAL_WIDTH))
-            .height(Length::Fixed(MODAL_HEIGHT))
-            .style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(theme.palette().background)),
-                    border: Border {
-                        color: palette.primary.weak.color.scale_alpha(0.3),
-                        width: 1.0,
-                        radius: 8.0.into(),
-                    },
-                    text_color: Some(theme.palette().text),
-                    shadow: iced::Shadow {
-                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
-                        offset: iced::Vector::new(0.0, 6.0),
-                        blur_radius: 16.0,
-                    },
-                    snap: false,
-                }
-            });
+        let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), scrollable_list,].into());
 
-        container(modal_content)
+        let button_area = dialog_area(buttons);
+
+        let modal = modal_container(
+            column![container(dialog_content).height(Length::Fill), separator(), button_area,].into(),
+            DIALOG_WIDTH_SMALL,
+        );
+
+        container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

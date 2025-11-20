@@ -3,11 +3,15 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, button, column, container, pick_list, row, scrollable, text, text_input},
 };
-use iced_engine_gui::settings::{SECTION_PADDING, effect_box, left_label, section_header};
+use iced_engine_gui::{
+    SECTION_PADDING, section_header,
+    settings::{effect_box, left_label},
+    ui::DIALOG_SPACING as INPUT_SPACING,
+};
 
 use crate::ui::{
     select_bps_dialog::STANDARD_RATES,
-    settings_dialog::{CharSizeOption, FlowControlOption, INPUT_SPACING, ParityOption, SettingsDialogState, SettingsMsg, StopBitsOption},
+    settings_dialog::{CharSizeOption, FlowControlOption, ParityOption, SettingsDialogState, SettingsMsg, StopBitsOption},
 };
 
 impl SettingsDialogState {

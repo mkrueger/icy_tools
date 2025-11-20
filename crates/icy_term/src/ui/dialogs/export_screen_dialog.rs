@@ -1,18 +1,15 @@
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, pick_list, row, text, text_input, tooltip},
+    Alignment, Element, Length,
+    widget::{Space, column, container, pick_list, row, text, text_input},
 };
 use iced_engine_gui::settings::effect_box;
+use iced_engine_gui::ui::*;
 use icy_engine::{EditableScreen, SaveOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::ui::MainWindowMode;
-
-const MODAL_WIDTH: f32 = 550.0;
-const MODAL_HEIGHT: f32 = 224.0;
-const DIALOG_LABEL_WIDTH: f32 = 100.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -47,6 +44,7 @@ pub enum ExportScreenMsg {
     ChangeFileName(String),
     ChangeFormat(ExportFormat),
     BrowseDirectory,
+    RestoreDefaults,
     Cancel,
 }
 
@@ -192,6 +190,13 @@ impl ExportScreenDialogState {
                 }
                 None
             }
+            ExportScreenMsg::RestoreDefaults => {
+                let default_dir = crate::data::Options::default_capture_directory();
+                if let Some(path_str) = default_dir.to_str() {
+                    self.temp_directory = path_str.to_string();
+                }
+                None
+            }
             ExportScreenMsg::Cancel => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         }
     }
@@ -202,10 +207,7 @@ impl ExportScreenDialogState {
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
-        let title = text(fl!(crate::LANGUAGE_LOADER, "export-dialog-title")).size(16).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..iced::Font::default()
-        });
+        let title = dialog_title(fl!(crate::LANGUAGE_LOADER, "export-dialog-title"));
 
         // Check directory validity
         let dir_path = Path::new(&self.temp_directory);
@@ -226,31 +228,13 @@ impl ExportScreenDialogState {
             .size(14)
             .width(Length::Fill);
 
-        let browse_button = button(text("…").size(14))
-            .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::BrowseDirectory))
-            .padding([6, 12]);
+        let browse_btn = browse_button(crate::ui::Message::ExportDialog(ExportScreenMsg::BrowseDirectory));
 
-        let mut dir_input_row = row![dir_input, Space::new().width(4.0), browse_button].align_y(Alignment::Center);
+        let dir_input_row = row![dir_input, Space::new().width(4.0), browse_btn].align_y(Alignment::Center);
 
-        if let Some(error) = dir_error {
-            let warning_icon = tooltip(
-                text("⚠").size(16).style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.weak.color),
-                }),
-                container(text(error)).style(container::rounded_box),
-                tooltip::Position::Top,
-            );
-            dir_input_row = dir_input_row.push(Space::new().width(4.0)).push(warning_icon);
-        }
-
-        let dir_row = row![
-            container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-folder")).size(14))
-                .width(Length::Fixed(DIALOG_LABEL_WIDTH))
-                .align_x(iced::alignment::Horizontal::Right),
-            dir_input_row,
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+        let dir_row = row![left_label_small(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-folder")), dir_input_row,]
+            .spacing(DIALOG_SPACING)
+            .align_y(Alignment::Center);
 
         // Filename input with format picker
         let file_input = text_input("", &self.temp_filename)
@@ -265,94 +249,94 @@ impl ExportScreenDialogState {
         .width(Length::Fixed(120.0));
 
         let file_row = row![
-            container(text(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")).size(14))
-                .width(Length::Fixed(DIALOG_LABEL_WIDTH))
-                .align_x(iced::alignment::Horizontal::Right),
+            left_label_small(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")),
             file_input,
             Space::new().width(4.0),
             format_picker,
         ]
-        .spacing(8)
+        .spacing(DIALOG_SPACING)
         .align_y(Alignment::Center);
 
-        // Display the full path that will be saved
-        let full_path_preview = text(format!("→ {}", self.get_temp_full_path().display()))
-            .size(12)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            });
+        // Warning/Preview area - show either directory error or path preview
+        let warning_content = if let Some(error) = dir_error {
+            let error_msg = error.clone();
+            row![
+                error_tooltip(error),
+                Space::new().width(4.0),
+                text(error_msg).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                })
+            ]
+        } else {
+            row![
+                text(format!("→ {}", self.get_temp_full_path().display()))
+                    .size(12)
+                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().secondary.base.color),
+                    })
+            ]
+        };
 
-        let preview_row = row![Space::new().width(DIALOG_LABEL_WIDTH + 8.0), full_path_preview,];
+        let preview_row = row![Space::new().width(LABEL_SMALL_WIDTH + DIALOG_SPACING), warning_content];
+
+        // Check if settings are at defaults for restore button
+        let default_dir = crate::data::Options::default_capture_directory();
+        let is_at_defaults = default_dir.to_str().map(|s| s == self.temp_directory).unwrap_or(true);
+
+        let restore_btn = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"),
+            if !is_at_defaults {
+                Some(crate::ui::Message::ExportDialog(ExportScreenMsg::RestoreDefaults))
+            } else {
+                None
+            },
+        );
 
         // Action buttons
         let export_enabled = !self.temp_directory.is_empty() && !self.temp_filename.is_empty() && dir_valid;
 
-        let mut export_button = button(text(fl!(crate::LANGUAGE_LOADER, "export-dialog-export-button")))
-            .padding([6, 12])
-            .style(button::primary);
+        let export_btn = primary_button(
+            fl!(crate::LANGUAGE_LOADER, "export-dialog-export-button"),
+            if export_enabled {
+                Some(crate::ui::Message::ExportDialog(ExportScreenMsg::Export))
+            } else {
+                None
+            },
+        );
 
-        if export_enabled {
-            export_button = export_button.on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Export));
-        }
+        let cancel_btn = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            Some(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel)),
+        );
 
-        let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")))
-            .on_press(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel))
-            .padding([6, 12])
-            .style(button::secondary);
+        let buttons_left = vec![restore_btn.into()];
+        let buttons_right = vec![cancel_btn.into(), export_btn.into()];
 
-        let button_row = row![Space::new().width(Length::Fill), cancel_button, Space::new().width(8.0), export_button,];
-
-        // Visual separator
-        let separator = container(Space::new())
-            .width(Length::Fill)
-            .height(1.0)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.palette().text.scale_alpha(0.06))),
-                ..Default::default()
-            });
+        let buttons = button_row_with_left(buttons_left, buttons_right);
 
         // Main content wrapped in effect_box
         let content_box = effect_box(
-            column![dir_row, Space::new().height(8.0), file_row, Space::new().height(8.0), preview_row,]
-                .spacing(0)
-                .into(),
+            column![
+                dir_row,
+                Space::new().height(DIALOG_SPACING),
+                file_row,
+                Space::new().height(DIALOG_SPACING),
+                preview_row,
+            ]
+            .spacing(0)
+            .into(),
         );
 
-        // Main content
-        let modal_content = container(
-            column![
-                title,
-                Space::new().height(8.0),
-                content_box,
-                Space::new().height(8.0),
-                separator,
-                Space::new().height(8.0),
-                button_row,
-            ]
-            .padding(10),
-        )
-        .width(Length::Fixed(MODAL_WIDTH))
-        .height(Length::Fixed(MODAL_HEIGHT))
-        .style(|theme: &iced::Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background)),
-                border: Border {
-                    color: palette.text,
-                    width: 1.0,
-                    radius: 8.0.into(),
-                },
-                text_color: Some(palette.text),
-                shadow: iced::Shadow {
-                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
-                    offset: iced::Vector::new(0.0, 4.0),
-                    blur_radius: 16.0,
-                },
-                snap: false,
-            }
-        });
+        let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box, Space::new().height(DIALOG_SPACING),].into());
 
-        container(modal_content)
+        let button_area = dialog_area(buttons.into());
+
+        let modal = modal_container(
+            column![container(dialog_content).height(Length::Fill), separator(), button_area,].into(),
+            DIALOG_WIDTH_LARGE,
+        );
+
+        iced::widget::container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

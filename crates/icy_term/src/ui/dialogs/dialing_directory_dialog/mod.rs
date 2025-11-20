@@ -7,6 +7,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced::{Event, keyboard};
+use iced_engine_gui::ui::*;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use std::sync::Arc;
@@ -62,14 +63,13 @@ impl DialingDirectoryState {
 
     pub fn view(&self, options: &crate::Options) -> Element<'_, Message> {
         // Main layout with left panel, right panel, and bottom bar
-        let main_content = column![
-            row![
-                container(self.create_address_list()).padding(8),
-                container(self.create_option_panel(options)).padding(8).width(Length::Fill)
-            ]
-            .height(Length::Fill),
-            container(self.create_bottom_bar()).width(Length::Fill).style(container::bordered_box)
-        ];
+        let content_area = row![
+            container(self.create_address_list()).padding(8),
+            container(self.create_option_panel(options)).padding(8).width(Length::Fill)
+        ]
+        .height(Length::Fill);
+
+        let main_content = column![container(content_area).height(Length::Fill), separator(), self.create_bottom_bar()];
 
         // If there's a pending delete, show the confirmation modal
         if let Some(idx) = self.pending_delete {
@@ -85,6 +85,7 @@ impl DialingDirectoryState {
         let delete_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-delete");
         let delete_icon = svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
         let can_delete = self.selected_bbs.is_some();
+
         // Base delete button (icon only)
         let delete_button = if can_delete {
             button(delete_icon)
@@ -94,6 +95,7 @@ impl DialingDirectoryState {
             // Disabled style (secondary) but still show icon + tooltip
             button(delete_icon).style(button::secondary).padding(6)
         };
+
         // Wrap in tooltip with localized text
         let del_btn: tooltip::Tooltip<'_, Message> = tooltip(
             delete_button,
@@ -103,15 +105,27 @@ impl DialingDirectoryState {
         .gap(10)
         .style(container::rounded_box)
         .padding(8);
-        let close_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-close_button"))).on_press(Message::from(DialingDirectoryMsg::Close));
-        let connect_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button")))
-            .on_press(Message::from(DialingDirectoryMsg::ConnectSelected))
-            .style(button::primary);
-        row![del_btn, Space::new().width(Length::Fill), close_btn, connect_btn]
-            .spacing(12)
-            .align_y(Alignment::Center)
-            .padding(12)
-            .into()
+
+        let close_btn = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-close_button"),
+            Some(Message::from(DialingDirectoryMsg::Close)),
+        );
+
+        let connect_btn = primary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-button"),
+            Some(Message::from(DialingDirectoryMsg::ConnectSelected)),
+        );
+
+        let buttons = button_row(vec![close_btn.into(), connect_btn.into()]);
+
+        container(
+            row![del_btn, Space::new().width(Length::Fill), buttons]
+                .spacing(DIALOG_SPACING)
+                .align_y(Alignment::Center),
+        )
+        .padding(DIALOG_PADDING)
+        .width(Length::Fill)
+        .into()
     }
 
     pub(crate) fn update(&mut self, msg: DialingDirectoryMsg) -> Task<Message> {

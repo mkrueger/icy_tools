@@ -1,8 +1,9 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length, Padding, Theme,
-    widget::{Space, button, column, container, row, scrollable, text},
+    widget::{Space, column, container, row, scrollable, text},
 };
+use iced_engine_gui::ui::primary_button;
 
 pub struct HelpDialog;
 
@@ -352,45 +353,11 @@ impl HelpDialog {
         let footer = container(
             row![
                 Space::new().width(Length::Fill),
-                button(text(fl!(crate::LANGUAGE_LOADER, "dialog-close_button")).size(14))
-                    .padding(Padding::from([5, 20]))
-                    .on_press(crate::ui::Message::CloseDialog(Box::new(crate::ui::MainWindowMode::ShowTerminal)))
-                    .style(|theme: &Theme, status| {
-                        let palette = theme.extended_palette();
-                        match status {
-                            button::Status::Active => button::Style {
-                                background: Some(palette.primary.base.color.into()),
-                                text_color: palette.primary.base.text,
-                                border: Border {
-                                    color: Color::TRANSPARENT,
-                                    width: 0.0,
-                                    radius: 5.0.into(),
-                                },
-                                ..Default::default()
-                            },
-                            button::Status::Hovered => button::Style {
-                                background: Some(palette.primary.strong.color.into()),
-                                text_color: palette.primary.strong.text,
-                                border: Border {
-                                    color: Color::TRANSPARENT,
-                                    width: 0.0,
-                                    radius: 5.0.into(),
-                                },
-                                ..Default::default()
-                            },
-                            button::Status::Pressed => button::Style {
-                                background: Some(palette.primary.base.color.into()),
-                                text_color: palette.primary.base.text,
-                                border: Border {
-                                    color: palette.primary.strong.color,
-                                    width: 0.0,
-                                    radius: 5.0.into(),
-                                },
-                                ..Default::default()
-                            },
-                            _ => button::Style::default(),
-                        }
-                    }),
+                primary_button(
+                    fl!(crate::LANGUAGE_LOADER, "dialog-close_button"),
+                    Some(crate::ui::Message::CloseDialog(Box::new(crate::ui::MainWindowMode::ShowTerminal)))
+                )
+                .padding(Padding::from([5, 20])),
             ]
             .align_y(Alignment::Center),
         )

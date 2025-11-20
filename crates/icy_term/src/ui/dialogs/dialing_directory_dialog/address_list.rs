@@ -60,7 +60,7 @@ impl super::DialingDirectoryState {
         let clear_btn: Element<Message> = if self.filter_text.is_empty() {
             Space::new().into()
         } else {
-            button(text("×"))
+            button(text("×").wrapping(text::Wrapping::None))
                 .on_press(Message::from(DialingDirectoryMsg::FilterTextChanged(String::new())))
                 .width(Length::Shrink)
                 .into()

@@ -1,35 +1,24 @@
 use i18n_embed_fl::fl;
-use iced::widget::{button, column, container, row, slider, space, text};
+use iced::widget::{button, container, row, slider, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme};
 use icy_engine::Color as IcyColor;
 use lazy_static::lazy_static;
 use std::fmt;
 
 // Import LANGUAGE_LOADER from the ui module
-use crate::LANGUAGE_LOADER;
 use crate::MonitorType;
+use crate::{EFFECT_BOX_PADDING, EFFECT_BOX_RADIUS, LABEL_WIDTH, LANGUAGE_LOADER, TEXT_SIZE_NORMAL};
 
 pub mod msg;
 pub use msg::*;
 
-pub mod ui;
-pub use ui::*;
+pub mod monitor_settings;
+pub use monitor_settings::*;
 
 // Design constants
-pub const LABEL_WIDTH: f32 = 180.0;
 const INPUT_WIDTH: f32 = 220.0;
-pub const SECTION_PADDING: f32 = 20.0;
 const ROW_SPACING: f32 = 12.0;
 const SLIDER_VALUE_WIDTH: f32 = 50.0;
-
-pub const SECTION_SPACING: f32 = 24.0;
-pub const EFFECT_BOX_PADDING: u16 = 16;
-pub const EFFECT_BOX_RADIUS: f32 = 6.0;
-pub const SLIDER_SPACING: f32 = 8.0;
-pub const TOGGLE_SPACING: f32 = 10.0;
-pub const TEXT_SIZE_NORMAL: f32 = 14.0;
-pub const TEXT_SIZE_SMALL: f32 = 12.0;
-pub const HEADER_TEXT_SIZE: f32 = 16.0;
 
 lazy_static! {
     static ref MONITOR_NAMES: [String; 7] = [
@@ -174,29 +163,6 @@ fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Ele
         .width(Length::Fixed(60.0))
         .height(Length::Fixed(28.0))
         .into()
-}
-
-// Section header with styling
-pub fn section_header<T: 'static>(title: String) -> Element<'static, T> {
-    column![
-        row![
-            space().width(8.0),
-            text(title)
-                .size(TEXT_SIZE_NORMAL)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..iced::Font::default()
-                })
-                .style(|theme: &Theme| {
-                    text::Style {
-                        color: Some(theme.palette().text),
-                    }
-                }),
-        ],
-        space().height(4),
-    ]
-    .spacing(4)
-    .into()
 }
 
 // Add a new method for themed container box (macOS style)

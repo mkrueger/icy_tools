@@ -5,7 +5,6 @@ use std::{
 };
 
 use directories::UserDirs;
-use iced::widget::canvas::Path;
 use iced_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
 

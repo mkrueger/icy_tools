@@ -3,9 +3,13 @@ use iced::{
     Alignment, Element, Length,
     widget::{checkbox, column, row, text_input},
 };
-use iced_engine_gui::settings::{SECTION_PADDING, effect_box_toggleable, left_label, section_header};
+use iced_engine_gui::{
+    SECTION_PADDING, section_header,
+    settings::{effect_box_toggleable, left_label},
+    ui::DIALOG_SPACING as INPUT_SPACING,
+};
 
-use crate::ui::settings_dialog::{INPUT_SPACING, SettingsDialogState, SettingsMsg};
+use crate::ui::settings_dialog::{SettingsDialogState, SettingsMsg};
 
 impl SettingsDialogState {
     pub fn iemsi_settings_content<'a>(&self) -> Element<'a, crate::ui::Message> {

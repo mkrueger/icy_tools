@@ -1,8 +1,9 @@
 use i18n_embed_fl::fl;
 use iced::{
     Element, Length, Task,
-    widget::{Space, button, column, container, row, text},
+    widget::{column, container},
 };
+use iced_engine_gui::ui::{button_row, dialog_area, primary_button, separator};
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use icy_engine::{AttributedChar, EditableScreen, Position, TextAttribute, TextBuffer, TextPane, TextScreen};
 use icy_parser_core::MusicOption;
@@ -78,31 +79,19 @@ impl AboutDialog {
         let mut settings = MonitorSettings::neutral();
         settings.use_pixel_perfect_scaling = false;
 
-        let content = column![
-            // Terminal view showing the help ANSI
-            container({
-                let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(|terminal_msg| match terminal_msg {
-                    iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
-                    _ => Message::None,
-                });
-                terminal_view
-            }),
-            // Bottom button bar
-            container(row![
-                Space::new().width(Length::Fill),
-                button(text(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")).size(14))
-                    .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
-                    .style(button::primary)
-                    .padding([6, 20]),
-            ])
-            .padding([8, 12])
-            .width(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
-                ..Default::default()
-            }),
-        ]
-        .spacing(0);
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(|terminal_msg| match terminal_msg {
+            iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
+            _ => Message::None,
+        });
+
+        let ok_button = primary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"),
+            Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+        );
+
+        let buttons = button_row(vec![ok_button.into()]);
+
+        let content = column![container(terminal_view).height(Length::Fill), separator(), dialog_area(buttons),].spacing(0);
         /*
         // Wrap in a centered modal overlay
         container(

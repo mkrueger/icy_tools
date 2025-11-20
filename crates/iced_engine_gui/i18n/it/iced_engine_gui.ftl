@@ -1,7 +1,7 @@
 settings-heading = Impostazioni
 settings-scaling = Scala
 settings-monitor-type = Monitor
-settings-reset-button = Reimposta
+settings-restore-defaults-button = Ripristina predefinite
 settings-monitor-category = Monitor
 settings-monitor-use-crt-filter-checkbox = Usa filtro CRT
 settings-monitor-brightness = Luminosità

@@ -32,6 +32,9 @@ pub use crt_shader_state::*;
 pub mod crt_shader_program;
 pub use crt_shader_program::*;
 
+pub mod ui;
+pub use ui::*;
+
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};

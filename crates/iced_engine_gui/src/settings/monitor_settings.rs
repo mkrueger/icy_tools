@@ -1,5 +1,5 @@
 use super::*;
-use crate::LANGUAGE_LOADER;
+use crate::{LANGUAGE_LOADER, SECTION_PADDING, SECTION_SPACING, SLIDER_SPACING, TEXT_SIZE_SMALL, section_header};
 use crate::{MonitorSettings, MonitorType};
 use i18n_embed_fl::fl;
 use iced::widget::{Space, checkbox, column, container, pick_list, row, text};
@@ -93,7 +93,7 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
                 left_label(fl!(LANGUAGE_LOADER, "settings-monitor-custom")),
                 color_button(c, MonitorSettingsMessage::CustomColorChanged(c)),
                 text(format!("RGB({}, {}, {})", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8))
-                    .size(TEXT_SIZE_SMALL)
+                    .size(TEXT_SIZE_NORMAL)
                     .style(|theme: &Theme| text::Style {
                         color: Some(theme.extended_palette().background.strong.text)
                     })

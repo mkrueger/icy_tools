@@ -1,8 +1,9 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, rule, scrollable, text},
+    widget::{Space, button, column, container, row, scrollable, text},
 };
+use iced_engine_gui::ui::*;
 use icy_net::protocol::TransferProtocolType;
 
 use crate::ui::{MainWindowMode, Message};
@@ -10,7 +11,6 @@ use crate::ui::{MainWindowMode, Message};
 use once_cell::sync::Lazy;
 
 // Text size constants
-const TITLE_SIZE: u32 = 20;
 const PROTOCOL_NAME_SIZE: u32 = 16;
 const PROTOCOL_DESCRIPTION_SIZE: u32 = 14;
 
@@ -79,12 +79,11 @@ impl ProtocolSelector {
 }
 
 fn create_modal_content(is_download: bool) -> Element<'static, Message> {
-    let title = text(if is_download {
+    let title = dialog_title(if is_download {
         fl!(crate::LANGUAGE_LOADER, "protocol-select-download")
     } else {
         fl!(crate::LANGUAGE_LOADER, "protocol-select-upload")
-    })
-    .size(TITLE_SIZE);
+    });
 
     // Create protocol list
     let mut protocol_rows = column![].spacing(0);
@@ -129,43 +128,34 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
         protocol_rows = protocol_rows.push(protocol_button);
     }
 
-    let cancel_button = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")).size(14.0))
-        .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
-        .style(button::secondary);
+    let cancel_button = secondary_button(
+        fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+        Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+    );
 
-    let modal_content = container(
+    let protocol_list = iced_engine_gui::settings::effect_box(
+        scrollable(protocol_rows)
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default()))
+            .into(),
+    );
+
+    let dialog_content = dialog_area(
         column![
-            container(title).width(Length::Fill).align_x(Alignment::Center),
-            container(scrollable(protocol_rows).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
-                .height(Length::Fixed(250.0))
-                .width(Length::Fill),
-            rule::horizontal(1),
-            container(row![Space::new().width(Length::Fill), cancel_button])
+            title,
+            Space::new().height(DIALOG_SPACING),
+            container(protocol_list).height(Length::Fill).width(Length::Fill),
         ]
-        .padding(10)
-        .spacing(8),
-    )
-    .width(Length::Fixed(400.0))
-    .style(|theme: &iced::Theme| {
-        let palette = theme.palette();
-        container::Style {
-            background: Some(iced::Background::Color(palette.background)),
-            border: Border {
-                color: palette.text,
-                width: 1.0,
-                radius: 8.0.into(),
-            },
-            text_color: Some(palette.text),
-            shadow: iced::Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
-                offset: iced::Vector::new(0.0, 4.0),
-                blur_radius: 16.0,
-            },
-            snap: false,
-        }
-    });
+        .into(),
+    );
 
-    container(modal_content)
+    let button_area = dialog_area(button_row(vec![cancel_button.into()]));
+
+    let modal = modal_container(
+        column![container(dialog_content).height(Length::Fill), separator(), button_area,].into(),
+        DIALOG_WIDTH_MEDIUM,
+    );
+
+    container(modal)
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)

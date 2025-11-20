@@ -3,7 +3,10 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, button, column, row, text, text_input},
 };
-use iced_engine_gui::settings::{effect_box, left_label, section_header};
+use iced_engine_gui::{
+    section_header,
+    settings::{effect_box, left_label},
+};
 
 use crate::ui::dialogs::settings_dialog::SettingsMsg;
 
@@ -28,7 +31,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-config-dir")),
                     text_input("", &config_dir).size(14).width(Length::Fill),
-                    button(text("…".to_string()).size(14))
+                    button(text("…".to_string()).size(14).wrapping(text::Wrapping::None))
                         .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::OpenSettingsFolder))
                         .padding([4, 8]),
                 ]
@@ -63,7 +66,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                         .on_input(|value| { crate::ui::Message::SettingsDialog(SettingsMsg::UpdateDownloadPath(value)) })
                         .size(14)
                         .width(Length::Fill),
-                    button(text("…").size(14))
+                    button(text("…").size(14).wrapping(text::Wrapping::None))
                         .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseDownloadPath))
                         .padding([4, 8]),
                 ]
@@ -76,7 +79,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                         .on_input(|value| { crate::ui::Message::SettingsDialog(SettingsMsg::UpdateCapturePath(value)) })
                         .size(14)
                         .width(Length::Fill),
-                    button(text("…").size(14))
+                    button(text("…").size(14).wrapping(text::Wrapping::None))
                         .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseCapturePath))
                         .padding([4, 8]),
                 ]

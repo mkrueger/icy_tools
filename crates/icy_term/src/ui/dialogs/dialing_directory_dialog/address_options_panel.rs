@@ -8,7 +8,9 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, button, column, container, pick_list, row, scrollable, svg, text, text_input},
 };
-use iced_engine_gui::settings::{SECTION_SPACING, effect_box, left_label, section_header};
+use iced_engine_gui::settings::{effect_box, left_label};
+use iced_engine_gui::ui::{primary_button, secondary_button, text_button_style};
+use iced_engine_gui::{LABEL_WIDTH, SECTION_SPACING, section_header};
 use icy_engine::TerminalResolutionExt;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
@@ -124,7 +126,7 @@ impl super::DialingDirectoryState {
                 .size(18)
                 .width(Length::Fill);
 
-            let star_btn: button::Button<'_, Message> = button(text(if addr.is_favored { "★" } else { "☆" }))
+            let star_btn: button::Button<'_, Message> = button(text(if addr.is_favored { "★" } else { "☆" }).wrapping(text::Wrapping::None))
                 .on_press(Message::from(DialingDirectoryMsg::ToggleFavorite(if let Some(addr_idx) = self.selected_bbs {
                     addr_idx
                 } else {
@@ -456,7 +458,7 @@ impl super::DialingDirectoryState {
                     })
                     .text_size(14);
 
-                let igs_link = button(text("Enable IGS").size(14))
+                let igs_link = button(text("Enable IGS").size(14).wrapping(text::Wrapping::None))
                     .on_press(Message::OpenLink(
                         "https://breakintochat.com/blog/category/instant-graphics-and-sound".to_string(),
                     ))
@@ -477,7 +479,7 @@ impl super::DialingDirectoryState {
                             _ => base,
                         }
                     })
-                    .width(Length::Fixed(iced_engine_gui::settings::LABEL_WIDTH))
+                    .width(Length::Fixed(LABEL_WIDTH))
                     .padding(0);
 
                 server_content = server_content.push(row![igs_link, igs_toggle].spacing(12).align_y(Alignment::Center));
@@ -554,20 +556,19 @@ impl super::DialingDirectoryState {
             let toggler_pw = button(visibility_icon)
                 .on_press(Message::from(DialingDirectoryMsg::ToggleShowPasswords))
                 .padding(4)
-                .style(button::text);
+                .style(text_button_style);
 
             let (generate_btn, tooltip_label) = if addr.password.is_empty() {
                 (
-                    button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")).size(14))
-                        .on_press(Message::from(DialingDirectoryMsg::GeneratePassword))
-                        .padding([6, 12]),
+                    primary_button(
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate"),
+                        Some(Message::from(DialingDirectoryMsg::GeneratePassword)),
+                    ),
                     fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-tooltip"),
                 )
             } else {
                 (
-                    button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate")).size(14))
-                        .padding([6, 12])
-                        .style(button::secondary),
+                    secondary_button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate"), None),
                     fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-disabled-tooltip"),
                 )
             };
@@ -674,14 +675,14 @@ impl super::DialingDirectoryState {
             }
         } else {
             // Quick connect "Add BBS" button
-            let mut add_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button")).size(14))
-                .on_press(Message::from(DialingDirectoryMsg::AddAddress))
-                .padding([6, 12])
-                .width(Length::Shrink);
-
-            if self.quick_connect_address.address.is_empty() {
-                add_btn = add_btn.style(button::secondary);
-            }
+            let add_btn = if self.quick_connect_address.address.is_empty() {
+                secondary_button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button"), None)
+            } else {
+                primary_button(
+                    fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button"),
+                    Some(Message::from(DialingDirectoryMsg::AddAddress)),
+                )
+            };
 
             content = content.push(Space::new().height(24)).push(row![Space::new().width(Length::Fill), add_btn]);
         }

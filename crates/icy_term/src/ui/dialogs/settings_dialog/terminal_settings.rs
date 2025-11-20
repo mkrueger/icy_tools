@@ -3,11 +3,15 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, checkbox, column, pick_list, row},
 };
-use iced_engine_gui::settings::{SECTION_PADDING, effect_box, left_label};
+use iced_engine_gui::{
+    SECTION_PADDING,
+    settings::{effect_box, left_label},
+    ui::DIALOG_SPACING as INPUT_SPACING,
+};
 
 use crate::{
     data::options::DialTone,
-    ui::settings_dialog::{INPUT_SPACING, SettingsDialogState, SettingsMsg},
+    ui::settings_dialog::{SettingsDialogState, SettingsMsg},
 };
 
 // Create a wrapper type for the pick list

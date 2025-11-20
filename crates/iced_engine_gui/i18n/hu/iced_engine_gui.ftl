@@ -1,7 +1,7 @@
 settings-heading = Beállítások
 settings-scaling = Méretezés
 settings-monitor-type = Monitor
-settings-reset-button = Visszaállítás
+settings-restore-defaults-button = Alapértelmezések visszaállítása
 settings-monitor-category = Monitor
 settings-monitor-use-crt-filter-checkbox = CRT szűrő használata
 settings-monitor-brightness = Fényerő

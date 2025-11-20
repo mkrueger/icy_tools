@@ -2,8 +2,9 @@ use crate::ui::MainWindowMode;
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, button, column, container, row, scrollable, text},
+    widget::{Space, column, container, row, scrollable, text},
 };
+use iced_engine_gui::ui::*;
 
 pub fn view<'a>(
     terminal_content: Element<'a, crate::ui::Message>,
@@ -82,37 +83,23 @@ pub fn view<'a>(
         .width(Length::Fill)
     };
 
-    // Actions (removed Copy button because variant doesn’t exist)
-    let close_btn = button(text(fl!(crate::LANGUAGE_LOADER, "dialog-close_button")).size(14))
-        .padding([6, 20])
-        .style(button::primary)
-        .on_press(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
+    // Actions (removed Copy button because variant doesn't exist)
+    let close_btn = primary_button(
+        fl!(crate::LANGUAGE_LOADER, "dialog-close_button"),
+        Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+    );
 
-    let button_row = row![Space::new().width(Length::Fill), close_btn].align_y(Alignment::Center).spacing(8);
+    let button_area = button_row(vec![close_btn.into()]);
 
     // Dialog container
-    let dialog = container(
-        column![title_row, details_block, Space::new().height(8), button_row,]
-            .spacing(8)
-            .width(Length::Fill),
-    )
-    .padding(18)
-    .width(Length::Fixed(500.0))
-    .max_width(560)
-    .style(|theme: &iced::Theme| container::Style {
-        background: Some(theme.extended_palette().background.base.color.into()),
-        border: iced::Border {
-            color: theme.extended_palette().background.strong.color,
-            width: 1.0,
-            radius: 10.0.into(),
-        },
-        shadow: iced::Shadow {
-            color: iced::Color::from_rgba8(0, 0, 0, 0.35),
-            offset: iced::Vector::new(0.0, 6.0),
-            blur_radius: 22.0,
-        },
-        ..Default::default()
-    });
+    let dialog_content = dialog_area(column![title_row, details_block, Space::new().height(DIALOG_SPACING)].into());
+
+    let button_area_wrapped = dialog_area(button_area);
+
+    let modal = modal_container(
+        column![container(dialog_content).height(Length::Fill), separator(), button_area_wrapped,].into(),
+        DIALOG_WIDTH_MEDIUM,
+    );
 
     // Overlay
     let overlay = container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| container::Style {
@@ -123,7 +110,7 @@ pub fn view<'a>(
     container(iced::widget::stack![
         terminal_content,
         overlay,
-        container(dialog)
+        container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(iced::alignment::Horizontal::Center)
