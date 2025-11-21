@@ -1315,8 +1315,9 @@ impl TerminalThread {
             TerminalRequest::DeviceStatusReport => Some(b"\x1B[0n".to_vec()),
             TerminalRequest::CursorPositionReport => {
                 if let Ok(screen) = self.edit_screen.lock() {
-                    let y = screen.caret().y.min(screen.get_height() as i32 - 1) + 1;
-                    let x = screen.caret().x.min(screen.get_width() as i32 - 1) + 1;
+                    let pos = screen.caret_position();
+                    let y = pos.y.min(screen.get_height() as i32 - 1) + 1;
+                    let x = pos.x.min(screen.get_width() as i32 - 1) + 1;
                     Some(format!("\x1B[{};{}R", y, x).into_bytes())
                 } else {
                     None

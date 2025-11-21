@@ -341,23 +341,27 @@ pub trait EditableScreen: RgbaScreen {
 
     /// Moves the cursor down one line in the same column. If the cursor is at the bottom margin, the page scrolls up.
     fn index(&mut self) {
-        let y = self.caret_mut().y;
-        self.caret_mut().y = y + 1;
+        let mut pos = self.caret_position();
+        pos.y += 1;
+        self.set_caret_position(pos);
         self.check_scrolling_on_caret_down(true);
         self.limit_caret_pos();
     }
 
     /// Moves the cursor up one line in the same column. If the cursor is at the top margin, the page scrolls down.
     fn reverse_index(&mut self) {
-        self.caret_mut().y -= 1;
+        let mut pos = self.caret_position();
+        pos.y -= 1;
+        self.set_caret_position(pos);
         self.check_scrolling_on_caret_up(true);
         self.limit_caret_pos();
     }
 
     fn next_line(&mut self) {
-        let y = self.caret_mut().y;
-        self.caret_mut().y = y + 1;
-        self.caret_mut().x = 0;
+        let mut pos = self.caret_position();
+        pos.y += 1;
+        pos.x = 0;
+        self.set_caret_position(pos);
         self.check_scrolling_on_caret_down(true);
         self.limit_caret_pos();
     }
@@ -365,18 +369,21 @@ pub trait EditableScreen: RgbaScreen {
     fn check_scrolling_on_caret_up(&mut self, force: bool) {
         if self.terminal_state().needs_scrolling() || force {
             let last = self.get_first_editable_line();
-            while self.caret().y < last {
+            while self.caret_position().y < last {
                 self.scroll_down();
-                let y = self.caret_mut().y;
-                self.caret_mut().y = y + 1;
+                let mut pos = self.caret_position();
+                pos.y += 1;
+                self.set_caret_position(pos);
             }
         }
     }
 
     fn check_scrolling_on_caret_down(&mut self, force: bool) {
-        if (self.terminal_state().needs_scrolling() || force) && self.caret().y > self.get_last_editable_line() {
+        if (self.terminal_state().needs_scrolling() || force) && self.caret_position().y > self.get_last_editable_line() {
             self.scroll_up();
-            self.caret_mut().y -= 1;
+            let mut pos = self.caret_position();
+            pos.y -= 1;
+            self.set_caret_position(pos);
         }
     }
 
@@ -503,9 +510,11 @@ pub trait EditableScreen: RgbaScreen {
     fn add_hyperlink(&mut self, link: crate::HyperLink);
 
     fn tab_forward(&mut self) {
-        let x = (self.caret().x / 8 + 1) * 8;
+        let mut pos = self.caret_position();
+        let x = (pos.x / 8 + 1) * 8;
         let w = self.get_width() - 1;
-        self.caret_mut().x = x.min(w);
+        pos.x = x.min(w);
+        self.set_caret_position(pos);
     }
 
     fn limit_caret_pos(&mut self) {

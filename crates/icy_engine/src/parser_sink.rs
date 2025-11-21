@@ -353,7 +353,9 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::CsiCursorHorizontalAbsolute(col) => {
                 let col = (col as i32).saturating_sub(1).max(0);
-                self.screen.caret_mut().x = col;
+                let mut pos = self.screen.caret_position();
+                pos.x = col;
+                self.screen.set_caret_position(pos);
                 self.screen.limit_caret_pos();
             }
             TerminalCommand::CsiCursorPosition(row, col) => {
@@ -432,12 +434,12 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::CsiInsertLine(n) => {
                 for _ in 0..n {
-                    self.screen.insert_terminal_line(self.screen.caret().y);
+                    self.screen.insert_terminal_line(self.screen.caret_position().y);
                 }
             }
             TerminalCommand::CsiDeleteLine(n) => {
                 for _ in 0..n {
-                    self.screen.remove_terminal_line(self.screen.caret().y);
+                    self.screen.remove_terminal_line(self.screen.caret_position().y);
                 }
             }
 
@@ -445,7 +447,9 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::CsiLinePositionAbsolute(line) => {
                 let upper_left = self.screen.upper_left_position();
                 let line = upper_left.y + (line as i32).saturating_sub(1).max(0);
-                self.screen.caret_mut().y = line;
+                let mut pos = self.screen.caret_position();
+                pos.y = line;
+                self.screen.set_caret_position(pos);
                 self.screen.limit_caret_pos();
             }
             TerminalCommand::CsiLinePositionForward(n) => {
@@ -457,13 +461,15 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::CsiHorizontalPositionAbsolute(col) => {
                 let upper_left = self.screen.upper_left_position();
                 let col = upper_left.x + (col as i32).saturating_sub(1).max(0);
-                self.screen.caret_mut().x = col;
+                let mut pos = self.screen.caret_position();
+                pos.x = col;
+                self.screen.set_caret_position(pos);
                 self.screen.limit_caret_pos();
             }
 
             // Tab operations
             TerminalCommand::CsiClearTabulation => {
-                let col = self.screen.caret().x;
+                let col = self.screen.caret_position().x;
                 self.screen.terminal_state_mut().remove_tab_stop(col);
             }
             TerminalCommand::CsiClearAllTabs => {
@@ -472,13 +478,17 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::CsiCursorLineTabulationForward(num) => {
                 (0..num).for_each(|_| {
                     let x = self.screen.terminal_state().next_tab_stop(self.screen.caret_position().x);
-                    self.screen.caret_mut().x = x;
+                    let mut pos = self.screen.caret_position();
+                    pos.x = x;
+                    self.screen.set_caret_position(pos);
                 });
             }
             TerminalCommand::CsiCursorBackwardTabulation(num) => {
                 (0..num).for_each(|_| {
                     let x = self.screen.terminal_state().prev_tab_stop(self.screen.caret_position().x);
-                    self.screen.caret_mut().x = x;
+                    let mut pos = self.screen.caret_position();
+                    pos.x = x;
+                    self.screen.set_caret_position(pos);
                 });
             }
 
@@ -731,10 +741,10 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 // For Viewdata, default foreground is white (color 7), not black
                 self.screen.caret_mut().attribute.set_foreground(7);
                 self.screen.caret_mut().attribute.set_background(0);
-                self.vd_last_row = self.screen.caret().y;
+                self.vd_last_row = self.screen.caret_position().y;
             }
             ViewDataCommand::CheckAndResetOnRowChange => {
-                let current_row = self.screen.caret().y;
+                let current_row = self.screen.caret_position().y;
                 if current_row != self.vd_last_row {
                     // For Viewdata, default foreground is white (color 7), not black
                     self.screen.caret_mut().attribute.set_foreground(7);
@@ -744,24 +754,30 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             ViewDataCommand::MoveCaret(direction) => match direction {
                 Direction::Up => {
-                    let y = if self.screen.caret().y > 0 {
-                        self.screen.caret().y.saturating_sub(1)
+                    let current_y = self.screen.caret_position().y;
+                    let y = if current_y > 0 {
+                        current_y.saturating_sub(1)
                     } else {
                         self.screen.terminal_state().get_height() - 1
                     };
-                    self.screen.caret_mut().y = y;
+                    let mut pos = self.screen.caret_position();
+                    pos.y = y;
+                    self.screen.set_caret_position(pos);
                 }
                 Direction::Down => {
-                    let y = self.screen.caret().y;
-                    self.screen.caret_mut().y = y + 1;
-                    if self.screen.caret().y >= self.screen.terminal_state().get_height() {
-                        self.screen.caret_mut().y = 0;
+                    let mut pos = self.screen.caret_position();
+                    pos.y = pos.y + 1;
+                    if pos.y >= self.screen.terminal_state().get_height() {
+                        pos.y = 0;
                     }
+                    self.screen.set_caret_position(pos);
                 }
                 Direction::Left => {
-                    if self.screen.caret().x > 0 {
-                        let x = self.screen.caret().x.saturating_sub(1);
-                        self.screen.caret_mut().x = x;
+                    let pos = self.screen.caret_position();
+                    if pos.x > 0 {
+                        let mut new_pos = pos;
+                        new_pos.x = pos.x.saturating_sub(1);
+                        self.screen.set_caret_position(new_pos);
                     } else {
                         let x = self.screen.terminal_state().get_width().saturating_sub(1);
                         self.screen.caret_mut().x = x;

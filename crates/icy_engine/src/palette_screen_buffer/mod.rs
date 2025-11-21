@@ -8,6 +8,7 @@ mod skypix_impl;
 pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
 use igs_impl::IgsState;
+use libyaff::GlyphDefinition;
 
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
@@ -159,13 +160,9 @@ impl PaletteScreenBuffer {
     }
 
     /// Render a character directly to the RGBA buffer
-    fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) {
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
-            return;
-        }
-
-        let x = pos.x;
-        let y = pos.y;
+    fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) -> Option<GlyphDefinition> {
+        let pixel_x = pos.x;
+        let pixel_y = pos.y;
 
         // Get colors from palette
         let mut fg_color = ch.attribute.get_foreground() as u32;
@@ -182,17 +179,15 @@ impl PaletteScreenBuffer {
         } else {
             &DEFAULT_BITFONT
         };
-
-        // Calculate pixel position
-        let pixel_x = x * font.size().width;
-        let pixel_y = y * font.size().height;
-
-        // Get glyph data from font
-        let glyph = font.get_glyph(ch.ch);
-        // Render the character
         let font_size = font.size();
 
-        // let glyph_size = self.font.size();
+        // Get glyph data from font
+        let Some(glyph) = font.get_glyph(ch.ch) else {
+            log::error!("NO GLYPH for char '{}'", ch.ch);
+            return None;
+        };
+
+        // Render the character (always fill font_size area with background/foreground)
         for row in 0..font_size.height {
             for col in 0..font_size.width {
                 let px = pixel_x + col;
@@ -203,19 +198,12 @@ impl PaletteScreenBuffer {
                 }
 
                 // Check if pixel is set in font glyph
-                let is_foreground = if let Some(g) = &glyph {
-                    // Use bitmap.pixels[row][col] if in bounds
-                    if row < g.bitmap.pixels.len() as i32 && col < g.bitmap.pixels[row as usize].len() as i32 {
-                        g.bitmap.pixels[row as usize][col as usize]
-                    } else {
-                        false
-                    }
+                let is_foreground = if row < glyph.bitmap.pixels.len() as i32 && col < glyph.bitmap.pixels[row as usize].len() as i32 {
+                    glyph.bitmap.pixels[row as usize][col as usize]
                 } else {
-                    log::error!("NO GLYPH for char '{}'", ch.ch);
                     false
                 };
 
-                // Clone colors to avoid move in loop
                 let color = if is_foreground { fg_color } else { bg_color };
 
                 // Write to RGBA buffer
@@ -223,6 +211,7 @@ impl PaletteScreenBuffer {
                 self.screen[offset as usize] = color as u8;
             }
         }
+        Some(glyph)
     }
 
     pub fn get_pixel_dimensions(&self) -> (usize, usize) {
@@ -270,6 +259,13 @@ impl Screen for PaletteScreenBuffer {
 
     fn terminal_state(&self) -> &TerminalState {
         &self.terminal_state
+    }
+
+    /// Override: Convert pixel coordinates to character grid coordinates
+    fn caret_position(&self) -> Position {
+        let pixel_pos = self.caret.position();
+        let font_size = self.get_font_dimensions();
+        Position::new(pixel_pos.x / font_size.width, pixel_pos.y / font_size.height)
     }
 
     fn graphics_type(&self) -> crate::GraphicsType {
@@ -498,6 +494,115 @@ impl RgbaScreen for PaletteScreenBuffer {
 }
 
 impl EditableScreen for PaletteScreenBuffer {
+    /// Override: Convert character grid coordinates to pixel coordinates
+    fn set_caret_position(&mut self, pos: Position) {
+        let font_size = self.get_font_dimensions();
+        let pixel_pos = Position::new(pos.x * font_size.width, pos.y * font_size.height);
+        self.caret.set_position(pixel_pos);
+    }
+
+    /// Override: print_char that works with pixel coordinates
+    fn print_char(&mut self, ch: AttributedChar) {
+        let font_size = self.get_font_dimensions();
+
+        if self.caret.insert_mode {
+            self.ins();
+        }
+
+        if let Some(glyph) = self.render_char_to_buffer(self.caret.position(), ch) {
+            // For proportional fonts with bearing information, use glyph metrics
+            // For monospace fonts, use font_size.width
+            let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+                font
+            } else if let Some(font) = self.get_font(0) {
+                font
+            } else {
+                &DEFAULT_BITFONT
+            };
+
+            // Check if this is a proportional font with bearing information
+            let use_bearings =
+                font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) && (glyph.left_bearing.is_some() || glyph.right_bearing.is_some());
+
+            let advance_width = if use_bearings {
+                // Calculate advance width using glyph bearings
+                let glyph_width = glyph.bitmap.pixels.get(0).map(|row| row.len() as i32).unwrap_or(font_size.width);
+                let left_bearing = glyph.left_bearing.unwrap_or(0);
+                let right_bearing = glyph.right_bearing.unwrap_or(0);
+                left_bearing + glyph_width + right_bearing
+            } else {
+                // For monospace fonts, always use font_size.width
+                font_size.width
+            };
+            if ch.ch == ' ' {
+                println!("Space char advance width: {}", advance_width);
+            }
+            self.caret.x += advance_width;
+        }
+
+        // Check for wrap
+        if self.caret.x >= self.pixel_size.width {
+            if self.terminal_state.auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
+                self.caret.x = 0;
+                self.caret.y += font_size.height;
+            } else {
+                self.lf();
+                return;
+            }
+        }
+
+        self.mark_dirty();
+    }
+
+    /// Override: Line feed - move down by font height in pixels
+    fn lf(&mut self) {
+        let font_size = self.get_font_dimensions();
+        self.caret.x = 0;
+        self.caret.y += font_size.height;
+
+        if self.terminal_state.is_terminal_buffer {
+            while self.caret.y >= self.pixel_size.height {
+                self.scroll_up();
+                self.caret.y -= font_size.height;
+            }
+            // Call limit_caret_pos to respect margins
+            self.limit_caret_pos();
+        }
+    }
+
+    /// Override: Limit caret position to margins (convert between char and pixel coordinates)
+    fn limit_caret_pos(&mut self) {
+        let font_size = self.get_font_dimensions();
+
+        match self.terminal_state.origin_mode {
+            crate::OriginMode::UpperLeftCorner => {
+                if self.terminal_state.is_terminal_buffer {
+                    let first = self.get_first_visible_line();
+                    let char_y = self.caret.y / font_size.height;
+                    let clamped_char_y = char_y.clamp(first, first + self.get_height() - 1);
+                    self.caret.y = clamped_char_y * font_size.height;
+                }
+                let char_x = self.caret.x / font_size.width;
+                let clamped_char_x = char_x.clamp(0, (self.get_width() - 1).max(0));
+                self.caret.x = clamped_char_x * font_size.width;
+            }
+            crate::OriginMode::WithinMargins => {
+                let first = self.get_first_editable_line();
+                let height = self.get_last_editable_line() - first;
+                let char_y = self.caret.y / font_size.height;
+                let clamped_char_y = char_y.clamp(first, (first + height - 1).max(first));
+                self.caret.y = clamped_char_y * font_size.height;
+
+                // Respect left/right margins when origin is within margins
+                let left = self.get_first_editable_column().max(0);
+                let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
+                let char_x = self.caret.x / font_size.width;
+                let clamped_char_x = char_x.clamp(left, right);
+                self.caret.x = clamped_char_x * font_size.width;
+            }
+        }
+    }
+
     fn reset_resolution(&mut self) {
         // Get original resolution from graphics_type
         let (px_width, px_height) = match self.graphics_type {
@@ -825,5 +930,82 @@ impl EditableScreen for PaletteScreenBuffer {
             pos.x = x;
             self.set_char(pos, ch);
         }
+    }
+
+    /// Override: Move left, handling autowrap and pixel coordinates
+    fn left(&mut self, num: i32) {
+        let font_size = self.get_font_dimensions();
+
+        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
+            if self.caret().x == 0 {
+                // At column 0: wrap to previous line end if above origin line
+                let origin_line = match self.terminal_state().origin_mode {
+                    crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
+                    crate::OriginMode::WithinMargins => self.get_first_editable_line(),
+                };
+
+                let char_y = self.caret().y / font_size.height;
+                if char_y <= origin_line {
+                    // Already at origin line -> no-op
+                    return;
+                }
+
+                self.caret_mut().y -= font_size.height;
+                self.caret_mut().x = ((self.get_width() - 1).max(0)) * font_size.width;
+                self.limit_caret_pos();
+                return;
+            }
+        }
+
+        // Move left by num characters (in pixels)
+        let char_x = self.caret().x / font_size.width;
+        let new_char_x = char_x.saturating_sub(num);
+        self.caret_mut().x = new_char_x * font_size.width;
+        self.limit_caret_pos();
+    }
+
+    /// Override: Move right, handling autowrap and pixel coordinates
+    fn right(&mut self, num: i32) {
+        let font_size = self.get_font_dimensions();
+        let last_col = (self.get_width() - 1).max(0);
+
+        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
+            let char_x = self.caret().x / font_size.width;
+            if char_x >= last_col {
+                // At end of line: move to start of next line, scrolling if needed
+                self.caret_mut().x = 0;
+                self.caret_mut().y += font_size.height;
+                // Use existing scrolling logic to handle terminal buffers
+                self.check_scrolling_on_caret_down(true);
+                self.limit_caret_pos();
+                return;
+            }
+        }
+
+        // Move right by num characters (in pixels)
+        let char_x = self.caret().x / font_size.width;
+        let new_char_x = char_x.saturating_add(num);
+        self.caret_mut().x = new_char_x * font_size.width;
+        self.limit_caret_pos();
+    }
+
+    /// Override: Move up, handling pixel coordinates
+    fn up(&mut self, num: i32) {
+        let font_size = self.get_font_dimensions();
+        let char_y = self.caret().y / font_size.height;
+        let new_char_y = char_y.saturating_sub(num);
+        self.caret_mut().y = new_char_y * font_size.height;
+        self.check_scrolling_on_caret_up(false);
+        self.limit_caret_pos();
+    }
+
+    /// Override: Move down, handling pixel coordinates
+    fn down(&mut self, num: i32) {
+        let font_size = self.get_font_dimensions();
+        let char_y = self.caret().y / font_size.height;
+        let new_char_y = char_y + num;
+        self.caret_mut().y = new_char_y * font_size.height;
+        self.check_scrolling_on_caret_down(false);
+        self.limit_caret_pos();
     }
 }

@@ -144,10 +144,8 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
         }
 
         SkypixCommand::PositionCursor { x, y } => {
-            // Convert pixel coordinates to character coordinates
-            let char_x = (x * 80) / SKYPIX_SCREEN_SIZE.width;
-            let char_y = (y * 25) / SKYPIX_SCREEN_SIZE.height;
-            buf.set_caret_position((char_x, char_y).into());
+            println!("PositionCursor to ({}, {})", x, y);
+            buf.caret_mut().set_position((x, y).into());
 
             // Also update BGI pen position for graphics
             bgi.move_to(x, y);

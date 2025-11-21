@@ -623,8 +623,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::PositionCursor { x, y } => {
-            buf.caret_mut()
-                .set_position(crate::Position::new(x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds)));
+            buf.set_caret_position(crate::Position::new(x.evaluate(&state.random_bounds), y.evaluate(&state.random_bounds)));
         }
 
         IgsCommand::RememberCursor { .. } => {
