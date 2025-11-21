@@ -59,25 +59,58 @@ mod tables;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpecialKey {
-    Home = 1,
     Insert = 2,
     Delete = 3,
-    End = 4,
     PageUp = 5,
     PageDown = 6,
+    Home = 7,
+    End = 8,
+    F1 = 11,
+    F2 = 12,
+    F3 = 13,
+    F4 = 14,
+    F5 = 15,
+    F6 = 17,
+    F7 = 18,
+    F8 = 19,
+    F9 = 20,
+    F10 = 21,
+    F11 = 23,
+    F12 = 24,
+}
+
+impl TryFrom<u16> for SpecialKey {
+    type Error = ();
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            2 => Ok(SpecialKey::Insert),
+            3 => Ok(SpecialKey::Delete),
+            5 => Ok(SpecialKey::PageUp),
+            6 => Ok(SpecialKey::PageDown),
+            7 => Ok(SpecialKey::Home),
+            8 => Ok(SpecialKey::End),
+            11 => Ok(SpecialKey::F1),
+            12 => Ok(SpecialKey::F2),
+            13 => Ok(SpecialKey::F3),
+            14 => Ok(SpecialKey::F4),
+            15 => Ok(SpecialKey::F5),
+            17 => Ok(SpecialKey::F6),
+            18 => Ok(SpecialKey::F7),
+            19 => Ok(SpecialKey::F8),
+            20 => Ok(SpecialKey::F9),
+            21 => Ok(SpecialKey::F10),
+            23 => Ok(SpecialKey::F11),
+            24 => Ok(SpecialKey::F12),
+            _ => Err(()),
+        }
+    }
 }
 
 impl SpecialKey {
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(SpecialKey::Home),
-            2 => Some(SpecialKey::Insert),
-            3 => Some(SpecialKey::Delete),
-            4 => Some(SpecialKey::End),
-            5 => Some(SpecialKey::PageUp),
-            6 => Some(SpecialKey::PageDown),
-            _ => None,
-        }
+    /// Returns the ANSI escape sequence for this special key (CSI [number] ~)
+    pub fn to_sequence(&self) -> String {
+        format!("\x1B[{}~", *self as u16)
     }
 }
 pub use tables::*;

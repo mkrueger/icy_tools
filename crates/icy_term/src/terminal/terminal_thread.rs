@@ -1251,6 +1251,7 @@ impl TerminalThread {
         let response: Option<Vec<u8>> = match &request {
             TerminalRequest::DeviceAttributes => {
                 // respond with IcyTerm as ASCII followed by the package version.
+
                 let version = format!(
                     "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
                     env!("CARGO_PKG_VERSION_MAJOR"),
@@ -1456,20 +1457,20 @@ impl TerminalThread {
         if let Some(data) = response {
             if let Some(conn) = &mut self.connection {
                 /*
-                                // Debug output with filtered control chars
-                                let debug_str = data
-                                    .iter()
-                                    .map(|&b| {
-                                        match b {
-                                            0x1B => "<ESC>".to_string(),
-                                            0x00..=0x1F => format!("<{:02X}>", b),
-                                            0x7F => "<DEL>".to_string(),
-                                            0x80..=0xFF => format!("[{:02X}]", b), // High ASCII
-                                            _ => (b as char).to_string(),
-                                        }
-                                    })
-                                    .collect::<String>();
-                                println!("Sending response: {}", debug_str);
+                // Debug output with filtered control chars
+                let debug_str = data
+                    .iter()
+                    .map(|&b| {
+                        match b {
+                            0x1B => "<ESC>".to_string(),
+                            0x00..=0x1F => format!("<{:02X}>", b),
+                            0x7F => "<DEL>".to_string(),
+                            0x80..=0xFF => format!("[{:02X}]", b), // High ASCII
+                            _ => (b as char).to_string(),
+                        }
+                    })
+                    .collect::<String>();
+                println!("Sending response: {}", debug_str);
                 */
                 let _ = conn.send(&data).await;
             }

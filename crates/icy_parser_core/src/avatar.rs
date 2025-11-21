@@ -362,7 +362,8 @@ impl CommandParser for AvatarParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed Avatar command",
-                                sequence: None,
+                                sequence: Some(format!("CTRL-V 0x{:02X}", byte)),
+                                context: Some(format!("Unknown Avatar command byte: 0x{:02X}", byte)),
                             },
                             crate::ErrorLevel::Error,
                         );

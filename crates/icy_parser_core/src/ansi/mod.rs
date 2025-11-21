@@ -121,7 +121,8 @@ impl AnsiParser {
                                 sink.report_error(
                                     ParseError::MalformedSequence {
                                         description: "Invalid base64 in DCS font data",
-                                        sequence: None,
+                                        sequence: Some(format!("ESC P CTerm:Font:{}:...", slot)),
+                                        context: Some(format!("Font slot {}", slot)),
                                     },
                                     crate::ErrorLevel::Error,
                                 );
@@ -132,10 +133,12 @@ impl AnsiParser {
                 }
             }
             // If parsing failed, report error
+            let seq_preview = String::from_utf8_lossy(&self.parse_buffer[..self.parse_buffer.len().min(20)]).to_string();
             sink.report_error(
                 ParseError::MalformedSequence {
                     description: "Unknown or malformed DCS sequence",
-                    sequence: None,
+                    sequence: Some(format!("ESC P {}...", seq_preview)),
+                    context: Some("CTerm:Font parsing failed".to_string()),
                 },
                 crate::ErrorLevel::Error,
             );
@@ -186,10 +189,12 @@ impl AnsiParser {
         }
 
         // Unknown DCS - emit as Unknown
+        let seq_preview = String::from_utf8_lossy(&self.parse_buffer[..self.parse_buffer.len().min(30)]).to_string();
         sink.report_error(
             ParseError::MalformedSequence {
                 description: "Unknown or malformed escape sequence",
-                sequence: None,
+                sequence: Some(format!("ESC P {}...", seq_preview)),
+                context: Some("DCS command not recognized".to_string()),
             },
             crate::ErrorLevel::Error,
         );
@@ -450,7 +455,15 @@ impl CommandParser for AnsiParser {
                             sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Unknown or malformed escape sequence",
-                                    sequence: None,
+                                    sequence: Some(format!(
+                                        "ESC {}",
+                                        if byte.is_ascii_graphic() {
+                                            format!("'{}'", byte as char)
+                                        } else {
+                                            format!("0x{:02X}", byte)
+                                        }
+                                    )),
+                                    context: Some("ESC followed by unrecognized character".to_string()),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -672,7 +685,16 @@ impl CommandParser for AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI {:?} * {}",
+                                    self.params,
+                                    if byte.is_ascii_graphic() {
+                                        format!("'{}'", byte as char)
+                                    } else {
+                                        format!("0x{:02X}", byte)
+                                    }
+                                )),
+                                context: Some("CSI * followed by unrecognized character".to_string()),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -758,7 +780,16 @@ impl CommandParser for AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI {:?} $ {}",
+                                    self.params,
+                                    if byte.is_ascii_graphic() {
+                                        format!("'{}'", byte as char)
+                                    } else {
+                                        format!("0x{:02X}", byte)
+                                    }
+                                )),
+                                context: Some("CSI $ followed by unrecognized character (after DECSERA)".to_string()),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -844,7 +875,15 @@ impl CommandParser for AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI $ {}",
+                                    if byte.is_ascii_graphic() {
+                                        format!("'{}'", byte as char)
+                                    } else {
+                                        format!("0x{:02X}", byte)
+                                    }
+                                )),
+                                context: Some("CSI $ followed by unrecognized character".to_string()),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -854,6 +893,7 @@ impl CommandParser for AnsiParser {
                     }
                 },
 
+                // CSI > (Greater sequences)
                 // CSI > (Greater sequences) - not commonly used
                 ParserState::CsiGreater => match byte {
                     b'0'..=b'9' => {
@@ -880,7 +920,15 @@ impl CommandParser for AnsiParser {
                                 sink.report_error(
                                     ParseError::MalformedSequence {
                                         description: "Unsupported CSI > sequence",
-                                        sequence: None,
+                                        sequence: Some(format!(
+                                            "CSI > {}",
+                                            if byte.is_ascii_graphic() {
+                                                format!("'{}'", byte as char)
+                                            } else {
+                                                format!("0x{:02X}", byte)
+                                            }
+                                        )),
+                                        context: Some(format!("CSI > with params {:?}", self.params)),
                                     },
                                     crate::ErrorLevel::Error,
                                 );
@@ -919,7 +967,15 @@ impl CommandParser for AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unsupported CSI < sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI < {}",
+                                    if byte.is_ascii_graphic() {
+                                        format!("'{}'", byte as char)
+                                    } else {
+                                        format!("0x{:02X}", byte)
+                                    }
+                                )),
+                                context: Some(format!("CSI < with params {:?}", self.params)),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -949,7 +1005,15 @@ impl CommandParser for AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unsupported CSI ! sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI ! {}",
+                                    if byte.is_ascii_graphic() {
+                                        format!("'{}'", byte as char)
+                                    } else {
+                                        format!("0x{:02X}", byte)
+                                    }
+                                )),
+                                context: Some(format!("CSI ! with params {:?}", self.params)),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -985,7 +1049,8 @@ impl CommandParser for AnsiParser {
                                     sink.report_error(
                                         ParseError::MalformedSequence {
                                             description: "Unsupported CSI = n sequence",
-                                            sequence: None,
+                                            sequence: Some(format!("CSI = {} n", self.params.first().unwrap_or(&0))),
+                                            context: Some("Font/mode report with unsupported parameter".to_string()),
                                         },
                                         crate::ErrorLevel::Error,
                                     );
@@ -995,7 +1060,8 @@ impl CommandParser for AnsiParser {
                             sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Invalid parameter count for CSI = n",
-                                    sequence: None,
+                                    sequence: Some(format!("CSI = {:?} n", self.params)),
+                                    context: Some(format!("Expected 1 parameter, got {}", self.params.len())),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -1022,7 +1088,8 @@ impl CommandParser for AnsiParser {
                                 sink.report_error(
                                     ParseError::MalformedSequence {
                                         description: "Invalid margin type for CSI = m",
-                                        sequence: None,
+                                        sequence: Some(format!("CSI = {} ; {} m", margin_type_val, value)),
+                                        context: Some(format!("Invalid margin type: {}", margin_type_val)),
                                     },
                                     crate::ErrorLevel::Error,
                                 );
@@ -1031,7 +1098,8 @@ impl CommandParser for AnsiParser {
                             sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Invalid parameter count for CSI = m",
-                                    sequence: None,
+                                    sequence: Some(format!("CSI = {:?} m", self.params)),
+                                    context: Some(format!("Expected 2 parameters, got {}", self.params.len())),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -1045,7 +1113,16 @@ impl CommandParser for AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unsupported CSI = sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI = {:?} {}",
+                                    self.params,
+                                    if byte.is_ascii_graphic() {
+                                        format!("'{}'", byte as char)
+                                    } else {
+                                        format!("0x{:02X}", byte)
+                                    }
+                                )),
+                                context: Some("CSI = followed by unrecognized command".to_string()),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -1252,7 +1329,8 @@ impl AnsiParser {
                             sink.report_error(
                                 ParseError::MalformedSequence {
                                     description: "Unknown or malformed escape sequence",
-                                    sequence: None,
+                                    sequence: Some(format!("OSC {}", ps)),
+                                    context: Some("Unknown OSC command number".to_string()),
                                 },
                                 crate::ErrorLevel::Error,
                             );
@@ -1264,10 +1342,12 @@ impl AnsiParser {
         }
 
         // Malformed OSC
+        let seq_preview = String::from_utf8_lossy(&self.parse_buffer[..self.parse_buffer.len().min(30)]).to_string();
         sink.report_error(
             ParseError::MalformedSequence {
                 description: "Unknown or malformed escape sequence",
-                sequence: None,
+                sequence: Some(format!("OSC {}...", seq_preview)),
+                context: Some("Could not parse OSC command number".to_string()),
             },
             crate::ErrorLevel::Error,
         );
@@ -1284,7 +1364,8 @@ impl AnsiParser {
                 sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Invalid UTF-8 in OSC 4 palette sequence",
-                        sequence: None,
+                        sequence: Some(format!("OSC 4 ; {:?}", &data[..data.len().min(20)])),
+                        context: Some("Palette data is not valid UTF-8".to_string()),
                     },
                     crate::ErrorLevel::Error,
                 );
@@ -1304,7 +1385,8 @@ impl AnsiParser {
                     sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid color index in OSC 4",
-                            sequence: None,
+                            sequence: Some(format!("OSC 4 ; {} ; ...", parts[i])),
+                            context: Some("Color index must be 0-255".to_string()),
                         },
                         crate::ErrorLevel::Error,
                     );
@@ -1329,7 +1411,8 @@ impl AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Invalid RGB values in OSC 4",
-                                sequence: None,
+                                sequence: Some(format!("OSC 4 ; {} ; {}", index, color_spec)),
+                                context: Some(format!("Failed to parse hex values: {}", rgb_part)),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -1338,7 +1421,8 @@ impl AnsiParser {
                     sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid RGB format in OSC 4",
-                            sequence: None,
+                            sequence: Some(format!("OSC 4 ; {} ; {}", index, color_spec)),
+                            context: Some(format!("Expected 3 components separated by '/', got {}", rgb_parts.len())),
                         },
                         crate::ErrorLevel::Error,
                     );
@@ -1347,7 +1431,8 @@ impl AnsiParser {
                 sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Missing 'rgb:' prefix in OSC 4",
-                        sequence: None,
+                        sequence: Some(format!("OSC 4 ; {} ; {}", index, color_spec)),
+                        context: Some("Expected format: 'rgb:rr/gg/bb'".to_string()),
                     },
                     crate::ErrorLevel::Error,
                 );
@@ -1515,7 +1600,8 @@ impl AnsiParser {
                     sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid parameter count for CSI = r",
-                            sequence: None,
+                            sequence: Some(format!("CSI = {:?} r", self.params)),
+                            context: Some(format!("Expected 2-4 parameters for scroll region, got {}", self.params.len())),
                         },
                         crate::ErrorLevel::Error,
                     );
@@ -1565,7 +1651,8 @@ impl AnsiParser {
                 sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Unknown CSI N command",
-                        sequence: None,
+                        sequence: Some("CSI N".to_string()),
+                        context: Some(format!("ANSI Music is disabled (option: {:?})", self.music_option)),
                     },
                     crate::ErrorLevel::Error,
                 );
@@ -1614,7 +1701,13 @@ impl AnsiParser {
                         sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
-                                sequence: None,
+                                sequence: Some(format!(
+                                    "CSI {} ; {} ; {} t",
+                                    cmd,
+                                    self.params.get(1).unwrap_or(&0),
+                                    self.params.get(2).unwrap_or(&0)
+                                )),
+                                context: Some(format!("Unknown CSI t command: {}", cmd)),
                             },
                             crate::ErrorLevel::Error,
                         );
@@ -1632,7 +1725,8 @@ impl AnsiParser {
                         _ => sink.report_error(
                             ParseError::MalformedSequence {
                                 description: "Unknown or malformed escape sequence",
-                                sequence: None,
+                                sequence: Some(format!("CSI {} ; {} ; {} ; {} t", fg_or_bg, r, g, b)),
+                                context: Some(format!("Invalid fg_or_bg parameter: {} (expected 0 or 1)", fg_or_bg)),
                             },
                             crate::ErrorLevel::Error,
                         ),
@@ -1642,7 +1736,8 @@ impl AnsiParser {
                     sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Unknown or malformed escape sequence",
-                            sequence: None,
+                            sequence: Some(format!("CSI {:?} t", self.params)),
+                            context: Some(format!("Invalid parameter count for CSI t: {}", self.params.len())),
                         },
                         crate::ErrorLevel::Error,
                     );
@@ -1650,8 +1745,17 @@ impl AnsiParser {
             },
             b'~' => {
                 let n = self.params.first().copied().unwrap_or(0);
-                if let Some(key) = crate::SpecialKey::from_u8(n as u8) {
+                if let Ok(key) = crate::SpecialKey::try_from(n) {
                     sink.emit(TerminalCommand::CsiSpecialKey(key));
+                } else {
+                    sink.report_error(
+                        ParseError::InvalidParameter {
+                            command: "CSI Special Key",
+                            value: format!("{}", n).to_string(),
+                            expected: Some("A valid sepecial key, report if one is missing".to_string()),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
                 }
             }
             b'c' => {
@@ -1729,7 +1833,16 @@ impl AnsiParser {
                 sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Unknown or malformed escape sequence",
-                        sequence: None,
+                        sequence: Some(format!(
+                            "CSI {:?} {}",
+                            self.params,
+                            if final_byte.is_ascii_graphic() {
+                                format!("'{}'", final_byte as char)
+                            } else {
+                                format!("0x{:02X}", final_byte)
+                            }
+                        )),
+                        context: Some("Unrecognized CSI command (not DEC private mode)".to_string()),
                     },
                     crate::ErrorLevel::Error,
                 );
@@ -1826,7 +1939,8 @@ impl AnsiParser {
                     sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid parameter count for DEC DSR",
-                            sequence: None,
+                            sequence: Some(format!("CSI ? {:?} n", self.params)),
+                            context: Some(format!("Expected 2 parameters for memory checksum, got {}", self.params.len())),
                         },
                         crate::ErrorLevel::Error,
                     );
@@ -1836,7 +1950,16 @@ impl AnsiParser {
                 sink.report_error(
                     ParseError::MalformedSequence {
                         description: "Unknown or malformed escape sequence",
-                        sequence: None,
+                        sequence: Some(format!(
+                            "CSI ? {:?} {}",
+                            self.params,
+                            if final_byte.is_ascii_graphic() {
+                                format!("'{}'", final_byte as char)
+                            } else {
+                                format!("0x{:02X}", final_byte)
+                            }
+                        )),
+                        context: Some("Unrecognized DEC private mode sequence".to_string()),
                     },
                     crate::ErrorLevel::Error,
                 );

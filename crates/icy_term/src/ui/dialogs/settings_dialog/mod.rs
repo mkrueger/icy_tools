@@ -215,7 +215,7 @@ impl SettingsDialogState {
                     dialog = dialog.set_directory(dir);
                 }
 
-                if let Some(path) = dialog.save_file() {
+                if let Some(path) = dialog.pick_folder() {
                     if let Some(path_str) = path.to_str() {
                         self.temp_options.lock().unwrap().capture_path = path_str.to_string();
                     }

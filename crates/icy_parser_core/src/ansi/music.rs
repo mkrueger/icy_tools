@@ -153,7 +153,15 @@ impl AnsiParser {
                     sink.report_error(
                         ParseError::MalformedSequence {
                             description: "Invalid octave in ANSI music",
-                            sequence: None,
+                            sequence: Some(format!(
+                                "O{}",
+                                if byte.is_ascii_graphic() {
+                                    format!("'{}'", byte as char)
+                                } else {
+                                    format!("0x{:02X}", byte)
+                                }
+                            )),
+                            context: Some("Octave must be 0-6".to_string()),
                         },
                         crate::ErrorLevel::Error,
                     );

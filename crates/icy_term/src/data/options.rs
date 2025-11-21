@@ -101,9 +101,11 @@ pub struct Options {
     #[serde(default)]
     pub dial_tone: DialTone,
 
+    /// The path where the capture files are stored in. Defaults to documents
     #[serde(default)]
     pub capture_path: String,
 
+    /// The  path downloads are stored in. Defaults to downloads.
     #[serde(default)]
     pub download_path: String,
 

@@ -52,6 +52,8 @@ pub enum ParseError {
         description: &'static str,
         /// The problematic byte or sequence (for debugging)
         sequence: Option<String>,
+        /// Additional context about where/how the error occurred
+        context: Option<String>,
     },
     /// Unsupported feature or command (not an error, but worth reporting)
     UnsupportedFeature { description: &'static str },
@@ -84,12 +86,19 @@ impl ParseError {
             Self::IncompleteSequence { context } => {
                 format!("Incomplete sequence: {}", context)
             }
-            Self::MalformedSequence { description, sequence } => {
+            Self::MalformedSequence {
+                description,
+                sequence,
+                context,
+            } => {
+                let mut msg = format!("Malformed sequence: {}", description);
                 if let Some(seq) = sequence {
-                    format!("Malformed sequence: {} (sequence: {})", description, seq)
-                } else {
-                    format!("Malformed sequence: {}", description)
+                    msg.push_str(&format!(" (sequence: {})", seq));
                 }
+                if let Some(ctx) = context {
+                    msg.push_str(&format!(" [{}]", ctx));
+                }
+                msg
             }
             Self::UnsupportedFeature { description } => {
                 format!("Unsupported feature: {}", description)
