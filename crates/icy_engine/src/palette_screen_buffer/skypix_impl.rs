@@ -147,7 +147,7 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
             // Convert pixel coordinates to character coordinates
             let char_x = (x * 80) / SKYPIX_SCREEN_SIZE.width;
             let char_y = (y * 25) / SKYPIX_SCREEN_SIZE.height;
-            buf.caret_mut().set_position_xy(char_x, char_y);
+            buf.set_caret_position((char_x, char_y).into());
 
             // Also update BGI pen position for graphics
             bgi.move_to(x, y);

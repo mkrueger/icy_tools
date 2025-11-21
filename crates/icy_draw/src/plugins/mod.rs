@@ -403,13 +403,13 @@ impl UserData for LuaBufferView {
                 let ch = AttributedChar::new(this.convert_from_unicode(c.to_string())?, attribute);
                 let _ = this.buffer_view.lock().get_edit_state_mut().set_char(pos, ch);
                 pos.x += 1;
-                this.buffer_view.lock().get_caret_mut().set_position(pos);
+                this.buffer_view.lock().get_set_caret_position(pos);
             }
             Ok(())
         });
 
         methods.add_method_mut("gotoxy", |_, this, (x, y): (i32, i32)| {
-            this.buffer_view.lock().get_caret_mut().set_position(Position::new(x, y));
+            this.buffer_view.lock().get_set_caret_position(Position::new(x, y));
             Ok(())
         });
 

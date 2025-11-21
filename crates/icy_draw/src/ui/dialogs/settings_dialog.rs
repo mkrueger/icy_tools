@@ -352,7 +352,7 @@ impl SettingsDialog {
                     if let Some(click_pos) = response.hover_pos() {
                         let pos = calc.calc_click_pos(click_pos);
                         let pos = Position::new(pos.x as i32, pos.y as i32);
-                        view.lock().get_caret_mut().set_position(pos);
+                        view.lock().get_set_caret_position(pos);
                     }
                 }
             }
@@ -367,7 +367,7 @@ impl SettingsDialog {
             let mut pos = self.views[self.selected_view].lock().get_caret().get_position();
             self.char_sets[self.cur_char_set].table[self.selected_view][pos.x as usize] = ch;
             pos.x = (pos.x + 1).min(9);
-            self.views[self.selected_view].lock().get_caret_mut().set_position(pos);
+            self.views[self.selected_view].lock().get_set_caret_position(pos);
 
             for x in 0..10 {
                 let ch = self.char_sets[self.cur_char_set].table[self.selected_view][x];
@@ -380,13 +380,13 @@ impl SettingsDialog {
         if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
             let mut pos = self.views[self.selected_view].lock().get_caret().get_position();
             pos.x = (pos.x - 1).max(0);
-            self.views[self.selected_view].lock().get_caret_mut().set_position(pos);
+            self.views[self.selected_view].lock().get_set_caret_position(pos);
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
             let mut pos = self.views[self.selected_view].lock().get_caret().get_position();
             pos.x = (pos.x + 1).min(9);
-            self.views[self.selected_view].lock().get_caret_mut().set_position(pos);
+            self.views[self.selected_view].lock().get_set_caret_position(pos);
         }
     }
 }

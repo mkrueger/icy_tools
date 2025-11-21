@@ -39,11 +39,11 @@ fn test_invalid_erase_display_mode() {
     assert_eq!(sink.errors.len(), 1);
     match &sink.errors[0].0 {
         ParseError::InvalidParameter { command, value, expected } => {
-            assert_eq!(*command, "Erase Display (J)");
+            assert_eq!(*command, "EraseDisplay");
             assert_eq!(*value, "5");
-            assert!(expected.as_ref().unwrap().contains("0 (to end)"));
-            assert!(expected.as_ref().unwrap().contains("1 (from start)"));
-            assert!(expected.as_ref().unwrap().contains("2 (entire)"));
+            assert!(expected.as_ref().unwrap().contains("cursor to end"));
+            assert!(expected.as_ref().unwrap().contains("start to cursor"));
+            assert!(expected.as_ref().unwrap().contains("entire display"));
         }
         _ => panic!("Expected InvalidParameter error"),
     }
@@ -73,11 +73,11 @@ fn test_invalid_erase_line_mode() {
     assert_eq!(sink.errors.len(), 1);
     match &sink.errors[0].0 {
         ParseError::InvalidParameter { command, value, expected } => {
-            assert_eq!(*command, "Erase Line (K)");
+            assert_eq!(*command, "EraseLine");
             assert_eq!(*value, "3");
-            assert!(expected.as_ref().unwrap().contains("0 (to end)"));
-            assert!(expected.as_ref().unwrap().contains("1 (from start)"));
-            assert!(expected.as_ref().unwrap().contains("2 (entire)"));
+            assert!(expected.as_ref().unwrap().contains("cursor to end"));
+            assert!(expected.as_ref().unwrap().contains("start to cursor"));
+            assert!(expected.as_ref().unwrap().contains("entire line"));
         }
         _ => panic!("Expected InvalidParameter error"),
     }

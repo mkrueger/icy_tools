@@ -127,7 +127,7 @@ impl Tool for ClickTool {
         if cp.y > editor.drag_pos.start_abs.y {
             cp.y -= 1;
         }
-        editor.buffer_view.lock().get_caret_mut().set_position(cp);
+        editor.buffer_view.lock().get_set_caret_position(cp);
 
         match self.selection_drag {
             SelectionDrag::Move => {

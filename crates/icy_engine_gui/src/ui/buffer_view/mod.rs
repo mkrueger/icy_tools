@@ -196,7 +196,7 @@ impl BufferView {
         self.get_buffer_mut().layers[cur_layer].clear();
         self.get_buffer_mut().stop_sixel_threads();
 
-        self.get_caret_mut().set_position(Position::default());
+        self.get_set_caret_position(Position::default());
         self.get_caret_mut().set_is_visible(true);
         self.get_caret_mut().reset_color_attribute();
     }

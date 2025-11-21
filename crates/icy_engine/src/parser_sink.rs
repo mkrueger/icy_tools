@@ -266,11 +266,11 @@ impl<'a> ScreenSink<'a> {
     }
 
     fn vd_fill_to_eol(&mut self) {
-        if self.screen.caret().position().x <= 0 {
+        if self.screen.caret_position().x <= 0 {
             return;
         }
-        let sx = self.screen.caret().position().x;
-        let sy = self.screen.caret().position().y;
+        let sx = self.screen.caret_position().x;
+        let sy = self.screen.caret_position().y;
 
         let prev_attr = self.screen.get_char((sx, sy).into()).attribute;
 
@@ -361,6 +361,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let row = upper_left.y + (row as i32).saturating_sub(1).max(0);
                 let col = upper_left.x + (col as i32).saturating_sub(1).max(0);
                 self.screen.set_caret_position(Position::new(col, row));
+                self.screen.limit_caret_pos();
             }
 
             // Erase operations
@@ -420,7 +421,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 }
             }
             TerminalCommand::CsiEraseCharacter(n) => {
-                let pos = self.screen.caret().position();
+                let pos = self.screen.caret_position();
                 let blank = AttributedChar::new(' ', self.get_display_attribute());
                 for i in 0..n as i32 {
                     let x = pos.x + i;
@@ -470,24 +471,24 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::CsiCursorLineTabulationForward(num) => {
                 (0..num).for_each(|_| {
-                    let x = self.screen.terminal_state().next_tab_stop(self.screen.caret().position().x);
+                    let x = self.screen.terminal_state().next_tab_stop(self.screen.caret_position().x);
                     self.screen.caret_mut().x = x;
                 });
             }
             TerminalCommand::CsiCursorBackwardTabulation(num) => {
                 (0..num).for_each(|_| {
-                    let x = self.screen.terminal_state().prev_tab_stop(self.screen.caret().position().x);
+                    let x = self.screen.terminal_state().prev_tab_stop(self.screen.caret_position().x);
                     self.screen.caret_mut().x = x;
                 });
             }
 
             // Cursor save/restore
             TerminalCommand::CsiSaveCursorPosition => {
-                *self.screen.saved_caret_pos() = self.screen.caret().position();
+                *self.screen.saved_caret_pos() = self.screen.caret_position();
             }
             TerminalCommand::CsiRestoreCursorPosition => {
                 let pos = *self.screen.saved_caret_pos();
-                self.screen.caret_mut().set_position(pos);
+                self.screen.set_caret_position(pos);
             }
 
             TerminalCommand::EscSaveCursor => {
@@ -588,7 +589,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
                 self.screen.terminal_state_mut().set_margins_left_right(left, right);
                 let pos = self.screen.upper_left_position();
-                self.screen.caret_mut().set_position(pos);
+                self.screen.set_caret_position(pos);
             }
             TerminalCommand::SetTopBottomMargin { top, bottom } => {
                 // CSI = {top};{bottom}r - Set margins
@@ -596,12 +597,12 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let bottom = (bottom as i32).saturating_sub(1).max(0);
                 self.screen.terminal_state_mut().set_margins_top_bottom(top, bottom);
                 let pos = self.screen.upper_left_position();
-                self.screen.caret_mut().set_position(pos);
+                self.screen.set_caret_position(pos);
             }
             TerminalCommand::ResetMargins => {
                 self.screen.terminal_state_mut().clear_margins_left_right();
                 self.screen.terminal_state_mut().clear_margins_top_bottom();
-                self.screen.caret_mut().set_position(Position::default());
+                self.screen.set_caret_position(Position::default());
             }
             TerminalCommand::ResetLeftAndRightMargin { left, right } => {
                 let width = self.screen.get_width();
@@ -624,7 +625,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 if new_left >= 0 && new_right >= 0 && new_left < width && new_right < width && new_left < new_right {
                     self.screen.terminal_state_mut().set_margins_left_right(new_left, new_right);
                     let pos = self.screen.upper_left_position();
-                    self.screen.caret_mut().set_position(pos);
+                    self.screen.set_caret_position(pos);
                 }
             }
 
@@ -783,7 +784,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             ViewDataCommand::SetChar(ch) => {
                 let ch = AttributedChar::new(ch as char, self.get_display_attribute());
-                self.screen.set_char(self.screen.caret().position(), ch);
+                self.screen.set_char(self.screen.caret_position(), ch);
             }
         }
         false
@@ -811,7 +812,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 sixel_data,
             } => match Sixel::parse_from(aspect_ratio, zero_color, grid_size, &sixel_data) {
                 Ok(sixel) => {
-                    let pos = self.screen.caret().position();
+                    let pos = self.screen.caret_position();
                     self.screen.add_sixel(pos, sixel);
                 }
                 Err(err) => {
@@ -850,7 +851,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                     /*
                     if uri_str.is_empty() {
                         self.screen.caret_mut().attribute.set_is_underlined(false);
-                        let cp = self.screen.caret().position();
+                        let cp = self.screen.caret_position();
                         if cp.y == p.position.y {
                             p.length = cp.x - p.position.x;
                         } else {
@@ -861,7 +862,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                     self.screen.caret_mut().attribute.set_is_underlined(true);
                     self.screen.add_hyperlink(crate::HyperLink {
                         url: Some(uri_str.to_string()),
-                        position: self.screen.caret().position(),
+                        position: self.screen.caret_position(),
                         length: 0,
                     });
                 }

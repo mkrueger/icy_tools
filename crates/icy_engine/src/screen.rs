@@ -35,6 +35,10 @@ pub trait Screen: TextPane + Send {
 
     fn caret(&self) -> &caret::Caret;
 
+    fn caret_position(&self) -> Position {
+        self.caret().position()
+    }
+
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>);
 
     fn get_first_visible_line(&self) -> i32;
@@ -185,13 +189,13 @@ pub trait EditableScreen: RgbaScreen {
 
     fn home(&mut self) {
         let pos = self.upper_left_position();
-        self.caret_mut().set_position(pos);
+        self.set_caret_position(pos);
     }
 
     /// Delete character at caret position, shifting remaining characters in the line left.
     /// Implements a slower fallback using only get_char/set_char APIs.
     fn del(&mut self) {
-        let pos = self.caret().position();
+        let pos = self.caret_position();
         let line_len = self.get_line_length(pos.y);
         if pos.x < 0 || pos.y < 0 {
             return;
@@ -212,7 +216,7 @@ pub trait EditableScreen: RgbaScreen {
     /// Insert a blank character at caret, shifting existing characters right.
     /// Uses get_char/set_char only; slower but generic.
     fn ins(&mut self) {
-        let pos = self.caret().position();
+        let pos = self.caret_position();
         if pos.x < 0 || pos.y < 0 {
             return;
         }
@@ -271,11 +275,11 @@ pub trait EditableScreen: RgbaScreen {
             self.caret_mut().x = target_x;
 
             // Delete (blank) that character.
-            self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
+            self.set_char(self.caret_position(), AttributedChar::new(' ', self.caret().attribute));
         } else {
             let x = max(0, self.caret_mut().x - 1);
             self.caret_mut().x = x;
-            self.set_char(self.caret().position(), AttributedChar::new(' ', self.caret().attribute));
+            self.set_char(self.caret_position(), AttributedChar::new(' ', self.caret().attribute));
         }
     }
 
@@ -394,7 +398,7 @@ pub trait EditableScreen: RgbaScreen {
         if !is_terminal && self.caret().y + 1 > self.get_height() {
             self.set_height(self.caret().y + 1);
         }
-        let mut caret_pos = self.caret().position();
+        let mut caret_pos = self.caret_position();
         self.set_char(caret_pos, ch);
         caret_pos.x += 1;
         if caret_pos.x >= buffer_width {
@@ -406,7 +410,7 @@ pub trait EditableScreen: RgbaScreen {
                 return;
             }
         }
-        self.caret_mut().set_position(caret_pos);
+        self.set_caret_position(caret_pos);
     }
 
     fn scroll_up(&mut self);
@@ -419,7 +423,6 @@ pub trait EditableScreen: RgbaScreen {
 
     fn set_caret_position(&mut self, pos: Position) {
         self.caret_mut().set_position(pos);
-        self.limit_caret_pos();
     }
 
     fn clear_scrollback(&mut self);
@@ -428,7 +431,7 @@ pub trait EditableScreen: RgbaScreen {
     fn set_scroll_position(&mut self, line: usize);
 
     fn clear_buffer_down(&mut self) {
-        let pos = self.caret().position();
+        let pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -442,7 +445,7 @@ pub trait EditableScreen: RgbaScreen {
     }
 
     fn clear_buffer_up(&mut self) {
-        let pos = self.caret().position();
+        let pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -456,7 +459,7 @@ pub trait EditableScreen: RgbaScreen {
     }
 
     fn clear_line(&mut self) {
-        let mut pos = self.caret().position();
+        let mut pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -468,7 +471,7 @@ pub trait EditableScreen: RgbaScreen {
     }
 
     fn clear_line_end(&mut self) {
-        let mut pos = self.caret().position();
+        let mut pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -480,7 +483,7 @@ pub trait EditableScreen: RgbaScreen {
     }
 
     fn clear_line_start(&mut self) {
-        let mut pos = self.caret().position();
+        let mut pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()

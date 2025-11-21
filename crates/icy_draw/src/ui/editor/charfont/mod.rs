@@ -532,7 +532,7 @@ impl CharFontEditor {
             let edit_state = &mut lock.get_edit_state_mut();
             set_up_layers(edit_state.get_buffer_mut());
             edit_state.set_current_layer(1);
-            edit_state.get_caret_mut().set_position((0, 0).into());
+            edit_state.get_set_caret_position((0, 0).into());
             edit_state.set_outline_style(usize::MAX);
             edit_state.set_is_buffer_dirty();
             if let Some(ch) = self.selected_char_opt {

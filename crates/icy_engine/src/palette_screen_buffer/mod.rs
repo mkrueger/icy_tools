@@ -10,8 +10,8 @@ pub use igs::{TerminalResolution, TerminalResolutionExt};
 use igs_impl::IgsState;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette,
-    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
+    Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     palette_screen_buffer::{
         rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
@@ -27,9 +27,6 @@ pub struct PaletteScreenBuffer {
     pub pixel_size: Size,
     pub screen: Vec<u8>,
     pub char_screen_size: Size,
-
-    // Text layer for char storage and compatibility
-    layer: Layer,
 
     // Rendering properties
     font_table: HashMap<usize, BitFont>,
@@ -104,13 +101,6 @@ impl PaletteScreenBuffer {
         // Allocate pixel buffer and fill with background color (0)
         let screen = vec![0u8; px_width as usize * px_height as usize];
 
-        // Create text layer with character dimensions
-        let mut layer = Layer::new("", Size::new(char_cols, char_rows));
-        layer.lines.clear();
-        for _ in 0..char_rows {
-            layer.lines.push(Line::new());
-        }
-
         // Set appropriate default palette based on graphics type
         let palette = match graphics_type {
             GraphicsType::IGS(res) => res.get_palette().clone(),
@@ -143,7 +133,6 @@ impl PaletteScreenBuffer {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
             char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
             screen,
-            layer,
             font_table,
             palette,
             caret,
@@ -242,21 +231,8 @@ impl PaletteScreenBuffer {
 }
 
 impl TextPane for PaletteScreenBuffer {
-    fn get_char(&self, pos: Position) -> AttributedChar {
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
-            return AttributedChar::default();
-        }
-
-        let y = pos.y as usize;
-        let x = pos.x as usize;
-
-        if y < self.layer.lines.len() {
-            let line = &self.layer.lines[y];
-            if x < line.chars.len() {
-                return line.chars[x];
-            }
-        }
-
+    fn get_char(&self, _pos: Position) -> AttributedChar {
+        // won't work for rgba screens.
         AttributedChar::default()
     }
 
@@ -277,17 +253,9 @@ impl TextPane for PaletteScreenBuffer {
         self.char_screen_size.height
     }
 
-    fn get_line_length(&self, line: i32) -> i32 {
-        if line < 0 || line >= self.char_screen_size.height {
-            return 0;
-        }
-
-        let y = line as usize;
-        if y < self.layer.lines.len() {
-            self.layer.lines[y].chars.len() as i32
-        } else {
-            0
-        }
+    fn get_line_length(&self, _line: i32) -> i32 {
+        // won't work for rgba screens.
+        0
     }
 
     fn get_rectangle(&self) -> Rectangle {
@@ -435,7 +403,8 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn line_count(&self) -> usize {
-        self.layer.lines.len()
+        // won't work for rgba screens.
+        0
     }
 
     fn caret(&self) -> &Caret {
@@ -585,10 +554,8 @@ impl EditableScreen for PaletteScreenBuffer {
         self.caret.reset();
     }
 
-    fn insert_line(&mut self, line: usize, new_line: Line) {
-        if line <= self.layer.lines.len() {
-            self.layer.lines.insert(line, new_line);
-        }
+    fn insert_line(&mut self, _line: usize, _new_line: Line) {
+        // currently unused in rgba screens.
     }
 
     fn set_font(&mut self, font_number: usize, font: BitFont) {
@@ -605,8 +572,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn set_size(&mut self, size: Size) {
         self.char_screen_size = size;
-        self.layer.set_size(size);
-        self.layer.lines.resize_with(size.height as usize, Line::new);
     }
 
     /// Scroll the screen up by one line (move content up, clear bottom line)
@@ -628,12 +593,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Clear the freed bottom region
         self.screen[movable_rows * row_len..screen_height * row_len].fill(0);
-
-        // Update text layer
-        if !self.layer.lines.is_empty() {
-            self.layer.lines.remove(0);
-            self.layer.lines.push(Line::new());
-        }
 
         self.mark_dirty();
     }
@@ -658,12 +617,6 @@ impl EditableScreen for PaletteScreenBuffer {
         // Clear the freed top region
         self.screen[0..line_height * row_len].fill(0);
 
-        // Update text layer
-        if !self.layer.lines.is_empty() {
-            self.layer.lines.pop();
-            self.layer.lines.insert(0, Line::new());
-        }
-
         self.mark_dirty();
     }
 
@@ -684,13 +637,6 @@ impl EditableScreen for PaletteScreenBuffer {
             self.screen.copy_within(row_start + char_width..row_start + screen_width, row_start);
             // Clear vacated right area
             self.screen[row_start + screen_width - char_width..row_start + screen_width].fill(0);
-        }
-
-        // Update text layer (keep existing semantics: remove first char)
-        for line in &mut self.layer.lines {
-            if !line.chars.is_empty() {
-                line.chars.remove(0);
-            }
         }
 
         self.mark_dirty();
@@ -716,23 +662,12 @@ impl EditableScreen for PaletteScreenBuffer {
             self.screen[row_start..row_start + char_width].fill(0);
         }
 
-        // Update text layer (insert blank char at start)
-        for line in &mut self.layer.lines {
-            line.chars.insert(0, AttributedChar::default());
-        }
-
         self.mark_dirty();
     }
 
     fn clear_screen(&mut self) {
-        self.caret_mut().set_position(Position::default());
-        self.layer.clear();
+        self.set_caret_position(Position::default());
         self.terminal_state_mut().cleared_screen = true;
-
-        // Clear text layer
-        for line in &mut self.layer.lines {
-            line.chars.clear();
-        }
 
         // Clear pixel buffer
         self.screen.fill(self.caret.attribute.get_background() as u8);
@@ -755,56 +690,18 @@ impl EditableScreen for PaletteScreenBuffer {
         // No-op, no scrollback
     }
 
-    fn remove_terminal_line(&mut self, line: i32) {
-        if line >= self.layer.lines.len() as i32 {
-            return;
-        }
-        if line >= 0 && (line as usize) < self.layer.lines.len() {
-            self.layer.lines.remove(line as usize);
-        }
-
-        // If we have scroll margins, insert a blank line at the bottom margin
-        if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
-            if end < self.layer.lines.len() as i32 {
-                self.layer.lines.insert(end as usize, Line::new());
-            }
-        }
+    fn remove_terminal_line(&mut self, _line: i32) {
+        // atm unused in rgba screens.
     }
 
-    fn insert_terminal_line(&mut self, line: i32) {
-        // If we have scroll margins, remove the line at the bottom margin first
-        if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
-            if end < self.layer.lines.len() as i32 {
-                self.layer.lines.remove(end as usize);
-            }
-        }
-
-        if line >= 0 && (line as usize) <= self.layer.lines.len() {
-            self.layer.lines.insert(line as usize, Line::new());
-        }
+    fn insert_terminal_line(&mut self, _line: i32) {
+        // atm unused in rgba screens.
     }
 
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
             return;
         }
-        let y = pos.y as usize;
-        let x = pos.x as usize;
-
-        // Ensure line exists
-        while y >= self.layer.lines.len() {
-            self.layer.lines.push(Line::new());
-        }
-
-        let line = &mut self.layer.lines[y];
-
-        // Ensure line has enough chars
-        while x >= line.chars.len() {
-            line.chars.push(AttributedChar::default());
-        }
-
-        // Store in text layer
-        line.chars[x] = ch;
 
         // Render directly to RGBA buffer
         self.render_char_to_buffer(pos, ch);
@@ -820,9 +717,6 @@ impl EditableScreen for PaletteScreenBuffer {
         log::error!("error: setting height to {:?}", height);
 
         let height = height.max(1);
-
-        // Resize text layer
-        self.layer.lines.resize_with(height as usize, Line::new);
 
         // Update screen size
         self.char_screen_size.height = height;
@@ -870,7 +764,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_buffer_down(&mut self) {
-        let pos = self.caret().position();
+        let pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -884,7 +778,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_buffer_up(&mut self) {
-        let pos = self.caret().position();
+        let pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -898,7 +792,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_line(&mut self) {
-        let mut pos = self.caret().position();
+        let mut pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -910,7 +804,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_line_end(&mut self) {
-        let mut pos = self.caret().position();
+        let mut pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()
@@ -922,7 +816,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_line_start(&mut self) {
-        let mut pos = self.caret().position();
+        let mut pos = self.caret_position();
         let ch: AttributedChar = AttributedChar {
             attribute: self.caret().attribute,
             ..Default::default()

@@ -532,7 +532,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_screen(&mut self) {
-        self.caret_mut().set_position(Position::default());
+        self.set_caret_position(Position::default());
         let layer = &mut self.buffer.layers[self.current_layer];
         layer.clear();
         if self.terminal_state().is_terminal_buffer {

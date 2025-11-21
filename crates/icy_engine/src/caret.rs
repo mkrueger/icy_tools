@@ -26,11 +26,6 @@ impl Caret {
         self.y = pos.y;
     }
 
-    pub fn set_position_xy(&mut self, x: i32, y: i32) {
-        self.x = x;
-        self.y = y;
-    }
-
     pub fn set_foreground(&mut self, color: u32) {
         self.attribute.set_foreground(color);
     }

@@ -612,14 +612,14 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
 
         IgsCommand::CursorMotion { direction, count } => {
             use icy_parser_core::Direction;
-            let pos = buf.caret().position();
+            let pos = buf.caret_position();
             let new_pos = match direction {
                 Direction::Up => crate::Position::new(pos.x, pos.y.saturating_sub(count)),
                 Direction::Down => crate::Position::new(pos.x, pos.y + count),
                 Direction::Left => crate::Position::new(pos.x.saturating_sub(count), pos.y),
                 Direction::Right => crate::Position::new(pos.x + count, pos.y),
             };
-            buf.caret_mut().set_position(new_pos);
+            buf.set_caret_position(new_pos);
         }
 
         IgsCommand::PositionCursor { x, y } => {
@@ -628,7 +628,7 @@ fn execute_igs_command(buf: &mut dyn EditableScreen, state: &mut IgsState, cmd: 
         }
 
         IgsCommand::RememberCursor { .. } => {
-            *buf.saved_caret_pos() = buf.caret().position();
+            *buf.saved_caret_pos() = buf.caret_position();
         }
 
         IgsCommand::InverseVideo { enabled } => {

@@ -121,7 +121,7 @@ impl SelectFontDialog {
             for ch in b {
                 let pos = font.render_next(&mut state, prev, ch, false);
                 prev = ch;
-                state.get_caret_mut().set_position(pos);
+                state.get_set_caret_position(pos);
             }
             let img = create_image(ui.ctx(), state.get_buffer());
             self.image_cache.insert(cur_font, img);

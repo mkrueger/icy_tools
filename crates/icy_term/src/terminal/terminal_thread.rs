@@ -912,7 +912,7 @@ impl TerminalThread {
                             match Sixel::parse_from(aspect_ratio.clone(), zero_color.clone(), grid_size.clone(), sixel_data) {
                                 Ok(sixel) => {
                                     if let Ok(mut screen) = self.edit_screen.lock() {
-                                        let pos = screen.caret().position();
+                                        let pos = screen.caret_position();
                                         screen.add_sixel(pos, sixel);
                                     }
                                     // let the sixel update.
