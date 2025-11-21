@@ -116,6 +116,16 @@ fn emit_dos_color_as_sgr(sink: &mut dyn CommandSink, attr: u8) {
     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(bg_color)));
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScrollAreaStage {
+    NumLines,
+    Top,
+    Left,
+    Bottom,
+    Right,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AvatarState {
     /// Normal character processing
@@ -140,7 +150,7 @@ enum AvatarState {
     // FSC‑0037
     ReadScrollArea {
         direction: Direction,
-        stage: u8, // 0 = num_lines, 1 = top, 2 = left, 3 = bottom, 4 = right
+        stage: ScrollAreaStage,
         num_lines: u8,
         top: u8,
         left: u8,
@@ -306,7 +316,7 @@ impl CommandParser for AvatarParser {
                     SCROLL_UP => {
                         self.state = AvatarState::ReadScrollArea {
                             direction: Direction::Up,
-                            stage: 0,
+                            stage: ScrollAreaStage::NumLines,
                             num_lines: 0,
                             top: 0,
                             left: 0,
@@ -318,7 +328,7 @@ impl CommandParser for AvatarParser {
                     SCROLL_DOWN => {
                         self.state = AvatarState::ReadScrollArea {
                             direction: Direction::Down,
-                            stage: 0,
+                            stage: ScrollAreaStage::NumLines,
                             num_lines: 0,
                             top: 0,
                             left: 0,
@@ -416,49 +426,48 @@ impl CommandParser for AvatarParser {
                     bottom,
                 } => {
                     match stage {
-                        0 => {
-                            // num_lines
+                        ScrollAreaStage::NumLines => {
                             let nl = if byte == 0 { 0 } else { byte };
                             self.state = AvatarState::ReadScrollArea {
                                 direction,
-                                stage: 1,
+                                stage: ScrollAreaStage::Top,
                                 num_lines: nl,
                                 top,
                                 left,
                                 bottom,
                             };
                         }
-                        1 => {
+                        ScrollAreaStage::Top => {
                             self.state = AvatarState::ReadScrollArea {
                                 direction,
-                                stage: 2,
+                                stage: ScrollAreaStage::Left,
                                 num_lines,
                                 top: byte.max(1),
                                 left,
                                 bottom,
                             };
                         }
-                        2 => {
+                        ScrollAreaStage::Left => {
                             self.state = AvatarState::ReadScrollArea {
                                 direction,
-                                stage: 3,
+                                stage: ScrollAreaStage::Bottom,
                                 num_lines,
                                 top,
                                 left: byte.max(1),
                                 bottom,
                             };
                         }
-                        3 => {
+                        ScrollAreaStage::Bottom => {
                             self.state = AvatarState::ReadScrollArea {
                                 direction,
-                                stage: 4,
+                                stage: ScrollAreaStage::Right,
                                 num_lines,
                                 top,
                                 left,
                                 bottom: byte.max(1),
                             };
                         }
-                        4 => {
+                        ScrollAreaStage::Right => {
                             let right = byte.max(1);
                             sink.emit(TerminalCommand::ScrollArea {
                                 direction,
@@ -468,9 +477,6 @@ impl CommandParser for AvatarParser {
                                 bottom: bottom.max(1) as u16,
                                 right: right as u16,
                             });
-                            self.reset();
-                        }
-                        _ => {
                             self.reset();
                         }
                     }

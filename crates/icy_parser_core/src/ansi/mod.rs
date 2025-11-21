@@ -9,8 +9,9 @@ use base64::{Engine as _, engine::general_purpose};
 pub mod music;
 pub mod sgr;
 use crate::{
-    AnsiMode, BaudEmulation, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DecPrivateMode, DeviceControlString, Direction,
-    EraseInDisplayMode, EraseInLineMode, MusicState, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest,
+    AnsiMode, BACKSPACE, BELL, BaudEmulation, CARRIAGE_RETURN, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DELETE, DecPrivateMode,
+    DeviceControlString, Direction, ESC, EraseInDisplayMode, EraseInLineMode, FORM_FEED, LINE_FEED, MusicState, OperatingSystemCommand, ParseError,
+    SgrAttribute, TAB, TerminalCommand, TerminalRequest,
 };
 
 pub struct AnsiParser {
@@ -302,57 +303,49 @@ impl CommandParser for AnsiParser {
             match self.state {
                 ParserState::Default => {
                     match byte {
-                        0x1B => {
-                            // ESC - start escape sequence
+                        ESC => {
                             self.flush_printable(sink, input, printable_start, i);
                             self.state = ParserState::Escape;
                             i += 1;
                             printable_start = i;
                         }
-                        0x07 => {
-                            // BEL
+                        BELL => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Bell);
                             i += 1;
                             printable_start = i;
                         }
-                        0x08 => {
-                            // BS
+                        BACKSPACE => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Backspace);
                             i += 1;
                             printable_start = i;
                         }
-                        0x09 => {
-                            // HT
+                        TAB => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Tab);
                             i += 1;
                             printable_start = i;
                         }
-                        0x0A => {
-                            // LF
+                        LINE_FEED => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::LineFeed);
                             i += 1;
                             printable_start = i;
                         }
-                        0x0C => {
-                            // FF
+                        FORM_FEED => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::FormFeed);
                             i += 1;
                             printable_start = i;
                         }
-                        0x0D => {
-                            // CR
+                        CARRIAGE_RETURN => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::CarriageReturn);
                             i += 1;
                             printable_start = i;
                         }
-                        0x7F => {
-                            // DEL
+                        DELETE => {
                             self.flush_printable(sink, input, printable_start, i);
                             sink.emit(TerminalCommand::Delete);
                             i += 1;
@@ -444,7 +437,7 @@ impl CommandParser for AnsiParser {
                             i += 1;
                             printable_start = i;
                         }
-                        0x0C | 0x07 | 0x08 | b'\x09' | b'\x7F' | b'\x1B' | b'\n' | b'\r' => {
+                        FORM_FEED | BELL | BACKSPACE | TAB | DELETE | ESC | LINE_FEED | CARRIAGE_RETURN => {
                             // non standard extension to print esc chars ESC ESC -> ESC
                             self.last_char = byte;
                             sink.print(&[byte]);
@@ -657,13 +650,20 @@ impl CommandParser for AnsiParser {
                     }
                     b'y' => {
                         // Request Checksum of Rectangular Area: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y
-                        let _pid = self.params.first().copied().unwrap_or(0);
-                        let ppage = self.params.get(1).copied().unwrap_or(0) as u8;
-                        let pt = self.params.get(2).copied().unwrap_or(0) as u16;
-                        let pl = self.params.get(3).copied().unwrap_or(0) as u16;
-                        let pb = self.params.get(4).copied().unwrap_or(0) as u16;
-                        let pr = self.params.get(5).copied().unwrap_or(0) as u16;
-                        sink.request(TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr));
+                        let id = self.params.first().copied().unwrap_or(0) as u8;
+                        let page = self.params.get(1).copied().unwrap_or(0) as u8;
+                        let top = self.params.get(2).copied().unwrap_or(0) as u16;
+                        let left = self.params.get(3).copied().unwrap_or(0) as u16;
+                        let bottom = self.params.get(4).copied().unwrap_or(0) as u16;
+                        let right = self.params.get(5).copied().unwrap_or(0) as u16;
+                        sink.request(TerminalRequest::RequestChecksumRectangularArea {
+                            id,
+                            page,
+                            top,
+                            left,
+                            bottom,
+                            right,
+                        });
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1057,12 +1057,12 @@ impl CommandParser for AnsiParser {
 
                 ParserState::OscString => {
                     // Use memchr to quickly find the next BEL or ESC byte
-                    if let Some(term_pos) = memchr::memchr2(0x07, 0x1B, &input[i..]) {
+                    if let Some(term_pos) = memchr::memchr2(BELL, ESC, &input[i..]) {
                         let term_byte = input[i + term_pos];
                         // Copy everything up to terminator into parse_buffer
                         self.parse_buffer.extend_from_slice(&input[i..i + term_pos]);
 
-                        if term_byte == 0x07 {
+                        if term_byte == BELL {
                             // BEL - End of OSC
                             self.emit_osc_sequence(sink);
                             self.reset();
@@ -1079,7 +1079,7 @@ impl CommandParser for AnsiParser {
                                 printable_start = i;
                             } else {
                                 // Collect ESC as part of OSC string
-                                self.parse_buffer.push(0x1B);
+                                self.parse_buffer.push(ESC);
                                 i += 1;
                             }
                         }
@@ -1092,7 +1092,7 @@ impl CommandParser for AnsiParser {
 
                 ParserState::DcsString => {
                     // Use memchr to quickly find the next ESC byte
-                    if let Some(esc_pos) = memchr::memchr(0x1B, &input[i..]) {
+                    if let Some(esc_pos) = memchr::memchr(ESC, &input[i..]) {
                         // Copy everything up to ESC into parse_buffer
                         self.parse_buffer.extend_from_slice(&input[i..i + esc_pos]);
                         i += esc_pos;
@@ -1141,13 +1141,13 @@ impl CommandParser for AnsiParser {
 
                         // If we get here, it wasn't a valid macro sequence
                         // Treat the ESC [ and following chars as regular DCS data
-                        self.parse_buffer.push(0x1B);
+                        self.parse_buffer.push(ESC);
                         self.parse_buffer.push(b'[');
                         // The next iteration will handle the current byte
                         self.state = ParserState::DcsString;
                     } else {
                         // False alarm - ESC was part of DCS data
-                        self.parse_buffer.push(0x1B);
+                        self.parse_buffer.push(ESC);
                         self.parse_buffer.push(byte);
                         self.state = ParserState::DcsString;
                         i += 1;
@@ -1156,7 +1156,7 @@ impl CommandParser for AnsiParser {
 
                 ParserState::ApsString => {
                     // Use memchr to quickly find the next ESC byte
-                    if let Some(esc_pos) = memchr::memchr(0x1B, &input[i..]) {
+                    if let Some(esc_pos) = memchr::memchr(ESC, &input[i..]) {
                         // Copy everything up to ESC into parse_buffer
                         self.parse_buffer.extend_from_slice(&input[i..i + esc_pos]);
                         i += esc_pos;
@@ -1179,7 +1179,7 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     } else {
                         // False alarm - ESC was part of APS data
-                        self.parse_buffer.push(0x1B);
+                        self.parse_buffer.push(ESC);
                         self.parse_buffer.push(byte);
                         self.state = ParserState::ApsString;
                         i += 1;

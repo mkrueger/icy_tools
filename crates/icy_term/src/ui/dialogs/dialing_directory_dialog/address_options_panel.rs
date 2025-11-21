@@ -289,13 +289,14 @@ impl super::DialingDirectoryState {
                 TerminalEmulationWrapper(TerminalEmulation::Ansi),
                 TerminalEmulationWrapper(TerminalEmulation::Utf8Ansi),
                 TerminalEmulationWrapper(TerminalEmulation::Ascii),
-                TerminalEmulationWrapper(TerminalEmulation::Avatar),
+                TerminalEmulationWrapper(TerminalEmulation::Rip),
+                TerminalEmulationWrapper(TerminalEmulation::AtariST),
                 TerminalEmulationWrapper(TerminalEmulation::PETscii),
                 TerminalEmulationWrapper(TerminalEmulation::ATAscii),
                 TerminalEmulationWrapper(TerminalEmulation::ViewData),
                 TerminalEmulationWrapper(TerminalEmulation::Mode7),
-                TerminalEmulationWrapper(TerminalEmulation::AtariST),
-                TerminalEmulationWrapper(TerminalEmulation::Rip),
+                TerminalEmulationWrapper(TerminalEmulation::Skypix),
+                TerminalEmulationWrapper(TerminalEmulation::Avatar),
             ];
 
             let term_pick = pick_list(terms, Some(TerminalEmulationWrapper(addr.terminal_type)), move |t: TerminalEmulationWrapper| {

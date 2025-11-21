@@ -1,13 +1,4 @@
-use crate::{CommandParser, CommandSink, TerminalCommand};
-
-// ASCII control character codes
-const BELL: u8 = 0x07;
-const BACKSPACE: u8 = 0x08;
-const TAB: u8 = 0x09;
-const LINE_FEED: u8 = 0x0A;
-const FORM_FEED: u8 = 0x0C;
-const CARRIAGE_RETURN: u8 = 0x0D;
-const DELETE: u8 = 0x7F;
+use crate::*;
 
 // Direct lookup table mapping ASCII bytes to TerminalCommand
 const CONTROL_COMMAND: [Option<TerminalCommand>; 256] = {

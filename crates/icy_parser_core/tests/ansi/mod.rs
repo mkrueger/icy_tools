@@ -5,11 +5,19 @@ use icy_parser_core::{
     EraseInLineMode, ErrorLevel, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
 };
 
-mod debug_melody;
-mod debug_music;
+mod requests;
+
+mod dcs;
+
+mod aps;
+
+mod osc;
+
+mod control_codes;
+
 pub mod music;
 
-struct CollectSink {
+pub struct CollectSink {
     pub text: Vec<u8>,
     pub cmds: Vec<TerminalCommand>,
     pub requests: Vec<TerminalRequest>,
@@ -306,28 +314,6 @@ fn test_esc_sequences() {
     parser.parse(b"\x1BM", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     assert_eq!(sink.cmds[0], TerminalCommand::EscReverseIndex);
-}
-
-#[test]
-fn test_osc_sequences() {
-    let mut parser = AnsiParser::new();
-    let mut sink = CollectSink::new();
-
-    // ESC]0;My Title BEL - Set window title
-    parser.parse(b"\x1B]0;My Title\x07", &mut sink);
-    assert_eq!(sink.osc_commands.len(), 1);
-    if let OperatingSystemCommand::SetTitle(title) = &sink.osc_commands[0] {
-        assert_eq!(title, b"My Title");
-    }
-
-    sink.osc_commands.clear();
-
-    // ESC]2;Another Title ESC\ - Set window title with ST terminator
-    parser.parse(b"\x1B]2;Another Title\x1B\\", &mut sink);
-    assert_eq!(sink.osc_commands.len(), 1);
-    if let OperatingSystemCommand::SetWindowTitle(title) = &sink.osc_commands[0] {
-        assert_eq!(title, b"Another Title");
-    }
 }
 
 #[test]
@@ -692,74 +678,6 @@ fn test_ansi_modes() {
 }
 
 #[test]
-fn test_dcs_sequences() {
-    let mut parser = AnsiParser::new();
-    let mut sink = CollectSink::new();
-
-    // DCS with unknown content now reports error instead of Unknown
-    parser.parse(b"\x1BPHello\x1B\\World", &mut sink);
-    assert_eq!(sink.cmds.len(), 0); // No commands emitted for malformed DCS
-    assert_eq!(sink.text, b"World");
-
-    sink.text.clear();
-
-    // DCS with ESC in the middle (not a terminator) also reports error
-    parser.parse(b"\x1BPTest\x1BData\x1B\\", &mut sink);
-    assert_eq!(sink.cmds.len(), 0); // No commands emitted for malformed DCS
-
-    sink.text.clear();
-
-    // DCS for sixel graphics
-    parser.parse(b"\x1BP0;0;8q\"1;1;80;80#0;2;0;0;0#1!80~-#1!80~-\x1B\\", &mut sink);
-    assert_eq!(sink.dcs_commands.len(), 1);
-    if let DeviceControlString::Sixel {
-        aspect_ratio: _,
-        zero_color: _,
-        grid_size: _,
-        sixel_data,
-    } = &sink.dcs_commands[0]
-    {
-        // TODO: Update these assertions based on actual parameter parsing
-        assert!(sixel_data.starts_with(b"\"1;1;80;80"));
-    } else {
-        panic!("Expected Sixel");
-    }
-
-    sink.dcs_commands.clear();
-
-    // DCS for custom font loading: CTerm:Font:{slot}:{base64_data}
-    // Base64 "dGVzdGRhdGE=" decodes to "testdata"
-    parser.parse(b"\x1BPCTerm:Font:5:dGVzdGRhdGE=\x1B\\", &mut sink);
-    assert_eq!(sink.dcs_commands.len(), 1);
-    if let DeviceControlString::LoadFont(slot, data) = &sink.dcs_commands[0] {
-        assert_eq!(slot, &5);
-        assert_eq!(data, b"testdata");
-    } else {
-        panic!("Expected LoadFont");
-    }
-}
-
-#[test]
-fn test_aps_sequences() {
-    let mut parser = AnsiParser::new();
-    let mut sink = CollectSink::new();
-
-    // APS with string terminator ESC \
-    parser.parse(b"\x1B_AppCommand\x1B\\Text", &mut sink);
-    assert_eq!(sink.aps_data.len(), 1);
-    assert_eq!(sink.text, b"Text");
-    assert_eq!(sink.aps_data[0], b"AppCommand");
-
-    sink.text.clear();
-    sink.aps_data.clear();
-
-    // APS with ESC in the middle
-    parser.parse(b"\x1B_Test\x1BData\x1B\\", &mut sink);
-    assert_eq!(sink.aps_data.len(), 1);
-    assert_eq!(sink.aps_data[0], b"Test\x1BData");
-}
-
-#[test]
 fn test_csi_asterisk_sequences() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
@@ -786,15 +704,24 @@ fn test_csi_asterisk_sequences() {
     sink.cmds.clear();
 
     // CSI multiple params *y - Request Checksum of Rectangular Area
-    // Format: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y (Pid is ignored)
+    // Format: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y
     parser.parse(b"\x1B[1;2;3;4;5;6*y", &mut sink);
     assert_eq!(sink.requests.len(), 1);
-    if let TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr) = sink.requests[0] {
-        assert_eq!(ppage, 2); // Pid (1) is ignored, this is Ppage
-        assert_eq!(pt, 3);
-        assert_eq!(pl, 4);
-        assert_eq!(pb, 5);
-        assert_eq!(pr, 6);
+    if let TerminalRequest::RequestChecksumRectangularArea {
+        id,
+        page,
+        top,
+        left,
+        bottom,
+        right,
+    } = sink.requests[0]
+    {
+        assert_eq!(id, 1);
+        assert_eq!(page, 2);
+        assert_eq!(top, 3);
+        assert_eq!(left, 4);
+        assert_eq!(bottom, 5);
+        assert_eq!(right, 6);
     } else {
         panic!("Expected RequestChecksumRectangularArea");
     }
@@ -804,17 +731,6 @@ fn test_csi_asterisk_sequences() {
 fn test_csi_dollar_sequences() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
-
-    // CSI Ps$w - Request Tab Stop Report
-    parser.parse(b"\x1B[2$w", &mut sink);
-    assert_eq!(sink.requests.len(), 1);
-    if let TerminalRequest::RequestTabStopReport = sink.requests[0] {
-        // Success
-    } else {
-        panic!("Expected RequestTabStopReport");
-    }
-
-    sink.cmds.clear();
 
     // CSI Pchar;Pt;Pl;Pb;Pr$x - Fill Rectangular Area
     parser.parse(b"\x1B[65;1;1;10;10$x", &mut sink);
@@ -1177,90 +1093,5 @@ fn test_special_keys() {
         assert_eq!(key, icy_parser_core::SpecialKey::PageDown);
     } else {
         panic!("Expected CsiSpecialKey");
-    }
-}
-
-#[test]
-fn test_macro_checksum_report() {
-    let mut parser = AnsiParser::new();
-    let mut sink = CollectSink::new();
-
-    // Load two macros: macro 0 with "Hello", macro 1 with "World"
-    parser.parse(b"\x1BP0;0;0!zHello\x1B\\", &mut sink);
-    parser.parse(b"\x1BP1;0;0!zWorld\x1B\\", &mut sink);
-
-    // Request memory checksum report with pid=1
-    parser.parse(b"\x1B[?63;1n", &mut sink);
-
-    // Should have one request
-    assert_eq!(sink.requests.len(), 1);
-
-    // Check that we got a MemoryChecksumReport with the correct checksum
-    if let TerminalRequest::MemoryChecksumReport(pid, checksum) = sink.requests[0] {
-        assert_eq!(pid, 1);
-        // Checksum calculation: "Hello" = 72+101+108+108+111 = 500 (0x01F4)
-        //                       "World" = 87+111+114+108+100 = 520 (0x0208)
-        //                       Total = 1020 (0x03FC)
-        assert_eq!(checksum, 0x03FC);
-    } else {
-        panic!("Expected MemoryChecksumReport");
-    }
-}
-
-#[test]
-fn test_osc_palette() {
-    let mut parser = AnsiParser::new();
-    let mut sink = CollectSink::new();
-
-    // OSC 4 - Set palette color 0 to black
-    parser.parse(b"\x1B]4;0;rgb:00/00/00\x07", &mut sink);
-
-    assert_eq!(sink.osc_commands.len(), 1);
-    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[0] {
-        assert_eq!(index, 0);
-        assert_eq!(r, 0x00);
-        assert_eq!(g, 0x00);
-        assert_eq!(b, 0x00);
-    } else {
-        panic!("Expected SetPaletteColor");
-    }
-
-    sink.osc_commands.clear();
-
-    // OSC 4 - Set palette color 15 to white (using ST terminator)
-    parser.parse(b"\x1B]4;15;rgb:ff/ff/ff\x1B\\", &mut sink);
-
-    assert_eq!(sink.osc_commands.len(), 1);
-    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[0] {
-        assert_eq!(index, 15);
-        assert_eq!(r, 0xff);
-        assert_eq!(g, 0xff);
-        assert_eq!(b, 0xff);
-    } else {
-        panic!("Expected SetPaletteColor");
-    }
-
-    sink.osc_commands.clear();
-
-    // OSC 4 - Multiple palette entries
-    parser.parse(b"\x1B]4;1;rgb:80/00/00;2;rgb:00/80/00\x07", &mut sink);
-
-    assert_eq!(sink.osc_commands.len(), 2);
-    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[0] {
-        assert_eq!(index, 1);
-        assert_eq!(r, 0x80);
-        assert_eq!(g, 0x00);
-        assert_eq!(b, 0x00);
-    } else {
-        panic!("Expected SetPaletteColor");
-    }
-
-    if let OperatingSystemCommand::SetPaletteColor(index, r, g, b) = sink.osc_commands[1] {
-        assert_eq!(index, 2);
-        assert_eq!(r, 0x00);
-        assert_eq!(g, 0x80);
-        assert_eq!(b, 0x00);
-    } else {
-        panic!("Expected SetPaletteColor");
     }
 }

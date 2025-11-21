@@ -9,6 +9,9 @@ pub use errors::{ErrorLevel, ParseError, print_char_value};
 
 mod ansi;
 
+mod control_codes;
+pub use control_codes::*;
+
 pub use ansi::music::*;
 pub use ansi::{AnsiParser, sgr::ANSI_COLOR_OFFSETS};
 
@@ -727,9 +730,16 @@ pub enum TerminalRequest {
     /// Terminal should respond with current DEC mode status
     DecPrivateModeReport(DecPrivateMode),
 
-    /// Request Checksum of Rectangular Area: ESC[{page};{top};{left};{bottom};{right}*y
+    /// Request Checksum of Rectangular Area: ESC[{id};{page};{top};{left};{bottom};{right}*y
     /// Terminal should respond with checksum in DCS format
-    RequestChecksumRectangularArea(u8, u16, u16, u16, u16),
+    RequestChecksumRectangularArea {
+        id: u8,
+        page: u8,
+        top: u16,
+        left: u16,
+        bottom: u16,
+        right: u16,
+    },
 
     /// Request Tab Stop Report: ESC[2$w
     /// Terminal should respond with current tab stops in DCS format

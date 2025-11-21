@@ -1320,10 +1320,17 @@ impl TerminalThread {
             }
             TerminalRequest::AnsiModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
             TerminalRequest::DecPrivateModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
-            TerminalRequest::RequestChecksumRectangularArea(ppage, pt, pl, pb, pr) => {
+            TerminalRequest::RequestChecksumRectangularArea {
+                id,
+                page: _,
+                top,
+                left,
+                bottom,
+                right,
+            } => {
                 if let Ok(screen) = self.edit_screen.lock() {
-                    let checksum = icy_engine::decrqcra_checksum(&**screen, *pt as i32, *pl as i32, *pb as i32, *pr as i32);
-                    Some(format!("\x1BP{}!~{:04X}\x1B\\", ppage, checksum).into_bytes())
+                    let checksum = icy_engine::decrqcra_checksum(&**screen, *top as i32, *left as i32, *bottom as i32, *right as i32);
+                    Some(format!("\x1BP{}!~{:04X}\x1B\\", id, checksum).into_bytes())
                 } else {
                     None
                 }
