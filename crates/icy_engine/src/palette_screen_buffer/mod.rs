@@ -187,9 +187,24 @@ impl PaletteScreenBuffer {
             return None;
         };
 
+        let fill_width = if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
+            // For proportional fonts, use the actual advance width
+            let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
+            let left_bearing = glyph.left_bearing.unwrap_or(0);
+            let right_bearing = glyph.right_bearing.unwrap_or(0);
+            // Special handling for empty glyphs (like space)
+            if glyph_width == 0 && left_bearing > 0 {
+                left_bearing
+            } else {
+                left_bearing + glyph_width + right_bearing
+            }
+        } else {
+            font_size.width as i32
+        };
+
         // Render the character (always fill font_size area with background/foreground)
         for row in 0..font_size.height {
-            for col in 0..font_size.width {
+            for col in 0..fill_width {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
@@ -514,8 +529,15 @@ impl EditableScreen for PaletteScreenBuffer {
         if self.caret.insert_mode {
             self.ins();
         }
+        let mut pos = self.caret.position();
 
-        if let Some(glyph) = self.render_char_to_buffer(self.caret.position(), ch) {
+        if let Some(font) = self.get_font(self.caret.font_page()) {
+            if let Some(shift) = font.yaff_font.global_shift_up {
+                pos.y = pos.y.saturating_sub(shift as i32);
+            }
+        }
+
+        if let Some(glyph) = self.render_char_to_buffer(pos, ch) {
             let advance_width = if self.graphics_type() == GraphicsType::Skypix {
                 // For proportional fonts with bearing information, use glyph metrics
                 // For monospace fonts, use font_size.width
@@ -527,11 +549,8 @@ impl EditableScreen for PaletteScreenBuffer {
                     &DEFAULT_BITFONT
                 };
 
-                // Check if this is a proportional font with bearing information
-                let use_bearings =
-                    font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) && (glyph.left_bearing.is_some() || glyph.right_bearing.is_some());
-
-                if use_bearings {
+                // For proportional fonts, use glyph metrics
+                if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
                     // Calculate advance width using glyph bearings
                     let glyph_width = glyph.bitmap.pixels.get(0).map(|row| row.len() as i32).unwrap_or(0);
                     let left_bearing = glyph.left_bearing.unwrap_or(0);

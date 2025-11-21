@@ -302,9 +302,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn emit(&mut self, cmd: TerminalCommand) {
-        if !matches!(cmd, TerminalCommand::CsiCursorPosition(_, _)) {
-            println!("cmd: {:?}", cmd);
-        }
         match cmd {
             // Basic control characters
             TerminalCommand::CarriageReturn => {

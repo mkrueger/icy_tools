@@ -144,7 +144,6 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
         }
 
         SkypixCommand::PositionCursor { x, y } => {
-            println!("PositionCursor to ({}, {})", x, y);
             buf.caret_mut().set_position((x, y).into());
 
             // Also update BGI pen position for graphics
