@@ -387,7 +387,13 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
+        if let Some(font) = self.get_font(self.caret.font_page()) {
+            font.size()
+        } else if let Some(font) = self.get_font(0) {
+            font.size()
+        } else {
+            Size::new(8, 16)
+        }
     }
 
     fn get_font(&self, font_number: usize) -> Option<&BitFont> {
@@ -510,33 +516,41 @@ impl EditableScreen for PaletteScreenBuffer {
         }
 
         if let Some(glyph) = self.render_char_to_buffer(self.caret.position(), ch) {
-            // For proportional fonts with bearing information, use glyph metrics
-            // For monospace fonts, use font_size.width
-            let font = if let Some(font) = self.get_font(ch.get_font_page()) {
-                font
-            } else if let Some(font) = self.get_font(0) {
-                font
-            } else {
-                &DEFAULT_BITFONT
-            };
+            let advance_width = if self.graphics_type() == GraphicsType::Skypix {
+                // For proportional fonts with bearing information, use glyph metrics
+                // For monospace fonts, use font_size.width
+                let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+                    font
+                } else if let Some(font) = self.get_font(0) {
+                    font
+                } else {
+                    &DEFAULT_BITFONT
+                };
 
-            // Check if this is a proportional font with bearing information
-            let use_bearings =
-                font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) && (glyph.left_bearing.is_some() || glyph.right_bearing.is_some());
+                // Check if this is a proportional font with bearing information
+                let use_bearings =
+                    font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) && (glyph.left_bearing.is_some() || glyph.right_bearing.is_some());
 
-            let advance_width = if use_bearings {
-                // Calculate advance width using glyph bearings
-                let glyph_width = glyph.bitmap.pixels.get(0).map(|row| row.len() as i32).unwrap_or(font_size.width);
-                let left_bearing = glyph.left_bearing.unwrap_or(0);
-                let right_bearing = glyph.right_bearing.unwrap_or(0);
-                left_bearing + glyph_width + right_bearing
+                if use_bearings {
+                    // Calculate advance width using glyph bearings
+                    let glyph_width = glyph.bitmap.pixels.get(0).map(|row| row.len() as i32).unwrap_or(0);
+                    let left_bearing = glyph.left_bearing.unwrap_or(0);
+                    let right_bearing = glyph.right_bearing.unwrap_or(0);
+
+                    // For empty glyphs (like space), left_bearing is the total advance
+                    if glyph_width == 0 && left_bearing > 0 {
+                        left_bearing
+                    } else {
+                        left_bearing + glyph_width + right_bearing
+                    }
+                } else {
+                    // For monospace fonts, always use font_size.width
+                    font_size.width
+                }
             } else {
-                // For monospace fonts, always use font_size.width
                 font_size.width
             };
-            if ch.ch == ' ' {
-                println!("Space char advance width: {}", advance_width);
-            }
+
             self.caret.x += advance_width;
         }
 
@@ -869,66 +883,82 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_buffer_down(&mut self) {
-        let pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
+        let bg_color = self.caret.attribute.get_background() as u8;
+        let screen_width = self.pixel_size.width as usize;
+        let screen_height = self.pixel_size.height as usize;
 
-        for y in pos.y..self.get_last_visible_line() {
-            for x in 0..self.get_width() {
-                self.set_char((x, y).into(), ch);
-            }
+        // Clear from current caret.y to end of screen
+        let start_y = self.caret.y as usize;
+        let clear_start = start_y * screen_width;
+        let clear_end = screen_height * screen_width;
+
+        if clear_start < clear_end {
+            self.screen[clear_start..clear_end].fill(bg_color);
         }
     }
 
     fn clear_buffer_up(&mut self) {
-        let pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
+        let bg_color = self.caret.attribute.get_background() as u8;
+        let screen_width = self.pixel_size.width as usize;
+        let font_size = self.get_font_dimensions();
 
-        for y in self.get_first_visible_line()..pos.y {
-            for x in 0..self.get_width() {
-                self.set_char((x, y).into(), ch);
-            }
+        // Clear from top of screen to current line (caret.y + font_size.height)
+        let end_y = ((self.caret.y as usize) + (font_size.height as usize)).min(self.pixel_size.height as usize);
+        let clear_end = end_y * screen_width;
+
+        if clear_end > 0 {
+            self.screen[0..clear_end].fill(bg_color);
         }
     }
 
     fn clear_line(&mut self) {
-        let mut pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
-        for x in 0..self.get_width() {
-            pos.x = x;
-            self.set_char(pos, ch);
+        let font_size = self.get_font_dimensions();
+        let bg_color = self.caret.attribute.get_background() as u8;
+        let screen_width = self.pixel_size.width as usize;
+
+        // Clear entire line from x=0 to screen width, for font_size.height rows
+        let start_y = self.caret.y as usize;
+        let end_y = (start_y + font_size.height as usize).min(self.pixel_size.height as usize);
+
+        for y in start_y..end_y {
+            let row_start = y * screen_width;
+            let row_end = row_start + screen_width;
+            self.screen[row_start..row_end].fill(bg_color);
         }
     }
 
     fn clear_line_end(&mut self) {
-        let mut pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
-        for x in pos.x..self.get_width() {
-            pos.x = x;
-            self.set_char(pos, ch);
+        let font_size = self.get_font_dimensions();
+        let bg_color = self.caret.attribute.get_background() as u8;
+        let screen_width = self.pixel_size.width as usize;
+
+        // Clear from caret.x to end of line, for font_size.height rows
+        let start_x = self.caret.x as usize;
+        let start_y = self.caret.y as usize;
+        let end_y = (start_y + font_size.height as usize).min(self.pixel_size.height as usize);
+
+        for y in start_y..end_y {
+            let row_start = y * screen_width;
+            let clear_start = row_start + start_x;
+            let clear_end = row_start + screen_width;
+            self.screen[clear_start..clear_end].fill(bg_color);
         }
     }
 
     fn clear_line_start(&mut self) {
-        let mut pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
-        for x in 0..pos.x {
-            pos.x = x;
-            self.set_char(pos, ch);
+        let font_size = self.get_font_dimensions();
+        let bg_color = self.caret.attribute.get_background() as u8;
+        let screen_width = self.pixel_size.width as usize;
+
+        // Clear from 0 to caret.x, for font_size.height rows
+        let end_x = self.caret.x as usize;
+        let start_y = self.caret.y as usize;
+        let end_y = (start_y + font_size.height as usize).min(self.pixel_size.height as usize);
+
+        for y in start_y..end_y {
+            let row_start = y * screen_width;
+            let clear_end = row_start + end_x;
+            self.screen[row_start..clear_end].fill(bg_color);
         }
     }
 
