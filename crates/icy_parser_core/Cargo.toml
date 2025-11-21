@@ -56,3 +56,7 @@ harness = false
 [[bench]]
 name = "igs"
 harness = false
+
+[[bench]]
+name = "skypix"
+harness = false

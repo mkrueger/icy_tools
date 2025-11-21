@@ -45,7 +45,7 @@ mod rip;
 pub use rip::{BlockTransferMode, FileQueryMode, ImagePasteMode, QueryMode, RipCommand, RipParser, WriteMode};
 
 mod skypix;
-pub use skypix::{SkypixCommand, SkypixParser};
+pub use skypix::*;
 
 mod vt52;
 pub use vt52::{VT52Mode, Vt52Parser};

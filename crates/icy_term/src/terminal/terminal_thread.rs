@@ -850,6 +850,35 @@ impl TerminalThread {
                     thread::sleep(Duration::from_millis(1000 * (*vsyncs) as u64 / 60));
                     continue;
                 }
+
+                QueuedCommand::Skypix(SkypixCommand::Delay { jiffies }) => {
+                    thread::sleep(Duration::from_millis(1000 * (*jiffies) as u64 / 60));
+                    continue;
+                }
+
+                QueuedCommand::Skypix(SkypixCommand::CrcTransfer {
+                    mode,
+                    width: _,
+                    height: _,
+                    filename,
+                }) => {
+                    // CrcTransferMode determines the file type being transferred
+                    // width, height: image dimensions (used for IFF Brush mode)
+                    // filename: name of file to transfer
+
+                    // For now, all modes trigger a download - in the future this could be enhanced
+                    // to handle different transfer types based on the mode
+                    let is_download = true; // Always download for SkyPix CRC transfers
+                    let file_name = if filename.is_empty() { None } else { Some(filename.clone()) };
+
+                    // Log the transfer mode for debugging
+                    log::info!("SkyPix CRC transfer initiated: mode={:?}, filename={:?}", mode, file_name);
+
+                    // Trigger XMODEM-CRC file transfer via the event system
+                    self.send_event(TerminalEvent::AutoTransferTriggered(TransferProtocolType::XModem, is_download, file_name));
+                    continue;
+                }
+
                 // Sound commands should also not block
                 QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
                 | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })

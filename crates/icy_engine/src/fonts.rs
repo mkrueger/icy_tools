@@ -1,4 +1,6 @@
 use base64::{Engine, engine::general_purpose};
+#[allow(unused_imports)]
+use lazy_static::lazy_static;
 use libyaff::{GlyphDefinition, YaffFont};
 
 use crate::EngineResult;
@@ -680,14 +682,38 @@ macro_rules! amiga_fonts {
             pub const $i: &str = include_str!(concat!("../data/fonts/Amiga/original/", $file));
         )*
 
-        pub fn load_amiga_fonts() -> Vec<(String, usize, &'static str)> {
+        pub fn load_amiga_fonts() -> Vec<(String, i32, &'static str, Mutex<Option<BitFont>>)> {
             let mut fonts = Vec::new();
             $(
-                fonts.push(($name.to_string(), $size, $i));
+                fonts.push(($name.to_string(), $size, $i, Mutex::new(None)));
             )*
             fonts
         }
     }
+}
+
+lazy_static::lazy_static! {
+    static ref AMIGA_FONTS: Vec<(String, i32, &'static str, Mutex<Option<BitFont>>)> = load_amiga_fonts();
+}
+
+pub fn get_amiga_font_by_name(name: &str, size: i32) -> Option<BitFont> {
+    for (font_name, font_size, font_data, opt_font) in AMIGA_FONTS.iter() {
+        if font_name == name && size == *font_size {
+            let mut font_cache = opt_font.lock().unwrap();
+
+            // Check if font is already cached
+            if let Some(cached_font) = font_cache.as_ref() {
+                return Some(cached_font.clone());
+            }
+
+            // Load font and cache it
+            if let Ok(font) = BitFont::from_bytes(font_name, font_data.as_bytes()) {
+                *font_cache = Some(font.clone());
+                return Some(font);
+            }
+        }
+    }
+    None
 }
 
 amiga_fonts![
@@ -696,6 +722,7 @@ amiga_fonts![
     (AMIGA_TOPAZ_11, "workbench-3.1/Topaz_8x11.yaff", "Topaz.font", 11),
     (AMIGA_DIAMOND_12, "workbench-3.1/Diamond_12.yaff", "Diamond.font", 12),
     (AMIGA_DIAMOND_20, "workbench-3.1/Diamond_20.yaff", "Diamond.font", 20),
+    (AMIGA_EMERALD_17, "workbench-3.1/Emerald_17.yaff", "Emerald.font", 17),
     (AMIGA_EMERALD_20, "workbench-1.0/Emerald_20.yaff", "Emerald.font", 20),
     (AMIGA_PEARL_08, "pearl_08.yaff", "Pearl.font", 8),
     (AMIGA_GARNET_09, "workbench-3.1/Garnet_9.yaff", "Garnet.font", 9),

@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, SkypixCommand, SkypixParser, TerminalCommand};
+use icy_parser_core::{CommandParser, CommandSink, DisplayMode, SkypixCommand, SkypixParser, TerminalCommand};
 
 struct TestSink {
     skypix_commands: Vec<SkypixCommand>,
@@ -278,7 +278,7 @@ fn test_skypix_set_display_mode() {
     assert_eq!(sink.skypix_commands.len(), 1);
     match &sink.skypix_commands[0] {
         SkypixCommand::SetDisplayMode { mode } => {
-            assert_eq!(*mode, 2);
+            assert_eq!(*mode, DisplayMode::SixteenColors);
         }
         _ => panic!("Expected SetDisplayMode command"),
     }

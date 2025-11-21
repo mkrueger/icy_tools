@@ -7,8 +7,8 @@ mod avatar;
 mod igs;
 mod petscii;
 mod rip;
+mod skypix;
 mod view_data;
-
 mod vt52;
 
 pub fn parse_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8]) -> icy_engine::EngineResult<()> {

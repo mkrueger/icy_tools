@@ -13,7 +13,10 @@ use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Layer, Line, Palette,
     Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
-    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    palette_screen_buffer::{
+        rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+        skypix_impl::SKYPIX_SCREEN_SIZE,
+    },
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -72,7 +75,7 @@ impl PaletteScreenBuffer {
                 let res = term_res.get_resolution();
                 (res.width, res.height)
             }
-            GraphicsType::Skypix => (800, 600),
+            GraphicsType::Skypix => (SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height),
         };
 
         let mut font_table: HashMap<usize, BitFont> = HashMap::new();
@@ -132,6 +135,7 @@ impl PaletteScreenBuffer {
 
         let scan_lines = match graphics_type {
             GraphicsType::IGS(term_res) => term_res.use_scanlines(),
+            GraphicsType::Skypix => true,
             _ => false,
         };
 

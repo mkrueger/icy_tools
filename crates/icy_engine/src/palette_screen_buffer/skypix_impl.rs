@@ -1,8 +1,11 @@
-use icy_parser_core::SkypixCommand;
+use icy_parser_core::{DisplayMode, SkypixCommand};
 
 use crate::{
-    EditableScreen, Palette, SKYPIX_PALETTE, Size,
-    palette_screen_buffer::bgi::{Bgi, WriteMode},
+    EditableScreen, Palette, SKYPIX_PALETTE, Size, get_amiga_font_by_name,
+    palette_screen_buffer::{
+        bgi::{Bgi, WriteMode},
+        rip_impl::RIP_FONT,
+    },
 };
 
 pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
@@ -68,10 +71,13 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
             log::info!("SKYPIX_PLAY_SAMPLE not implemented");
         }
 
-        SkypixCommand::SetFont { size: _, name: _ } => {
-            // Font loading needs to be handled at parser level
-            // This is a no-op here as fonts are managed by the parser
-            log::info!("SKYPIX_SET_FONT not implemented at BGI level");
+        SkypixCommand::SetFont { size, name } => {
+            if let Some(font) = get_amiga_font_by_name(&name, size) {
+                buf.set_font(0, font);
+            } else {
+                log::warn!("SKYPIX_SET_FONT: Font '{}' of size {} not found, setting default.", name, size);
+                buf.set_font(0, RIP_FONT.clone());
+            }
         }
 
         SkypixCommand::NewPalette { colors } => {
@@ -103,9 +109,8 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
             bgi.fill_ellipse(buf, x, y, 0, 360, a, b);
         }
 
-        SkypixCommand::Delay { jiffies } => {
-            // Delay implementation - jiffies are 1/60th of a second
-            std::thread::sleep(std::time::Duration::from_millis((1000 * jiffies as u64) / 60));
+        SkypixCommand::Delay { .. } => {
+            // Handled by the terminal
         }
 
         SkypixCommand::SetPenA { color } => {
@@ -127,9 +132,8 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
         SkypixCommand::SetDisplayMode { mode } => {
             // Display mode switching (3 vs 4 bitplanes)
             match mode {
-                1 => log::info!("Display mode: 8 colors (3 bitplanes)"),
-                2 => log::info!("Display mode: 16 colors (4 bitplanes)"),
-                _ => log::warn!("Unknown display mode: {}", mode),
+                DisplayMode::EightColors => log::info!("Display mode: 8 colors (3 bitplanes)"),
+                DisplayMode::SixteenColors => log::info!("Display mode: 16 colors (4 bitplanes)"),
             }
         }
 
