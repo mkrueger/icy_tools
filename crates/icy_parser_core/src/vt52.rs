@@ -110,8 +110,7 @@
 //! - Escape (0x1B) during a multi-byte sequence starts a new escape sequence
 
 use crate::{
-    Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, flush_input,
-    print_char_value,
+    Color, CommandParser, CommandSink, DecMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, flush_input, print_char_value,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,16 +157,16 @@ fn build_escape_lut() -> Vec<EscAction> {
     lut[b'b' as usize] = EscAction::ReadColor(true);
     lut[b'4' as usize] = EscAction::ReadColor(false);
     lut[b'c' as usize] = EscAction::ReadColor(false);
-    lut[b'e' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::CursorVisible)));
-    lut[b'f' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::CursorVisible)));
+    lut[b'e' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecSetMode(DecMode::CursorVisible, true)));
+    lut[b'f' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecSetMode(DecMode::CursorVisible, false)));
     lut[b'j' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiSaveCursorPosition));
     lut[b'k' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiRestoreCursorPosition));
     lut[b'L' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiInsertLine(1)));
     lut[b'M' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDeleteLine(1)));
     lut[b'p' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(true))));
     lut[b'q' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(false))));
-    lut[b'v' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::AutoWrap)));
-    lut[b'w' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::AutoWrap)));
+    lut[b'v' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecSetMode(DecMode::AutoWrap, true)));
+    lut[b'w' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiDecSetMode(DecMode::AutoWrap, false)));
     lut[b'd' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::StartToCursor)));
     lut[b'o' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiEraseInLine(EraseInLineMode::StartToCursor)));
     lut[b'i' as usize] = EscAction::ReadInsertLineCount;

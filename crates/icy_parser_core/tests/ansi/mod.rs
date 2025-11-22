@@ -1,8 +1,8 @@
 use std::u16;
 
 use icy_parser_core::{
-    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecPrivateMode, DeviceControlString, EraseInDisplayMode, EraseInLineMode, ErrorLevel,
-    Frame, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
+    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecMode, DeviceControlString, EraseInDisplayMode, EraseInLineMode, ErrorLevel, Frame,
+    Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
 };
 
 mod requests;
@@ -158,10 +158,10 @@ fn test_dec_private_modes() {
     // ESC[?25h - Show cursor (DECSET)
     parser.parse(b"\x1B[?25h", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiDecPrivateModeSet(mode) = sink.cmds[0] {
-        assert_eq!(mode, DecPrivateMode::CursorVisible);
+    if let TerminalCommand::CsiDecSetMode(mode, true) = sink.cmds[0] {
+        assert_eq!(mode, DecMode::CursorVisible);
     } else {
-        panic!("Expected CsiDecPrivateModeSet");
+        panic!("Expected CsiDecSetMode with true");
     }
 
     sink.cmds.clear();
@@ -169,10 +169,10 @@ fn test_dec_private_modes() {
     // ESC[?7l - Disable auto wrap (DECRST)
     parser.parse(b"\x1B[?7l", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiDecPrivateModeReset(mode) = sink.cmds[0] {
-        assert_eq!(mode, DecPrivateMode::AutoWrap);
+    if let TerminalCommand::CsiDecSetMode(mode, false) = sink.cmds[0] {
+        assert_eq!(mode, DecMode::AutoWrap);
     } else {
-        panic!("Expected CsiDecPrivateModeReset");
+        panic!("Expected CsiDecSetMode with false");
     }
 
     sink.cmds.clear();
@@ -180,15 +180,15 @@ fn test_dec_private_modes() {
     // ESC[?25;1000h - Multiple modes (cursor visible + VT200 mouse) - emits 2 commands
     parser.parse(b"\x1B[?25;1000h", &mut sink);
     assert_eq!(sink.cmds.len(), 2);
-    if let TerminalCommand::CsiDecPrivateModeSet(mode) = sink.cmds[0] {
-        assert_eq!(mode, DecPrivateMode::CursorVisible);
+    if let TerminalCommand::CsiDecSetMode(mode, true) = sink.cmds[0] {
+        assert_eq!(mode, DecMode::CursorVisible);
     } else {
-        panic!("Expected CsiDecPrivateModeSet for first command");
+        panic!("Expected CsiDecSetMode for first command");
     }
-    if let TerminalCommand::CsiDecPrivateModeSet(mode) = sink.cmds[1] {
-        assert_eq!(mode, DecPrivateMode::VT200Mouse);
+    if let TerminalCommand::CsiDecSetMode(mode, true) = sink.cmds[1] {
+        assert_eq!(mode, DecMode::VT200Mouse);
     } else {
-        panic!("Expected CsiDecPrivateModeSet for second command");
+        panic!("Expected CsiDecSetMode for second command");
     }
 }
 
@@ -304,7 +304,7 @@ fn test_error_reporting() {
     assert_eq!(
         sink.errors[0],
         ParseError::InvalidParameter {
-            command: "CsiDecPrivateModeSet",
+            command: "CsiDecSetMode",
             value: 9999.to_string(),
             expected: None,
         }
@@ -319,15 +319,15 @@ fn test_error_reporting() {
     parser.parse(b"\x1B[?25;9999;1000h", &mut sink);
     assert_eq!(sink.errors.len(), 1); // Error for mode 9999
     assert_eq!(sink.cmds.len(), 2); // Two valid mode commands
-    if let TerminalCommand::CsiDecPrivateModeSet(mode) = sink.cmds[0] {
-        assert_eq!(mode, DecPrivateMode::CursorVisible);
+    if let TerminalCommand::CsiDecSetMode(mode, true) = sink.cmds[0] {
+        assert_eq!(mode, DecMode::CursorVisible);
     } else {
-        panic!("Expected CsiDecPrivateModeSet for first command");
+        panic!("Expected CsiDecSetMode for first command");
     }
-    if let TerminalCommand::CsiDecPrivateModeSet(mode) = sink.cmds[1] {
-        assert_eq!(mode, DecPrivateMode::VT200Mouse);
+    if let TerminalCommand::CsiDecSetMode(mode, true) = sink.cmds[1] {
+        assert_eq!(mode, DecMode::VT200Mouse);
     } else {
-        panic!("Expected CsiDecPrivateModeSet for second command");
+        panic!("Expected CsiDecSetMode for second command");
     }
 }
 

@@ -80,13 +80,13 @@ impl CommandParser for CtrlAParser {
                     b'E' => {
                         self.high_bg = true;
                         // Enable iCE colors mode (background intensity instead of blink)
-                        sink.emit(TerminalCommand::CsiDecPrivateModeSet(crate::DecPrivateMode::IceColors));
+                        sink.emit(TerminalCommand::CsiDecSetMode(crate::DecMode::IceColors, true));
                     }
                     b'N' => {
                         self.is_bold = false;
                         self.high_bg = false;
                         // Disable iCE colors mode
-                        sink.emit(TerminalCommand::CsiDecPrivateModeReset(crate::DecPrivateMode::IceColors));
+                        sink.emit(TerminalCommand::CsiDecSetMode(crate::DecMode::IceColors, false));
                         // Reset attributes
                         sink.emit(TerminalCommand::CsiSelectGraphicRendition(crate::SgrAttribute::Reset));
                     }

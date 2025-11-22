@@ -298,6 +298,7 @@ impl ScreenMode {
                 *screen.buffer_type_mut() = BufferType::Atascii;
             }
         }
+        screen.caret_default_colors();
     }
 
     /// Creates a screen and parser combination for the given terminal emulation.
@@ -341,7 +342,7 @@ impl ScreenMode {
         };
 
         self.apply_to_edit_screen(screen.as_mut());
-        let music_option = option.as_ref().map(|o| o.ansi_music);
+        let music_option = option.as_ref().map(|o: &CreationOptions| o.ansi_music);
         let parser = get_parser(&emulation, music_option, self);
         (screen, parser)
     }

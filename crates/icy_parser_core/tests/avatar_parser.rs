@@ -1,4 +1,4 @@
-use icy_parser_core::{AvatarParser, Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInLineMode, SgrAttribute, TerminalCommand};
+use icy_parser_core::{AvatarParser, Color, CommandParser, CommandSink, DecMode, Direction, EraseInLineMode, SgrAttribute, TerminalCommand};
 
 /// Test helper that collects all emitted commands
 struct CollectSink {
@@ -19,7 +19,7 @@ enum OwnedCommand {
     CsiMoveCursor(Direction, u16),
     CsiCursorPosition(u16, u16),
     CsiEraseInLine(EraseInLineMode),
-    CsiDecPrivateModeReset(DecPrivateMode),
+    CsiDecSetMode(DecMode, bool),
     CsiSelectGraphicRendition(SgrAttribute),
 }
 
@@ -40,7 +40,7 @@ impl CommandSink for CollectSink {
             TerminalCommand::CsiMoveCursor(dir, n) => OwnedCommand::CsiMoveCursor(dir, n),
             TerminalCommand::CsiCursorPosition(r, c) => OwnedCommand::CsiCursorPosition(r, c),
             TerminalCommand::CsiEraseInLine(mode) => OwnedCommand::CsiEraseInLine(mode),
-            TerminalCommand::CsiDecPrivateModeReset(mode) => OwnedCommand::CsiDecPrivateModeReset(mode),
+            TerminalCommand::CsiDecSetMode(mode, enabled) => OwnedCommand::CsiDecSetMode(mode, enabled),
             TerminalCommand::CsiSelectGraphicRendition(attr) => OwnedCommand::CsiSelectGraphicRendition(attr),
             _ => panic!("Unexpected command type in Avatar test"),
         };

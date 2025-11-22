@@ -1,4 +1,5 @@
 use super::*;
+use crate::rip::command::RipCommand;
 
 impl RipParser {
     pub fn emit_command(&mut self, sink: &mut dyn CommandSink) {
@@ -36,8 +37,21 @@ impl RipParser {
                 value: self.builder.u16_params[1],
             },
             (0, b'W') if !self.builder.u16_params.is_empty() => {
-                use crate::rip::command::WriteMode;
-                let mode = WriteMode::from_i32(self.builder.u16_params[0]).unwrap_or(WriteMode::Normal);
+                let mode_value = self.builder.u16_params[0];
+                let mode = match WriteMode::try_from(mode_value) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_WRITE_MODE",
+                                value: mode_value.to_string(),
+                                expected: Some("0 (Normal) or 1 (XOR)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
                 RipCommand::WriteMode { mode }
             }
             (0, b'm') if self.builder.u16_params.len() >= 2 => RipCommand::Move {
@@ -154,15 +168,52 @@ impl RipParser {
                 y: self.builder.u16_params[1],
                 border: self.builder.u16_params[2],
             },
-            (0, b'=') if self.builder.u16_params.len() >= 3 => RipCommand::LineStyle {
-                style: self.builder.u16_params[0],
-                user_pat: self.builder.u16_params[1],
-                thick: self.builder.u16_params[2],
-            },
-            (0, b'S') if self.builder.u16_params.len() >= 2 => RipCommand::FillStyle {
-                pattern: self.builder.u16_params[0],
-                color: self.builder.u16_params[1],
-            },
+            (0, b'=') if self.builder.u16_params.len() >= 3 => {
+                let style_value = self.builder.u16_params[0];
+                let style = match LineStyle::try_from(style_value as i32) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_LINE_STYLE",
+                                value: style_value.to_string(),
+                                expected: Some("0-4 (Solid, Dotted, Center, Dashed, User)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
+                RipCommand::LineStyle {
+                    style,
+                    user_pat: self.builder.u16_params[1],
+                    thick: self.builder.u16_params[2],
+                }
+            }
+            (0, b'S') if self.builder.u16_params.len() >= 2 => {
+                let pattern_value = self.builder.u16_params[0];
+                let pattern = match FillStyle::try_from(pattern_value as u8) {
+                    Ok(p) => p,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_FILL_STYLE",
+                                value: pattern_value.to_string(),
+                                expected: Some(
+                                    "0x00-0x0B (Empty, Solid, Line, LtSlash, Slash, BkSlash, LtBkSlash, Hatch, XHatch, Interleave, WideDot, CloseDot)"
+                                        .to_string(),
+                                ),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
+                RipCommand::FillStyle {
+                    pattern,
+                    color: self.builder.u16_params[1],
+                }
+            }
             (0, b's') if self.builder.u16_params.len() >= 9 => RipCommand::FillPattern {
                 c1: self.builder.u16_params[0],
                 c2: self.builder.u16_params[1],
@@ -212,8 +263,21 @@ impl RipParser {
                 res: self.builder.u16_params[4],
             },
             (1, b'P') if self.builder.u16_params.len() >= 4 => {
-                use crate::rip::command::ImagePasteMode;
-                let mode = ImagePasteMode::from_i32(self.builder.u16_params[2]).unwrap_or(ImagePasteMode::Copy);
+                let mode_value = self.builder.u16_params[2];
+                let mode = match ImagePasteMode::try_from(mode_value) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_PUT_IMAGE",
+                                value: mode_value.to_string(),
+                                expected: Some("0-4 (Copy, Xor, Or, And, Not)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
                 RipCommand::PutImage {
                     x: self.builder.u16_params[0],
                     y: self.builder.u16_params[1],
@@ -226,8 +290,21 @@ impl RipParser {
                 data: self.builder.string_param.clone(),
             },
             (1, b'I') if self.builder.u16_params.len() >= 5 => {
-                use crate::rip::command::ImagePasteMode;
-                let mode = ImagePasteMode::from_i32(self.builder.u16_params[2]).unwrap_or(ImagePasteMode::Copy);
+                let mode_value = self.builder.u16_params[2];
+                let mode = match ImagePasteMode::try_from(mode_value) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_LOAD_ICON",
+                                value: mode_value.to_string(),
+                                expected: Some("0-4 (Copy, Xor, Or, And, Not)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
                 RipCommand::LoadIcon {
                     x: self.builder.u16_params[0],
                     y: self.builder.u16_params[1],
@@ -270,8 +347,21 @@ impl RipParser {
                 text: self.builder.string_param.clone(),
             },
             (1, 0x1B) if self.builder.u16_params.len() >= 2 => {
-                use crate::rip::command::QueryMode;
-                let mode = QueryMode::from_i32(self.builder.u16_params[0]).unwrap_or(QueryMode::ProcessNow);
+                let mode_value = self.builder.u16_params[0];
+                let mode = match QueryMode::try_from(mode_value) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_QUERY",
+                                value: mode_value.to_string(),
+                                expected: Some("0-2 (ProcessNow, OnClickGraphics, OnClickText)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
                 RipCommand::Query {
                     mode,
                     res: self.builder.u16_params[1],
@@ -290,8 +380,21 @@ impl RipParser {
                 file_name: self.builder.string_param.clone(),
             },
             (1, b'F') if self.builder.u16_params.len() >= 2 => {
-                use crate::rip::command::FileQueryMode;
-                let mode = FileQueryMode::from_i32(self.builder.u16_params[0]).unwrap_or(FileQueryMode::FileExists);
+                let mode_value = self.builder.u16_params[0];
+                let mode = match FileQueryMode::try_from(mode_value) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_FILE_QUERY",
+                                value: mode_value.to_string(),
+                                expected: Some("0-4 (FileExists, FileExistsWithCR, QueryWithSize, QueryExtended, QueryWithFilename)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
                 RipCommand::FileQuery {
                     mode,
                     res: self.builder.u16_params[1],
@@ -301,8 +404,21 @@ impl RipParser {
 
             // Level 9 commands
             (9, 0x1B) if self.builder.u16_params.len() >= 4 => {
-                use crate::rip::command::BlockTransferMode;
-                let mode = BlockTransferMode::from_i32(self.builder.u16_params[0]).unwrap_or(BlockTransferMode::XmodemChecksum);
+                let mode_value = self.builder.u16_params[0];
+                let mode = match BlockTransferMode::try_from(mode_value) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "RIP_ENTER_BLOCK_MODE",
+                                value: mode_value.to_string(),
+                                expected: Some("0-7 (XmodemChecksum, XmodemCrc, Xmodem1K, Xmodem1KG, Kermit, Ymodem, YmodemG, Zmodem)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        return;
+                    }
+                };
                 RipCommand::EnterBlockMode {
                     mode,
                     proto: self.builder.u16_params[1],

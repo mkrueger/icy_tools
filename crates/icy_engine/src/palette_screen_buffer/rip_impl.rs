@@ -9,12 +9,10 @@ use std::{
 
 use crate::{
     BitFont, EditableScreen, EngineResult, Position, Size,
-    bgi::{
-        Bgi, ButtonStyle2, Direction, FillStyle as BgiFillStyle, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode,
-    },
+    bgi::{Bgi, ButtonStyle2, Direction, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode},
 };
 use byteorder::{LittleEndian, ReadBytesExt};
-use icy_parser_core::{ImagePasteMode, RipCommand, WriteMode as RipWriteMode};
+use icy_parser_core::{FillStyle, ImagePasteMode, LineStyle, RipCommand, WriteMode as RipWriteMode};
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
 pub static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
 
@@ -234,14 +232,14 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
 
         RipCommand::LineStyle { style, user_pat, thick } => {
             bgi.set_line_style(BgiLineStyle::from(style as u8));
-            if style == 4 {
+            if style == LineStyle::User {
                 bgi.set_line_pattern(user_pat.into());
             }
             bgi.set_line_thickness(thick.into());
         }
 
         RipCommand::FillStyle { pattern, color } => {
-            bgi.set_fill_style(BgiFillStyle::from(pattern as u8));
+            bgi.set_fill_style(pattern);
             bgi.set_fill_color(color as u8);
         }
 
@@ -258,7 +256,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         } => {
             let pattern = vec![c1 as u8, c2 as u8, c3 as u8, c4 as u8, c5 as u8, c6 as u8, c7 as u8, c8 as u8];
             bgi.set_user_fill_pattern(&pattern);
-            bgi.set_fill_style(BgiFillStyle::User);
+            bgi.set_fill_style(FillStyle::User);
             bgi.set_fill_color(col as u8);
         }
 

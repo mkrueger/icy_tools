@@ -1,5 +1,5 @@
 use icy_parser_core::{
-    Color, CommandParser, CommandSink, DecPrivateMode, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsParser, ParseError, SgrAttribute,
+    Color, CommandParser, CommandSink, DecMode, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsParser, ParseError, SgrAttribute,
     TerminalCommand,
 };
 
@@ -230,7 +230,7 @@ fn test_vt52_wrap_on() {
     parser.parse(b"\x1Bv", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::AutoWrap)));
+    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecSetMode(DecMode::AutoWrap, true)));
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn test_vt52_wrap_off() {
     parser.parse(b"\x1Bw", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::AutoWrap)));
+    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecSetMode(DecMode::AutoWrap, false)));
 }
 
 // Cursor visibility
@@ -253,7 +253,7 @@ fn test_vt52_show_cursor() {
     parser.parse(b"\x1Be", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::CursorVisible)));
+    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecSetMode(DecMode::CursorVisible, true)));
 }
 
 #[test]
@@ -264,10 +264,7 @@ fn test_vt52_hide_cursor() {
     parser.parse(b"\x1Bf", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(
-        sink.commands[0],
-        TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::CursorVisible)
-    ));
+    assert!(matches!(sink.commands[0], TerminalCommand::CsiDecSetMode(DecMode::CursorVisible, false)));
 }
 
 // TosWin2 extensions

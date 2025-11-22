@@ -5,10 +5,13 @@
 
 use crate::{AnsiParser, CommandParser, CommandSink};
 mod command;
-pub use command::{BlockTransferMode, FileQueryMode, ImagePasteMode, QueryMode, RipCommand, WriteMode};
+pub use command::*;
 
 mod builder;
 use builder::*;
+
+mod types;
+pub use types::*;
 
 mod emit;
 mod parse_params;

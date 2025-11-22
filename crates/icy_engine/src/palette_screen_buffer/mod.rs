@@ -462,6 +462,9 @@ impl Screen for PaletteScreenBuffer {
 }
 
 impl RgbaScreen for PaletteScreenBuffer {
+    fn default_foreground_color(&self) -> u32 {
+        self.graphics_type.default_fg_color()
+    }
     fn max_base_colors(&self) -> u32 {
         if let GraphicsType::IGS(t) = self.graphics_type {
             t.get_max_colors()

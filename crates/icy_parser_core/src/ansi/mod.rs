@@ -9,7 +9,7 @@ use base64::{Engine as _, engine::general_purpose};
 pub mod music;
 pub mod sgr;
 use crate::{
-    AnsiMode, BACKSPACE, BELL, BaudEmulation, CARRIAGE_RETURN, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DELETE, DecPrivateMode,
+    AnsiMode, BACKSPACE, BELL, BaudEmulation, CARRIAGE_RETURN, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DELETE, DecMode,
     DeviceControlString, Direction, ESC, EraseInDisplayMode, EraseInLineMode, FORM_FEED, LINE_FEED, MusicState, OperatingSystemCommand, ParseError,
     SgrAttribute, TAB, TerminalCommand, TerminalRequest,
 };
@@ -1853,35 +1853,17 @@ impl AnsiParser {
     #[inline(always)]
     fn handle_dec_private_csi_final(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
         match final_byte {
-            b'h' => {
+            b'h' | b'l' => {
+                let enabled = final_byte == b'h';
                 for &param in &self.params {
-                    match DecPrivateMode::from_u16(param) {
+                    match DecMode::from_u16(param) {
                         Some(mode) => {
-                            sink.emit(TerminalCommand::CsiDecPrivateModeSet(mode));
+                            sink.emit(TerminalCommand::CsiDecSetMode(mode, enabled));
                         }
                         None => {
                             sink.report_error(
                                 ParseError::InvalidParameter {
-                                    command: "CsiDecPrivateModeSet",
-                                    value: format!("{}", param).to_string(),
-                                    expected: None,
-                                },
-                                crate::ErrorLevel::Error,
-                            );
-                        }
-                    }
-                }
-            }
-            b'l' => {
-                for &param in &self.params {
-                    match DecPrivateMode::from_u16(param) {
-                        Some(mode) => {
-                            sink.emit(TerminalCommand::CsiDecPrivateModeReset(mode));
-                        }
-                        None => {
-                            sink.report_error(
-                                ParseError::InvalidParameter {
-                                    command: "CsiDecPrivateModeReset",
+                                    command: "CsiDecSetMode",
                                     value: format!("{}", param).to_string(),
                                     expected: None,
                                 },

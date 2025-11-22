@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, CtrlAParser, DecPrivateMode, TerminalCommand};
+use icy_parser_core::{CommandParser, CommandSink, CtrlAParser, DecMode, TerminalCommand};
 
 struct TestSink {
     commands: Vec<String>,
@@ -26,10 +26,10 @@ impl CommandSink for TestSink {
             TerminalCommand::CsiSelectGraphicRendition(icy_parser_core::SgrAttribute::Reset) => {
                 self.commands.push("Reset".to_string());
             }
-            TerminalCommand::CsiDecPrivateModeSet(DecPrivateMode::IceColors) => {
+            TerminalCommand::CsiDecSetMode(DecMode::IceColors, true) => {
                 self.commands.push("IceColors: On".to_string());
             }
-            TerminalCommand::CsiDecPrivateModeReset(DecPrivateMode::IceColors) => {
+            TerminalCommand::CsiDecSetMode(DecMode::IceColors, false) => {
                 self.commands.push("IceColors: Off".to_string());
             }
             _ => {

@@ -16,6 +16,17 @@ pub enum GraphicsType {
     Skypix,
 }
 
+impl GraphicsType {
+    pub fn default_fg_color(&self) -> u32 {
+        match self {
+            GraphicsType::Text => 7,
+            GraphicsType::Rip => 7,
+            GraphicsType::IGS(res) => res.default_fg_color() as u32,
+            GraphicsType::Skypix => 7,
+        }
+    }
+}
+
 pub trait Screen: TextPane + Send {
     fn buffer_type(&self) -> crate::BufferType;
     fn graphics_type(&self) -> crate::GraphicsType {
@@ -96,6 +107,7 @@ pub trait Screen: TextPane + Send {
 }
 
 pub trait RgbaScreen: Screen {
+    fn default_foreground_color(&self) -> u32;
     fn max_base_colors(&self) -> u32;
     fn get_resolution(&self) -> Size;
     fn set_resolution(&mut self, size: Size);
@@ -118,6 +130,7 @@ pub trait EditableScreen: RgbaScreen {
         let font_page = self.caret_mut().font_page();
         self.caret_mut().attribute = TextAttribute {
             font_page,
+            foreground_color: self.default_foreground_color(),
             ..Default::default()
         };
     }
@@ -397,7 +410,6 @@ pub trait EditableScreen: RgbaScreen {
     fn set_char(&mut self, pos: Position, ch: AttributedChar);
 
     fn print_char(&mut self, ch: AttributedChar) {
-        let buffer_width = self.get_width();
         if self.caret().insert_mode {
             self.ins();
         }
@@ -406,11 +418,18 @@ pub trait EditableScreen: RgbaScreen {
             self.set_height(self.caret().y + 1);
         }
         let mut caret_pos = self.caret_position();
+
         self.set_char(caret_pos, ch);
         caret_pos.x += 1;
-        if caret_pos.x >= buffer_width {
+        // left/right margin only valued inside margins - this way it's possible to print beyond right margin for updating UI
+        // without resetting margins
+        let in_margins = self.get_first_editable_line() <= caret_pos.y && caret_pos.y <= self.get_last_editable_line();
+        let last_col = if in_margins { self.get_last_editable_column() } else { self.get_width() - 1 };
+
+        let should_break_line = caret_pos.x > last_col;
+        if should_break_line {
             if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                caret_pos.x = 0;
+                caret_pos.x = self.get_first_editable_column();
                 caret_pos.y += 1;
             } else {
                 self.lf();

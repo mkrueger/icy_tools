@@ -1405,7 +1405,7 @@ impl TerminalThread {
 
                     match state.mouse_state.extended_mode {
                         icy_engine::ExtMouseMode::None => {}
-                        icy_engine::ExtMouseMode::Extended => params.push("1005"),
+                        icy_engine::ExtMouseMode::ExtendedUTF8 => params.push("1005"),
                         icy_engine::ExtMouseMode::SGR => params.push("1006"),
                         icy_engine::ExtMouseMode::URXVT => params.push("1015"),
                         icy_engine::ExtMouseMode::PixelPosition => params.push("1016"),

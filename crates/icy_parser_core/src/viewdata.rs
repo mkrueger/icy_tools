@@ -223,10 +223,10 @@ impl CommandParser for ViewdataParser {
 
                 // control codes 1
                 0b001_0000 => {} // ignore
-                0b001_0001 => sink.emit(TerminalCommand::CsiDecPrivateModeSet(crate::DecPrivateMode::CursorVisible)),
+                0b001_0001 => sink.emit(TerminalCommand::CsiDecSetMode(crate::DecMode::CursorVisible, true)),
                 0b001_0010 => {} // ignore
                 0b001_0011 => {} // ignore
-                0b001_0100 => sink.emit(TerminalCommand::CsiDecPrivateModeReset(crate::DecPrivateMode::CursorVisible)),
+                0b001_0100 => sink.emit(TerminalCommand::CsiDecSetMode(crate::DecMode::CursorVisible, false)),
                 0b001_0101 => {} // NAK
                 0b001_0110 => {} // ignore
                 0b001_0111 => {} // ignore

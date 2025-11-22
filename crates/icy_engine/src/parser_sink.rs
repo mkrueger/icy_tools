@@ -18,11 +18,11 @@
 //! ```
 
 use icy_parser_core::{
-    AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecPrivateMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel,
-    IgsCommand, Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
+    AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsCommand,
+    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
 };
 
-use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
+use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
@@ -213,26 +213,26 @@ impl<'a> ScreenSink<'a> {
         }
     }
 
-    fn set_dec_private_mode(&mut self, mode: DecPrivateMode, enabled: bool) {
+    fn set_dec_private_mode(&mut self, mode: DecMode, enabled: bool) {
         match mode {
-            DecPrivateMode::OriginMode => {
+            DecMode::OriginMode => {
                 self.screen.terminal_state_mut().origin_mode = if enabled {
                     crate::OriginMode::WithinMargins
                 } else {
                     crate::OriginMode::UpperLeftCorner
                 };
             }
-            DecPrivateMode::AutoWrap => {
+            DecMode::AutoWrap => {
                 self.screen.terminal_state_mut().auto_wrap_mode = if enabled {
                     crate::AutoWrapMode::AutoWrap
                 } else {
                     crate::AutoWrapMode::NoWrap
                 };
             }
-            DecPrivateMode::CursorVisible => {
+            DecMode::CursorVisible => {
                 self.screen.caret_mut().visible = enabled;
             }
-            DecPrivateMode::Inverse => {
+            DecMode::Inverse => {
                 // Screen-wide inverse mode: swap foreground and background
                 // Note: This is a simplified implementation
                 // A full implementation would need to track this mode separately
@@ -244,15 +244,54 @@ impl<'a> ScreenSink<'a> {
                     attr.set_background(fg);
                 }
             }
-            DecPrivateMode::IceColors => {
+            DecMode::IceColors => {
                 self.screen.terminal_state_mut().ice_colors = enabled;
             }
-            DecPrivateMode::CursorBlinking => {
-                // Caret doesn't have a blinking field currently
-                // Could be extended if needed
+            DecMode::CursorBlinking => {
+                self.screen.caret_mut().blinking = enabled;
             }
-            _ => {
-                // Other modes not yet implemented
+            DecMode::SmoothScroll => {
+                self.screen.terminal_state_mut().scroll_state = if enabled {
+                    crate::TerminalScrolling::Smooth
+                } else {
+                    crate::TerminalScrolling::Fast
+                };
+            }
+            DecMode::LeftRightMargin => {
+                self.screen.terminal_state_mut().set_dec_left_right_margins(enabled);
+            }
+            DecMode::X10Mouse => {
+                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::X10);
+            }
+            DecMode::VT200Mouse => {
+                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::VT200);
+            }
+            DecMode::VT200HighlightMouse => {
+                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::VT200_Highlight);
+            }
+            DecMode::ButtonEventMouse => {
+                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::ButtonEvents);
+            }
+            DecMode::AnyEventMouse => {
+                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::AnyEvents);
+            }
+            DecMode::FocusEvent => {
+                self.screen.terminal_state_mut().mouse_state.focus_out_event_enabled = enabled;
+            }
+            DecMode::AlternateScroll => {
+                self.screen.terminal_state_mut().mouse_state.alternate_scroll_enabled = enabled;
+            }
+            DecMode::ExtendedMouseUTF8 => {
+                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::ExtendedUTF8;
+            }
+            DecMode::ExtendedMouseSGR => {
+                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::SGR;
+            }
+            DecMode::ExtendedMouseURXVT => {
+                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::URXVT;
+            }
+            DecMode::ExtendedMousePixel => {
+                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::PixelPosition;
             }
         }
     }
@@ -526,11 +565,8 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::CsiSpecialKey(_key) => {}
 
             // DEC Private Modes
-            TerminalCommand::CsiDecPrivateModeSet(mode) => {
-                self.set_dec_private_mode(mode, true);
-            }
-            TerminalCommand::CsiDecPrivateModeReset(mode) => {
-                self.set_dec_private_mode(mode, false);
+            TerminalCommand::CsiDecSetMode(mode, enabled) => {
+                self.set_dec_private_mode(mode, enabled);
             }
 
             // ANSI Modes

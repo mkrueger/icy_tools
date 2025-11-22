@@ -7,6 +7,7 @@ pub use character::*;
 
 mod font;
 pub use font::*;
+use icy_parser_core::FillStyle;
 
 #[derive(Clone, Copy)]
 pub enum Color {
@@ -93,80 +94,6 @@ impl LineStyle {
             res.push((LineStyle::LINE_PATTERNS[offset] & (1 << i)) != 0);
         }
         res
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum FillStyle {
-    Empty,
-    Solid,
-    Line,
-    LtSlash,
-    Slash,
-    BkSlash,
-    LtBkSlash,
-    Hatch,
-    XHatch,
-    Interleave,
-    WideDot,
-    CloseDot,
-    User,
-}
-
-impl FillStyle {
-    pub const DEFAULT_FILL_PATTERNS: [[u8; 8]; 13] = [
-        // Empty
-        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-        // Solid
-        [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-        // Line
-        [0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-        // LtSlash
-        [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80],
-        // Slash
-        [0xE0, 0xC1, 0x83, 0x07, 0x0E, 0x1C, 0x38, 0x70],
-        // BkSlash
-        [0xF0, 0x78, 0x3C, 0x1E, 0x0F, 0x87, 0xC3, 0xE1],
-        // LtBkSlash
-        [0xA5, 0xD2, 0x69, 0xB4, 0x5A, 0x2D, 0x96, 0x4B],
-        // Hatch
-        [0xFF, 0x88, 0x88, 0x88, 0xFF, 0x88, 0x88, 0x88],
-        // XHatch
-        [0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81],
-        // Interleave
-        [0xCC, 0x33, 0xCC, 0x33, 0xCC, 0x33, 0xCC, 0x33],
-        // WideDot
-        [0x80, 0x00, 0x08, 0x00, 0x80, 0x00, 0x08, 0x00],
-        // CloseDot
-        [0x88, 0x00, 0x22, 0x00, 0x88, 0x00, 0x22, 0x00],
-        // User
-        [0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55],
-    ];
-
-    pub fn from(fill_style: u8) -> FillStyle {
-        match fill_style {
-            // 0 => FillStyle::Empty,
-            1 => FillStyle::Solid,
-            2 => FillStyle::Line,
-            3 => FillStyle::LtSlash,
-            4 => FillStyle::Slash,
-            5 => FillStyle::BkSlash,
-            6 => FillStyle::LtBkSlash,
-            7 => FillStyle::Hatch,
-            8 => FillStyle::XHatch,
-            9 => FillStyle::Interleave,
-            10 => FillStyle::WideDot,
-            11 => FillStyle::CloseDot,
-            12 => FillStyle::User,
-            _ => FillStyle::Empty,
-        }
-    }
-
-    fn get_fill_pattern(self, fill_user_pattern: &[u8]) -> &[u8] {
-        match self {
-            FillStyle::User => fill_user_pattern,
-            _ => &FillStyle::DEFAULT_FILL_PATTERNS[self as usize],
-        }
     }
 }
 

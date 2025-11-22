@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, ImagePasteMode, RipCommand, RipParser, TerminalCommand, TerminalRequest, WriteMode};
+use icy_parser_core::{CommandParser, CommandSink, FillStyle, ImagePasteMode, RipCommand, RipParser, TerminalCommand, TerminalRequest, WriteMode};
 
 mod load;
 
@@ -303,7 +303,7 @@ fn test_rip_fill_style() {
     assert_eq!(sink.rip_commands.len(), 1);
     match &sink.rip_commands[0] {
         RipCommand::FillStyle { pattern, color } => {
-            assert_eq!(*pattern, 1);
+            assert_eq!(*pattern, FillStyle::Solid);
             assert_eq!(*color, 15);
         }
         _ => panic!("Expected FillStyle command"),

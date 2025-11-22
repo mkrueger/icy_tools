@@ -56,7 +56,6 @@ pub struct TerminalState {
     margins_top_bottom: Option<(i32, i32)>,
     margins_left_right: Option<(i32, i32)>,
     pub mouse_state: MouseState,
-    pub dec_margin_mode_left_right: bool,
 
     pub font_selection_state: FontSelectionState,
 
@@ -68,6 +67,24 @@ pub struct TerminalState {
     pub cr_is_if: bool, // that basically skips /r
     tab_stops: Vec<i32>,
     baud_rate: BaudEmulation,
+
+    /// DECLRMM - Left Right Margin Mode (DEC private mode 69)
+    ///
+    /// Defines whether or not the set left and right margins (DECSLRM) control
+    /// function can set margins.
+    ///
+    /// - When set (`true`): DECSLRM can set the left and right margins. All line
+    ///   attributes currently in page memory are set to single width, single height.
+    ///   The terminal ignores any sequences to change line attributes to double
+    ///   width or double height (DECDWL or DECDHL).
+    ///
+    /// - When reset (`false`, default): DECSLRM cannot set the left and right margins.
+    ///   The margins are set to the page borders. The terminal can process sequences
+    ///   to change line attributes to double width or double height.
+    ///
+    /// Available in: VT Level 4 mode only
+    /// Format: CSI ? 69 h (set) / CSI ? 69 l (reset)
+    dec_left_right_margins: bool,
 
     // Attributes used for determining the real current device attribute:
     pub(crate) inverse_video: bool,
@@ -95,7 +112,7 @@ pub enum MouseMode {
 pub enum ExtMouseMode {
     #[default]
     None,
-    Extended,
+    ExtendedUTF8,
     SGR,
     URXVT,
     PixelPosition,
@@ -112,7 +129,6 @@ impl TerminalState {
             mouse_state: MouseState::default(),
             margins_top_bottom: None,
             margins_left_right: None,
-            dec_margin_mode_left_right: false,
             baud_rate: BaudEmulation::Off,
             tab_stops: vec![],
             font_selection_state: FontSelectionState::NoRequest,
@@ -124,6 +140,7 @@ impl TerminalState {
             cr_is_if: false,
             inverse_video: false,
             ice_colors: false,
+            dec_left_right_margins: false,
         };
         ret.reset_tabs();
         ret
@@ -238,8 +255,37 @@ impl TerminalState {
         self.margins_top_bottom = if top > bottom { None } else { Some((top, bottom)) };
     }
 
+    /// Returns whether DECLRMM (Left Right Margin Mode) is enabled.
+    ///
+    /// When `true`, the DECSLRM control function can set left and right margins.
+    /// When `false` (default), DECSLRM cannot set margins and they default to page borders.
+    ///
+    /// See DECLRMM (DEC private mode 69) in VT420 specification.
+    pub fn dec_left_right_margins(&self) -> bool {
+        self.dec_left_right_margins
+    }
+
+    /// Sets the DECLRMM (Left Right Margin Mode) state.
+    ///
+    /// # Arguments
+    /// * `enabled` - Whether to enable (`true`) or disable (`false`) left/right margin setting
+    ///
+    /// # Effects
+    /// - When enabled: DECSLRM can set margins, line attributes become single width/height
+    /// - When disabled: Clears any existing left/right margins, allows double width/height attributes
+    ///
+    /// See DECLRMM (DEC private mode 69) in VT420 specification.
+    pub fn set_dec_left_right_margins(&mut self, enabled: bool) {
+        self.dec_left_right_margins = enabled;
+        if !enabled {
+            self.margins_left_right = None;
+        }
+    }
+
     pub fn set_margins_left_right(&mut self, left: i32, right: i32) {
-        self.margins_left_right = if left > right { None } else { Some((left, right)) };
+        if self.dec_left_right_margins {
+            self.margins_left_right = if left > right { None } else { Some((left, right)) };
+        }
     }
 
     pub fn clear_margins_top_bottom(&mut self) {
@@ -252,6 +298,7 @@ impl TerminalState {
 
     pub fn set_text_window(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         self.origin_mode = OriginMode::WithinMargins;
+        self.set_dec_left_right_margins(true);
         self.set_margins_top_bottom(y0, y1);
         self.set_margins_left_right(x0, x1);
     }
@@ -259,6 +306,7 @@ impl TerminalState {
     pub fn clear_text_window(&mut self) {
         self.origin_mode = OriginMode::UpperLeftCorner;
 
+        self.set_dec_left_right_margins(false);
         self.clear_margins_top_bottom();
         self.clear_margins_left_right();
     }
@@ -277,7 +325,7 @@ impl TerminalState {
         // Margins & text window
         self.margins_top_bottom = None;
         self.margins_left_right = None;
-        self.dec_margin_mode_left_right = false;
+        self.dec_left_right_margins = false;
 
         // Mouse state remains...
 

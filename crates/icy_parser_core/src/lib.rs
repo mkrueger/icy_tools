@@ -42,7 +42,8 @@ mod mode7;
 pub use mode7::Mode7Parser;
 
 mod rip;
-pub use rip::{BlockTransferMode, FileQueryMode, ImagePasteMode, QueryMode, RipCommand, RipParser, WriteMode};
+pub use rip::{BlockTransferMode, FileQueryMode, FillStyle, ImagePasteMode, LineStyle, QueryMode, WriteMode};
+pub use rip::{RipCommand, RipParser};
 
 mod skypix;
 pub use skypix::*;
@@ -254,7 +255,7 @@ impl AnsiMode {
 /// These are terminal-specific modes distinct from standard ANSI modes
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DecPrivateMode {
+pub enum DecMode {
     // Scrolling and Display Modes
     /// DECSCLM - Smooth Scroll (Mode 4)
     SmoothScroll = 4,
@@ -324,7 +325,7 @@ pub enum DecPrivateMode {
     ExtendedMousePixel = 1016,
 }
 
-impl DecPrivateMode {
+impl DecMode {
     fn from_u16(n: u16) -> Option<Self> {
         match n {
             4 => Some(Self::SmoothScroll),
@@ -612,12 +613,10 @@ pub enum TerminalCommand {
     /// Special keys: ESC[{n}~
     CsiSpecialKey(SpecialKey),
 
-    /// DECSET - DEC Private Mode Set: ESC[?{n}h
+    /// DECSET/DECRST - DEC Mode Set/Reset: ESC[?{n}h or ESC[?{n}l
     /// Emitted once per mode (e.g., ESC[?25;1000h emits two commands)
-    CsiDecPrivateModeSet(DecPrivateMode),
-    /// DECRST - DEC Private Mode Reset: ESC[?{n}l
-    /// Emitted once per mode (e.g., ESC[?25;1000l emits two commands)
-    CsiDecPrivateModeReset(DecPrivateMode),
+    /// Second parameter: true = set (h), false = reset (l)
+    CsiDecSetMode(DecMode, bool),
 
     /// SM - Set Mode: ESC[{n}h
     /// Emitted once per mode
@@ -761,7 +760,7 @@ pub enum TerminalRequest {
 
     /// DEC Private Mode Report: ESC[?{mode}$p
     /// Terminal should respond with current DEC mode status
-    DecPrivateModeReport(DecPrivateMode),
+    DecPrivateModeReport(DecMode),
 
     /// Request Checksum of Rectangular Area: ESC[{id};{page};{top};{left};{bottom};{right}*y
     /// Terminal should respond with checksum in DCS format
