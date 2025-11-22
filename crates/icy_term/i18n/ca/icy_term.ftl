@@ -189,7 +189,7 @@ capture-dialog-capture-title = Captura
 capture-dialog-capture-button = Iniciar
 capture-dialog-dir-not-exist = El directori no existeix
 capture-dialog-not-directory = El camí no és un directori
-capture-dialog-file-exists = El fitxer existeix i s'hi afegirà contingut
+capture-dialog-file-exists = El fitxer existeix i se sobreescriurà
 
 export-dialog-title = Exportar memòria intermèdia a fitxer
 export-dialog-export-button = Exportar

@@ -189,7 +189,10 @@ capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Start
 capture-dialog-dir-not-exist=Directory does not exist
 capture-dialog-not-directory=Path is not a directory
-capture-dialog-file-exists=File exists and will be appended to
+capture-dialog-file-exists=File exists and will be overwritten
+capture-dialog-overwrite-title=Warning
+capture-dialog-overwrite-secondary=This action cannot be undone.
+capture-dialog-overwrite-message=Are you sure you want to overwrite '{$filename}'?
 
 export-dialog-title = Export Buffer to File
 export-dialog-export-button = Export

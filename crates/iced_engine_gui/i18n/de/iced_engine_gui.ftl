@@ -51,3 +51,4 @@ dialog-yes-button = Ja
 dialog-no-button = Nein
 dialog-close-button = Schließen
 dialog-delete-button = Löschen
+dialog-overwrite-button = Überschreiben

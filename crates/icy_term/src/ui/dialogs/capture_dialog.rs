@@ -19,6 +19,8 @@ pub enum CaptureMsg {
     BrowseDirectory,
     RestoreDefaults,
     Cancel,
+    ConfirmOverwrite,
+    CancelOverwrite,
 }
 
 pub struct CaptureDialogState {
@@ -27,6 +29,7 @@ pub struct CaptureDialogState {
     pub capture_filename: String,
     temp_directory: String,
     temp_filename: String,
+    pending_overwrite: bool,
 }
 
 impl CaptureDialogState {
@@ -49,6 +52,7 @@ impl CaptureDialogState {
             capture_filename: file.clone(),
             temp_directory: dir,
             temp_filename: file,
+            pending_overwrite: false,
         }
     }
 
@@ -86,26 +90,46 @@ impl CaptureDialogState {
         }
     }
 
+    fn start_capture_internal(&mut self) -> Option<crate::ui::Message> {
+        self.capture_directory = self.temp_directory.clone();
+        self.capture_filename = self.temp_filename.clone();
+        self.capture_session = true;
+
+        // Create directory if it doesn't exist
+        if let Err(e) = std::fs::create_dir_all(&self.capture_directory) {
+            log::error!("Failed to create directory: {}", e);
+            return None;
+        }
+
+        // Save the full path to options
+        let full_path = self.get_full_path();
+        if let Some(path_str) = full_path.to_str() {
+            Some(crate::ui::Message::StartCapture(path_str.to_string()))
+        } else {
+            None
+        }
+    }
+
     pub fn update(&mut self, message: CaptureMsg) -> Option<crate::ui::Message> {
         match message {
             CaptureMsg::StartCapture => {
-                self.capture_directory = self.temp_directory.clone();
-                self.capture_filename = self.temp_filename.clone();
-                self.capture_session = true;
-
-                // Create directory if it doesn't exist
-                if let Err(e) = std::fs::create_dir_all(&self.capture_directory) {
-                    log::error!("Failed to create directory: {}", e);
-                    return None;
-                }
-
-                // Save the full path to options
-                let full_path = self.get_full_path();
-                if let Some(path_str) = full_path.to_str() {
-                    Some(crate::ui::Message::StartCapture(path_str.to_string()))
-                } else {
+                // Check if file exists
+                let full_path = PathBuf::from(&self.temp_directory).join(&self.temp_filename);
+                if full_path.exists() && !self.capture_session {
+                    // Show confirmation dialog
+                    self.pending_overwrite = true;
                     None
+                } else {
+                    self.start_capture_internal()
                 }
+            }
+            CaptureMsg::ConfirmOverwrite => {
+                self.pending_overwrite = false;
+                self.start_capture_internal()
+            }
+            CaptureMsg::CancelOverwrite => {
+                self.pending_overwrite = false;
+                None
             }
             CaptureMsg::StopCapture => {
                 // This message is no longer used - use Message::StopCapture directly
@@ -148,6 +172,7 @@ impl CaptureDialogState {
             }
             CaptureMsg::Cancel => {
                 // Don't save changes, just close
+                self.pending_overwrite = false;
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
         }
@@ -155,7 +180,28 @@ impl CaptureDialogState {
 
     pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
         let overlay = self.create_modal_content();
-        crate::ui::modal(terminal_content, overlay, crate::ui::Message::CaptureDialog(CaptureMsg::Cancel))
+        let modal = crate::ui::modal(terminal_content, overlay, crate::ui::Message::CaptureDialog(CaptureMsg::Cancel));
+
+        if self.pending_overwrite {
+            let filename = self.temp_filename.clone();
+            let dialog = iced_engine_gui::ConfirmationDialog::new(
+                fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-title"),
+                fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-message", filename = filename),
+            )
+            .dialog_type(iced_engine_gui::DialogType::Warning)
+            .secondary_message(fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-secondary"))
+            .buttons(iced_engine_gui::ButtonSet::OverwriteCancel);
+
+            dialog.view(modal, |result| match result {
+                iced_engine_gui::DialogResult::Overwrite => crate::ui::Message::CaptureDialog(CaptureMsg::ConfirmOverwrite),
+                _ => {
+                    // Reset pending_overwrite flag when user cancels
+                    crate::ui::Message::CaptureDialog(CaptureMsg::CancelOverwrite)
+                }
+            })
+        } else {
+            modal
+        }
     }
 
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {

@@ -187,7 +187,7 @@ capture-dialog-capture-title = Rögzítés
 capture-dialog-capture-button = Indítás
 capture-dialog-dir-not-exist = A könyvtár nem létezik
 capture-dialog-not-directory = Az útvonal nem könyvtár
-capture-dialog-file-exists = A fájl létezik és bővítve lesz
+capture-dialog-file-exists = A fájl létezik és felülírva lesz
 
 export-dialog-title = Puffer exportálása fájlba
 export-dialog-export-button = Exportálás

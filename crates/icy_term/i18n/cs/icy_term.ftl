@@ -187,7 +187,7 @@ capture-dialog-capture-title=Záznam
 capture-dialog-capture-button=Start
 capture-dialog-dir-not-exist = Adresář neexistuje
 capture-dialog-not-directory = Cesta není adresář
-capture-dialog-file-exists = Soubor existuje a bude rozšířen
+capture-dialog-file-exists = Soubor existuje a bude přepsán
 
 export-dialog-title = Exportovat buffer do souboru
 export-dialog-export-button = Exportovat

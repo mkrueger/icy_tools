@@ -187,7 +187,7 @@ capture-dialog-capture-title=Capture
 capture-dialog-capture-button=Commencer
 capture-dialog-dir-not-exist = Le répertoire n'existe pas
 capture-dialog-not-directory = Le chemin n'est pas un répertoire
-capture-dialog-file-exists = Le fichier existe et sera complété
+capture-dialog-file-exists = Le fichier existe et sera écrasé
 
 export-dialog-title = Exporter le tampon vers un fichier
 export-dialog-export-button = Exporter

@@ -19,6 +19,7 @@ pub enum ButtonSet {
     YesNo,
     YesNoCancel,
     DeleteCancel,
+    OverwriteCancel,
 }
 
 impl ButtonSet {
@@ -35,6 +36,7 @@ impl ButtonSet {
                 (ButtonType::Yes, ButtonStyle::Primary),
             ],
             Self::DeleteCancel => vec![(ButtonType::Cancel, ButtonStyle::Secondary), (ButtonType::Delete, ButtonStyle::Danger)],
+            Self::OverwriteCancel => vec![(ButtonType::Cancel, ButtonStyle::Secondary), (ButtonType::Overwrite, ButtonStyle::Danger)],
         }
     }
 }
@@ -47,6 +49,7 @@ pub enum ButtonType {
     No,
     Close,
     Delete,
+    Overwrite,
 }
 
 impl fmt::Display for ButtonType {
@@ -58,6 +61,7 @@ impl fmt::Display for ButtonType {
             Self::No => fl!(LANGUAGE_LOADER, "dialog-no-button"),
             Self::Close => fl!(LANGUAGE_LOADER, "dialog-close-button"),
             Self::Delete => fl!(LANGUAGE_LOADER, "dialog-delete-button"),
+            Self::Overwrite => fl!(LANGUAGE_LOADER, "dialog-overwrite-button"),
         };
         write!(f, "{}", text)
     }
@@ -72,6 +76,7 @@ impl ButtonType {
             Self::No => DialogResult::No,
             Self::Close => DialogResult::Close,
             Self::Delete => DialogResult::Delete,
+            Self::Overwrite => DialogResult::Overwrite,
         }
     }
 }
@@ -131,6 +136,7 @@ pub enum DialogResult {
     No,
     Close,
     Delete,
+    Overwrite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

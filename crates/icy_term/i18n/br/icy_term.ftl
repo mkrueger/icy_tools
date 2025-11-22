@@ -187,7 +187,7 @@ capture-dialog-capture-title = Captura
 capture-dialog-capture-button = Iniciar
 capture-dialog-dir-not-exist = O diretório não existe
 capture-dialog-not-directory = O caminho não é um diretório
-capture-dialog-file-exists = O arquivo existe e será anexado
+capture-dialog-file-exists = O arquivo existe e será sobrescrito
 
 export-dialog-title = Exportar buffer para arquivo
 export-dialog-export-button = Exportar

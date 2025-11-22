@@ -187,7 +187,7 @@ capture-dialog-capture-title = Przechwytywanie
 capture-dialog-capture-button = Start
 capture-dialog-dir-not-exist = Katalog nie istnieje
 capture-dialog-not-directory = Ścieżka nie jest katalogiem
-capture-dialog-file-exists = Plik istnieje i zostanie rozszerzony
+capture-dialog-file-exists = Plik istnieje i zostanie nadpisany
 
 export-dialog-title = Eksportuj bufor do pliku
 export-dialog-export-button = Eksportuj

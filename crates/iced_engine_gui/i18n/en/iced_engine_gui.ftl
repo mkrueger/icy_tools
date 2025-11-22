@@ -49,3 +49,4 @@ dialog-yes-button = Yes
 dialog-no-button = No
 dialog-close-button = Close
 dialog-delete-button = Delete
+dialog-overwrite-button = Overwrite
