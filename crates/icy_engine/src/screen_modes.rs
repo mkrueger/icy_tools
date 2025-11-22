@@ -1,15 +1,16 @@
 use std::fmt::{self, Display};
 
-use icy_engine::{
-    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437,
-    EditableScreen, IBM_VGA50_SAUCE, Palette, SKYPIX_PALETTE, Size, TerminalResolution, VIEWDATA, VIEWDATA_PALETTE,
+use crate::{
+    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED,
+    C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen,
+    VIEWDATA, VIEWDATA_PALETTE, graphics_screen_buffer,
 };
+use icy_net::telnet::TerminalEmulation;
+use icy_parser_core::{CommandParser, MusicOption};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
 };
-
-//use super::{BufferInputMode, BufferView};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ScreenMode {
@@ -213,6 +214,12 @@ pub const ATASCII_SCREEN_SIZE: Size = Size { width: 40, height: 24 };
 pub const ATASCII_PAL_SCREEN_SIZE: Size = Size { width: 40, height: 25 };
 pub const ATASCII_XEP80_SCREEN_SIZE: Size = Size { width: 80, height: 25 };
 
+/// Options for creating a screen and parser combination.
+pub struct CreationOptions {
+    /// Music option for ANSI parsers
+    pub ansi_music: MusicOption,
+}
+
 impl ScreenMode {
     pub fn get_window_size(&self) -> Size {
         match self {
@@ -237,30 +244,30 @@ impl ScreenMode {
         }
     }
 
-    pub fn apply_to_edit_screen(&self, screen: &mut dyn EditableScreen) {
-        screen.terminal_state_mut().auto_wrap_mode = icy_engine::AutoWrapMode::NoWrap;
+    fn apply_to_edit_screen(&self, screen: &mut dyn EditableScreen) {
+        screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::NoWrap;
         // Ensure we have at least one layer and set its size
         match self {
             ScreenMode::Vga(_x, y) => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
-                *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
+                *screen.buffer_type_mut() = BufferType::CP437;
             }
             ScreenMode::Unicode(_x, _y) => {
-                *screen.buffer_type_mut() = icy_engine::BufferType::Unicode;
+                *screen.buffer_type_mut() = BufferType::Unicode;
             }
             ScreenMode::Default => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_bytes("", CP437).unwrap());
-                *screen.buffer_type_mut() = icy_engine::BufferType::CP437;
+                *screen.buffer_type_mut() = BufferType::CP437;
             }
             ScreenMode::Vic => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
                 screen.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
-                *screen.buffer_type_mut() = icy_engine::BufferType::Petscii;
-                screen.terminal_state_mut().auto_wrap_mode = icy_engine::AutoWrapMode::AutoWrap;
+                *screen.buffer_type_mut() = BufferType::Petscii;
+                screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
             }
             ScreenMode::Atascii(i) => {
                 screen.clear_font_table();
@@ -272,14 +279,14 @@ impl ScreenMode {
                     screen.set_font(1, ATARI_XEP80_INT.clone());
                     *screen.palette_mut() = Palette::from_slice(&ATARI_XEP80_PALETTE);
                 }
-                *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
+                *screen.buffer_type_mut() = BufferType::Atascii;
             }
             ScreenMode::Videotex | ScreenMode::Mode7 => {
                 screen.clear_font_table();
                 screen.set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&VIEWDATA_PALETTE);
-                *screen.buffer_type_mut() = icy_engine::BufferType::Viewdata;
-                screen.terminal_state_mut().auto_wrap_mode = icy_engine::AutoWrapMode::AutoWrap;
+                *screen.buffer_type_mut() = BufferType::Viewdata;
+                screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
             }
             ScreenMode::Rip => {
                 // Done by creation
@@ -288,8 +295,95 @@ impl ScreenMode {
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
             }
             ScreenMode::AtariST(_x, _igs) => {
-                *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
+                *screen.buffer_type_mut() = BufferType::Atascii;
             }
+        }
+    }
+
+    /// Creates a screen and parser combination for the given terminal emulation.
+    ///
+    /// # Arguments
+    /// * `emulation` - The terminal emulation type
+    /// * `option` - Optional creation options (e.g., ANSI music settings)
+    ///
+    /// # Returns
+    /// A tuple of (EditableScreen, CommandParser) properly configured for the emulation
+    ///
+    /// # Example
+    /// ```no_run
+    /// use icy_engine::{ScreenMode, CreationOptions, MusicOption};
+    /// use icy_net::telnet::TerminalEmulation;
+    ///
+    /// let mode = ScreenMode::Vga(80, 25);
+    /// let options = Some(CreationOptions { ansi_music: MusicOption::Both });
+    /// let (screen, parser) = mode.create_screen(TerminalEmulation::Ansi, options);
+    /// ```
+    pub fn create_screen(&self, emulation: TerminalEmulation, option: Option<CreationOptions>) -> (Box<dyn EditableScreen>, Box<dyn CommandParser + Send>) {
+        let mut screen: Box<dyn EditableScreen> = match emulation {
+            TerminalEmulation::Rip => {
+                let buf = PaletteScreenBuffer::new(GraphicsType::Rip);
+                Box::new(buf)
+            }
+            TerminalEmulation::Skypix => {
+                let buf = graphics_screen_buffer::GraphicsScreenBuffer::new(GraphicsType::Skypix);
+                Box::new(buf)
+            }
+            TerminalEmulation::AtariST => {
+                let (res, _igs) = if let ScreenMode::AtariST(res, igs) = self {
+                    (*res, *igs)
+                } else {
+                    (TerminalResolution::Low, false)
+                };
+                let buf = PaletteScreenBuffer::new(GraphicsType::IGS(res));
+                Box::new(buf)
+            }
+            _ => Box::new(TextScreen::new(self.get_window_size())),
+        };
+
+        self.apply_to_edit_screen(screen.as_mut());
+        let music_option = option.as_ref().map(|o| o.ansi_music);
+        let parser = get_parser(&emulation, music_option, self);
+        (screen, parser)
+    }
+}
+
+/// Creates a parser for the given terminal emulation and screen mode.
+///
+/// # Arguments
+/// * `emulator` - The terminal emulation type
+/// * `use_ansi_music` - Optional music option for ANSI parsers
+/// * `screen_mode` - The screen mode (used for AtariST IGS detection)
+///
+/// # Returns
+/// A boxed command parser configured for the emulation type
+#[must_use]
+pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: Option<MusicOption>, screen_mode: &ScreenMode) -> Box<dyn CommandParser + Send> {
+    match emulator {
+        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
+            let mut parser = icy_parser_core::AnsiParser::new();
+            if let Some(music_opt) = use_ansi_music {
+                parser.music_option = music_opt;
+            }
+            Box::new(parser)
+        }
+        TerminalEmulation::Avatar => Box::new(icy_parser_core::AvatarParser::new()),
+        TerminalEmulation::Ascii => Box::new(icy_parser_core::AsciiParser::new()),
+        TerminalEmulation::PETscii => Box::new(icy_parser_core::PetsciiParser::new()),
+        TerminalEmulation::ATAscii => Box::new(icy_parser_core::AtasciiParser::new()),
+        TerminalEmulation::ViewData => Box::new(icy_parser_core::ViewdataParser::new()),
+        TerminalEmulation::Mode7 => Box::new(icy_parser_core::Mode7Parser::new()),
+        TerminalEmulation::Rip => Box::new(icy_parser_core::RipParser::new()),
+        TerminalEmulation::Skypix => Box::new(icy_parser_core::SkypixParser::new()),
+        TerminalEmulation::AtariST => {
+            if let ScreenMode::AtariST(_, igs) = screen_mode {
+                return if *igs {
+                    Box::new(icy_parser_core::IgsParser::new())
+                } else {
+                    Box::new(icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed))
+                };
+            }
+            log::warn!("ScreenMode is wrong for AtariST {:?}, fall back to IGS.", screen_mode);
+            Box::new(icy_parser_core::IgsParser::new())
         }
     }
 }

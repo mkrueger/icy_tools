@@ -1,6 +1,6 @@
 use crate::ui::{MainWindowMode, Message, modal};
 use crate::util::Rng;
-use crate::{Address, AddressBook, ScreenMode};
+use crate::{Address, AddressBook};
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length, Task,
@@ -8,6 +8,7 @@ use iced::{
 };
 use iced::{Event, keyboard};
 use iced_engine_gui::ui::*;
+use icy_engine::ScreenMode;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use std::sync::Arc;

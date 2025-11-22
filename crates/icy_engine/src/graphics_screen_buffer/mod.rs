@@ -38,7 +38,7 @@ pub struct GraphicsScreenBuffer {
     pub bgi: Bgi,
 
     // IGS state (only used for IGS graphics)
-    igs_state: Option<IgsState>,
+    _igs_state: Option<IgsState>,
 
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
@@ -137,7 +137,7 @@ impl GraphicsScreenBuffer {
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
             bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
-            igs_state: None,
+            _igs_state: None,
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
             saved_pos: Position::default(),
@@ -882,7 +882,7 @@ impl EditableScreen for GraphicsScreenBuffer {
         &mut self.saved_cursor_state
     }
 
-    fn handle_rip_command(&mut self, cmd: RipCommand) {
+    fn handle_rip_command(&mut self, _cmd: RipCommand) {
         // self.handle_rip_command_impl(cmd);
     }
 
@@ -890,7 +890,7 @@ impl EditableScreen for GraphicsScreenBuffer {
         self.handle_skypix_command_impl(cmd);
     }
 
-    fn handle_igs_command(&mut self, cmd: icy_parser_core::IgsCommand) {
+    fn handle_igs_command(&mut self, _cmd: icy_parser_core::IgsCommand) {
         // self.handle_igs_command_impl(cmd);
     }
 

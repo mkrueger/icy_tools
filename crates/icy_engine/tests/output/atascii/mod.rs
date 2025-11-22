@@ -1,8 +1,6 @@
-use icy_engine::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, EditableScreen, Palette, TextScreen};
-use icy_parser_core::AtasciiParser;
+use icy_engine::ScreenMode;
+use icy_net::telnet::TerminalEmulation;
 use std::fs::{self};
-
-use crate::compare_output;
 
 #[test]
 pub fn test_atascii_40() {
@@ -15,16 +13,8 @@ pub fn test_atascii_40() {
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
-        let mut screen = TextScreen::new((40, 25));
-        screen.terminal_state_mut().is_terminal_buffer = true;
-        screen.clear_font_table();
-        screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
-        *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
-        *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
-        super::parse_with_parser(&mut screen, &mut AtasciiParser::default(), &data).expect("Error parsing file");
-
-        // Pass filenames for loading expected PNG and saving output
-        compare_output(&screen, &cur_entry);
+        let mut screen = ScreenMode::Atascii(40).create_screen(TerminalEmulation::ATAscii, None);
+        super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }
 
@@ -39,15 +29,7 @@ pub fn test_atascii_80() {
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
-        let mut screen = TextScreen::new((80, 25));
-        screen.terminal_state_mut().is_terminal_buffer = true;
-        screen.clear_font_table();
-        screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
-        *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
-        *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
-
-        super::parse_with_parser(&mut screen, &mut AtasciiParser::default(), &data).expect("Error parsing file");
-        // Pass filenames for loading expected PNG and saving output
-        compare_output(&screen, &cur_entry);
+        let mut screen = ScreenMode::Atascii(80).create_screen(TerminalEmulation::ATAscii, None);
+        super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }

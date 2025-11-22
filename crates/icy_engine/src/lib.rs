@@ -90,6 +90,9 @@ pub use paint::*;
 
 pub use palette_screen_buffer::bgi::MouseField;
 
+mod screen_modes;
+pub use screen_modes::*;
+
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Size {
     pub width: i32,

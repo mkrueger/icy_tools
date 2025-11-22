@@ -1,9 +1,9 @@
-use crate::{ConnectionInformation, ScreenMode, TerminalResult};
+use crate::{ConnectionInformation, TerminalResult};
 //use crate::ui::screen_modes::ScreenMode;
 use chrono::{Duration, Utc};
+use icy_engine::ScreenMode;
 use icy_net::ConnectionType;
 use icy_net::telnet::TerminalEmulation;
-use icy_parser_core::CommandParser;
 use icy_parser_core::{BaudEmulation, MusicOption};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
@@ -42,36 +42,6 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
         TerminalEmulation::Rip => "RIPscrip",
         TerminalEmulation::Skypix => "Skypix",
         TerminalEmulation::AtariST => "Atari ST",
-    }
-}
-
-#[must_use]
-pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: MusicOption, screen_mode: ScreenMode) -> Box<dyn CommandParser + Send> {
-    match emulator {
-        TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
-            let mut parser = icy_parser_core::AnsiParser::new();
-            parser.music_option = use_ansi_music;
-            Box::new(parser)
-        }
-        TerminalEmulation::Avatar => Box::new(icy_parser_core::AvatarParser::new()),
-        TerminalEmulation::Ascii => Box::new(icy_parser_core::AsciiParser::new()),
-        TerminalEmulation::PETscii => Box::new(icy_parser_core::PetsciiParser::new()),
-        TerminalEmulation::ATAscii => Box::new(icy_parser_core::AtasciiParser::new()),
-        TerminalEmulation::ViewData => Box::new(icy_parser_core::ViewdataParser::new()),
-        TerminalEmulation::Mode7 => Box::new(icy_parser_core::Mode7Parser::new()),
-        TerminalEmulation::Rip => Box::new(icy_parser_core::RipParser::new()),
-        TerminalEmulation::Skypix => Box::new(icy_parser_core::SkypixParser::new()),
-        TerminalEmulation::AtariST => {
-            if let ScreenMode::AtariST(_, igs) = screen_mode {
-                return if igs {
-                    Box::new(icy_parser_core::IgsParser::new())
-                } else {
-                    Box::new(icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed))
-                };
-            }
-            log::warn!("ScreenMode is wrong for AtariST {:?}, fall back to IGS.", screen_mode);
-            Box::new(icy_parser_core::IgsParser::new())
-        }
     }
 }
 

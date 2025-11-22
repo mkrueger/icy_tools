@@ -1,8 +1,6 @@
-use icy_engine::{ScreenSink, SkypixParser, graphics_screen_buffer::GraphicsScreenBuffer};
-use icy_parser_core::CommandParser;
+use icy_engine::ScreenMode;
+use icy_net::telnet::TerminalEmulation;
 use std::fs::{self};
-
-use crate::compare_output;
 
 #[test]
 pub fn test_skypix() {
@@ -14,14 +12,7 @@ pub fn test_skypix() {
         }
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let mut buffer = GraphicsScreenBuffer::new(icy_engine::GraphicsType::Skypix);
-
-        let mut parser = SkypixParser::new();
-        let mut sink = ScreenSink::new(&mut buffer);
-
-        parser.parse(&data, &mut sink);
-
-        // Pass filenames for loading expected PNG and saving output
-        compare_output(&buffer, &cur_entry);
+        let mut screen = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+        super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }

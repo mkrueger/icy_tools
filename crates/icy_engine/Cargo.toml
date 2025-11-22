@@ -25,6 +25,7 @@ byteorder = "1"
 bstr = { workspace = true }
 codepages = { workspace = true }
 rayon = { workspace = true }
+icy_net = { workspace = true }
 
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }

@@ -26,6 +26,9 @@ icy_parser_core = { path = "crates/icy_parser_core"}
 icy_sauce = "0.3.4"
 #icy_sauce = { path = "../icy_sauce" }
 icy_sixel = "0.2.0"
+icy_net = { git ="https://github.com/mkrueger/icy_board" }
+#icy_net = { path ="../../../icy_board/crates/icy_net" }
+
 #icy_view_gui = { path = "crates/icy_view_gui" }
 iced_engine_gui = { path = "crates/iced_engine_gui" } 
 #libyaff = { path = "../libyaff" }

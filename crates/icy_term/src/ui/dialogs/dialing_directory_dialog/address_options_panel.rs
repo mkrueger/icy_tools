@@ -1,6 +1,6 @@
+use crate::ConnectionInformation;
 use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
-use crate::{ConnectionInformation, ScreenMode, VGA_MODES};
 use i18n_embed_fl::fl;
 use iced::Padding;
 use iced::widget::tooltip;
@@ -11,7 +11,7 @@ use iced::{
 use iced_engine_gui::settings::{effect_box, left_label};
 use iced_engine_gui::ui::{primary_button, secondary_button, text_button_style};
 use iced_engine_gui::{LABEL_WIDTH, SECTION_SPACING, section_header};
-use icy_engine::TerminalResolutionExt;
+use icy_engine::{ScreenMode, TerminalResolutionExt, VGA_MODES};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use once_cell::sync::Lazy;

@@ -1,9 +1,9 @@
+use crate::ConnectionInformation;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
-use crate::{ConnectionInformation, ScreenMode};
 use directories::UserDirs;
-use icy_engine::{EditableScreen, GraphicsType, PaletteScreenBuffer, ScreenSink, Sixel, TextScreen};
+use icy_engine::{CreationOptions, EditableScreen, GraphicsType, ScreenMode, ScreenSink, Sixel};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -83,7 +83,7 @@ pub struct ConnectionConfig {
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfig>,
 
-    pub music_option: MusicOption,
+    pub ansi_music: MusicOption,
     pub screen_mode: ScreenMode,
 
     pub baud_emulation: BaudEmulation,
@@ -601,42 +601,19 @@ impl TerminalThread {
 
         self.connection = Some(connection);
         self.connection_time = Some(Instant::now());
-        if let Ok(mut screen) = self.edit_screen.lock() {
-            let screen_mode = config.screen_mode;
 
-            match config.terminal_type {
-                TerminalEmulation::Rip => {
-                    let buf = PaletteScreenBuffer::new(GraphicsType::Rip);
-                    *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
-                }
-                TerminalEmulation::Skypix => {
-                    let buf = icy_engine::graphics_screen_buffer::GraphicsScreenBuffer::new(GraphicsType::Skypix);
-                    //   buf.set_size((80, 42).into());
-                    *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
-                }
-                TerminalEmulation::AtariST => {
-                    let (res, _igs) = if let ScreenMode::AtariST(res, igs) = config.screen_mode {
-                        (res, igs)
-                    } else {
-                        (icy_engine::TerminalResolution::Low, false)
-                    };
-                    let buf = PaletteScreenBuffer::new(GraphicsType::IGS(res));
-                    *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
-                }
-                _ => {
-                    *screen = Box::new(TextScreen::new(screen_mode.get_window_size())) as Box<dyn icy_engine::EditableScreen>;
-                }
+        let (new_screen, parser) = config
+            .screen_mode
+            .create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
+        {
+            if let Ok(mut screen) = self.edit_screen.lock() {
+                *screen = new_screen;
             }
-
-            screen.terminal_state_mut().is_terminal_buffer = true;
-
-            screen_mode.apply_to_edit_screen(&mut **screen);
         }
-        self.parser = crate::get_parser(&config.terminal_type, config.music_option, config.screen_mode);
+        self.parser = parser;
 
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
-
         self.send_event(TerminalEvent::Connected);
 
         Ok(())
@@ -1644,12 +1621,9 @@ impl TerminalThread {
 // Helper function to create a terminal thread for the UI
 pub fn create_terminal_thread(
     edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
-    terminal_type: TerminalEmulation,
 ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
-    use icy_parser_core::MusicOption;
-    let parser = crate::get_parser(&terminal_type, MusicOption::Off, ScreenMode::default());
-
-    TerminalThread::spawn(edit_screen, parser)
+    let parser = icy_parser_core::AnsiParser::new();
+    TerminalThread::spawn(edit_screen, Box::new(parser))
 }
 
 fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

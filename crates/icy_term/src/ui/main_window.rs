@@ -116,7 +116,7 @@ impl MainWindow {
         let edit_screen = terminal_window.terminal.screen.clone();
 
         // Create terminal thread
-        let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), icy_net::telnet::TerminalEmulation::Ansi);
+        let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone());
 
         Self {
             effect: 0,
@@ -226,7 +226,7 @@ impl MainWindow {
 
                     proxy_command: None, // fill from settings if needed
                     modem,
-                    music_option: address.ansi_music,
+                    ansi_music: address.ansi_music,
                     screen_mode: address.get_screen_mode(),
                     iemsi_auto_login: options.iemsi.autologin,
                     auto_login_exp: address.auto_login.clone(),

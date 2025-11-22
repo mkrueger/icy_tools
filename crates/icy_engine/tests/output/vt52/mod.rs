@@ -1,11 +1,9 @@
-use icy_engine::{PaletteScreenBuffer, ScreenSink};
-use icy_parser_core::{CommandParser, IgsParser};
+use icy_engine::ScreenMode;
+use icy_net::telnet::TerminalEmulation;
 use std::{
     fs::{self},
     path::Path,
 };
-
-use crate::compare_output;
 
 #[test]
 pub fn test_vt52_igs() {
@@ -18,17 +16,8 @@ pub fn test_vt52_igs() {
         log::info!("Testing VT52 file: {:?}", cur_entry);
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        // Use Low resolution (40x25, 16 colors) for VT52 files as they were designed for Atari ST Low mode
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Medium));
-
-        let mut parser: IgsParser = IgsParser::new();
-        //let mut parser = icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed);
-        let mut sink = ScreenSink::new(&mut buffer);
-
-        parser.parse(&data, &mut sink);
-
-        // Pass filenames for loading expected PNG and saving output
-        compare_output(&buffer, &cur_entry);
+        let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, true).create_screen(TerminalEmulation::AtariST, None);
+        super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }
 
@@ -43,16 +32,8 @@ pub fn test_vt52_mixed() {
         log::info!("Testing VT52 file: {:?}", cur_entry);
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        // Use Low resolution (40x25, 16 colors) for VT52 files as they were designed for Atari ST Low mode
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Medium));
-
-        let mut parser = icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed);
-        let mut sink = ScreenSink::new(&mut buffer);
-
-        parser.parse(&data, &mut sink);
-
-        // Pass filenames for loading expected PNG and saving output
-        compare_output(&buffer, &cur_entry);
+        let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false).create_screen(TerminalEmulation::AtariST, None);
+        super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }
 
@@ -63,29 +44,14 @@ pub fn color_test() {
     let data = fs::read("tests/output/vt52/2st.st").unwrap();
 
     // Test Low resolution
-    {
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Low));
-        let mut parser: IgsParser = IgsParser::new();
-        let mut sink = ScreenSink::new(&mut buffer);
-        parser.parse(&data, &mut sink);
-        compare_output(&buffer, Path::new("tests/output/vt52/2st.low.png"));
-    }
+    let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Low, false).create_screen(TerminalEmulation::AtariST, None);
+    super::run_parser_compare(&mut screen, &Path::new("tests/output/vt52/2st.low.png"), &data);
 
     // Test Medium resolution
-    {
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::Medium));
-        let mut parser: IgsParser = IgsParser::new();
-        let mut sink = ScreenSink::new(&mut buffer);
-        parser.parse(&data, &mut sink);
-        compare_output(&buffer, Path::new("tests/output/vt52/2st.medium.png"));
-    }
+    let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false).create_screen(TerminalEmulation::AtariST, None);
+    super::run_parser_compare(&mut screen, &Path::new("tests/output/vt52/2st.medium.png"), &data);
 
     // Test High resolution
-    {
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::IGS(icy_engine::TerminalResolution::High));
-        let mut parser: IgsParser = IgsParser::new();
-        let mut sink = ScreenSink::new(&mut buffer);
-        parser.parse(&data, &mut sink);
-        compare_output(&buffer, Path::new("tests/output/vt52/2st.high.png"));
-    }
+    let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::High, false).create_screen(TerminalEmulation::AtariST, None);
+    super::run_parser_compare(&mut screen, &Path::new("tests/output/vt52/2st.high.png"), &data);
 }
