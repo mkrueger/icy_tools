@@ -305,7 +305,7 @@ impl ExportScreenDialogState {
         );
 
         let cancel_btn = secondary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            format!("{}", iced_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel)),
         );
 

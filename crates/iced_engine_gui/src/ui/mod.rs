@@ -4,6 +4,9 @@ use iced::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 mod icons;
 pub use icons::*;
 
+mod confirmation_dialog;
+pub use confirmation_dialog::*;
+
 // Button styling
 pub const BUTTON_FONT_SIZE: f32 = 14.0;
 pub const BUTTON_BORDER_WIDTH: f32 = 1.0;
@@ -104,11 +107,32 @@ pub fn modal_container<'a, T: 'a>(content: Element<'a, T>, width: f32) -> contai
     })
 }
 
+pub fn modal_overlay<'a, Message: 'a + Clone>(background: Element<'a, Message>, modal: Element<'a, Message>) -> Element<'a, Message> {
+    // Overlay that blocks clicks to the background
+    let overlay = container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| container::Style {
+        background: Some(Color::from_rgba8(0, 0, 0, 0.55).into()),
+        ..Default::default()
+    });
+
+    container(iced::widget::stack![
+        background,
+        iced::widget::mouse_area(overlay).interaction(iced::mouse::Interaction::Idle),
+        container(modal)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
+    ])
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+
 pub fn warning_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Message> {
     use crate::ui::icons::warning_icon;
 
     tooltip(
-        warning_icon().style(|theme: &Theme, _status| iced::widget::svg::Style {
+        warning_icon(18.0).style(|theme: &Theme, _status| iced::widget::svg::Style {
             color: Some(theme.extended_palette().warning.base.color),
         }),
         container(text(error_text)).style(container::rounded_box),
@@ -121,7 +145,7 @@ pub fn error_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Message
     use crate::ui::icons::error_icon;
 
     tooltip(
-        error_icon().style(|theme: &Theme, _status| iced::widget::svg::Style {
+        error_icon(18.0).style(|theme: &Theme, _status| iced::widget::svg::Style {
             color: Some(theme.extended_palette().danger.base.color),
         }),
         container(text(error_text)).style(container::rounded_box),

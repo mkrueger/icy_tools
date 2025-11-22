@@ -42,3 +42,10 @@ settings-curvature-y-label = Krzywizna Y
 settings-noise-artifacts-section = Szum i artefakty
 settings-noise-level-label = Poziom szumu
 settings-sync-wobble-label = Drganie synchronizacji
+# Przyciski dialogowe
+dialog-ok-button = OK
+dialog-cancel-button = Anuluj
+dialog-yes-button = Tak
+dialog-no-button = Nie
+dialog-close-button = Zamknij
+dialog-delete-button = Usuń

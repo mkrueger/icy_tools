@@ -1,9 +1,5 @@
 connect-to = Connecta a { $address }...
 
-dialog-ok_button = D'acord
-dialog-cancel_button = Cancel·lar
-dialog-close_button = Tancar
-
 settings-heading = Configuració
 settings-enabled-checkbox = Habilitat
 settings-scaling = Escalat

@@ -42,3 +42,10 @@ settings-curvature-y-label = Zakřivení Y
 settings-noise-artifacts-section = Šum a artefakty
 settings-noise-level-label = Úroveň šumu
 settings-sync-wobble-label = Synchronní chvění
+# Dialogová tlačítka
+dialog-ok-button = OK
+dialog-cancel-button = Zrušit
+dialog-yes-button = Ano
+dialog-no-button = Ne
+dialog-close-button = Zavřít
+dialog-delete-button = Smazat

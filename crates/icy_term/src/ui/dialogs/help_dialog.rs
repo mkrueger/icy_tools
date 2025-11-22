@@ -354,7 +354,7 @@ impl HelpDialog {
             row![
                 Space::new().width(Length::Fill),
                 primary_button(
-                    fl!(crate::LANGUAGE_LOADER, "dialog-close_button"),
+                    format!("{}", iced_engine_gui::ButtonType::Close),
                     Some(crate::ui::Message::CloseDialog(Box::new(crate::ui::MainWindowMode::ShowTerminal)))
                 )
                 .padding(Padding::from([5, 20])),

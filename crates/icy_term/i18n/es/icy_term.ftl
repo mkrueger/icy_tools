@@ -1,9 +1,5 @@
 connect-to = Conectar a { $address }...
 
-dialog-ok_button = Aceptar
-dialog-cancel_button = Cancelar
-dialog-close_button = Cerrar
-
 settings-heading = Configuración
 settings-enabled-checkbox = Habilitado
 settings-scaling = Escalado

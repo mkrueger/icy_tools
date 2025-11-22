@@ -1,9 +1,5 @@
 connect-to = Csatlakozás { $address }...
 
-dialog-ok_button = OK
-dialog-cancel_button = Mégse
-dialog-close_button = Bezárás
-
 settings-heading = Beállítások
 settings-enabled-checkbox = Engedélyezve
 settings-scaling = Méretezés

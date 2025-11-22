@@ -1,9 +1,5 @@
 connect-to = Připojit k { $address }...
 
-dialog-ok_button = OK
-dialog-cancel_button = Zrušit
-dialog-close_button = Zavřít
-
 settings-heading = Nastavení
 settings-enabled-checkbox = Povoleno
 settings-scaling = Měřítko

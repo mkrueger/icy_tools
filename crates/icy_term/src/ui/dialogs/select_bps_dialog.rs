@@ -238,11 +238,11 @@ impl SelectBpsDialog {
 
         // Buttons
         let cancel_button = secondary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            format!("{}", iced_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         );
 
-        let ok_button = primary_button(fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"), Some(crate::ui::Message::ApplyBaudEmulation));
+        let ok_button = primary_button(format!("{}", iced_engine_gui::ButtonType::Ok), Some(crate::ui::Message::ApplyBaudEmulation));
 
         let buttons = button_row(vec![cancel_button.into(), ok_button.into()]);
 

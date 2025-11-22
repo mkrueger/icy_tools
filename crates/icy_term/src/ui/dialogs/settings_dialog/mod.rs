@@ -310,12 +310,12 @@ impl SettingsDialogState {
 
         // Buttons
         let ok_button = primary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"),
+            format!("{}", iced_engine_gui::ButtonType::Ok),
             Some(crate::ui::Message::SettingsDialog(SettingsMsg::Save)),
         );
 
         let cancel_button = secondary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+            format!("{}", iced_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::SettingsDialog(SettingsMsg::Cancel)),
         );
 

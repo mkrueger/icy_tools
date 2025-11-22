@@ -176,9 +176,9 @@ impl FileTransferDialogState {
 
             // Action buttons
             let button_label = if state.is_finished {
-                fl!(crate::LANGUAGE_LOADER, "dialog-ok_button")
+                format!("{}", iced_engine_gui::ButtonType::Ok)
             } else {
-                fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")
+                format!("{}", iced_engine_gui::ButtonType::Cancel)
             };
 
             let action_button = button(
@@ -467,7 +467,7 @@ impl FileTransferDialogState {
                     button(row![
                         text("✕").size(14),
                         Space::new().width(4.0),
-                        text(fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button")).size(14),
+                        text(format!("{}", iced_engine_gui::ButtonType::Cancel)).size(14),
                     ])
                     .on_press(crate::ui::Message::TransferDialog(TransferMsg::Close))
                     .padding([10, 20])

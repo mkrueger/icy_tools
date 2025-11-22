@@ -42,3 +42,10 @@ settings-curvature-y-label = Curvature Y
 settings-noise-artifacts-section = Noise & Artifacts
 settings-noise-level-label = Noise Level
 settings-sync-wobble-label = Sync Wobble
+# Dialog buttons
+dialog-ok-button = OK
+dialog-cancel-button = Cancel
+dialog-yes-button = Yes
+dialog-no-button = No
+dialog-close-button = Close
+dialog-delete-button = Delete

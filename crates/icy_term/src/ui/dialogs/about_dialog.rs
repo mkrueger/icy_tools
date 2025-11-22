@@ -1,4 +1,3 @@
-use i18n_embed_fl::fl;
 use iced::{
     Element, Length, Task,
     widget::{column, container},
@@ -85,7 +84,7 @@ impl AboutDialog {
         });
 
         let ok_button = primary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"),
+            format!("{}", iced_engine_gui::ButtonType::Ok),
             Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         );
 

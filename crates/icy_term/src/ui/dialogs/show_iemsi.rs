@@ -204,7 +204,7 @@ impl ShowIemsiDialog {
 
         // Styled OK button
         let ok_button = primary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-ok_button"),
+            format!("{}", iced_engine_gui::ButtonType::Ok),
             Some(crate::ui::Message::ShowIemsi(IemsiMsg::Close)),
         )
         .padding(10.0);

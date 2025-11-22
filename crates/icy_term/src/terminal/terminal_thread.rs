@@ -23,7 +23,7 @@ use log::error;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
 
@@ -104,50 +104,6 @@ pub struct ModemConfig {
     // Support multiple init lines (safer & closer to original patterns)
     pub init_string: String,
     pub dial_string: String,
-}
-
-/// Buffered capture writer for better I/O performance
-struct CaptureWriter {
-    file: std::fs::File,
-    buffer: Vec<u8>,
-    last_flush: Instant,
-}
-
-impl CaptureWriter {
-    fn new(file: std::fs::File) -> Self {
-        Self {
-            file,
-            buffer: Vec::with_capacity(4096), // 4KB buffer
-            last_flush: Instant::now(),
-        }
-    }
-
-    fn write(&mut self, data: &[u8]) -> std::io::Result<()> {
-        self.buffer.extend_from_slice(data);
-
-        // Auto-flush if buffer is full or 100ms elapsed
-        if self.buffer.len() >= 4096 || self.last_flush.elapsed() >= Duration::from_millis(100) {
-            self.flush()?;
-        }
-        Ok(())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        if !self.buffer.is_empty() {
-            use std::io::Write;
-            self.file.write_all(&self.buffer)?;
-            self.file.flush()?;
-            self.buffer.clear();
-            self.last_flush = Instant::now();
-        }
-        Ok(())
-    }
-}
-
-impl Drop for CaptureWriter {
-    fn drop(&mut self) {
-        let _ = self.flush(); // Final flush on drop
-    }
 }
 
 /// Queued command for processing
@@ -290,7 +246,7 @@ pub struct TerminalThread {
     auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>, // For pending auto-transfers
 
     // Capture state with buffering
-    capture_writer: Option<CaptureWriter>,
+    capture_writer: Option<BufWriter<tokio::fs::File>>,
 
     // Command queue for granular locking
     queueing_sink: QueueingSink,
@@ -359,7 +315,7 @@ impl TerminalThread {
                     if self.baud_emulator.has_buffered_data() {
                         let data = self.baud_emulator.emulate(&[]);
                         if !data.is_empty() {
-                            self.write_to_capture(&data);
+                            self.write_to_capture(&data).await;
                             self.process_data(&data).await;
                         }
                     }
@@ -494,10 +450,9 @@ impl TerminalThread {
             TerminalCommand::SetBaudEmulation(bps) => {
                 self.baud_emulator.set_baud_rate(bps);
             }
-            TerminalCommand::StartCapture(file_name) => match std::fs::File::create(&file_name) {
+            TerminalCommand::StartCapture(file_name) => match tokio::fs::File::create(&file_name).await {
                 Ok(file) => {
-                    self.capture_writer = Some(CaptureWriter::new(file));
-                    log::info!("Started capturing to {}", file_name);
+                    self.capture_writer = Some(BufWriter::new(file));
                 }
                 Err(e) => {
                     log::error!("Failed to create capture file {}: {}", file_name, e);
@@ -506,9 +461,8 @@ impl TerminalThread {
             },
             TerminalCommand::StopCapture => {
                 if let Some(mut writer) = self.capture_writer.take() {
-                    let _ = writer.flush(); // Ensure final flush
+                    let _ = writer.flush().await; // Ensure final flush
                 }
-                log::info!("Stopped capturing");
             }
             TerminalCommand::SetDownloadDirectory(dir) => {
                 self.download_directory = Some(dir);
@@ -692,7 +646,7 @@ impl TerminalThread {
                     data = self.baud_emulator.emulate(&data);
 
                     if !data.is_empty() {
-                        self.write_to_capture(&data);
+                        self.write_to_capture(&data).await;
                         self.process_data(&data).await;
                     }
                     data
@@ -820,16 +774,16 @@ impl TerminalThread {
             // Check if this is a delay command that should be processed outside lock
             match &cmd {
                 QueuedCommand::Igs(IgsCommand::PauseSeconds { seconds }) => {
-                    thread::sleep(Duration::from_secs((*seconds).into()));
+                    tokio::time::sleep(Duration::from_secs((*seconds).into())).await;
                     continue;
                 }
                 QueuedCommand::Igs(IgsCommand::VsyncPause { vsyncs }) => {
-                    thread::sleep(Duration::from_millis(1000 * (*vsyncs) as u64 / 60));
+                    tokio::time::sleep(Duration::from_millis(1000 * (*vsyncs) as u64 / 60)).await;
                     continue;
                 }
 
                 QueuedCommand::Skypix(SkypixCommand::Delay { jiffies }) => {
-                    thread::sleep(Duration::from_millis(1000 * (*jiffies) as u64 / 60));
+                    tokio::time::sleep(Duration::from_millis(1000 * (*jiffies) as u64 / 60)).await;
                     continue;
                 }
 
@@ -1243,9 +1197,9 @@ impl TerminalThread {
         }
     }
 
-    fn write_to_capture(&mut self, data: &[u8]) {
+    async fn write_to_capture(&mut self, data: &[u8]) {
         if let Some(writer) = &mut self.capture_writer {
-            if let Err(e) = writer.write(data) {
+            if let Err(e) = writer.write(data).await {
                 log::error!("Failed to write to capture file: {}", e);
                 // Close the capture file on error
                 self.capture_writer = None;

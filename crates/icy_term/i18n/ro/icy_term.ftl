@@ -1,9 +1,5 @@
 connect-to = Conectează-te la { $address }...
 
-dialog-ok_button = OK
-dialog-cancel_button = Anulare
-dialog-close_button = Închide
-
 settings-heading = Setări
 settings-enabled-checkbox = Activat
 settings-scaling = Scalare

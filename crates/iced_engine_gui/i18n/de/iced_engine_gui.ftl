@@ -43,3 +43,11 @@ settings-noise-artifacts-section = Rauschen & Artefakte
 settings-noise-level-label = Rauschpegel
 settings-sync-wobble-label = Sync-Wobble
 
+
+# Dialog buttons
+dialog-ok-button = OK
+dialog-cancel-button = Abbrechen
+dialog-yes-button = Ja
+dialog-no-button = Nein
+dialog-close-button = Schließen
+dialog-delete-button = Löschen

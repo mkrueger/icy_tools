@@ -8,7 +8,6 @@ use super::{
     RANDOM_PATTERN, SOLID_PATTERN,
     vdi::{TWOPI, gdp_curve},
 };
-use crate::TerminalResolutionExt;
 use crate::igs::load_atari_font;
 use crate::palette_screen_buffer::igs::TerminalResolution;
 use crate::{EditableScreen, Position, Size, palette_screen_buffer::igs::vdi::blit_px};

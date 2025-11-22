@@ -42,3 +42,10 @@ settings-curvature-y-label = Curbură Y
 settings-noise-artifacts-section = Zgomot și artefacte
 settings-noise-level-label = Nivel zgomot
 settings-sync-wobble-label = Oscilație sincronizare
+# Butoane dialog
+dialog-ok-button = OK
+dialog-cancel-button = Anulează
+dialog-yes-button = Da
+dialog-no-button = Nu
+dialog-close-button = Închide
+dialog-delete-button = Șterge

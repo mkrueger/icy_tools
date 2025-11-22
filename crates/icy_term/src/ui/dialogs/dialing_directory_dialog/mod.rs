@@ -1,4 +1,4 @@
-use crate::ui::{MainWindowMode, Message, modal};
+use crate::ui::{MainWindowMode, Message};
 use crate::util::Rng;
 use crate::{Address, AddressBook};
 use i18n_embed_fl::fl;
@@ -74,8 +74,7 @@ impl DialingDirectoryState {
 
         // If there's a pending delete, show the confirmation modal
         if let Some(idx) = self.pending_delete {
-            let overlay = self.delete_confirmation_modal(idx);
-            modal(main_content, overlay, Message::from(DialingDirectoryMsg::Close)).into()
+            self.delete_confirmation_modal(idx)
         } else {
             main_content.into()
         }
@@ -108,7 +107,7 @@ impl DialingDirectoryState {
         .padding(8);
 
         let close_btn = secondary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-close_button"),
+            format!("{}", iced_engine_gui::ButtonType::Close),
             Some(Message::from(DialingDirectoryMsg::Close)),
         );
 

@@ -1,11 +1,8 @@
 use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::DialingDirectoryMsg;
 use i18n_embed_fl::fl;
-use iced::{
-    Alignment, Element, Length,
-    widget::{Space, column, container, row, rule, text},
-};
-use iced_engine_gui::ui::{danger_button, secondary_button};
+use iced::Element;
+use iced_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogResult, DialogType};
 
 impl super::DialingDirectoryState {
     pub fn delete_confirmation_modal(&self, idx: usize) -> Element<'_, Message> {
@@ -15,59 +12,19 @@ impl super::DialingDirectoryState {
             "Unknown".to_string()
         };
 
-        let title = text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-title")).size(22);
+        let title = fl!(crate::LANGUAGE_LOADER, "delete-bbs-title");
+        let question = fl!(crate::LANGUAGE_LOADER, "delete-bbs-question", system = system_name);
 
-        let question = text(fl!(crate::LANGUAGE_LOADER, "delete-bbs-question", system = system_name))
-            .wrapping(text::Wrapping::WordOrGlyph)
-            .size(16);
+        // Create background element from the main content
+        let background = iced::widget::Space::new().width(iced::Length::Fill).height(iced::Length::Fill).into();
 
-        let delete_btn = danger_button(
-            fl!(crate::LANGUAGE_LOADER, "delete-bbs-delete-button"),
-            Some(Message::from(DialingDirectoryMsg::ConfirmDelete(idx))),
-        )
-        .padding([6, 12]);
+        let dialog = ConfirmationDialog::new(title, question)
+            .dialog_type(DialogType::Question)
+            .buttons(ButtonSet::DeleteCancel);
 
-        let cancel_btn = secondary_button(
-            fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
-            Some(Message::from(DialingDirectoryMsg::Close)),
-        );
-
-        let modal_content = container(
-            column![
-                title.width(Length::Fill).align_x(Alignment::Center),
-                rule::horizontal(1),
-                question.width(Length::Fixed(440.0)),
-                Space::new().height(Length::Fixed(24.0)),
-                row![Space::new().width(Length::Fill), cancel_btn, delete_btn].spacing(12)
-            ]
-            .padding(20)
-            .spacing(8),
-        )
-        .width(Length::Fixed(480.0))
-        .style(|theme: &iced::Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background)),
-                border: iced::Border {
-                    color: palette.text,
-                    width: 1.0,
-                    radius: 8.0.into(),
-                },
-                text_color: Some(palette.text),
-                shadow: iced::Shadow {
-                    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5),
-                    offset: iced::Vector::new(0.0, 4.0),
-                    blur_radius: 16.0,
-                },
-                snap: false,
-            }
-        });
-
-        container(modal_content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        dialog.view(background, move |result| match result {
+            DialogResult::Delete => Message::from(DialingDirectoryMsg::ConfirmDelete(idx)),
+            _ => Message::from(DialingDirectoryMsg::Close),
+        })
     }
 }

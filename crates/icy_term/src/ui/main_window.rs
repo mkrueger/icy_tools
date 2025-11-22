@@ -12,7 +12,7 @@ use crate::{
     ui::{
         Message,
         dialogs::find_dialog,
-        error_dialog, export_screen_dialog,
+        export_screen_dialog,
         up_download_dialog::{self, FileTransferDialogState},
     },
     util::SoundThread,
@@ -20,6 +20,7 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
+use iced_engine_gui::{ButtonSet, ConfirmationDialog, DialogType};
 use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::BaudEmulation;
@@ -966,7 +967,14 @@ impl MainWindow {
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
             MainWindowMode::ShowHelpDialog => self.help_dialog.view(terminal_view),
-            MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => error_dialog::view(terminal_view, title, secondary_msg, error_message),
+            MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => {
+                let dialog = ConfirmationDialog::new(title, error_message)
+                    .dialog_type(DialogType::Error)
+                    .secondary_message(secondary_msg)
+                    .buttons(ButtonSet::Close);
+
+                dialog.view(terminal_view, |_result| Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
+            }
             _ => {
                 panic!("Unhandled main window mode in view()")
             }

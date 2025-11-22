@@ -42,3 +42,10 @@ settings-curvature-y-label = Courbure Y
 settings-noise-artifacts-section = Bruit et artefacts
 settings-noise-level-label = Niveau de bruit
 settings-sync-wobble-label = Oscillation de synchronisation
+# Boutons de dialogue
+dialog-ok-button = OK
+dialog-cancel-button = Annuler
+dialog-yes-button = Oui
+dialog-no-button = Non
+dialog-close-button = Fermer
+dialog-delete-button = Supprimer

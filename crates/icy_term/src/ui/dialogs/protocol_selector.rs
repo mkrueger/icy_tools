@@ -129,7 +129,7 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
     }
 
     let cancel_button = secondary_button(
-        fl!(crate::LANGUAGE_LOADER, "dialog-cancel_button"),
+        format!("{}", iced_engine_gui::ButtonType::Cancel),
         Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
     );
 

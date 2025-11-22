@@ -42,3 +42,10 @@ settings-curvature-y-label = Görbület Y
 settings-noise-artifacts-section = Zaj és artefaktumok
 settings-noise-level-label = Zajszint
 settings-sync-wobble-label = Szinkron ingadozás
+# Párbeszéd gombok
+dialog-ok-button = OK
+dialog-cancel-button = Mégse
+dialog-yes-button = Igen
+dialog-no-button = Nem
+dialog-close-button = Bezárás
+dialog-delete-button = Törlés
