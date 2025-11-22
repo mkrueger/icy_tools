@@ -395,14 +395,14 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let mut pos = self.screen.caret_position();
                 pos.x = col;
                 self.screen.set_caret_position(pos);
-                self.screen.limit_caret_pos();
+                self.screen.limit_caret_pos(false);
             }
             TerminalCommand::CsiCursorPosition(row, col) => {
                 let upper_left = self.screen.upper_left_position();
                 let row = upper_left.y + (row as i32).saturating_sub(1).max(0);
                 let col = upper_left.x + (col as i32).saturating_sub(1).max(0);
                 self.screen.set_caret_position(Position::new(col, row));
-                self.screen.limit_caret_pos();
+                self.screen.limit_caret_pos(false);
             }
 
             // Erase operations
@@ -489,7 +489,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let mut pos = self.screen.caret_position();
                 pos.y = line;
                 self.screen.set_caret_position(pos);
-                self.screen.limit_caret_pos();
+                self.screen.limit_caret_pos(false);
             }
             TerminalCommand::CsiLinePositionForward(n) => {
                 self.screen.down(n as i32);
@@ -503,7 +503,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let mut pos = self.screen.caret_position();
                 pos.x = col;
                 self.screen.set_caret_position(pos);
-                self.screen.limit_caret_pos();
+                self.screen.limit_caret_pos(false);
             }
 
             // Tab operations

@@ -1,6 +1,6 @@
 use icy_parser_core::BaudEmulation;
 
-use crate::Size;
+use crate::{Position, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalScrolling {
@@ -294,6 +294,27 @@ impl TerminalState {
 
     pub fn clear_margins_left_right(&mut self) {
         self.margins_left_right = None;
+    }
+
+    /// Returns true if the given position is within the current text margins.
+    /// Retruns false if origin mode is UpperLeftCorner or position is outside margins.
+    pub fn in_margin(&self, pos: Position) -> bool {
+        if self.origin_mode == OriginMode::UpperLeftCorner || self.margins_top_bottom.is_none() && self.margins_left_right.is_none() {
+            return false;
+        }
+
+        if let Some((top, bottom)) = self.margins_top_bottom {
+            if pos.y < top || pos.y > bottom {
+                return false;
+            }
+        }
+
+        if let Some((left, right)) = self.margins_left_right {
+            if pos.x < left || pos.x > right {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn set_text_window(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {

@@ -161,6 +161,8 @@ pub trait EditableScreen: RgbaScreen {
 
     fn lf(&mut self) {
         let _was_ooe = self.caret().y > self.get_last_editable_line();
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
+
         self.caret_mut().x = 0;
         let y = self.caret_mut().y;
         self.caret_mut().y = y + 1;
@@ -179,7 +181,7 @@ pub trait EditableScreen: RgbaScreen {
         }
 
         self.check_scrolling_on_caret_down(false);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     fn add_sixel(&mut self, pos: Position, sixel: Sixel);
@@ -192,7 +194,9 @@ pub trait EditableScreen: RgbaScreen {
 
     /// (carriage return, CR, \r, ^M), moves the printing position to the start of the line.
     fn cr(&mut self) {
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().x = 0;
+        self.limit_caret_pos(in_margin);
     }
 
     fn eol(&mut self) {
@@ -297,6 +301,7 @@ pub trait EditableScreen: RgbaScreen {
     }
 
     fn left(&mut self, num: i32) {
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
             && self.caret().x == 0
         {
@@ -311,16 +316,16 @@ pub trait EditableScreen: RgbaScreen {
             }
             self.caret_mut().y -= 1;
             self.caret_mut().x = (self.get_width() - 1).max(0);
-            self.limit_caret_pos();
         } else {
             let x = self.caret().x.saturating_sub(num);
             self.caret_mut().x = x;
-            self.limit_caret_pos();
         }
+        self.limit_caret_pos(in_margin);
     }
 
     fn right(&mut self, num: i32) {
         let last_col = (self.get_width() - 1).max(0);
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
 
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
             && self.caret().x >= last_col
@@ -330,53 +335,57 @@ pub trait EditableScreen: RgbaScreen {
             self.caret_mut().y += 1;
             // Use existing scrolling logic to handle terminal buffers
             self.check_scrolling_on_caret_down(true);
-            self.limit_caret_pos();
         } else {
             let x = self.caret_mut().x.saturating_add(num);
             self.caret_mut().x = x;
-            self.limit_caret_pos();
         }
+        self.limit_caret_pos(in_margin);
     }
 
     fn up(&mut self, num: i32) {
         let y = self.caret().y.saturating_sub(num);
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().y = y;
         self.check_scrolling_on_caret_up(false);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     fn down(&mut self, num: i32) {
         let y = self.caret().y + num;
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().y = y;
         self.check_scrolling_on_caret_down(false);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     /// Moves the cursor down one line in the same column. If the cursor is at the bottom margin, the page scrolls up.
     fn index(&mut self) {
         let mut pos = self.caret_position();
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         pos.y += 1;
         self.set_caret_position(pos);
         self.check_scrolling_on_caret_down(true);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     /// Moves the cursor up one line in the same column. If the cursor is at the top margin, the page scrolls down.
     fn reverse_index(&mut self) {
         let mut pos = self.caret_position();
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         pos.y -= 1;
         self.set_caret_position(pos);
         self.check_scrolling_on_caret_up(true);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     fn next_line(&mut self) {
         let mut pos = self.caret_position();
+        let in_margin = self.terminal_state().in_margin(self.caret().position());
         pos.y += 1;
         pos.x = 0;
         self.set_caret_position(pos);
         self.check_scrolling_on_caret_down(true);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     fn check_scrolling_on_caret_up(&mut self, force: bool) {
@@ -536,28 +545,27 @@ pub trait EditableScreen: RgbaScreen {
         self.set_caret_position(pos);
     }
 
-    fn limit_caret_pos(&mut self) {
-        match self.terminal_state().origin_mode {
-            crate::OriginMode::UpperLeftCorner => {
-                if self.terminal_state().is_terminal_buffer {
-                    let first = self.get_first_visible_line();
-                    self.caret_mut().y = self.caret().y.clamp(first, first + self.get_height() - 1);
-                }
-                let x: i32 = self.caret().x.clamp(0, (self.get_width() - 1).max(0));
-                self.caret_mut().x = x;
+    fn limit_caret_pos(&mut self, was_in_margin: bool) {
+        let mut pos = self.caret_position();
+        if !was_in_margin || self.terminal_state().origin_mode == crate::OriginMode::UpperLeftCorner {
+            if self.terminal_state().is_terminal_buffer {
+                let first = self.get_first_visible_line();
+                pos.y = pos.y.clamp(first, first + self.get_height() - 1);
             }
-            crate::OriginMode::WithinMargins => {
-                let first = self.get_first_editable_line();
-                let height = self.get_last_editable_line() - first;
-                let n = self.caret().y.clamp(first, (first + height - 1).max(first));
-                self.caret_mut().y = n;
-                // Respect left/right margins when origin is within margins
-                let left = self.get_first_editable_column().max(0);
-                let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
-                let x = self.caret().x.clamp(left, right);
-                self.caret_mut().x = x;
-            }
+            let x: i32 = pos.x.clamp(0, (self.get_width() - 1).max(0));
+            pos.x = x;
+        } else {
+            let first = self.get_first_editable_line();
+            let height = self.get_last_editable_line() - first;
+            let n = pos.y.clamp(first, (first + height - 1).max(first));
+            pos.y = n;
+            // Respect left/right margins when origin is within margins
+            let left = self.get_first_editable_column().max(0);
+            let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
+            let x = pos.x.clamp(left, right);
+            pos.x = x;
         }
+        self.set_caret_position(pos);
     }
 
     fn saved_caret_pos(&mut self) -> &mut Position;

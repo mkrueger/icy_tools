@@ -9,7 +9,6 @@ pub fn test_rip() {
         if cur_entry.extension().unwrap() != "rip" {
             continue;
         }
-
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 

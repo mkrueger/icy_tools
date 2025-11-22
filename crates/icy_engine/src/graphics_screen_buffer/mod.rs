@@ -587,6 +587,7 @@ impl EditableScreen for GraphicsScreenBuffer {
     /// Override: Line feed - move down by font height in pixels
     fn lf(&mut self) {
         let font_size = self.get_font_dimensions();
+        let in_margin = self.terminal_state.in_margin(self.caret.position());
         self.caret.x = 0;
         self.caret.y += font_size.height;
 
@@ -596,40 +597,7 @@ impl EditableScreen for GraphicsScreenBuffer {
                 self.caret.y -= font_size.height;
             }
             // Call limit_caret_pos to respect margins
-            self.limit_caret_pos();
-        }
-    }
-
-    /// Override: Limit caret position to margins (convert between char and pixel coordinates)
-    fn limit_caret_pos(&mut self) {
-        let font_size = self.get_font_dimensions();
-
-        match self.terminal_state.origin_mode {
-            crate::OriginMode::UpperLeftCorner => {
-                if self.terminal_state.is_terminal_buffer {
-                    let first = self.get_first_visible_line();
-                    let char_y = self.caret.y / font_size.height;
-                    let clamped_char_y = char_y.clamp(first, first + self.get_height() - 1);
-                    self.caret.y = clamped_char_y * font_size.height;
-                }
-                let char_x = self.caret.x / font_size.width;
-                let clamped_char_x = char_x.clamp(0, (self.get_width() - 1).max(0));
-                self.caret.x = clamped_char_x * font_size.width;
-            }
-            crate::OriginMode::WithinMargins => {
-                let first = self.get_first_editable_line();
-                let height = self.get_last_editable_line() - first;
-                let char_y = self.caret.y / font_size.height;
-                let clamped_char_y = char_y.clamp(first, (first + height - 1).max(first));
-                self.caret.y = clamped_char_y * font_size.height;
-
-                // Respect left/right margins when origin is within margins
-                let left = self.get_first_editable_column().max(0);
-                let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
-                let char_x = self.caret.x / font_size.width;
-                let clamped_char_x = char_x.clamp(left, right);
-                self.caret.x = clamped_char_x * font_size.width;
-            }
+            self.limit_caret_pos(in_margin);
         }
     }
 
@@ -981,6 +949,7 @@ impl EditableScreen for GraphicsScreenBuffer {
     /// Override: Move left, handling autowrap and pixel coordinates
     fn left(&mut self, num: i32) {
         let font_size = self.get_font_dimensions();
+        let in_margin = self.terminal_state.in_margin(self.caret.position());
 
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
             if self.caret().x == 0 {
@@ -998,7 +967,7 @@ impl EditableScreen for GraphicsScreenBuffer {
 
                 self.caret_mut().y -= font_size.height;
                 self.caret_mut().x = ((self.get_width() - 1).max(0)) * font_size.width;
-                self.limit_caret_pos();
+                self.limit_caret_pos(in_margin);
                 return;
             }
         }
@@ -1007,13 +976,14 @@ impl EditableScreen for GraphicsScreenBuffer {
         let char_x = self.caret().x / font_size.width;
         let new_char_x = char_x.saturating_sub(num);
         self.caret_mut().x = new_char_x * font_size.width;
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move right, handling autowrap and pixel coordinates
     fn right(&mut self, num: i32) {
         let font_size = self.get_font_dimensions();
         let last_col = (self.get_width() - 1).max(0);
+        let in_margin = self.terminal_state.in_margin(self.caret.position());
 
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
             let char_x = self.caret().x / font_size.width;
@@ -1023,7 +993,7 @@ impl EditableScreen for GraphicsScreenBuffer {
                 self.caret_mut().y += font_size.height;
                 // Use existing scrolling logic to handle terminal buffers
                 self.check_scrolling_on_caret_down(true);
-                self.limit_caret_pos();
+                self.limit_caret_pos(in_margin);
                 return;
             }
         }
@@ -1032,26 +1002,30 @@ impl EditableScreen for GraphicsScreenBuffer {
         let char_x = self.caret().x / font_size.width;
         let new_char_x = char_x.saturating_add(num);
         self.caret_mut().x = new_char_x * font_size.width;
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move up, handling pixel coordinates
     fn up(&mut self, num: i32) {
+        let in_margin = self.terminal_state.in_margin(self.caret.position());
+
         let font_size = self.get_font_dimensions();
         let char_y = self.caret().y / font_size.height;
         let new_char_y = char_y.saturating_sub(num);
         self.caret_mut().y = new_char_y * font_size.height;
         self.check_scrolling_on_caret_up(false);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move down, handling pixel coordinates
     fn down(&mut self, num: i32) {
+        let in_margin = self.terminal_state.in_margin(self.caret.position());
+
         let font_size = self.get_font_dimensions();
         let char_y = self.caret().y / font_size.height;
         let new_char_y = char_y + num;
         self.caret_mut().y = new_char_y * font_size.height;
         self.check_scrolling_on_caret_down(false);
-        self.limit_caret_pos();
+        self.limit_caret_pos(in_margin);
     }
 }

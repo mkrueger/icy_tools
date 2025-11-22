@@ -421,7 +421,6 @@ impl EditableScreen for TextScreen {
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data right
         for y in start_line..=end_line {
-            println!("Scrolling right line {}", y);
             let line: &mut Line = &mut layer_ref.lines[y as usize];
             if line.chars.len() > start_column {
                 line.chars.insert(start_column, AttributedChar::default());
