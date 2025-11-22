@@ -1,26 +1,23 @@
 use icy_parser_core::{RipCommand, SkypixCommand};
 
-pub mod bgi;
-pub mod igs_impl;
-pub mod rip_impl;
+mod bgi;
+pub mod skypix_impl;
 
-pub mod igs;
-pub use igs::{TerminalResolution, TerminalResolutionExt};
-pub use igs_impl::IgsState;
 use libyaff::GlyphDefinition;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, IgsState, Line, Palette,
+    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
+    TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
-    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    igs,
+    rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
+use skypix_impl::SKYPIX_SCREEN_SIZE;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub use rip_impl::RIP_TERMINAL_ID;
-
-pub struct PaletteScreenBuffer {
+pub struct GraphicsScreenBuffer {
     pub pixel_size: Size,
     pub screen: Vec<u8>,
     pub char_screen_size: Size,
@@ -56,7 +53,7 @@ pub struct PaletteScreenBuffer {
     pub scan_lines: bool,
 }
 
-impl PaletteScreenBuffer {
+impl GraphicsScreenBuffer {
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(graphics_type: GraphicsType) -> Self {
@@ -230,7 +227,7 @@ impl PaletteScreenBuffer {
     }
 }
 
-impl TextPane for PaletteScreenBuffer {
+impl TextPane for GraphicsScreenBuffer {
     fn get_char(&self, _pos: Position) -> AttributedChar {
         // won't work for rgba screens.
         AttributedChar::default()
@@ -263,7 +260,7 @@ impl TextPane for PaletteScreenBuffer {
     }
 }
 
-impl Screen for PaletteScreenBuffer {
+impl Screen for GraphicsScreenBuffer {
     fn ice_mode(&self) -> IceMode {
         self.ice_mode
     }
@@ -477,7 +474,7 @@ impl Screen for PaletteScreenBuffer {
     }
 }
 
-impl RgbaScreen for PaletteScreenBuffer {
+impl RgbaScreen for GraphicsScreenBuffer {
     fn max_base_colors(&self) -> u32 {
         if let GraphicsType::IGS(t) = self.graphics_type {
             t.get_max_colors()
@@ -510,7 +507,7 @@ impl RgbaScreen for PaletteScreenBuffer {
     }
 }
 
-impl EditableScreen for PaletteScreenBuffer {
+impl EditableScreen for GraphicsScreenBuffer {
     /// Override: Convert character grid coordinates to pixel coordinates
     fn set_caret_position(&mut self, pos: Position) {
         let font_size = self.get_font_dimensions();
@@ -886,7 +883,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn handle_rip_command(&mut self, cmd: RipCommand) {
-        self.handle_rip_command_impl(cmd);
+        // self.handle_rip_command_impl(cmd);
     }
 
     fn handle_skypix_command(&mut self, cmd: SkypixCommand) {
@@ -894,7 +891,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn handle_igs_command(&mut self, cmd: icy_parser_core::IgsCommand) {
-        self.handle_igs_command_impl(cmd);
+        // self.handle_igs_command_impl(cmd);
     }
 
     fn clear_buffer_down(&mut self) {

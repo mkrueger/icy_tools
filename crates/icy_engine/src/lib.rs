@@ -28,6 +28,8 @@ pub use position::*;
 mod text_buffer;
 pub use text_buffer::*;
 
+mod graphics_screen_buffer;
+
 mod palette_screen_buffer;
 pub use palette_screen_buffer::*;
 

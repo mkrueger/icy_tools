@@ -1,16 +1,17 @@
 use icy_parser_core::{DisplayMode, SkypixCommand};
 
 use crate::{
-    EditableScreen, Palette, SKYPIX_PALETTE, Size, get_amiga_font_by_name,
-    palette_screen_buffer::{
-        bgi::{Bgi, WriteMode},
-        rip_impl::RIP_FONT,
-    },
+    BitFont, EditableScreen, Palette, SKYPIX_PALETTE, Size, get_amiga_font_by_name,
+    palette_screen_buffer::bgi::{Bgi, WriteMode},
 };
+
+lazy_static::lazy_static! {
+    pub static ref SKYPIX_IBM_FONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
+}
 
 pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
-fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, cmd: SkypixCommand) {
+fn execute_skypix_command(buf: &mut super::GraphicsScreenBuffer, bgi: &mut Bgi, cmd: SkypixCommand) {
     match cmd {
         SkypixCommand::SetPixel { x, y } => {
             bgi.put_pixel(buf, x, y, bgi.get_color());
@@ -76,7 +77,7 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
                 buf.set_font(0, font);
             } else {
                 log::warn!("SKYPIX_SET_FONT: Font '{}' of size {} not found, setting default.", name, size);
-                buf.set_font(0, RIP_FONT.clone());
+                buf.set_font(0, SKYPIX_IBM_FONT.clone());
             }
         }
 
@@ -169,7 +170,7 @@ fn execute_skypix_command(buf: &mut crate::PaletteScreenBuffer, bgi: &mut Bgi, c
     }
 }
 
-impl crate::PaletteScreenBuffer {
+impl super::GraphicsScreenBuffer {
     pub(crate) fn handle_skypix_command_impl(&mut self, cmd: SkypixCommand) {
         // Temporarily extract bgi to avoid borrow checker issues
         // SAFETY: We ensure that bgi and self don't overlap in memory access during the call
