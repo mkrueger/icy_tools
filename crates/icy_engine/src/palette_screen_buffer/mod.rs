@@ -7,12 +7,12 @@ pub mod rip_impl;
 pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
 pub use igs_impl::IgsState;
-use libyaff::GlyphDefinition;
 
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
     Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    graphics_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
 use std::collections::HashMap;
@@ -156,9 +156,13 @@ impl PaletteScreenBuffer {
     }
 
     /// Render a character directly to the RGBA buffer
-    fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) -> Option<GlyphDefinition> {
-        let pixel_x = pos.x;
-        let pixel_y = pos.y;
+    fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.char_screen_size.width || pos.y >= self.char_screen_size.height {
+            return;
+        }
+
+        let x = pos.x;
+        let y = pos.y;
 
         // Get colors from palette
         let mut fg_color = ch.attribute.get_foreground() as u32;
@@ -175,32 +179,19 @@ impl PaletteScreenBuffer {
         } else {
             &DEFAULT_BITFONT
         };
-        let font_size = font.size();
+
+        // Calculate pixel position
+        let pixel_x = x * font.size().width;
+        let pixel_y = y * font.size().height;
 
         // Get glyph data from font
-        let Some(glyph) = font.get_glyph(ch.ch) else {
-            log::error!("NO GLYPH for char '{}'", ch.ch);
-            return None;
-        };
+        let glyph = font.get_glyph(ch.ch);
+        // Render the character
+        let font_size = font.size();
 
-        let fill_width = if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
-            // For proportional fonts, use the actual advance width
-            let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
-            let left_bearing = glyph.left_bearing.unwrap_or(0);
-            let right_bearing = glyph.right_bearing.unwrap_or(0);
-            // Special handling for empty glyphs (like space)
-            if glyph_width == 0 && left_bearing > 0 {
-                left_bearing
-            } else {
-                left_bearing + glyph_width + right_bearing
-            }
-        } else {
-            font_size.width as i32
-        };
-
-        // Render the character (always fill font_size area with background/foreground)
+        // let glyph_size = self.font.size();
         for row in 0..font_size.height {
-            for col in 0..fill_width {
+            for col in 0..font_size.width {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
@@ -209,12 +200,19 @@ impl PaletteScreenBuffer {
                 }
 
                 // Check if pixel is set in font glyph
-                let is_foreground = if row < glyph.bitmap.pixels.len() as i32 && col < glyph.bitmap.pixels[row as usize].len() as i32 {
-                    glyph.bitmap.pixels[row as usize][col as usize]
+                let is_foreground = if let Some(g) = &glyph {
+                    // Use bitmap.pixels[row][col] if in bounds
+                    if row < g.bitmap.pixels.len() as i32 && col < g.bitmap.pixels[row as usize].len() as i32 {
+                        g.bitmap.pixels[row as usize][col as usize]
+                    } else {
+                        false
+                    }
                 } else {
+                    log::error!("NO GLYPH for char '{}'", ch.ch);
                     false
                 };
 
+                // Clone colors to avoid move in loop
                 let color = if is_foreground { fg_color } else { bg_color };
 
                 // Write to RGBA buffer
@@ -222,7 +220,6 @@ impl PaletteScreenBuffer {
                 self.screen[offset as usize] = color as u8;
             }
         }
-        Some(glyph)
     }
 
     pub fn get_pixel_dimensions(&self) -> (usize, usize) {
@@ -270,13 +267,6 @@ impl Screen for PaletteScreenBuffer {
 
     fn terminal_state(&self) -> &TerminalState {
         &self.terminal_state
-    }
-
-    /// Override: Convert pixel coordinates to character grid coordinates
-    fn caret_position(&self) -> Position {
-        let pixel_pos = self.caret.position();
-        let font_size = self.get_font_dimensions();
-        Position::new(pixel_pos.x / font_size.width, pixel_pos.y / font_size.height)
     }
 
     fn graphics_type(&self) -> crate::GraphicsType {
@@ -398,13 +388,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(self.caret.font_page()) {
-            font.size()
-        } else if let Some(font) = self.get_font(0) {
-            font.size()
-        } else {
-            Size::new(8, 16)
-        }
+        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
     }
 
     fn get_font(&self, font_number: usize) -> Option<&BitFont> {
@@ -511,127 +495,6 @@ impl RgbaScreen for PaletteScreenBuffer {
 }
 
 impl EditableScreen for PaletteScreenBuffer {
-    /// Override: Convert character grid coordinates to pixel coordinates
-    fn set_caret_position(&mut self, pos: Position) {
-        let font_size = self.get_font_dimensions();
-        let pixel_pos = Position::new(pos.x * font_size.width, pos.y * font_size.height);
-        self.caret.set_position(pixel_pos);
-    }
-
-    /// Override: print_char that works with pixel coordinates
-    fn print_char(&mut self, ch: AttributedChar) {
-        let font_size = self.get_font_dimensions();
-
-        if self.caret.insert_mode {
-            self.ins();
-        }
-        let mut pos = self.caret.position();
-
-        if let Some(font) = self.get_font(self.caret.font_page()) {
-            if let Some(shift) = font.yaff_font.global_shift_up {
-                pos.y = pos.y.saturating_sub(shift as i32);
-            }
-        }
-
-        if let Some(glyph) = self.render_char_to_buffer(pos, ch) {
-            let advance_width = if self.graphics_type() == GraphicsType::Skypix {
-                // For proportional fonts with bearing information, use glyph metrics
-                // For monospace fonts, use font_size.width
-                let font = if let Some(font) = self.get_font(ch.get_font_page()) {
-                    font
-                } else if let Some(font) = self.get_font(0) {
-                    font
-                } else {
-                    &DEFAULT_BITFONT
-                };
-
-                // For proportional fonts, use glyph metrics
-                if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
-                    // Calculate advance width using glyph bearings
-                    let glyph_width = glyph.bitmap.pixels.get(0).map(|row| row.len() as i32).unwrap_or(0);
-                    let left_bearing = glyph.left_bearing.unwrap_or(0);
-                    let right_bearing = glyph.right_bearing.unwrap_or(0);
-
-                    // For empty glyphs (like space), left_bearing is the total advance
-                    if glyph_width == 0 && left_bearing > 0 {
-                        left_bearing
-                    } else {
-                        left_bearing + glyph_width + right_bearing
-                    }
-                } else {
-                    // For monospace fonts, always use font_size.width
-                    font_size.width
-                }
-            } else {
-                font_size.width
-            };
-
-            self.caret.x += advance_width;
-        }
-
-        // Check for wrap
-        if self.caret.x >= self.pixel_size.width {
-            if self.terminal_state.auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                self.caret.x = 0;
-                self.caret.y += font_size.height;
-            } else {
-                self.lf();
-                return;
-            }
-        }
-
-        self.mark_dirty();
-    }
-
-    /// Override: Line feed - move down by font height in pixels
-    fn lf(&mut self) {
-        let font_size = self.get_font_dimensions();
-        self.caret.x = 0;
-        self.caret.y += font_size.height;
-
-        if self.terminal_state.is_terminal_buffer {
-            while self.caret.y >= self.pixel_size.height {
-                self.scroll_up();
-                self.caret.y -= font_size.height;
-            }
-            // Call limit_caret_pos to respect margins
-            self.limit_caret_pos();
-        }
-    }
-
-    /// Override: Limit caret position to margins (convert between char and pixel coordinates)
-    fn limit_caret_pos(&mut self) {
-        let font_size = self.get_font_dimensions();
-
-        match self.terminal_state.origin_mode {
-            crate::OriginMode::UpperLeftCorner => {
-                if self.terminal_state.is_terminal_buffer {
-                    let first = self.get_first_visible_line();
-                    let char_y = self.caret.y / font_size.height;
-                    let clamped_char_y = char_y.clamp(first, first + self.get_height() - 1);
-                    self.caret.y = clamped_char_y * font_size.height;
-                }
-                let char_x = self.caret.x / font_size.width;
-                let clamped_char_x = char_x.clamp(0, (self.get_width() - 1).max(0));
-                self.caret.x = clamped_char_x * font_size.width;
-            }
-            crate::OriginMode::WithinMargins => {
-                let first = self.get_first_editable_line();
-                let height = self.get_last_editable_line() - first;
-                let char_y = self.caret.y / font_size.height;
-                let clamped_char_y = char_y.clamp(first, (first + height - 1).max(first));
-                self.caret.y = clamped_char_y * font_size.height;
-
-                // Respect left/right margins when origin is within margins
-                let left = self.get_first_editable_column().max(0);
-                let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
-                let char_x = self.caret.x / font_size.width;
-                let clamped_char_x = char_x.clamp(left, right);
-                self.caret.x = clamped_char_x * font_size.width;
-            }
-        }
-    }
-
     fn reset_resolution(&mut self) {
         // Get original resolution from graphics_type
         let (px_width, px_height) = match self.graphics_type {
@@ -889,8 +752,8 @@ impl EditableScreen for PaletteScreenBuffer {
         self.handle_rip_command_impl(cmd);
     }
 
-    fn handle_skypix_command(&mut self, cmd: SkypixCommand) {
-        self.handle_skypix_command_impl(cmd);
+    fn handle_skypix_command(&mut self, _cmd: SkypixCommand) {
+        // ATM NO-OP handled by graphics_screen_buffer
     }
 
     fn handle_igs_command(&mut self, cmd: icy_parser_core::IgsCommand) {
@@ -898,159 +761,66 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_buffer_down(&mut self) {
-        let bg_color = self.caret.attribute.get_background() as u8;
-        let screen_width = self.pixel_size.width as usize;
-        let screen_height = self.pixel_size.height as usize;
+        let pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
 
-        // Clear from current caret.y to end of screen
-        let start_y = self.caret.y as usize;
-        let clear_start = start_y * screen_width;
-        let clear_end = screen_height * screen_width;
-
-        if clear_start < clear_end {
-            self.screen[clear_start..clear_end].fill(bg_color);
+        for y in pos.y..self.get_last_visible_line() {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
         }
     }
 
     fn clear_buffer_up(&mut self) {
-        let bg_color = self.caret.attribute.get_background() as u8;
-        let screen_width = self.pixel_size.width as usize;
-        let font_size = self.get_font_dimensions();
+        let pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
 
-        // Clear from top of screen to current line (caret.y + font_size.height)
-        let end_y = ((self.caret.y as usize) + (font_size.height as usize)).min(self.pixel_size.height as usize);
-        let clear_end = end_y * screen_width;
-
-        if clear_end > 0 {
-            self.screen[0..clear_end].fill(bg_color);
+        for y in self.get_first_visible_line()..pos.y {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
         }
     }
 
     fn clear_line(&mut self) {
-        let font_size = self.get_font_dimensions();
-        let bg_color = self.caret.attribute.get_background() as u8;
-        let screen_width = self.pixel_size.width as usize;
-
-        // Clear entire line from x=0 to screen width, for font_size.height rows
-        let start_y = self.caret.y as usize;
-        let end_y = (start_y + font_size.height as usize).min(self.pixel_size.height as usize);
-
-        for y in start_y..end_y {
-            let row_start = y * screen_width;
-            let row_end = row_start + screen_width;
-            self.screen[row_start..row_end].fill(bg_color);
+        let mut pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
         }
     }
 
     fn clear_line_end(&mut self) {
-        let font_size = self.get_font_dimensions();
-        let bg_color = self.caret.attribute.get_background() as u8;
-        let screen_width = self.pixel_size.width as usize;
-
-        // Clear from caret.x to end of line, for font_size.height rows
-        let start_x = self.caret.x as usize;
-        let start_y = self.caret.y as usize;
-        let end_y = (start_y + font_size.height as usize).min(self.pixel_size.height as usize);
-
-        for y in start_y..end_y {
-            let row_start = y * screen_width;
-            let clear_start = row_start + start_x;
-            let clear_end = row_start + screen_width;
-            self.screen[clear_start..clear_end].fill(bg_color);
+        let mut pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in pos.x..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
         }
     }
 
     fn clear_line_start(&mut self) {
-        let font_size = self.get_font_dimensions();
-        let bg_color = self.caret.attribute.get_background() as u8;
-        let screen_width = self.pixel_size.width as usize;
-
-        // Clear from 0 to caret.x, for font_size.height rows
-        let end_x = self.caret.x as usize;
-        let start_y = self.caret.y as usize;
-        let end_y = (start_y + font_size.height as usize).min(self.pixel_size.height as usize);
-
-        for y in start_y..end_y {
-            let row_start = y * screen_width;
-            let clear_end = row_start + end_x;
-            self.screen[row_start..clear_end].fill(bg_color);
+        let mut pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..pos.x {
+            pos.x = x;
+            self.set_char(pos, ch);
         }
-    }
-
-    /// Override: Move left, handling autowrap and pixel coordinates
-    fn left(&mut self, num: i32) {
-        let font_size = self.get_font_dimensions();
-
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
-            if self.caret().x == 0 {
-                // At column 0: wrap to previous line end if above origin line
-                let origin_line = match self.terminal_state().origin_mode {
-                    crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
-                    crate::OriginMode::WithinMargins => self.get_first_editable_line(),
-                };
-
-                let char_y = self.caret().y / font_size.height;
-                if char_y <= origin_line {
-                    // Already at origin line -> no-op
-                    return;
-                }
-
-                self.caret_mut().y -= font_size.height;
-                self.caret_mut().x = ((self.get_width() - 1).max(0)) * font_size.width;
-                self.limit_caret_pos();
-                return;
-            }
-        }
-
-        // Move left by num characters (in pixels)
-        let char_x = self.caret().x / font_size.width;
-        let new_char_x = char_x.saturating_sub(num);
-        self.caret_mut().x = new_char_x * font_size.width;
-        self.limit_caret_pos();
-    }
-
-    /// Override: Move right, handling autowrap and pixel coordinates
-    fn right(&mut self, num: i32) {
-        let font_size = self.get_font_dimensions();
-        let last_col = (self.get_width() - 1).max(0);
-
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
-            let char_x = self.caret().x / font_size.width;
-            if char_x >= last_col {
-                // At end of line: move to start of next line, scrolling if needed
-                self.caret_mut().x = 0;
-                self.caret_mut().y += font_size.height;
-                // Use existing scrolling logic to handle terminal buffers
-                self.check_scrolling_on_caret_down(true);
-                self.limit_caret_pos();
-                return;
-            }
-        }
-
-        // Move right by num characters (in pixels)
-        let char_x = self.caret().x / font_size.width;
-        let new_char_x = char_x.saturating_add(num);
-        self.caret_mut().x = new_char_x * font_size.width;
-        self.limit_caret_pos();
-    }
-
-    /// Override: Move up, handling pixel coordinates
-    fn up(&mut self, num: i32) {
-        let font_size = self.get_font_dimensions();
-        let char_y = self.caret().y / font_size.height;
-        let new_char_y = char_y.saturating_sub(num);
-        self.caret_mut().y = new_char_y * font_size.height;
-        self.check_scrolling_on_caret_up(false);
-        self.limit_caret_pos();
-    }
-
-    /// Override: Move down, handling pixel coordinates
-    fn down(&mut self, num: i32) {
-        let font_size = self.get_font_dimensions();
-        let char_y = self.caret().y / font_size.height;
-        let new_char_y = char_y + num;
-        self.caret_mut().y = new_char_y * font_size.height;
-        self.check_scrolling_on_caret_down(false);
-        self.limit_caret_pos();
     }
 }

@@ -10,6 +10,7 @@ pub struct Caret {
     pub visible: bool,
     pub blinking: bool,
     pub shape: CaretShape,
+    pub use_pixel_positioning: bool,
 }
 
 impl Caret {
@@ -73,6 +74,7 @@ impl Default for Caret {
             visible: true,
             blinking: true,
             shape: CaretShape::Block,
+            use_pixel_positioning: false,
         }
     }
 }

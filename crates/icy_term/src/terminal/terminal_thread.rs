@@ -610,7 +610,7 @@ impl TerminalThread {
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }
                 TerminalEmulation::Skypix => {
-                    let buf = PaletteScreenBuffer::new(GraphicsType::Skypix);
+                    let buf = icy_engine::graphics_screen_buffer::GraphicsScreenBuffer::new(GraphicsType::Skypix);
                     //   buf.set_size((80, 42).into());
                     *screen = Box::new(buf) as Box<dyn icy_engine::EditableScreen>;
                 }

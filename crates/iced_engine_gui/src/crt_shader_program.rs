@@ -564,12 +564,18 @@ impl<'a> CRTShaderProgram<'a> {
                 let cell_y = caret_pos.y;
 
                 if cell_x >= 0 && cell_y >= 0 {
-                    let px_x = (cell_x as usize) * font_w;
-                    // In scanline mode, y-position and height are doubled
-                    let px_y = if scan_lines {
-                        (cell_y as usize) * font_h * 2
+                    let (px_x, px_y) = if caret.use_pixel_positioning {
+                        (caret_pos.x as usize, caret_pos.y as usize * if scan_lines { 2 } else { 1 })
                     } else {
-                        (cell_y as usize) * font_h
+                        (
+                            (cell_x as usize) * font_w,
+                            // In scanline mode, y-position and height are doubled
+                            if scan_lines {
+                                (cell_y as usize) * font_h * 2
+                            } else {
+                                (cell_y as usize) * font_h
+                            },
+                        )
                     };
                     let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
                     if px_x + font_w <= size.0 as usize && px_y + actual_font_h <= size.1 as usize {

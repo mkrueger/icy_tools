@@ -1,6 +1,5 @@
 use icy_parser_core::{RipCommand, SkypixCommand};
 
-mod bgi;
 pub mod skypix_impl;
 
 use libyaff::GlyphDefinition;
@@ -105,6 +104,7 @@ impl GraphicsScreenBuffer {
 
         // Set appropriate default caret colors based on graphics type
         let mut caret = Caret::default();
+        caret.use_pixel_positioning = true;
         match graphics_type {
             GraphicsType::IGS(_) => {
                 caret.attribute.set_foreground(1);

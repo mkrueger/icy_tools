@@ -1,4 +1,4 @@
-use icy_engine::{PaletteScreenBuffer, ScreenSink, SkypixParser};
+use icy_engine::{ScreenSink, SkypixParser, graphics_screen_buffer::GraphicsScreenBuffer};
 use icy_parser_core::CommandParser;
 use std::fs::{self};
 
@@ -14,7 +14,7 @@ pub fn test_skypix() {
         }
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
-        let mut buffer = PaletteScreenBuffer::new(icy_engine::GraphicsType::Skypix);
+        let mut buffer = GraphicsScreenBuffer::new(icy_engine::GraphicsType::Skypix);
 
         let mut parser = SkypixParser::new();
         let mut sink = ScreenSink::new(&mut buffer);
