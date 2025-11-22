@@ -1,19 +1,0 @@
-2[0m[2J
-This creates a vertical window from 5 to 15 with "<ESC>[5;15r", which protects
-text above and below our horizontal scroll box from scrolling. Next, it
-enables "DEC Left Right Margin" mode with "<ESC>[?69h" followed by setting the
-horizontal scroll window from column 10 to 70 with "<ESC>[10;70s". Finally
-it populates our scroll window with text, and scrolls it from left to right.
- 
-When finished, it cleans up both vertical and horizontal scroll windows and
-disables "DEC Left Right Margin" mode with:
-"<ESC>[1;24r", "<ESC>[1;80s", "<ESC>[?69l"
-----------------------------------------------------------------------------
-
-[Enter] to proceed:[K[0m[2J[5;15r
-[10;45f[?69h[10;70s[4;1f===============================================================================[16;1f===============================================================================
-[5;9f>[6;9f>[7;9f>[8;9f>[9;9f>[10;9f>[11;9f>[12;9f>[13;9f>[14;9f>[15;9f>[5;71f<[6;71f<[7;71f<[8;71f<[9;71f<[10;71f<[11;71f<[12;71f<[13;71f<[14;71f<[15;71f<[5;12f12345678901234567890[6;12fabcdefghijklmnopqrst[7;12fABCDEFGHIJKLMNOPQRST[8;12f!@#$%^&*()_+!@#$%^&*[9;12fzxcvbnm,./ZXCVBNM<>?[10;12f12345678901234567890[11;12fabcdefghijklmnopqrst[12;12fABCDEFGHIJKLMNOPQRST[13;12f!@#$%^&*()_+!@#$%^&*[14;12fzxcvbnm,./ZXCVBNM<>?[15;12f[][][][][[][][][][][[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[10;12f[1 A[1;24r
-[1;80s
-[?69l
-[Enter] to continue.[K
-

@@ -163,7 +163,6 @@ pub trait EditableScreen: RgbaScreen {
         let _was_ooe = self.caret().y > self.get_last_editable_line();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
 
-
         let mut pos = self.caret().position();
 
         pos.x = self.get_first_editable_column();
@@ -182,7 +181,7 @@ pub trait EditableScreen: RgbaScreen {
             self.set_caret_position(pos);
             return;
         }
-        
+
         self.set_caret_position(pos);
         self.check_scrolling_on_caret_down(false);
         self.limit_caret_pos(in_margin);

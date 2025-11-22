@@ -927,7 +927,13 @@ impl DrawExecutor {
         }
 
         let x_radius = ((buf.get_resolution().width >> 6).min((x2 - x1) / 2) - 1).max(0);
-        let y_radius = x_radius;
+
+        // This is a hack I've fixed it visually
+        let y_radius = match self.terminal_resolution {
+            TerminalResolution::Low => self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2),
+            TerminalResolution::Medium => x_radius,
+            TerminalResolution::High => self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2),
+        };
 
         const ISIN225: i32 = 12539;
         const ISIN450: i32 = 23170;
