@@ -163,23 +163,27 @@ pub trait EditableScreen: RgbaScreen {
         let _was_ooe = self.caret().y > self.get_last_editable_line();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
 
-        self.caret_mut().x = 0;
-        let y = self.caret_mut().y;
-        self.caret_mut().y = y + 1;
+
+        let mut pos = self.caret().position();
+
+        pos.x = self.get_first_editable_column();
+        pos.y += 1;
 
         if self.terminal_state().is_terminal_buffer {
-            while self.caret().y >= self.get_height() {
+            while pos.y >= self.get_height() {
                 self.scroll_up();
-                self.caret_mut().y -= 1;
+                pos.y -= 1;
                 continue;
             }
         } else {
-            if self.caret().y + 1 > self.get_height() {
-                self.set_height(self.caret().y + 1);
+            if pos.y + 1 > self.get_height() {
+                self.set_height(pos.y + 1);
             }
+            self.set_caret_position(pos);
             return;
         }
-
+        
+        self.set_caret_position(pos);
         self.check_scrolling_on_caret_down(false);
         self.limit_caret_pos(in_margin);
     }
@@ -437,10 +441,9 @@ pub trait EditableScreen: RgbaScreen {
 
         let should_break_line = caret_pos.x > last_col;
         if should_break_line {
+            // lf needs to be in margins, if there are some.
+            caret_pos.x = last_col;
             if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                caret_pos.x = self.get_first_editable_column();
-                caret_pos.y += 1;
-            } else {
                 self.lf();
                 return;
             }

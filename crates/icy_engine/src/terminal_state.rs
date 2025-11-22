@@ -19,8 +19,8 @@ pub enum OriginMode {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum AutoWrapMode {
     #[default]
-    NoWrap,
     AutoWrap,
+    NoWrap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

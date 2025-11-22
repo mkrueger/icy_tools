@@ -13,7 +13,6 @@ pub fn test_ansi_output() {
         }
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
-        println!("----------");
         let mut screen = ScreenMode::Vga(80, 25).create_screen(TerminalEmulation::Ansi, None);
         super::run_parser_compare(&mut screen, &cur_entry, &data);
     }

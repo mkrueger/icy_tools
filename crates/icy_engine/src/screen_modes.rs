@@ -245,7 +245,7 @@ impl ScreenMode {
     }
 
     fn apply_to_edit_screen(&self, screen: &mut dyn EditableScreen) {
-        screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::NoWrap;
+        screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
         // Ensure we have at least one layer and set its size
         match self {
             ScreenMode::Vga(_x, y) => {
@@ -267,7 +267,6 @@ impl ScreenMode {
                 screen.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Petscii;
-                screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
             }
             ScreenMode::Atascii(i) => {
                 screen.clear_font_table();
@@ -286,7 +285,6 @@ impl ScreenMode {
                 screen.set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&VIEWDATA_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Viewdata;
-                screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
             }
             ScreenMode::Rip => {
                 // Done by creation
