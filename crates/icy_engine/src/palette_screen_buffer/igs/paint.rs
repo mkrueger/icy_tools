@@ -8,6 +8,7 @@ use super::{
     RANDOM_PATTERN, SOLID_PATTERN,
     vdi::{TWOPI, gdp_curve},
 };
+use crate::TerminalResolutionExt;
 use crate::igs::load_atari_font;
 use crate::palette_screen_buffer::igs::TerminalResolution;
 use crate::{EditableScreen, Position, Size, palette_screen_buffer::igs::vdi::blit_px};
@@ -367,8 +368,9 @@ impl DrawExecutor {
     }
 
     pub fn fill_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32) {
-        let y_rad = self.calc_circle_y_rad(r).max(1);
-        self.fill_ellipse(buf, xm, ym, r, y_rad);
+        let y_rad = self.calc_circle_y_rad(r);
+        let points: Vec<i32> = gdp_curve(xm, ym, r, y_rad, 0, TWOPI as i32);
+        self.fill_poly(buf, &points);
     }
 
     pub fn draw_circle(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, r: i32, color: u8) {
@@ -378,17 +380,20 @@ impl DrawExecutor {
     }
 
     pub fn draw_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32, color: u8) {
+        let b = self.calc_circle_y_rad(b);
         let points: Vec<i32> = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.draw_poly(buf, &points, color, false);
     }
 
     pub fn draw_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
+        let yr = self.calc_circle_y_rad(yr);
         let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
         points.extend_from_slice(&[xm, ym]);
         self.draw_poly(buf, &points, self.fill_color, true);
     }
 
     pub fn fill_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, xr: i32, yr: i32, beg_ang: i32, end_ang: i32) {
+        let yr = self.calc_circle_y_rad(yr);
         let mut points = gdp_curve(xm, ym, xr, yr, beg_ang * 10, end_ang * 10);
         points.extend_from_slice(&[xm, ym]);
         self.fill_poly(buf, &points);
@@ -409,6 +414,7 @@ impl DrawExecutor {
     }
 
     pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, xm: i32, ym: i32, a: i32, b: i32) {
+        let b = self.calc_circle_y_rad(b);
         let points: Vec<i32> = gdp_curve(xm, ym, a, b, 0, TWOPI as i32);
         self.fill_poly(buf, &points);
     }
@@ -922,7 +928,7 @@ impl DrawExecutor {
         }
 
         let x_radius = ((buf.get_resolution().width >> 6).min((x2 - x1) / 2) - 1).max(0);
-        let y_radius = self.calc_circle_y_rad(x_radius).min((y1 - y2) / 2).max(0);
+        let y_radius = x_radius;
 
         const ISIN225: i32 = 12539;
         const ISIN450: i32 = 23170;
@@ -1014,16 +1020,14 @@ impl DrawExecutor {
         self.line_kind = old_type;
     }
 
-    fn calc_circle_y_rad(&self, xrad: i32) -> i32 {
-        // Calculate Y radius to compensate for non-square pixels
-        // The values are empirically determined for Atari ST displays
-        // to make circles appear round on 4:3 monitors
-        let x_size = match self.terminal_resolution {
-            TerminalResolution::Low => 338,
-            TerminalResolution::Medium => 338, // Was 169, but that made circles too flat
-            TerminalResolution::High => 372,
+    fn calc_circle_y_rad(&self, rad: i32) -> i32 {
+        let (xsize, ysize) = match self.terminal_resolution {
+            TerminalResolution::Low => (338, 372),
+            TerminalResolution::Medium => (440, 1000),
+            TerminalResolution::High => (372, 372),
         };
-        xrad * x_size / 372
+
+        (rad * xsize) / ysize
     }
 }
 
@@ -1072,8 +1076,7 @@ impl DrawExecutor {
     }
 
     pub fn draw_arc_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, start_angle: i32, end_angle: i32, radius: i32) {
-        let y_radius = self.calc_circle_y_rad(radius);
-        self.draw_arc(buf, x, y, radius, y_radius, start_angle, end_angle);
+        self.draw_arc(buf, x, y, radius, radius, start_angle, end_angle);
     }
 
     pub fn draw_pieslice_pub(&mut self, buf: &mut dyn crate::EditableScreen, x: i32, y: i32, radius: i32, start_angle: i32, end_angle: i32) {
