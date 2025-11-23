@@ -5,9 +5,8 @@ pub mod skypix_impl;
 use libyaff::GlyphDefinition;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, IgsState, Line, Palette,
-    Position, Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
-    TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
+    Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     igs,
     rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
@@ -38,7 +37,7 @@ pub struct GraphicsScreenBuffer {
     pub bgi: Bgi,
 
     // IGS state (only used for IGS graphics)
-    _igs_state: Option<IgsState>,
+    _igs_state: Option<igs::vdi_paint::VdiPaint>,
 
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,
@@ -947,7 +946,7 @@ impl EditableScreen for GraphicsScreenBuffer {
     }
 
     /// Override: Move left, handling autowrap and pixel coordinates
-    fn left(&mut self, num: i32) {
+    fn left(&mut self, num: i32, scroll: bool) {
         let font_size = self.get_font_dimensions();
         let in_margin = self.terminal_state.in_margin(self.caret.position());
 
@@ -967,6 +966,9 @@ impl EditableScreen for GraphicsScreenBuffer {
 
                 self.caret_mut().y -= font_size.height;
                 self.caret_mut().x = ((self.get_width() - 1).max(0)) * font_size.width;
+                if scroll {
+                    self.check_scrolling_on_caret_up(false);
+                }
                 self.limit_caret_pos(in_margin);
                 return;
             }
@@ -976,11 +978,14 @@ impl EditableScreen for GraphicsScreenBuffer {
         let char_x = self.caret().x / font_size.width;
         let new_char_x = char_x.saturating_sub(num);
         self.caret_mut().x = new_char_x * font_size.width;
+        if scroll {
+            self.check_scrolling_on_caret_up(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move right, handling autowrap and pixel coordinates
-    fn right(&mut self, num: i32) {
+    fn right(&mut self, num: i32, scroll: bool) {
         let font_size = self.get_font_dimensions();
         let last_col = (self.get_width() - 1).max(0);
         let in_margin = self.terminal_state.in_margin(self.caret.position());
@@ -993,6 +998,9 @@ impl EditableScreen for GraphicsScreenBuffer {
                 self.caret_mut().y += font_size.height;
                 // Use existing scrolling logic to handle terminal buffers
                 self.check_scrolling_on_caret_down(true);
+                if scroll {
+                    self.check_scrolling_on_caret_up(false);
+                }
                 self.limit_caret_pos(in_margin);
                 return;
             }
@@ -1002,30 +1010,37 @@ impl EditableScreen for GraphicsScreenBuffer {
         let char_x = self.caret().x / font_size.width;
         let new_char_x = char_x.saturating_add(num);
         self.caret_mut().x = new_char_x * font_size.width;
+        if scroll {
+            self.check_scrolling_on_caret_up(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move up, handling pixel coordinates
-    fn up(&mut self, num: i32) {
-        let in_margin = self.terminal_state.in_margin(self.caret.position());
+    fn up(&mut self, num: i32, scroll: bool) {
+        let in_margin: bool = self.terminal_state.in_margin(self.caret.position());
 
         let font_size = self.get_font_dimensions();
         let char_y = self.caret().y / font_size.height;
         let new_char_y = char_y.saturating_sub(num);
         self.caret_mut().y = new_char_y * font_size.height;
-        self.check_scrolling_on_caret_up(false);
+        if scroll {
+            self.check_scrolling_on_caret_up(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move down, handling pixel coordinates
-    fn down(&mut self, num: i32) {
+    fn down(&mut self, num: i32, scroll: bool) {
         let in_margin = self.terminal_state.in_margin(self.caret.position());
 
         let font_size = self.get_font_dimensions();
         let char_y = self.caret().y / font_size.height;
         let new_char_y = char_y + num;
         self.caret_mut().y = new_char_y * font_size.height;
-        self.check_scrolling_on_caret_down(false);
+        if scroll {
+            self.check_scrolling_on_caret_down(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 }

@@ -34,8 +34,6 @@ pub struct IgsParser {
     is_current_param_random: bool,
     text_buffer: Vec<u8>,
 
-    loop_command: Vec<u8>,
-    loop_parameters: Vec<Vec<Vec<u8>>>,
     loop_tokens: Vec<Vec<u8>>,
     loop_token_buffer: Vec<u8>,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
@@ -53,8 +51,6 @@ impl IgsParser {
             current_param: 0,
             is_current_param_random: false,
             text_buffer: Vec::new(),
-            loop_command: Vec::new(),
-            loop_parameters: Vec::new(),
             loop_tokens: Vec::new(),
             loop_token_buffer: Vec::new(),
             reading_chain_gang: false,
@@ -85,103 +81,6 @@ impl IgsParser {
         self.params.push(param);
         self.current_param = 0;
         self.is_current_param_random = false;
-    }
-
-    fn create_loop_command(&mut self, sink: &mut dyn CommandSink) -> Option<IgsCommand> {
-        // & from,to,step,delay,cmd,param_count,(params...)
-        if self.params.len() < 6 {
-            sink.report_error(
-                crate::ParseError::InvalidParameter {
-                    command: "LoopCommand",
-                    value: format!("{}", self.params.len()),
-                    expected: Some("6 parameter".to_string()),
-                },
-                crate::ErrorLevel::Error,
-            );
-            None
-        } else {
-            let from = self.params[0];
-            let to = self.params[1];
-            let step = self.params[2];
-            let delay = self.params[3];
-            let command_identifier = self.loop_command.clone();
-            let param_count = self.params[4].value() as u16;
-
-            let mut params_tokens: Vec<LoopParamToken> = Vec::new();
-            // Remaining numeric params are converted to tokens unless already substituted tokens in loop_parameters
-            if self.params.len() > 5 {
-                for p in &self.params[5..] {
-                    params_tokens.push(LoopParamToken::Number(*p));
-                }
-            }
-            // Add any textual parameter tokens captured (x,y,+n etc.)
-            for token_group in &self.loop_parameters {
-                for token in token_group {
-                    if token == b":" {
-                        params_tokens.push(LoopParamToken::GroupSeparator);
-                    } else if token == b"x" {
-                        params_tokens.push(LoopParamToken::StepForward);
-                    } else if token == b"y" {
-                        params_tokens.push(LoopParamToken::StepReverse);
-                    } else if token == b"r" {
-                        params_tokens.push(LoopParamToken::Random);
-                    } else if let Some(&first) = token.first() {
-                        // Check if token starts with a prefix operator (+, -, !)
-                        if first == b'+' || first == b'-' || first == b'!' {
-                            let operator = match first {
-                                b'+' => ParamOperator::Add,
-                                b'-' => ParamOperator::Subtract,
-                                b'!' => ParamOperator::SubtractStep,
-                                _ => unreachable!(),
-                            };
-                            let value = Self::parse_i32_from_bytes(&token[1..]);
-                            params_tokens.push(LoopParamToken::Expr(operator, value.into()));
-                        } else {
-                            let value = Self::parse_i32_from_bytes(token);
-                            params_tokens.push(LoopParamToken::Number(value.into()));
-                        }
-                    } else {
-                        params_tokens.push(LoopParamToken::Number(0.into()));
-                    }
-                }
-            }
-
-            let mut modifiers = LoopModifiers::default();
-            let original_ident = String::from_utf8_lossy(&command_identifier);
-            let mut base_ident = original_ident.as_ref();
-            if let Some(pos) = base_ident.find(|c| c == '|' || c == '@') {
-                let (ident_part, mod_part) = base_ident.split_at(pos);
-                base_ident = ident_part;
-                for ch in mod_part.chars() {
-                    match ch {
-                        '|' => modifiers.xor_stepping = true,
-                        '@' => modifiers.refresh_text_each_iteration = true,
-                        _ => {}
-                    }
-                }
-            }
-
-            let target = if base_ident.starts_with('>') && original_ident.ends_with('@') {
-                let inner: String = base_ident.chars().skip(1).collect();
-                let commands: Vec<IgsCommandType> = inner.chars().filter_map(|ch| IgsCommandType::try_from(ch as u8).ok()).collect();
-                LoopTarget::ChainGang { commands }
-            } else {
-                let ch = base_ident.chars().next().unwrap_or(' ');
-                let cmd_type = IgsCommandType::try_from(ch as u8).unwrap_or(IgsCommandType::WriteText);
-                LoopTarget::Single(cmd_type)
-            };
-
-            Some(IgsCommand::Loop(LoopCommandData {
-                from: from.value(),
-                to: to.value(),
-                step: step.value(),
-                delay: delay.value(),
-                target,
-                modifiers,
-                param_count,
-                params: params_tokens,
-            }))
-        }
     }
 
     fn emit_loop_command_with_texts(&mut self, sink: &mut dyn CommandSink) {
@@ -309,7 +208,6 @@ impl IgsParser {
             param_count: param_count as u16,
             params,
         };
-
         sink.emit_igs(IgsCommand::Loop(data));
         self.loop_tokens.clear();
         self.loop_token_buffer.clear();
@@ -317,16 +215,7 @@ impl IgsParser {
     }
 
     fn emit_command(&mut self, cmd_type: IgsCommandType, sink: &mut dyn CommandSink) {
-        let command = if cmd_type == IgsCommandType::LoopCommand {
-            // Special handling for Loop command to use collected tokens
-            if let Some(IgsCommand::Loop(data)) = self.create_loop_command(sink) {
-                data.run(sink, &self.param_bounds);
-            }
-            None
-        } else {
-            cmd_type.create_command(sink, &self.params, &self.text_buffer)
-        };
-
+        let command = cmd_type.create_command(sink, &self.params, &self.text_buffer);
         if let Some(IgsCommand::SetRandomRange { range_type }) = &command {
             self.param_bounds.update(range_type);
         }
@@ -712,7 +601,6 @@ impl CommandParser for IgsParser {
                                         param_count: param_count as u16,
                                         params,
                                     };
-
                                     sink.emit_igs(IgsCommand::Loop(data));
                                     self.loop_tokens.clear();
                                     self.loop_token_buffer.clear();
@@ -845,7 +733,6 @@ impl CommandParser for IgsParser {
                                     param_count: param_count as u16,
                                     params,
                                 };
-
                                 sink.emit_igs(IgsCommand::Loop(data));
                             }
                             self.loop_tokens.clear();
@@ -1049,15 +936,60 @@ impl CommandParser for IgsParser {
                     }
                 }
                 State::ReadFillPattern(pattern) => match byte {
-                    b':' | b'\n' => {
-                        sink.emit_igs(IgsCommand::LoadFillPattern {
-                            pattern: pattern as u8,
-                            data: self.text_buffer.clone(),
-                        });
+                    b':' => {
+                        if pattern < 0 || pattern > 7 {
+                            sink.report_error(
+                                crate::ParseError::InvalidParameter {
+                                    command: "ExtendedCommand:LoadFillPattern",
+                                    value: format!("{}", pattern),
+                                    expected: Some("Pattern slot 0-7".to_string()),
+                                },
+                                crate::ErrorLevel::Error,
+                            );
+                            // Invalid pattern index - discard command
+                            self.reset_params();
+                            self.state = State::GotIgsStart;
+                            continue;
+                        }
+                        // Parse the pattern buffer using the proper format
+                        if let Some(data) = IgsCommandType::parse_pattern_buffer(&self.text_buffer, sink) {
+                            sink.emit_igs(IgsCommand::LoadFillPattern { pattern: pattern as u8, data });
+                        }
                         self.reset_params();
-                        self.state = if byte == b'\n' { State::Default } else { State::GotIgsStart };
+                        self.state = State::GotIgsStart;
                     }
-                    _ => self.text_buffer.push(byte),
+                    b' ' | b'\t' => { /* skip ws */ }
+                    b'@' => {
+                        // Store the '@' as delimiter (needed for validation in parse_pattern_buffer)
+                        self.text_buffer.push(byte);
+                        if self.text_buffer.len() >= 16 * 17 {
+                            // 16 lines × 17 chars (16 pattern + '@')
+                            // Validate pattern slot first
+                            if pattern < 0 || pattern > 7 {
+                                sink.report_error(
+                                    crate::ParseError::InvalidParameter {
+                                        command: "ExtendedCommand:LoadFillPattern",
+                                        value: format!("{}", pattern),
+                                        expected: Some("Pattern slot 0-7".to_string()),
+                                    },
+                                    crate::ErrorLevel::Error,
+                                );
+                                // Invalid pattern index - discard command
+                                self.reset_params();
+                                self.state = State::GotIgsStart;
+                                continue;
+                            }
+                            // Parse the pattern buffer using the proper format
+                            if let Some(data) = IgsCommandType::parse_pattern_buffer(&self.text_buffer, sink) {
+                                sink.emit_igs(IgsCommand::LoadFillPattern { pattern: pattern as u8, data });
+                            }
+                            self.reset_params();
+                            self.state = State::GotIgsStart;
+                        }
+                    }
+                    _ => {
+                        self.text_buffer.push(byte);
+                    }
                 },
                 State::ReadTextString(_x, _y, _just) => {
                     if byte == b'@' || byte == b'\n' {

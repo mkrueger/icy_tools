@@ -1,0 +1,93 @@
+6-20-2024
+BEST VIEWED with ME.TTP  <ctrl-X> <ctrl-C> EXIT without saving!
+		<ctrl-S> Search	
+		<ctrl-V> PAGE Forward <esc>V PAGE Backward
+		<esc>< MOVE to Beginning <esc>> MOVE to End of Buffer
+
+In case you missed this:
+
+*** IMPORTANT USE IGDEV13.PRG WITH HSMODA07.ZIP set up a 32K serial buffer the
+	ST's default serial buffer is only 256 bytes I believe, not near enough!
+	IG220.ACC needs it too. Set Interlink's serial port buffer to 31K.
+	This allows IG to do it's graphics on the screen and not lose commands
+	coming over the serial port at HIGH SPEEDs. :) 19.2K baud!
+	Back in 1989  maybe a 4K or 8K serial buffer worked but we only had
+	2400 baud modems, 2.4K baud!  The screen is not as fast as the serial
+	port.  Without a big serial buffer even ASCII text will drop out a
+	little bit. 
+ 
+	Here's a couple of links to get HSMODA07.LZH / .ZIP
+		www.scheutzow.de/museum/index.html
+	https://github-wiki-see.page/m/z80andrew//SerialDisk/wiki/User-guide
+
+	Also besides HSMODA07 that goes in the AUTO folder you may want to 
+	put KX.PRG or KRX.PRGs I included cuts off key click sound and or key
+	repeats. These can mess up the TAP-A-TUNE in the IGDEV program.
+
+TIPS for IGDEV13:
+
+  If you want to Draw in 320x200 16 colors Set your DESKTOP to LOW resolution
+run the IGDEV13 program from the DESKTOP in LOW resolution.  For ease of use
+you can ALT-R to medium resolution in the terminal mode to ALT-(S)end the Draw
+buffer to to a BBS, then hit CLRHOME key to go back to LOW resolution.  ALT-S
+turns the graphics off because some graphics commands will get spit out at
+end by the serial buffer and the terminal will try to execute them, not ok.
+I had this happen a couple of times as I was testing on Dark Force BBS.
+You have to PRESS F10 to turn them back on, it tells you but you might not
+catch that at first.  You Hit F1 from the terminal mode to enter the DRAW
+mode.  In the Draw Menu you will see selections with Rb this means if you 
+do a RIGHT button mouse click it will do something different.  The Draw
+progam will work in MED 640x200 4 colors and HIGH 640x400 mono resolution
+also. Sometimes when trying to click the mouse in the upper left portion of
+the screen it doesn't want to accept it you have to wiggle the mouse a little
+and click. It's something to do with GEM and drop down menus even though I'm
+not using any.
+  In the TAP-A-TUNE section it is a very busy looking display.
+I'm sorry but I like synths and electronic music I tried to work all the
+GI Sound Tool's (GIST) options in there I could. The main key here is using
+| key to select which VOICE you are making changes to and which VOICES you
+are using 0,1,2 alone or together.  Some sound effects that when used as a
+instrument the STOP type might have to be 0 to hear it. Some of STOP types
+you set can effect ALL voices at once.  Once you get the sound how you want
+it you can shift octives with the ESC, BACKSPACE keys and the \ key. Hitting the
+HOME key will shut down the diplays that change, they greatly slow down how
+fast you can type the notes. If the display gets messed up it can in the top
+portion if just the INVERSE video is on and you type very fast, the ALT-K
+will set it to redraw the screen.  It's almost like having a little synthesizer
+but a computer keyboard is different than a musical keyboard, no playing 
+louder when you hit the keys harder, no pressing several keys at once for
+cords. I did everything I could think of like skew pitches, octives.
+Like I said a busy screen but it can be fun just messing with the sounds you
+can come up with.  There are 2 different RECORD methods F1 uses the
+q command Vsync(); for timing and will allow up to 3 seconds between key
+presses the F10 key uses a blank note for timing with 200th's of a second
+up to 49 seconds but abortable.  The Utility program that converts the n 
+commands into the N ASCII stream buffer music will convert either method but
+it will not use the q command it will convert it to 200th's of a second one
+BYTE max 255 so about 1.25 seconds max delay that you get when doing that.
+The N buffer can store 1666 chip notes and you can play notes from and to
+within it or you can use the N buffer for storing a IG script and execute
+it over and over.  If you have Lee Actor's GIST you can create new instruments
+for the TAP-A-TUNE I made a converter program it takes the .C files GIST makes
+and turns them into new IG sound effects that you can use as instruments.
+   
+  I arranged the Draw menu in top down order.  SET things then plot or draw
+after SETting COLORS TYPES.  I hope you have fun using IGS and incorporate it
+into your TELNET BBS. You mostly select with LEFT mouse Button, reset with
+RIGHT mouse button, RIGHT+LEFT mouse button to ABORT in most cases.
+The Draw program has some tips, prompts within itself.  If you press the
+CONTROL key you get a drawing grid, multiple presses changes grid size.
+LEFT SHIFT key prints X,Y coordinates, mutiple presses changes position where
+X,Y is printed. The draw grid and X,Y coordinates may appear on top off some of
+your drawing but it is not permanate.   We are not all artists
+and or musicans but you may have friends that are, ask them for help. One other
+thing I thought about was printing line art out and taping onto the monitor 
+screen so you could trace a drawing.  You can print on tracing paper. I
+You Tubed it.  You tape in onto cardstock first.  I also bought a Pen Tablet
+call ONE by WACOM off Amazon.  While I couldn't just plug it into the ST, I used
+it in Windows 10 with the Hatari emulator.  You download it's software and you
+have to play with adjustments to get it usable on Hatari.  I only played
+with it a little but I believe it could be used to free hand draw or trace.
+
+Larry Mears  June 20, 2024
+

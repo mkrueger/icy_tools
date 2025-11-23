@@ -27,6 +27,9 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         RipCommand::TextWindow { x0, y0, x1, y1, wrap, size } => {
             if x0 == 0 && y0 == 0 && x1 == 0 && y1 == 0 && size == 0 && !wrap {
                 bgi.suspend_text = !bgi.suspend_text;
+                buf.terminal_state_mut().reset_text_window();
+                buf.set_caret_position((0, 0).into());
+                return;
             }
             buf.terminal_state_mut().set_text_window(x0.into(), y0.into(), x1.into(), y1.into());
             buf.caret_mut().set_font_page(size.clamp(0, 4) as usize);
@@ -38,14 +41,14 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::ResetWindows => {
-            buf.terminal_state_mut().clear_text_window();
+            buf.terminal_state_mut().reset_text_window();
             buf.clear_screen();
             buf.reset_terminal();
             bgi.graph_defaults(buf);
         }
 
         RipCommand::EraseWindow => {
-            buf.terminal_state_mut().clear_text_window();
+            buf.terminal_state_mut().reset_text_window();
         }
 
         RipCommand::EraseView => {

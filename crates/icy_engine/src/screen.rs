@@ -303,7 +303,7 @@ pub trait EditableScreen: RgbaScreen {
         }
     }
 
-    fn left(&mut self, num: i32) {
+    fn left(&mut self, num: i32, scroll: bool) {
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
             && self.caret().x == 0
@@ -323,41 +323,49 @@ pub trait EditableScreen: RgbaScreen {
             let x = self.caret().x.saturating_sub(num);
             self.caret_mut().x = x;
         }
+        if scroll {
+            self.check_scrolling_on_caret_down(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
-    fn right(&mut self, num: i32) {
+    fn right(&mut self, num: i32, scroll: bool) {
         let last_col = (self.get_width() - 1).max(0);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
 
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
             && self.caret().x >= last_col
         {
-            // At end of line: move to start of next line, scrolling if needed
-            self.caret_mut().x = 0;
-            self.caret_mut().y += 1;
-            // Use existing scrolling logic to handle terminal buffers
-            self.check_scrolling_on_caret_down(true);
+            self.caret_mut().x = last_col;
+            self.lf();
+            return;
         } else {
             let x = self.caret_mut().x.saturating_add(num);
             self.caret_mut().x = x;
         }
+        if scroll {
+            self.check_scrolling_on_caret_down(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
-    fn up(&mut self, num: i32) {
+    fn up(&mut self, num: i32, scroll: bool) {
         let y = self.caret().y.saturating_sub(num);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().y = y;
-        self.check_scrolling_on_caret_up(false);
+        if scroll {
+            self.check_scrolling_on_caret_up(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
-    fn down(&mut self, num: i32) {
+    fn down(&mut self, num: i32, scroll: bool) {
         let y = self.caret().y + num;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().y = y;
-        self.check_scrolling_on_caret_down(false);
+        if scroll {
+            self.check_scrolling_on_caret_down(false);
+        }
         self.limit_caret_pos(in_margin);
     }
 
@@ -371,29 +379,21 @@ pub trait EditableScreen: RgbaScreen {
         self.limit_caret_pos(in_margin);
     }
 
-    /// Moves the cursor up one line in the same column. If the cursor is at the top margin, the page scrolls down.
-    fn reverse_index(&mut self) {
-        let mut pos = self.caret_position();
-        let in_margin = self.terminal_state().in_margin(self.caret().position());
-        pos.y -= 1;
-        self.set_caret_position(pos);
-        self.check_scrolling_on_caret_up(true);
-        self.limit_caret_pos(in_margin);
-    }
-
-    fn next_line(&mut self) {
+    fn next_line(&mut self, scroll: bool) {
         let mut pos = self.caret_position();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         pos.y += 1;
         pos.x = 0;
         self.set_caret_position(pos);
-        self.check_scrolling_on_caret_down(true);
+        if scroll {
+            self.check_scrolling_on_caret_down(true);
+        }
         self.limit_caret_pos(in_margin);
     }
 
     fn check_scrolling_on_caret_up(&mut self, force: bool) {
         if self.terminal_state().needs_scrolling() || force {
-            let last = self.get_first_editable_line();
+            let last: i32 = self.get_first_editable_line();
             while self.caret_position().y < last {
                 self.scroll_down();
                 let mut pos = self.caret_position();

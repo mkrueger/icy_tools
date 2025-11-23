@@ -375,19 +375,19 @@ impl<'a> CommandSink for ScreenSink<'a> {
             TerminalCommand::CsiMoveCursor(direction, n) => {
                 let n = n as i32;
                 match direction {
-                    Direction::Up => self.screen.up(n),
-                    Direction::Down => self.screen.down(n),
-                    Direction::Left => self.screen.left(n),
-                    Direction::Right => self.screen.right(n),
+                    Direction::Up => self.screen.up(n, false),
+                    Direction::Down => self.screen.down(n, false),
+                    Direction::Left => self.screen.left(n, false),
+                    Direction::Right => self.screen.right(n, false),
                 }
             }
             TerminalCommand::CsiCursorNextLine(n) => {
                 for _ in 0..n {
-                    self.screen.next_line();
+                    self.screen.next_line(false);
                 }
             }
             TerminalCommand::CsiCursorPreviousLine(n) => {
-                self.screen.up(n as i32);
+                self.screen.up(n as i32, false);
                 self.screen.cr();
             }
             TerminalCommand::CsiCursorHorizontalAbsolute(col) => {
@@ -492,10 +492,10 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.limit_caret_pos(false);
             }
             TerminalCommand::CsiLinePositionForward(n) => {
-                self.screen.down(n as i32);
+                self.screen.down(n as i32, false);
             }
             TerminalCommand::CsiCharacterPositionForward(n) => {
-                self.screen.right(n as i32);
+                self.screen.right(n as i32, false);
             }
             TerminalCommand::CsiHorizontalPositionAbsolute(col) => {
                 let upper_left = self.screen.upper_left_position();
@@ -589,14 +589,14 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.index();
             }
             TerminalCommand::EscNextLine => {
-                self.screen.next_line();
+                self.screen.next_line(true);
             }
             TerminalCommand::EscSetTab => {
                 let col = self.screen.caret().x;
                 self.screen.terminal_state_mut().set_tab_at(col);
             }
             TerminalCommand::EscReverseIndex => {
-                self.screen.reverse_index();
+                self.screen.up(1, true);
             }
             TerminalCommand::EscReset => {
                 self.screen.reset_terminal();

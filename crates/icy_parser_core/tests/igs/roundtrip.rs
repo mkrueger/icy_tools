@@ -376,7 +376,73 @@ fn test_left_mouse_button() {
 
 #[test]
 fn test_load_fill_pattern() {
-    test_roundtrip("G#X>7,1,XXXXXXXXXXXXXXXX:");
+    // Pattern with proper format: 16 lines × 17 chars (272 bytes total)
+    // Each line: 16 pattern chars + '@' delimiter
+    let pattern = concat!(
+        "G#X>7,1,",
+        "----------------@\n", // Line 1: all zeros -> 0x0000
+        "----------------@\n", // Line 2: all zeros -> 0x0000
+        "--------XX------@\n", // Line 3: two bits set -> 0x00C0
+        "-------XXXX-----@\n", // Line 4: four bits set -> 0x01E0
+        "------XXXXXX----@\n", // Line 5: six bits set -> 0x03F0
+        "-----XXXXXXXX---@\n", // Line 6: eight bits set -> 0x07F8
+        "----XXXXXXXXXX--@\n", // Line 7: ten bits set -> 0x0FFC
+        "---XXXXXXXXXXXX-@\n", // Line 8: twelve bits set -> 0x1FFE
+        "---XXXXXXXXXXXX-@\n", // Line 9: twelve bits set -> 0x1FFE
+        "----XXXXXXXXXX--@\n", // Line 10: ten bits set -> 0x0FFC
+        "-----XXXXXXXX---@\n", // Line 11: eight bits set -> 0x07F8
+        "------XXXXXX----@\n", // Line 12: six bits set -> 0x03F0
+        "-------XXXX-----@\n", // Line 13: four bits set -> 0x01E0
+        "--------XX------@\n", // Line 14: two bits set -> 0x00C0
+        "----------------@\n", // Line 15: all zeros -> 0x0000
+        "----------------@",   // Line 16: all zeros -> 0x0000
+    );
+
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(pattern.as_bytes(), &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1, "Should parse one command");
+
+    if let IgsCommand::LoadFillPattern { pattern: pat, data } = &sink.igs_commands[0] {
+        assert_eq!(*pat, 1, "Pattern slot should be 1");
+        assert_eq!(data.len(), 16, "Should have 16 pattern lines");
+
+        // Verify the pattern values
+        let expected = vec![
+            0x0000, // ----------------
+            0x0000, // ----------------
+            0x00C0, // --------XX------
+            0x01E0, // -------XXXX-----
+            0x03F0, // ------XXXXXX----
+            0x07F8, // -----XXXXXXXX---
+            0x0FFC, // ----XXXXXXXXXX--
+            0x1FFE, // ---XXXXXXXXXXXX-
+            0x1FFE, // ---XXXXXXXXXXXX-
+            0x0FFC, // ----XXXXXXXXXX--
+            0x07F8, // -----XXXXXXXX---
+            0x03F0, // ------XXXXXX----
+            0x01E0, // -------XXXX-----
+            0x00C0, // --------XX------
+            0x0000, // ----------------
+            0x0000, // ----------------
+        ];
+
+        for (i, (&actual, &expected)) in data.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(actual, expected, "Line {} mismatch: got 0x{:04X}, expected 0x{:04X}", i, actual, expected);
+        }
+    } else {
+        panic!("Expected LoadFillPattern command");
+    }
+
+    // Test roundtrip - output should be compact form without newlines
+    let expected_output = "G#X>7,1,----------------@----------------@--------XX------@-------XXXX-----@------XXXXXX----@-----XXXXXXXX---@----XXXXXXXXXX--@---XXXXXXXXXXXX-@---XXXXXXXXXXXX-@----XXXXXXXXXX--@-----XXXXXXXX---@------XXXXXX----@-------XXXX-----@--------XX------@----------------@----------------@:";
+    let generated = format!("{}", sink.igs_commands[0]);
+    assert_eq!(
+        generated, expected_output,
+        "Round-trip failed: expected '{}', got '{}'",
+        expected_output, generated
+    );
 }
 
 #[test]
@@ -681,4 +747,213 @@ fn test_ask_mouse_position_crosshair() {
 #[test]
 fn test_ask_resolution() {
     test_roundtrip("G#?>3:");
+}
+
+// LoadFillPattern tests
+
+#[test]
+fn test_load_fill_pattern_error_wrong_length() {
+    // Test with incorrect buffer length (should be 272 bytes: 16 × 17)
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // This pattern is too short
+    parser.parse(b"G#X>7,1,XXXXXXXXXXXXXXXX:", &mut sink);
+
+    // Should not produce a command due to invalid length
+    assert_eq!(sink.igs_commands.len(), 0, "Should reject pattern with wrong length");
+}
+
+#[test]
+fn test_load_fill_pattern_error_missing_delimiter() {
+    // Test with missing '@' delimiter
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Pattern with wrong delimiter (using '#' instead of '@')
+    let pattern = concat!(
+        "G#X>7,2,",
+        "XXXXXXXXXXXXXXXX#", // Wrong delimiter
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        ":"
+    );
+    parser.parse(pattern.as_bytes(), &mut sink);
+
+    // Should not produce a command due to invalid delimiter
+    assert_eq!(sink.igs_commands.len(), 0, "Should reject pattern with wrong delimiter");
+}
+
+#[test]
+fn test_load_fill_pattern_error_invalid_slot() {
+    // Test with invalid pattern slot (>7)
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+
+    // Valid pattern data but invalid slot number
+    let pattern = concat!(
+        "G#X>7,8,", // Slot 8 is invalid (only 0-7 allowed)
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        "----------------@",
+        ":"
+    );
+    parser.parse(pattern.as_bytes(), &mut sink);
+
+    // Should not produce a command due to invalid slot
+    assert_eq!(sink.igs_commands.len(), 0, "Should reject pattern with invalid slot number");
+}
+
+#[test]
+fn test_load_fill_pattern_all_set() {
+    // Pattern with all bits set
+    let pattern = concat!(
+        "G#X>7,3,",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        "XXXXXXXXXXXXXXXX@",
+        ":"
+    );
+
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(pattern.as_bytes(), &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+
+    if let IgsCommand::LoadFillPattern { pattern: pat, data } = &sink.igs_commands[0] {
+        assert_eq!(*pat, 3);
+        assert_eq!(data.len(), 16);
+
+        // All lines should be 0xFFFF
+        for (i, &value) in data.iter().enumerate() {
+            assert_eq!(value, 0xFFFF, "Line {} should be all 1s (0xFFFF), got 0x{:04X}", i, value);
+        }
+    } else {
+        panic!("Expected LoadFillPattern command");
+    }
+
+    let generated = format!("{}", sink.igs_commands[0]);
+    assert_eq!(generated, pattern);
+}
+
+#[test]
+fn test_load_fill_pattern_lowercase_x() {
+    // Test that lowercase 'x' also works
+    let pattern = concat!(
+        "G#X>7,4,",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        "xxxxxxxxxxxxxxxx@",
+        ":"
+    );
+    // Note: Display will normalize to uppercase 'X'
+    let expected = pattern.replace('x', "X");
+
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(pattern.as_bytes(), &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+    let generated = format!("{}", sink.igs_commands[0]);
+    assert_eq!(generated, expected, "Round-trip should normalize lowercase to uppercase");
+}
+
+#[test]
+fn test_load_fill_pattern_checkerboard() {
+    // Checkerboard pattern
+    let pattern = concat!(
+        "G#X>7,5,",
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        "X-X-X-X-X-X-X-X-@", // 0xAAAA
+        "-X-X-X-X-X-X-X-X@", // 0x5555
+        ":"
+    );
+
+    let mut parser = IgsParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(pattern.as_bytes(), &mut sink);
+
+    assert_eq!(sink.igs_commands.len(), 1);
+
+    if let IgsCommand::LoadFillPattern { pattern: pat, data } = &sink.igs_commands[0] {
+        assert_eq!(*pat, 5);
+        assert_eq!(data.len(), 16);
+
+        // Checkerboard should alternate between 0xAAAA and 0x5555
+        for (i, &value) in data.iter().enumerate() {
+            let expected = if i % 2 == 0 { 0xAAAA } else { 0x5555 };
+            assert_eq!(value, expected, "Line {} should be 0x{:04X}, got 0x{:04X}", i, expected, value);
+        }
+    } else {
+        panic!("Expected LoadFillPattern command");
+    }
+
+    let generated = format!("{}", sink.igs_commands[0]);
+    assert_eq!(generated, pattern);
 }

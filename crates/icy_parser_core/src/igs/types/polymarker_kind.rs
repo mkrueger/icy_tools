@@ -15,6 +15,21 @@ pub enum PolymarkerKind {
     Diamond = 6,
 }
 
+impl PolymarkerKind {
+    pub fn get_points(&self) -> &'static [i32] {
+        // The first two values are control values (line count, points per line)
+        // The rest are coordinate pairs that need to be scaled
+        match self {
+            PolymarkerKind::Point => &[1, 2, 0, 0, 0, 0],
+            PolymarkerKind::Plus => &[2, 2, 0, -3, 0, 3, 2, -4, 0, 4, 0],
+            PolymarkerKind::Star => &[3, 2, 0, -3, 0, 3, 2, 3, 2, -3, -2, 2, 3, -2, -3, 2],
+            PolymarkerKind::Square => &[1, 5, -4, -3, 4, -3, 4, 3, -4, 3, -4, -3],
+            PolymarkerKind::DiagonalCross => &[2, 2, -4, -3, 4, 3, 2, -4, 3, 4, -3],
+            PolymarkerKind::Diamond => &[1, 5, -4, 0, 0, -3, 4, 0, 0, 3, -4, 0],
+        }
+    }
+}
+
 impl Default for PolymarkerKind {
     fn default() -> Self {
         Self::Point

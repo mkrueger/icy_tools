@@ -9,6 +9,9 @@ pub use polymarker_kind::*;
 mod pattern_type;
 pub use pattern_type::*;
 
+mod extended_commands;
+pub use extended_commands::*;
+
 mod text_effect;
 pub use text_effect::*;
 
@@ -35,6 +38,9 @@ pub use cursor_mode::*;
 
 mod ask_query;
 pub use ask_query::*;
+
+mod screen_clear;
+pub use screen_clear::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IgsParameter {

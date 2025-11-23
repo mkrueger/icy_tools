@@ -1,12 +1,10 @@
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 pub mod bgi;
-pub mod igs_impl;
 pub mod rip_impl;
 
 pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
-pub use igs_impl::IgsState;
 
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
@@ -42,7 +40,7 @@ pub struct PaletteScreenBuffer {
     pub bgi: Bgi,
 
     // IGS state (only used for IGS graphics)
-    igs_state: Option<IgsState>,
+    igs_state: Option<igs::vdi_paint::VdiPaint>,
 
     // Dirty tracking for rendering optimization
     buffer_dirty: std::sync::atomic::AtomicBool,

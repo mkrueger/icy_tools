@@ -243,16 +243,16 @@ impl LoopCommandData {
                 break;
             }
 
-            // Collect parameters for this iteration
-            let mut iteration_params = Vec::new();
+            // Evaluate ALL param_count parameters for this iteration
+            // The command may be executed multiple times per iteration if param_count
+            // is larger than what the command needs
             let reverse_value = self.to + self.from - current; // y = from + to - x
             let mut param_index = 0;
 
-            for _ in 0..self.param_count {
-                if param_index >= self.params.len() {
-                    break;
-                }
+            // Collect ALL param_count values
+            let mut all_params = Vec::new();
 
+            while param_index < self.param_count as usize && param_index < self.params.len() {
                 let token = &self.params[param_index];
                 param_index += 1;
 
@@ -260,11 +260,7 @@ impl LoopCommandData {
                     LoopParamToken::Number(param) => param.evaluate(bounds),
                     LoopParamToken::StepForward => current,
                     LoopParamToken::StepReverse => reverse_value,
-                    LoopParamToken::Random => {
-                        // Use the midpoint of the random range as a placeholder
-                        // In a real execution environment, this would generate an actual random value
-                        rnd_min + (rnd_max - rnd_min) / 2
-                    }
+                    LoopParamToken::Random => fastrand::i32(rnd_min..=rnd_max),
                     LoopParamToken::Expr(op, param) => {
                         let constant = param.evaluate(bounds);
                         match op {
@@ -274,33 +270,46 @@ impl LoopCommandData {
                         }
                     }
                     LoopParamToken::GroupSeparator => {
-                        // Skip group separators, don't count toward param_count
+                        // Skip group separators, they don't count
                         continue;
                     }
                     LoopParamToken::Text(_) => {
-                        // Text tokens are handled specially for W@ commands
-                        // For now, skip in regular parameter collection
+                        // Text tokens handled separately for W@ commands
                         continue;
                     }
                 };
 
-                iteration_params.push(value);
+                all_params.push(value);
             }
 
-            // Build and emit the command based on target
+            // Now execute the command as many times as needed based on param requirements
+            // For example, Circle needs 3 params, so if param_count=12, execute 4 times
             match &self.target {
                 LoopTarget::Single(cmd_type) => {
-                    if let Some(cmd) = Self::build_command(*cmd_type, &iteration_params) {
-                        sink.emit_igs(cmd);
+                    let params_per_command = cmd_type.parameter_count().unwrap_or(0);
+                    if params_per_command > 0 {
+                        let mut offset = 0;
+                        while offset + params_per_command <= all_params.len() {
+                            let cmd_params = &all_params[offset..offset + params_per_command];
+                            if let Some(cmd) = Self::build_command(*cmd_type, cmd_params) {
+                                sink.emit_igs(cmd);
+                            }
+                            offset += params_per_command;
+                        }
                     }
                 }
                 LoopTarget::ChainGang { commands } => {
-                    // Use current value to index into the chain
-                    let index = (current.abs() as usize) % commands.len();
-                    let cmd_type = commands[index];
+                    // Use first parameter to index into chain
+                    if !all_params.is_empty() {
+                        let index: usize = (all_params[0].abs() as usize) % commands.len();
+                        let cmd_type = commands[index];
+                        let params_per_command = cmd_type.parameter_count().unwrap_or(0);
 
-                    if let Some(cmd) = Self::build_command(cmd_type, &iteration_params) {
-                        sink.emit_igs(cmd);
+                        if params_per_command > 0 && params_per_command <= all_params.len() {
+                            if let Some(cmd) = Self::build_command(cmd_type, &all_params[..params_per_command]) {
+                                sink.emit_igs(cmd);
+                            }
+                        }
                     }
                 }
             }
@@ -308,8 +317,6 @@ impl LoopCommandData {
             // Apply delay if specified (delay is in 1/200 seconds)
             if self.delay > 0 {
                 // In a real implementation, this would pause execution
-                // For parsing/serialization, we just note the delay
-                // The actual delay implementation would be in the rendering layer
             }
 
             // Advance to next iteration

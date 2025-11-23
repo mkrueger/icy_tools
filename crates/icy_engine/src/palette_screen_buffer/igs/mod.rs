@@ -1,12 +1,11 @@
 use crate::Size;
 
-pub mod paint;
-
-pub mod patterns;
-pub use patterns::*;
+mod igs_runner;
+pub mod vdi_paint;
+pub use vdi_paint::*;
 
 pub mod sound;
-pub mod vdi;
+pub mod util;
 
 mod fonts;
 pub use fonts::*;

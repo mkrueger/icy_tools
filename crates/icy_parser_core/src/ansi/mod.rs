@@ -1465,10 +1465,11 @@ impl AnsiParser {
     #[inline(always)]
     fn handle_csi_final(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
         match final_byte {
-            b'A' => {
+            b'A' | b'k' => {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
             }
+
             b'B' => {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16));
@@ -1477,7 +1478,7 @@ impl AnsiParser {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16));
             }
-            b'D' => {
+            b'D' | b'j' => {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
             }
@@ -1497,14 +1498,6 @@ impl AnsiParser {
                 let row = self.params.first().copied().unwrap_or(1);
                 let col = self.params.get(1).copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
-            }
-            b'j' => {
-                let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
-            }
-            b'k' => {
-                let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
             }
             b'd' => {
                 let n = self.params.first().copied().unwrap_or(1);

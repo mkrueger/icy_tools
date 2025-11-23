@@ -324,7 +324,7 @@ impl TerminalState {
         self.set_margins_left_right(x0, x1);
     }
 
-    pub fn clear_text_window(&mut self) {
+    pub fn reset_text_window(&mut self) {
         self.origin_mode = OriginMode::UpperLeftCorner;
 
         self.set_dec_left_right_margins(false);

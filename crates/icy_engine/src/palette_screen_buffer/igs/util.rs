@@ -113,27 +113,3 @@ pub fn clc_arc(xm: i32, ym: i32, x_rad: i32, y_rad: i32, beg_ang: i32, end_ang: 
     points.push(p.y);
     points
 }
-
-pub fn blit_px(write_mode: i32, _colors: usize, s: u8, d: u8) -> u8 {
-    let dest = match write_mode {
-        0 => 0,
-        1 => s & d,
-        2 => s & !d,
-        3 => s,
-        4 => !s & d,
-        5 => d,
-        6 => s ^ d,
-        7 => s | d,
-        8 => !(s | d),
-        9 => !(s ^ d),
-        10 => !d,
-        11 => s | !d,
-        12 => !s,
-        13 => !s | d,
-        14 => !(s & d),
-        15 => 1,
-        _ => 2,
-    } & 0xF;
-
-    dest
-}

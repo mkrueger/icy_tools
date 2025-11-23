@@ -216,13 +216,14 @@ pub enum IgsCommand {
     /// and end decorations (arrows, rounded ends).
     ///
     /// # Parameters
-    /// * `kind` - Style kind (Polymarker or Line with specific type)
-    /// * `value` - Third parameter: size/thickness/pattern/end-style composite
-    ///   - For polymarkers: size 1-8
-    ///   - For solid lines: thickness 1-41
-    ///   - For user defined lines: pattern number 1-32
-    ///   - Line end styles (add to size): 0=square, 50=arrows both, 51=arrow left, 52=arrow right, 60=rounded
-    LineStyle { kind: LineStyleKind, value: u16 },
+    /// * `style` - Combined style including type, size/thickness, and endpoints
+    ///
+    /// # Examples
+    /// * `G#T>1,3,8:` - Star polymarker with size 8
+    /// * `G#T>2,1,40:` - Solid line with thickness 40
+    /// * `G#T>2,1,50:` - Solid line with arrows on both ends
+    /// * `G#T>2,1,0:` - Solid line with square ends
+    SetLineOrMarkerStyle { style: LineMarkerStyle },
 
     /// Set pen RGB color command (S)
     ///
@@ -394,7 +395,7 @@ pub enum IgsCommand {
     ///
     /// # Special Mode
     /// Value 2 doubles Y coordinates in monochrome mode for aspect correction
-    GraphicScaling { mode: u8 },
+    GraphicScaling { mode: GraphicsScalingMode },
 
     /// Screen grab/BitBlit command (G)
     ///
@@ -623,14 +624,8 @@ pub enum IgsCommand {
     /// Clears all or part of the screen using various methods.
     ///
     /// # Parameters
-    /// * `mode` - Clear mode:
-    ///   - 0: Clear screen and home cursor
-    ///   - 1: Clear from home to cursor
-    ///   - 2: Clear from cursor to bottom
-    ///   - 3: Clear whole screen with VDI
-    ///   - 4: Clear with VDI and home cursor
-    ///   - 5: Quick VT52 reset (clear, home, reverse off, reset colors)
-    ScreenClear { mode: u8 },
+    /// * `mode` - Clear mode (see ScreenClearMode enum)
+    ScreenClear { mode: ScreenClearMode },
 
     /// Set resolution command (R)
     ///
@@ -824,16 +819,30 @@ pub enum IgsCommand {
     ///
     /// IGS: `G#X>7,pattern,data...:`
     ///
-    /// Loads a custom 16x16 bit pattern for fills. Patterns 6-7 also
-    /// serve as line patterns.
+    /// Loads a custom 16×16 bit pattern into one of 8 pattern slots (0-7).
+    /// Patterns 6-7 also serve as line patterns.
+    ///
+    /// # Format
+    /// The data consists of 272 bytes (16 lines × 17 characters):
+    /// - Each line: 16 pattern characters + '@' delimiter
+    /// - Pattern characters: 'X' or 'x' = bit 1, anything else = bit 0
+    /// - Data is stored as Vec<u16> with 16 elements (one u16 per line)
     ///
     /// # Parameters
-    /// * `pattern` - Pattern slot (0-7)
-    /// * `data` - 16 strings of 16 characters each, 'X' for set bits
+    /// * `pattern` - Pattern slot number (0-7)
+    /// * `data` - Vec<u16> containing 16 elements (one u16 per line, MSB = leftmost bit)
     ///
     /// # Example
-    /// Each row ends with '@', use 'X' for 1 bits, anything else for 0
-    LoadFillPattern { pattern: u8, data: Vec<u8> },
+    /// ```text
+    /// G#X>7,1,
+    /// ----------------@
+    /// --------XX------@
+    /// -------XXXX-----@
+    /// ...
+    /// ----------------@
+    /// :
+    /// ```
+    LoadFillPattern { pattern: u8, data: Vec<u16> },
 
     /// Rotate color registers (X 8)
     ///
@@ -1014,6 +1023,30 @@ pub enum IgsCommand {
     LineWrap { enabled: bool },
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphicsScalingMode {
+    Normal = 0,
+    Virtual10000 = 1,
+    MonochromeAspect = 2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidGraphicsScalingMode(pub u8);
+
+impl TryFrom<u8> for GraphicsScalingMode {
+    type Error = InvalidGraphicsScalingMode;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Virtual10000),
+            2 => Ok(Self::MonochromeAspect),
+            other => Err(InvalidGraphicsScalingMode(other)),
+        }
+    }
+}
+
 impl fmt::Display for IgsCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1061,14 +1094,31 @@ impl fmt::Display for IgsCommand {
                     PatternType::Pattern(idx) => (2, *idx),
                     PatternType::Hatch(idx) => (3, *idx),
                     PatternType::UserDefined(idx) => (4, *idx),
+                    PatternType::Random => (4, 8),
+                    PatternType::StarTrek => (4, 9),
                 };
                 let border_val = if *border { 1 } else { 0 };
                 write!(f, "G#A>{},{},{}:", type_val, index_val, border_val)
             }
-            IgsCommand::LineStyle { kind, value } => {
-                let (type_val, style_val) = match kind {
-                    LineStyleKind::Polymarker(pk) => (1, *pk as u8),
-                    LineStyleKind::Line(lk) => (2, *lk as u8),
+            IgsCommand::SetLineOrMarkerStyle { style } => {
+                let (type_val, style_val, value) = match style {
+                    LineMarkerStyle::PolyMarkerSize(pk, size) => (1, *pk as u8, *size as u16),
+                    LineMarkerStyle::LineThickness(lk, thickness) => (2, *lk as u8, *thickness as u16),
+                    LineMarkerStyle::LineEndpoints(lk, left, right) => {
+                        // Encode endpoints: 50-54 for arrow variants, 60-64 for rounded variants, 0 for square
+                        let value = match (*left, *right) {
+                            (ArrowEnd::Square, ArrowEnd::Square) => 0,
+                            (ArrowEnd::Arrow, ArrowEnd::Arrow) => 50,
+                            (ArrowEnd::Arrow, ArrowEnd::Square) => 51,
+                            (ArrowEnd::Square, ArrowEnd::Arrow) => 52,
+                            (ArrowEnd::Arrow, ArrowEnd::Rounded) => 53,
+                            (ArrowEnd::Rounded, ArrowEnd::Arrow) => 54,
+                            (ArrowEnd::Rounded, ArrowEnd::Rounded) => 60,
+                            (ArrowEnd::Rounded, ArrowEnd::Square) => 61,
+                            (ArrowEnd::Square, ArrowEnd::Rounded) => 62,
+                        };
+                        (2, *lk as u8, value)
+                    }
                 };
                 write!(f, "G#T>{},{},{}:", type_val, style_val, value)
             }
@@ -1106,9 +1156,7 @@ impl fmt::Display for IgsCommand {
             IgsCommand::StopAllSound => write!(f, "G#b>21:"),
             IgsCommand::RestoreSoundEffect { sound_effect } => write!(f, "G#b>22,{}:", *sound_effect as u8),
             IgsCommand::SetEffectLoops { count } => write!(f, "G#b>23,{}:", count),
-            IgsCommand::GraphicScaling { mode } => {
-                write!(f, "G#g>{}:", mode)
-            }
+            IgsCommand::GraphicScaling { mode } => write!(f, "G#g>{}:", *mode as u8),
             IgsCommand::GrabScreen { operation, mode } => match operation {
                 BlitOperation::ScreenToScreen {
                     src_x1,
@@ -1224,7 +1272,7 @@ impl fmt::Display for IgsCommand {
                 }
                 AskQuery::CurrentResolution => write!(f, "G#?>3:"),
             },
-            IgsCommand::ScreenClear { mode } => write!(f, "G#s>{}:", mode),
+            IgsCommand::ScreenClear { mode } => write!(f, "G#s>{}:", *mode as u8),
             IgsCommand::SetResolution { resolution, palette } => write!(f, "G#R>{},{}:", *resolution as u8, *palette as u8),
             IgsCommand::PauseSeconds { seconds } => write!(f, "G#t>{}:", seconds),
             IgsCommand::VsyncPause { vsyncs } => write!(f, "G#q>{}:", vsyncs),
@@ -1378,7 +1426,21 @@ impl fmt::Display for IgsCommand {
                 write!(f, "G#X>6,{}:", mode)
             }
             IgsCommand::LoadFillPattern { pattern, data } => {
-                write!(f, "G#X>7,{},{}:", pattern, String::from_utf8_lossy(data))
+                // Convert Vec<u16> back to 16×17 character format (compact form without newlines)
+                // Each u16 represents one line (16 bits)
+                write!(f, "G#X>7,{},", pattern)?;
+
+                for word in data.iter() {
+                    for bit in 0..16 {
+                        if (word & (1 << (15 - bit))) != 0 {
+                            write!(f, "X")?;
+                        } else {
+                            write!(f, "-")?;
+                        }
+                    }
+                    write!(f, "@")?;
+                }
+                write!(f, ":")
             }
             IgsCommand::RotateColorRegisters {
                 start_reg,

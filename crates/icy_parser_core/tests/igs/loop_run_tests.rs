@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, IgsCommand, IgsParser, ParameterBounds, TerminalCommand, TerminalRequest};
+use icy_parser_core::{CommandParser, CommandSink, IgsCommand, IgsParameter, IgsParser, ParameterBounds, TerminalCommand, TerminalRequest};
 
 struct TestSink {
     igs_commands: Vec<IgsCommand>,
@@ -377,18 +377,23 @@ fn test_run_loop_single_iteration() {
 
 #[test]
 fn test_run_loop_random_placeholder() {
-    // Loop with 'r' (random) - currently uses midpoint as placeholder
+    // Loop with 'r' (random) - should generate random values in the parameter bounds
     let commands = run_loop("G#&>0,2,1,0,O,3,50,50,r:");
 
     assert_eq!(commands.len(), 3);
 
-    // Default bounds are (0,199), so midpoint is 99
+    // Default bounds are (0,199), so 'r' should generate values in this range
     for cmd in &commands {
         match cmd {
             IgsCommand::Circle { x, y, radius } => {
                 assert_eq!(*x, 50.into());
                 assert_eq!(*y, 50.into());
-                assert_eq!(*radius, 99.into()); // midpoint of (0,199)
+                // Radius should be a random value within bounds (0-199)
+                if let IgsParameter::Value(r) = radius {
+                    assert!(*r >= 0 && *r <= 199, "Random radius {} should be in range [0, 199]", r);
+                } else {
+                    panic!("Expected Value parameter for radius");
+                }
             }
             _ => panic!("Expected Circle command"),
         }
