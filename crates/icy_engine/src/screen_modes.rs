@@ -2,8 +2,8 @@ use std::fmt::{self, Display};
 
 use crate::{
     ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED,
-    C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen,
-    VIEWDATA, VIEWDATA_PALETTE, graphics_screen_buffer,
+    C64_UNSHIFTED, CP437, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Screen, Size, TerminalResolution, TextScreen, VIEWDATA,
+    VIEWDATA_PALETTE, graphics_screen_buffer,
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
@@ -244,7 +244,8 @@ impl ScreenMode {
         }
     }
 
-    fn apply_to_edit_screen(&self, screen: &mut dyn EditableScreen) {
+    fn apply_to_edit_screen(&self, screen: &mut dyn Screen) {
+        let screen = screen.as_editable().unwrap();
         screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
         // Ensure we have at least one layer and set its size
         match self {
@@ -317,8 +318,8 @@ impl ScreenMode {
     /// let options = Some(CreationOptions { ansi_music: MusicOption::Both });
     /// let (screen, parser) = mode.create_screen(TerminalEmulation::Ansi, options);
     /// ```
-    pub fn create_screen(&self, emulation: TerminalEmulation, option: Option<CreationOptions>) -> (Box<dyn EditableScreen>, Box<dyn CommandParser + Send>) {
-        let mut screen: Box<dyn EditableScreen> = match emulation {
+    pub fn create_screen(&self, emulation: TerminalEmulation, option: Option<CreationOptions>) -> (Box<dyn Screen>, Box<dyn CommandParser + Send>) {
+        let mut screen: Box<dyn Screen> = match emulation {
             TerminalEmulation::Rip => {
                 let buf = PaletteScreenBuffer::new(GraphicsType::Rip);
                 Box::new(buf)

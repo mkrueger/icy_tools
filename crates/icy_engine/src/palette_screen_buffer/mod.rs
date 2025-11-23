@@ -8,7 +8,7 @@ pub use igs::{TerminalResolution, TerminalResolutionExt};
 
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
-    Rectangle, RenderOptions, RgbaScreen, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
+    RenderOptions, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     graphics_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
@@ -231,13 +231,8 @@ impl TextPane for PaletteScreenBuffer {
         AttributedChar::default()
     }
 
-    fn get_size(&self) -> Size {
-        // Return character dimensions (resolution already stores char cols/rows)
-        self.char_screen_size
-    }
-
     fn get_line_count(&self) -> i32 {
-        self.get_height()
+        self.char_screen_size.height
     }
 
     fn get_width(&self) -> i32 {
@@ -248,13 +243,17 @@ impl TextPane for PaletteScreenBuffer {
         self.char_screen_size.height
     }
 
+    fn get_size(&self) -> Size {
+        self.char_screen_size
+    }
+
     fn get_line_length(&self, _line: i32) -> i32 {
         // won't work for rgba screens.
         0
     }
 
-    fn get_rectangle(&self) -> Rectangle {
-        Rectangle::from_coords(0, 0, self.get_width() - 1, self.get_height() - 1)
+    fn get_rectangle(&self) -> crate::Rectangle {
+        crate::Rectangle::from_coords(0, 0, self.char_screen_size.width - 1, self.char_screen_size.height - 1)
     }
 }
 
@@ -273,30 +272,6 @@ impl Screen for PaletteScreenBuffer {
 
     fn scan_lines(&self) -> bool {
         self.scan_lines
-    }
-
-    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType) {
-        self.graphics_type = graphics_type;
-
-        self.scan_lines = match graphics_type {
-            GraphicsType::IGS(term_res) => term_res.use_scanlines(),
-            _ => false,
-        };
-
-        match graphics_type {
-            GraphicsType::IGS(res) => {
-                self.caret.attribute.set_foreground(1);
-                self.caret.attribute.set_background(0);
-                self.terminal_state.cr_is_if = true;
-                self.set_resolution(res.get_resolution());
-            }
-            _ => {
-                // Keep current caret settings
-            }
-        }
-
-        self.buffer_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
-        self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
@@ -341,6 +316,100 @@ impl Screen for PaletteScreenBuffer {
         }
     }
 
+    fn get_font_dimensions(&self) -> Size {
+        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
+    }
+
+    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
+        self.font_table.get(&font_number)
+    }
+
+    fn font_count(&self) -> usize {
+        self.font_table.len()
+    }
+
+    fn caret(&self) -> &Caret {
+        &self.caret
+    }
+
+    fn palette(&self) -> &Palette {
+        &self.palette
+    }
+
+    fn buffer_type(&self) -> BufferType {
+        self.buffer_type
+    }
+
+    fn get_selection(&self) -> Option<Selection> {
+        None
+    }
+
+    fn selection_mask(&self) -> &SelectionMask {
+        &self.selection_mask
+    }
+
+    fn hyperlinks(&self) -> &Vec<HyperLink> {
+        &self.hyperlinks
+    }
+
+    fn get_copy_text(&self) -> Option<String> {
+        None
+    }
+
+    fn get_copy_rich_text(&self) -> Option<String> {
+        None
+    }
+
+    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
+        None
+    }
+    fn mouse_fields(&self) -> &Vec<MouseField> {
+        &self.mouse_fields
+    }
+
+    fn get_version(&self) -> u64 {
+        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn default_foreground_color(&self) -> u32 {
+        self.graphics_type.default_fg_color()
+    }
+
+    fn max_base_colors(&self) -> u32 {
+        if let GraphicsType::IGS(t) = self.graphics_type {
+            t.get_max_colors()
+        } else {
+            self.palette.len() as u32
+        }
+    }
+
+    fn get_resolution(&self) -> Size {
+        self.pixel_size
+    }
+
+    fn screen(&self) -> &[u8] {
+        &self.screen
+    }
+
+    fn set_selection(&mut self, _selection: Selection) -> EngineResult<()> {
+        Ok(())
+    }
+
+    fn clear_selection(&mut self) -> EngineResult<()> {
+        Ok(())
+    }
+
+    fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
+        Some(self)
+    }
+
+    fn to_bytes(&mut self, _file_name: &str, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+        // Return empty for now, could implement PNG export later
+        Ok(Vec::new())
+    }
+}
+
+impl EditableScreen for PaletteScreenBuffer {
     fn get_first_visible_line(&self) -> i32 {
         0
     }
@@ -385,94 +454,40 @@ impl Screen for PaletteScreenBuffer {
         self.char_screen_size.width - 1
     }
 
-    fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
-    }
-
-    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
-        self.font_table.get(&font_number)
-    }
-
-    fn font_count(&self) -> usize {
-        self.font_table.len()
-    }
-
-    fn line_count(&self) -> usize {
-        // won't work for rgba screens.
-        0
-    }
-
-    fn caret(&self) -> &Caret {
-        &self.caret
-    }
-
-    fn palette(&self) -> &Palette {
-        &self.palette
-    }
-
-    fn buffer_type(&self) -> BufferType {
-        self.buffer_type
-    }
-
-    fn get_selection(&self) -> Option<Selection> {
+    fn get_line(&self, _line: usize) -> Option<&Line> {
         None
     }
 
-    fn selection_mask(&self) -> &SelectionMask {
-        &self.selection_mask
+    fn line_count(&self) -> usize {
+        0
     }
 
-    fn set_selection(&mut self, _selection: Selection) -> EngineResult<()> {
-        Ok(())
-    }
+    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType) {
+        self.graphics_type = graphics_type;
 
-    fn clear_selection(&mut self) -> EngineResult<()> {
-        Ok(())
-    }
+        self.scan_lines = match graphics_type {
+            GraphicsType::IGS(term_res) => term_res.use_scanlines(),
+            _ => false,
+        };
 
-    fn hyperlinks(&self) -> &Vec<HyperLink> {
-        &self.hyperlinks
+        match graphics_type {
+            GraphicsType::IGS(res) => {
+                self.caret.attribute.set_foreground(1);
+                self.caret.attribute.set_background(0);
+                self.terminal_state.cr_is_if = true;
+                self.set_resolution(res.get_resolution());
+            }
+            _ => {
+                // Keep current caret settings
+            }
+        }
+
+        self.buffer_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn update_hyperlinks(&mut self) {
         // No-op for now
-    }
-
-    fn to_bytes(&mut self, _file_name: &str, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
-        // Return empty for now, could implement PNG export later
-        Ok(Vec::new())
-    }
-
-    fn get_copy_text(&self) -> Option<String> {
-        None
-    }
-
-    fn get_copy_rich_text(&self) -> Option<String> {
-        None
-    }
-
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
-        None
-    }
-    fn mouse_fields(&self) -> &Vec<MouseField> {
-        &self.mouse_fields
-    }
-}
-
-impl RgbaScreen for PaletteScreenBuffer {
-    fn default_foreground_color(&self) -> u32 {
-        self.graphics_type.default_fg_color()
-    }
-    fn max_base_colors(&self) -> u32 {
-        if let GraphicsType::IGS(t) = self.graphics_type {
-            t.get_max_colors()
-        } else {
-            self.palette.len() as u32
-        }
-    }
-
-    fn get_resolution(&self) -> Size {
-        self.pixel_size
     }
 
     fn set_resolution(&mut self, size: Size) {
@@ -486,16 +501,10 @@ impl RgbaScreen for PaletteScreenBuffer {
             .resize((self.pixel_size.width as usize) * (self.pixel_size.height as usize), bg_color as u8);
     }
 
-    fn screen(&self) -> &[u8] {
-        &self.screen
-    }
-
     fn screen_mut(&mut self) -> &mut Vec<u8> {
         &mut self.screen
     }
-}
 
-impl EditableScreen for PaletteScreenBuffer {
     fn reset_resolution(&mut self) {
         // Get original resolution from graphics_type
         let (px_width, px_height) = match self.graphics_type {
@@ -722,18 +731,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn add_hyperlink(&mut self, hyperlink: HyperLink) {
         self.hyperlinks.push(hyperlink);
-    }
-
-    fn get_version(&self) -> u64 {
-        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn is_dirty(&self) -> bool {
-        self.buffer_dirty.load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    fn clear_dirty(&self) {
-        self.buffer_dirty.store(false, std::sync::atomic::Ordering::Release)
     }
 
     fn mark_dirty(&self) {

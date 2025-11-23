@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced_engine_gui::{Terminal, terminal_view::TerminalView};
-use icy_engine::EditableScreen;
+use icy_engine::Screen;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
 use std::sync::{Arc, Mutex};
@@ -32,7 +32,7 @@ pub struct TerminalWindow {
 
 impl TerminalWindow {
     pub fn new(sound_thread: Arc<Mutex<SoundThread>>) -> Self {
-        let edit_screen: Arc<Mutex<Box<dyn EditableScreen>>> = Arc::new(Mutex::new(Box::new(super::welcome_screen::create_welcome_screen())));
+        let edit_screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(super::welcome_screen::create_welcome_screen())));
 
         Self {
             terminal: Terminal::new(edit_screen),
@@ -61,12 +61,16 @@ impl TerminalWindow {
             iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
         });
 
-        // Get scrollback info from Box<dyn EditableScreen>
-        let (has_scrollback, scroll_position, max_scroll) = if let Ok(screen) = self.terminal.screen.lock() {
-            let has_scrollback = screen.get_max_scrollback_offset() > 0;
-            let scroll_offset = screen.scrollback_position() as i32;
-            let max_scroll = screen.get_max_scrollback_offset() as i32;
-            (has_scrollback, scroll_offset, max_scroll)
+        // Get scrollback info from Box<dyn Screen>
+        let (has_scrollback, scroll_position, max_scroll) = if let Ok(mut screen) = self.terminal.screen.lock() {
+            if let Some(editable) = screen.as_editable() {
+                let has_scrollback = editable.get_max_scrollback_offset() > 0;
+                let scroll_offset = editable.scrollback_position() as i32;
+                let max_scroll = editable.get_max_scrollback_offset() as i32;
+                (has_scrollback, scroll_offset, max_scroll)
+            } else {
+                (false, 0, 0)
+            }
         } else {
             (false, 0, 0)
         };

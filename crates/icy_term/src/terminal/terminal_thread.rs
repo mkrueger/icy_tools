@@ -3,7 +3,7 @@ use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use directories::UserDirs;
-use icy_engine::{CreationOptions, EditableScreen, GraphicsType, ScreenMode, ScreenSink, Sixel};
+use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::serial::CharSize;
@@ -222,7 +222,7 @@ impl CommandSink for QueueingSink {
 
 pub struct TerminalThread {
     // Shared state with UI
-    edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
+    edit_screen: Arc<Mutex<Box<dyn Screen>>>,
 
     // Thread-local state
     connection: Option<Box<dyn Connection>>,
@@ -257,7 +257,7 @@ pub struct TerminalThread {
 
 impl TerminalThread {
     pub fn spawn(
-        edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
+        edit_screen: Arc<Mutex<Box<dyn Screen>>>,
         parser: Box<dyn CommandParser + Send>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -370,7 +370,9 @@ impl TerminalThread {
 
     fn perform_resize(&mut self, width: u16, height: u16) {
         if let Ok(mut state) = self.edit_screen.lock() {
-            state.set_size(icy_engine::Size::new(width as i32, height as i32));
+            if let Some(editable) = state.as_editable() {
+                editable.set_size(icy_engine::Size::new(width as i32, height as i32));
+            }
         }
     }
 
@@ -623,7 +625,9 @@ impl TerminalThread {
             let _ = conn.shutdown().await;
         }
         if let Ok(mut state) = self.edit_screen.lock() {
-            state.caret_default_colors();
+            if let Some(editable) = state.as_editable() {
+                editable.caret_default_colors();
+            }
         }
         self.process_data(b"\r\nNO CARRIER\r\n").await;
 
@@ -844,7 +848,9 @@ impl TerminalThread {
                                 Ok(sixel) => {
                                     if let Ok(mut screen) = self.edit_screen.lock() {
                                         let pos = screen.caret_position();
-                                        screen.add_sixel(pos, sixel);
+                                        if let Some(editable) = screen.as_editable() {
+                                            editable.add_sixel(pos, sixel);
+                                        }
                                     }
                                     // let the sixel update.
                                     tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
@@ -894,193 +900,200 @@ impl TerminalThread {
                         continue;
                     }
                     QueuedCommand::ResizeTerminal(width, height) => {
-                        screen.set_size(icy_engine::Size::new(*width as i32, *height as i32));
+                        if let Some(editable) = screen.as_editable() {
+                            editable.set_size(icy_engine::Size::new(*width as i32, *height as i32));
+                        }
                         drop(screen);
                         continue;
                     }
                     _ => {}
                 }
 
-                // Now create sink for normal command processing
-                let mut screen_sink = ScreenSink::new(&mut **screen);
+                // Get editable screen for command processing
+                if let Some(editable) = screen.as_editable() {
+                    // Now create sink for normal command processing
+                    let mut screen_sink = ScreenSink::new(editable);
 
-                // Process this command
-                match cmd {
-                    QueuedCommand::Print(text, inverse_video) => {
-                        if inverse_video {
-                            // Drop sink to get direct mutable access
-                            drop(screen_sink);
-
-                            // Apply inverse video: swap fg/bg in the attribute
-                            let mut attr = screen.caret().attribute;
-                            let fg = attr.get_foreground();
-                            let bg = attr.get_background();
-                            attr.set_foreground(bg);
-                            attr.set_background(fg);
-
-                            // Print each character with swapped colors
-                            for &byte in &text {
-                                let ch = icy_engine::AttributedChar::new(byte as char, attr);
-                                screen.print_char(ch);
-                            }
-
-                            // Recreate sink for following commands
-                            screen_sink = ScreenSink::new(&mut **screen);
-                        } else {
-                            screen_sink.print(&text);
-                        }
-                    }
-                    QueuedCommand::Command(parser_cmd) => {
-                        screen_sink.emit(parser_cmd);
-                    }
-                    QueuedCommand::Rip(rip_cmd) => {
-                        screen_sink.emit_rip(rip_cmd);
-                    }
-                    QueuedCommand::Skypix(skypix_cmd) => {
-                        screen_sink.emit_skypix(skypix_cmd);
-                    }
-                    QueuedCommand::Igs(igs_cmd) => {
-                        screen_sink.emit_igs(igs_cmd);
-                    }
-                    QueuedCommand::DeviceControl(dcs) => {
-                        screen_sink.device_control(dcs);
-                    }
-                    QueuedCommand::OperatingSystemCommand(osc) => {
-                        screen_sink.operating_system_command(osc);
-                    }
-                    QueuedCommand::Aps(data) => {
-                        screen_sink.aps(&data);
-                    }
-                    _ => {}
-                }
-
-                // Process more commands if we haven't exceeded max lock time
-                while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
-                    let next_cmd = {
-                        if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
-                            queue.pop_front()
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(next_cmd) = next_cmd {
-                        // Check if next command needs to be outside lock
-                        match &next_cmd {
-                            QueuedCommand::Igs(IgsCommand::PauseSeconds { .. })
-                            | QueuedCommand::Igs(IgsCommand::VsyncPause { .. })
-                            | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
-                            | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
-                            | QueuedCommand::Igs(IgsCommand::StopAllSound)
-                            | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
-                            | QueuedCommand::Igs(IgsCommand::SetEffectLoops { .. })
-                            | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
-                            | QueuedCommand::Igs(IgsCommand::Noise { .. })
-                            | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
-                            | QueuedCommand::Music(_)
-                            | QueuedCommand::Bell
-                            | QueuedCommand::TerminalRequest(_) => {
-                                // Put it back and break to process outside lock
-                                if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
-                                    queue.push_front(next_cmd);
-                                }
-                                break;
-                            }
-                            _ => {}
-                        }
-
-                        // Handle special commands that need direct screen access
-                        match &next_cmd {
-                            QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
-                                // Need to drop sink temporarily for immutable borrow
+                    // Process this command
+                    match cmd {
+                        QueuedCommand::Print(text, inverse_video) => {
+                            if inverse_video {
+                                // Drop sink to get direct mutable access
                                 drop(screen_sink);
-                                match query {
-                                    AskQuery::VersionNumber => {
-                                        if let Some(conn) = &mut self.connection {
-                                            let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
-                                        }
+
+                                // Apply inverse video: swap fg/bg in the attribute
+                                let mut attr = editable.caret().attribute;
+                                let fg = attr.get_foreground();
+                                let bg = attr.get_background();
+                                attr.set_foreground(bg);
+                                attr.set_background(fg);
+
+                                // Print each character with swapped colors
+                                for &byte in &text {
+                                    let ch = icy_engine::AttributedChar::new(byte as char, attr);
+                                    editable.print_char(ch);
+                                }
+
+                                // Recreate sink for following commands
+                                screen_sink = ScreenSink::new(editable);
+                            } else {
+                                screen_sink.print(&text);
+                            }
+                        }
+                        QueuedCommand::Command(parser_cmd) => {
+                            screen_sink.emit(parser_cmd);
+                        }
+                        QueuedCommand::Rip(rip_cmd) => {
+                            screen_sink.emit_rip(rip_cmd);
+                        }
+                        QueuedCommand::Skypix(skypix_cmd) => {
+                            screen_sink.emit_skypix(skypix_cmd);
+                        }
+                        QueuedCommand::Igs(igs_cmd) => {
+                            screen_sink.emit_igs(igs_cmd);
+                        }
+                        QueuedCommand::DeviceControl(dcs) => {
+                            screen_sink.device_control(dcs);
+                        }
+                        QueuedCommand::OperatingSystemCommand(osc) => {
+                            screen_sink.operating_system_command(osc);
+                        }
+                        QueuedCommand::Aps(data) => {
+                            screen_sink.aps(&data);
+                        }
+                        _ => {}
+                    }
+
+                    // Process more commands if we haven't exceeded max lock time
+                    while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
+                        let next_cmd = {
+                            if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
+                                queue.pop_front()
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(next_cmd) = next_cmd {
+                            // Check if next command needs to be outside lock
+                            match &next_cmd {
+                                QueuedCommand::Igs(IgsCommand::PauseSeconds { .. })
+                                | QueuedCommand::Igs(IgsCommand::VsyncPause { .. })
+                                | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
+                                | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
+                                | QueuedCommand::Igs(IgsCommand::StopAllSound)
+                                | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
+                                | QueuedCommand::Igs(IgsCommand::SetEffectLoops { .. })
+                                | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
+                                | QueuedCommand::Igs(IgsCommand::Noise { .. })
+                                | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
+                                | QueuedCommand::Music(_)
+                                | QueuedCommand::Bell
+                                | QueuedCommand::TerminalRequest(_) => {
+                                    // Put it back and break to process outside lock
+                                    if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
+                                        queue.push_front(next_cmd);
                                     }
-                                    AskQuery::CurrentResolution => {
-                                        if let GraphicsType::IGS(mode) = screen.graphics_type() {
+                                    break;
+                                }
+                                _ => {}
+                            }
+
+                            // Handle special commands that need direct screen access
+                            match &next_cmd {
+                                QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
+                                    // Need to drop sink temporarily for immutable borrow
+                                    drop(screen_sink);
+                                    match query {
+                                        AskQuery::VersionNumber => {
                                             if let Some(conn) = &mut self.connection {
-                                                let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
+                                                let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
                                             }
                                         }
+                                        AskQuery::CurrentResolution => {
+                                            if let GraphicsType::IGS(mode) = editable.graphics_type() {
+                                                if let Some(conn) = &mut self.connection {
+                                                    let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
+                                                }
+                                            }
+                                        }
+                                        _ => {}
                                     }
-                                    _ => {}
+                                    // Recreate sink for remaining commands
+                                    screen_sink = ScreenSink::new(editable);
+                                    continue;
                                 }
-                                // Recreate sink for remaining commands
-                                screen_sink = ScreenSink::new(&mut **screen);
-                                continue;
-                            }
-                            QueuedCommand::ResizeTerminal(width, height) => {
-                                // Need to drop sink for mutable access
-                                drop(screen_sink);
-                                screen.set_size(icy_engine::Size::new(*width as i32, *height as i32));
-                                // Recreate sink
-                                screen_sink = ScreenSink::new(&mut **screen);
-                                continue;
-                            }
-                            _ => {}
-                        }
-
-                        // Process normal command
-                        match next_cmd {
-                            QueuedCommand::Print(text, inverse_video) => {
-                                if inverse_video {
-                                    // Drop sink for direct screen access
+                                QueuedCommand::ResizeTerminal(width, height) => {
+                                    // Need to drop sink for mutable access
                                     drop(screen_sink);
-
-                                    // Apply inverse video
-                                    let mut attr = screen.caret().attribute;
-                                    let fg = attr.get_foreground();
-                                    let bg = attr.get_background();
-                                    attr.set_foreground(bg);
-                                    attr.set_background(fg);
-
-                                    // Print each character with swapped colors
-                                    for &byte in &text {
-                                        let ch = icy_engine::AttributedChar::new(byte as char, attr);
-                                        screen.print_char(ch);
-                                    }
-
+                                    editable.set_size(icy_engine::Size::new(*width as i32, *height as i32));
                                     // Recreate sink
-                                    screen_sink = ScreenSink::new(&mut **screen);
-                                } else {
-                                    screen_sink.print(&text);
+                                    screen_sink = ScreenSink::new(editable);
+                                    continue;
+                                }
+                                _ => {}
+                            }
+
+                            // Process normal command
+                            match next_cmd {
+                                QueuedCommand::Print(text, inverse_video) => {
+                                    if inverse_video {
+                                        // Drop sink for direct screen access
+                                        drop(screen_sink);
+
+                                        // Apply inverse video
+                                        let mut attr = editable.caret().attribute;
+                                        let fg = attr.get_foreground();
+                                        let bg = attr.get_background();
+                                        attr.set_foreground(bg);
+                                        attr.set_background(fg);
+
+                                        // Print each character with swapped colors
+                                        for &byte in &text {
+                                            let ch = icy_engine::AttributedChar::new(byte as char, attr);
+                                            editable.print_char(ch);
+                                        }
+
+                                        // Recreate sink
+                                        screen_sink = ScreenSink::new(editable);
+                                    } else {
+                                        screen_sink.print(&text);
+                                    }
+                                }
+                                QueuedCommand::Command(parser_cmd) => {
+                                    screen_sink.emit(parser_cmd);
+                                }
+                                QueuedCommand::Rip(rip_cmd) => {
+                                    screen_sink.emit_rip(rip_cmd);
+                                }
+                                QueuedCommand::Skypix(skypix_cmd) => {
+                                    screen_sink.emit_skypix(skypix_cmd);
+                                }
+                                QueuedCommand::Igs(igs_cmd) => {
+                                    screen_sink.emit_igs(igs_cmd);
+                                }
+                                QueuedCommand::DeviceControl(dcs) => {
+                                    screen_sink.device_control(dcs);
+                                }
+                                QueuedCommand::OperatingSystemCommand(osc) => {
+                                    screen_sink.operating_system_command(osc);
+                                }
+                                QueuedCommand::Aps(data) => {
+                                    screen_sink.aps(&data);
+                                }
+                                _ => {
+                                    unreachable!("command {:?} not handled", next_cmd);
                                 }
                             }
-                            QueuedCommand::Command(parser_cmd) => {
-                                screen_sink.emit(parser_cmd);
-                            }
-                            QueuedCommand::Rip(rip_cmd) => {
-                                screen_sink.emit_rip(rip_cmd);
-                            }
-                            QueuedCommand::Skypix(skypix_cmd) => {
-                                screen_sink.emit_skypix(skypix_cmd);
-                            }
-                            QueuedCommand::Igs(igs_cmd) => {
-                                screen_sink.emit_igs(igs_cmd);
-                            }
-                            QueuedCommand::DeviceControl(dcs) => {
-                                screen_sink.device_control(dcs);
-                            }
-                            QueuedCommand::OperatingSystemCommand(osc) => {
-                                screen_sink.operating_system_command(osc);
-                            }
-                            QueuedCommand::Aps(data) => {
-                                screen_sink.aps(&data);
-                            }
-                            _ => {
-                                unreachable!("command {:?} not handled", next_cmd);
-                            }
+                        } else {
+                            break;
                         }
-                    } else {
-                        break;
                     }
-                }
 
-                // Update hyperlinks before releasing lock
-                screen.update_hyperlinks();
+                    // Update hyperlinks before releasing lock
+                    if let Some(editable) = screen.as_editable() {
+                        editable.update_hyperlinks();
+                    }
+                } // End of as_editable() block
             }
         } // End of main command processing loop
     }
@@ -1573,9 +1586,7 @@ impl TerminalThread {
 }
 
 // Helper function to create a terminal thread for the UI
-pub fn create_terminal_thread(
-    edit_screen: Arc<Mutex<Box<dyn EditableScreen>>>,
-) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
+pub fn create_terminal_thread(edit_screen: Arc<Mutex<Box<dyn Screen>>>) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
     let parser = icy_parser_core::AnsiParser::new();
     TerminalThread::spawn(edit_screen, Box::new(parser))
 }

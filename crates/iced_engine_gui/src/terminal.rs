@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use iced::{Color, widget};
-use icy_engine::EditableScreen;
+use icy_engine::Screen;
 
 pub struct Terminal {
-    pub screen: Arc<Mutex<Box<dyn EditableScreen>>>,
+    pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub font_size: f32,
     pub char_width: f32,
     pub char_height: f32,
@@ -13,7 +13,7 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(screen: Arc<Mutex<Box<dyn EditableScreen>>>) -> Self {
+    pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
         Self {
             screen,
             font_size: 16.0,

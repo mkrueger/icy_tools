@@ -188,17 +188,19 @@ impl MainWindow {
 
                         // Display error message in terminal
                         if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
-                            screen.clear_screen();
+                            if let Some(editable) = screen.as_editable() {
+                                editable.clear_screen();
 
-                            // Write error message
-                            for ch in error_msg.chars() {
-                                screen.print_char(icy_engine::AttributedChar::new(
-                                    ch,
-                                    icy_engine::TextAttribute::from_color(4, 0), // Red on black
-                                ));
+                                // Write error message
+                                for ch in error_msg.chars() {
+                                    editable.print_char(icy_engine::AttributedChar::new(
+                                        ch,
+                                        icy_engine::TextAttribute::from_color(4, 0), // Red on black
+                                    ));
+                                }
+                                editable.cr();
+                                editable.lf();
                             }
-                            screen.cr();
-                            screen.lf();
                         }
 
                         self.state.mode = MainWindowMode::ShowTerminal;
@@ -253,7 +255,11 @@ impl MainWindow {
             }
             Message::SendData(data) => {
                 self.clear_selection();
-                self.terminal_window.terminal.screen.lock().unwrap().set_scroll_position(0);
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    if let Some(editable) = screen.as_editable() {
+                        editable.set_scroll_position(0);
+                    }
+                }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
@@ -262,7 +268,9 @@ impl MainWindow {
                 let mut screen = self.terminal_window.terminal.screen.lock().unwrap();
                 let _ = screen.clear_selection();
                 let buffer_type = screen.buffer_type();
-                screen.set_scroll_position(0);
+                if let Some(editable) = screen.as_editable() {
+                    editable.set_scroll_position(0);
+                }
                 drop(screen);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
@@ -276,8 +284,10 @@ impl MainWindow {
             Message::RipCommand(clear_screen, cmd) => {
                 let lock = &mut self.terminal_window.terminal.screen.lock().unwrap();
                 if clear_screen {
-                    lock.clear_screen();
-                    lock.reset_terminal();
+                    if let Some(editable) = lock.as_editable() {
+                        editable.clear_screen();
+                        editable.reset_terminal();
+                    }
                 }
                 let buffer_type = lock.buffer_type();
                 // Send the RIP command
@@ -509,10 +519,12 @@ impl MainWindow {
 
             Message::ScrollRelative(lines) => {
                 let mut state = self.terminal_window.terminal.screen.lock().unwrap();
-                let current_offset = state.scrollback_position() as i32;
-                let max_offset = state.get_max_scrollback_offset() as i32;
-                let new_offset = (current_offset - lines).clamp(0, max_offset) as usize;
-                state.set_scroll_position(new_offset);
+                if let Some(editable) = state.as_editable() {
+                    let current_offset = editable.scrollback_position() as i32;
+                    let max_offset = editable.get_max_scrollback_offset() as i32;
+                    let new_offset = (current_offset - lines).clamp(0, max_offset) as usize;
+                    editable.set_scroll_position(new_offset);
+                }
                 Task::none()
             }
 
@@ -625,8 +637,10 @@ impl MainWindow {
             }
             Message::ClearScreen => {
                 if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
-                    edit_screen.clear_scrollback();
-                    edit_screen.clear_screen();
+                    if let Some(editable) = edit_screen.as_editable() {
+                        editable.clear_scrollback();
+                        editable.clear_screen();
+                    }
                 }
                 Task::none()
             }

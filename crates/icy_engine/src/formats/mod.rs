@@ -245,8 +245,10 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
     let real_height = result.buffer.get_line_count().max(result.caret.y + 1);
     result.buffer.set_height(real_height);
 
-    for y in 0..result.get_height() {
-        for x in 0..result.get_width() {
+    let height = result.get_height();
+    let width = result.get_width();
+    for y in 0..height {
+        for x in 0..width {
             let mut ch = result.get_char((x, y).into());
             if ch.attribute.is_bold() {
                 let fg = ch.attribute.get_foreground();

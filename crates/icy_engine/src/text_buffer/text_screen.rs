@@ -4,8 +4,8 @@ use std::u32;
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, RgbaScreen, SaveOptions,
-    SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, SavedCaretState,
+    Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
 };
 
 pub struct TextScreen {
@@ -98,34 +98,6 @@ impl Screen for TextScreen {
         self.buffer.render_to_rgba(options, self.scan_lines)
     }
 
-    fn get_first_visible_line(&self) -> i32 {
-        self.buffer.get_first_visible_line()
-    }
-
-    fn get_last_visible_line(&self) -> i32 {
-        self.buffer.get_last_visible_line()
-    }
-
-    fn get_first_editable_line(&self) -> i32 {
-        self.buffer.get_first_editable_line()
-    }
-
-    fn get_last_editable_line(&self) -> i32 {
-        self.buffer.get_last_editable_line()
-    }
-
-    fn get_first_editable_column(&self) -> i32 {
-        self.buffer.get_first_editable_column()
-    }
-
-    fn get_last_editable_column(&self) -> i32 {
-        self.buffer.get_last_editable_column()
-    }
-
-    fn line_count(&self) -> usize {
-        self.buffer.get_line_count() as usize
-    }
-
     fn get_font(&self, font_number: usize) -> Option<&BitFont> {
         self.buffer.get_font(font_number)
     }
@@ -146,22 +118,8 @@ impl Screen for TextScreen {
         &self.selection_mask
     }
 
-    fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
-        self.selection_opt = Some(sel);
-        Ok(())
-    }
-
-    fn clear_selection(&mut self) -> EngineResult<()> {
-        self.selection_opt = None;
-        Ok(())
-    }
-
     fn hyperlinks(&self) -> &Vec<HyperLink> {
         &self.buffer.layers[self.current_layer].hyperlinks
-    }
-
-    fn update_hyperlinks(&mut self) {
-        self.buffer.update_hyperlinks();
     }
 
     fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>> {
@@ -190,21 +148,10 @@ impl Screen for TextScreen {
         &self.mouse_fields
     }
 
-    fn upper_left_position(&self) -> Position {
-        match self.terminal_state().origin_mode {
-            crate::OriginMode::UpperLeftCorner => Position {
-                x: 0,
-                y: self.get_first_visible_line(),
-            },
-            crate::OriginMode::WithinMargins => Position {
-                x: 0,
-                y: self.get_first_editable_line(),
-            },
-        }
+    fn get_version(&self) -> u64 {
+        self.buffer.get_version()
     }
-}
 
-impl RgbaScreen for TextScreen {
     fn default_foreground_color(&self) -> u32 {
         7
     }
@@ -215,7 +162,7 @@ impl RgbaScreen for TextScreen {
 
     fn get_resolution(&self) -> Size {
         let font_size = self.get_font(0).unwrap().size();
-        let rect = self.get_size();
+        let rect = self.buffer.get_size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
         Size::new(px_width, px_height)
@@ -225,16 +172,92 @@ impl RgbaScreen for TextScreen {
         panic!("Not supported for TextScreen");
     }
 
-    fn screen_mut(&mut self) -> &mut Vec<u8> {
-        panic!("Not supported for TextScreen");
+    fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
+        self.selection_opt = Some(sel);
+        Ok(())
+    }
+
+    fn clear_selection(&mut self) -> EngineResult<()> {
+        self.selection_opt = None;
+        Ok(())
+    }
+
+    fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
+        Some(self)
+    }
+}
+
+impl EditableScreen for TextScreen {
+    fn get_first_visible_line(&self) -> i32 {
+        self.buffer.get_first_visible_line()
+    }
+
+    fn get_last_visible_line(&self) -> i32 {
+        self.buffer.get_last_visible_line()
+    }
+
+    fn get_first_editable_line(&self) -> i32 {
+        self.buffer.get_first_editable_line()
+    }
+
+    fn get_last_editable_line(&self) -> i32 {
+        self.buffer.get_last_editable_line()
+    }
+
+    fn get_first_editable_column(&self) -> i32 {
+        self.buffer.get_first_editable_column()
+    }
+
+    fn get_last_editable_column(&self) -> i32 {
+        self.buffer.get_last_editable_column()
+    }
+
+    fn get_line(&self, line: usize) -> Option<&Line> {
+        self.buffer.layers[self.current_layer].lines.get(line)
+    }
+
+    fn line_count(&self) -> usize {
+        self.buffer.get_line_count() as usize
     }
 
     fn set_resolution(&mut self, _size: Size) {
         panic!("Not supported for TextScreen");
     }
-}
 
-impl EditableScreen for TextScreen {
+    fn screen_mut(&mut self) -> &mut Vec<u8> {
+        panic!("Not supported for TextScreen");
+    }
+
+    fn set_graphics_type(&mut self, _graphics_type: crate::GraphicsType) {
+        panic!("Not supported for TextScreen");
+    }
+
+    fn update_hyperlinks(&mut self) {
+        self.buffer.update_hyperlinks();
+    }
+
+    fn clear_line(&mut self) {
+        let line = self.caret.position().y;
+        if let Some(l) = self.buffer.layers[self.current_layer].lines.get_mut(line as usize) {
+            l.chars.clear();
+        }
+    }
+
+    fn clear_line_end(&mut self) {
+        let pos = self.caret.position();
+        if let Some(l) = self.buffer.layers[self.current_layer].lines.get_mut(pos.y as usize) {
+            l.chars.truncate(pos.x as usize);
+        }
+    }
+
+    fn clear_line_start(&mut self) {
+        let pos = self.caret.position();
+        if let Some(l) = self.buffer.layers[self.current_layer].lines.get_mut(pos.y as usize) {
+            for i in 0..pos.x.min(l.chars.len() as i32) {
+                l.chars[i as usize] = AttributedChar::default();
+            }
+        }
+    }
     fn clear_mouse_fields(&mut self) {
         self.mouse_fields.clear();
     }
@@ -515,7 +538,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
-        if line >= self.get_line_count() {
+        if line >= self.buffer.get_line_count() {
             return;
         }
         self.buffer.layers[self.current_layer].remove_line(line);
@@ -543,18 +566,6 @@ impl EditableScreen for TextScreen {
             self.buffer.set_size(self.terminal_state().get_size());
         }
         self.buffer.mark_dirty();
-    }
-
-    fn get_version(&self) -> u64 {
-        self.buffer.get_version()
-    }
-
-    fn is_dirty(&self) -> bool {
-        self.buffer.is_dirty()
-    }
-
-    fn clear_dirty(&self) {
-        self.buffer.clear_dirty()
     }
 
     fn mark_dirty(&self) {

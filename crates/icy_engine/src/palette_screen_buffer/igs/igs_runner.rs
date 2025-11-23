@@ -249,8 +249,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                 start_angle.evaluate(&paint.random_bounds),
                 end_angle.evaluate(&paint.random_bounds),
             );
-            paint
-                .draw_elliptical_pieslice_pub(buf, x, y, x_radius, y_radius, start_angle, end_angle);
+            paint.draw_elliptical_pieslice_pub(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
 
         IgsCommand::RoundedRectangles { x1, y1, x2, y2, fill: _ } => {

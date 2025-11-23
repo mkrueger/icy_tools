@@ -507,9 +507,6 @@ impl<'a> CRTShaderProgram<'a> {
                 }
                 *cached_size_guard = size;
                 *cached_font_guard = (font_w, font_h);
-
-                // Clear buffer dirty flag after rendering
-                screen.clear_dirty();
             } else {
                 // Reuse cached images - just pick the right one based on blink state
                 size = *cached_size_guard;

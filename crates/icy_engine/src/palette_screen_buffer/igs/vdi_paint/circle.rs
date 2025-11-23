@@ -35,14 +35,32 @@ impl VdiPaint {
         self.draw_poly(buf, &points, color, false);
     }
 
-    fn draw_elliptical_pieslice_border(&mut self, buf: &mut dyn EditableScreen, center_x: i32, center_y: i32, radius_x: i32, radius_y: i32, start_angle: i32, end_angle: i32) {
+    fn draw_elliptical_pieslice_border(
+        &mut self,
+        buf: &mut dyn EditableScreen,
+        center_x: i32,
+        center_y: i32,
+        radius_x: i32,
+        radius_y: i32,
+        start_angle: i32,
+        end_angle: i32,
+    ) {
         let radius_y = self.calc_circle_y_radius(radius_y);
         let mut points = gdp_curve(center_x, center_y, radius_x, radius_y, start_angle * 10, end_angle * 10);
         points.extend_from_slice(&[center_x, center_y]);
         self.draw_poly(buf, &points, self.fill_color, true);
     }
 
-    fn fill_elliptical_pieslice(&mut self, buf: &mut dyn EditableScreen, center_x: i32, center_y: i32, radius_x: i32, radius_y: i32, start_angle: i32, end_angle: i32) {
+    fn fill_elliptical_pieslice(
+        &mut self,
+        buf: &mut dyn EditableScreen,
+        center_x: i32,
+        center_y: i32,
+        radius_x: i32,
+        radius_y: i32,
+        start_angle: i32,
+        end_angle: i32,
+    ) {
         let radius_y = self.calc_circle_y_radius(radius_y);
         let mut points = gdp_curve(center_x, center_y, radius_x, radius_y, start_angle * 10, end_angle * 10);
         points.extend_from_slice(&[center_x, center_y]);
@@ -88,7 +106,16 @@ impl VdiPaint {
         }
     }
 
-    pub fn draw_arc_pub(&mut self, buf: &mut dyn crate::EditableScreen, center_x: i32, center_y: i32, radius_x: i32, radius_y: i32, start_angle: i32, end_angle: i32) {
+    pub fn draw_arc_pub(
+        &mut self,
+        buf: &mut dyn crate::EditableScreen,
+        center_x: i32,
+        center_y: i32,
+        radius_x: i32,
+        radius_y: i32,
+        start_angle: i32,
+        end_angle: i32,
+    ) {
         self.draw_arc(buf, center_x, center_y, radius_x, radius_y, start_angle, end_angle);
     }
 

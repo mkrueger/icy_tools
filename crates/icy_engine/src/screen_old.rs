@@ -3,8 +3,7 @@ use std::cmp::max;
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection, Sixel,
-    Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret,
+    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection, Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret
 };
 
 #[repr(u8)]
@@ -27,110 +26,49 @@ impl GraphicsType {
     }
 }
 
-/// Core trait for anything that can be displayed
-/// Viewing interface - all screens must implement this
-pub trait Screen: TextPane + Send + Sync {
-    // Core identity
+pub trait Screen: TextPane + Send {
     fn buffer_type(&self) -> crate::BufferType;
-
     fn graphics_type(&self) -> crate::GraphicsType {
         crate::GraphicsType::Text
     }
-
-    // Display properties
-    fn get_resolution(&self) -> Size;
-
-    fn virtual_size(&self) -> Size {
-        self.get_resolution() // Default: no scrollback
-    }
-
-    fn get_font_dimensions(&self) -> Size;
-
     fn scan_lines(&self) -> bool;
 
-    // Rendering
-    fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>);
-
-    fn render_region_to_rgba(&self, _region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
-        // Default implementation: render full and crop
-        //let (full_size, full_pixels) = self.render_to_rgba(options);
-        //crop_region(&full_pixels, full_size, region)
-
-        todo!("Implement render_region_to_rgba for specific screen types");
+    fn set_graphics_type(&mut self, _graphics_type: crate::GraphicsType) {
+        panic!("graphics_type_mut not implemented for this Screen type");
     }
 
-    // Visual state
-    fn palette(&self) -> &Palette;
     fn ice_mode(&self) -> IceMode;
-    fn get_font(&self, font_number: usize) -> Option<&BitFont>;
-    fn font_count(&self) -> usize;
 
-    // Version for change tracking
-    fn get_version(&self) -> u64;
-
-    // Default foreground color
-    fn default_foreground_color(&self) -> u32;
-    fn max_base_colors(&self) -> u32;
-
-    // Optional text content access (for copy/paste)
-    fn get_copy_text(&self) -> Option<String> {
-        None
-    }
-
-    fn get_copy_rich_text(&self) -> Option<String> {
-        None
-    }
-
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
-        None
-    }
-
-    // Optional interactive elements
-    fn hyperlinks(&self) -> &Vec<HyperLink>;
-
-    fn mouse_fields(&self) -> &Vec<MouseField>;
-
-    // Selection support
-    fn get_selection(&self) -> Option<Selection>;
-    fn selection_mask(&self) -> &crate::SelectionMask;
-
-    // Selection management (mutable)
-    fn set_selection(&mut self, sel: Selection) -> EngineResult<()>;
-    fn clear_selection(&mut self) -> EngineResult<()>;
-
-    // Terminal state (read-only for viewing)
     fn terminal_state(&self) -> &TerminalState;
+
+    fn palette(&self) -> &Palette;
+
     fn caret(&self) -> &caret::Caret;
 
     fn caret_position(&self) -> Position {
         self.caret().position()
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>>;
+    // fn render_region_to_rgba(&self, px_region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>);
 
-    // Access to editor if this screen is editable
-    fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
-        None
-    }
+    fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>);
 
-    // Direct pixel access (for some operations)
-    fn screen(&self) -> &[u8];
-}
-
-/// Trait for screens that can be edited
-/// Extends Screen with editing operations
-pub trait EditableScreen: Screen {
-    // Utility methods for editing operations
     fn get_first_visible_line(&self) -> i32;
+
     fn get_last_visible_line(&self) -> i32;
+
     fn get_first_editable_line(&self) -> i32;
+
     fn get_last_editable_line(&self) -> i32;
+
     fn get_first_editable_column(&self) -> i32;
+
     fn get_last_editable_column(&self) -> i32;
 
-    // Line access for editing
-    fn get_line(&self, line: usize) -> Option<&Line>;
-    fn line_count(&self) -> usize;
+    fn get_font_dimensions(&self) -> Size;
+    fn get_font(&self, font_number: usize) -> Option<&BitFont>;
+
+    fn font_count(&self) -> usize;
 
     #[must_use]
     fn upper_left_position(&self) -> Position {
@@ -146,26 +84,52 @@ pub trait EditableScreen: Screen {
         }
     }
 
-    // Mouse field management
+    fn line_count(&self) -> usize;
+
+    fn get_selection(&self) -> Option<Selection>;
+
+    fn selection_mask(&self) -> &crate::SelectionMask;
+
+    fn set_selection(&mut self, sel: Selection) -> EngineResult<()>;
+
+    fn clear_selection(&mut self) -> EngineResult<()>;
+
+    fn hyperlinks(&self) -> &Vec<HyperLink>;
+
+    fn update_hyperlinks(&mut self);
+
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>>;
+
+    fn get_copy_text(&self) -> Option<String>;
+    fn get_copy_rich_text(&self) -> Option<String>;
+    fn get_clipboard_data(&self) -> Option<Vec<u8>>;
+
+    fn mouse_fields(&self) -> &Vec<MouseField>;
+}
+
+pub trait RgbaScreen: Screen {
+    // Dirty tracking for rendering optimization
+    fn get_version(&self) -> u64;
+
+    fn default_foreground_color(&self) -> u32;
+    fn max_base_colors(&self) -> u32;
+    fn get_resolution(&self) -> Size;
+    fn set_resolution(&mut self, size: Size);
+
+    fn screen(&self) -> &[u8];
+    fn screen_mut(&mut self) -> &mut Vec<u8>;
+}
+
+pub trait EditableScreen: RgbaScreen {
     fn clear_mouse_fields(&mut self);
+
     fn add_mouse_field(&mut self, mouse_field: MouseField);
 
-    // Mutable state access
     fn ice_mode_mut(&mut self) -> &mut IceMode;
+
     fn caret_mut(&mut self) -> &mut caret::Caret;
-    fn palette_mut(&mut self) -> &mut Palette;
-    fn buffer_type_mut(&mut self) -> &mut crate::BufferType;
-    fn terminal_state_mut(&mut self) -> &mut TerminalState;
 
-    // Graphics type management
-    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType);
-
-    // Resolution management
-    fn set_resolution(&mut self, size: Size);
     fn reset_resolution(&mut self) {}
-
-    // Caret and terminal management
-    fn reset_terminal(&mut self);
 
     fn caret_default_colors(&mut self) {
         let font_page = self.caret_mut().font_page();
@@ -176,121 +140,26 @@ pub trait EditableScreen: Screen {
         };
     }
 
-    // Font management
+    fn palette_mut(&mut self) -> &mut Palette;
+
+    fn buffer_type_mut(&mut self) -> &mut crate::BufferType;
+
+    fn terminal_state_mut(&mut self) -> &mut TerminalState;
+
+    fn reset_terminal(&mut self);
+
+    fn insert_line(&mut self, line: usize, new_line: Line);
+
     fn set_font(&mut self, font_number: usize, font: BitFont);
+
     fn remove_font(&mut self, font_number: usize) -> Option<BitFont>;
+
     fn clear_font_table(&mut self);
 
-    // Size management
     fn set_size(&mut self, size: Size);
-    fn set_height(&mut self, height: i32);
 
-    // Change tracking
     fn mark_dirty(&self);
 
-    // Line operations
-    fn insert_line(&mut self, line: usize, new_line: Line);
-    fn remove_terminal_line(&mut self, line: i32);
-    fn insert_terminal_line(&mut self, line: i32);
-
-    // Character operations
-    fn set_char(&mut self, pos: Position, ch: AttributedChar);
-
-    fn print_char(&mut self, ch: AttributedChar) {
-        if self.caret().insert_mode {
-            self.ins();
-        }
-        let is_terminal = self.terminal_state().is_terminal_buffer;
-        if !is_terminal && self.caret().y + 1 > self.get_height() {
-            self.set_height(self.caret().y + 1);
-        }
-        let mut caret_pos = self.caret_position();
-
-        self.set_char(caret_pos, ch);
-        caret_pos.x += 1;
-        // left/right margin only valued inside margins - this way it's possible to print beyond right margin for updating UI
-        // without resetting margins
-        let in_margins = self.get_first_editable_line() <= caret_pos.y && caret_pos.y <= self.get_last_editable_line();
-        let last_col = if in_margins { self.get_last_editable_column() } else { self.get_width() - 1 };
-
-        let should_break_line = caret_pos.x > last_col;
-        if should_break_line {
-            // lf needs to be in margins, if there are some.
-            caret_pos.x = last_col;
-            if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                self.lf();
-                return;
-            }
-        }
-        self.set_caret_position(caret_pos);
-    }
-
-    fn print_value(&mut self, ch: u16) {
-        if let Some(ch) = char::from_u32(ch as u32) {
-            let ch = AttributedChar::new(ch, self.caret().attribute);
-            self.print_char(ch);
-        }
-    }
-
-    // Scrolling
-    fn scroll_up(&mut self);
-    fn scroll_down(&mut self);
-    fn scroll_left(&mut self);
-    fn scroll_right(&mut self);
-
-    // Scrollback management
-    fn clear_scrollback(&mut self);
-    fn get_max_scrollback_offset(&self) -> usize;
-    fn scrollback_position(&self) -> usize;
-    fn set_scroll_position(&mut self, line: usize);
-
-    // Clear operations
-    fn clear_screen(&mut self);
-    fn clear_line(&mut self);
-    fn clear_line_end(&mut self);
-    fn clear_line_start(&mut self);
-
-    fn clear_buffer_down(&mut self) {
-        let pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
-
-        for y in pos.y..self.get_last_visible_line() {
-            for x in 0..self.get_width() {
-                self.set_char((x, y).into(), ch);
-            }
-        }
-    }
-
-    fn clear_buffer_up(&mut self) {
-        let pos = self.caret_position();
-        let ch: AttributedChar = AttributedChar {
-            attribute: self.caret().attribute,
-            ..Default::default()
-        };
-
-        for y in self.get_first_visible_line()..pos.y {
-            for x in 0..self.get_width() {
-                self.set_char((x, y).into(), ch);
-            }
-        }
-    }
-
-    // Hyperlink management
-    fn update_hyperlinks(&mut self);
-    fn add_hyperlink(&mut self, link: crate::HyperLink);
-
-    // Sixel support
-    fn add_sixel(&mut self, pos: Position, sixel: Sixel);
-
-    // Caret positioning
-    fn set_caret_position(&mut self, pos: Position) {
-        self.caret_mut().set_position(pos);
-    }
-
-    // Terminal control sequences
     fn lf(&mut self) {
         let _was_ooe = self.caret().y > self.get_last_editable_line();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
@@ -319,11 +188,15 @@ pub trait EditableScreen: Screen {
         self.limit_caret_pos(in_margin);
     }
 
+    fn add_sixel(&mut self, pos: Position, sixel: Sixel);
+
+    /// (form feed, FF, \f, ^L), to cause a printer to eject paper to the top of the next page, or a video terminal to clear the screen.
     fn ff(&mut self) {
         self.reset_terminal();
         self.clear_screen();
     }
 
+    /// (carriage return, CR, \r, ^M), moves the printing position to the start of the line.
     fn cr(&mut self) {
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().x = 0;
@@ -340,6 +213,8 @@ pub trait EditableScreen: Screen {
         self.set_caret_position(pos);
     }
 
+    /// Delete character at caret position, shifting remaining characters in the line left.
+    /// Implements a slower fallback using only get_char/set_char APIs.
     fn del(&mut self) {
         let pos = self.caret_position();
         let line_len = self.get_line_length(pos.y);
@@ -359,6 +234,8 @@ pub trait EditableScreen: Screen {
         self.set_char((line_len - 1, pos.y).into(), blank);
     }
 
+    /// Insert a blank character at caret, shifting existing characters right.
+    /// Uses get_char/set_char only; slower but generic.
     fn ins(&mut self) {
         let pos = self.caret_position();
         if pos.x < 0 || pos.y < 0 {
@@ -387,6 +264,7 @@ pub trait EditableScreen: Screen {
         self.caret_mut().x = (pos.x + 1).min(x);
     }
 
+    /// (backspace, BS, \b, ^H), may overprint the previous character
     fn bs(&mut self) {
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
             && self.caret().x == 0
@@ -492,6 +370,7 @@ pub trait EditableScreen: Screen {
         self.limit_caret_pos(in_margin);
     }
 
+    /// Moves the cursor down one line in the same column. If the cursor is at the bottom margin, the page scrolls up.
     fn index(&mut self) {
         let mut pos = self.caret_position();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
@@ -534,6 +413,133 @@ pub trait EditableScreen: Screen {
         }
     }
 
+    fn print_value(&mut self, ch: u16) {
+        if let Some(ch) = char::from_u32(ch as u32) {
+            let ch = AttributedChar::new(ch, self.caret().attribute);
+            self.print_char(ch);
+        }
+    }
+
+    fn set_char(&mut self, pos: Position, ch: AttributedChar);
+
+    fn print_char(&mut self, ch: AttributedChar) {
+        if self.caret().insert_mode {
+            self.ins();
+        }
+        let is_terminal = self.terminal_state().is_terminal_buffer;
+        if !is_terminal && self.caret().y + 1 > self.get_height() {
+            self.set_height(self.caret().y + 1);
+        }
+        let mut caret_pos = self.caret_position();
+
+        self.set_char(caret_pos, ch);
+        caret_pos.x += 1;
+        // left/right margin only valued inside margins - this way it's possible to print beyond right margin for updating UI
+        // without resetting margins
+        let in_margins = self.get_first_editable_line() <= caret_pos.y && caret_pos.y <= self.get_last_editable_line();
+        let last_col = if in_margins { self.get_last_editable_column() } else { self.get_width() - 1 };
+
+        let should_break_line = caret_pos.x > last_col;
+        if should_break_line {
+            // lf needs to be in margins, if there are some.
+            caret_pos.x = last_col;
+            if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
+                self.lf();
+                return;
+            }
+        }
+        self.set_caret_position(caret_pos);
+    }
+
+    fn scroll_up(&mut self);
+    fn scroll_down(&mut self);
+
+    fn scroll_left(&mut self);
+    fn scroll_right(&mut self);
+
+    fn clear_screen(&mut self);
+
+    fn set_caret_position(&mut self, pos: Position) {
+        self.caret_mut().set_position(pos);
+    }
+
+    fn clear_scrollback(&mut self);
+    fn get_max_scrollback_offset(&self) -> usize;
+    fn scrollback_position(&self) -> usize;
+    fn set_scroll_position(&mut self, line: usize);
+
+    fn clear_buffer_down(&mut self) {
+        let pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+
+        for y in pos.y..self.get_last_visible_line() {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
+        }
+    }
+
+    fn clear_buffer_up(&mut self) {
+        let pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+
+        for y in self.get_first_visible_line()..pos.y {
+            for x in 0..self.get_width() {
+                self.set_char((x, y).into(), ch);
+            }
+        }
+    }
+
+    fn clear_line(&mut self) {
+        let mut pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_line_end(&mut self) {
+        let mut pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in pos.x..self.get_width() {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_line_start(&mut self) {
+        let mut pos = self.caret_position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..pos.x {
+            pos.x = x;
+            self.set_char(pos, ch);
+        }
+    }
+
+    fn remove_terminal_line(&mut self, line: i32);
+
+    fn insert_terminal_line(&mut self, line: i32);
+
+    fn set_height(&mut self, height: i32);
+
+    fn add_hyperlink(&mut self, link: crate::HyperLink);
+
     fn tab_forward(&mut self) {
         let mut pos = self.caret_position();
         let x = (pos.x / 8 + 1) * 8;
@@ -566,15 +572,14 @@ pub trait EditableScreen: Screen {
     }
 
     fn saved_caret_pos(&mut self) -> &mut Position;
+
     fn saved_cursor_state(&mut self) -> &mut SavedCaretState;
 
-    // Protocol command handlers
     fn handle_rip_command(&mut self, cmd: RipCommand);
-    fn handle_skypix_command(&mut self, cmd: SkypixCommand);
-    fn handle_igs_command(&mut self, cmd: IgsCommand);
 
-    // Direct pixel access mut
-    fn screen_mut(&mut self) -> &mut Vec<u8>;
+    fn handle_skypix_command(&mut self, cmd: SkypixCommand);
+
+    fn handle_igs_command(&mut self, cmd: IgsCommand);
 }
 
 #[derive(Clone, Default)]

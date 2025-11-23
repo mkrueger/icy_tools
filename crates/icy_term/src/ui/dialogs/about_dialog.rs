@@ -4,7 +4,7 @@ use iced::{
 };
 use iced_engine_gui::ui::{button_row, dialog_area, primary_button, separator};
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
-use icy_engine::{AttributedChar, EditableScreen, Position, TextAttribute, TextBuffer, TextPane, TextScreen};
+use icy_engine::{AttributedChar, Position, Screen, TextAttribute, TextBuffer, TextPane, TextScreen};
 use icy_parser_core::MusicOption;
 use std::sync::{Arc, Mutex};
 
@@ -59,7 +59,7 @@ impl AboutDialog {
         }
         screen.caret.visible = false;
 
-        let edit_screen: Arc<Mutex<Box<dyn EditableScreen>>> = Arc::new(Mutex::new(Box::new(screen)));
+        let edit_screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(screen)));
         let terminal = Terminal::new(edit_screen.clone());
 
         Self { terminal }

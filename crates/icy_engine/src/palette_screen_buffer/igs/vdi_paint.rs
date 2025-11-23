@@ -43,7 +43,7 @@ pub struct VdiPaint {
     pub user_patterns: [Vec<u16>; 8],
     pub scaling_mode: icy_parser_core::GraphicsScalingMode,
 
-    pub random_bounds: ParameterBounds
+    pub random_bounds: ParameterBounds,
 }
 
 unsafe impl Send for VdiPaint {}
@@ -114,11 +114,11 @@ impl VdiPaint {
 
     pub fn reset_attributes(&mut self) {
         let default_color = self.terminal_resolution.default_fg_color();
-        
+
         // Reset polymarker attributes (vsm_*)
         self.polymarker_type = PolymarkerKind::Point;
         self.polymarker_color = default_color;
-        self.drawing_mode = DrawingMode::Replace;  // vswr_mode
+        self.drawing_mode = DrawingMode::Replace; // vswr_mode
         self.polymarker_size = 1;
 
         // Reset line attributes (vsl_*)
@@ -135,8 +135,8 @@ impl VdiPaint {
         // Reset text attributes (vst_*)
         self.text_color = default_color;
         self.text_rotation = TextRotation::Degrees0;
-        self.text_effects = TextEffects::NORMAL;  // vst_effects(0)
-        self.text_size = 9;  // Default text height
+        self.text_effects = TextEffects::NORMAL; // vst_effects(0)
+        self.text_size = 9; // Default text height
 
         // Reset drawing position
         self.draw_to_position = Position::new(0, 0);
@@ -216,8 +216,7 @@ impl VdiPaint {
         // Apply drawing mode via set_pixel_with_mode
         self.set_pixel_with_mode(buf, x, y, color, mask);
     }
-    
-    
+
     pub fn set_fill_pattern(&mut self, pattern_type: PatternType) {
         self.fill_pattern_type = pattern_type;
     }
