@@ -51,7 +51,7 @@ pub struct GraphicsScreenBuffer {
 
     // Scan lines for Atari ST Medium resolution (doubles line height)
     pub scan_lines: bool,
-    pub scrollback_buffer: Arc<Mutex<Box<dyn Screen>>>,
+    pub scrollback_buffer: ScrollbackBuffer,
 }
 
 impl GraphicsScreenBuffer {
@@ -146,7 +146,7 @@ impl GraphicsScreenBuffer {
             saved_cursor_state: SavedCaretState::default(),
             graphics_type,
             scan_lines,
-            scrollback_buffer: Arc::new(Mutex::new(Box::new(ScrollbackBuffer::new()))),
+            scrollback_buffer: ScrollbackBuffer::new(),
         }
     }
 
@@ -418,11 +418,7 @@ impl Screen for GraphicsScreenBuffer {
     }
 
     fn set_scrollback_buffer_size(&mut self, buffer_size: usize) {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.set_buffer_size(buffer_size);
-            }
-        }
+        self.scrollback_buffer.set_buffer_size(buffer_size);
     }
 
     fn set_selection(&mut self, _selection: Selection) -> EngineResult<()> {
@@ -453,12 +449,9 @@ impl Screen for GraphicsScreenBuffer {
 
 impl EditableScreen for GraphicsScreenBuffer {
     fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.snapshot_current_screen(self);
-            }
-        }
-        Some(self.scrollback_buffer.clone())
+        let mut scrollback = self.scrollback_buffer.clone();
+        scrollback.snapshot_current_screen(self);
+        return Some(Arc::new(Mutex::new(Box::new(scrollback))));
     }
 
     fn get_first_visible_line(&self) -> i32 {

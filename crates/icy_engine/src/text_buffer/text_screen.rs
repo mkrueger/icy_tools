@@ -25,7 +25,7 @@ pub struct TextScreen {
     pub saved_caret_state: SavedCaretState,
     pub scan_lines: bool,
 
-    pub scrollback_buffer: Arc<Mutex<Box<dyn Screen>>>,
+    pub scrollback_buffer: ScrollbackBuffer,
 }
 
 impl TextScreen {
@@ -40,7 +40,7 @@ impl TextScreen {
             saved_caret_pos: Position::default(),
             saved_caret_state: SavedCaretState::default(),
             scan_lines: false,
-            scrollback_buffer: Arc::new(Mutex::new(Box::new(ScrollbackBuffer::new()))),
+            scrollback_buffer: ScrollbackBuffer::new(),
         }
     }
 
@@ -57,11 +57,7 @@ impl TextScreen {
         let (size, rgba_data) = self.buffer.render_to_rgba(&options, self.scan_lines);
 
         // Add the line to the scrollback buffer
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.add_chunk(rgba_data, size);
-            }
-        }
+        self.scrollback_buffer.add_chunk(rgba_data, size);
     }
 }
 
@@ -203,11 +199,7 @@ impl Screen for TextScreen {
     }
 
     fn set_scrollback_buffer_size(&mut self, buffer_size: usize) {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.set_buffer_size(buffer_size);
-            }
-        }
+        self.scrollback_buffer.set_buffer_size(buffer_size);
     }
 
     fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
@@ -231,12 +223,9 @@ impl Screen for TextScreen {
 
 impl EditableScreen for TextScreen {
     fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.snapshot_current_screen(self);
-            }
-        }
-        Some(self.scrollback_buffer.clone())
+        let mut scrollback = self.scrollback_buffer.clone();
+        scrollback.snapshot_current_screen(self);
+        return Some(Arc::new(Mutex::new(Box::new(scrollback))));
     }
 
     fn get_first_visible_line(&self) -> i32 {
@@ -573,11 +562,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_scrollback(&mut self) {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.clear();
-            }
-        }
+        self.scrollback_buffer.clear();
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
