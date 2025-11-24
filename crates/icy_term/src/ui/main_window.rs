@@ -1104,6 +1104,23 @@ impl MainWindow {
             Event::Mouse(iced::mouse::Event::CursorLeft) => {
                 return Some(Message::CursorLeftWindow);
             }
+            Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
+                // Only handle mouse wheel in scrollback mode
+                if self.terminal_window.terminal.is_in_scrollback_mode() {
+                    let line_height = self.terminal_window.terminal.char_height;
+                    let scroll_amount = match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. } => {
+                            // Each line of scroll = one character line
+                            -y * line_height
+                        }
+                        iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                            // Direct pixel scrolling
+                            -y
+                        }
+                    };
+                    return Some(Message::ScrollViewport(0.0, scroll_amount));
+                }
+            }
 
             _ => {}
         }

@@ -85,18 +85,18 @@ impl TerminalWindow {
             let scrollbar_position = self.terminal.scrollbar.scroll_position;
             let max_scroll_y = self.terminal.viewport.max_scroll_y();
 
-            let scrollbar_view = ScrollbarOverlay::new(
-                scrollbar_visibility,
-                scrollbar_position,
-                scrollbar_height_ratio,
-                max_scroll_y,
-                self.terminal.scrollbar_hover_state.clone(),
-                |x, y| Message::ScrollViewportTo(false, x, y),
-                |is_hovered| Message::ScrollbarHovered(is_hovered),
-            )
-            .view();
-
             if self.terminal.is_in_scrollback_mode() {
+                let scrollbar_view = ScrollbarOverlay::new(
+                    scrollbar_visibility,
+                    scrollbar_position,
+                    scrollbar_height_ratio,
+                    max_scroll_y,
+                    self.terminal.scrollbar_hover_state.clone(),
+                    |x, y| Message::ScrollViewportTo(false, x, y),
+                    |is_hovered| Message::ScrollbarHovered(is_hovered),
+                )
+                .view();
+
                 // Add scroll position indicator if not at bottom
                 let scroll_indicator = container(
                     text(format!("↑ {:04}", scrollback_lines))
@@ -136,17 +136,11 @@ impl TerminalWindow {
                 .width(Length::Fill)
                 .height(Length::Fill)
             } else {
-                // Show terminal with scrollbar overlay (for testing)
-                container(iced::widget::stack![
-                    container(terminal_view).width(Length::Fill).height(Length::Fill),
-                    container(scrollbar_view)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Right)
-                        .align_y(iced::alignment::Vertical::Center)
-                ])
-                .width(Length::Fill)
-                .height(Length::Fill)
+                container(terminal_view)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
             }
         };
 
