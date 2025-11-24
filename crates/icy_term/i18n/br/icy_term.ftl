@@ -34,6 +34,9 @@ settings-scaling-linear = Linear
 settings-terminal-category = Terminal
 settings-terminal-console-beep-checkbox = Beep do console
 settings-terminal-open-settings-dir-button = Abrir diretório de configurações
+settings-terminal-dial-tone = Tom de discagem
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Linhas
 
 settings-keybinds-category = Atalhos
 settings-keybinds-disconnect = Desconectar:

@@ -32,8 +32,11 @@ settings-scaling-nearest = Nejbližší
 settings-scaling-linear = Lineární
 
 settings-terminal-category = Terminál
-settings-terminal-console-beep-checkbox = Pípnutí konzole
+settings-terminal-console-beep-checkbox = Zvuk konzole
 settings-terminal-open-settings-dir-button = Otevřít adresář nastavení
+settings-terminal-dial-tone = Oznamovací tón
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Řádky
 
 settings-keybinds-category = Klávesové zkratky
 settings-keybinds-disconnect = Odpojit:

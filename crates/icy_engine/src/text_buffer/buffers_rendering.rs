@@ -43,6 +43,57 @@ impl TextBuffer {
         }
     }
 
+    /// Render only a specific pixel region (for viewport-based rendering)
+    /// More efficient than rendering full buffer and cropping
+    pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        let font_size = self.get_font(0).unwrap().size();
+
+        // Convert pixel region to character region (round outwards to include partial chars)
+        let char_x = px_region.start.x / font_size.width;
+        let char_y = px_region.start.y / font_size.height;
+        let char_width = ((px_region.start.x + px_region.size.width + font_size.width - 1) / font_size.width) - char_x;
+        let char_height = ((px_region.start.y + px_region.size.height + font_size.height - 1) / font_size.height) - char_y;
+
+        // Clamp to buffer bounds
+        let char_x = char_x.max(0).min(self.get_width());
+        let char_y = char_y.max(0).min(self.get_height());
+        let char_width = char_width.max(0).min(self.get_width() - char_x);
+        let char_height = char_height.max(0).min(self.get_height() - char_y);
+
+        // Create new options with char-based rect
+        let region_options = RenderOptions {
+            rect: Rectangle::from_coords(char_x, char_y, char_x + char_width, char_y + char_height).into(),
+            blink_on: options.blink_on,
+            selection: options.selection,
+            selection_fg: options.selection_fg.clone(),
+            selection_bg: options.selection_bg.clone(),
+        };
+
+        // Render the character region
+        let (full_size, full_pixels) = self.render_to_rgba(&region_options, scan_lines);
+
+        // Now crop to exact pixel bounds within the rendered region
+        let crop_x = px_region.start.x - (char_x * font_size.width);
+        let crop_y = px_region.start.y - (char_y * font_size.height);
+        let crop_width = px_region.size.width.min(full_size.width - crop_x);
+        let crop_height = px_region.size.height.min(full_size.height - crop_y);
+
+        // If no cropping needed, return as-is
+        if crop_x == 0 && crop_y == 0 && crop_width == full_size.width && crop_height == full_size.height {
+            return (full_size, full_pixels);
+        }
+
+        // Extract the exact pixel region
+        let mut cropped_pixels = Vec::with_capacity((crop_width * crop_height * 4) as usize);
+        for y in 0..crop_height {
+            let src_row_start = ((crop_y + y) * full_size.width + crop_x) as usize * 4;
+            let src_row_end = src_row_start + (crop_width as usize * 4);
+            cropped_pixels.extend_from_slice(&full_pixels[src_row_start..src_row_end]);
+        }
+
+        (Size::new(crop_width, crop_height), cropped_pixels)
+    }
+
     pub fn render_to_rgba_into(
         &self,
         options: &RenderOptions,

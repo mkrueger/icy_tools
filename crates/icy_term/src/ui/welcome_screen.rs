@@ -20,7 +20,6 @@ pub fn create_welcome_screen() -> TextScreen {
     .unwrap();
     buffer.buffer_type = icy_engine::BufferType::CP437;
     buffer.terminal_state.is_terminal_buffer = true;
-
     // Find and replace special characters
     let mut ready_position = None;
 

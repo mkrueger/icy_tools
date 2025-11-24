@@ -109,14 +109,13 @@ impl MainWindow {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         let default_export_path = directories::UserDirs::new()
-            .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+            .and_then(|dirs: directories::UserDirs| dirs.document_dir().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
             .join("export.icy");
 
         let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
         let edit_screen = terminal_window.terminal.screen.clone();
 
-        // Create terminal thread
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone());
 
         Self {
@@ -233,6 +232,7 @@ impl MainWindow {
                     screen_mode: address.get_screen_mode(),
                     iemsi_auto_login: options.iemsi.autologin,
                     auto_login_exp: address.auto_login.clone(),
+                    max_scrollback_lines: options.max_scrollback_lines,
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
@@ -255,11 +255,6 @@ impl MainWindow {
             }
             Message::SendData(data) => {
                 self.clear_selection();
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
-                    if let Some(editable) = screen.as_editable() {
-                        editable.set_scroll_position(0);
-                    }
-                }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
             }
@@ -268,9 +263,7 @@ impl MainWindow {
                 let mut screen = self.terminal_window.terminal.screen.lock().unwrap();
                 let _ = screen.clear_selection();
                 let buffer_type = screen.buffer_type();
-                if let Some(editable) = screen.as_editable() {
-                    editable.set_scroll_position(0);
-                }
+
                 drop(screen);
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
@@ -517,17 +510,6 @@ impl MainWindow {
             }
             Message::None => Task::none(),
 
-            Message::ScrollRelative(lines) => {
-                let mut state = self.terminal_window.terminal.screen.lock().unwrap();
-                if let Some(editable) = state.as_editable() {
-                    let current_offset = editable.scrollback_position() as i32;
-                    let max_offset = editable.get_max_scrollback_offset() as i32;
-                    let new_offset = (current_offset - lines).clamp(0, max_offset) as usize;
-                    editable.set_scroll_position(new_offset);
-                }
-                Task::none()
-            }
-
             Message::ToggleFullscreen => {
                 self._is_fullscreen_mode = !self._is_fullscreen_mode;
                 let mode = if self._is_fullscreen_mode {
@@ -644,6 +626,31 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::ShowScrollback => {
+                // Toggle scrollback mode
+                if self.terminal_window.terminal.is_in_scrollback_mode() {
+                    // Exit scrollback mode
+                    self.terminal_window.terminal.exit_scrollback_mode();
+                } else {
+                    // Enter scrollback mode
+                    let scrollback_opt = {
+                        if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                            if let Some(editable) = screen.as_editable() {
+                                editable.snapshot_scrollback()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some(scrollback) = scrollback_opt {
+                        self.terminal_window.terminal.enter_scrollback_mode(scrollback);
+                    }
+                }
+                Task::none()
+            }
             Message::SetFocus(focus) => {
                 self.terminal_window.set_focus(focus);
                 Task::none()
@@ -662,6 +669,29 @@ impl MainWindow {
                         data.push(converted_byte as u8);
                     }
                     let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
+                }
+                Task::none()
+            }
+
+            Message::ScrollViewport(dx, dy) => {
+                self.terminal_window.terminal.viewport.scroll_by(dx, dy);
+                Task::none()
+            }
+
+            Message::ScrollViewportTo(x, y) => {
+                self.terminal_window.terminal.viewport.scroll_to(x, y);
+                Task::none()
+            }
+
+            Message::ViewportTick => {
+                // Update viewport animation
+                self.terminal_window.terminal.viewport.update_animation();
+                Task::none()
+            }
+
+            Message::SetScrollbackBufferSize(buffer_size) => {
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    screen.set_scrollback_buffer_size(buffer_size);
                 }
                 Task::none()
             }
@@ -1096,6 +1126,49 @@ impl MainWindow {
                         physical_key,
                         ..
                     }) => {
+                        // Handle scrollback mode navigation
+                        if self.terminal_window.terminal.is_in_scrollback_mode() {
+                            // Get font height for line-based scrolling
+                            let line_height = self.terminal_window.terminal.char_height;
+                            let page_height = self.terminal_window.terminal.viewport.visible_height;
+
+                            match key {
+                                // ESC exits scrollback mode
+                                keyboard::Key::Named(keyboard::key::Named::Escape) => {
+                                    return Some(Message::ShowScrollback);
+                                }
+                                // Arrow Up: scroll up one line
+                                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
+                                    return Some(Message::ScrollViewport(0.0, -line_height));
+                                }
+                                // Arrow Down: scroll down one line
+                                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                                    return Some(Message::ScrollViewport(0.0, line_height));
+                                }
+                                // Page Up: scroll up one screen
+                                keyboard::Key::Named(keyboard::key::Named::PageUp) => {
+                                    return Some(Message::ScrollViewport(0.0, -page_height));
+                                }
+                                // Page Down: scroll down one screen
+                                keyboard::Key::Named(keyboard::key::Named::PageDown) => {
+                                    return Some(Message::ScrollViewport(0.0, page_height));
+                                }
+                                // Home: scroll to top
+                                keyboard::Key::Named(keyboard::key::Named::Home) => {
+                                    return Some(Message::ScrollViewportTo(0.0, 0.0));
+                                }
+                                // End: scroll to bottom
+                                keyboard::Key::Named(keyboard::key::Named::End) => {
+                                    let max_y = self.terminal_window.terminal.viewport.max_scroll_y();
+                                    return Some(Message::ScrollViewportTo(0.0, max_y));
+                                }
+                                // Any other key exits scrollback mode
+                                _ => {
+                                    return Some(Message::ShowScrollback);
+                                }
+                            }
+                        }
+
                         #[cfg(target_os = "macos")]
                         let cmd_key = modifiers.command();
                         #[cfg(not(target_os = "macos"))]
@@ -1126,6 +1199,7 @@ impl MainWindow {
                                     "x" => return Some(Message::QuitIcyTerm),
                                     "a" => return Some(Message::ShowAboutDialog),
                                     "c" => return Some(Message::ClearScreen),
+                                    "b" => return Some(Message::ShowScrollback),
                                     _ => {}
                                 },
                                 _ => {}

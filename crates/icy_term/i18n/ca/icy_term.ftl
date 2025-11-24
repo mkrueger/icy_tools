@@ -32,8 +32,11 @@ settings-scaling-nearest = Més proper
 settings-scaling-linear = Lineal
 
 settings-terminal-category = Terminal
-settings-terminal-console-beep-checkbox = Beep de consola
-settings-terminal-open-settings-dir-button = Obre el directori de configuració
+settings-terminal-console-beep-checkbox = So de consola
+settings-terminal-open-settings-dir-button = Obrir directori de configuració
+settings-terminal-dial-tone = To de marcatge
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Línies
 
 settings-keybinds-category = Tecles ràpides
 settings-keybinds-disconnect = Desconnectar:

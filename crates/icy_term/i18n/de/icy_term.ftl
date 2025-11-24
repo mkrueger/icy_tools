@@ -35,6 +35,9 @@ settings-scaling-linear = Linear
 settings-terminal-category = Terminal
 settings-terminal-console-beep-checkbox = Konsolen-Signalton
 settings-terminal-open-settings-dir-button = Einstellungsverzeichnis öffnen
+settings-terminal-dial-tone = Wählton
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Zeilen
 
 settings-keybinds-category = Tastatur
 settings-keybinds-disconnect = Trennen:

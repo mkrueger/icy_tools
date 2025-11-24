@@ -1,11 +1,14 @@
 use core::panic;
-use std::u32;
+use std::{
+    sync::{Arc, Mutex},
+    u32,
+};
 
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, RenderOptions, SaveOptions, SavedCaretState,
-    Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
+    SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
 };
 
 pub struct TextScreen {
@@ -21,6 +24,8 @@ pub struct TextScreen {
     pub saved_caret_pos: Position,
     pub saved_caret_state: SavedCaretState,
     pub scan_lines: bool,
+
+    pub scrollback_buffer: Arc<Mutex<Box<dyn Screen>>>,
 }
 
 impl TextScreen {
@@ -35,6 +40,27 @@ impl TextScreen {
             saved_caret_pos: Position::default(),
             saved_caret_state: SavedCaretState::default(),
             scan_lines: false,
+            scrollback_buffer: Arc::new(Mutex::new(Box::new(ScrollbackBuffer::new()))),
+        }
+    }
+
+    fn add_line_to_scrollback(&mut self, i: i32) {
+        let width = self.buffer.get_width();
+
+        // Create render options for a single line
+        let options = RenderOptions {
+            rect: crate::Rectangle::from_coords(0, i, width, i + 1).into(),
+            ..RenderOptions::default()
+        };
+
+        // Render just this line
+        let (size, rgba_data) = self.buffer.render_to_rgba(&options, self.scan_lines);
+
+        // Add the line to the scrollback buffer
+        if let Ok(mut sb) = self.scrollback_buffer.lock() {
+            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
+                scrollback.add_chunk(rgba_data, size);
+            }
         }
     }
 }
@@ -96,6 +122,10 @@ impl Screen for TextScreen {
 
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
         self.buffer.render_to_rgba(options, self.scan_lines)
+    }
+
+    fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.buffer.render_region_to_rgba(px_region, options, self.scan_lines)
     }
 
     fn get_font(&self, font_number: usize) -> Option<&BitFont> {
@@ -172,6 +202,14 @@ impl Screen for TextScreen {
         panic!("Not supported for TextScreen");
     }
 
+    fn set_scrollback_buffer_size(&mut self, buffer_size: usize) {
+        if let Ok(mut sb) = self.scrollback_buffer.lock() {
+            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
+                scrollback.set_buffer_size(buffer_size);
+            }
+        }
+    }
+
     fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
         self.selection_opt = Some(sel);
         Ok(())
@@ -185,9 +223,22 @@ impl Screen for TextScreen {
     fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
         Some(self)
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl EditableScreen for TextScreen {
+    fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
+        if let Ok(mut sb) = self.scrollback_buffer.lock() {
+            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
+                scrollback.snapshot_current_screen(self);
+            }
+        }
+        Some(self.scrollback_buffer.clone())
+    }
+
     fn get_first_visible_line(&self) -> i32 {
         self.buffer.get_first_visible_line()
     }
@@ -303,8 +354,7 @@ impl EditableScreen for TextScreen {
 
     fn scroll_up(&mut self) {
         if self.terminal_state().get_margins_top_bottom().is_none() {
-            let line = self.buffer.layers[0].lines.get(0).cloned().unwrap_or(Line::new());
-            self.buffer.push_to_scrollback(line);
+            self.add_line_to_scrollback(0);
         }
 
         let font_dims = self.get_font_dimensions();
@@ -363,7 +413,7 @@ impl EditableScreen for TextScreen {
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data downward
         for x in start_column..=end_column {
-            ((start_line + 1)..=end_line).rev().for_each(|y| {
+            ((start_line + 1)..=end_line).rev().for_each(|y: i32| {
                 let ch = layer_ref.get_char((x, y - 1).into());
                 layer_ref.set_char((x, y), ch);
             });
@@ -523,18 +573,11 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_scrollback(&mut self) {
-        self.buffer.clear_scrollback();
-    }
-
-    fn get_max_scrollback_offset(&self) -> usize {
-        self.buffer.get_max_scrollback_offset()
-    }
-    fn scrollback_position(&self) -> usize {
-        self.buffer.scrollback_position()
-    }
-
-    fn set_scroll_position(&mut self, line: usize) {
-        self.buffer.set_scroll_position(line);
+        if let Ok(mut sb) = self.scrollback_buffer.lock() {
+            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
+                scrollback.clear();
+            }
+        }
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
@@ -559,6 +602,10 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_screen(&mut self) {
+        for i in 0..self.get_height() {
+            self.add_line_to_scrollback(i);
+        }
+
         self.set_caret_position(Position::default());
         let layer = &mut self.buffer.layers[self.current_layer];
         layer.clear();

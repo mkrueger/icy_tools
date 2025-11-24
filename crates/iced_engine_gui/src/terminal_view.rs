@@ -5,7 +5,6 @@ use icy_engine::MouseEvent;
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Scroll(i32),
     OpenLink(String),
     Copy,
     Paste,
@@ -13,6 +12,7 @@ pub enum Message {
     RipCommand(bool, String),
 
     SendMouseEvent(MouseEvent),
+    ScrollViewport(f32, f32), // dx, dy in pixels
 }
 
 pub struct TerminalView<'a> {

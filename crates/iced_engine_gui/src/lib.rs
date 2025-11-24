@@ -2,6 +2,9 @@ pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
 
+pub mod viewport;
+pub use viewport::*;
+
 pub mod terminal_shader;
 pub use terminal_shader::*;
 

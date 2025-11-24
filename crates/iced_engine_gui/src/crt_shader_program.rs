@@ -30,6 +30,10 @@ impl<'a> CRTShaderProgram<'a> {
         state.caret_blink.update(now);
         state.character_blink.update(now);
 
+        // Update viewport animation
+        // Note: We need mutable access to Terminal, so this will need to be handled differently
+        // For now, mark as needing animation support
+
         // Size change triggers full content redraw
         if let Ok(screen) = self.term.screen.try_lock() {
             if let Some(font) = screen.get_font(0) {
@@ -369,17 +373,18 @@ impl<'a> CRTShaderProgram<'a> {
                             }
                         }
                     } else {
-                        // Normal scrolling when mouse tracking is disabled
+                        // Viewport-based scrolling when mouse tracking is disabled
                         match delta {
-                            mouse::ScrollDelta::Lines { y, .. } => {
-                                let lines = -(*y as i32); // Negative for natural scrolling
-                                return Some(iced::widget::Action::publish(Message::Scroll(lines)));
+                            mouse::ScrollDelta::Lines { x, y, .. } => {
+                                // Scroll by pixel amount based on line height
+                                let scroll_y = *y * 20.0; // ~20 pixels per line
+                                let scroll_x = *x * 10.0; // ~10 pixels per column
+
+                                return Some(iced::widget::Action::publish(Message::ScrollViewport(-scroll_x, -scroll_y)));
                             }
-                            mouse::ScrollDelta::Pixels { y, .. } => {
-                                let lines = -((*y / 20.0) as i32); // Convert pixels to lines
-                                if lines != 0 {
-                                    return Some(iced::widget::Action::publish(Message::Scroll(lines)));
-                                }
+                            mouse::ScrollDelta::Pixels { x, y, .. } => {
+                                // Direct pixel scrolling
+                                return Some(iced::widget::Action::publish(Message::ScrollViewport(-*x, -*y)));
                             }
                         }
                     }
@@ -399,7 +404,6 @@ impl<'a> CRTShaderProgram<'a> {
         let scan_lines;
         // Check if we need to re-render based on buffer version and blink state
         let mut needs_full_render = false;
-
         if let Ok(screen) = self.term.screen.lock() {
             scan_lines = screen.scan_lines();
             if let Some(font) = screen.get_font(0) {
@@ -412,8 +416,9 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Check if buffer version changed (content modified)
             let last_version = *state.last_buffer_version.lock();
-            if current_buffer_version != last_version {
+            if current_buffer_version != last_version || self.term.viewport.changed.load(std::sync::atomic::Ordering::Acquire) {
                 needs_full_render = true;
+                self.term.viewport.changed.store(false, std::sync::atomic::Ordering::Relaxed);
                 *state.last_buffer_version.lock() = current_buffer_version;
             }
 
@@ -463,24 +468,42 @@ impl<'a> CRTShaderProgram<'a> {
                     );
                     (render_on, render_off)
                 } else {
-                    let rect = icy_engine::Rectangle {
-                        start: icy_engine::Position::new(0, 0),
-                        size: icy_engine::Size::new(screen.get_width(), screen.get_height()),
-                    };
-                    let render_on = screen.render_to_rgba(&icy_engine::RenderOptions {
-                        rect: rect.into(),
+                    // Use viewport-based region rendering for both normal and scrollback mode
+                    // Get the actual content resolution
+                    let resolution = screen.get_resolution();
+
+                    // Calculate visible region using scroll offsets
+                    // Note: We use resolution as the visible size since the viewport's visible_size
+                    // might not be updated yet (immutable access in shader)
+                    let viewport_region = self.term.viewport.visible_region_with_size(resolution.width as f32, resolution.height as f32);
+
+                    let base_options = icy_engine::RenderOptions {
+                        rect: icy_engine::Rectangle {
+                            start: icy_engine::Position::new(0, 0),
+                            size: resolution,
+                        }
+                        .into(),
                         blink_on: true,
                         selection,
                         selection_fg: Some(fg_sel.clone()),
                         selection_bg: Some(bg_sel.clone()),
-                    });
-                    let render_off = screen.render_to_rgba(&icy_engine::RenderOptions {
-                        rect: rect.into(),
+                    };
+
+                    let render_on = screen.render_region_to_rgba(viewport_region, &base_options);
+
+                    let base_options_off = icy_engine::RenderOptions {
+                        rect: icy_engine::Rectangle {
+                            start: icy_engine::Position::new(0, 0),
+                            size: resolution,
+                        }
+                        .into(),
                         blink_on: false,
                         selection,
                         selection_fg: Some(fg_sel.clone()),
                         selection_bg: Some(bg_sel.clone()),
-                    });
+                    };
+
+                    let render_off = screen.render_region_to_rgba(viewport_region, &base_options_off);
                     (render_on, render_off)
                 };
 

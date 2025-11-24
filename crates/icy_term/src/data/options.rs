@@ -112,6 +112,9 @@ pub struct Options {
     // pub window_rect: Option<Rect>,
     #[serde(default)]
     pub modems: Vec<Modem>,
+
+    #[serde(default)]
+    pub max_scrollback_lines: usize,
 }
 
 fn default_connect_timeout() -> Duration {
@@ -154,6 +157,7 @@ impl Default for Options {
             dial_tone: DialTone::default(),
             capture_path: String::new(),
             download_path: String::new(),
+            max_scrollback_lines: 2000,
         }
     }
 }

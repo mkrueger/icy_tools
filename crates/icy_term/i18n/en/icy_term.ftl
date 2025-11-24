@@ -35,6 +35,8 @@ settings-terminal-category = Terminal
 settings-terminal-console-beep-checkbox = Console beep
 settings-terminal-open-settings-dir-button = Open settings directory
 settings-terminal-dial-tone = Dial Tone
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Lines
 
 settings-keybinds-category = Keybinds
 settings-keybinds-disconnect = Disconnect:

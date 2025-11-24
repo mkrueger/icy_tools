@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, checkbox, column, pick_list, row},
+    widget::{Space, checkbox, column, pick_list, row, text_input},
 };
 use iced_engine_gui::{
     SECTION_PADDING,
@@ -57,6 +57,7 @@ impl SettingsDialogState {
         let temp_options = self.temp_options.lock().unwrap();
         let console_beep = temp_options.console_beep;
         let dial_tone = temp_options.dial_tone;
+        let max_scrollback_lines = temp_options.max_scrollback_lines;
         drop(temp_options); // Release the lock early
 
         column![effect_box(
@@ -90,6 +91,31 @@ impl SettingsDialogState {
                     })
                     .width(Length::Fixed(200.0))
                     .text_size(14),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                // Scrollback Buffer Size
+                row![
+                    left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines")),
+                    text_input("2000", &max_scrollback_lines.to_string())
+                        .on_input({
+                            let temp_options = self.temp_options.clone();
+                            move |value: String| {
+                                if let Ok(lines) = value.parse::<usize>() {
+                                    let lines = lines.clamp(100, 100000);
+                                    let mut new_options = temp_options.lock().unwrap().clone();
+                                    new_options.max_scrollback_lines = lines;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                } else {
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(temp_options.lock().unwrap().clone()))
+                                }
+                            }
+                        })
+                        .width(Length::Fixed(100.0))
+                        .size(14),
+                    iced::widget::text(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines-unit"))
+                        .size(14)
+                        .width(Length::Shrink),
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),

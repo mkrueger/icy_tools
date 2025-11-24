@@ -34,6 +34,9 @@ settings-scaling-linear = Liniar
 settings-terminal-category = Terminal
 settings-terminal-console-beep-checkbox = Beep consolă
 settings-terminal-open-settings-dir-button = Deschide directorul de setări
+settings-terminal-dial-tone = Ton de apelare
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Linii
 
 settings-keybinds-category = Comenzi rapide
 settings-keybinds-disconnect = Deconectare:

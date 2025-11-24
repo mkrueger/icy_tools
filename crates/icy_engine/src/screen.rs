@@ -1,4 +1,7 @@
-use std::cmp::max;
+use std::{
+    cmp::max,
+    sync::{Arc, Mutex},
+};
 
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
@@ -37,9 +40,10 @@ pub trait Screen: TextPane + Send + Sync {
         crate::GraphicsType::Text
     }
 
-    // Display properties
+    /// Gets the current resolution of the screen in pixels
     fn get_resolution(&self) -> Size;
 
+    /// Gets the virtual size of the screen (including scrollback)
     fn virtual_size(&self) -> Size {
         self.get_resolution() // Default: no scrollback
     }
@@ -113,8 +117,16 @@ pub trait Screen: TextPane + Send + Sync {
         None
     }
 
+    // Downcast support for accessing concrete types
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
     // Direct pixel access (for some operations)
     fn screen(&self) -> &[u8];
+
+    // Scrollback buffer management
+    fn set_scrollback_buffer_size(&mut self, _buffer_size: usize) {
+        // Default implementation does nothing
+    }
 }
 
 /// Trait for screens that can be edited
@@ -239,10 +251,12 @@ pub trait EditableScreen: Screen {
     fn scroll_right(&mut self);
 
     // Scrollback management
+
+    fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
+        None
+    }
+
     fn clear_scrollback(&mut self);
-    fn get_max_scrollback_offset(&self) -> usize;
-    fn scrollback_position(&self) -> usize;
-    fn set_scroll_position(&mut self, line: usize);
 
     // Clear operations
     fn clear_screen(&mut self);

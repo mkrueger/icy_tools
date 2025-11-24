@@ -377,6 +377,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                     icy_parser_core::InitializationType::DesktopPaletteAndAttributes => {
                         *buf.palette_mut() = IGS_DESKTOP_PALETTE.clone();
                         buf.reset_resolution();
+                        paint.reset_attributes();
                     }
 
                     icy_parser_core::InitializationType::DesktopPaletteOnly => {
@@ -384,7 +385,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                     }
 
                     icy_parser_core::InitializationType::DesktopAttributesOnly => {
-                        buf.reset_resolution();
+                        paint.reset_attributes();
                     }
 
                     icy_parser_core::InitializationType::IgDefaultPalette => {

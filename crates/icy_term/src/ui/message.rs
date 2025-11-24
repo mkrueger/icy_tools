@@ -53,7 +53,6 @@ pub enum Message {
     SendString(String),
     None,
     StopSound,
-    ScrollRelative(i32),
     ToggleFullscreen,
     OpenLink(String),
     Copy,
@@ -62,8 +61,13 @@ pub enum Message {
     SelectBps(BaudEmulation),
     QuitIcyTerm,
     ClearScreen,
+    ShowScrollback,
     SetFocus(bool),
     SendMouseEvent(MouseEvent),
+    ScrollViewport(f32, f32),       // dx, dy in pixels
+    ScrollViewportTo(f32, f32),     // x, y absolute position in pixels
+    ViewportTick,                   // Update viewport animation
+    SetScrollbackBufferSize(usize), // Set scrollback buffer size
     McpCommand(Arc<crate::mcp::McpCommand>),
 
     FocusNext,

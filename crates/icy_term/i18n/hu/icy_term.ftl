@@ -34,6 +34,9 @@ settings-scaling-linear = Lineáris
 settings-terminal-category = Terminál
 settings-terminal-console-beep-checkbox = Konzol beep
 settings-terminal-open-settings-dir-button = Beállítások könyvtár megnyitása
+settings-terminal-dial-tone = Tárcsahang
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Sorok
 
 settings-keybinds-category = Gyorsbillentyűk
 settings-keybinds-disconnect = Leválasztás:

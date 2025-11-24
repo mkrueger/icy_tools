@@ -42,6 +42,7 @@ pub enum WindowManagerMessage {
     TitleChanged(window::Id, String),
     Event(window::Id, iced::Event),
     UpdateBuffers,
+    ViewportTick,
 }
 
 const DEFAULT_SIZE: Size = Size::new(853.0, 597.0);
@@ -233,6 +234,14 @@ impl WindowManager {
                 }
                 Task::none()
             }
+
+            WindowManagerMessage::ViewportTick => {
+                // Update viewport animation for all windows
+                for window in self.windows.values_mut() {
+                    window.terminal_window.terminal.viewport.update_animation();
+                }
+                Task::none()
+            }
         }
     }
 
@@ -309,6 +318,7 @@ impl WindowManager {
                 Some(WindowManagerMessage::Event(window_id, event))
             }),
             iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::UpdateBuffers),
+            iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::ViewportTick),
         ];
         iced::Subscription::batch(subs)
     }

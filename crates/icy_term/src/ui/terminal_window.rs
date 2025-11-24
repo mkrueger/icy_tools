@@ -52,78 +52,75 @@ impl TerminalWindow {
 
         // Create the main terminal area
         let terminal_view = TerminalView::show_with_effects(&self.terminal, options.monitor_settings.clone()).map(|terminal_msg| match terminal_msg {
-            iced_engine_gui::Message::Scroll(lines) => Message::ScrollRelative(lines),
             iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
             iced_engine_gui::Message::Copy => Message::Copy,
             iced_engine_gui::Message::Paste => Message::Paste,
             iced_engine_gui::Message::RipCommand(clear_screen, cmd) => Message::RipCommand(clear_screen, cmd),
-
             iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
+            iced_engine_gui::Message::ScrollViewport(dx, dy) => Message::ScrollViewport(dx, dy),
         });
 
         // Get scrollback info from Box<dyn Screen>
-        let (has_scrollback, scroll_position, max_scroll) = if let Ok(mut screen) = self.terminal.screen.lock() {
-            if let Some(editable) = screen.as_editable() {
-                let has_scrollback = editable.get_max_scrollback_offset() > 0;
-                let scroll_offset = editable.scrollback_position() as i32;
-                let max_scroll = editable.get_max_scrollback_offset() as i32;
-                (has_scrollback, scroll_offset, max_scroll)
+
+        // Calculate scrollback lines for status bar
+        let scrollback_lines = if self.terminal.is_in_scrollback_mode() {
+            // Get font dimensions to calculate how many lines we've scrolled
+            if let Ok(screen) = self.terminal.screen.lock() {
+                let font_height = screen.get_font_dimensions().height as f32;
+                // Calculate how many lines we've scrolled from the bottom
+                let max_scroll_y = (self.terminal.viewport.content_height - self.terminal.viewport.visible_height).max(0.0);
+                let scroll_from_bottom = max_scroll_y - self.terminal.viewport.scroll_y;
+                (scroll_from_bottom / font_height) as i32
             } else {
-                (false, 0, 0)
+                0
             }
         } else {
-            (false, 0, 0)
+            0
         };
-
         // Create terminal area with optional scrollbar
-        let terminal_area = if has_scrollback && max_scroll > 0 {
+        let terminal_area = if self.terminal.is_in_scrollback_mode() {
             // Combine terminal view and scrollbar side by side
             let terminal_with_scrollbar = row![container(terminal_view).width(Length::Fill).height(Length::Fill)].spacing(0);
 
             // Add scroll position indicator if not at bottom
-            if scroll_position < 0 {
-                let lines_scrolled = -scroll_position;
-                let scroll_indicator = container(
-                    text(format!("↑ {} lines", lines_scrolled))
-                        .size(10)
-                        .style(|theme: &iced::Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().primary.weak.color),
-                            ..Default::default()
-                        }),
-                )
-                .padding([2, 8])
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
-                    border: Border {
-                        color: theme.extended_palette().background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                });
+            let scroll_indicator = container(
+                text(format!("↑ {:04}", scrollback_lines))
+                    .size(12)
+                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().primary.weak.color),
+                        ..Default::default()
+                    }),
+            )
+            .padding([2, 8])
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                border: Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            });
 
-                // Overlay the indicator on top-right of terminal
-                container(iced::widget::stack![
-                    terminal_with_scrollbar,
-                    container(scroll_indicator)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Right)
-                        .align_y(iced::alignment::Vertical::Top)
-                        .padding(8)
-                ])
-                .width(Length::Fill)
-                .height(Length::Fill)
-            } else {
-                container(terminal_with_scrollbar).width(Length::Fill).height(Length::Fill)
-            }
+            // Overlay the indicator on top-right of terminal
+            container(iced::widget::stack![
+                terminal_with_scrollbar,
+                container(scroll_indicator)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .align_y(iced::alignment::Vertical::Top)
+                    .padding(8)
+            ])
+            .width(Length::Fill)
+            .height(Length::Fill)
         } else {
             // No scrollback - just show terminal without scrollbar
             container(terminal_view).width(Length::Fill).height(Length::Fill)
         };
 
         // Status bar at the bottom - add scrollback info
-        let status_bar = self.create_status_bar(options, scroll_position);
+        let status_bar = self.create_status_bar(options);
 
         // Combine all elements
         column![button_bar, terminal_area, status_bar].spacing(0).into()
@@ -374,7 +371,7 @@ impl TerminalWindow {
             .into()
     }
 
-    fn create_status_bar(&self, options: &Options, scrollback_lines: i32) -> Element<'_, Message> {
+    fn create_status_bar(&self, options: &Options) -> Element<'_, Message> {
         let connection_status = if let Some(addr) = &self.current_address {
             if !self.is_connected {
                 text("DIALING...").style(|theme: &iced::Theme| iced::widget::text::Style {
@@ -452,16 +449,10 @@ impl TerminalWindow {
         // Build the status bar row
         let mut status_row = row![connection_status].spacing(8).align_y(Alignment::Center);
 
-        if scrollback_lines > 0 {
-            let scrollback_text = text(format!("↑{:04}", scrollback_lines))
-                .size(14)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
-                    ..Default::default()
-                });
-
-            status_row = status_row.push(text("|")).push(scrollback_text);
+        if self.terminal.is_in_scrollback_mode() {
+            status_row = status_row.push(container(text(" | SCROLLBACK").size(14)).padding([0, 2]));
         }
+
         status_row = status_row.push(Space::new().width(Length::Fill));
 
         if self.is_capturing {

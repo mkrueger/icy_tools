@@ -6,7 +6,8 @@ use libyaff::GlyphDefinition;
 
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
-    RenderOptions, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState, TextPane,
+    Rectangle, RenderOptions, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
+    TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     igs,
     rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
@@ -14,6 +15,7 @@ use crate::{
 use skypix_impl::SKYPIX_SCREEN_SIZE;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 pub struct GraphicsScreenBuffer {
     pub pixel_size: Size,
@@ -49,6 +51,7 @@ pub struct GraphicsScreenBuffer {
 
     // Scan lines for Atari ST Medium resolution (doubles line height)
     pub scan_lines: bool,
+    pub scrollback_buffer: Arc<Mutex<Box<dyn Screen>>>,
 }
 
 impl GraphicsScreenBuffer {
@@ -143,6 +146,7 @@ impl GraphicsScreenBuffer {
             saved_cursor_state: SavedCaretState::default(),
             graphics_type,
             scan_lines,
+            scrollback_buffer: Arc::new(Mutex::new(Box::new(ScrollbackBuffer::new()))),
         }
     }
 
@@ -282,6 +286,67 @@ impl Screen for GraphicsScreenBuffer {
         self.scan_lines
     }
 
+    fn render_region_to_rgba(&self, px_region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
+        let pal = self.palette().clone();
+
+        // Clamp region to screen bounds
+        let x = px_region.start.x.max(0).min(self.pixel_size.width);
+        let y = px_region.start.y.max(0).min(self.pixel_size.height);
+        let width = px_region.size.width.min(self.pixel_size.width - x);
+        let height = px_region.size.height.min(self.pixel_size.height - y);
+
+        if width <= 0 || height <= 0 {
+            return (Size::new(0, 0), Vec::new());
+        }
+
+        if self.scan_lines {
+            // Double the height for scan lines
+            let doubled_height = height * 2;
+            let mut pixels = Vec::with_capacity(width as usize * doubled_height as usize * 4);
+
+            for py in 0..height {
+                let src_y = y + py;
+                let row_start = (src_y * self.pixel_size.width + x) as usize;
+
+                // Render the line once
+                let start_pos = pixels.len();
+                for px in 0..width {
+                    let idx = row_start + px as usize;
+                    let (r, g, b) = pal.get_rgb(self.screen[idx] as u32);
+                    pixels.push(r);
+                    pixels.push(g);
+                    pixels.push(b);
+                    pixels.push(255);
+                }
+
+                // Copy the rendered line for scanline effect
+                let end_pos = pixels.len();
+                pixels.extend_from_within(start_pos..end_pos);
+            }
+
+            (Size::new(width, doubled_height), pixels)
+        } else {
+            // Standard rendering without scan lines
+            let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+
+            for py in 0..height {
+                let src_y = y + py;
+                let row_start = (src_y * self.pixel_size.width + x) as usize;
+
+                for px in 0..width {
+                    let idx = row_start + px as usize;
+                    let (r, g, b) = pal.get_rgb(self.screen[idx] as u32);
+                    pixels.push(r);
+                    pixels.push(g);
+                    pixels.push(b);
+                    pixels.push(255);
+                }
+            }
+
+            (Size::new(width, height), pixels)
+        }
+    }
+
     fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
         let pal = self.palette().clone();
 
@@ -390,6 +455,14 @@ impl Screen for GraphicsScreenBuffer {
         &self.screen
     }
 
+    fn set_scrollback_buffer_size(&mut self, buffer_size: usize) {
+        if let Ok(mut sb) = self.scrollback_buffer.lock() {
+            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
+                scrollback.set_buffer_size(buffer_size);
+            }
+        }
+    }
+
     fn set_selection(&mut self, _selection: Selection) -> EngineResult<()> {
         Ok(())
     }
@@ -410,9 +483,22 @@ impl Screen for GraphicsScreenBuffer {
     fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
         Some(self)
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl EditableScreen for GraphicsScreenBuffer {
+    fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
+        if let Ok(mut sb) = self.scrollback_buffer.lock() {
+            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
+                scrollback.snapshot_current_screen(self);
+            }
+        }
+        Some(self.scrollback_buffer.clone())
+    }
+
     fn get_first_visible_line(&self) -> i32 {
         0
     }
@@ -777,18 +863,6 @@ impl EditableScreen for GraphicsScreenBuffer {
 
     fn clear_scrollback(&mut self) {
         // No scrollback in this implementation
-    }
-
-    fn get_max_scrollback_offset(&self) -> usize {
-        0
-    }
-
-    fn scrollback_position(&self) -> usize {
-        0
-    }
-
-    fn set_scroll_position(&mut self, _position: usize) {
-        // No-op, no scrollback
     }
 
     fn remove_terminal_line(&mut self, _line: i32) {

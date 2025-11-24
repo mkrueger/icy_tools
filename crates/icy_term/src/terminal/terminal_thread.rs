@@ -91,6 +91,7 @@ pub struct ConnectionConfig {
     // Auto-login configuration
     pub iemsi_auto_login: bool,
     pub auto_login_exp: String,
+    pub max_scrollback_lines: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -558,16 +559,16 @@ impl TerminalThread {
         self.connection = Some(connection);
         self.connection_time = Some(Instant::now());
 
-        let (new_screen, parser) = config
+        let (mut new_screen, parser) = config
             .screen_mode
             .create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
         {
+            new_screen.set_scrollback_buffer_size(config.max_scrollback_lines);
             if let Ok(mut screen) = self.edit_screen.lock() {
                 *screen = new_screen;
             }
         }
         self.parser = parser;
-
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
         self.send_event(TerminalEvent::Connected);
@@ -1588,6 +1589,7 @@ impl TerminalThread {
 // Helper function to create a terminal thread for the UI
 pub fn create_terminal_thread(edit_screen: Arc<Mutex<Box<dyn Screen>>>) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
     let parser = icy_parser_core::AnsiParser::new();
+
     TerminalThread::spawn(edit_screen, Box::new(parser))
 }
 

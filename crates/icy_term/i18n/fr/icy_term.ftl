@@ -32,8 +32,11 @@ settings-scaling-nearest = Le plus proche
 settings-scaling-linear = Linéaire
 
 settings-terminal-category = Terminal
-settings-terminal-console-beep-checkbox = Bip de la console
+settings-terminal-console-beep-checkbox = Bip de console
 settings-terminal-open-settings-dir-button = Ouvrir le répertoire des paramètres
+settings-terminal-dial-tone = Tonalité de numérotation
+settings-terminal-scrollback-lines = Scrollback
+settings-terminal-scrollback-lines-unit = Lignes
 
 settings-keybinds-category = Raccourcis clavier
 settings-keybinds-disconnect = Déconnecter :

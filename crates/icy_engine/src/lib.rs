@@ -28,6 +28,9 @@ pub use position::*;
 mod text_buffer;
 pub use text_buffer::*;
 
+mod scrollback_buffer;
+pub use scrollback_buffer::*;
+
 pub mod graphics_screen_buffer;
 
 mod palette_screen_buffer;
@@ -377,14 +380,28 @@ impl SubAssign<Position> for Rectangle {
 }
 
 pub trait TextPane {
+    /// Gets the character at the specified position
     fn get_char(&self, pos: Position) -> AttributedChar;
+
+    /// Gets the number of lines
     fn get_line_count(&self) -> i32;
+
+    /// Gets the width in characters
     fn get_width(&self) -> i32;
+
+    /// Gets the height in characters
     fn get_height(&self) -> i32;
+
+    /// Gets the size in characters
     fn get_size(&self) -> Size;
+
+    /// Gets the length of a specific line in characters
     fn get_line_length(&self, line: i32) -> i32;
+
+    /// Gets the rectangle covering the entire text pane
     fn get_rectangle(&self) -> Rectangle;
 
+    /// Gets a string of specified size starting from the given position
     fn get_string(&self, pos: Position, size: usize) -> String {
         let pos = pos.into();
         let mut result = String::new();
@@ -400,6 +417,7 @@ pub trait TextPane {
         result
     }
 
+    /// Checks if a position is within a range starting from 'from' with given size
     fn is_position_in_range(&self, pos: Position, from: Position, size: i32) -> bool {
         match pos.y.cmp(&from.y) {
             std::cmp::Ordering::Less => false,

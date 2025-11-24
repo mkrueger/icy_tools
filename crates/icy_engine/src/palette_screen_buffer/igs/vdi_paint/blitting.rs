@@ -147,6 +147,11 @@ impl VdiPaint {
             return;
         }
 
+        // Clip source region to source buffer bounds
+        if !src_region.clip_to_bounds(src_buffer.width, src_buffer.height) {
+            return;
+        }
+
         let dest_x = dest_pos.x as usize;
         let dest_y = dest_pos.y as usize;
 

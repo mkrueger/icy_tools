@@ -128,11 +128,19 @@ impl SettingsDialogState {
             }
             SettingsMsg::Save => {
                 // Save the options and close dialog
+                let old_buffer_size = self.original_options.lock().unwrap().max_scrollback_lines;
                 let tmp = self.temp_options.lock().unwrap().clone();
+                let new_buffer_size = tmp.max_scrollback_lines;
                 *self.original_options.lock().unwrap() = tmp;
                 if let Err(e) = self.original_options.lock().unwrap().store_options() {
                     log::error!("Failed to save options: {}", e);
                 }
+
+                // If buffer size changed, notify the terminal thread
+                if old_buffer_size != new_buffer_size {
+                    return Some(crate::ui::Message::SetScrollbackBufferSize(new_buffer_size));
+                }
+
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             SettingsMsg::Cancel => {

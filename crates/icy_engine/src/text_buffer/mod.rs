@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fmt::Alignment;
 use std::{
     cmp::max,
@@ -224,7 +224,6 @@ pub struct TextBuffer {
     pub tags: Vec<Tag>,
     //    pub ansi_music: Vec<AnsiMusic>,
     /// Scrollback buffer storing lines that scrolled off the top
-    pub scrollback_lines: VecDeque<Line>,
 
     /// Maximum number of lines to keep in scrollback (0 = unlimited)
     pub max_scrollback_lines: usize,
@@ -474,34 +473,6 @@ impl TextBuffer {
             }
         }
     }
-
-    pub fn push_to_scrollback(&mut self, line: Line) {
-        self.scrollback_lines.push_back(line);
-
-        // Trim oldest lines if we exceed the limit
-        if self.max_scrollback_lines > 0 {
-            while self.scrollback_lines.len() > self.max_scrollback_lines {
-                self.scrollback_lines.pop_front();
-            }
-        }
-    }
-
-    pub fn clear_scrollback(&mut self) {
-        self.scrollback_lines.clear();
-    }
-
-    pub fn get_max_scrollback_offset(&self) -> usize {
-        self.scrollback_lines.len()
-    }
-
-    pub fn scrollback_position(&self) -> usize {
-        // TODO
-        0
-    }
-
-    pub fn set_scroll_position(&self, _line: usize) {
-        // TODO
-    }
 }
 
 pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<usize> {
@@ -589,7 +560,6 @@ impl TextBuffer {
             show_tags: true,
             tags: Vec::new(),
             //            ansi_music: Vec::new(),
-            scrollback_lines: VecDeque::new(),
             max_scrollback_lines: 10000, // Reasonable default
 
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
