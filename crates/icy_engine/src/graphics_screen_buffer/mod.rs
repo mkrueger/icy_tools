@@ -347,46 +347,8 @@ impl Screen for GraphicsScreenBuffer {
         }
     }
 
-    fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
-        let pal = self.palette().clone();
-
-        if self.scan_lines {
-            // Double the height for scan lines (Atari ST Medium resolution)
-            let doubled_height = self.pixel_size.height * 2;
-            let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * doubled_height as usize * 4);
-
-            for y in 0..self.pixel_size.height {
-                let row_start = (y * self.pixel_size.width) as usize;
-                let row_end = row_start + self.pixel_size.width as usize;
-
-                // Render the line once
-                let start_pos = pixels.len();
-                for i in row_start..row_end {
-                    let (r, g, b) = pal.get_rgb(self.screen[i] as u32);
-                    pixels.push(r);
-                    pixels.push(g);
-                    pixels.push(b);
-                    pixels.push(255);
-                }
-
-                // Copy the rendered line
-                let end_pos = pixels.len();
-                pixels.extend_from_within(start_pos..end_pos);
-            }
-
-            (Size::new(self.pixel_size.width, doubled_height), pixels)
-        } else {
-            // Standard rendering without scan lines
-            let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * self.pixel_size.height as usize * 4);
-            for i in &self.screen {
-                let (r, g, b) = pal.get_rgb(*i as u32);
-                pixels.push(r);
-                pixels.push(g);
-                pixels.push(b);
-                pixels.push(255);
-            }
-            (self.pixel_size, pixels)
-        }
+    fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.get_resolution()), options)
     }
 
     fn get_font_dimensions(&self) -> Size {

@@ -487,6 +487,7 @@ impl<'a> CRTShaderProgram<'a> {
                         selection,
                         selection_fg: Some(fg_sel.clone()),
                         selection_bg: Some(bg_sel.clone()),
+                        override_scan_lines: None,
                     };
 
                     let render_on = screen.render_region_to_rgba(viewport_region, &base_options);
@@ -501,6 +502,7 @@ impl<'a> CRTShaderProgram<'a> {
                         selection,
                         selection_fg: Some(fg_sel.clone()),
                         selection_bg: Some(bg_sel.clone()),
+                        override_scan_lines: None,
                     };
 
                     let render_off = screen.render_region_to_rgba(viewport_region, &base_options_off);

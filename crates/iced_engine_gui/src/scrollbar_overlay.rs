@@ -23,6 +23,11 @@ pub struct ScrollbarOverlay<Message> {
     last_hover_state: Arc<AtomicBool>,           // Shared atomic state to track hover
 }
 
+const MIN_WITH: f32 = 3.0;
+const MAX_WIDTH: f32 = 10.0;
+const MIN_ALPHA: f32 = 0.42;
+const MAX_ALPHA: f32 = 0.87;
+
 impl<Message> ScrollbarOverlay<Message>
 where
     Message: Clone + 'static,
@@ -60,8 +65,7 @@ where
 
         if is_thin {
             // Draw just a thin line at the right edge - always visible
-            let line_width = 3.0;
-            let line_x = size.width - line_width; // Right edge of canvas
+            let line_x = size.width - MIN_WITH; // Right edge of canvas
 
             // Calculate thumb position
             let available_height = size.height - 8.0;
@@ -70,11 +74,11 @@ where
             let thumb_y = 4.0 + (max_thumb_offset * self.scroll_position);
 
             // Draw thin thumb indicator - bright white with alpha
-            let thin_thumb = Path::rounded_rectangle(Point::new(line_x, thumb_y), Size::new(line_width, thumb_height), 1.5.into());
-            frame.fill(&thin_thumb, Color::from_rgba(1.0, 1.0, 1.0, 0.5 * animated_visibility));
+            let thin_thumb = Path::rounded_rectangle(Point::new(line_x, thumb_y), Size::new(MIN_WITH, thumb_height), 1.5.into());
+            frame.fill(&thin_thumb, Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA));
         } else {
             // Full scrollbar mode with smooth transition
-            let scrollbar_width = 12.0 * self.visibility;
+            let scrollbar_width = MIN_WITH + (MAX_WIDTH - MIN_WITH) * self.visibility;
             let scrollbar_x = 0.0;
 
             // Draw background track - subtle dark background
@@ -89,13 +93,13 @@ where
 
             // Draw thumb - bright white
             let thumb_path = Path::rounded_rectangle(
-                Point::new(scrollbar_x + 12.0 - scrollbar_width, thumb_y),
+                Point::new(scrollbar_x + MAX_WIDTH - scrollbar_width, thumb_y),
                 Size::new(scrollbar_width, thumb_height),
                 4.0.into(),
             );
             frame.fill(
                 &thumb_path,
-                Color::from_rgba(1.0, 1.0, 1.0, 0.7 * animated_visibility), // White
+                Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * animated_visibility), // White
             );
 
             // Add subtle border for depth

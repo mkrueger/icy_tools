@@ -50,6 +50,9 @@ impl Terminal {
             let virtual_size = scr.virtual_size();
             // Only update content size, not visible size (which is the widget size, not screen size)
             self.viewport.set_content_size(virtual_size.width as f32, virtual_size.height as f32);
+
+            let resolution = scr.get_resolution();
+            self.viewport.set_visible_size(resolution.width as f32, resolution.height as f32);
         }
         // Sync scrollbar position with viewport (after the lock is dropped)
         self.sync_scrollbar_with_viewport();
@@ -106,6 +109,9 @@ impl Terminal {
                 // Clamp with the correct visible size
                 self.viewport.clamp_scroll_with_size(resolution.width as f32, resolution.height as f32);
             }
+
+            // Sync scrollbar position with the new viewport position
+            self.sync_scrollbar_with_viewport();
         }
     }
 
@@ -114,6 +120,8 @@ impl Terminal {
             self.screen = original;
             // Update viewport back to normal content
             self.update_viewport_size();
+            // Sync scrollbar position when exiting scrollback
+            self.sync_scrollbar_with_viewport();
         }
     }
 

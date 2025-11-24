@@ -55,7 +55,7 @@ pub struct PaletteScreenBuffer {
 
     // Scan lines for Atari ST Medium resolution (doubles line height)
     pub scan_lines: bool,
-    pub scrollback_buffer: Arc<Mutex<Box<dyn Screen>>>,
+    pub scrollback_buffer: ScrollbackBuffer,
 }
 
 impl PaletteScreenBuffer {
@@ -149,7 +149,7 @@ impl PaletteScreenBuffer {
             saved_cursor_state: SavedCaretState::default(),
             graphics_type,
             scan_lines,
-            scrollback_buffer: Arc::new(Mutex::new(Box::new(ScrollbackBuffer::new()))),
+            scrollback_buffer: ScrollbackBuffer::new(),
         }
     }
 
@@ -230,27 +230,20 @@ impl PaletteScreenBuffer {
     }
 
     fn add_line_to_scrollback(&mut self, i: i32) {
-        let width = self.get_width();
+        let width = self.get_resolution().width;
 
         // Create render options for a single line
         let options = RenderOptions {
-            rect: crate::Rectangle::from_coords(0, i, width, i + 1).into(),
+            override_scan_lines: Some(false),
             ..RenderOptions::default()
         };
+        let font_size = self.get_font_dimensions();
+        let region = Rectangle::from(0, i * font_size.width, width, font_size.height);
 
-        // Render just this line
-        let saved_scan_lines = self.scan_lines;
-        self.scan_lines = false;
-
-        let (size, rgba_data) = self.render_to_rgba(&options);
-        self.scan_lines = saved_scan_lines;
+        let (size, rgba_data) = self.render_region_to_rgba(region, &options);
 
         // Add the line to the scrollback buffer
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.add_chunk(rgba_data, size);
-            }
-        }
+        self.scrollback_buffer.add_chunk(rgba_data, size);
     }
 }
 
@@ -303,7 +296,7 @@ impl Screen for PaletteScreenBuffer {
         self.scan_lines
     }
 
-    fn render_region_to_rgba(&self, px_region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
+    fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         let pal = self.palette().clone();
 
         // Clamp region to screen bounds
@@ -316,7 +309,9 @@ impl Screen for PaletteScreenBuffer {
             return (Size::new(0, 0), Vec::new());
         }
 
-        if self.scan_lines {
+        let scan_lines = options.override_scan_lines.unwrap_or(self.scan_lines);
+
+        if scan_lines {
             // Double the height for scan lines
             let doubled_height = height * 2;
             let mut pixels = Vec::with_capacity(width as usize * doubled_height as usize * 4);
@@ -364,46 +359,8 @@ impl Screen for PaletteScreenBuffer {
         }
     }
 
-    fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
-        let pal = self.palette().clone();
-
-        if self.scan_lines {
-            // Double the height for scan lines (Atari ST Medium resolution)
-            let doubled_height = self.pixel_size.height * 2;
-            let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * doubled_height as usize * 4);
-
-            for y in 0..self.pixel_size.height {
-                let row_start = (y * self.pixel_size.width) as usize;
-                let row_end = row_start + self.pixel_size.width as usize;
-
-                // Render the line once
-                let start_pos = pixels.len();
-                for i in row_start..row_end {
-                    let (r, g, b) = pal.get_rgb(self.screen[i] as u32);
-                    pixels.push(r);
-                    pixels.push(g);
-                    pixels.push(b);
-                    pixels.push(255);
-                }
-
-                // Copy the rendered line
-                let end_pos = pixels.len();
-                pixels.extend_from_within(start_pos..end_pos);
-            }
-
-            (Size::new(self.pixel_size.width, doubled_height), pixels)
-        } else {
-            // Standard rendering without scan lines
-            let mut pixels = Vec::with_capacity(self.pixel_size.width as usize * self.pixel_size.height as usize * 4);
-            for i in &self.screen {
-                let (r, g, b) = pal.get_rgb(*i as u32);
-                pixels.push(r);
-                pixels.push(g);
-                pixels.push(b);
-                pixels.push(255);
-            }
-            (self.pixel_size, pixels)
-        }
+    fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.get_resolution()), options)
     }
 
     fn get_font_dimensions(&self) -> Size {
@@ -482,11 +439,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn set_scrollback_buffer_size(&mut self, buffer_size: usize) {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.set_buffer_size(buffer_size);
-            }
-        }
+        self.scrollback_buffer.set_buffer_size(buffer_size);
     }
 
     fn set_selection(&mut self, _selection: Selection) -> EngineResult<()> {
@@ -513,12 +466,9 @@ impl Screen for PaletteScreenBuffer {
 
 impl EditableScreen for PaletteScreenBuffer {
     fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
-        if let Ok(mut sb) = self.scrollback_buffer.lock() {
-            if let Some(scrollback) = sb.as_any_mut().downcast_mut::<ScrollbackBuffer>() {
-                scrollback.snapshot_current_screen(self);
-            }
-        }
-        Some(self.scrollback_buffer.clone())
+        let mut scrollback = self.scrollback_buffer.clone();
+        scrollback.snapshot_current_screen(self);
+        return Some(Arc::new(Mutex::new(Box::new(scrollback))));
     }
 
     fn get_first_visible_line(&self) -> i32 {

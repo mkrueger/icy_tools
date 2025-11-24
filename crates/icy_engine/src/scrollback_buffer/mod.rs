@@ -3,11 +3,13 @@ use crate::{
     SelectionMask, Size, TerminalState, TextPane, bgi::MouseField,
 };
 
+#[derive(Clone)]
 pub struct ScrollbackChunk {
     pub rgba_data: Vec<u8>,
     pub size: Size,
 }
 
+#[derive(Clone)]
 pub struct ScrollbackBuffer {
     buffer_size: usize,
 
@@ -65,12 +67,15 @@ impl ScrollbackBuffer {
 
     pub fn snapshot_current_screen(&mut self, screen: &dyn Screen) {
         let mut opt = RenderOptions::default();
-        opt.rect = screen.get_rectangle().into();
-        let (size, rgba_data) = screen.render_to_rgba(&opt);
+        opt.override_scan_lines = Some(false);
+
+        let (size, rgba_data) = screen.render_region_to_rgba(Rectangle::new(Position::new(0, 0), screen.get_resolution()), &opt);
+
         self.cur_screen = ScrollbackChunk { rgba_data, size };
 
         // Inherit properties from the screen being snapshotted
         self.scan_lines = screen.scan_lines();
+
         self.cur_screen_size = screen.get_size();
         self.font_dimensions = screen.get_font_dimensions();
         self.palette = screen.palette().clone();
@@ -93,15 +98,15 @@ impl TextPane for ScrollbackBuffer {
     }
 
     fn get_width(&self) -> i32 {
-        self.cur_screen_size.width
+        self.cur_screen_size.width / self.font_dimensions.width
     }
 
     fn get_height(&self) -> i32 {
-        self.cur_screen_size.height
+        self.get_line_count()
     }
 
     fn get_size(&self) -> Size {
-        self.cur_screen_size
+        Size::new(self.get_width(), self.get_height())
     }
 
     fn get_line_length(&self, _line: i32) -> i32 {
@@ -120,7 +125,11 @@ impl Screen for ScrollbackBuffer {
 
     fn get_resolution(&self) -> Size {
         // Resolution is the size of the current visible screen (not including scrollback)
-        Size::new(self.cur_screen.size.width, self.cur_screen.size.height)
+        let mut h = self.cur_screen.size.height;
+        if self.scan_lines {
+            h *= 2;
+        }
+        Size::new(self.cur_screen.size.width, h)
     }
 
     fn virtual_size(&self) -> Size {
@@ -132,8 +141,12 @@ impl Screen for ScrollbackBuffer {
         } else {
             0
         };
+        let mut height = self.total_height();
+        if self.scan_lines {
+            height *= 2;
+        }
 
-        Size::new(width, self.total_height())
+        Size::new(width, height)
     }
 
     fn get_font_dimensions(&self) -> Size {
@@ -144,7 +157,12 @@ impl Screen for ScrollbackBuffer {
         self.scan_lines
     }
 
-    fn render_region_to_rgba(&self, px_region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
+    fn render_region_to_rgba(&self, mut px_region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
+        if self.scan_lines {
+            px_region.start.y /= 2;
+            px_region.size.height /= 2;
+        }
+
         // Target width is always the current screen width
         let target_width = self.cur_screen.size.width.max(1);
         let total_height = self.total_height();
@@ -152,7 +170,7 @@ impl Screen for ScrollbackBuffer {
         // Clamp region to valid bounds
         let x = px_region.start.x.max(0).min(target_width);
         let y = px_region.start.y.max(0).min(total_height);
-        let region_width = px_region.size.width.max(0).min(target_width - x);
+        let region_width: i32 = px_region.size.width.max(0).min(target_width - x);
         let region_height = px_region.size.height.max(0).min(total_height - y);
 
         // Early exit for empty region
@@ -288,87 +306,8 @@ impl Screen for ScrollbackBuffer {
         (Size::new(region_width, region_height), region_data)
     }
 
-    fn render_to_rgba(&self, _options: &RenderOptions) -> (Size, Vec<u8>) {
-        // Target width is always the current screen width
-        let target_width = self.cur_screen.size.width.max(1);
-        let total_height = self.total_height();
-
-        // Calculate output height with scan_lines
-        let output_height = if self.scan_lines { total_height * 2 } else { total_height };
-
-        let mut combined_data = Vec::with_capacity((target_width * output_height * 4) as usize);
-
-        // Helper to scale an entire chunk to target width
-        let scale_chunk = |chunk: &ScrollbackChunk, target_width: i32| -> Vec<u8> {
-            if chunk.size.width == target_width {
-                // No scaling needed
-                return chunk.rgba_data.clone();
-            }
-
-            let mut scaled = Vec::with_capacity((target_width * chunk.size.height * 4) as usize);
-            let scale_factor = chunk.size.width as f32 / target_width as f32;
-
-            for y in 0..chunk.size.height {
-                let src_line_offset = (y * chunk.size.width) as usize * 4;
-
-                for x in 0..target_width {
-                    // Map destination x to source x
-                    let src_x = (x as f32 * scale_factor) as i32;
-                    let src_x = src_x.min(chunk.size.width - 1).max(0);
-
-                    let src_pixel_offset = src_line_offset + (src_x * 4) as usize;
-                    if src_pixel_offset + 4 <= chunk.rgba_data.len() {
-                        scaled.extend_from_slice(&chunk.rgba_data[src_pixel_offset..src_pixel_offset + 4]);
-                    } else {
-                        scaled.extend_from_slice(&[0, 0, 0, 255]);
-                    }
-                }
-            }
-
-            scaled
-        };
-
-        // Add all scrollback chunks (scaled if needed)
-        for chunk in &self.chunks {
-            let scaled_chunk = scale_chunk(chunk, target_width);
-
-            if self.scan_lines {
-                // Double each line for scan_lines
-                for y in 0..chunk.size.height {
-                    let line_offset = (y * target_width) as usize * 4;
-                    let line_end = line_offset + (target_width as usize * 4);
-                    if line_end <= scaled_chunk.len() {
-                        let line: &[u8] = &scaled_chunk[line_offset..line_end];
-                        combined_data.extend_from_slice(line);
-                        combined_data.extend_from_slice(line);
-                    }
-                }
-            } else {
-                combined_data.extend_from_slice(&scaled_chunk);
-            }
-        }
-
-        // Add current screen (scaled if needed)
-        if !self.cur_screen.rgba_data.is_empty() {
-            let scaled_screen = scale_chunk(&self.cur_screen, target_width);
-
-            if self.scan_lines {
-                // Double each line for scan_lines
-                for y in 0..self.cur_screen.size.height {
-                    let line_offset = (y * target_width) as usize * 4;
-                    let line_end = line_offset + (target_width as usize * 4);
-                    if line_end <= scaled_screen.len() {
-                        let line = &scaled_screen[line_offset..line_end];
-                        combined_data.extend_from_slice(line);
-                        combined_data.extend_from_slice(line);
-                    }
-                }
-            } else {
-                combined_data.extend_from_slice(&scaled_screen);
-            }
-        }
-
-        (Size::new(target_width, output_height), combined_data)
+    fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.get_resolution()), options)
     }
 
     fn palette(&self) -> &Palette {

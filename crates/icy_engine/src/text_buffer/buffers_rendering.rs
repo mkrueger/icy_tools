@@ -12,6 +12,7 @@ impl TextBuffer {
         let line_bytes = px_width * 4;
         let base_size = (px_width * px_height * 4) as usize;
 
+        let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
         if scan_lines {
             // Render to temporary buffer first
             let mut pixels = vec![0u8; base_size];
@@ -47,6 +48,7 @@ impl TextBuffer {
     /// More efficient than rendering full buffer and cropping
     pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         let font_size = self.get_font(0).unwrap().size();
+        let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
 
         // Convert pixel region to character region (round outwards to include partial chars)
         let char_x = px_region.start.x / font_size.width;
@@ -67,6 +69,7 @@ impl TextBuffer {
             selection: options.selection,
             selection_fg: options.selection_fg.clone(),
             selection_bg: options.selection_bg.clone(),
+            override_scan_lines: None,
         };
 
         // Render the character region
@@ -691,18 +694,49 @@ impl TextBuffer {
                     continue;
                 }
 
-                let visible_width_bytes = (visible_width * 4) as usize;
                 let mut sixel_line = (skip_y_px) as usize;
 
                 for py in dest_y_px..max_y {
-                    let offset = (py * line_bytes + dest_x_px * 4) as usize;
-                    let src_o = sixel_line * sixel_line_bytes + (skip_x_px * 4) as usize;
+                    let dest_line_start = (py * line_bytes) as usize;
+                    let src_line_start = sixel_line * sixel_line_bytes;
 
-                    if src_o + visible_width_bytes > sixel.picture_data.len() || offset + visible_width_bytes > pixels.len() {
+                    // Bounds check before the inner loop
+                    if src_line_start >= sixel.picture_data.len() {
                         break;
                     }
 
-                    pixels[offset..offset + visible_width_bytes].copy_from_slice(&sixel.picture_data[src_o..src_o + visible_width_bytes]);
+                    // Copy pixels with alpha blending
+                    for px in 0..visible_width {
+                        let dest_offset = dest_line_start + ((dest_x_px + px) * 4) as usize;
+                        let src_offset = src_line_start + ((skip_x_px + px) * 4) as usize;
+
+                        // Bounds check for each pixel
+                        if src_offset + 4 > sixel.picture_data.len() || dest_offset + 4 > pixels.len() {
+                            break;
+                        }
+
+                        let src_alpha = sixel.picture_data[src_offset + 3];
+
+                        // Only blend if alpha > 0 (visible pixel)
+                        if src_alpha > 0 {
+                            if src_alpha == 255 {
+                                // Fully opaque - direct copy
+                                pixels[dest_offset..dest_offset + 4].copy_from_slice(&sixel.picture_data[src_offset..src_offset + 4]);
+                            } else {
+                                // Alpha blending
+                                let alpha = src_alpha as f32 / 255.0;
+                                let inv_alpha = 1.0 - alpha;
+
+                                pixels[dest_offset] = ((sixel.picture_data[src_offset] as f32 * alpha) + (pixels[dest_offset] as f32 * inv_alpha)) as u8;
+                                pixels[dest_offset + 1] =
+                                    ((sixel.picture_data[src_offset + 1] as f32 * alpha) + (pixels[dest_offset + 1] as f32 * inv_alpha)) as u8;
+                                pixels[dest_offset + 2] =
+                                    ((sixel.picture_data[src_offset + 2] as f32 * alpha) + (pixels[dest_offset + 2] as f32 * inv_alpha)) as u8;
+                                pixels[dest_offset + 3] = 255; // Keep destination fully opaque
+                            }
+                        }
+                    }
+
                     sixel_line += 1;
                 }
             }

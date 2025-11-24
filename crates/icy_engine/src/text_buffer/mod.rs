@@ -519,6 +519,8 @@ pub struct RenderOptions {
     /// Custom background color for selected text (requires selection to be Some)  
     /// If None and selection is Some, colors will be inverted
     pub selection_bg: Option<Color>,
+
+    pub override_scan_lines: Option<bool>,
 }
 
 impl From<Rectangle> for RenderOptions {

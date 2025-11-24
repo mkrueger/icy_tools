@@ -113,11 +113,7 @@ impl ScrollbarState {
         self.anim_from = self.visibility;
 
         // Different target values for different states
-        self.target_visibility = if fade_in {
-            1.0 // Full visibility when active (scrolling/dragging)
-        } else {
-            0.15 // Thin line when inactive
-        };
+        self.target_visibility = if fade_in { 1.0 } else { 0.0 };
 
         // Configure animation duration: faster fade-in, slightly slower fade-out
         self.anim_duration = if self.target_visibility > self.anim_from {
@@ -146,7 +142,6 @@ impl ScrollbarState {
         let new_pos = position.clamp(0.0, 1.0);
         if (self.scroll_position - new_pos).abs() > 0.001 {
             self.scroll_position = new_pos;
-            self.mark_interaction(true);
         }
     }
 

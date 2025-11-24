@@ -548,6 +548,7 @@ impl MainWindow {
                             selection: None,
                             selection_fg: None,
                             selection_bg: None,
+                            override_scan_lines: None,
                         });
                         // Avoid DynamicImage hop if API allows raw RGBA; if not, keep as-is.
                         let dynamic_image =
