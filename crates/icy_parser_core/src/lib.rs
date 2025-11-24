@@ -870,6 +870,20 @@ pub trait CommandSink {
     /// }
     /// ```
     fn report_error(&mut self, _error: ParseError, _level: ErrorLevel) {}
+
+    /// Begin XOR drawing mode for IGS loop commands with XOR stepping modifier.
+    /// This is used by IGS `&` loops with the `|` modifier (e.g., `G|`).
+    /// Default implementation does nothing.
+    ///
+    /// # Example
+    /// Used in loop sequences like `G#&>198,0,2,0,G|4,2,6,x,x:` where shapes
+    /// are drawn in XOR mode, allowing animation effects by overlaying/removing.
+    fn begin_igs_xor_mode(&mut self) {}
+
+    /// End XOR drawing mode and restore normal drawing.
+    /// Called after an IGS loop with XOR stepping completes.
+    /// Default implementation does nothing.
+    fn end_igs_xor_mode(&mut self) {}
 }
 
 pub trait CommandParser: Send {

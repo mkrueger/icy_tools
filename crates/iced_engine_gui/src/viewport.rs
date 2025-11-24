@@ -141,21 +141,16 @@ impl Viewport {
     pub fn scroll_by(&mut self, delta_x: f32, delta_y: f32) {
         self.target_scroll_x += delta_x;
         self.target_scroll_y += delta_y;
-        /*
-        self.scroll_x += delta_x;
-        self.scroll_y += delta_y;*/
         self.clamp_scroll();
-        //        self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.last_update = Some(Instant::now());
     }
 
     /// Set scroll position directly
     pub fn scroll_to(&mut self, x: f32, y: f32) {
         self.target_scroll_x = x;
         self.target_scroll_y = y;
-        /*self.scroll_x = x;
-        self.scroll_y = y;*/
         self.clamp_scroll();
-        //      self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.last_update = Some(Instant::now());
     }
 
     /// Set scroll position immediately without animation
@@ -165,11 +160,17 @@ impl Viewport {
         self.target_scroll_x = x;
         self.target_scroll_y = y;
         self.clamp_scroll();
+        self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Update smooth scrolling animation
     /// Returns true if the viewport changed and a redraw is needed
     pub fn update_animation(&mut self) {
+        // Early return if not animating
+        if !self.is_animating() {
+            return;
+        }
+
         let now = Instant::now();
         let delta_time = if let Some(last) = self.last_update {
             now.duration_since(last).as_secs_f32()
@@ -177,7 +178,6 @@ impl Viewport {
             0.016 // ~60fps fallback
         };
         self.last_update = Some(now);
-
         let mut changed = false;
 
         // Interpolation factor based on delta_time

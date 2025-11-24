@@ -1,7 +1,7 @@
 use crate::{
     ArrowEnd, AskQuery, BlitMode, BlitOperation, CommandSink, CursorMode, Direction, DrawingMode, GraphicsScalingMode, IgsCommand, IgsParameter,
-    InitializationType, LineKind, LineMarkerStyle, MousePointerType, PaletteMode, PatternType, PenType, PolymarkerKind, RandomRangeType, ScreenClearMode,
-    SoundEffect, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
+    InitializationType, LineKind, LineMarkerStyle, MousePointerType, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, RandomRangeType,
+    ScreenClearMode, SoundEffect, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
 };
 
 #[repr(u8)]
@@ -233,61 +233,146 @@ impl IgsCommandType {
         }
     }
 
-    /// Returns the number of parameters required by this command type.
-    /// Returns None for variable-length commands (like PolyLine, PolyFill, etc.)
-    pub fn parameter_count(&self) -> Option<usize> {
+    /// Returns the expected parameter count for this command type.
+    /// For variable-length commands, uses the first parameter to determine the count.
+    ///
+    /// # Arguments
+    /// * `first_param` - The first parameter value (used for commands like PolyLine where count depends on it)
+    ///
+    /// # Returns
+    /// * The expected number of parameters for this command
+    pub fn get_parameter_count(&self, first_param: i32) -> usize {
         use IgsCommandType::*;
 
         match self {
-            Line => Some(4),               // x1, y1, x2, y2
-            LineDrawTo => Some(2),         // x, y
-            Circle => Some(3),             // x, y, radius
-            Box => Some(5),                // x1, y1, x2, y2, rounded
-            RoundedRectangles => Some(5),  // x1, y1, x2, y2, fill
-            FilledRectangle => Some(4),    // x1, y1, x2, y2
-            PolyMarker => Some(2),         // x, y
-            Ellipse => Some(4),            // x, y, x_radius, y_radius
-            Arc => Some(5),                // x, y, radius, start_angle, end_angle
-            EllipticalArc => Some(6),      // x, y, x_radius, y_radius, start_angle, end_angle
-            PieSlice => Some(5),           // x, y, radius, start_angle, end_angle
-            EllipticalPieSlice => Some(6), // x, y, x_radius, y_radius, start_angle, end_angle
-            ColorSet => Some(2),           // pen, color
-            AttributeForFills => Some(3),  // type, pattern, border
-            FloodFill => Some(2),          // x, y
-            SetPenColor => Some(4),        // pen, red, green, blue
-            DrawingMode => Some(1),        // mode
-            HollowSet => Some(1),          // enabled
-            WriteText => Some(2),          // x, y (text comes separately)
-            LineType => Some(3),           // type, kind, value
-            TextEffects => Some(3),        // effects, size, rotation
-            Initialize => Some(1),         // mode
-            SetResolution => Some(2),      // resolution, palette
-            GraphicScaling => Some(1),     // mode
-            Cursor => Some(1),             // mode
-            ChipMusic => Some(6),          // sound_effect, voice, volume, pitch, timing, stop_type
-            ScreenClear => Some(1),        // mode
-            PauseSeconds => Some(1),       // seconds
-            VsyncPause => Some(1),         // vsyncs
-            CursorMotion => Some(2),       // direction, count
-            PositionCursor => Some(2),     // x, y
-            InverseVideo => Some(1),       // enabled
-            LineWrap => Some(1),           // enabled
-            SetTextColor => Some(2),       // layer, color
-            DeleteLines => Some(1),        // count
-            InsertLine => Some(2),         // mode, count (mode optional, defaults to 0)
-            ClearLine => Some(1),          // mode (optional, defaults to 0)
-            RememberCursor => Some(1),     // value (optional, defaults to 0)
+            // Fixed parameter commands
+            Line => 4,               // x1, y1, x2, y2
+            LineDrawTo => 2,         // x, y
+            Circle => 3,             // x, y, radius
+            Box => 5,                // x1, y1, x2, y2, rounded
+            RoundedRectangles => 5,  // x1, y1, x2, y2, fill
+            FilledRectangle => 4,    // x1, y1, x2, y2
+            PolyMarker => 2,         // x, y
+            Ellipse => 4,            // x, y, x_radius, y_radius
+            Arc => 5,                // x, y, radius, start_angle, end_angle
+            EllipticalArc => 6,      // x, y, x_radius, y_radius, start_angle, end_angle
+            PieSlice => 5,           // x, y, radius, start_angle, end_angle
+            EllipticalPieSlice => 6, // x, y, x_radius, y_radius, start_angle, end_angle
+            ColorSet => 2,           // pen, color
+            AttributeForFills => 3,  // type, pattern, border
+            FloodFill => 2,          // x, y
+            SetPenColor => 4,        // pen, red, green, blue
+            DrawingMode => 1,        // mode
+            HollowSet => 1,          // enabled
+            WriteText => 2,          // x, y (text comes separately)
+            LineType => 3,           // type, kind, value
+            TextEffects => 3,        // effects, size, rotation
+            Initialize => 1,         // mode
+            SetResolution => 2,      // resolution, palette
+            GraphicScaling => 1,     // mode
+            Cursor => 1,             // mode
+            ChipMusic => 6,          // sound_effect, voice, volume, pitch, timing, stop_type
+            ScreenClear => 1,        // mode
+            PauseSeconds => 1,       // seconds
+            VsyncPause => 1,         // vsyncs
+            CursorMotion => 2,       // direction, count
+            PositionCursor => 2,     // x, y
+            InverseVideo => 1,       // enabled
+            LineWrap => 1,           // enabled
+            SetTextColor => 2,       // layer, color
+            DeleteLines => 1,        // count
+            InsertLine => 2,         // mode, count
+            ClearLine => 1,          // mode
+            RememberCursor => 1,     // value
 
-            // Variable-length commands - return None
-            PolyLine => None,         // count, then count*2 coordinates
-            PolyFill => None,         // count, then count*2 coordinates
-            BellsAndWhistles => None, // variable based on subcommand
-            ExtendedCommand => None,  // variable based on subcommand
-            GrabScreen => None,       // variable based on blit type (2-8 params)
-            Noise => None,            // variable
-            InputCommand => None,     // variable
-            AskIG => None,            // variable (1-2 params)
-            LoopCommand => None,      // complex variable structure
+            // Variable commands that depend on first parameter
+            PolyLine | PolyFill => {
+                // First param is point count, total = 1 + count*2
+                if first_param > 0 {
+                    1 + (first_param as usize) * 2
+                } else {
+                    1 // Minimum: just the count parameter
+                }
+            }
+
+            BellsAndWhistles => {
+                // First param determines sub-command
+                match first_param {
+                    20 => 7, // AlterSoundEffect: id + 6 params
+                    21 => 1, // StopAllSound: just id
+                    22 => 2, // RestoreSoundEffect: id + sound_effect
+                    23 => 2, // SetEffectLoops: id + count
+                    _ => 1,  // Default sound effect: just id (0-19)
+                }
+            }
+
+            ExtendedCommand => {
+                // First param is sub-command ID
+                match first_param {
+                    0 => 6, // SprayPaint: id + 5 params
+                    1 => 3, // SetColorRegister: id + 2 params
+                    2 => 3, // SetRandomRange: id + 2 params (small range)
+                    // Note: Can also be 4 for big range, but default to small
+                    3 => 2,  // RightMouseMacro: id + at least 1 param (we use minimum)
+                    4 => 8,  // DefineZone: id + 7 params (or 2 for clear, but default to define)
+                    5 => 2,  // FlowControl: id + mode (minimum)
+                    6 => 2,  // LeftMouseButton: id + mode
+                    7 => 2,  // LoadFillPattern: id + pattern
+                    8 => 5,  // RotateColorRegisters: id + 4 params
+                    9 => 2,  // LoadMidiBuffer: id + at least 1 param
+                    10 => 3, // SetDrawtoBegin: id + x + y
+                    11 => 2, // LoadBitblitMemory: id + at least 1 param
+                    12 => 2, // LoadColorPalette: id + at least 1 param
+                    _ => 1,  // Unknown sub-command: just id
+                }
+            }
+
+            GrabScreen => {
+                // First param is blit type
+                match first_param {
+                    0 => 8, // ScreenToScreen: type + mode + 6 coords
+                    1 => 6, // ScreenToMemory: type + mode + 4 coords
+                    2 => 4, // MemoryToScreen: type + mode + 2 coords
+                    3 => 8, // PieceOfMemoryToScreen: type + mode + 6 coords
+                    4 => 8, // MemoryToMemory: type + mode + 6 coords
+                    _ => 2, // Unknown blit type: type + mode minimum
+                }
+            }
+
+            AskIG => {
+                // First param is query type
+                match first_param {
+                    0 => 1, // VersionNumber: just query type
+                    1 => 2, // CursorPositionAndMouseButton: type + pointer_type
+                    2 => 2, // MousePositionAndButton: type + pointer_type
+                    3 => 1, // CurrentResolution: just query type
+                    _ => 1, // Unknown query: just type
+                }
+            }
+
+            InputCommand => 2, // type + at least 1 param
+
+            // Commands with truly variable/unknown parameter counts
+            Noise => 1,       // Minimum 1 parameter
+            LoopCommand => 5, // from, to, step, delay, target (minimum)
+        }
+    }
+
+    /// Check if this command type has variable parameter count
+    pub fn has_variable_parameters(&self) -> bool {
+        use IgsCommandType::*;
+        matches!(
+            self,
+            PolyLine | PolyFill | BellsAndWhistles | ExtendedCommand | GrabScreen | Noise | InputCommand | AskIG | LoopCommand
+        )
+    }
+
+    /// Get minimum parameter count (when first param is not known)
+    pub fn min_parameter_count(&self) -> usize {
+        if self.has_variable_parameters() {
+            self.get_parameter_count(0)
+        } else {
+            self.get_parameter_count(0)
         }
     }
 
@@ -698,12 +783,14 @@ impl IgsCommandType {
                 Self::check_parameters(params, sink, "LineType", 3, |_sink| Some(IgsCommand::SetLineOrMarkerStyle { style }))
             }
             IgsCommandType::PauseSeconds => Self::check_parameters(params, sink, "PauseSeconds", 1, |_sink| {
-                Some(IgsCommand::PauseSeconds {
-                    seconds: params[0].value() as u8,
+                Some(IgsCommand::Pause {
+                    pause_type: PauseType::Seconds(params[0].value() as u8),
                 })
             }),
             IgsCommandType::VsyncPause => Self::check_parameters(params, sink, "VsyncPause", 1, |_sink| {
-                Some(IgsCommand::VsyncPause { vsyncs: params[0].value() })
+                Some(IgsCommand::Pause {
+                    pause_type: PauseType::VSync(params[0].value()),
+                })
             }),
             IgsCommandType::PolyLine | IgsCommandType::PolyFill => {
                 if params.is_empty() {

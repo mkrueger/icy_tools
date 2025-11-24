@@ -44,6 +44,9 @@ pub struct VdiPaint {
     pub scaling_mode: icy_parser_core::GraphicsScalingMode,
 
     pub random_bounds: ParameterBounds,
+
+    // Stack for temporarily changing drawing mode (e.g., for XOR loops)
+    drawing_mode_stack: Vec<DrawingMode>,
 }
 
 unsafe impl Send for VdiPaint {}
@@ -82,6 +85,7 @@ impl VdiPaint {
             blit_buffer: BlitSurface::new(0, 0),
             scaling_mode: icy_parser_core::GraphicsScalingMode::Normal,
             random_bounds: ParameterBounds::default(),
+            drawing_mode_stack: Vec::new(),
         }
     }
 
@@ -219,5 +223,17 @@ impl VdiPaint {
 
     pub fn set_fill_pattern(&mut self, pattern_type: PatternType) {
         self.fill_pattern_type = pattern_type;
+    }
+
+    /// Push current drawing mode onto stack (for IGS XOR loops)
+    pub fn push_drawing_mode(&mut self) {
+        self.drawing_mode_stack.push(self.drawing_mode);
+    }
+
+    /// Pop and restore previous drawing mode from stack
+    pub fn pop_drawing_mode(&mut self) {
+        if let Some(mode) = self.drawing_mode_stack.pop() {
+            self.drawing_mode = mode;
+        }
     }
 }

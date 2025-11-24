@@ -134,6 +134,11 @@ impl HelpDialog {
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-clear-screen"),
                     },
                     Shortcut {
+                        keys: format!("{mod_symbol} B"),
+                        action: fl!(crate::LANGUAGE_LOADER, "help-action-scrollback"),
+                        desc: fl!(crate::LANGUAGE_LOADER, "help-desc-scrollback"),
+                    },
+                    Shortcut {
                         keys: format!("{mod_symbol} I"),
                         action: fl!(crate::LANGUAGE_LOADER, "help-action-capture-screen"),
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-capture-screen"),

@@ -1,6 +1,56 @@
 use super::*;
 use std::fmt;
 
+/// Pause type for IGS pause commands
+#[derive(Debug, Clone, PartialEq)]
+pub enum PauseType {
+    /// Pause for specified seconds (t command)
+    Seconds(u8),
+    /// Pause for specified vsyncs (q command)
+    VSync(i32),
+    /// Pause for specified milliseconds (used internally for loops)
+    MilliSeconds(u32),
+}
+
+impl PauseType {
+    /// Get pause duration in milliseconds
+    pub fn ms(&self) -> u64 {
+        match self {
+            PauseType::Seconds(seconds) => (*seconds as u64) * 1000,
+            PauseType::VSync(vsyncs) => {
+                if *vsyncs <= 180 {
+                    // Normal vsync pause: 60Hz = 16.67ms per vsync
+                    (*vsyncs as u64 * 1000) / 60
+                } else {
+                    // Special double-stepping modes don't pause
+                    0
+                }
+            }
+            PauseType::MilliSeconds(ms) => *ms as u64,
+        }
+    }
+
+    /// Check if this is a double-stepping configuration command
+    pub fn is_double_step_config(&self) -> bool {
+        match self {
+            PauseType::VSync(v) => *v >= 9995 && *v <= 9999,
+            _ => false,
+        }
+    }
+
+    /// Get double-stepping delay in vsyncs (if this is a config command)
+    pub fn get_double_step_vsyncs(&self) -> Option<u8> {
+        match self {
+            PauseType::VSync(9995) => Some(3), // 3 vsyncs between steps
+            PauseType::VSync(9996) => Some(2), // 2 vsyncs between steps
+            PauseType::VSync(9997) => Some(1), // 1 vsync between steps
+            PauseType::VSync(9998) => Some(0), // No delay between steps
+            PauseType::VSync(9999) => None,    // Turn off double-stepping
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum IgsCommand {
     // Drawing commands
@@ -657,31 +707,19 @@ pub enum IgsCommand {
     ///   - VdiDefault: VDI default palette
     SetResolution { resolution: TerminalResolution, palette: PaletteMode },
 
-    /// Time pause command (t)
+    /// Pause command (t/q)
     ///
-    /// IGS: `G#t>seconds:`
+    /// IGS: `G#t>seconds:` or `G#q>vsyncs:`
     ///
-    /// Sends ^S (XOFF), waits for specified seconds, then sends ^Q (XON).
-    /// Any key press aborts the pause prematurely. Used to prevent BBS timeouts
-    /// during graphics display. Maximum 30 seconds; chain multiple for longer pauses.
+    /// Unified pause command supporting both time-based and vsync-based delays.
     ///
-    /// # Parameters
-    /// * `seconds` - Number of seconds to pause (max 30)
+    /// # Pause Types
+    /// * `PauseType::Seconds(u8)` - Pauses for N seconds (max 30). Any key press aborts.
+    ///   Used to prevent BBS timeouts during graphics display.
+    ///   Example: `G#t>30:t>5:` - 35 seconds total (30 + 5)
     ///
-    /// # Example
-    /// `G#t>30:t>5:` - Pauses for 35 seconds total (30 + 5)
-    PauseSeconds { seconds: u8 },
-
-    /// Vsync pause command (q)
-    ///
-    /// IGS: `G#q>vsyncs:`
-    ///
-    /// Pauses execution for specified vertical syncs (1/60th second each).
-    /// Vsync() waits until the screen's next vertical blank, ensuring smooth animations.
-    /// Also controls internal double-stepping for BitBlit's GrabScreen command.
-    ///
-    /// # Parameters
-    /// * `vsyncs` - Number of vertical syncs to wait, or special values:
+    /// * `PauseType::VSync(i32)` - Pauses for N vertical syncs (1/60th second each).
+    ///   Waits for vertical blank, ensuring smooth animations.
     ///   - 0-9994: Normal pause for N vsyncs (max ~180 recommended)
     ///   - 9995: Enable double-step with 3 vsync delay
     ///   - 9996: Enable double-step with 2 vsync delay
@@ -691,7 +729,7 @@ pub enum IgsCommand {
     ///
     /// # Note
     /// Double-step mode makes GrabScreen command internally step by 2 for XOR operations
-    VsyncPause { vsyncs: i32 },
+    Pause { pause_type: PauseType },
 
     /// Loop command (&)
     ///
@@ -1274,8 +1312,20 @@ impl fmt::Display for IgsCommand {
             },
             IgsCommand::ScreenClear { mode } => write!(f, "G#s>{}:", *mode as u8),
             IgsCommand::SetResolution { resolution, palette } => write!(f, "G#R>{},{}:", *resolution as u8, *palette as u8),
-            IgsCommand::PauseSeconds { seconds } => write!(f, "G#t>{}:", seconds),
-            IgsCommand::VsyncPause { vsyncs } => write!(f, "G#q>{}:", vsyncs),
+            IgsCommand::Pause { pause_type } => match pause_type {
+                PauseType::Seconds(seconds) => write!(f, "G#t>{}:", seconds),
+                PauseType::VSync(vsyncs) => write!(f, "G#q>{}:", vsyncs),
+                PauseType::MilliSeconds(ms) => {
+                    // Convert back to appropriate command for serialization
+                    if *ms >= 1000 {
+                        write!(f, "G#t>{}:", ms / 1000)
+                    } else {
+                        // Convert to vsyncs: ms * 60 / 1000
+                        let vsyncs = ((*ms as u64 * 60) / 1000).max(1);
+                        write!(f, "G#q>{}:", vsyncs)
+                    }
+                }
+            },
             IgsCommand::Loop(data) => {
                 write!(f, "G#&>{},{},{},{}", data.from, data.to, data.step, data.delay)?;
 

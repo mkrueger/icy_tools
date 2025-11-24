@@ -1,14 +1,17 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use iced::{Color, widget};
 use icy_engine::Screen;
 
-use crate::Viewport;
+use crate::{ScrollbarState, Viewport};
 
 pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub original_screen: Option<Arc<Mutex<Box<dyn Screen>>>>,
     pub viewport: Viewport,
+    pub scrollbar: ScrollbarState,
+    pub scrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for scrollbar
     pub font_size: f32,
     pub char_width: f32,
     pub char_height: f32,
@@ -31,6 +34,8 @@ impl Terminal {
             screen,
             original_screen: None,
             viewport,
+            scrollbar: ScrollbarState::new(),
+            scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             font_size: 16.0,
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,
@@ -46,6 +51,37 @@ impl Terminal {
             // Only update content size, not visible size (which is the widget size, not screen size)
             self.viewport.set_content_size(virtual_size.width as f32, virtual_size.height as f32);
         }
+        // Sync scrollbar position with viewport (after the lock is dropped)
+        self.sync_scrollbar_with_viewport();
+    }
+
+    /// Sync scrollbar state with viewport scroll position
+    pub fn sync_scrollbar_with_viewport(&mut self) {
+        let max_scroll = self.viewport.max_scroll_y();
+        if max_scroll > 0.0 {
+            let scroll_ratio = self.viewport.scroll_y / max_scroll;
+            self.scrollbar.set_scroll_position(scroll_ratio);
+        } else {
+            self.scrollbar.set_scroll_position(0.0);
+        }
+    }
+
+    /// Update animations for both viewport and scrollbar
+    /// Should be called from ViewportTick
+    pub fn update_animations(&mut self) {
+        // Update viewport animation
+        self.viewport.update_animation();
+
+        // Sync scrollbar position after viewport animation
+        self.sync_scrollbar_with_viewport();
+
+        // Update scrollbar fade animation (uses same delta_time logic as viewport)
+        self.scrollbar.update_animation();
+    }
+
+    /// Check if any animations are active
+    pub fn needs_animation(&self) -> bool {
+        self.viewport.is_animating() || self.scrollbar.needs_animation()
     }
 
     pub fn is_in_scrollback_mode(&self) -> bool {

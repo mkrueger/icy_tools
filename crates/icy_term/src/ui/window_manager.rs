@@ -236,9 +236,9 @@ impl WindowManager {
             }
 
             WindowManagerMessage::ViewportTick => {
-                // Update viewport animation for all windows
+                // Update viewport and scrollbar animations for all windows
                 for window in self.windows.values_mut() {
-                    window.terminal_window.terminal.viewport.update_animation();
+                    window.terminal_window.terminal.update_animations();
                 }
                 Task::none()
             }
@@ -259,7 +259,7 @@ impl WindowManager {
     }
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        let subs = vec![
+        let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
@@ -318,8 +318,14 @@ impl WindowManager {
                 Some(WindowManagerMessage::Event(window_id, event))
             }),
             iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::UpdateBuffers),
-            iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::ViewportTick),
         ];
+
+        // Only subscribe to ViewportTick if any window needs animation (viewport or scrollbar)
+        let any_animating = self.windows.values().any(|w| w.terminal_window.terminal.needs_animation());
+        if any_animating {
+            subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::ViewportTick));
+        }
+
         iced::Subscription::batch(subs)
     }
 

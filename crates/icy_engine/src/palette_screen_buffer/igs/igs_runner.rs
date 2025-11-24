@@ -486,11 +486,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             }
         }
 
-        IgsCommand::PauseSeconds { .. } => {
-            // Pauses are typically ignored in non-real-time rendering, handled on viewer/terminal level
-        }
-
-        IgsCommand::VsyncPause { .. } => {
+        IgsCommand::Pause { .. } => {
             // Pauses are typically ignored in non-real-time rendering, handled on viewer/terminal level
         }
 

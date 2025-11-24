@@ -79,6 +79,7 @@ pub struct MainWindow {
     connection_time: Option<Instant>,
     current_address: Option<Address>,
     last_address: Option<Address>,
+    pause_message: Option<String>,
     terminal_emulation: TerminalEmulation,
 
     _is_fullscreen_mode: bool,
@@ -146,6 +147,7 @@ impl MainWindow {
             connection_time: None,
             current_address: None,
             last_address: None,
+            pause_message: None,
 
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
@@ -678,14 +680,37 @@ impl MainWindow {
                 Task::none()
             }
 
-            Message::ScrollViewportTo(x, y) => {
-                self.terminal_window.terminal.viewport.scroll_to(x, y);
+            Message::ScrollViewportTo(smooth, x, y) => {
+                // Immediate scroll for scrollbar interaction (no smooth animation)
+                if smooth {
+                    self.terminal_window.terminal.viewport.scroll_to(x, y);
+                } else {
+                    self.terminal_window.terminal.viewport.scroll_to_immediate(x, y);
+                }
+                self.terminal_window.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
 
             Message::ViewportTick => {
                 // Update viewport animation
                 self.terminal_window.terminal.viewport.update_animation();
+                Task::none()
+            }
+
+            Message::ScrollbarHovered(is_hovered) => {
+                // Update scrollbar hover state for animation
+                self.terminal_window.terminal.scrollbar.set_hovered(is_hovered);
+                Task::none()
+            }
+
+            Message::CursorLeftWindow => {
+                // Fade out scrollbar when cursor leaves window
+                self.terminal_window.terminal.scrollbar.set_hovered(false);
+                // Reset hover tracking state so next cursor move triggers hover update
+                self.terminal_window
+                    .terminal
+                    .scrollbar_hover_state
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 Task::none()
             }
 
@@ -913,6 +938,14 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            TerminalEvent::InformDelay(ms) => {
+                self.pause_message = Some(format!("Pause {}ms", ms));
+                Task::none()
+            }
+            TerminalEvent::ContinueAfterDelay => {
+                self.pause_message = None;
+                Task::none()
+            }
             TerminalEvent::Beep => {
                 let r = self.sound_thread.lock().unwrap().beep();
                 if let Err(r) = r {
@@ -997,7 +1030,7 @@ impl MainWindow {
             } else {
                 &self.settings_dialog.original_options.lock().unwrap()
             };
-            self.terminal_window.view(settings)
+            self.terminal_window.view(settings, &self.pause_message)
         };
 
         match &self.state.mode {
@@ -1066,6 +1099,9 @@ impl MainWindow {
             }
             Event::Window(window::Event::Unfocused) => {
                 return Some(Message::SetFocus(false));
+            }
+            Event::Mouse(iced::mouse::Event::CursorLeft) => {
+                return Some(Message::CursorLeftWindow);
             }
 
             _ => {}
@@ -1155,12 +1191,12 @@ impl MainWindow {
                                 }
                                 // Home: scroll to top
                                 keyboard::Key::Named(keyboard::key::Named::Home) => {
-                                    return Some(Message::ScrollViewportTo(0.0, 0.0));
+                                    return Some(Message::ScrollViewportTo(true, 0.0, 0.0));
                                 }
                                 // End: scroll to bottom
                                 keyboard::Key::Named(keyboard::key::Named::End) => {
                                     let max_y = self.terminal_window.terminal.viewport.max_scroll_y();
-                                    return Some(Message::ScrollViewportTo(0.0, max_y));
+                                    return Some(Message::ScrollViewportTo(true, 0.0, max_y));
                                 }
                                 // Any other key exits scrollback mode
                                 _ => {

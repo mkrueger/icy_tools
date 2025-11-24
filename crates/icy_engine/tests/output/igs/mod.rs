@@ -80,3 +80,19 @@ pub fn test_igs_gof() {
         super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }
+
+#[test]
+pub fn test_ignite() {
+    crate::init_logging();
+    for entry in fs::read_dir("tests/output/igs/ignite01").expect("Error reading test_data directory.") {
+        let cur_entry = entry.unwrap().path();
+        if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("IG") {
+            continue;
+        }
+        log::info!("Testing IGS file: {:?}", cur_entry);
+        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
+
+        let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Low, true).create_screen(TerminalEmulation::AtariST, None);
+        super::run_parser_compare(&mut screen, &cur_entry, &data);
+    }
+}

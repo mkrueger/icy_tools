@@ -5,6 +5,12 @@ pub use terminal::*;
 pub mod viewport;
 pub use viewport::*;
 
+pub mod scrollbar_state;
+pub use scrollbar_state::*;
+
+pub mod scrollbar_overlay;
+pub use scrollbar_overlay::*;
+
 pub mod terminal_shader;
 pub use terminal_shader::*;
 

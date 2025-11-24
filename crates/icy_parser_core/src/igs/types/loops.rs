@@ -1,4 +1,4 @@
-use crate::{CommandSink, IgsCommand, IgsCommandType, IgsParameter, ParameterBounds};
+use crate::{CommandSink, IgsCommand, IgsCommandType, IgsParameter, ParameterBounds, PauseType};
 
 /// Describes what command the loop executes each iteration.
 ///
@@ -163,12 +163,29 @@ pub enum LoopParamToken {
 /// The loop executes roughly as:
 /// ```pseudocode
 /// current = from
+/// text_cursor = 0
+/// ring_cursor = 0
 /// while (from <= to ? current <= to : current >= to):
-///     compute parameters from the stream (x→current, y→opposite, etc.)
+///     collect param_count values from params ring (wrapping at end)
+///     compute parameters (x→current, y→opposite, r→random, etc.)
+///     if W@ (WriteText with refresh): use next text from text_tokens ring
 ///     execute target_command with these parameters
 ///     delay for DELAY * (1/200) seconds
 ///     current += (from <= to ? step : -step)
 /// ```
+///
+/// **Text Refresh (`W@`)**: When `refresh_text_each_iteration` is true and the
+/// target is `WriteText`, the loop cycles through all `Text` tokens found in
+/// the parameter stream. Example:
+/// ```text
+/// G#&>20,140,20,0,W@,2,0,x,First@Second@Third@
+/// ```
+/// This displays "First" at y=20, "Second" at y=40, "Third" at y=60, etc.
+///
+/// **Parameter Ring**: All parameters (excluding `GroupSeparator` and `Text`)
+/// form a ring buffer. The loop consumes `param_count` values per iteration,
+/// wrapping back to the start when reaching the end. This matches IG 2.17's
+/// `lp_eff_ct` behavior.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopCommandData {
     /// Start value for the stepping variable (inclusive).
@@ -227,12 +244,33 @@ impl LoopCommandData {
         if self.step == 0 {
             return;
         }
-
         let forward = self.from <= self.to;
         let step_value = if forward { self.step.abs() } else { -self.step.abs() };
 
         let mut current = self.from;
         let (rnd_min, rnd_max) = bounds.small_range();
+
+        // Parameter ring cursor - persists across iterations like IG 2.17's lp_eff_ct
+        let mut ring_cursor = 0usize;
+        let total_params = self.params.len();
+
+        if total_params == 0 {
+            return; // No parameters to process
+        }
+
+        // Extract all text tokens for W@ (WriteText with refresh) commands
+        let text_tokens: Vec<&Vec<u8>> = self
+            .params
+            .iter()
+            .filter_map(|token| if let LoopParamToken::Text(text) = token { Some(text) } else { None })
+            .collect();
+
+        let mut text_cursor = 0usize;
+
+        // Enable XOR mode if modifier is set
+        if self.modifiers.xor_stepping {
+            sink.begin_igs_xor_mode();
+        }
 
         loop {
             // Check loop termination
@@ -247,14 +285,14 @@ impl LoopCommandData {
             // The command may be executed multiple times per iteration if param_count
             // is larger than what the command needs
             let reverse_value = self.to + self.from - current; // y = from + to - x
-            let mut param_index = 0;
 
-            // Collect ALL param_count values
+            // Collect ALL param_count values from the parameter ring
             let mut all_params = Vec::new();
+            let mut params_collected = 0;
 
-            while param_index < self.param_count as usize && param_index < self.params.len() {
-                let token = &self.params[param_index];
-                param_index += 1;
+            while params_collected < self.param_count as usize {
+                let token: &LoopParamToken = &self.params[ring_cursor];
+                ring_cursor = (ring_cursor + 1) % total_params;
 
                 let value = match token {
                     LoopParamToken::Number(param) => param.evaluate(bounds),
@@ -270,31 +308,52 @@ impl LoopCommandData {
                         }
                     }
                     LoopParamToken::GroupSeparator => {
-                        // Skip group separators, they don't count
+                        // Skip group separators, they don't count towards param_count
                         continue;
                     }
                     LoopParamToken::Text(_) => {
-                        // Text tokens handled separately for W@ commands
+                        // Text tokens handled separately for W@ commands - skip them here
                         continue;
                     }
                 };
 
                 all_params.push(value);
+                params_collected += 1;
             }
 
             // Now execute the command as many times as needed based on param requirements
             // For example, Circle needs 3 params, so if param_count=12, execute 4 times
             match &self.target {
                 LoopTarget::Single(cmd_type) => {
-                    let params_per_command = cmd_type.parameter_count().unwrap_or(0);
-                    if params_per_command > 0 {
-                        let mut offset = 0;
-                        while offset + params_per_command <= all_params.len() {
-                            let cmd_params = &all_params[offset..offset + params_per_command];
-                            if let Some(cmd) = Self::build_command(*cmd_type, cmd_params) {
-                                sink.emit_igs(cmd);
+                    // Special handling for WriteText with refresh modifier
+                    if *cmd_type == IgsCommandType::WriteText && self.modifiers.refresh_text_each_iteration {
+                        // W@ command: use x,y from params and cycle through text tokens
+                        if all_params.len() >= 2 && !text_tokens.is_empty() {
+                            let text = text_tokens[text_cursor % text_tokens.len()].clone();
+                            text_cursor += 1;
+
+                            sink.emit_igs(IgsCommand::WriteText {
+                                x: all_params[0].into(),
+                                y: all_params[1].into(),
+                                text,
+                            });
+                        }
+                    } else {
+                        // Use first parameter to determine parameter count for variable commands
+                        let first_param = all_params.first().copied().unwrap_or(0);
+                        let params_per_command = cmd_type.get_parameter_count(first_param);
+                        if params_per_command > 0 {
+                            let mut offset = 0;
+                            while offset + params_per_command <= all_params.len() {
+                                let cmd_params = &all_params[offset..offset + params_per_command];
+
+                                // Convert i32 params to IgsParameter
+                                let igs_params: Vec<IgsParameter> = cmd_params.iter().map(|&v| IgsParameter::Value(v)).collect();
+                                if let Some(cmd) = cmd_type.create_command(sink, &igs_params, &[]) {
+                                    sink.emit_igs(cmd);
+                                }
+                                offset += params_per_command;
                             }
-                            offset += params_per_command;
                         }
                     }
                 }
@@ -303,11 +362,20 @@ impl LoopCommandData {
                     if !all_params.is_empty() {
                         let index: usize = (all_params[0].abs() as usize) % commands.len();
                         let cmd_type = commands[index];
-                        let params_per_command = cmd_type.parameter_count().unwrap_or(0);
 
-                        if params_per_command > 0 && params_per_command <= all_params.len() {
-                            if let Some(cmd) = Self::build_command(cmd_type, &all_params[..params_per_command]) {
-                                sink.emit_igs(cmd);
+                        // For chain gang, skip the index parameter and use remaining params
+                        let remaining_params = &all_params[1..];
+                        if !remaining_params.is_empty() {
+                            let first_param = remaining_params[0];
+                            let params_per_command = cmd_type.get_parameter_count(first_param);
+
+                            if params_per_command <= remaining_params.len() {
+                                // Convert i32 params to IgsParameter
+                                let igs_params: Vec<IgsParameter> = remaining_params[..params_per_command].iter().map(|&v| IgsParameter::Value(v)).collect();
+
+                                if let Some(cmd) = cmd_type.create_command(sink, &igs_params, &[]) {
+                                    sink.emit_igs(cmd);
+                                }
                             }
                         }
                     }
@@ -315,108 +383,22 @@ impl LoopCommandData {
             }
 
             // Apply delay if specified (delay is in 1/200 seconds)
+            // IGS spec: "4th parameter = DELAY in 200 hundredths of a between each step."
+            // Convert to milliseconds: delay * 1000 / 200 = delay * 5
             if self.delay > 0 {
-                // In a real implementation, this would pause execution
+                let delay_ms = (self.delay as u32) * 5;
+                sink.emit_igs(IgsCommand::Pause {
+                    pause_type: PauseType::MilliSeconds(delay_ms),
+                });
             }
 
             // Advance to next iteration
             current += step_value;
         }
-    }
 
-    /// Helper method to construct an IgsCommand from a command type and parameters.
-    /// This is a simplified implementation - a full implementation would need to
-    /// match all command types and their specific parameter requirements.
-    fn build_command(cmd_type: IgsCommandType, params: &[i32]) -> Option<IgsCommand> {
-        use IgsCommandType::*;
-
-        match cmd_type {
-            Line => {
-                if params.len() >= 4 {
-                    Some(IgsCommand::Line {
-                        x1: params[0].into(),
-                        y1: params[1].into(),
-                        x2: params[2].into(),
-                        y2: params[3].into(),
-                    })
-                } else {
-                    None
-                }
-            }
-            LineDrawTo => {
-                if params.len() >= 2 {
-                    Some(IgsCommand::LineDrawTo {
-                        x: params[0].into(),
-                        y: params[1].into(),
-                    })
-                } else {
-                    None
-                }
-            }
-            Circle => {
-                if params.len() >= 3 {
-                    Some(IgsCommand::Circle {
-                        x: params[0].into(),
-                        y: params[1].into(),
-                        radius: params[2].into(),
-                    })
-                } else {
-                    None
-                }
-            }
-            Box => {
-                if params.len() >= 5 {
-                    Some(IgsCommand::Box {
-                        x1: params[0].into(),
-                        y1: params[1].into(),
-                        x2: params[2].into(),
-                        y2: params[3].into(),
-                        rounded: params[4] != 0,
-                    })
-                } else {
-                    None
-                }
-            }
-            PolyMarker => {
-                if params.len() >= 2 {
-                    Some(IgsCommand::PolymarkerPlot {
-                        x: params[0].into(),
-                        y: params[1].into(),
-                    })
-                } else {
-                    None
-                }
-            }
-            ColorSet => {
-                if params.len() >= 2 {
-                    let pen = match params[0] {
-                        0 => crate::PenType::Polymarker,
-                        1 => crate::PenType::Line,
-                        2 => crate::PenType::Fill,
-                        3 => crate::PenType::Text,
-                        _ => crate::PenType::Polymarker,
-                    };
-                    Some(IgsCommand::ColorSet { pen, color: params[1] as u8 })
-                } else {
-                    None
-                }
-            }
-            Arc => {
-                if params.len() >= 5 {
-                    Some(IgsCommand::Arc {
-                        x: params[0].into(),
-                        y: params[1].into(),
-                        radius: params[2].into(),
-                        start_angle: params[3].into(),
-                        end_angle: params[4].into(),
-                    })
-                } else {
-                    None
-                }
-            }
-            // Add more command types as needed
-            // For now, return None for unimplemented types
-            _ => None,
+        // Disable XOR mode if it was enabled
+        if self.modifiers.xor_stepping {
+            sink.end_igs_xor_mode();
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::{Position, Selection, Shape, TextAttribute, TextBuffer, TextPane};
+use crate::{BufferType, IceMode, Position, Selection, Shape, TextAttribute, TextBuffer, TextPane};
 
 pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<String> {
     let mut rtf = String::new();
@@ -29,8 +29,20 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         for y in start.y..=end.y {
             for x in start.x..=end.x {
                 let ch = buffer.get_char((x, y).into());
-                add_color(palette.get_rgb(ch.attribute.get_foreground()));
-                let bg = ch.attribute.get_background();
+                let mut fg = ch.attribute.get_foreground();
+                if buffer.buffer_type == BufferType::CP437 {
+                    if ch.attribute.is_bold() && fg < 8 {
+                        fg += 8; // bright variant
+                    }
+                }
+                add_color(palette.get_rgb(fg));
+
+                let mut bg = ch.attribute.get_background();
+                if buffer.ice_mode == IceMode::Ice {
+                    if ch.attribute.is_blinking() && bg < 8 {
+                        bg += 8; // bright variant
+                    }
+                }
                 if bg & (1 << 31) == 0 {
                     // skip transparent sentinel
                     add_color(palette.get_rgb(bg));

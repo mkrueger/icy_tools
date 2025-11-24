@@ -281,6 +281,7 @@ help-action-close-window = Zavřít okno
 help-action-new-window = Nové okno
 help-action-fullscreen = Celá obrazovka
 help-action-clear-screen = Vymazat obrazovku
+help-action-scrollback = Zobrazit historii
 help-action-capture-screen = Zachytit obrazovku
 help-action-capture-session = Zachytit relaci
 help-action-find = Najít

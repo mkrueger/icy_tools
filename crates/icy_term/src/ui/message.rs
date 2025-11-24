@@ -64,11 +64,13 @@ pub enum Message {
     ShowScrollback,
     SetFocus(bool),
     SendMouseEvent(MouseEvent),
-    ScrollViewport(f32, f32),       // dx, dy in pixels
-    ScrollViewportTo(f32, f32),     // x, y absolute position in pixels
-    ViewportTick,                   // Update viewport animation
-    SetScrollbackBufferSize(usize), // Set scrollback buffer size
+    ScrollViewport(f32, f32),         // dx, dy in pixels
+    ScrollViewportTo(bool, f32, f32), // smooth, x, y absolute position in pixels
+    ViewportTick,                     // Update viewport animation
+    SetScrollbackBufferSize(usize),   // Set scrollback buffer size
     McpCommand(Arc<crate::mcp::McpCommand>),
+    ScrollbarHovered(bool), // Scrollbar hover state changed
+    CursorLeftWindow,       // Cursor left the window
 
     FocusNext,
     FocusPrevious,

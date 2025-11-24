@@ -208,7 +208,8 @@ impl IgsParser {
             param_count: param_count as u16,
             params,
         };
-        sink.emit_igs(IgsCommand::Loop(data));
+        data.run(sink, &self.param_bounds);
+        //sink.emit_igs(IgsCommand::Loop(data));
         self.loop_tokens.clear();
         self.loop_token_buffer.clear();
         self.reading_chain_gang = false;
@@ -601,7 +602,8 @@ impl CommandParser for IgsParser {
                                         param_count: param_count as u16,
                                         params,
                                     };
-                                    sink.emit_igs(IgsCommand::Loop(data));
+                                    data.run(sink, &self.param_bounds);
+                                    //sink.emit_igs(IgsCommand::Loop(data));
                                     self.loop_tokens.clear();
                                     self.loop_token_buffer.clear();
                                     self.state = State::GotIgsStart;
@@ -733,7 +735,8 @@ impl CommandParser for IgsParser {
                                     param_count: param_count as u16,
                                     params,
                                 };
-                                sink.emit_igs(IgsCommand::Loop(data));
+                                data.run(sink, &self.param_bounds);
+                                // sink.emit_igs(IgsCommand::Loop(data));
                             }
                             self.loop_tokens.clear();
                             self.loop_token_buffer.clear();

@@ -653,33 +653,56 @@ impl TextBuffer {
         let font_dims = font_size;
         for layer in &self.layers {
             for sixel in &layer.sixels {
-                // Clip test
+                // Calculate sixel position in character coordinates
                 let sx_char = layer.get_offset().x + sixel.position.x;
                 let sy_char = layer.get_offset().y + sixel.position.y;
-                if sy_char > rect.bottom() || sx_char > rect.right() {
+
+                // Calculate sixel dimensions in character coordinates
+                let sixel_width_chars = (sixel.get_width() + font_dims.width - 1) / font_dims.width;
+                let sixel_height_chars = (sixel.get_height() + font_dims.height - 1) / font_dims.height;
+
+                // Skip if sixel is completely outside the rect
+                if sy_char + sixel_height_chars <= rect.start.y
+                    || sy_char > rect.bottom()
+                    || sx_char + sixel_width_chars <= rect.start.x
+                    || sx_char > rect.right()
+                {
                     continue;
                 }
 
+                // Calculate which part of the sixel is visible
                 let sx = sx_char - rect.start.x;
                 let sy = sy_char - rect.start.y;
-                if sx < 0 || sy < 0 {
+
+                // Calculate pixel offsets for clipping
+                let skip_x_px = if sx < 0 { -sx * font_dims.width } else { 0 };
+                let skip_y_px = if sy < 0 { -sy * font_dims.height } else { 0 };
+
+                // Calculate destination position (clamped to 0)
+                let dest_x_px = sx.max(0) * font_dims.width;
+                let dest_y_px = sy.max(0) * font_dims.height;
+
+                // Calculate how many pixels to copy
+                let sixel_line_bytes = (sixel.get_width() * 4) as usize;
+                let max_y = (dest_y_px + sixel.get_height() - skip_y_px).min(px_height);
+                let visible_width = (sixel.get_width() - skip_x_px).min(line_bytes / 4 - dest_x_px);
+
+                if visible_width <= 0 {
                     continue;
                 }
 
-                let sx_px = sx * font_dims.width;
-                let sy_px = sy * font_dims.height;
+                let visible_width_bytes = (visible_width * 4) as usize;
+                let mut sixel_line = (skip_y_px) as usize;
 
-                let sixel_line_bytes = (sixel.get_width() * 4) as usize;
-                let max_y = (sy_px + sixel.get_height()).min(px_height);
-                let mut sixel_line = 0usize;
+                for py in dest_y_px..max_y {
+                    let offset = (py * line_bytes + dest_x_px * 4) as usize;
+                    let src_o = sixel_line * sixel_line_bytes + (skip_x_px * 4) as usize;
 
-                for py in sy_px..max_y {
-                    let offset = (py * line_bytes + sx_px * 4) as usize;
-                    let src_o = sixel_line * sixel_line_bytes;
-                    if src_o + sixel_line_bytes > sixel.picture_data.len() || offset + sixel_line_bytes > pixels.len() {
+                    if src_o + visible_width_bytes > sixel.picture_data.len() || offset + visible_width_bytes > pixels.len() {
                         break;
                     }
-                    pixels[offset..offset + sixel_line_bytes].copy_from_slice(&sixel.picture_data[src_o..src_o + sixel_line_bytes]);
+
+                    pixels[offset..offset + visible_width_bytes].copy_from_slice(&sixel.picture_data[src_o..src_o + visible_width_bytes]);
                     sixel_line += 1;
                 }
             }

@@ -27,6 +27,9 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
 use web_time::{Duration, Instant};
 
+/// Minimum pause duration in milliseconds to display in status bar
+const MIN_PAUSE_DISPLAY_MS: u64 = 500;
+
 /// Messages sent to the terminal thread
 #[derive(Debug, Clone)]
 pub enum TerminalCommand {
@@ -63,6 +66,8 @@ pub enum TerminalEvent {
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
     PlayIgs(Box<IgsCommand>),
+    InformDelay(u64), // Delay in milliseconds
+    ContinueAfterDelay,
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +259,9 @@ pub struct TerminalThread {
 
     // Download directory
     download_directory: Option<PathBuf>,
+
+    /// Double-stepping mode for IGS G commands (0 = off, 1-3 = vsync delays)
+    double_step_vsyncs: Option<u8>,
 }
 
 impl TerminalThread {
@@ -282,6 +290,7 @@ impl TerminalThread {
             capture_writer: None,
             queueing_sink: QueueingSink::new(),
             download_directory: None,
+            double_step_vsyncs: None,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -778,17 +787,27 @@ impl TerminalThread {
             };
             // Check if this is a delay command that should be processed outside lock
             match &cmd {
-                QueuedCommand::Igs(IgsCommand::PauseSeconds { seconds }) => {
-                    tokio::time::sleep(Duration::from_secs((*seconds).into())).await;
-                    continue;
-                }
-                QueuedCommand::Igs(IgsCommand::VsyncPause { vsyncs }) => {
-                    tokio::time::sleep(Duration::from_millis(1000 * (*vsyncs) as u64 / 60)).await;
+                QueuedCommand::Igs(IgsCommand::Pause { pause_type }) => {
+                    if pause_type.is_double_step_config() {
+                        self.double_step_vsyncs = pause_type.get_double_step_vsyncs();
+                    } else {
+                        let delay_ms = pause_type.ms().min(10_000); // max 10s 
+                        if delay_ms > MIN_PAUSE_DISPLAY_MS {
+                            self.send_event(TerminalEvent::InformDelay(delay_ms));
+                        }
+                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        if delay_ms > MIN_PAUSE_DISPLAY_MS {
+                            self.send_event(TerminalEvent::ContinueAfterDelay);
+                        }
+                    }
                     continue;
                 }
 
                 QueuedCommand::Skypix(SkypixCommand::Delay { jiffies }) => {
-                    tokio::time::sleep(Duration::from_millis(1000 * (*jiffies) as u64 / 60)).await;
+                    let delay_ms = 1000 * (*jiffies) as u64 / 60;
+                    self.send_event(TerminalEvent::InformDelay(delay_ms));
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    self.send_event(TerminalEvent::ContinueAfterDelay);
                     continue;
                 }
 
@@ -876,6 +895,7 @@ impl TerminalThread {
 
             // Process command with lock, but release after max duration
             let lock_start = Instant::now();
+            let mut had_grab_screen = false;
 
             if let Ok(mut screen) = self.edit_screen.lock() {
                 // Handle commands that need direct screen access first
@@ -945,13 +965,21 @@ impl TerminalThread {
                             screen_sink.emit(parser_cmd);
                         }
                         QueuedCommand::Rip(rip_cmd) => {
+                            screen_sink.screen().mark_dirty();
                             screen_sink.emit_rip(rip_cmd);
                         }
                         QueuedCommand::Skypix(skypix_cmd) => {
+                            screen_sink.screen().mark_dirty();
                             screen_sink.emit_skypix(skypix_cmd);
                         }
-                        QueuedCommand::Igs(igs_cmd) => {
-                            screen_sink.emit_igs(igs_cmd);
+                        QueuedCommand::Igs(ref igs_cmd) => {
+                            screen_sink.screen().mark_dirty();
+
+                            // Track GrabScreen commands for double-stepping
+                            if matches!(igs_cmd, IgsCommand::GrabScreen { .. }) {
+                                had_grab_screen = true;
+                            }
+                            screen_sink.emit_igs(igs_cmd.clone());
                         }
                         QueuedCommand::DeviceControl(dcs) => {
                             screen_sink.device_control(dcs);
@@ -977,8 +1005,7 @@ impl TerminalThread {
                         if let Some(next_cmd) = next_cmd {
                             // Check if next command needs to be outside lock
                             match &next_cmd {
-                                QueuedCommand::Igs(IgsCommand::PauseSeconds { .. })
-                                | QueuedCommand::Igs(IgsCommand::VsyncPause { .. })
+                                QueuedCommand::Igs(IgsCommand::Pause { .. })
                                 | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
                                 | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
                                 | QueuedCommand::Igs(IgsCommand::StopAllSound)
@@ -1069,8 +1096,15 @@ impl TerminalThread {
                                 QueuedCommand::Skypix(skypix_cmd) => {
                                     screen_sink.emit_skypix(skypix_cmd);
                                 }
-                                QueuedCommand::Igs(igs_cmd) => {
-                                    screen_sink.emit_igs(igs_cmd);
+                                QueuedCommand::Igs(ref igs_cmd) => {
+                                    screen_sink.emit_igs(igs_cmd.clone());
+                                    // Track GrabScreen commands for double-stepping
+                                    if matches!(igs_cmd, IgsCommand::GrabScreen { .. }) {
+                                        had_grab_screen = self.double_step_vsyncs.is_some();
+                                        if had_grab_screen {
+                                            break;
+                                        }
+                                    }
                                 }
                                 QueuedCommand::DeviceControl(dcs) => {
                                     screen_sink.device_control(dcs);
@@ -1095,6 +1129,15 @@ impl TerminalThread {
                         editable.update_hyperlinks();
                     }
                 } // End of as_editable() block
+            }
+
+            // Apply double-stepping delay if GrabScreen was processed
+            if had_grab_screen {
+                if let Some(vsyncs) = self.double_step_vsyncs {
+                    // Calculate delay: vsyncs * (1000ms / 60Hz)
+                    let delay_ms = (vsyncs as u64) * 1000 / 60;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                }
             }
         } // End of main command processing loop
     }

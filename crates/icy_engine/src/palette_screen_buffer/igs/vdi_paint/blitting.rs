@@ -1,4 +1,5 @@
 use icy_parser_core::BlitMode;
+use std::fmt;
 
 use super::VdiPaint;
 use crate::{EditableScreen, Position};
@@ -71,6 +72,78 @@ pub struct BlitSurface {
     data: Vec<u8>,
     width: usize,
     height: usize,
+}
+
+impl fmt::Display for BlitSurface {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "BlitSurface {}x{} ({} bytes):", self.width, self.height, self.data.len())?;
+
+        // ASCII representation for pixel values 0-15
+        let chars = [
+            ' ', // 0
+            '░', // 1
+            '▒', // 2
+            '▓', // 3
+            '█', // 4
+            '◆', // 5
+            '●', // 6
+            '■', // 7
+            '▪', // 8
+            '◘', // 9
+            '○', // 10
+            '◙', // 11
+            '◊', // 12
+            '◈', // 13
+            '◉', // 14
+            '■', // 15
+        ];
+
+        // Print top border
+        write!(f, "┌")?;
+        for _ in 0..self.width {
+            write!(f, "─")?;
+        }
+        writeln!(f, "┐")?;
+
+        // Print each row
+        for y in 0..self.height {
+            write!(f, "│")?;
+            for x in 0..self.width {
+                let pixel = self.data[y * self.width + x];
+                let ch = if pixel <= 15 {
+                    chars[pixel as usize]
+                } else {
+                    '?' // For values > 15 (shouldn't happen with & 0xF)
+                };
+                write!(f, "{}", ch)?;
+            }
+            writeln!(f, "│")?;
+        }
+
+        // Print bottom border
+        write!(f, "└")?;
+        for _ in 0..self.width {
+            write!(f, "─")?;
+        }
+        writeln!(f, "┘")?;
+
+        // Print pixel value statistics
+        let mut histogram = [0u32; 16];
+        for &pixel in &self.data {
+            if pixel <= 15 {
+                histogram[pixel as usize] += 1;
+            }
+        }
+
+        writeln!(f, "Pixel distribution:")?;
+        for (value, count) in histogram.iter().enumerate() {
+            if *count > 0 {
+                writeln!(f, "  {} ('{}'): {} pixels", value, chars[value], count)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl BlitSurface {
@@ -160,7 +233,7 @@ impl VdiPaint {
         }
 
         let copy_width = src_region.width.min(dest_width - dest_x);
-        let copy_height = src_region.height.min(dest_height - dest_y);
+        let copy_height: usize = src_region.height.min(dest_height - dest_y);
 
         for y in 0..copy_height {
             for x in 0..copy_width {
@@ -179,7 +252,7 @@ impl VdiPaint {
         let src_region = BlitRegion::from_corners(from, to);
 
         if let Some(buffer) = self.copy_region_to_buffer(buf, &src_region) {
-            self.blit_buffer_to_screen(buf, &buffer, dest, blit_mode);
+            Self::blit_buffer_to_screen(buf, &buffer, dest, blit_mode);
         }
     }
 
@@ -192,8 +265,7 @@ impl VdiPaint {
     }
 
     pub fn blit_memory_to_screen(&mut self, buf: &mut dyn EditableScreen, blit_mode: BlitMode, dest: Position) {
-        let buffer = self.blit_buffer.clone();
-        self.blit_buffer_to_screen(buf, &buffer, dest, blit_mode);
+        Self::blit_buffer_to_screen(buf, &self.blit_buffer, dest, blit_mode);
     }
 
     fn copy_region_to_buffer(&self, buf: &dyn EditableScreen, region: &BlitRegion) -> Option<BlitSurface> {
@@ -207,12 +279,12 @@ impl VdiPaint {
         Some(BlitSurface::from_screen(buf.screen(), &region, res.width as usize))
     }
 
-    fn blit_buffer_to_screen(&self, buf: &mut dyn EditableScreen, buffer: &BlitSurface, dest: Position, blit_mode: BlitMode) {
+    fn blit_buffer_to_screen(buf: &mut dyn EditableScreen, buffer: &BlitSurface, dest: Position, blit_mode: BlitMode) {
         let res = buf.get_resolution();
         let screen_width = res.width as usize;
         let screen_height = res.height as usize;
 
-        let src_region = BlitRegion {
+        let src_region: BlitRegion = BlitRegion {
             x: 0,
             y: 0,
             width: buffer.width,
@@ -264,7 +336,7 @@ impl VdiPaint {
         let region = BlitRegion::from_corners(from, to);
 
         if let Some(temp_buffer) = Self::copy_buffer_region(&self.blit_buffer.data, self.blit_buffer.width, self.blit_buffer.height, &region) {
-            self.blit_buffer_to_screen(buf, &temp_buffer, dest, blit_mode);
+            Self::blit_buffer_to_screen(buf, &temp_buffer, dest, blit_mode);
         }
     }
 }

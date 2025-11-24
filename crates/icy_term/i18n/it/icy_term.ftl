@@ -280,6 +280,7 @@ help-action-close-window = Chiudi finestra
 help-action-new-window = Nuova finestra
 help-action-fullscreen = Schermo intero
 help-action-clear-screen = Pulisci schermo
+help-action-scrollback = Mostra cronologia
 help-action-capture-screen = Cattura schermo
 help-action-capture-session = Cattura sessione
 help-action-find = Trova

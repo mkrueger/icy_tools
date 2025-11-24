@@ -281,6 +281,7 @@ help-action-close-window = Fechar janela
 help-action-new-window = Nova janela
 help-action-fullscreen = Tela cheia
 help-action-clear-screen = Limpar tela
+help-action-scrollback = Mostrar histórico
 help-action-capture-screen = Capturar tela
 help-action-capture-session = Capturar sessão
 help-action-find = Buscar
