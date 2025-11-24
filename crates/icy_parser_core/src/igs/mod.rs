@@ -40,6 +40,7 @@ pub struct IgsParser {
 
     param_bounds: ParameterBounds,
     vt52_parser: Vt52Parser,
+    pub run_loop: bool,
     skip_next_lf: bool, // used for skipping LF in igs line G>....\n otherwise screen would scroll.
 }
 
@@ -56,6 +57,7 @@ impl IgsParser {
             reading_chain_gang: false,
             vt52_parser: Vt52Parser::new(crate::vt52::VT52Mode::Mixed),
             skip_next_lf: false,
+            run_loop: false,
             param_bounds: ParameterBounds::default(),
         }
     }
@@ -208,8 +210,11 @@ impl IgsParser {
             param_count: param_count as u16,
             params,
         };
-        data.run(sink, &self.param_bounds);
-        //sink.emit_igs(IgsCommand::Loop(data));
+        if self.run_loop {
+            data.run(sink, &self.param_bounds);
+        } else {
+            sink.emit_igs(IgsCommand::Loop(data));
+        }
         self.loop_tokens.clear();
         self.loop_token_buffer.clear();
         self.reading_chain_gang = false;
@@ -602,8 +607,11 @@ impl CommandParser for IgsParser {
                                         param_count: param_count as u16,
                                         params,
                                     };
-                                    data.run(sink, &self.param_bounds);
-                                    //sink.emit_igs(IgsCommand::Loop(data));
+                                    if self.run_loop {
+                                        data.run(sink, &self.param_bounds);
+                                    } else {
+                                        sink.emit_igs(IgsCommand::Loop(data));
+                                    }
                                     self.loop_tokens.clear();
                                     self.loop_token_buffer.clear();
                                     self.state = State::GotIgsStart;
@@ -735,8 +743,11 @@ impl CommandParser for IgsParser {
                                     param_count: param_count as u16,
                                     params,
                                 };
-                                data.run(sink, &self.param_bounds);
-                                // sink.emit_igs(IgsCommand::Loop(data));
+                                if self.run_loop {
+                                    data.run(sink, &self.param_bounds);
+                                } else {
+                                    sink.emit_igs(IgsCommand::Loop(data));
+                                }
                             }
                             self.loop_tokens.clear();
                             self.loop_token_buffer.clear();

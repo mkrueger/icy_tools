@@ -376,7 +376,9 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: Option<MusicOpti
         TerminalEmulation::AtariST => {
             if let ScreenMode::AtariST(_, igs) = screen_mode {
                 return if *igs {
-                    Box::new(icy_parser_core::IgsParser::new())
+                    let mut p = icy_parser_core::IgsParser::new();
+                    p.run_loop = true;
+                    Box::new(p)
                 } else {
                     Box::new(icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed))
                 };
