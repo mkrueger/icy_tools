@@ -6,8 +6,8 @@ use iced::{
     Border, Color, Element, Length,
     widget::{Space, button, column, container, row, scrollable, text},
 };
-use iced_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
-use iced_engine_gui::ui::*;
+use icy_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
+use icy_engine_gui::ui::*;
 use icy_net::serial::{CharSize, Parity, StopBits};
 
 use crate::{Options, ui::MainWindowMode};
@@ -319,19 +319,19 @@ impl SettingsDialogState {
 
         // Buttons
         let ok_button = primary_button(
-            format!("{}", iced_engine_gui::ButtonType::Ok),
+            format!("{}", icy_engine_gui::ButtonType::Ok),
             Some(crate::ui::Message::SettingsDialog(SettingsMsg::Save)),
         );
 
         let cancel_button = secondary_button(
-            format!("{}", iced_engine_gui::ButtonType::Cancel),
+            format!("{}", icy_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::SettingsDialog(SettingsMsg::Cancel)),
         );
 
         let reset_button = match self.current_category {
             SettingsCategory::Monitor => {
                 let current_settings = self.temp_options.lock().monitor_settings.clone();
-                let default_settings = iced_engine_gui::MonitorSettings::default();
+                let default_settings = icy_engine_gui::MonitorSettings::default();
                 let is_default = current_settings == default_settings;
                 let msg = if !is_default {
                     Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))

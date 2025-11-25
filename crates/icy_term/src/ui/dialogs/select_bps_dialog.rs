@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, column, container, radio, row, scrollable, text, text_input},
 };
-use iced_engine_gui::ui::*;
+use icy_engine_gui::ui::*;
 use icy_parser_core::BaudEmulation;
 
 use crate::ui::MainWindowMode;
@@ -238,11 +238,11 @@ impl SelectBpsDialog {
 
         // Buttons
         let cancel_button = secondary_button(
-            format!("{}", iced_engine_gui::ButtonType::Cancel),
+            format!("{}", icy_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         );
 
-        let ok_button = primary_button(format!("{}", iced_engine_gui::ButtonType::Ok), Some(crate::ui::Message::ApplyBaudEmulation));
+        let ok_button = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(crate::ui::Message::ApplyBaudEmulation));
 
         let buttons = button_row(vec![cancel_button.into(), ok_button.into()]);
 

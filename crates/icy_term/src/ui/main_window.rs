@@ -22,8 +22,8 @@ use crate::{
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use iced_engine_gui::{ButtonSet, ConfirmationDialog, DialogType};
 use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::BaudEmulation;
 use image::DynamicImage;
@@ -1111,16 +1111,16 @@ impl MainWindow {
         modifiers: keyboard::Modifiers,
     ) -> Option<Vec<u8>> {
         let key_map = match terminal_type {
-            icy_net::telnet::TerminalEmulation::PETscii => iced_engine_gui::key_map::C64_KEY_MAP,
-            icy_net::telnet::TerminalEmulation::ViewData => iced_engine_gui::key_map::VIDEOTERM_KEY_MAP,
-            icy_net::telnet::TerminalEmulation::Mode7 => iced_engine_gui::key_map::MODE7_KEY_MAP,
-            icy_net::telnet::TerminalEmulation::ATAscii => iced_engine_gui::key_map::ATASCII_KEY_MAP,
-            icy_net::telnet::TerminalEmulation::AtariST => iced_engine_gui::key_map::ATARI_ST_KEY_MAP,
-            _ => iced_engine_gui::key_map::ANSI_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::PETscii => icy_engine_gui::key_map::C64_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::ViewData => icy_engine_gui::key_map::VIDEOTERM_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::Mode7 => icy_engine_gui::key_map::MODE7_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::ATAscii => icy_engine_gui::key_map::ATASCII_KEY_MAP,
+            icy_net::telnet::TerminalEmulation::AtariST => icy_engine_gui::key_map::ATARI_ST_KEY_MAP,
+            _ => icy_engine_gui::key_map::ANSI_KEY_MAP,
         };
 
         // Use the lookup_key function from the key_map module
-        iced_engine_gui::key_map::lookup_key(key, physical, modifiers, key_map)
+        icy_engine_gui::key_map::lookup_key(key, physical, modifiers, key_map)
     }
 
     fn clear_selection(&mut self) {

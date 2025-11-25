@@ -1,6 +1,6 @@
 [package]
 name = "icy_engine"
-version = "0.4.0"
+version = "0.5.0"
 authors.workspace = true
 edition.workspace = true
 
@@ -40,7 +40,7 @@ libyaff = { workspace = true }
 walkdir = { workspace = true }
 pretty_assertions = "1.4.1"
 env_logger = "0.11"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 
 [[bench]]
 name = "render_region"

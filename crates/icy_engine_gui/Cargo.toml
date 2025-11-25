@@ -1,5 +1,5 @@
 [package]
-name = "iced_engine_gui"
+name = "icy_engine_gui"
 version = "0.5.0"
 authors.workspace = true
 edition.workspace = true

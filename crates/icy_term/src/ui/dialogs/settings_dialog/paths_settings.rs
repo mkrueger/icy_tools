@@ -3,7 +3,7 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, button, column, row, text, text_input},
 };
-use iced_engine_gui::{
+use icy_engine_gui::{
     section_header,
     settings::{effect_box, left_label},
 };

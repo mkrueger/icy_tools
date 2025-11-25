@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, column, container, row, scrollable, text, text_input},
 };
-use iced_engine_gui::ui::primary_button;
+use icy_engine_gui::ui::primary_button;
 use icy_net::iemsi::EmsiISI;
 
 use crate::ui::MainWindowMode;
@@ -204,7 +204,7 @@ impl ShowIemsiDialog {
 
         // Styled OK button
         let ok_button = primary_button(
-            format!("{}", iced_engine_gui::ButtonType::Ok),
+            format!("{}", icy_engine_gui::ButtonType::Ok),
             Some(crate::ui::Message::ShowIemsi(IemsiMsg::Close)),
         )
         .padding(10.0);

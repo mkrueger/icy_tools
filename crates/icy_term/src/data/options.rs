@@ -5,7 +5,7 @@ use std::{
 };
 
 use directories::UserDirs;
-use iced_engine_gui::MonitorSettings;
+use icy_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::{Modem, TerminalResult};

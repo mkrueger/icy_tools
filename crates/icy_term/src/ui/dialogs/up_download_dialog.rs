@@ -7,7 +7,7 @@ use iced::{
     Alignment, Border, Color, Element, Length, Padding, gradient,
     widget::{Space, button, column, container, progress_bar, row, scrollable, text},
 };
-use iced_engine_gui::ui::{danger_button_style, success_button_style};
+use icy_engine_gui::ui::{danger_button_style, success_button_style};
 use icy_net::protocol::{OutputLogMessage, TransferState};
 
 use crate::ui::MainWindowMode;
@@ -176,9 +176,9 @@ impl FileTransferDialogState {
 
             // Action buttons
             let button_label = if state.is_finished {
-                format!("{}", iced_engine_gui::ButtonType::Ok)
+                format!("{}", icy_engine_gui::ButtonType::Ok)
             } else {
-                format!("{}", iced_engine_gui::ButtonType::Cancel)
+                format!("{}", icy_engine_gui::ButtonType::Cancel)
             };
 
             let action_button = button(
@@ -467,7 +467,7 @@ impl FileTransferDialogState {
                     button(row![
                         text("✕").size(14),
                         Space::new().width(4.0),
-                        text(format!("{}", iced_engine_gui::ButtonType::Cancel)).size(14),
+                        text(format!("{}", icy_engine_gui::ButtonType::Cancel)).size(14),
                     ])
                     .on_press(crate::ui::Message::TransferDialog(TransferMsg::Close))
                     .padding([10, 20])

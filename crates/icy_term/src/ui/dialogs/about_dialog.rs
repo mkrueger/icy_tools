@@ -2,9 +2,9 @@ use iced::{
     Element, Length, Task,
     widget::{column, container},
 };
-use iced_engine_gui::ui::{button_row, dialog_area, primary_button, separator};
-use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use icy_engine::{AttributedChar, Position, Screen, TextAttribute, TextBuffer, TextPane, TextScreen};
+use icy_engine_gui::ui::{button_row, dialog_area, primary_button, separator};
+use icy_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -80,12 +80,12 @@ impl AboutDialog {
         settings.use_pixel_perfect_scaling = false;
 
         let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(|terminal_msg| match terminal_msg {
-            iced_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
+            icy_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
             _ => Message::None,
         });
 
         let ok_button = primary_button(
-            format!("{}", iced_engine_gui::ButtonType::Ok),
+            format!("{}", icy_engine_gui::ButtonType::Ok),
             Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
         );
 

@@ -20,7 +20,7 @@ regex = { workspace = true }
 github_release_check = { workspace = true }
 semver = { workspace = true }
 webbrowser = { workspace = true }
-iced_engine_gui = { workspace = true }
+icy_engine_gui = { workspace = true }
 fastrand = { workspace = true }
 clap = { workspace = true }
 jsonrpc-core = { workspace = true }

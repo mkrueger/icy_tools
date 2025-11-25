@@ -3,9 +3,9 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, column, container, pick_list, row, text, text_input},
 };
-use iced_engine_gui::settings::effect_box;
-use iced_engine_gui::ui::*;
 use icy_engine::{SaveOptions, Screen};
+use icy_engine_gui::settings::effect_box;
+use icy_engine_gui::ui::*;
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -306,7 +306,7 @@ impl ExportScreenDialogState {
         );
 
         let cancel_btn = secondary_button(
-            format!("{}", iced_engine_gui::ButtonType::Cancel),
+            format!("{}", icy_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel)),
         );
 

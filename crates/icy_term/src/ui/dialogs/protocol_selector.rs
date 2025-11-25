@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, button, column, container, row, scrollable, text},
 };
-use iced_engine_gui::ui::*;
+use icy_engine_gui::ui::*;
 use icy_net::protocol::TransferProtocolType;
 
 use crate::ui::{MainWindowMode, Message};
@@ -129,11 +129,11 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
     }
 
     let cancel_button = secondary_button(
-        format!("{}", iced_engine_gui::ButtonType::Cancel),
+        format!("{}", icy_engine_gui::ButtonType::Cancel),
         Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
     );
 
-    let protocol_list = iced_engine_gui::settings::effect_box(
+    let protocol_list = icy_engine_gui::settings::effect_box(
         scrollable(protocol_rows)
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default()))
             .into(),

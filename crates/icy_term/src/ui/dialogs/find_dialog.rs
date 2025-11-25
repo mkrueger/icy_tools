@@ -7,8 +7,8 @@ use iced::{
     alignment::{Horizontal, Vertical},
     widget::{Id, button, column, container, row, text, text_input},
 };
-use iced_engine_gui::ui::{BUTTON_FONT_SIZE, danger_button_style, primary_button_style, secondary_button_style};
 use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection};
+use icy_engine_gui::ui::{BUTTON_FONT_SIZE, danger_button_style, primary_button_style, secondary_button_style};
 
 use crate::ui::{MainWindowMode, Message};
 

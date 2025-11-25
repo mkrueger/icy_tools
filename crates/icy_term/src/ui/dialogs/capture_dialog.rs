@@ -3,8 +3,8 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, column, container, row, text, text_input},
 };
-use iced_engine_gui::settings::effect_box;
-use iced_engine_gui::ui::*;
+use icy_engine_gui::settings::effect_box;
+use icy_engine_gui::ui::*;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -184,16 +184,16 @@ impl CaptureDialogState {
 
         if self.pending_overwrite {
             let filename = self.temp_filename.clone();
-            let dialog = iced_engine_gui::ConfirmationDialog::new(
+            let dialog = icy_engine_gui::ConfirmationDialog::new(
                 fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-title"),
                 fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-message", filename = filename),
             )
-            .dialog_type(iced_engine_gui::DialogType::Warning)
+            .dialog_type(icy_engine_gui::DialogType::Warning)
             .secondary_message(fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-secondary"))
-            .buttons(iced_engine_gui::ButtonSet::OverwriteCancel);
+            .buttons(icy_engine_gui::ButtonSet::OverwriteCancel);
 
             dialog.view(modal, |result| match result {
-                iced_engine_gui::DialogResult::Overwrite => crate::ui::Message::CaptureDialog(CaptureMsg::ConfirmOverwrite),
+                icy_engine_gui::DialogResult::Overwrite => crate::ui::Message::CaptureDialog(CaptureMsg::ConfirmOverwrite),
                 _ => {
                     // Reset pending_overwrite flag when user cancels
                     crate::ui::Message::CaptureDialog(CaptureMsg::CancelOverwrite)
@@ -310,7 +310,7 @@ impl CaptureDialogState {
         };
 
         let cancel_btn = secondary_button(
-            format!("{}", iced_engine_gui::ButtonType::Cancel),
+            format!("{}", icy_engine_gui::ButtonType::Cancel),
             Some(crate::ui::Message::CaptureDialog(CaptureMsg::Cancel)),
         );
 

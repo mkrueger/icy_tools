@@ -3,7 +3,7 @@ use iced::{
     Alignment, Element, Length,
     widget::{checkbox, column, row, text_input},
 };
-use iced_engine_gui::{
+use icy_engine_gui::{
     SECTION_PADDING, section_header,
     settings::{effect_box_toggleable, left_label},
     ui::DIALOG_SPACING as INPUT_SPACING,

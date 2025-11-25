@@ -21,7 +21,7 @@ regex = { workspace = true }
 github_release_check = "0.2.1"
 semver = { workspace = true }
 webbrowser = { workspace = true }
-iced_engine_gui = { workspace = true }
+icy_engine_gui = { workspace = true }
 bstr = { workspace = true }
 clap = { workspace = true }
 #sound

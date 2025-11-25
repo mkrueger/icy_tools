@@ -6,8 +6,8 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use iced::{Event, keyboard};
-use iced_engine_gui::ui::*;
 use icy_engine::ScreenMode;
+use icy_engine_gui::ui::*;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use parking_lot::Mutex;
@@ -106,7 +106,7 @@ impl DialingDirectoryState {
         .padding(8);
 
         let close_btn = secondary_button(
-            format!("{}", iced_engine_gui::ButtonType::Close),
+            format!("{}", icy_engine_gui::ButtonType::Close),
             Some(Message::from(DialingDirectoryMsg::Close)),
         );
 

@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length, Padding, Theme,
     widget::{Space, column, container, row, scrollable, text},
 };
-use iced_engine_gui::ui::primary_button;
+use icy_engine_gui::ui::primary_button;
 
 pub struct HelpDialog;
 
@@ -359,7 +359,7 @@ impl HelpDialog {
             row![
                 Space::new().width(Length::Fill),
                 primary_button(
-                    format!("{}", iced_engine_gui::ButtonType::Close),
+                    format!("{}", icy_engine_gui::ButtonType::Close),
                     Some(crate::ui::Message::CloseDialog(Box::new(crate::ui::MainWindowMode::ShowTerminal)))
                 )
                 .padding(Padding::from([5, 20])),
