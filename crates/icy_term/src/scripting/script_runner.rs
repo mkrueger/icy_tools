@@ -66,7 +66,8 @@ impl ScriptRunner {
 
     /// Run a script from a file
     pub fn run_file(&mut self, path: &Path) -> Result<(), String> {
-        let script = std::fs::read_to_string(path).map_err(|e| format!("Failed to read script file: {}", e))?;
+        let script =
+            std::fs::read_to_string(path).map_err(|e| format!("{}:\n{}", i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-file-read-failed"), e))?;
 
         self.run_script(script)
     }

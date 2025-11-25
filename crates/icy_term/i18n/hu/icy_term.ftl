@@ -229,6 +229,14 @@ error-address-book-load-secondary=Úgy tűnik a címlista fájl sérült. Az Icy
 
     Technikai részletek:
 
+error-script-title=Szkript Hiba
+error-script-execution-failed=A szkript végrehajtása sikertelen
+error-script-file-read-failed=Nem sikerült beolvasni a szkript fájlt
+
+script-dialog-title=Lua Szkript Kiválasztása
+script-dialog-filter-lua=Lua Szkriptek
+script-dialog-filter-all=Minden Fájl
+
 # Help dialog
 help-title = Gyorsbillentyűk
 help-subtitle = Gyors referencia az iCY TERM-hez

@@ -169,7 +169,6 @@ impl TerminalLuaExtension {
 
                     // Search for pattern in screen text
                     if let Some(m) = regex.find(&screen_text) {
-                        println!("[SCRIPT] wait_for() FOUND: {:?}", m.as_str());
                         return Ok(Some(m.as_str().to_string()));
                     }
 
@@ -235,12 +234,9 @@ impl TerminalLuaExtension {
         globals.set(
             "disconnect",
             lua.create_function(move |_, ()| {
-                println!("[SCRIPT] disconnect()");
                 if command_tx.send(TerminalCommand::Disconnect).is_err() {
-                    println!("[SCRIPT] disconnect() FAILED");
                     return Err(mlua::Error::RuntimeError("Failed to disconnect".to_string()));
                 }
-                println!("[SCRIPT] disconnect() OK");
                 Ok(())
             })?,
         )?;

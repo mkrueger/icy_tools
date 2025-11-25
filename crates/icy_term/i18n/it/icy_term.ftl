@@ -228,6 +228,14 @@ error-address-book-load-secondary=Il file della rubrica sembra corrotto. IcyTerm
 
     Dettagli tecnici:
 
+error-script-title=Errore Script
+error-script-execution-failed=Esecuzione dello script non riuscita
+error-script-file-read-failed=Impossibile leggere il file di script
+
+script-dialog-title=Seleziona Script Lua
+script-dialog-filter-lua=Script Lua
+script-dialog-filter-all=Tutti i File
+
 # Help dialog
 help-title = Scorciatoie da tastiera
 help-subtitle = Riferimento rapido per iCY TERM

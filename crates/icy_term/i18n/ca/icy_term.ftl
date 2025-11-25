@@ -231,6 +231,14 @@ error-address-book-load-secondary=El fitxer de la llibreta d’adreces sembla ma
 
     Detalls tècnics:
 
+error-script-title=Error d'Script
+error-script-execution-failed=Ha fallat l'execució de l'script
+error-script-file-read-failed=No s'ha pogut llegir el fitxer d'script
+
+script-dialog-title=Seleccionar Script Lua
+script-dialog-filter-lua=Scripts Lua
+script-dialog-filter-all=Tots els Fitxers
+
 # Help dialog
 help-title = Dreceres de teclat
 help-subtitle = Referència ràpida per a iCY TERM

@@ -471,9 +471,9 @@ impl MainWindow {
                 return Task::perform(
                     async {
                         rfd::AsyncFileDialog::new()
-                            .add_filter("Lua Scripts", &["lua"])
-                            .add_filter("All Files", &["*"])
-                            .set_title("Select Lua Script")
+                            .add_filter(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-filter-lua"), &["lua"])
+                            .add_filter(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-filter-all"), &["*"])
+                            .set_title(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-title"))
                             .pick_file()
                             .await
                             .map(|f| f.path().to_path_buf())
@@ -1091,8 +1091,8 @@ impl MainWindow {
                     Err(e) => {
                         log::error!("Script error: {}", e);
                         self.state.mode = MainWindowMode::ShowErrorDialog(
-                            "Script Error".to_string(),
-                            "Script execution failed".to_string(),
+                            i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-title"),
+                            i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-execution-failed"),
                             e,
                             Box::new(MainWindowMode::ShowTerminal),
                         );

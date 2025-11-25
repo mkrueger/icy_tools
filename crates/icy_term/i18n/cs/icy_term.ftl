@@ -229,6 +229,14 @@ error-address-book-load-secondary=Soubor adresáře se zdá být poškozen. IcyT
 
     Technické detaily:
 
+error-script-title=Chyba Skriptu
+error-script-execution-failed=Provedení skriptu se nezdařilo
+error-script-file-read-failed=Nepodařilo se přečíst soubor skriptu
+
+script-dialog-title=Vybrat Lua Skript
+script-dialog-filter-lua=Lua Skripty
+script-dialog-filter-all=Všechny Soubory
+
 # Help dialog
 help-title = Klávesové zkratky
 help-subtitle = Rychlá referenční příručka pro iCY TERM

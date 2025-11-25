@@ -228,6 +228,14 @@ error-address-book-load-secondary=Le fichier du répertoire semble corrompu. Icy
 
     Détails techniques :
 
+error-script-title=Erreur de Script
+error-script-execution-failed=L'exécution du script a échoué
+error-script-file-read-failed=Échec de la lecture du fichier de script
+
+script-dialog-title=Sélectionner un Script Lua
+script-dialog-filter-lua=Scripts Lua
+script-dialog-filter-all=Tous les Fichiers
+
 # Help dialog
 help-title = Raccourcis clavier
 help-subtitle = Référence rapide pour iCY TERM

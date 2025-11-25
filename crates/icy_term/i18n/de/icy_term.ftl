@@ -232,6 +232,14 @@ error-address-book-load-secondary=Die Adressbuch-Datei scheint beschädigt zu se
 
     Technische Details:
 
+error-script-title=Skript-Fehler
+error-script-execution-failed=Skriptausführung fehlgeschlagen
+error-script-file-read-failed=Skript-Datei konnte nicht gelesen werden
+
+script-dialog-title=Lua-Skript auswählen
+script-dialog-filter-lua=Lua-Skripte
+script-dialog-filter-all=Alle Dateien
+
 # Help dialog
 help-title = Tastaturkürzel
 help-subtitle = Schnellreferenz für iCY TERM

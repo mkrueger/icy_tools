@@ -229,6 +229,14 @@ error-address-book-load-secondary=O arquivo do diretório de discagem parece est
 
     Detalhes técnicos:
 
+error-script-title=Erro de Script
+error-script-execution-failed=Falha na execução do script
+error-script-file-read-failed=Falha ao ler arquivo de script
+
+script-dialog-title=Selecionar Script Lua
+script-dialog-filter-lua=Scripts Lua
+script-dialog-filter-all=Todos os Arquivos
+
 # Help dialog
 help-title = Atalhos de teclado
 help-subtitle = Referência rápida do iCY TERM

@@ -228,6 +228,14 @@ error-address-book-load-secondary=Plik książki adresowej wydaje się uszkodzon
 
     Szczegóły techniczne:
 
+error-script-title=Błąd Skryptu
+error-script-execution-failed=Wykonanie skryptu nie powiodło się
+error-script-file-read-failed=Nie udało się odczytać pliku skryptu
+
+script-dialog-title=Wybierz Skrypt Lua
+script-dialog-filter-lua=Skrypty Lua
+script-dialog-filter-all=Wszystkie Pliki
+
 # Help dialog
 help-title = Skróty klawiszowe
 help-subtitle = Szybka ściągawka dla iCY TERM

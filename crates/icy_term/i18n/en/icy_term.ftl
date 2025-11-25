@@ -233,6 +233,14 @@ error-address-book-load-secondary=The address book file appears to be corrupted.
 
     Technical details:
 
+error-script-title=Script Error
+error-script-execution-failed=Script execution failed
+error-script-file-read-failed=Failed to read script file
+
+script-dialog-title=Select Lua Script
+script-dialog-filter-lua=Lua Scripts
+script-dialog-filter-all=All Files
+
 # Help dialog
 help-title = Keyboard Shortcuts
 help-subtitle = Quick reference for iCY TERM

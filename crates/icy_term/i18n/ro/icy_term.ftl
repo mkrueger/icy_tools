@@ -229,6 +229,14 @@ error-address-book-load-secondary=Fișierul agendei pare corupt. IcyTerm va porn
 
     Detalii tehnice:
 
+error-script-title=Eroare Script
+error-script-execution-failed=Execuția scriptului a eșuat
+error-script-file-read-failed=Nu s-a putut citi fișierul de script
+
+script-dialog-title=Selectați Script Lua
+script-dialog-filter-lua=Scripturi Lua
+script-dialog-filter-all=Toate Fișierele
+
 # Help dialog
 help-title = Comenzi rapide de la tastatură
 help-subtitle = Referință rapidă pentru iCY TERM

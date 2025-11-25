@@ -228,6 +228,14 @@ error-address-book-load-secondary=El archivo del directorio parece dañado. IcyT
 
     Detalles técnicos:
 
+error-script-title=Error de Script
+error-script-execution-failed=Falló la ejecución del script
+error-script-file-read-failed=Error al leer el archivo de script
+
+script-dialog-title=Seleccionar Script Lua
+script-dialog-filter-lua=Scripts Lua
+script-dialog-filter-all=Todos los Archivos
+
 # Help dialog
 help-title = Atajos de teclado
 help-subtitle = Referencia rápida para iCY TERM
