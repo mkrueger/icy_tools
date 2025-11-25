@@ -236,6 +236,10 @@ script-dialog-title=Seleziona Script Lua
 script-dialog-filter-lua=Script Lua
 script-dialog-filter-all=Tutti i File
 
+cli-error-url-parse=Errore nell'analisi dell'URL '{ $url }': { $error }
+cli-error-script-not-found=Impossibile leggere '{ $file }': File non trovato
+cli-error-script-not-file=Impossibile leggere '{ $file }': È una directory
+
 # Help dialog
 help-title = Scorciatoie da tastiera
 help-subtitle = Riferimento rapido per iCY TERM

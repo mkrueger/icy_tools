@@ -164,7 +164,28 @@ fn main() {
 
     if let Some(url) = &args.url {
         if let Err(e) = crate::ConnectionInformation::parse(url) {
-            eprintln!("Error parsing URL '{}': {}", url, e);
+            eprintln!(
+                "{}",
+                i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "cli-error-url-parse", url = url.as_str(), error = e.to_string())
+            );
+            std::process::exit(1);
+        }
+    }
+
+    // Validate script file if provided
+    if let Some(script_path) = &args.run {
+        if !script_path.exists() {
+            eprintln!(
+                "{}",
+                i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "cli-error-script-not-found", file = script_path.display().to_string())
+            );
+            std::process::exit(1);
+        }
+        if !script_path.is_file() {
+            eprintln!(
+                "{}",
+                i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "cli-error-script-not-file", file = script_path.display().to_string())
+            );
             std::process::exit(1);
         }
     }

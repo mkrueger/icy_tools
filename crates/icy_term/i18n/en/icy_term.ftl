@@ -241,6 +241,10 @@ script-dialog-title=Select Lua Script
 script-dialog-filter-lua=Lua Scripts
 script-dialog-filter-all=All Files
 
+cli-error-url-parse=Error parsing URL '{ $url }': { $error }
+cli-error-script-not-found=Couldn't read '{ $file }': No such file
+cli-error-script-not-file=Couldn't read '{ $file }': Is a directory
+
 # Help dialog
 help-title = Keyboard Shortcuts
 help-subtitle = Quick reference for iCY TERM

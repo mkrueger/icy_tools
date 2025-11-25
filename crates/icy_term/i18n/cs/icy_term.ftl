@@ -237,6 +237,10 @@ script-dialog-title=Vybrat Lua Skript
 script-dialog-filter-lua=Lua Skripty
 script-dialog-filter-all=Všechny Soubory
 
+cli-error-url-parse=Chyba při analýze URL '{ $url }': { $error }
+cli-error-script-not-found=Nelze přečíst '{ $file }': Soubor nenalezen
+cli-error-script-not-file=Nelze přečíst '{ $file }': Je to adresář
+
 # Help dialog
 help-title = Klávesové zkratky
 help-subtitle = Rychlá referenční příručka pro iCY TERM

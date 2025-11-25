@@ -237,6 +237,10 @@ script-dialog-title=Lua Szkript Kiválasztása
 script-dialog-filter-lua=Lua Szkriptek
 script-dialog-filter-all=Minden Fájl
 
+cli-error-url-parse=Hiba az URL elemzésekor '{ $url }': { $error }
+cli-error-script-not-found=Nem sikerült olvasni '{ $file }': Fájl nem található
+cli-error-script-not-file=Nem sikerült olvasni '{ $file }': Ez egy könyvtár
+
 # Help dialog
 help-title = Gyorsbillentyűk
 help-subtitle = Gyors referencia az iCY TERM-hez

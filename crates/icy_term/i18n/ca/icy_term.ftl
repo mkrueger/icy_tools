@@ -239,6 +239,10 @@ script-dialog-title=Seleccionar Script Lua
 script-dialog-filter-lua=Scripts Lua
 script-dialog-filter-all=Tots els Fitxers
 
+cli-error-url-parse=Error en analitzar l'URL '{ $url }': { $error }
+cli-error-script-not-found=No s'ha pogut llegir '{ $file }': Fitxer no trobat
+cli-error-script-not-file=No s'ha pogut llegir '{ $file }': És un directori
+
 # Help dialog
 help-title = Dreceres de teclat
 help-subtitle = Referència ràpida per a iCY TERM

@@ -236,6 +236,10 @@ script-dialog-title=Wybierz Skrypt Lua
 script-dialog-filter-lua=Skrypty Lua
 script-dialog-filter-all=Wszystkie Pliki
 
+cli-error-url-parse=Błąd podczas analizowania URL '{ $url }': { $error }
+cli-error-script-not-found=Nie można odczytać '{ $file }': Plik nie istnieje
+cli-error-script-not-file=Nie można odczytać '{ $file }': To jest katalog
+
 # Help dialog
 help-title = Skróty klawiszowe
 help-subtitle = Szybka ściągawka dla iCY TERM

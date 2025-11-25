@@ -237,6 +237,10 @@ script-dialog-title=Selectați Script Lua
 script-dialog-filter-lua=Scripturi Lua
 script-dialog-filter-all=Toate Fișierele
 
+cli-error-url-parse=Eroare la analizarea URL-ului '{ $url }': { $error }
+cli-error-script-not-found=Nu s-a putut citi '{ $file }': Fișier inexistent
+cli-error-script-not-file=Nu s-a putut citi '{ $file }': Este un director
+
 # Help dialog
 help-title = Comenzi rapide de la tastatură
 help-subtitle = Referință rapidă pentru iCY TERM
