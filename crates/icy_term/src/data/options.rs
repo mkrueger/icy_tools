@@ -113,8 +113,12 @@ pub struct Options {
     #[serde(default)]
     pub modems: Vec<Modem>,
 
-    #[serde(default)]
+    #[serde(default = "default_max_scrollback_lines")]
     pub max_scrollback_lines: usize,
+}
+
+fn default_max_scrollback_lines() -> usize {
+    2000
 }
 
 fn default_connect_timeout() -> Duration {
