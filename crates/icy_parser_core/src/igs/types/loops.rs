@@ -81,46 +81,26 @@ pub enum ParamOperator {
 /// gets passed to the target command each iteration.
 ///
 /// Example: `G#&>0,100,10,0,L,4,10,20,x,y:` has param_count=4 and four tokens:
-/// `Number(10)`, `Number(20)`, `StepForward`, `StepReverse`.
+/// `Number(10)`, `Number(20)`, `Number(StepForward)`, `Number(StepReverse)`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopParamToken {
-    /// Constant numeric value that never changes across iterations.
+    /// Constant numeric value or loop variable (x, y, r, R).
     ///
-    /// Example: In `G#&>0,10,1,0,L,4,5,10,x,y:`, the `5` and `10` are constants.
+    /// Example: In `G#&>0,10,1,0,L,4,5,10,x,y:`, the `5` and `10` are constants,
+    /// `x` is `IgsParameter::StepForward`, `y` is `IgsParameter::StepReverse`.
     /// Can also be `IgsParameter::Random` for random values in loops.
     Number(IgsParameter),
 
-    /// `x` – stepping variable: varies from `from` to `to` in `step` increments.
-    ///
-    /// From the spec: "if you use a `x` as a parameter it will be stepped
-    /// in the direction of the FROM TO values". In the loop
-    /// `G#&>10,20,2,0,L,4,x,y,100,200:`, the first parameter (x) steps
-    /// as 10, 12, 14, 16, 18, 20.
-    StepForward,
-
-    /// `y` – reverse stepping variable: varies opposite to the FROM→TO direction.
-    ///
-    /// From the spec: "if you use a `y` the loop will step the value in a
-    /// reverse direction". In `G#&>10,20,2,0,L,4,x,y,100,200:`, the second
-    /// parameter (y) steps as 20, 18, 16, 14, 12, 10.
-    StepReverse,
-
-    /// `r` – random value within the range set by the `X 2` command.
-    ///
-    /// The spec describes: `X 2,0,50:` sets random range to 0–50.
-    /// Using `r` in a loop then produces random values in that range
-    /// for each iteration.
-    Random,
-
-    /// Arithmetic expression combining a step variable with a constant.
+    /// Arithmetic expression combining a parameter with a constant.
     ///
     /// Examples:
-    /// - `Expr(Add, 5)` for `+5`: current step + 5
-    /// - `Expr(Subtract, 10)` for `-10`: current step - 10
-    /// - `Expr(SubtractStep, 99)` for `!99`: 99 - current step
+    /// - `Expr(Add, Value(5))` for `+5`: current step + 5
+    /// - `Expr(Subtract, Value(10))` for `-10`: current step - 10
+    /// - `Expr(SubtractStep, Value(99))` for `!99`: 99 - current step
+    /// - `Expr(Subtract, StepForward)` for `-x`: 0 - x
     ///
     /// Useful for offset coordinates or other computed values.
-    /// Can also use `IgsParameter::Random` for the value.
+    /// The parameter can be a value, random, or even a step variable (x, y).
     Expr(ParamOperator, IgsParameter),
 
     /// Group separator `:` in the parameter stream.
@@ -248,7 +228,6 @@ impl LoopCommandData {
         let step_value = if forward { self.step.abs() } else { -self.step.abs() };
 
         let mut current = self.from;
-        let (rnd_min, rnd_max) = bounds.small_range();
 
         // Parameter ring cursor - persists across iterations like IG 2.17's lp_eff_ct
         let mut ring_cursor = 0usize;
@@ -295,12 +274,9 @@ impl LoopCommandData {
                 ring_cursor = (ring_cursor + 1) % total_params;
 
                 let value = match token {
-                    LoopParamToken::Number(param) => param.evaluate(bounds),
-                    LoopParamToken::StepForward => current,
-                    LoopParamToken::StepReverse => reverse_value,
-                    LoopParamToken::Random => fastrand::i32(rnd_min..=rnd_max),
+                    LoopParamToken::Number(param) => param.evaluate(bounds, current, reverse_value),
                     LoopParamToken::Expr(op, param) => {
-                        let constant = param.evaluate(bounds);
+                        let constant = param.evaluate(bounds, current, reverse_value);
                         match op {
                             ParamOperator::Add => current + constant,
                             ParamOperator::Subtract => current - constant,

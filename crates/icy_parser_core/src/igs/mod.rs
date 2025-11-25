@@ -30,8 +30,7 @@ enum State {
 pub struct IgsParser {
     state: State,
     params: Vec<IgsParameter>,
-    current_param: i32,
-    is_current_param_random: bool,
+    current_param: Vec<u8>,
     text_buffer: Vec<u8>,
 
     loop_tokens: Vec<Vec<u8>>,
@@ -49,8 +48,7 @@ impl IgsParser {
         Self {
             state: State::Default,
             params: Vec::new(),
-            current_param: 0,
-            is_current_param_random: false,
+            current_param: Vec::new(),
             text_buffer: Vec::new(),
             loop_tokens: Vec::new(),
             loop_token_buffer: Vec::new(),
@@ -64,7 +62,7 @@ impl IgsParser {
 
     fn reset_params(&mut self) {
         self.params.clear();
-        self.current_param = 0;
+        self.current_param.clear();
         self.text_buffer.clear();
     }
 
@@ -74,15 +72,96 @@ impl IgsParser {
         std::str::from_utf8(bytes).ok().and_then(|s| s.parse::<i32>().ok()).unwrap_or(0)
     }
 
-    fn push_current_param(&mut self) {
-        let param = if self.is_current_param_random {
-            IgsParameter::Random
+    /// Parse parameter from byte buffer - handles numbers, 'r', 'R', and in loop context 'x', 'y'
+    fn parse_param(bytes: &[u8], sink: &mut dyn CommandSink, in_loop: bool) -> IgsParameter {
+        if bytes.is_empty() {
+            return IgsParameter::Value(0);
+        }
+
+        if bytes == b"r" {
+            return IgsParameter::Random;
+        }
+
+        if bytes == b"R" {
+            return IgsParameter::BigRandom;
+        }
+
+        // Only in loop context
+        if in_loop {
+            if bytes == b"x" {
+                return IgsParameter::StepForward;
+            }
+            if bytes == b"y" {
+                return IgsParameter::StepReverse;
+            }
+        }
+
+        // Try to parse as number
+        match std::str::from_utf8(bytes) {
+            Ok(s) => match s.parse::<i32>() {
+                Ok(n) => IgsParameter::Value(n),
+                Err(_) => {
+                    sink.report_error(
+                        crate::ParseError::InvalidParameter {
+                            command: "IGS",
+                            value: s.to_string(),
+                            expected: Some(if in_loop {
+                                "number, 'r', 'R', 'x', or 'y'".to_string()
+                            } else {
+                                "number, 'r' or 'R'".to_string()
+                            }),
+                        },
+                        crate::ErrorLevel::Error,
+                    );
+                    IgsParameter::Value(0)
+                }
+            },
+            Err(_) => {
+                sink.report_error(
+                    crate::ParseError::InvalidParameter {
+                        command: "IGS",
+                        value: format!("{:?}", bytes),
+                        expected: Some("valid UTF-8 parameter".to_string()),
+                    },
+                    crate::ErrorLevel::Error,
+                );
+                IgsParameter::Value(0)
+            }
+        }
+    }
+
+    /// Parse loop parameter token from byte buffer
+    fn parse_loop_param_token(token: &[u8], sink: &mut dyn CommandSink) -> LoopParamToken {
+        if token.starts_with(b"TEXT:") {
+            // Extract text content after "TEXT:" prefix
+            let text = token[5..].to_vec();
+            LoopParamToken::Text(text)
+        } else if token == b":" {
+            LoopParamToken::GroupSeparator
+        } else if let Some(&first) = token.first() {
+            // Check if token starts with a prefix operator (+, -, !)
+            if first == b'+' || first == b'-' || first == b'!' {
+                let operator = match first {
+                    b'+' => ParamOperator::Add,
+                    b'-' => ParamOperator::Subtract,
+                    b'!' => ParamOperator::SubtractStep,
+                    _ => unreachable!(),
+                };
+                let param = Self::parse_param(&token[1..], sink, true);
+                LoopParamToken::Expr(operator, param)
+            } else {
+                let param = Self::parse_param(token, sink, true);
+                LoopParamToken::Number(param)
+            }
         } else {
-            IgsParameter::Value(self.current_param)
-        };
+            LoopParamToken::Number(IgsParameter::Value(0))
+        }
+    }
+
+    fn push_current_param(&mut self, sink: &mut dyn CommandSink) {
+        let param = Self::parse_param(&self.current_param, sink, false);
         self.params.push(param);
-        self.current_param = 0;
-        self.is_current_param_random = false;
+        self.current_param.clear();
     }
 
     fn emit_loop_command_with_texts(&mut self, sink: &mut dyn CommandSink) {
@@ -166,38 +245,7 @@ impl IgsParser {
         // Convert parameters including text strings to typed tokens
         let mut params: Vec<LoopParamToken> = Vec::new();
         for token in &self.loop_tokens[params_start..] {
-            if token.starts_with(b"TEXT:") {
-                // Extract text content after "TEXT:" prefix
-                let text = token[5..].to_vec();
-                params.push(LoopParamToken::Text(text));
-            } else if token == b":" {
-                params.push(LoopParamToken::GroupSeparator);
-            } else if token == b"x" {
-                params.push(LoopParamToken::StepForward);
-            } else if token == b"y" {
-                params.push(LoopParamToken::StepReverse);
-            } else if token == b"r" {
-                params.push(LoopParamToken::Random);
-            } else {
-                // Check if token starts with a prefix operator (+, -, !)
-                if let Some(&first) = token.first() {
-                    if first == b'+' || first == b'-' || first == b'!' {
-                        let operator = match first {
-                            b'+' => ParamOperator::Add,
-                            b'-' => ParamOperator::Subtract,
-                            b'!' => ParamOperator::SubtractStep,
-                            _ => unreachable!(),
-                        };
-                        let value = Self::parse_i32_from_bytes(&token[1..]);
-                        params.push(LoopParamToken::Expr(operator, value.into()));
-                    } else {
-                        let value = Self::parse_i32_from_bytes(token);
-                        params.push(LoopParamToken::Number(value.into()));
-                    }
-                } else {
-                    params.push(LoopParamToken::Number(0.into()));
-                }
-            }
+            params.push(Self::parse_loop_param_token(token, sink));
         }
 
         let data = LoopCommandData {
@@ -296,18 +344,11 @@ impl CommandParser for IgsParser {
                 }
                 State::ReadParams(cmd_type) => {
                     match byte {
-                        b'r' => {
-                            self.is_current_param_random = true;
-                        }
-                        b'R' => {
-                            // Big random - für jetzt als Random behandeln, kann später erweitert werden
-                            self.is_current_param_random = true;
-                        }
-                        b'0'..=b'9' => {
-                            self.current_param = self.current_param.wrapping_mul(10).wrapping_add((byte - b'0') as i32);
+                        b'r' | b'R' | b'0'..=b'9' => {
+                            self.current_param.push(byte);
                         }
                         b',' => {
-                            self.push_current_param();
+                            self.push_current_param(sink);
                             // For WriteText: after 2 params (x, y), next non-separator char starts text
                             if cmd_type == IgsCommandType::WriteText && self.params.len() == 2 {
                                 // W>x,y,text@ - text follows immediately after second comma
@@ -317,7 +358,7 @@ impl CommandParser for IgsParser {
                         }
                         b'@' if cmd_type == IgsCommandType::WriteText => {
                             // For WriteText: @ starts text after x,y params
-                            self.push_current_param();
+                            self.push_current_param(sink);
                             if self.params.len() == 2 {
                                 // W>x,y@text@ format
                                 self.state = State::ReadTextString(self.params[0].value(), self.params[1].value(), 0);
@@ -330,7 +371,7 @@ impl CommandParser for IgsParser {
                         }
                         b':' => {
                             // Command terminator
-                            self.push_current_param();
+                            self.push_current_param(sink);
                             self.emit_command(cmd_type, sink);
                             self.state = State::GotIgsStart;
                         }
@@ -569,32 +610,7 @@ impl CommandParser for IgsParser {
                                     // Convert parameters into typed tokens, preserving ':' position
                                     let mut params: Vec<LoopParamToken> = Vec::new();
                                     for token in &self.loop_tokens[params_start..] {
-                                        if token == b":" {
-                                            params.push(LoopParamToken::GroupSeparator);
-                                        } else if token == b"x" {
-                                            params.push(LoopParamToken::StepForward);
-                                        } else if token == b"y" {
-                                            params.push(LoopParamToken::StepReverse);
-                                        } else if token == b"r" {
-                                            params.push(LoopParamToken::Random);
-                                        } else if let Some(&first) = token.first() {
-                                            // Check if token starts with a prefix operator (+, -, !)
-                                            if first == b'+' || first == b'-' || first == b'!' {
-                                                let operator = match first {
-                                                    b'+' => ParamOperator::Add,
-                                                    b'-' => ParamOperator::Subtract,
-                                                    b'!' => ParamOperator::SubtractStep,
-                                                    _ => unreachable!(),
-                                                };
-                                                let value = Self::parse_i32_from_bytes(&token[1..]);
-                                                params.push(LoopParamToken::Expr(operator, value.into()));
-                                            } else {
-                                                let value = Self::parse_i32_from_bytes(token);
-                                                params.push(LoopParamToken::Number(value.into()));
-                                            }
-                                        } else {
-                                            params.push(LoopParamToken::Number(0.into()));
-                                        }
+                                        params.push(Self::parse_loop_param_token(token, sink));
                                     }
 
                                     let data = LoopCommandData {
@@ -705,32 +721,7 @@ impl CommandParser for IgsParser {
 
                                 let mut params: Vec<LoopParamToken> = Vec::new();
                                 for token in &self.loop_tokens[params_start..] {
-                                    if token.as_slice() == b":" {
-                                        params.push(LoopParamToken::GroupSeparator);
-                                    } else if token.as_slice() == b"x" {
-                                        params.push(LoopParamToken::StepForward);
-                                    } else if token.as_slice() == b"y" {
-                                        params.push(LoopParamToken::StepReverse);
-                                    } else if token.as_slice() == b"r" {
-                                        params.push(LoopParamToken::Random);
-                                    } else if let Some(&first) = token.first() {
-                                        // Check if token starts with a prefix operator (+, -, !)
-                                        if first == b'+' || first == b'-' || first == b'!' {
-                                            let operator = match first {
-                                                b'+' => ParamOperator::Add,
-                                                b'-' => ParamOperator::Subtract,
-                                                b'!' => ParamOperator::SubtractStep,
-                                                _ => unreachable!(),
-                                            };
-                                            let value = Self::parse_i32_from_bytes(&token[1..]);
-                                            params.push(LoopParamToken::Expr(operator, value.into()));
-                                        } else {
-                                            let value = Self::parse_i32_from_bytes(token);
-                                            params.push(LoopParamToken::Number(value.into()));
-                                        }
-                                    } else {
-                                        params.push(LoopParamToken::Number(0.into()));
-                                    }
+                                    params.push(Self::parse_loop_param_token(token.as_slice(), sink));
                                 }
 
                                 let data = LoopCommandData {
@@ -1021,8 +1012,8 @@ impl CommandParser for IgsParser {
             match cmd_type {
                 IgsCommandType::CursorMotion | IgsCommandType::InverseVideo | IgsCommandType::LineWrap => {
                     // Ensure last param captured
-                    if self.current_param != 0 || !self.params.is_empty() {
-                        self.push_current_param();
+                    if !self.current_param.is_empty() || !self.params.is_empty() {
+                        self.push_current_param(sink);
                     }
                     if !self.params.is_empty() {
                         self.emit_command(cmd_type, sink);

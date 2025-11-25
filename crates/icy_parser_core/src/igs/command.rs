@@ -1371,31 +1371,13 @@ impl fmt::Display for IgsCommand {
                             if !last_was_colon {
                                 write!(f, ",")?;
                             }
-                            write!(f, "{}", n)?;
-                            last_was_colon = false;
-                            last_was_text = false;
-                        }
-                        LoopParamToken::StepForward => {
-                            if !last_was_colon {
-                                write!(f, ",")?;
+                            // Special case: IgsParameter::Random should be printed as 'r'
+                            // StepForward as 'x', StepReverse as 'y' - but Display handles that
+                            if matches!(n, IgsParameter::Random) {
+                                write!(f, "r")?;
+                            } else {
+                                write!(f, "{}", n)?;
                             }
-                            write!(f, "x")?;
-                            last_was_colon = false;
-                            last_was_text = false;
-                        }
-                        LoopParamToken::StepReverse => {
-                            if !last_was_colon {
-                                write!(f, ",")?;
-                            }
-                            write!(f, "y")?;
-                            last_was_colon = false;
-                            last_was_text = false;
-                        }
-                        LoopParamToken::Random => {
-                            if !last_was_colon {
-                                write!(f, ",")?;
-                            }
-                            write!(f, "r")?;
                             last_was_colon = false;
                             last_was_text = false;
                         }

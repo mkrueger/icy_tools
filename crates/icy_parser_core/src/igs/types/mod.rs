@@ -49,6 +49,10 @@ pub enum IgsParameter {
     Random,
     /// 'R' for big random value (0-9999)
     BigRandom,
+    /// 'x' - loop step forward variable (only valid in loop context)
+    StepForward,
+    /// 'y' - loop step reverse variable (only valid in loop context)
+    StepReverse,
 }
 
 /// Specifies which text color layer to modify.
@@ -124,7 +128,8 @@ impl IgsParameter {
     /// Evaluates the parameter to a concrete value.
     /// For fixed values, returns the value directly.
     /// For random values, generates a random number within the configured range.
-    pub fn evaluate(&self, bounds: &ParameterBounds) -> i32 {
+    /// For loop step values, uses the provided step values (defaults to 0 if not in loop context).
+    pub fn evaluate(&self, bounds: &ParameterBounds, loop_step_forward: i32, loop_step_reverse: i32) -> i32 {
         match self {
             IgsParameter::Value(v) => *v,
             IgsParameter::Random => {
@@ -135,16 +140,20 @@ impl IgsParameter {
                 let (min, max) = bounds.big_range();
                 fastrand::i32(min..=max)
             }
+            IgsParameter::StepForward => loop_step_forward,
+            IgsParameter::StepReverse => loop_step_reverse,
         }
     }
 
     /// Evaluates the parameter with explicit min/max range.
     /// For fixed values, returns the value directly.
     /// For random values (both 'r' and 'R'), uses the provided range.
+    /// For loop step values, defaults to 0 (should not be called in loop context).
     pub fn value_with_range(&self, min: i32, max: i32) -> i32 {
         match self {
             IgsParameter::Value(v) => *v,
             IgsParameter::Random | IgsParameter::BigRandom => fastrand::i32(min..=max),
+            IgsParameter::StepForward | IgsParameter::StepReverse => 0,
         }
     }
 
@@ -155,12 +164,17 @@ impl IgsParameter {
             IgsParameter::Value(v) => *v,
             IgsParameter::Random => panic!("Cannot get fixed value from random parameter 'r'"),
             IgsParameter::BigRandom => panic!("Cannot get fixed value from random parameter 'R'"),
+            IgsParameter::StepForward => panic!("Cannot get fixed value from loop step variable 'x'"),
+            IgsParameter::StepReverse => panic!("Cannot get fixed value from loop step variable 'y'"),
         }
     }
 
-    /// Returns true if this parameter requires random number generation
+    /// Returns true if this parameter requires evaluation (random or loop step)
     pub fn is_random(&self) -> bool {
-        matches!(self, IgsParameter::Random | IgsParameter::BigRandom)
+        matches!(
+            self,
+            IgsParameter::Random | IgsParameter::BigRandom | IgsParameter::StepForward | IgsParameter::StepReverse
+        )
     }
 }
 
@@ -176,6 +190,8 @@ impl fmt::Display for IgsParameter {
             IgsParameter::Value(v) => write!(f, "{}", v),
             IgsParameter::Random => write!(f, "r"),
             IgsParameter::BigRandom => write!(f, "R"),
+            IgsParameter::StepForward => write!(f, "x"),
+            IgsParameter::StepReverse => write!(f, "y"),
         }
     }
 }

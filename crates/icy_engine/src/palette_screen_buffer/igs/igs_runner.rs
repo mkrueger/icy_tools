@@ -24,10 +24,10 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
     match cmd {
         IgsCommand::Box { x1, y1, x2, y2, rounded } => {
             let (x1, y1, x2, y2) = (
-                x1.evaluate(&paint.random_bounds),
-                y1.evaluate(&paint.random_bounds),
-                x2.evaluate(&paint.random_bounds),
-                y2.evaluate(&paint.random_bounds),
+                x1.evaluate(&paint.random_bounds, 0, 0),
+                y1.evaluate(&paint.random_bounds, 0, 0),
+                x2.evaluate(&paint.random_bounds, 0, 0),
+                y2.evaluate(&paint.random_bounds, 0, 0),
             );
             if rounded {
                 // Rounded box - use polyline to approximate
@@ -39,17 +39,17 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         IgsCommand::Line { x1, y1, x2, y2 } => {
             let (x1, y1, x2, y2) = (
-                x1.evaluate(&paint.random_bounds),
-                y1.evaluate(&paint.random_bounds),
-                x2.evaluate(&paint.random_bounds),
-                y2.evaluate(&paint.random_bounds),
+                x1.evaluate(&paint.random_bounds, 0, 0),
+                y1.evaluate(&paint.random_bounds, 0, 0),
+                x2.evaluate(&paint.random_bounds, 0, 0),
+                y2.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_line_pub(buf, x1, y1, x2, y2);
             paint.draw_to_position = (x2, y2).into();
         }
 
         IgsCommand::LineDrawTo { x, y } => {
-            let (x, y) = (x.evaluate(&paint.random_bounds), y.evaluate(&paint.random_bounds));
+            let (x, y) = (x.evaluate(&paint.random_bounds, 0, 0), y.evaluate(&paint.random_bounds, 0, 0));
             let pos = paint.draw_to_position;
             paint.draw_line_pub(buf, pos.x, pos.y, x, y);
             paint.draw_to_position = (x, y).into();
@@ -57,19 +57,19 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         IgsCommand::Circle { x, y, radius } => {
             let (x, y, radius) = (
-                x.evaluate(&paint.random_bounds),
-                y.evaluate(&paint.random_bounds),
-                radius.evaluate(&paint.random_bounds),
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                radius.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_circle_pub(buf, x, y, radius);
         }
 
         IgsCommand::Ellipse { x, y, x_radius, y_radius } => {
             let (x, y, x_radius, y_radius) = (
-                x.evaluate(&paint.random_bounds),
-                y.evaluate(&paint.random_bounds),
-                x_radius.evaluate(&paint.random_bounds),
-                y_radius.evaluate(&paint.random_bounds),
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                x_radius.evaluate(&paint.random_bounds, 0, 0),
+                y_radius.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_ellipse_pub(buf, x, y, x_radius, y_radius);
         }
@@ -82,18 +82,18 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             radius,
         } => {
             let (x, y, radius, start_angle, end_angle) = (
-                x.evaluate(&paint.random_bounds),
-                y.evaluate(&paint.random_bounds),
-                radius.evaluate(&paint.random_bounds),
-                start_angle.evaluate(&paint.random_bounds),
-                end_angle.evaluate(&paint.random_bounds),
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                radius.evaluate(&paint.random_bounds, 0, 0),
+                start_angle.evaluate(&paint.random_bounds, 0, 0),
+                end_angle.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_arc_pub(buf, x, y, radius, radius, start_angle, end_angle);
         }
 
         IgsCommand::PolyLine { points } => {
             if !points.is_empty() {
-                let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&paint.random_bounds)).collect();
+                let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&paint.random_bounds, 0, 0)).collect();
                 paint.draw_polyline(buf, paint.line_color, &int_points);
                 if int_points.len() >= 2 {
                     let last_idx = int_points.len() - 2;
@@ -104,13 +104,13 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         IgsCommand::PolyFill { points } => {
             if !points.is_empty() {
-                let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&paint.random_bounds)).collect();
+                let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&paint.random_bounds, 0, 0)).collect();
                 paint.fill_poly(buf, &int_points);
             }
         }
 
         IgsCommand::FloodFill { x, y } => {
-            let (x, y) = (x.evaluate(&paint.random_bounds), y.evaluate(&paint.random_bounds));
+            let (x, y) = (x.evaluate(&paint.random_bounds, 0, 0), y.evaluate(&paint.random_bounds, 0, 0));
             paint.flood_fill(buf, x, y);
         }
 
@@ -151,7 +151,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
         }
 
         IgsCommand::WriteText { x, y, text } => {
-            let (x, y) = (x.evaluate(&paint.random_bounds), y.evaluate(&paint.random_bounds));
+            let (x, y) = (x.evaluate(&paint.random_bounds, 0, 0), y.evaluate(&paint.random_bounds, 0, 0));
             let pos = crate::Position::new(x, y);
             paint.write_text(buf, pos, &text);
         }
@@ -192,7 +192,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         // Additional drawing commands
         IgsCommand::PolymarkerPlot { x, y } => {
-            let (x, y) = (x.evaluate(&paint.random_bounds), y.evaluate(&paint.random_bounds));
+            let (x, y) = (x.evaluate(&paint.random_bounds, 0, 0), y.evaluate(&paint.random_bounds, 0, 0));
             paint.draw_poly_marker(buf, x, y);
             paint.draw_to_position = (x, y).into();
         }
@@ -205,11 +205,11 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             end_angle,
         } => {
             let (x, y, radius, start_angle, end_angle) = (
-                x.evaluate(&paint.random_bounds),
-                y.evaluate(&paint.random_bounds),
-                radius.evaluate(&paint.random_bounds),
-                start_angle.evaluate(&paint.random_bounds),
-                end_angle.evaluate(&paint.random_bounds),
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                radius.evaluate(&paint.random_bounds, 0, 0),
+                start_angle.evaluate(&paint.random_bounds, 0, 0),
+                end_angle.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_pieslice_pub(buf, x, y, radius, start_angle, end_angle);
         }
@@ -223,12 +223,12 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             end_angle,
         } => {
             let (x, y, x_radius, y_radius, start_angle, end_angle) = (
-                x.evaluate(&paint.random_bounds),
-                y.evaluate(&paint.random_bounds),
-                x_radius.evaluate(&paint.random_bounds),
-                y_radius.evaluate(&paint.random_bounds),
-                start_angle.evaluate(&paint.random_bounds),
-                end_angle.evaluate(&paint.random_bounds),
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                x_radius.evaluate(&paint.random_bounds, 0, 0),
+                y_radius.evaluate(&paint.random_bounds, 0, 0),
+                start_angle.evaluate(&paint.random_bounds, 0, 0),
+                end_angle.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_arc_pub(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
@@ -242,32 +242,32 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             end_angle,
         } => {
             let (x, y, x_radius, y_radius, start_angle, end_angle) = (
-                x.evaluate(&paint.random_bounds),
-                y.evaluate(&paint.random_bounds),
-                x_radius.evaluate(&paint.random_bounds),
-                y_radius.evaluate(&paint.random_bounds),
-                start_angle.evaluate(&paint.random_bounds),
-                end_angle.evaluate(&paint.random_bounds),
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                x_radius.evaluate(&paint.random_bounds, 0, 0),
+                y_radius.evaluate(&paint.random_bounds, 0, 0),
+                start_angle.evaluate(&paint.random_bounds, 0, 0),
+                end_angle.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_elliptical_pieslice_pub(buf, x, y, x_radius, y_radius, start_angle, end_angle);
         }
 
         IgsCommand::RoundedRectangles { x1, y1, x2, y2, fill: _ } => {
             let (x1, y1, x2, y2) = (
-                x1.evaluate(&paint.random_bounds),
-                y1.evaluate(&paint.random_bounds),
-                x2.evaluate(&paint.random_bounds),
-                y2.evaluate(&paint.random_bounds),
+                x1.evaluate(&paint.random_bounds, 0, 0),
+                y1.evaluate(&paint.random_bounds, 0, 0),
+                x2.evaluate(&paint.random_bounds, 0, 0),
+                y2.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.draw_rounded_rect(buf, x1, y1, x2, y2);
         }
 
         IgsCommand::FilledRectangle { x1, y1, x2, y2 } => {
             let (x1, y1, x2, y2) = (
-                x1.evaluate(&paint.random_bounds),
-                y1.evaluate(&paint.random_bounds),
-                x2.evaluate(&paint.random_bounds),
-                y2.evaluate(&paint.random_bounds),
+                x1.evaluate(&paint.random_bounds, 0, 0),
+                y1.evaluate(&paint.random_bounds, 0, 0),
+                x2.evaluate(&paint.random_bounds, 0, 0),
+                y2.evaluate(&paint.random_bounds, 0, 0),
             );
             paint.fill_rect(buf, x1, y1, x2, y2);
         }
@@ -540,10 +540,10 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                     // Define a new mouse zone with clickable region
                     let host_command = if !string.is_empty() { Some(string.clone()) } else { None };
                     let (x1, y1, x2, y2) = (
-                        x1.evaluate(&paint.random_bounds),
-                        y1.evaluate(&paint.random_bounds),
-                        x2.evaluate(&paint.random_bounds),
-                        y2.evaluate(&paint.random_bounds),
+                        x1.evaluate(&paint.random_bounds, 0, 0),
+                        y1.evaluate(&paint.random_bounds, 0, 0),
+                        x2.evaluate(&paint.random_bounds, 0, 0),
+                        y2.evaluate(&paint.random_bounds, 0, 0),
                     );
 
                     // Create a default button style (similar to RIP)
@@ -583,7 +583,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
         }
 
         IgsCommand::SetDrawtoBegin { x, y } => {
-            let (x, y) = (x.evaluate(&paint.random_bounds), y.evaluate(&paint.random_bounds));
+            let (x, y) = (x.evaluate(&paint.random_bounds, 0, 0), y.evaluate(&paint.random_bounds, 0, 0));
             paint.draw_to_position = (x, y).into();
         }
 
@@ -621,8 +621,10 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
         }
 
         IgsCommand::PositionCursor { x, y } => {
-            buf.caret_mut()
-                .set_position(crate::Position::new(x.evaluate(&paint.random_bounds), y.evaluate(&paint.random_bounds)));
+            buf.caret_mut().set_position(crate::Position::new(
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+            ));
         }
 
         IgsCommand::RememberCursor { .. } => {
