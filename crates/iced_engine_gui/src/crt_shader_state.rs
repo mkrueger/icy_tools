@@ -4,12 +4,50 @@ use std::sync::{Mutex, atomic::AtomicU64};
 
 use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache};
 use iced::Element;
+use iced::Rectangle;
 use iced::widget::shader;
 use icy_engine::MouseField;
+use icy_engine::MouseState;
 use icy_engine::Position;
+use icy_engine::Screen;
+use icy_engine::Size;
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+/// Cached screen info for mouse mapping calculations and cache invalidation
+/// Updated during internal_draw to avoid extra locks in internal_update
+#[derive(Clone)]
+pub struct CachedScreenInfo {
+    pub font_w: f32,
+    pub font_h: f32,
+    pub screen_width: i32,
+    pub screen_height: i32,
+    pub resolution: Size,
+    pub scan_lines: bool,
+    /// Cached render size in pixels (from last full render)
+    pub render_size: (u32, u32),
+    /// Last selection state for cache invalidation (anchor, lead, locked)
+    pub last_selection_state: (Option<Position>, Option<Position>, bool),
+    /// Last buffer version for cache invalidation
+    pub last_buffer_version: u64,
+}
+
+impl Default for CachedScreenInfo {
+    fn default() -> Self {
+        Self {
+            font_w: 0.0,
+            font_h: 0.0,
+            screen_width: 0,
+            screen_height: 0,
+            resolution: Size::default(),
+            scan_lines: false,
+            render_size: (0, 0),
+            last_selection_state: (None, None, false),
+            last_buffer_version: u64::MAX,
+        }
+    }
+}
 
 pub struct CRTShaderState {
     pub caret_blink: crate::Blink,
@@ -32,23 +70,153 @@ pub struct CRTShaderState {
     /// Track which RIP field is hovered (by index)
     pub hovered_rip_field: Option<MouseField>,
 
-    pub last_rendered_size: Option<(u32, u32)>,
+    /// Cached mouse state from last draw (updated during internal_draw to avoid extra lock in internal_update)
+    pub cached_mouse_state: parking_lot::Mutex<Option<MouseState>>,
+
+    /// Cached screen info from last draw (font dimensions, screen size, etc.)
+    pub cached_screen_info: parking_lot::Mutex<CachedScreenInfo>,
+
     pub instance_id: u64,
 
     pub unicode_glyph_cache: Arc<parking_lot::Mutex<Option<UnicodeGlyphCache>>>,
 
     pub cached_rgba_blink_on: parking_lot::Mutex<Vec<u8>>,
     pub cached_rgba_blink_off: parking_lot::Mutex<Vec<u8>>,
-    pub cached_size: parking_lot::Mutex<(u32, u32)>,
-    pub cached_font_wh: parking_lot::Mutex<(usize, usize)>,
-    pub content_dirty: parking_lot::Mutex<bool>,
-    pub last_selection_state: parking_lot::Mutex<(Option<Position>, Option<Position>, bool)>, // (anchor, lead, locked)
-    pub last_buffer_version: parking_lot::Mutex<u64>,                                         // Track buffer version for cache invalidation
 }
 
 impl CRTShaderState {
     pub fn reset_caret(&mut self) {
         self.caret_blink.reset();
+    }
+
+    /// Update cached screen info from a screen reference
+    /// Called during internal_draw while screen is already locked
+    pub fn update_cached_screen_info(&self, screen: &dyn Screen) {
+        let mut info = self.cached_screen_info.lock();
+        if let Some(font) = screen.get_font(0) {
+            info.font_w = font.size().width as f32;
+            info.font_h = font.size().height as f32;
+        }
+        info.screen_width = screen.get_width();
+        info.screen_height = screen.get_height();
+        info.resolution = screen.get_resolution();
+        info.scan_lines = screen.scan_lines();
+    }
+
+    /// Map mouse coordinates to cell position using cached screen info
+    pub fn map_mouse_to_cell(&self, monitor: &MonitorSettings, bounds: Rectangle, mx: f32, my: f32) -> Option<Position> {
+        let info = self.cached_screen_info.lock();
+
+        let scale_factor = crate::get_scale_factor();
+        let bounds = bounds * scale_factor;
+        let mx = mx * scale_factor;
+        let my = my * scale_factor;
+
+        if info.font_w <= 0.0 || info.font_h <= 0.0 {
+            return None;
+        }
+
+        let term_px_w = info.screen_width as f32 * info.font_w;
+        let mut term_px_h = info.screen_height as f32 * info.font_h;
+
+        if info.scan_lines {
+            term_px_h *= 2.0;
+        }
+
+        if term_px_w <= 0.0 || term_px_h <= 0.0 {
+            return None;
+        }
+
+        let avail_w = bounds.width.max(1.0);
+        let avail_h = bounds.height.max(1.0);
+        let uniform_scale = (avail_w / term_px_w).min(avail_h / term_px_h);
+
+        let use_pp = monitor.use_pixel_perfect_scaling;
+        let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
+
+        let scaled_w = term_px_w * display_scale;
+        let scaled_h = term_px_h * display_scale;
+
+        let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
+        let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
+
+        let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
+            (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
+        } else {
+            (offset_x, offset_y, scaled_w, scaled_h)
+        };
+
+        if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
+            return None;
+        }
+
+        let local_px_x = (mx - vp_x) / display_scale;
+        let mut local_px_y = (my - vp_y) / display_scale;
+
+        let actual_font_h = if info.scan_lines {
+            local_px_y /= 2.0;
+            info.font_h
+        } else {
+            info.font_h
+        };
+
+        let cx = (local_px_x / info.font_w).floor() as i32;
+        let cy = (local_px_y / actual_font_h).floor() as i32;
+
+        if cx < 0 || cy < 0 || cx >= info.screen_width || cy >= info.screen_height {
+            return None;
+        }
+
+        Some(Position::new(cx, cy))
+    }
+
+    /// Map mouse coordinates to pixel position using cached screen info
+    pub fn map_mouse_to_xy(&self, monitor: &MonitorSettings, bounds: Rectangle, mx: f32, my: f32) -> Option<Position> {
+        let info = self.cached_screen_info.lock();
+
+        let scale_factor = crate::get_scale_factor();
+        let bounds = bounds * scale_factor;
+        let mx = mx * scale_factor;
+        let my = my * scale_factor;
+
+        if info.font_w <= 0.0 || info.font_h <= 0.0 {
+            return None;
+        }
+
+        let resolution_x = info.resolution.width as f32;
+        let mut resolution_y = info.resolution.height as f32;
+
+        if info.scan_lines {
+            resolution_y *= 2.0;
+        }
+
+        let avail_w = bounds.width.max(1.0);
+        let avail_h = bounds.height.max(1.0);
+        let uniform_scale = (avail_w / resolution_x).min(avail_h / resolution_y);
+
+        let use_pp = monitor.use_pixel_perfect_scaling;
+        let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
+
+        let scaled_w = resolution_x * display_scale;
+        let scaled_h = resolution_y * display_scale;
+
+        let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
+        let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
+
+        let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
+            (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
+        } else {
+            (offset_x, offset_y, scaled_w, scaled_h)
+        };
+
+        if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
+            return None;
+        }
+
+        let local_px_x = (mx - vp_x) / display_scale;
+        let local_px_y = (my - vp_y) / display_scale;
+
+        Some(Position::new(local_px_x as i32, local_px_y as i32))
     }
 }
 
@@ -75,17 +243,13 @@ impl Default for CRTShaderState {
             hovered_cell: None,
             hovered_link: None,
             hovered_rip_field: None,
-            last_rendered_size: None,
+            cached_mouse_state: parking_lot::Mutex::new(None),
+            cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
 
             cached_rgba_blink_on: parking_lot::Mutex::new(Vec::new()),
             cached_rgba_blink_off: parking_lot::Mutex::new(Vec::new()),
-            cached_size: parking_lot::Mutex::new((0, 0)),
-            cached_font_wh: parking_lot::Mutex::new((0, 0)),
-            content_dirty: parking_lot::Mutex::new(true),
-            last_selection_state: parking_lot::Mutex::new((None, None, false)),
-            last_buffer_version: parking_lot::Mutex::new(u64::MAX),
         }
     }
 }

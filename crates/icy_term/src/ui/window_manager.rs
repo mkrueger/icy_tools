@@ -262,7 +262,22 @@ impl WindowManager {
         let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
+                // Only forward events that are actually needed - skip mouse move events
+                // as they are handled directly by the shader's update() method
                 match &event {
+                    // Window focus events are needed
+                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => {
+                        return Some(WindowManagerMessage::Event(window_id, event));
+                    }
+                    // Mouse events: only CursorLeft and WheelScrolled are needed
+                    Event::Mouse(iced::mouse::Event::CursorLeft) | Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => {
+                        return Some(WindowManagerMessage::Event(window_id, event));
+                    }
+                    // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
+                    Event::Mouse(_) => {
+                        return None;
+                    }
+                    // Keyboard events need special handling
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
                             match &key {
@@ -311,11 +326,22 @@ impl WindowManager {
                                 _ => {}
                             }
                         }
+                        // Forward keyboard events for dialog handling
+                        return Some(WindowManagerMessage::Event(window_id, event));
                     }
-                    _ => { /* Handle other events if necessary */ }
+                    // Forward other keyboard events (KeyReleased, ModifiersChanged)
+                    Event::Keyboard(_) => {
+                        return Some(WindowManagerMessage::Event(window_id, event));
+                    }
+                    // Skip touch events
+                    Event::Touch(_) => {
+                        return None;
+                    }
+                    // Skip other events (InputMethod, etc.)
+                    _ => {
+                        return None;
+                    }
                 }
-
-                Some(WindowManagerMessage::Event(window_id, event))
             }),
             iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];

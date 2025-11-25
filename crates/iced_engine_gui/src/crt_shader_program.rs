@@ -1,7 +1,7 @@
 use crate::{CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalShader, render_unicode_to_rgba};
 use iced::widget::shader;
 use iced::{Rectangle, mouse};
-use icy_engine::{Caret, CaretShape, KeyModifiers, MouseButton, MouseEvent, MouseEventType, MouseState, Position};
+use icy_engine::{Caret, CaretShape, KeyModifiers, MouseButton, MouseEvent, MouseEventType};
 
 // Program wrapper that renders the terminal and creates the shader
 pub struct CRTShaderProgram<'a> {
@@ -12,10 +12,6 @@ pub struct CRTShaderProgram<'a> {
 impl<'a> CRTShaderProgram<'a> {
     pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
         Self { term, monitor_settings }
-    }
-
-    fn mark_content_dirty(state: &CRTShaderState) {
-        *state.content_dirty.lock() = true;
     }
 
     pub fn internal_update(
@@ -30,23 +26,6 @@ impl<'a> CRTShaderProgram<'a> {
         state.caret_blink.update(now);
         state.character_blink.update(now);
 
-        // Update viewport animation
-        // Note: We need mutable access to Terminal, so this will need to be handled differently
-        // For now, mark as needing animation support
-
-        // Size change triggers full content redraw
-        if let Ok(screen) = self.term.screen.try_lock() {
-            if let Some(font) = screen.get_font(0) {
-                let font_w = font.size().width as u32;
-                let font_h = font.size().height as u32;
-                let current_size = (screen.get_width() as u32 * font_w, screen.get_height() as u32 * font_h);
-                if state.last_rendered_size != Some(current_size) {
-                    state.last_rendered_size = Some(current_size);
-                    Self::mark_content_dirty(state);
-                }
-            }
-        }
-
         // Track modifier keys
         if let iced::Event::Keyboard(kbd_event) = event {
             match kbd_event {
@@ -60,102 +39,121 @@ impl<'a> CRTShaderProgram<'a> {
         }
 
         // Handle mouse events
-        // Handle mouse events
         if let iced::Event::Mouse(mouse_event) = event {
-            // Check if mouse tracking is enabled
-            let mouse_state = if let Ok(screen) = self.term.screen.lock() {
-                screen.terminal_state().mouse_state.clone()
-            } else {
-                MouseState::default()
-            };
+            // Use cached mouse state from last draw (avoids extra lock)
+            let mouse_state = state.cached_mouse_state.lock().clone();
+            let mouse_tracking_enabled = mouse_state.as_ref().map(|ms| ms.tracking_enabled()).unwrap_or(false);
 
-            let mouse_tracking_enabled = mouse_state.tracking_enabled();
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = cursor.position() {
-                        let cell_pos = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y);
-                        let xy_pos = map_mouse_to_xy(self.term, &self.monitor_settings, bounds, position.x, position.y);
-                        state.hovered_cell = cell_pos;
+                        // Calculate cell and xy positions using cached screen info (no screen lock needed)
+                        let cell_pos = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y);
+                        let xy_pos = state.map_mouse_to_xy(&self.monitor_settings, bounds, position.x, position.y);
 
-                        // Handle RIP field hovering
-                        // Convert cell position to RIP coordinates (640x350)
+                        // Only update if position actually changed
+                        if state.hovered_cell != cell_pos {
+                            state.hovered_cell = cell_pos;
+                        }
+
+                        // Handle RIP field hovering - needs screen lock for mouse_fields
                         if let Some(rip_pos) = xy_pos {
                             if let Ok(screen) = self.term.screen.try_lock() {
-                                // Convert cell position to RIP pixel coordinates
-                                // RIP uses 640x350 coordinate system
-
-                                // Check if we're hovering over a RIP field
-                                let mut found_field = None;
-                                for mouse_field in screen.mouse_fields() {
-                                    if !mouse_field.style.is_mouse_button() {
-                                        continue;
-                                    }
-                                    if mouse_field.contains(rip_pos.x, rip_pos.y) {
-                                        // Check if this field contains a previously found field
-                                        // (handle nested fields by preferring innermost)
-                                        if let Some(old_field) = &found_field {
-                                            if mouse_field.contains_field(old_field) {
+                                let mouse_fields = screen.mouse_fields();
+                                if !mouse_fields.is_empty() {
+                                    let mut found_field = None;
+                                    for mouse_field in mouse_fields {
+                                        if !mouse_field.style.is_mouse_button() {
+                                            continue;
+                                        }
+                                        if mouse_field.contains(rip_pos.x, rip_pos.y) {
+                                            if let Some(old_field) = &found_field {
+                                                if mouse_field.contains_field(old_field) {
+                                                    found_field = Some(mouse_field.clone());
+                                                }
+                                            } else {
                                                 found_field = Some(mouse_field.clone());
                                             }
-                                        } else {
-                                            // First matching field found
-                                            found_field = Some(mouse_field.clone());
                                         }
                                     }
-                                }
 
-                                if state.hovered_rip_field != found_field {
-                                    state.hovered_rip_field = found_field;
+                                    if state.hovered_rip_field != found_field {
+                                        state.hovered_rip_field = found_field;
+                                    }
+                                } else if state.hovered_rip_field.is_some() {
+                                    state.hovered_rip_field = None;
                                 }
                             }
-                        } else {
-                            // Not hovering over terminal
-                            if state.hovered_rip_field.is_some() {
-                                state.hovered_rip_field = None;
-                            }
+                        } else if state.hovered_rip_field.is_some() {
+                            state.hovered_rip_field = None;
                         }
 
                         // Send mouse motion event if mouse tracking is enabled
-                        if mouse_tracking_enabled {
-                            if let Some(cell) = cell_pos {
-                                // Check if we should report motion events based on the mouse mode
-                                let should_report_motion = match mouse_state.mouse_mode {
-                                    icy_engine::MouseMode::ButtonEvents => state.dragging,
-                                    icy_engine::MouseMode::AnyEvents => true,
-                                    _ => false,
-                                };
-
-                                if should_report_motion {
-                                    let modifiers = KeyModifiers {
-                                        shift: state.shift_pressed,
-                                        ctrl: state.ctrl_pressed,
-                                        alt: state.alt_pressed,
-                                        meta: false,
+                        if let Some(ref ms) = mouse_state {
+                            if mouse_tracking_enabled {
+                                if let Some(cell) = cell_pos {
+                                    let should_report_motion = match ms.mouse_mode {
+                                        icy_engine::MouseMode::ButtonEvents => state.dragging,
+                                        icy_engine::MouseMode::AnyEvents => true,
+                                        _ => false,
                                     };
 
-                                    let button = if state.dragging { MouseButton::Left } else { MouseButton::None };
+                                    if should_report_motion {
+                                        let modifiers = KeyModifiers {
+                                            shift: state.shift_pressed,
+                                            ctrl: state.ctrl_pressed,
+                                            alt: state.alt_pressed,
+                                            meta: false,
+                                        };
 
-                                    let mouse_event = MouseEvent {
-                                        mouse_state: mouse_state.clone(),
-                                        event_type: MouseEventType::Motion,
-                                        position: cell,
-                                        button,
-                                        modifiers,
-                                    };
+                                        let button = if state.dragging { MouseButton::Left } else { MouseButton::None };
 
-                                    // Send motion event immediately
-                                    return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                        let mouse_event = MouseEvent {
+                                            mouse_state: ms.clone(),
+                                            event_type: MouseEventType::Motion,
+                                            position: cell,
+                                            button,
+                                            modifiers,
+                                        };
+
+                                        return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                    }
                                 }
                             }
                         }
 
-                        // Handle dragging for selection (even when mouse tracking is enabled)
-                        if state.dragging {
+                        // Check hyperlinks only when not dragging
+                        if !state.dragging {
                             if let Some(cell) = cell_pos {
+                                if let Ok(screen) = self.term.screen.try_lock() {
+                                    let hyperlinks = screen.hyperlinks();
+                                    if !hyperlinks.is_empty() {
+                                        let mut found_link: Option<String> = None;
+                                        for hyperlink in hyperlinks {
+                                            if screen.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
+                                                found_link = Some(hyperlink.get_url(&**screen));
+                                                break;
+                                            }
+                                        }
+
+                                        if state.hovered_link != found_link {
+                                            state.hovered_link = found_link;
+                                        }
+                                    } else if state.hovered_link.is_some() {
+                                        state.hovered_link = None;
+                                    }
+                                }
+                            } else if state.hovered_link.is_some() {
+                                state.hovered_link = None;
+                            }
+                        }
+
+                        // Handle dragging for selection - needs mutable access
+                        if state.dragging {
+                            if let Some(cell) = state.hovered_cell {
                                 if state.last_drag_position != Some(cell) {
                                     state.last_drag_position = Some(cell);
                                     if let Ok(mut edit_state) = self.term.screen.try_lock() {
-                                        // Update selection
                                         if let Some(mut sel) = edit_state.get_selection().clone() {
                                             if !sel.locked {
                                                 sel.lead = cell;
@@ -170,35 +168,13 @@ impl<'a> CRTShaderProgram<'a> {
                                     }
                                 }
                             }
-                        } else {
-                            // Check hyperlinks only when not dragging
-                            if let Some(cell) = cell_pos {
-                                if let Ok(screen) = self.term.screen.try_lock() {
-                                    // Check hyperlinks
-                                    let mut found_link: Option<String> = None;
-                                    for hyperlink in screen.hyperlinks() {
-                                        if screen.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
-                                            found_link = Some(hyperlink.get_url(&**screen));
-                                            break;
-                                        }
-                                    }
-
-                                    if state.hovered_link != found_link {
-                                        state.hovered_link = found_link;
-                                    }
-                                }
-                            } else {
-                                if state.hovered_link.is_some() {
-                                    state.hovered_link = None;
-                                }
-                            }
                         }
                     }
                 }
 
                 mouse::Event::ButtonPressed(button) => {
                     if let Some(position) = cursor.position() {
-                        if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
+                        if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y) {
                             // Convert iced mouse button to our MouseButton type
                             let mouse_button = match button {
                                 mouse::Button::Left => MouseButton::Left,
@@ -215,25 +191,27 @@ impl<'a> CRTShaderProgram<'a> {
                             }
 
                             // Send mouse press event if mouse tracking is enabled
-                            if mouse_tracking_enabled {
-                                let modifiers = KeyModifiers {
-                                    shift: state.shift_pressed,
-                                    ctrl: state.ctrl_pressed,
-                                    alt: state.alt_pressed,
-                                    meta: false,
-                                };
+                            if let Some(ref ms) = mouse_state {
+                                if mouse_tracking_enabled {
+                                    let modifiers = KeyModifiers {
+                                        shift: state.shift_pressed,
+                                        ctrl: state.ctrl_pressed,
+                                        alt: state.alt_pressed,
+                                        meta: false,
+                                    };
 
-                                let mouse_event = MouseEvent {
-                                    mouse_state: mouse_state.clone(),
-                                    event_type: MouseEventType::Press,
-                                    position: cell,
-                                    button: mouse_button,
-                                    modifiers,
-                                };
+                                    let mouse_event = MouseEvent {
+                                        mouse_state: ms.clone(),
+                                        event_type: MouseEventType::Press,
+                                        position: cell,
+                                        button: mouse_button,
+                                        modifiers,
+                                    };
 
-                                // Send the mouse event, but continue to handle selection
-                                // Note: We don't return here to allow selection to work
-                                let _ = Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                    // Send the mouse event, but continue to handle selection
+                                    // Note: We don't return here to allow selection to work
+                                    let _ = Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                }
                             }
 
                             // Handle selection regardless of mouse tracking
@@ -296,32 +274,36 @@ impl<'a> CRTShaderProgram<'a> {
                     };
 
                     // Send mouse release event if mouse tracking is enabled
-                    if mouse_tracking_enabled {
-                        if let Some(position) = cursor.position() {
-                            if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
-                                let modifiers = KeyModifiers {
-                                    shift: state.shift_pressed,
-                                    ctrl: state.ctrl_pressed,
-                                    alt: state.alt_pressed,
-                                    meta: false,
-                                };
+                    if let Some(ref ms) = mouse_state {
+                        if mouse_tracking_enabled {
+                            if let Some(position) = cursor.position() {
+                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y) {
+                                    let modifiers = KeyModifiers {
+                                        shift: state.shift_pressed,
+                                        ctrl: state.ctrl_pressed,
+                                        alt: state.alt_pressed,
+                                        meta: false,
+                                    };
 
-                                if matches!(button, mouse::Button::Left) {
-                                    state.dragging = false;
+                                    if matches!(button, mouse::Button::Left) {
+                                        state.dragging = false;
+                                    }
+
+                                    let mouse_event = MouseEvent {
+                                        mouse_state: ms.clone(),
+                                        event_type: MouseEventType::Release,
+                                        position: cell,
+                                        button: mouse_button,
+                                        modifiers,
+                                    };
+
+                                    return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                                 }
-
-                                let mouse_event = MouseEvent {
-                                    mouse_state: mouse_state.clone(),
-                                    event_type: MouseEventType::Release,
-                                    position: cell,
-                                    button: mouse_button,
-                                    modifiers,
-                                };
-
-                                return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                             }
                         }
-                    } else if matches!(button, mouse::Button::Left) && state.dragging {
+                    }
+
+                    if !mouse_tracking_enabled && matches!(button, mouse::Button::Left) && state.dragging {
                         // Handle selection release when not in mouse tracking mode
                         state.dragging = false;
                         state.shift_pressed_during_selection = state.shift_pressed;
@@ -342,33 +324,35 @@ impl<'a> CRTShaderProgram<'a> {
                 mouse::Event::WheelScrolled { delta } => {
                     if mouse_tracking_enabled {
                         // Send wheel events as button press events
-                        if let Some(position) = cursor.position() {
-                            if let Some(cell) = map_mouse_to_cell(self.term, &self.monitor_settings, bounds, position.x, position.y) {
-                                let lines = match delta {
-                                    mouse::ScrollDelta::Lines { y, .. } => *y,
-                                    mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0,
-                                };
-
-                                if lines != 0.0 {
-                                    let button = if lines > 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };
-
-                                    let modifiers = KeyModifiers {
-                                        shift: state.shift_pressed,
-                                        ctrl: state.ctrl_pressed,
-                                        alt: state.alt_pressed,
-                                        meta: false,
+                        if let Some(ref ms) = mouse_state {
+                            if let Some(position) = cursor.position() {
+                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y) {
+                                    let lines = match delta {
+                                        mouse::ScrollDelta::Lines { y, .. } => *y,
+                                        mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0,
                                     };
 
-                                    let mouse_event = MouseEvent {
-                                        mouse_state: mouse_state.clone(),
-                                        event_type: MouseEventType::Press,
-                                        position: cell,
-                                        button,
-                                        modifiers,
-                                    };
+                                    if lines != 0.0 {
+                                        let button = if lines > 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };
 
-                                    // Wheel events are sent as press events
-                                    return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                        let modifiers = KeyModifiers {
+                                            shift: state.shift_pressed,
+                                            ctrl: state.ctrl_pressed,
+                                            alt: state.alt_pressed,
+                                            meta: false,
+                                        };
+
+                                        let mouse_event = MouseEvent {
+                                            mouse_state: ms.clone(),
+                                            event_type: MouseEventType::Press,
+                                            position: cell,
+                                            button,
+                                            modifiers,
+                                        };
+
+                                        // Wheel events are sent as press events
+                                        return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                    }
                                 }
                             }
                         }
@@ -411,32 +395,35 @@ impl<'a> CRTShaderProgram<'a> {
                 font_h = font.size().height as usize;
             }
 
+            // Cache screen info and mouse state for use in internal_update (avoids extra locks there)
+            state.update_cached_screen_info(&**screen);
+            *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
+
             let current_buffer_version = screen.get_version();
             let blink_on = state.character_blink.is_on();
 
-            // Check if buffer version changed (content modified)
-            let last_version = *state.last_buffer_version.lock();
-            if current_buffer_version != last_version || self.term.viewport.changed.load(std::sync::atomic::Ordering::Acquire) {
-                needs_full_render = true;
-                self.term.viewport.changed.store(false, std::sync::atomic::Ordering::Relaxed);
-                *state.last_buffer_version.lock() = current_buffer_version;
-            }
-
-            // Check if selection changed (affects highlighting)
+            // Check if buffer version or selection changed (need single lock for cached_screen_info)
             let selection = screen.get_selection();
             let sel_anchor = selection.as_ref().map(|s| s.anchor);
             let sel_lead = selection.as_ref().map(|s| s.lead);
             let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
+
             {
-                let mut last_sel = state.last_selection_state.lock();
-                if last_sel.0 != sel_anchor || last_sel.1 != sel_lead || last_sel.2 != sel_locked {
+                let mut info = state.cached_screen_info.lock();
+
+                // Check if buffer version changed (content modified)
+                if current_buffer_version != info.last_buffer_version || self.term.viewport.changed.load(std::sync::atomic::Ordering::Acquire) {
                     needs_full_render = true;
-                    *last_sel = (sel_anchor, sel_lead, sel_locked);
+                    self.term.viewport.changed.store(false, std::sync::atomic::Ordering::Relaxed);
+                    info.last_buffer_version = current_buffer_version;
+                }
+
+                // Check if selection changed (affects highlighting)
+                if info.last_selection_state.0 != sel_anchor || info.last_selection_state.1 != sel_lead || info.last_selection_state.2 != sel_locked {
+                    needs_full_render = true;
+                    info.last_selection_state = (sel_anchor, sel_lead, sel_locked);
                 }
             }
-
-            let mut cached_size_guard = state.cached_size.lock();
-            let mut cached_font_guard = state.cached_font_wh.lock();
 
             if needs_full_render {
                 // Full re-render - generate both blink on and blink off versions
@@ -530,16 +517,10 @@ impl<'a> CRTShaderProgram<'a> {
                     }
                     cached_off.clone_from(&render_blink_off.1);
                 }
-                *cached_size_guard = size;
-                *cached_font_guard = (font_w, font_h);
+                state.cached_screen_info.lock().render_size = size;
             } else {
                 // Reuse cached images - just pick the right one based on blink state
-                size = *cached_size_guard;
-                let (cfw, cfh) = *cached_font_guard;
-                if cfw != 0 && cfh != 0 {
-                    font_w = cfw;
-                    font_h = cfh;
-                }
+                size = state.cached_screen_info.lock().render_size;
                 rgba_data = if blink_on {
                     state.cached_rgba_blink_on.lock().clone()
                 } else {
@@ -673,150 +654,4 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             mouse::Interaction::default()
         }
     }
-}
-
-fn map_mouse_to_xy(
-    term: &Terminal,
-    monitor: &MonitorSettings,
-    bounds: Rectangle,
-    mx: f32, // mouse x in logical space
-    my: f32, // mouse y in logical space
-) -> Option<Position> {
-    // 3. Lock edit state & obtain font + buffer size (already in pixel units)
-    let screen = term.screen.try_lock().ok()?;
-    let font = screen.get_font(0)?;
-    let font_w = font.size().width as f32;
-    let font_h = font.size().height as f32;
-
-    let scale_factor = crate::get_scale_factor();
-    let bounds = bounds * scale_factor;
-    let mx = mx * scale_factor;
-    let my = my * scale_factor;
-    if font_w <= 0.0 || font_h <= 0.0 {
-        return None;
-    }
-
-    let resolution = screen.get_resolution();
-    let resolution_x = resolution.width as f32;
-    let mut resolution_y = resolution.height as f32;
-
-    // In scanline mode, the output height is doubled
-    if screen.scan_lines() {
-        resolution_y *= 2.0;
-    }
-    // 4. Aspect-fit scale in PHYSICAL space (match render())
-    let avail_w = bounds.width.max(1.0);
-    let avail_h = bounds.height.max(1.0);
-    let uniform_scale = (avail_w / resolution_x).min(avail_h / resolution_y);
-
-    let use_pp = monitor.use_pixel_perfect_scaling;
-    let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
-
-    let scaled_w = resolution_x * display_scale;
-    let scaled_h = resolution_y * display_scale;
-
-    // 5. Center terminal inside physical bounds (same as render())
-    let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
-    let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
-
-    // 6. Pixel-perfect rounding (only position & size used for viewport clipping)
-    let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
-        (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
-    } else {
-        (offset_x, offset_y, scaled_w, scaled_h)
-    };
-
-    // 7. Hit test in physical viewport
-    if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
-        return None;
-    }
-
-    // 8. Undo scaling using display_scale, not viewport width ratios
-    let local_px_x = (mx - vp_x) / display_scale;
-    let local_px_y = (my - vp_y) / display_scale;
-
-    Some(Position::new(local_px_x as i32, local_px_y as i32))
-}
-
-fn map_mouse_to_cell(
-    term: &Terminal,
-    monitor: &MonitorSettings,
-    bounds: Rectangle,
-    mx: f32, // mouse x in logical space
-    my: f32, // mouse y in logical space
-) -> Option<Position> {
-    // 3. Lock edit state & obtain font + buffer size (already in pixel units)
-    let screen = term.screen.try_lock().ok()?;
-    let font = screen.get_font(0)?;
-    let font_w = font.size().width as f32;
-    let font_h = font.size().height as f32;
-
-    let scale_factor = crate::get_scale_factor();
-    let bounds = bounds * scale_factor;
-    let mx = mx * scale_factor;
-    let my = my * scale_factor;
-    if font_w <= 0.0 || font_h <= 0.0 {
-        return None;
-    }
-
-    let term_px_w = screen.get_width() as f32 * font_w;
-    let mut term_px_h = screen.get_height() as f32 * font_h;
-
-    // In scanline mode, each line is doubled
-    if screen.scan_lines() {
-        term_px_h *= 2.0;
-    }
-
-    if term_px_w <= 0.0 || term_px_h <= 0.0 {
-        return None;
-    }
-
-    // 4. Aspect-fit scale in PHYSICAL space (match render())
-    let avail_w = bounds.width.max(1.0);
-    let avail_h = bounds.height.max(1.0);
-    let uniform_scale = (avail_w / term_px_w).min(avail_h / term_px_h);
-
-    let use_pp = monitor.use_pixel_perfect_scaling;
-    let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
-
-    let scaled_w = term_px_w * display_scale;
-    let scaled_h = term_px_h * display_scale;
-
-    // 5. Center terminal inside physical bounds (same as render())
-    let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
-    let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
-
-    // 6. Pixel-perfect rounding (only position & size used for viewport clipping)
-    let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
-        (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
-    } else {
-        (offset_x, offset_y, scaled_w, scaled_h)
-    };
-
-    // 7. Hit test in physical viewport
-    if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
-        return None;
-    }
-
-    // 8. Undo scaling using display_scale, not viewport width ratios
-    let local_px_x = (mx - vp_x) / display_scale;
-    let mut local_px_y = (my - vp_y) / display_scale;
-
-    // In scanline mode, we need to divide y by 2 to get the actual cell position
-    let actual_font_h = if screen.scan_lines() {
-        local_px_y /= 2.0;
-        font_h
-    } else {
-        font_h
-    };
-
-    // 9. Convert to cell indices
-    let cx = (local_px_x / font_w).floor() as i32;
-    let cy = (local_px_y / actual_font_h).floor() as i32;
-
-    if cx < 0 || cy < 0 || cx >= screen.get_width() as i32 || cy >= screen.get_height() as i32 {
-        return None;
-    }
-
-    Some(Position::new(cx, cy))
 }
