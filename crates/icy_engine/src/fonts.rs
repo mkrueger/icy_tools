@@ -311,7 +311,7 @@ impl BitFont {
                 }
             }
 
-            let new_w = glyph.bitmap.width.max(1) as usize; // keep width unchanged
+            let new_w = glyph.bitmap.width.max(1) as usize;
             glyph.bitmap = Bitmap {
                 width: new_w,
                 height: target_height,

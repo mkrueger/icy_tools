@@ -426,7 +426,11 @@ impl MainWindow {
                 Task::none()
             }
             Message::OpenReleaseLink => {
-                if let Err(e) = webbrowser::open("https://github.com/mkrueger/icy_tools/releases") {
+                let url = format!(
+                    "https://github.com/mkrueger/icy_tools/releases/tag/IcyTerm{}",
+                    crate::LATEST_VERSION.to_string()
+                );
+                if let Err(e) = webbrowser::open(&url) {
                     eprintln!("Failed to open release link: {}", e);
                 }
                 Task::none()

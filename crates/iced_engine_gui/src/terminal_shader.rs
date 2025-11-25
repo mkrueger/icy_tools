@@ -71,7 +71,6 @@ impl shader::Pipeline for TerminalShaderRenderer {
         let filter_mode = iced::wgpu::FilterMode::Linear;
         unsafe { FILTER_MODE = filter_mode };
 
-        // ...existing shader and pipeline creation code unchanged...
         let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
             label: Some(&format!("Terminal CRT Shader {}", renderer_id)),
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
@@ -80,7 +79,6 @@ impl shader::Pipeline for TerminalShaderRenderer {
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some(&format!("Terminal Shader Bind Group Layout {}", renderer_id)),
             entries: &[
-                // ...existing entries unchanged...
                 iced::wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: iced::wgpu::ShaderStages::FRAGMENT,
@@ -500,7 +498,6 @@ impl shader::Primitive for TerminalShader {
             return;
         };
 
-        // ...rest of render code unchanged except using instance bind_group...
         let term_w = self.terminal_size.0.max(1) as f32;
         let term_h = self.terminal_size.1.max(1) as f32;
         let avail_w = clip_bounds.width.max(1) as f32;

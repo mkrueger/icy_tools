@@ -159,7 +159,6 @@ impl TerminalWindow {
         container(
             button(
                 row![
-                    text("🎉 "),
                     text(fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string())).size(12),
                     text(" →").size(12)
                 ]
@@ -196,17 +195,6 @@ impl TerminalWindow {
         )
         .width(Length::Shrink)
         .padding([2, 6])
-        .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(Color::from_rgba(0.2, 0.6, 1.0, 0.05))),
-            border: iced::Border {
-                color: theme.extended_palette().background.strong.color,
-                width: 0.0,
-                radius: 0.0.into(),
-            },
-            text_color: None,
-            shadow: Default::default(),
-            snap: false,
-        })
         .into()
     }
 
@@ -261,26 +249,6 @@ impl TerminalWindow {
         let mut bar_content = row![phonebook_btn, container(text(" | ").size(10)).padding([0, 2]), upload_btn, download_btn,]
             .spacing(3)
             .align_y(Alignment::Center);
-        /*
-        // Only show Send Login button when connected and credentials are available
-        if self.is_connected {
-            if let Some(address) = &self.current_address {
-                if !address.user_name.is_empty() && !address.password.is_empty() {
-                    let send_login_btn = button(
-                        row![
-                            text("🔑").size(14), // or use svg(svg::Handle::from_memory(LOGIN_SVG))
-                            text(fl!(crate::LANGUAGE_LOADER, "terminal-autologin")).size(12)
-                        ]
-                        .spacing(3)
-                        .align_y(Alignment::Center),
-                    )
-                    .on_press(Message::SendLoginAndPassword(true, true))
-                    .padding([4, 6]);
-
-                    bar_content = bar_content.push(send_login_btn);
-                }
-            }
-        }*/
 
         bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
 
