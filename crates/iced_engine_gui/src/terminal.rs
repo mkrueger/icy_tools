@@ -1,5 +1,6 @@
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
 
 use iced::{Color, widget};
 use icy_engine::Screen;
@@ -22,12 +23,11 @@ pub struct Terminal {
 impl Terminal {
     pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
         // Initialize viewport with screen size
-        let viewport = if let Ok(scr) = screen.lock() {
+        let viewport = {
+            let scr = screen.lock();
             let virtual_size = scr.virtual_size();
             let resolution = scr.get_resolution();
             Viewport::new(resolution, virtual_size)
-        } else {
-            Viewport::default()
         };
 
         Self {
@@ -46,7 +46,8 @@ impl Terminal {
 
     /// Update viewport when screen size changes
     pub fn update_viewport_size(&mut self) {
-        if let Ok(scr) = self.screen.lock() {
+        {
+            let scr = self.screen.lock();
             let virtual_size = scr.virtual_size();
             // Only update content size, not visible size (which is the widget size, not screen size)
             self.viewport.set_content_size(virtual_size.width as f32, virtual_size.height as f32);
@@ -101,7 +102,8 @@ impl Terminal {
             self.update_viewport_size();
 
             // Get the resolution to use as visible size for scrolling calculations
-            if let Ok(scr) = self.screen.lock() {
+            {
+                let scr = self.screen.lock();
                 let resolution = scr.get_resolution();
                 // Use resolution as visible size and scroll to bottom immediately (no animation)
                 let max_scroll_y = (self.viewport.content_height * self.viewport.zoom - resolution.height as f32).max(0.0);

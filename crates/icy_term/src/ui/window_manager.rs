@@ -1,7 +1,6 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::BTreeMap, sync::Arc};
+
+use parking_lot::Mutex;
 
 use iced::{
     Element, Event, Size, Subscription, Task, Theme, Vector,

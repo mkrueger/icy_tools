@@ -1,6 +1,7 @@
 use crate::mcp::{McpCommand, McpServer};
 use jsonrpc_core::{Error, ErrorCode, IoHandler, Params};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
 use super::types::*;

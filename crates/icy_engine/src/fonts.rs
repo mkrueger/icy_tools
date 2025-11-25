@@ -4,13 +4,8 @@ use lazy_static::lazy_static;
 use libyaff::{GlyphDefinition, YaffFont};
 
 use crate::EngineResult;
-use std::{
-    collections::HashMap,
-    error::Error,
-    path::PathBuf,
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+use parking_lot::Mutex;
+use std::{collections::HashMap, error::Error, path::PathBuf, str::FromStr, sync::Arc};
 
 use super::Size;
 
@@ -42,7 +37,7 @@ impl Clone for BitFont {
     fn clone(&self) -> Self {
         Self {
             yaff_font: self.yaff_font.clone(),
-            glyph_cache: Mutex::new(self.glyph_cache.lock().unwrap().clone()),
+            glyph_cache: Mutex::new(self.glyph_cache.lock().clone()),
             glyph_lookup: self.glyph_lookup.clone(),
             path_opt: self.path_opt.clone(),
             font_type: self.font_type,
@@ -140,7 +135,7 @@ impl BitFont {
 
         // For characters outside 0..256, check cache first
         {
-            let cache = self.glyph_cache.lock().unwrap();
+            let cache = self.glyph_cache.lock();
             if let Some(glyph_def) = cache.get(&ch) {
                 return Some(glyph_def.clone());
             }
@@ -148,7 +143,7 @@ impl BitFont {
 
         // Find and cache the glyph
         if let Some(glyph_def) = self.find_glyph_in_font(ch) {
-            self.glyph_cache.lock().unwrap().insert(ch, glyph_def.clone());
+            self.glyph_cache.lock().insert(ch, glyph_def.clone());
             return Some(glyph_def);
         }
 
@@ -703,7 +698,7 @@ lazy_static::lazy_static! {
 pub fn get_amiga_font_by_name(name: &str, size: i32) -> Option<BitFont> {
     for (font_name, font_size, font_data, opt_font) in AMIGA_FONTS.iter() {
         if font_name == name && size == *font_size {
-            let mut font_cache = opt_font.lock().unwrap();
+            let mut font_cache = opt_font.lock();
 
             // Check if font is already cached
             if let Some(cached_font) = font_cache.as_ref() {

@@ -107,7 +107,7 @@ impl fmt::Display for TerminalResolutionWrapper {
 impl super::DialingDirectoryState {
     pub fn create_option_panel(&self, options: &crate::Options) -> Element<'_, Message> {
         let addr = if let Some(addr_idx) = self.selected_bbs {
-            self.addresses.lock().unwrap().addresses[addr_idx].clone()
+            self.addresses.lock().addresses[addr_idx].clone()
         } else {
             self.quick_connect_address.clone()
         };

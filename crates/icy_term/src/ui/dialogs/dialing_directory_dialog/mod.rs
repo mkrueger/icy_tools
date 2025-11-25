@@ -10,8 +10,8 @@ use iced_engine_gui::ui::*;
 use icy_engine::ScreenMode;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
+use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 mod address_list;
 mod address_options_panel;
@@ -155,9 +155,9 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::ToggleFavorite(idx) => {
-                if idx < self.addresses.lock().unwrap().addresses.len() {
-                    let tmp = self.addresses.lock().unwrap().addresses[idx].is_favored;
-                    self.addresses.lock().unwrap().addresses[idx].is_favored = !tmp;
+                if idx < self.addresses.lock().addresses.len() {
+                    let tmp = self.addresses.lock().addresses[idx].is_favored;
+                    self.addresses.lock().addresses[idx].is_favored = !tmp;
                 }
                 Task::none()
             }
@@ -176,8 +176,8 @@ impl DialingDirectoryState {
                 let mut new_address = self.quick_connect_address.clone();
                 self.quick_connect_address = Address::default();
                 new_address.system_name = new_address.address.clone();
-                self.addresses.lock().unwrap().addresses.push(new_address);
-                self.selected_bbs = Some(self.addresses.lock().unwrap().addresses.len() - 1);
+                self.addresses.lock().addresses.push(new_address);
+                self.selected_bbs = Some(self.addresses.lock().addresses.len() - 1);
                 Task::none()
             }
 
@@ -189,8 +189,8 @@ impl DialingDirectoryState {
 
             DialingDirectoryMsg::ConfirmDelete(idx) => {
                 // Actually delete the address
-                if idx < self.addresses.lock().unwrap().addresses.len() {
-                    self.addresses.lock().unwrap().addresses.remove(idx);
+                if idx < self.addresses.lock().addresses.len() {
+                    self.addresses.lock().addresses.remove(idx);
                     // Adjust selected index if needed
                     if let Some(selected) = self.selected_bbs {
                         if selected == idx {
@@ -201,7 +201,7 @@ impl DialingDirectoryState {
                     }
 
                     // Save the address book
-                    if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
+                    if let Err(e) = self.addresses.lock().store_phone_book() {
                         eprintln!("Failed to save address book: {}", e);
                     }
                 }
@@ -210,7 +210,7 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::AddressFieldChanged { id, field } => {
-                let mut lock = self.addresses.lock().unwrap();
+                let mut lock = self.addresses.lock();
                 let addr = if let Some(id) = id {
                     &mut lock.addresses[id]
                 } else {
@@ -280,8 +280,8 @@ impl DialingDirectoryState {
             DialingDirectoryMsg::ConnectSelected => {
                 // Get the selected address
                 let addr = if let Some(idx) = self.selected_bbs {
-                    if idx < self.addresses.lock().unwrap().addresses.len() {
-                        self.addresses.lock().unwrap().addresses[idx].clone()
+                    if idx < self.addresses.lock().addresses.len() {
+                        self.addresses.lock().addresses[idx].clone()
                     } else {
                         return Task::none();
                     }
@@ -291,12 +291,12 @@ impl DialingDirectoryState {
 
                 // Increment call counter for the selected address
                 if let Some(idx) = self.selected_bbs {
-                    self.addresses.lock().unwrap().addresses[idx].number_of_calls += 1;
-                    self.addresses.lock().unwrap().addresses[idx].last_call = Some(chrono::Utc::now());
+                    self.addresses.lock().addresses[idx].number_of_calls += 1;
+                    self.addresses.lock().addresses[idx].last_call = Some(chrono::Utc::now());
                 }
 
                 // Save the address book
-                if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
+                if let Err(e) = self.addresses.lock().store_phone_book() {
                     eprintln!("Failed to save address book: {}", e);
                 }
 
@@ -313,7 +313,7 @@ impl DialingDirectoryState {
                 }
 
                 // Save any changes before closing
-                if let Err(e) = self.addresses.lock().unwrap().store_phone_book() {
+                if let Err(e) = self.addresses.lock().store_phone_book() {
                     eprintln!("Failed to save address book: {}", e);
                 }
                 // Return a task that closes the dialog
@@ -326,7 +326,7 @@ impl DialingDirectoryState {
                 for _ in 0..16 {
                     pw.push(unsafe { char::from_u32_unchecked(fastrand::u8(b'0'..=b'z') as u32) });
                 }
-                let mut lock = self.addresses.lock().unwrap();
+                let mut lock = self.addresses.lock();
                 let addr = if let Some(id) = self.selected_bbs {
                     &mut lock.addresses[id]
                 } else {

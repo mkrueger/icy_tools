@@ -2,7 +2,8 @@ pub mod handlers;
 pub mod server;
 pub mod types;
 
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub use server::*;
 use tokio::sync::oneshot;

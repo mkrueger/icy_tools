@@ -12,10 +12,11 @@ use crate::{
     igs,
     rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
+use parking_lot::Mutex;
 use skypix_impl::SKYPIX_SCREEN_SIZE;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct GraphicsScreenBuffer {
     pub pixel_size: Size,

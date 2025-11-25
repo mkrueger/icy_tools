@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use iced::{
@@ -90,26 +91,26 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::UpdateOptions(options) => {
-                *self.temp_options.lock().unwrap() = options;
+                *self.temp_options.lock() = options;
                 None
             }
             SettingsMsg::ResetCategory(category) => {
                 match category {
                     SettingsCategory::Monitor => {
-                        self.temp_options.lock().unwrap().reset_monitor_settings();
+                        self.temp_options.lock().reset_monitor_settings();
                     }
                     SettingsCategory::Terminal => {
-                        let mut options = self.temp_options.lock().unwrap();
+                        let mut options = self.temp_options.lock();
                         let default_options = crate::data::Options::default();
                         options.console_beep = default_options.console_beep;
                         options.dial_tone = default_options.dial_tone;
                     }
                     SettingsCategory::IEMSI => {
-                        let mut options = self.temp_options.lock().unwrap();
+                        let mut options = self.temp_options.lock();
                         options.iemsi = crate::data::IEMSISettings::default();
                     }
                     SettingsCategory::Paths => {
-                        let mut options = self.temp_options.lock().unwrap();
+                        let mut options = self.temp_options.lock();
                         options.download_path = String::new();
                         options.capture_path = String::new();
                     }
@@ -128,11 +129,11 @@ impl SettingsDialogState {
             }
             SettingsMsg::Save => {
                 // Save the options and close dialog
-                let old_buffer_size = self.original_options.lock().unwrap().max_scrollback_lines;
-                let tmp = self.temp_options.lock().unwrap().clone();
+                let old_buffer_size = self.original_options.lock().max_scrollback_lines;
+                let tmp = self.temp_options.lock().clone();
                 let new_buffer_size = tmp.max_scrollback_lines;
-                *self.original_options.lock().unwrap() = tmp;
-                if let Err(e) = self.original_options.lock().unwrap().store_options() {
+                *self.original_options.lock() = tmp;
+                if let Err(e) = self.original_options.lock().store_options() {
                     log::error!("Failed to save options: {}", e);
                 }
 
@@ -145,8 +146,8 @@ impl SettingsDialogState {
             }
             SettingsMsg::Cancel => {
                 // Reset to original options and close
-                let tmp = self.original_options.lock().unwrap().clone();
-                *self.temp_options.lock().unwrap() = tmp;
+                let tmp = self.original_options.lock().clone();
+                *self.temp_options.lock() = tmp;
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             SettingsMsg::SelectModem(index) => {
@@ -154,17 +155,17 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::AddModem => {
-                let len = self.temp_options.lock().unwrap().modems.len();
+                let len = self.temp_options.lock().modems.len();
                 let new_modem = crate::data::modem::Modem {
                     name: format!("Modem {}", len + 1),
                     ..Default::default()
                 };
-                self.temp_options.lock().unwrap().modems.push(new_modem);
+                self.temp_options.lock().modems.push(new_modem);
                 self.selected_modem_index = len;
                 None
             }
             SettingsMsg::RemoveModem(index) => {
-                let mut temp_options = self.temp_options.lock().unwrap();
+                let mut temp_options = self.temp_options.lock();
                 if index < temp_options.modems.len() {
                     temp_options.modems.remove(index);
                     // After removal, get the new length
@@ -179,19 +180,19 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::MonitorSettings(settings) => {
-                update_monitor_settings(&mut self.temp_options.lock().unwrap().monitor_settings, settings);
+                update_monitor_settings(&mut self.temp_options.lock().monitor_settings, settings);
                 None
             }
             SettingsMsg::UpdateDownloadPath(path) => {
-                self.temp_options.lock().unwrap().download_path = path;
+                self.temp_options.lock().download_path = path;
                 None
             }
             SettingsMsg::UpdateCapturePath(path) => {
-                self.temp_options.lock().unwrap().capture_path = path;
+                self.temp_options.lock().capture_path = path;
                 None
             }
             SettingsMsg::BrowseDownloadPath => {
-                let current_path = self.temp_options.lock().unwrap().download_path();
+                let current_path = self.temp_options.lock().download_path();
                 let initial_dir = if std::path::Path::new(&current_path).exists() {
                     Some(std::path::PathBuf::from(&current_path))
                 } else {
@@ -205,13 +206,13 @@ impl SettingsDialogState {
 
                 if let Some(path) = dialog.pick_folder() {
                     if let Some(path_str) = path.to_str() {
-                        self.temp_options.lock().unwrap().download_path = path_str.to_string();
+                        self.temp_options.lock().download_path = path_str.to_string();
                     }
                 }
                 None
             }
             SettingsMsg::BrowseCapturePath => {
-                let current_path = self.temp_options.lock().unwrap().capture_path();
+                let current_path = self.temp_options.lock().capture_path();
                 let initial_dir = if std::path::Path::new(&current_path).exists() {
                     Some(std::path::PathBuf::from(&current_path))
                 } else {
@@ -225,13 +226,13 @@ impl SettingsDialogState {
 
                 if let Some(path) = dialog.pick_folder() {
                     if let Some(path_str) = path.to_str() {
-                        self.temp_options.lock().unwrap().capture_path = path_str.to_string();
+                        self.temp_options.lock().capture_path = path_str.to_string();
                     }
                 }
                 None
             }
             SettingsMsg::ResetPaths => {
-                let mut options = self.temp_options.lock().unwrap();
+                let mut options = self.temp_options.lock();
                 options.download_path = String::new();
                 options.capture_path = String::new();
                 None
@@ -300,7 +301,7 @@ impl SettingsDialogState {
         // Settings content for current category
         let settings_content = match self.current_category {
             SettingsCategory::Monitor => {
-                let monitor_settings = self.temp_options.lock().unwrap().monitor_settings.clone();
+                let monitor_settings = self.temp_options.lock().monitor_settings.clone();
                 show_monitor_settings(monitor_settings).map(|msg| crate::ui::Message::SettingsDialog(SettingsMsg::MonitorSettings(msg)))
             }
             SettingsCategory::IEMSI => self.iemsi_settings_content(),
@@ -308,7 +309,7 @@ impl SettingsDialogState {
             SettingsCategory::Keybinds => self.keybinds_settings_content(),
             SettingsCategory::Modem => self.modem_settings_content(),
             SettingsCategory::Paths => {
-                let options = self.temp_options.lock().unwrap();
+                let options = self.temp_options.lock();
                 let download_path = options.download_path();
                 let capture_path = options.capture_path();
                 drop(options);
@@ -329,7 +330,7 @@ impl SettingsDialogState {
 
         let reset_button = match self.current_category {
             SettingsCategory::Monitor => {
-                let current_settings = self.temp_options.lock().unwrap().monitor_settings.clone();
+                let current_settings = self.temp_options.lock().monitor_settings.clone();
                 let default_settings = iced_engine_gui::MonitorSettings::default();
                 let is_default = current_settings == default_settings;
                 let msg = if !is_default {
@@ -340,7 +341,7 @@ impl SettingsDialogState {
                 Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))
             }
             SettingsCategory::Terminal => {
-                let options = self.temp_options.lock().unwrap();
+                let options = self.temp_options.lock();
                 // let default_options = crate::data::Options::default();
                 // let is_default = options.console_beep == default_options.console_beep && options.dial_tone == default_options.dial_tone;
                 drop(options);
@@ -353,7 +354,7 @@ impl SettingsDialogState {
                 None
             }
             SettingsCategory::IEMSI => {
-                let options = self.temp_options.lock().unwrap();
+                let options = self.temp_options.lock();
                 // let current_iemsi = options.iemsi.clone();
                 // let default_iemsi = crate::data::IEMSISettings::default();
                 // let is_default = current_iemsi == default_iemsi;
@@ -375,7 +376,7 @@ impl SettingsDialogState {
                 ))
             }
             SettingsCategory::Paths => {
-                let options = self.temp_options.lock().unwrap();
+                let options = self.temp_options.lock();
                 let is_default = options.download_path.is_empty() && options.capture_path.is_empty();
                 drop(options);
                 let msg = if !is_default {

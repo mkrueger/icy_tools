@@ -242,7 +242,8 @@ impl shader::Primitive for TerminalShader {
             }
         }
 
-        if let Ok(mut pending) = PENDING_INSTANCE_REMOVALS.lock() {
+        {
+            let mut pending = PENDING_INSTANCE_REMOVALS.lock();
             for id in pending.drain(..) {
                 pipeline.instances.remove(&id);
             }

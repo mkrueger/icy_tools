@@ -58,7 +58,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                         // Handle RIP field hovering - needs screen lock for mouse_fields
                         if let Some(rip_pos) = xy_pos {
-                            if let Ok(screen) = self.term.screen.try_lock() {
+                            if let Some(screen) = self.term.screen.try_lock() {
                                 let mouse_fields = screen.mouse_fields();
                                 if !mouse_fields.is_empty() {
                                     let mut found_field = None;
@@ -125,7 +125,7 @@ impl<'a> CRTShaderProgram<'a> {
                         // Check hyperlinks only when not dragging
                         if !state.dragging {
                             if let Some(cell) = cell_pos {
-                                if let Ok(screen) = self.term.screen.try_lock() {
+                                if let Some(screen) = self.term.screen.try_lock() {
                                     let hyperlinks = screen.hyperlinks();
                                     if !hyperlinks.is_empty() {
                                         let mut found_link: Option<String> = None;
@@ -234,7 +234,7 @@ impl<'a> CRTShaderProgram<'a> {
                                 }
                             } else if matches!(button, mouse::Button::Middle) {
                                 // Middle click: copy if selection exists, paste if no selection
-                                if let Ok(screen) = self.term.screen.try_lock() {
+                                if let Some(screen) = self.term.screen.try_lock() {
                                     if screen.get_selection().is_some() {
                                         // Has selection - copy it
                                         return Some(iced::widget::Action::publish(Message::Copy));
@@ -371,7 +371,8 @@ impl<'a> CRTShaderProgram<'a> {
         let scan_lines;
         // Check if we need to re-render based on buffer version and blink state
         let mut needs_full_render = false;
-        if let Ok(screen) = self.term.screen.lock() {
+        {
+            let screen = self.term.screen.lock();
             scan_lines = screen.scan_lines();
             if let Some(font) = screen.get_font(0) {
                 font_w = font.size().width as usize;
@@ -516,10 +517,6 @@ impl<'a> CRTShaderProgram<'a> {
             if state.caret_blink.is_on() {
                 self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h, scan_lines);
             }
-        } else {
-            // Fallback minimal buffer
-            size = (640, 400);
-            rgba_data = vec![0; size.0 as usize * size.1 as usize * 4];
         }
 
         if rgba_data.len() != (size.0 as usize * size.1 as usize * 4) {

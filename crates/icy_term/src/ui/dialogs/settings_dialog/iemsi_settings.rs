@@ -13,7 +13,7 @@ use crate::ui::settings_dialog::{SettingsDialogState, SettingsMsg};
 
 impl SettingsDialogState {
     pub fn iemsi_settings_content<'a>(&self) -> Element<'a, crate::ui::Message> {
-        let iemsi = &self.temp_options.lock().unwrap().iemsi;
+        let iemsi = &self.temp_options.lock().iemsi;
         column![
             // IEMSI Autologin section
             section_header(fl!(crate::LANGUAGE_LOADER, "settings-iemsi-autologin-section")),
@@ -26,7 +26,7 @@ impl SettingsDialogState {
                             .on_toggle({
                                 let temp_options = self.temp_options.clone();
                                 move |checked| {
-                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    let mut new_options = (*temp_options.lock()).clone();
                                     new_options.iemsi.autologin = checked;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 }
@@ -42,7 +42,7 @@ impl SettingsDialogState {
                             .on_input({
                                 let temp_options = self.temp_options.clone();
                                 move |value| {
-                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    let mut new_options = (*temp_options.lock()).clone();
                                     new_options.iemsi.alias = value;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 }
@@ -59,7 +59,7 @@ impl SettingsDialogState {
                             .on_input({
                                 let temp_options = self.temp_options.clone();
                                 move |value| {
-                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    let mut new_options = (*temp_options.lock()).clone();
                                     new_options.iemsi.location = value;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 }
@@ -76,7 +76,7 @@ impl SettingsDialogState {
                             .on_input({
                                 let temp_options = self.temp_options.clone();
                                 move |value| {
-                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    let mut new_options = (*temp_options.lock()).clone();
                                     new_options.iemsi.data_phone = value;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 }
@@ -93,7 +93,7 @@ impl SettingsDialogState {
                             .on_input({
                                 let temp_options = self.temp_options.clone();
                                 move |value| {
-                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    let mut new_options = (*temp_options.lock()).clone();
                                     new_options.iemsi.voice_phone = value;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 }
@@ -110,7 +110,7 @@ impl SettingsDialogState {
                             .on_input({
                                 let temp_options = self.temp_options.clone();
                                 move |value| {
-                                    let mut new_options = (*temp_options.lock().unwrap()).clone();
+                                    let mut new_options = (*temp_options.lock()).clone();
                                     new_options.iemsi.birth_date = value;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 }

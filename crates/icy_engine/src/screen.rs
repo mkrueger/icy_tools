@@ -1,7 +1,5 @@
-use std::{
-    cmp::max,
-    sync::{Arc, Mutex},
-};
+use parking_lot::Mutex;
+use std::{cmp::max, sync::Arc};
 
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 

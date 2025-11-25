@@ -7,7 +7,8 @@ use iced_engine_gui::{ScrollbarOverlay, Terminal, terminal_view::TerminalView};
 use icy_engine::Screen;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 // use iced_aw::{menu, menu_bar, menu_items};
 
 use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message, util::SoundThread};
@@ -69,15 +70,12 @@ impl TerminalWindow {
         // Calculate scrollback lines for status bar
         let scrollback_lines = if self.terminal.is_in_scrollback_mode() {
             // Get font dimensions to calculate how many lines we've scrolled
-            if let Ok(screen) = self.terminal.screen.lock() {
-                let font_height = screen.get_font_dimensions().height as f32;
-                // Calculate how many lines we've scrolled from the bottom
-                let max_scroll_y = (self.terminal.viewport.content_height - self.terminal.viewport.visible_height).max(0.0);
-                let scroll_from_bottom = max_scroll_y - self.terminal.viewport.scroll_y;
-                (scroll_from_bottom / font_height) as i32
-            } else {
-                0
-            }
+            let screen = self.terminal.screen.lock();
+            let font_height = screen.get_font_dimensions().height as f32;
+            // Calculate how many lines we've scrolled from the bottom
+            let max_scroll_y = (self.terminal.viewport.content_height - self.terminal.viewport.visible_height).max(0.0);
+            let scroll_from_bottom = max_scroll_y - self.terminal.viewport.scroll_y;
+            (scroll_from_bottom / font_height) as i32
         } else {
             0
         };
@@ -253,7 +251,8 @@ impl TerminalWindow {
         bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
 
         // Add Stop Playing Sound button if music is playing
-        if let Ok(mut sound_guard) = self.sound_thread.lock() {
+        {
+            let mut sound_guard = self.sound_thread.lock();
             let _ = sound_guard.update_state();
             if sound_guard.is_playing() {
                 let button_text = match sound_guard.stop_button {
@@ -414,11 +413,10 @@ impl TerminalWindow {
             TerminalEmulation::AtariST => "Atari ST",
         };
 
-        let (buffer_width, buffer_height) = if let Ok(edit_screen) = self.terminal.screen.lock() {
+        let (buffer_width, buffer_height) = {
+            let edit_screen = self.terminal.screen.lock();
             let size = edit_screen.get_size();
             (size.width, size.height)
-        } else {
-            (80, 25)
         };
 
         let connection_string = if let Some(address) = &self.current_address {

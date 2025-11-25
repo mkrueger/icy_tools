@@ -1,10 +1,12 @@
 use core::panic;
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
     vec,
 };
+
+use parking_lot::Mutex;
 
 use crate::{
     McpHandler,
@@ -167,7 +169,7 @@ impl MainWindow {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
             Message::Connect(address) => {
                 let modem = if matches!(address.protocol, ConnectionType::Modem) {
-                    let options = &self.settings_dialog.original_options.lock().unwrap();
+                    let options = &self.settings_dialog.original_options.lock();
                     // Find the modem in options that matches the address
                     let modem_opt = options.modems.iter().find(|m| m.name == address.address);
 
@@ -188,7 +190,8 @@ impl MainWindow {
                         log::error!("{}", error_msg);
 
                         // Display error message in terminal
-                        if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                        {
+                            let mut screen = self.terminal_window.terminal.screen.lock();
                             if let Some(editable) = screen.as_editable() {
                                 editable.clear_screen();
 
@@ -210,7 +213,7 @@ impl MainWindow {
                 } else {
                     None
                 };
-                let options = &self.settings_dialog.original_options.lock().unwrap();
+                let options = &self.settings_dialog.original_options.lock();
 
                 self.terminal_emulation = address.terminal_type;
 
@@ -262,7 +265,7 @@ impl MainWindow {
             }
 
             Message::SendString(s) => {
-                let mut screen = self.terminal_window.terminal.screen.lock().unwrap();
+                let mut screen = self.terminal_window.terminal.screen.lock();
                 let _ = screen.clear_selection();
                 let buffer_type = screen.buffer_type();
 
@@ -277,7 +280,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::RipCommand(clear_screen, cmd) => {
-                let lock = &mut self.terminal_window.terminal.screen.lock().unwrap();
+                let lock = &mut self.terminal_window.terminal.screen.lock();
                 if clear_screen {
                     if let Some(editable) = lock.as_editable() {
                         editable.clear_screen();
@@ -327,7 +330,7 @@ impl MainWindow {
             Message::ShowHelpDialog => {
                 self.switch_to_terminal_screen();
                 /*
-                let r = self.sound_thread.lock().unwrap().play_igs(Box::new(IgsCommand::BellsAndWhistles {
+                let r = self.sound_thread.lock().play_igs(Box::new(IgsCommand::BellsAndWhistles {
                     sound_effect: icy_parser_core::SoundEffect::try_from(self.effect).unwrap(),
                 }));
                 self.effect = (self.effect + 1) % 20;
@@ -443,7 +446,7 @@ impl MainWindow {
             Message::ShowCaptureDialog => {
                 self.switch_to_terminal_screen();
                 // Update capture dialog with current capture path from options
-                let capture_path = self.settings_dialog.original_options.lock().unwrap().capture_path();
+                let capture_path = self.settings_dialog.original_options.lock().capture_path();
                 self.capture_dialog.reset(&capture_path, self.capture_dialog.is_capturing());
                 self.state.mode = MainWindowMode::ShowCaptureDialog;
                 Task::none()
@@ -511,7 +514,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::StopSound => {
-                self.sound_thread.lock().unwrap().clear();
+                self.sound_thread.lock().clear();
                 Task::none()
             }
             Message::None => Task::none(),
@@ -535,7 +538,8 @@ impl MainWindow {
             }
 
             Message::Copy => {
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut screen = self.terminal_window.terminal.screen.lock();
                     let mut contents = Vec::with_capacity(4);
                     if let Some(text) = screen.get_copy_text() {
                         contents.push(ClipboardContent::Text(text.clone()));
@@ -580,7 +584,7 @@ impl MainWindow {
                     Ok(text) => {
                         // Convert text to bytes using the current unicode converter
                         let mut data: Vec<u8> = Vec::new();
-                        let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
+                        let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
                         for ch in text.chars() {
                             let converted_byte = buffer_type.convert_from_unicode(ch);
                             data.push(converted_byte as u8);
@@ -620,12 +624,13 @@ impl MainWindow {
                     let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
                 }
                 // Stop sound thread
-                self.sound_thread.lock().unwrap().clear();
+                self.sound_thread.lock().clear();
 
                 iced::exit()
             }
             Message::ClearScreen => {
-                if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut edit_screen = self.terminal_window.terminal.screen.lock();
                     if let Some(editable) = edit_screen.as_editable() {
                         editable.clear_scrollback();
                         editable.clear_screen();
@@ -641,12 +646,9 @@ impl MainWindow {
                 } else {
                     // Enter scrollback mode
                     let scrollback_opt = {
-                        if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
-                            if let Some(editable) = screen.as_editable() {
-                                editable.snapshot_scrollback()
-                            } else {
-                                None
-                            }
+                        let mut screen = self.terminal_window.terminal.screen.lock();
+                        if let Some(editable) = screen.as_editable() {
+                            editable.snapshot_scrollback()
                         } else {
                             None
                         }
@@ -668,7 +670,7 @@ impl MainWindow {
             Message::SendMouseEvent(evt) => {
                 let escape_sequence = evt.generate_mouse_report();
                 // Send the escape sequence to the terminal if one was generated
-                let buffer_type = self.terminal_window.terminal.screen.lock().unwrap().buffer_type();
+                let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
                 if let Some(seq) = escape_sequence {
                     let mut data: Vec<u8> = Vec::new();
                     for ch in seq.chars() {
@@ -720,7 +722,8 @@ impl MainWindow {
             }
 
             Message::SetScrollbackBufferSize(buffer_size) => {
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut screen = self.terminal_window.terminal.screen.lock();
                     screen.set_scrollback_buffer_size(buffer_size);
                 }
                 Task::none()
@@ -754,19 +757,19 @@ impl MainWindow {
                     }
                     McpCommand::CaptureScreen(format, response_tx) => {
                         // Capture the current screen in the requested format
-                        let data = if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                        let data = {
+                            let mut screen = self.terminal_window.terminal.screen.lock();
                             let mut opt = icy_engine::SaveOptions::default();
                             opt.modern_terminal_output = true;
                             match format {
                                 ScreenCaptureFormat::Text => screen.to_bytes("asc", &opt).unwrap_or_default(),
                                 ScreenCaptureFormat::Ansi => screen.to_bytes("ans", &opt).unwrap_or_default(),
                             }
-                        } else {
-                            Vec::new()
                         };
 
                         // Take the sender out of the Arc<Mutex> and send the response
-                        if let Ok(mut tx_guard) = response_tx.lock() {
+                        {
+                            let mut tx_guard = response_tx.lock();
                             if let Some(tx) = tx_guard.take() {
                                 let _ = tx.send(data);
                             }
@@ -816,7 +819,8 @@ impl MainWindow {
 
                     McpCommand::GetState(response_tx) => {
                         // Gather current terminal state
-                        let state = if let Ok(screen) = self.terminal_window.terminal.screen.lock() {
+                        let state = {
+                            let screen = self.terminal_window.terminal.screen.lock();
                             let cursor = screen.caret_position();
                             mcp::types::TerminalState {
                                 cursor_position: (cursor.x as usize, cursor.y as usize),
@@ -825,18 +829,11 @@ impl MainWindow {
                                 is_connected: self.is_connected,
                                 current_bbs: self.current_address.as_ref().map(|addr| addr.system_name.clone()),
                             }
-                        } else {
-                            mcp::types::TerminalState {
-                                cursor_position: (0, 0),
-                                screen_size: (80, 25),
-                                current_buffer: String::new(),
-                                is_connected: false,
-                                current_bbs: None,
-                            }
                         };
 
                         // Take the sender out of the Arc<Mutex> and send the response
-                        if let Ok(mut tx_guard) = response_tx.lock() {
+                        {
+                            let mut tx_guard = response_tx.lock();
                             if let Some(tx) = tx_guard.take() {
                                 let _ = tx.send(state);
                             }
@@ -845,14 +842,14 @@ impl MainWindow {
 
                     McpCommand::ListAddresses(response_tx) => {
                         // Get addresses from the address book
-                        let addresses = if let Ok(book) = self.dialing_directory.addresses.lock() {
+                        let addresses = {
+                            let book = self.dialing_directory.addresses.lock();
                             book.addresses.clone()
-                        } else {
-                            Vec::new()
                         };
 
                         // Take the sender out of the Arc<Mutex> and send the response
-                        if let Ok(mut tx_guard) = response_tx.lock() {
+                        {
+                            let mut tx_guard = response_tx.lock();
                             if let Some(tx) = tx_guard.take() {
                                 let _ = tx.send(addresses);
                             }
@@ -863,14 +860,16 @@ impl MainWindow {
             }
 
             Message::StartSelection(sel) => {
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut screen = self.terminal_window.terminal.screen.lock();
                     let _ = screen.set_selection(sel);
                 }
                 Task::none()
             }
 
             Message::UpdateSelection(pos) => {
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut screen = self.terminal_window.terminal.screen.lock();
                     if let Some(mut sel) = screen.get_selection().clone() {
                         if !sel.locked {
                             sel.lead = pos;
@@ -882,7 +881,8 @@ impl MainWindow {
             }
 
             Message::EndSelection => {
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut screen = self.terminal_window.terminal.screen.lock();
                     if let Some(mut sel) = screen.get_selection().clone() {
                         sel.locked = true;
                         let _ = screen.set_selection(sel);
@@ -892,7 +892,8 @@ impl MainWindow {
             }
 
             Message::ClearSelection => {
-                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                {
+                    let mut screen = self.terminal_window.terminal.screen.lock();
                     let _ = screen.clear_selection();
                 }
                 Task::none()
@@ -903,7 +904,7 @@ impl MainWindow {
     fn initiate_file_transfer(&mut self, protocol: icy_net::protocol::TransferProtocolType, is_download: bool) {
         if is_download {
             // Set download directory from options
-            let download_path = self.settings_dialog.original_options.lock().unwrap().download_path();
+            let download_path = self.settings_dialog.original_options.lock().download_path();
             let _ = self.terminal_tx.send(TerminalCommand::SetDownloadDirectory(PathBuf::from(download_path)));
             let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
         } else {
@@ -966,14 +967,14 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::PlayMusic(music) => {
-                let r = self.sound_thread.lock().unwrap().play_music(music);
+                let r = self.sound_thread.lock().play_music(music);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::PlayMusic: {r}");
                 }
                 Task::none()
             }
             TerminalEvent::PlayIgs(music) => {
-                let r = self.sound_thread.lock().unwrap().play_igs(music);
+                let r = self.sound_thread.lock().play_igs(music);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::PlayMusic: {r}");
                 }
@@ -988,15 +989,15 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::Beep => {
-                let r = self.sound_thread.lock().unwrap().beep();
+                let r = self.sound_thread.lock().beep();
                 if let Err(r) = r {
                     log::error!("TerminalEvent::Beep: {r}");
                 }
                 Task::none()
             }
             TerminalEvent::OpenLineSound => {
-                let dial_tone = self.settings_dialog.original_options.lock().unwrap().dial_tone;
-                let r = self.sound_thread.lock().unwrap().start_line_sound(dial_tone);
+                let dial_tone = self.settings_dialog.original_options.lock().dial_tone;
+                let r = self.sound_thread.lock().start_line_sound(dial_tone);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::OpenLineSound: {r}");
                 }
@@ -1004,8 +1005,8 @@ impl MainWindow {
             }
 
             TerminalEvent::OpenDialSound(tone_dial, phone_number) => {
-                let dial_tone = self.settings_dialog.original_options.lock().unwrap().dial_tone;
-                let r = self.sound_thread.lock().unwrap().start_dial_sound(tone_dial, dial_tone, &phone_number);
+                let dial_tone = self.settings_dialog.original_options.lock().dial_tone;
+                let r = self.sound_thread.lock().start_dial_sound(tone_dial, dial_tone, &phone_number);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::OpenDialSound: {r}");
                 }
@@ -1013,7 +1014,7 @@ impl MainWindow {
             }
 
             TerminalEvent::StopSound => {
-                let r = self.sound_thread.lock().unwrap().stop_line_sound();
+                let r = self.sound_thread.lock().stop_line_sound();
                 if let Err(r) = r {
                     log::error!("TerminalEvent::StopSound: {r}");
                 }
@@ -1052,24 +1053,24 @@ impl MainWindow {
 
     pub fn theme(&self) -> Theme {
         if self.get_mode() == MainWindowMode::ShowSettings {
-            self.settings_dialog.temp_options.lock().unwrap().monitor_settings.get_theme()
+            self.settings_dialog.temp_options.lock().monitor_settings.get_theme()
         } else {
-            self.settings_dialog.original_options.lock().unwrap().monitor_settings.get_theme()
+            self.settings_dialog.original_options.lock().monitor_settings.get_theme()
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         match &self.state.mode {
-            MainWindowMode::ShowDialingDirectory => return self.dialing_directory.view(&self.settings_dialog.original_options.lock().unwrap()),
+            MainWindowMode::ShowDialingDirectory => return self.dialing_directory.view(&self.settings_dialog.original_options.lock()),
             MainWindowMode::ShowAboutDialog => return self.about_dialog.view(),
             _ => {}
         }
 
         let terminal_view = {
             let settings = if self.get_mode() == MainWindowMode::ShowSettings {
-                &self.settings_dialog.temp_options.lock().unwrap()
+                &self.settings_dialog.temp_options.lock()
             } else {
-                &self.settings_dialog.original_options.lock().unwrap()
+                &self.settings_dialog.original_options.lock()
             };
             self.terminal_window.view(settings, &self.pause_message)
         };
@@ -1123,10 +1124,9 @@ impl MainWindow {
     }
 
     fn clear_selection(&mut self) {
-        if let Ok(mut edit_screen) = self.terminal_window.terminal.screen.lock() {
-            let _ = edit_screen.clear_selection();
-            self.shift_pressed_during_selection = false;
-        }
+        let mut edit_screen = self.terminal_window.terminal.screen.lock();
+        let _ = edit_screen.clear_selection();
+        self.shift_pressed_during_selection = false;
     }
 
     fn switch_to_terminal_screen(&mut self) {

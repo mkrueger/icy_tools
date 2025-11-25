@@ -16,7 +16,7 @@ use crate::ui::{
 
 impl SettingsDialogState {
     pub fn modem_settings_content<'a>(&self) -> Element<'a, crate::ui::Message> {
-        let modems = self.temp_options.lock().unwrap().modems.clone();
+        let modems = self.temp_options.lock().modems.clone();
         let selected_index = self.selected_modem_index;
 
         // Modem list
@@ -120,7 +120,7 @@ impl SettingsDialogState {
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
                                         move |value| {
-                                            let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                            let mut new_options = temp_options_arc.lock().clone();
                                             if let Some(m) = new_options.modems.get_mut(selected_index) {
                                                 m.name = value;
                                             }
@@ -138,7 +138,7 @@ impl SettingsDialogState {
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
                                         move |value| {
-                                            let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                            let mut new_options = temp_options_arc.lock().clone();
                                             if let Some(m) = new_options.modems.get_mut(selected_index) {
                                                 m.device = value;
                                             }
@@ -158,7 +158,7 @@ impl SettingsDialogState {
                                         let temp_options_arc = self.temp_options.clone();
                                         move |value| {
                                             if let Ok(baud) = value.parse::<u32>() {
-                                                let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                                let mut new_options = temp_options_arc.lock().clone();
                                                 if let Some(m) = new_options.modems.get_mut(selected_index) {
                                                     m.baud_rate = baud;
                                                 }
@@ -174,7 +174,7 @@ impl SettingsDialogState {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
                                         if let Ok(baud) = value.parse::<u32>() {
-                                            let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                            let mut new_options = temp_options_arc.lock().clone();
                                             if let Some(m) = new_options.modems.get_mut(selected_index) {
                                                 m.baud_rate = baud;
                                             }
@@ -206,7 +206,7 @@ impl SettingsDialogState {
                                 pick_list(&CharSizeOption::ALL[..], Some(CharSizeOption::from(modem.char_size)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
-                                        let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                        let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
                                             m.char_size = value.into();
                                         }
@@ -225,7 +225,7 @@ impl SettingsDialogState {
                                 pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption::from(modem.stop_bits)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
-                                        let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                        let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
                                             m.stop_bits = value.into();
                                         }
@@ -244,7 +244,7 @@ impl SettingsDialogState {
                                 pick_list(&ParityOption::ALL[..], Some(ParityOption::from(modem.parity)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
-                                        let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                        let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
                                             m.parity = value.into();
                                         }
@@ -263,7 +263,7 @@ impl SettingsDialogState {
                                 pick_list(&FlowControlOption::ALL[..], Some(FlowControlOption::from(modem.flow_control)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
-                                        let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                        let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
                                             m.flow_control = value.into();
                                         }
@@ -291,7 +291,7 @@ impl SettingsDialogState {
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
                                         move |value| {
-                                            let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                            let mut new_options = temp_options_arc.lock().clone();
                                             if let Some(m) = new_options.modems.get_mut(selected_index) {
                                                 m.init_string = value;
                                             }
@@ -309,7 +309,7 @@ impl SettingsDialogState {
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
                                         move |value| {
-                                            let mut new_options = temp_options_arc.lock().unwrap().clone();
+                                            let mut new_options = temp_options_arc.lock().clone();
                                             if let Some(m) = new_options.modems.get_mut(selected_index) {
                                                 m.dial_string = value;
                                             }

@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use iced::{
@@ -53,7 +54,7 @@ impl DialogState {
 
                 // Clear selection if pattern is empty
                 if self.pattern.is_empty() {
-                    let mut edit_screen = edit_screen.lock().unwrap();
+                    let mut edit_screen = edit_screen.lock();
                     let _ = edit_screen.clear_selection();
                     self.results.clear();
                     self.cur_sel = 0;
@@ -63,7 +64,7 @@ impl DialogState {
                 }
 
                 // Search for the new pattern
-                let mut edit_screen_locked = edit_screen.lock().unwrap();
+                let mut edit_screen_locked = edit_screen.lock();
                 if let Some(editable) = edit_screen_locked.as_editable() {
                     self.search_pattern(editable);
                 }
@@ -102,7 +103,7 @@ impl DialogState {
                     self.select_current(edit_screen);
                 } else {
                     // No results found
-                    let mut edit_screen = edit_screen.lock().unwrap();
+                    let mut edit_screen = edit_screen.lock();
                     let _ = edit_screen.clear_selection();
                     self.last_selected_pos = None;
                 }
@@ -122,7 +123,7 @@ impl DialogState {
             }
             FindDialogMsg::CloseDialog => {
                 // Clear selection when closing
-                let mut edit_screen = edit_screen.lock().unwrap();
+                let mut edit_screen = edit_screen.lock();
                 let _ = edit_screen.clear_selection();
                 self.last_selected_pos = None;
                 Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
@@ -132,7 +133,7 @@ impl DialogState {
 
                 // Re-search with new case sensitivity setting
                 if !self.pattern.is_empty() {
-                    let mut screen_locked = edit_screen.lock().unwrap();
+                    let mut screen_locked = edit_screen.lock();
                     if let Some(editable) = screen_locked.as_editable() {
                         self.search_pattern(editable);
                     }
@@ -248,7 +249,7 @@ impl DialogState {
         let mut sel = Selection::new(pos);
         sel.lead = Position::new(pos.x + self.pattern.len() as i32 - 1, pos.y);
 
-        let mut edit_screen = edit_screen.lock().unwrap();
+        let mut edit_screen = edit_screen.lock();
         let _ = edit_screen.clear_selection();
         let _ = edit_screen.set_selection(sel);
 

@@ -20,7 +20,6 @@ impl super::DialingDirectoryState {
         let mut filtered: Vec<(usize, Address)> = self
             .addresses
             .lock()
-            .unwrap()
             .addresses
             .iter()
             .enumerate()
@@ -69,7 +68,7 @@ impl super::DialingDirectoryState {
             let mut col = Column::new();
             let show_quick_connect = self.filter_text.is_empty();
 
-            if show_quick_connect && !self.addresses.lock().unwrap().addresses.is_empty() {
+            if show_quick_connect && !self.addresses.lock().addresses.is_empty() {
                 let selected = self.selected_bbs.is_none();
                 let entry = address_row_entry(selected, None, CONNECT_TOADDRESS_PLACEHOLDER.to_string(), String::new(), false, u32::MAX, "");
                 col = col.push(entry);

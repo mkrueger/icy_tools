@@ -1,8 +1,6 @@
 use core::panic;
-use std::{
-    sync::{Arc, Mutex},
-    u32,
-};
+use parking_lot::Mutex;
+use std::{sync::Arc, u32};
 
 use icy_parser_core::{RipCommand, SkypixCommand};
 

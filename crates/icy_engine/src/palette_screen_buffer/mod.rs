@@ -13,11 +13,9 @@ use crate::{
     graphics_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
+use parking_lot::Mutex;
 use std::path::PathBuf;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 pub use rip_impl::RIP_TERMINAL_ID;
 

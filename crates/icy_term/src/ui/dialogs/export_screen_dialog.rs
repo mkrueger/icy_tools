@@ -6,8 +6,9 @@ use iced::{
 use iced_engine_gui::settings::effect_box;
 use iced_engine_gui::ui::*;
 use icy_engine::{SaveOptions, Screen};
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::ui::MainWindowMode;
 
@@ -121,7 +122,7 @@ impl ExportScreenDialogState {
         }
 
         // Get the buffer from edit state
-        let mut screen = edit_screen.lock().map_err(|e| format!("Failed to lock edit state: {}", e))?;
+        let mut screen = edit_screen.lock();
 
         // Get the file extension for format
         let ext = self.export_format.extension();

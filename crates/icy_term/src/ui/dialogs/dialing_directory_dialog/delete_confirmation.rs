@@ -6,7 +6,7 @@ use iced_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogResult, DialogTyp
 
 impl super::DialingDirectoryState {
     pub fn delete_confirmation_modal(&self, idx: usize) -> Element<'_, Message> {
-        let system_name = if let Some(addr) = self.addresses.lock().unwrap().addresses.get(idx) {
+        let system_name = if let Some(addr) = self.addresses.lock().addresses.get(idx) {
             addr.system_name.clone()
         } else {
             "Unknown".to_string()

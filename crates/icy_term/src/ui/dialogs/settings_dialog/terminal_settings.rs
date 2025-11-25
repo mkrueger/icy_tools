@@ -54,7 +54,7 @@ impl From<DialToneOption> for DialTone {
 
 impl SettingsDialogState {
     pub fn terminal_settings_content<'a>(&self) -> Element<'a, crate::ui::Message> {
-        let temp_options = self.temp_options.lock().unwrap();
+        let temp_options = self.temp_options.lock();
         let console_beep = temp_options.console_beep;
         let dial_tone = temp_options.dial_tone;
         let max_scrollback_lines = temp_options.max_scrollback_lines;
@@ -69,7 +69,7 @@ impl SettingsDialogState {
                         .on_toggle({
                             let temp_options = self.temp_options.clone();
                             move |checked| {
-                                let mut new_options = temp_options.lock().unwrap().clone();
+                                let mut new_options = temp_options.lock().clone();
                                 new_options.console_beep = checked;
                                 crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                             }
@@ -84,7 +84,7 @@ impl SettingsDialogState {
                     pick_list(&DialToneOption::ALL[..], Some(DialToneOption::from(dial_tone)), {
                         let temp_options = self.temp_options.clone();
                         move |value: DialToneOption| {
-                            let mut new_options = temp_options.lock().unwrap().clone();
+                            let mut new_options = temp_options.lock().clone();
                             new_options.dial_tone = value.into();
                             crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                         }
@@ -103,11 +103,11 @@ impl SettingsDialogState {
                             move |value: String| {
                                 if let Ok(lines) = value.parse::<usize>() {
                                     let lines = lines.clamp(100, 100000);
-                                    let mut new_options = temp_options.lock().unwrap().clone();
+                                    let mut new_options = temp_options.lock().clone();
                                     new_options.max_scrollback_lines = lines;
                                     crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                 } else {
-                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(temp_options.lock().unwrap().clone()))
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(temp_options.lock().clone()))
                                 }
                             }
                         })

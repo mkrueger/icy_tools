@@ -1,6 +1,7 @@
+use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
-use std::sync::{Mutex, atomic::AtomicU64};
+use std::sync::atomic::AtomicU64;
 
 use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache};
 use iced::Element;
@@ -222,9 +223,7 @@ impl CRTShaderState {
 
 impl Drop for CRTShaderState {
     fn drop(&mut self) {
-        if let Ok(mut v) = PENDING_INSTANCE_REMOVALS.lock() {
-            v.push(self.instance_id);
-        }
+        PENDING_INSTANCE_REMOVALS.lock().push(self.instance_id);
     }
 }
 

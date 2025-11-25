@@ -43,6 +43,7 @@ clipboard-rs = { workspace = true }
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+parking_lot = { workspace = true }
 
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }

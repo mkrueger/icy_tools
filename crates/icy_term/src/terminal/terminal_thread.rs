@@ -20,9 +20,10 @@ use icy_parser_core::*;
 use icy_parser_core::{AnsiMusic, CommandParser, CommandSink, TerminalCommand as ParserCommand, TerminalRequest};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use log::error;
+use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
@@ -146,9 +147,8 @@ impl QueueingSink {
 
 impl CommandSink for QueueingSink {
     fn print(&mut self, text: &[u8]) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::Print(text.to_vec(), self.inverse_video));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::Print(text.to_vec(), self.inverse_video));
     }
 
     fn emit(&mut self, cmd: ParserCommand) {
@@ -158,61 +158,53 @@ impl CommandSink for QueueingSink {
         }
 
         // Handle special commands that need immediate processing
-        if let Ok(mut queue) = self.command_queue.lock() {
-            match &cmd {
-                ParserCommand::Bell => {
-                    queue.push_back(QueuedCommand::Bell);
-                }
-                ParserCommand::CsiResizeTerminal(height, width) => {
-                    queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
-                }
-                _ => {
-                    queue.push_back(QueuedCommand::Command(cmd));
-                }
+        let mut queue = self.command_queue.lock();
+        match &cmd {
+            ParserCommand::Bell => {
+                queue.push_back(QueuedCommand::Bell);
+            }
+            ParserCommand::CsiResizeTerminal(height, width) => {
+                queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
+            }
+            _ => {
+                queue.push_back(QueuedCommand::Command(cmd));
             }
         }
     }
 
     fn play_music(&mut self, music: AnsiMusic) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::Music(music));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::Music(music));
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::Rip(cmd));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::Rip(cmd));
     }
 
     fn emit_skypix(&mut self, cmd: SkypixCommand) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::Skypix(cmd));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::Skypix(cmd));
     }
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::Igs(cmd));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::Igs(cmd));
     }
 
     fn device_control(&mut self, dcs: DeviceControlString) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::DeviceControl(dcs));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::DeviceControl(dcs));
     }
 
     fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::OperatingSystemCommand(osc));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::OperatingSystemCommand(osc));
     }
 
     fn aps(&mut self, data: &[u8]) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::Aps(data.to_vec()));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::Aps(data.to_vec()));
     }
 
     fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
@@ -220,9 +212,8 @@ impl CommandSink for QueueingSink {
     }
 
     fn request(&mut self, request: TerminalRequest) {
-        if let Ok(mut queue) = self.command_queue.lock() {
-            queue.push_back(QueuedCommand::TerminalRequest(request));
-        }
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::TerminalRequest(request));
     }
 }
 
@@ -379,10 +370,9 @@ impl TerminalThread {
     }
 
     fn perform_resize(&mut self, width: u16, height: u16) {
-        if let Ok(mut state) = self.edit_screen.lock() {
-            if let Some(editable) = state.as_editable() {
-                editable.set_size(icy_engine::Size::new(width as i32, height as i32));
-            }
+        let mut state = self.edit_screen.lock();
+        if let Some(editable) = state.as_editable() {
+            editable.set_size(icy_engine::Size::new(width as i32, height as i32));
         }
     }
 
@@ -573,9 +563,8 @@ impl TerminalThread {
             .create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
         {
             new_screen.set_scrollback_buffer_size(config.max_scrollback_lines);
-            if let Ok(mut screen) = self.edit_screen.lock() {
-                *screen = new_screen;
-            }
+            let mut screen = self.edit_screen.lock();
+            *screen = new_screen;
         }
         self.parser = parser;
         // Reset auto-transfer state
@@ -634,7 +623,8 @@ impl TerminalThread {
         if let Some(mut conn) = self.connection.take() {
             let _ = conn.shutdown().await;
         }
-        if let Ok(mut state) = self.edit_screen.lock() {
+        {
+            let mut state = self.edit_screen.lock();
             if let Some(editable) = state.as_editable() {
                 editable.caret_default_colors();
             }
@@ -774,11 +764,8 @@ impl TerminalThread {
         loop {
             // Get next command with queue lock
             let cmd = {
-                if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
-                    queue.pop_front()
-                } else {
-                    None
-                }
+                let mut queue = self.queueing_sink.command_queue.lock();
+                queue.pop_front()
             };
 
             // Exit loop if no more commands
@@ -866,7 +853,8 @@ impl TerminalThread {
                         } => {
                             match Sixel::parse_from(aspect_ratio.clone(), zero_color.clone(), grid_size.clone(), sixel_data) {
                                 Ok(sixel) => {
-                                    if let Ok(mut screen) = self.edit_screen.lock() {
+                                    {
+                                        let mut screen = self.edit_screen.lock();
                                         let pos = screen.caret_position();
                                         if let Some(editable) = screen.as_editable() {
                                             editable.add_sixel(pos, sixel);
@@ -897,7 +885,8 @@ impl TerminalThread {
             let lock_start = Instant::now();
             let mut had_grab_screen = false;
 
-            if let Ok(mut screen) = self.edit_screen.lock() {
+            {
+                let mut screen = self.edit_screen.lock();
                 // Handle commands that need direct screen access first
                 match &cmd {
                     QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
@@ -996,11 +985,8 @@ impl TerminalThread {
                     // Process more commands if we haven't exceeded max lock time
                     while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
                         let next_cmd = {
-                            if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
-                                queue.pop_front()
-                            } else {
-                                None
-                            }
+                            let mut queue = self.queueing_sink.command_queue.lock();
+                            queue.pop_front()
                         };
                         if let Some(next_cmd) = next_cmd {
                             // Check if next command needs to be outside lock
@@ -1018,9 +1004,8 @@ impl TerminalThread {
                                 | QueuedCommand::Bell
                                 | QueuedCommand::TerminalRequest(_) => {
                                     // Put it back and break to process outside lock
-                                    if let Ok(mut queue) = self.queueing_sink.command_queue.lock() {
-                                        queue.push_front(next_cmd);
-                                    }
+                                    let mut queue = self.queueing_sink.command_queue.lock();
+                                    queue.push_front(next_cmd);
                                     break;
                                 }
                                 _ => {}
@@ -1302,40 +1287,31 @@ impl TerminalThread {
             }
             TerminalRequest::DeviceStatusReport => Some(b"\x1B[0n".to_vec()),
             TerminalRequest::CursorPositionReport => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let pos = screen.caret_position();
-                    let y = pos.y.min(screen.get_height() as i32 - 1) + 1;
-                    let x = pos.x.min(screen.get_width() as i32 - 1) + 1;
-                    Some(format!("\x1B[{};{}R", y, x).into_bytes())
-                } else {
-                    None
-                }
+                let screen = self.edit_screen.lock();
+                let pos = screen.caret_position();
+                let y = pos.y.min(screen.get_height() as i32 - 1) + 1;
+                let x = pos.x.min(screen.get_width() as i32 - 1) + 1;
+                Some(format!("\x1B[{};{}R", y, x).into_bytes())
             }
             TerminalRequest::ScreenSizeReport => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let height = screen.get_height();
-                    let width = screen.get_width();
-                    Some(format!("\x1B[{};{}R", height, width).into_bytes())
-                } else {
-                    None
-                }
+                let screen = self.edit_screen.lock();
+                let height = screen.get_height();
+                let width = screen.get_width();
+                Some(format!("\x1B[{};{}R", height, width).into_bytes())
             }
             TerminalRequest::RequestTabStopReport => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let mut response = b"\x1BP2$u".to_vec();
-                    let tab_count = screen.terminal_state().tab_count();
-                    for i in 0..tab_count {
-                        let tab = screen.terminal_state().get_tabs()[i];
-                        response.extend_from_slice((tab + 1).to_string().as_bytes());
-                        if i < tab_count.saturating_sub(1) {
-                            response.push(b'/');
-                        }
+                let screen = self.edit_screen.lock();
+                let mut response = b"\x1BP2$u".to_vec();
+                let tab_count = screen.terminal_state().tab_count();
+                for i in 0..tab_count {
+                    let tab = screen.terminal_state().get_tabs()[i];
+                    response.extend_from_slice((tab + 1).to_string().as_bytes());
+                    if i < tab_count.saturating_sub(1) {
+                        response.push(b'/');
                     }
-                    response.extend_from_slice(b"\x1B\\");
-                    Some(response)
-                } else {
-                    None
                 }
+                response.extend_from_slice(b"\x1B\\");
+                Some(response)
             }
             TerminalRequest::AnsiModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
             TerminalRequest::DecPrivateModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
@@ -1347,108 +1323,93 @@ impl TerminalThread {
                 bottom,
                 right,
             } => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let checksum = icy_engine::decrqcra_checksum(&**screen, *top as i32, *left as i32, *bottom as i32, *right as i32);
-                    Some(format!("\x1BP{}!~{:04X}\x1B\\", id, checksum).into_bytes())
-                } else {
-                    None
-                }
+                let screen = self.edit_screen.lock();
+                let checksum = icy_engine::decrqcra_checksum(&**screen, *top as i32, *left as i32, *bottom as i32, *right as i32);
+                Some(format!("\x1BP{}!~{:04X}\x1B\\", id, checksum).into_bytes())
             }
             TerminalRequest::FontStateReport => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let state = screen.terminal_state();
-                    let font_selection_result = match state.font_selection_state {
-                        icy_engine::FontSelectionState::NoRequest => 99,
-                        icy_engine::FontSelectionState::Success => 0,
-                        icy_engine::FontSelectionState::Failure => 1,
-                    };
-                    Some(
-                        format!(
-                            "\x1B[=1;{};{};{};{};{}n",
-                            font_selection_result,
-                            state.normal_attribute_font_slot,
-                            state.high_intensity_attribute_font_slot,
-                            state.blink_attribute_font_slot,
-                            state.high_intensity_blink_attribute_font_slot
-                        )
-                        .into_bytes(),
+                let screen = self.edit_screen.lock();
+                let state = screen.terminal_state();
+                let font_selection_result = match state.font_selection_state {
+                    icy_engine::FontSelectionState::NoRequest => 99,
+                    icy_engine::FontSelectionState::Success => 0,
+                    icy_engine::FontSelectionState::Failure => 1,
+                };
+                Some(
+                    format!(
+                        "\x1B[=1;{};{};{};{};{}n",
+                        font_selection_result,
+                        state.normal_attribute_font_slot,
+                        state.high_intensity_attribute_font_slot,
+                        state.blink_attribute_font_slot,
+                        state.high_intensity_blink_attribute_font_slot
                     )
-                } else {
-                    None
-                }
+                    .into_bytes(),
+                )
             }
             TerminalRequest::FontModeReport => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let state = screen.terminal_state();
-                    let mut params = Vec::new();
+                let screen = self.edit_screen.lock();
+                let state = screen.terminal_state();
+                let mut params = Vec::new();
 
-                    if state.origin_mode == icy_engine::OriginMode::WithinMargins {
-                        params.push("6");
-                    }
-                    if state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap {
-                        params.push("7");
-                    }
-                    if screen.caret().visible {
-                        params.push("25");
-                    }
-                    if screen.ice_mode() == icy_engine::IceMode::Ice {
-                        params.push("33");
-                    }
-                    if screen.caret().blinking {
-                        params.push("35");
-                    }
-
-                    match state.mouse_mode() {
-                        icy_engine::MouseMode::OFF => {}
-                        icy_engine::MouseMode::X10 => params.push("9"),
-                        icy_engine::MouseMode::VT200 => params.push("1000"),
-                        icy_engine::MouseMode::VT200_Highlight => params.push("1001"),
-                        icy_engine::MouseMode::ButtonEvents => params.push("1002"),
-                        icy_engine::MouseMode::AnyEvents => params.push("1003"),
-                    }
-
-                    if state.mouse_state.focus_out_event_enabled {
-                        params.push("1004");
-                    }
-                    if state.mouse_state.alternate_scroll_enabled {
-                        params.push("1007");
-                    }
-
-                    match state.mouse_state.extended_mode {
-                        icy_engine::ExtMouseMode::None => {}
-                        icy_engine::ExtMouseMode::ExtendedUTF8 => params.push("1005"),
-                        icy_engine::ExtMouseMode::SGR => params.push("1006"),
-                        icy_engine::ExtMouseMode::URXVT => params.push("1015"),
-                        icy_engine::ExtMouseMode::PixelPosition => params.push("1016"),
-                    }
-
-                    let mode_report = if params.is_empty() {
-                        "\x1B[=2;n".to_string()
-                    } else {
-                        format!("\x1B[=2;{}n", params.join(";"))
-                    };
-                    Some(mode_report.into_bytes())
-                } else {
-                    None
+                if state.origin_mode == icy_engine::OriginMode::WithinMargins {
+                    params.push("6");
                 }
+                if state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap {
+                    params.push("7");
+                }
+                if screen.caret().visible {
+                    params.push("25");
+                }
+                if screen.ice_mode() == icy_engine::IceMode::Ice {
+                    params.push("33");
+                }
+                if screen.caret().blinking {
+                    params.push("35");
+                }
+
+                match state.mouse_mode() {
+                    icy_engine::MouseMode::OFF => {}
+                    icy_engine::MouseMode::X10 => params.push("9"),
+                    icy_engine::MouseMode::VT200 => params.push("1000"),
+                    icy_engine::MouseMode::VT200_Highlight => params.push("1001"),
+                    icy_engine::MouseMode::ButtonEvents => params.push("1002"),
+                    icy_engine::MouseMode::AnyEvents => params.push("1003"),
+                }
+
+                if state.mouse_state.focus_out_event_enabled {
+                    params.push("1004");
+                }
+                if state.mouse_state.alternate_scroll_enabled {
+                    params.push("1007");
+                }
+
+                match state.mouse_state.extended_mode {
+                    icy_engine::ExtMouseMode::None => {}
+                    icy_engine::ExtMouseMode::ExtendedUTF8 => params.push("1005"),
+                    icy_engine::ExtMouseMode::SGR => params.push("1006"),
+                    icy_engine::ExtMouseMode::URXVT => params.push("1015"),
+                    icy_engine::ExtMouseMode::PixelPosition => params.push("1016"),
+                }
+
+                let mode_report = if params.is_empty() {
+                    "\x1B[=2;n".to_string()
+                } else {
+                    format!("\x1B[=2;{}n", params.join(";"))
+                };
+                Some(mode_report.into_bytes())
             }
             TerminalRequest::FontDimensionReport => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    let dim = screen.get_font_dimensions();
-                    Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
-                } else {
-                    None
-                }
+                let screen = self.edit_screen.lock();
+                let dim = screen.get_font_dimensions();
+                Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
             }
             TerminalRequest::MacroSpaceReport => Some(b"\x1B[32767*{".to_vec()),
             TerminalRequest::MemoryChecksumReport(pid, checksum) => Some(format!("\x1BP{}!~{:04X}\x1B\\", pid, checksum).into_bytes()),
             TerminalRequest::RipRequestTerminalId => {
-                if let Ok(screen) = self.edit_screen.lock() {
-                    if screen.graphics_type() == GraphicsType::Rip {
-                        Some(icy_engine::RIP_TERMINAL_ID.as_bytes().to_vec())
-                    } else {
-                        None
-                    }
+                let screen = self.edit_screen.lock();
+                if screen.graphics_type() == GraphicsType::Rip {
+                    Some(icy_engine::RIP_TERMINAL_ID.as_bytes().to_vec())
                 } else {
                     None
                 }
@@ -1529,10 +1490,9 @@ impl TerminalThread {
                         let mut accumulated_text = String::new();
 
                         // Get buffer type for unicode conversion
-                        let buffer_type = if let Ok(screen) = self.edit_screen.lock() {
+                        let buffer_type = {
+                            let screen = self.edit_screen.lock();
                             screen.buffer_type()
-                        } else {
-                            icy_engine::BufferType::CP437 // Default fallback
                         };
 
                         loop {

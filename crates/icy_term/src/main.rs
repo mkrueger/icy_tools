@@ -174,7 +174,7 @@ fn main() {
 
         MCP_PORT.store(port, std::sync::atomic::Ordering::Relaxed);
         log::info!("MCP server started on port {}", port);
-        Some(std::sync::Mutex::new(Some(command_rx)))
+        Some(parking_lot::Mutex::new(Some(command_rx)))
     } else {
         None
     };
@@ -187,11 +187,7 @@ fn main() {
 
     iced::daemon(
         move || {
-            let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() {
-                mutex.lock().unwrap().take()
-            } else {
-                None
-            };
+            let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() { mutex.lock().take() } else { None };
             if let Some(ref url) = url_for_closure {
                 WindowManager::with_url(mcp_receiver, url.clone())
             } else {

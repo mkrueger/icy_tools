@@ -6,7 +6,8 @@ use iced_engine_gui::ui::{button_row, dialog_area, primary_button, separator};
 use iced_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use icy_engine::{AttributedChar, Position, Screen, TextAttribute, TextBuffer, TextPane, TextScreen};
 use icy_parser_core::MusicOption;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::{
     VERSION,
