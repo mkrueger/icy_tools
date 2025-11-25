@@ -1,6 +1,6 @@
 [package]
 name = "icy_play"
-version = "0.2.0"
+version = "0.3.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,6 +12,8 @@ repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
 icy_engine = { workspace = true }
-#icy_engine_gui = { workspace = true }
+icy_engine_scripting = { workspace = true }
+
 clap = { workspace = true }
 anyhow = { workspace = true }
+crc32fast = "1.5.0"

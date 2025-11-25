@@ -4,9 +4,9 @@ members = [
 #	"crates/icy_draw", 
 	"crates/icy_engine",
 	"crates/icy_engine_gui",
-#	"crates/icy_play", 
+ 	"crates/icy_play", 
 	"crates/icy_term",
-#	"crates/icy_view",
+	"crates/icy_engine_scripting",
 #	"crates/icy_view_gui",
 	"crates/icy_mail",
 	"crates/icy_parser_core",
@@ -20,6 +20,7 @@ license = "MIT or Apache-2.0"
 [workspace.dependencies]
 icy_engine = { path = "crates/icy_engine" }
 icy_parser_core = { path = "crates/icy_parser_core"} 
+icy_engine_scripting = { path = "crates/icy_engine_scripting"} 
 
 #icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = "0.3.4"

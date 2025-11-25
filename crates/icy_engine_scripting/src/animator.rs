@@ -1,18 +1,18 @@
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
     thread,
 };
 
-use icy_engine::{AttributedChar, Buffer, Caret, Position, TextPane, UnicodeConverter, attribute};
+use parking_lot::Mutex;
+use std::sync::Arc;
+
+use icy_engine::{AttributedChar, Caret, Position, TextBuffer, TextPane, attribute};
 use mlua::{Lua, UserData, Value};
 use regex::Regex;
 
 use web_time::Instant;
 
-use crate::{BufferView, MonitorType};
-
-use crate::MonitorSettings;
+use crate::{MonitorSettings, MonitorType};
 
 pub struct LogEntry {
     pub frame: usize,
@@ -20,10 +20,10 @@ pub struct LogEntry {
 }
 
 pub struct Animator {
-    pub scene: Option<Buffer>,
-    pub frames: Vec<(Buffer, MonitorSettings, u32)>,
+    pub scene: Option<TextBuffer>,
+    pub frames: Vec<(TextBuffer, MonitorSettings, u32)>,
     current_monitor_settings: MonitorSettings,
-    pub buffers: Vec<Buffer>,
+    pub buffers: Vec<TextBuffer>,
     pub error: String,
     pub log: Vec<LogEntry>,
     // play controls:
@@ -60,7 +60,7 @@ impl Default for Animator {
 struct LuaBuffer {
     cur_layer: usize,
     caret: Caret,
-    buffer: Buffer,
+    buffer: TextBuffer,
 }
 impl LuaBuffer {
     fn convert_from_unicode(&self, ch: String) -> mlua::Result<char> {
@@ -72,25 +72,13 @@ impl LuaBuffer {
         };
 
         let buffer_type = self.buffer.buffer_type;
-        let ch = match buffer_type {
-            icy_engine::BufferType::Unicode => ch,
-            icy_engine::BufferType::CP437 => icy_engine::ascii::CP437Converter::default().convert_from_unicode(ch, self.caret.get_font_page()),
-            icy_engine::BufferType::Petscii => icy_engine::ascii::CP437Converter::default().convert_from_unicode(ch, self.caret.get_font_page()),
-            icy_engine::BufferType::Atascii => icy_engine::ascii::CP437Converter::default().convert_from_unicode(ch, self.caret.get_font_page()),
-            icy_engine::BufferType::Viewdata => icy_engine::ascii::CP437Converter::default().convert_from_unicode(ch, self.caret.get_font_page()),
-        };
+        let ch = buffer_type.convert_from_unicode(ch);
         Ok(ch)
     }
 
     fn convert_to_unicode(&self, ch: AttributedChar) -> String {
         let buffer_type = self.buffer.buffer_type;
-        let ch = match buffer_type {
-            icy_engine::BufferType::Unicode => ch.ch,
-            icy_engine::BufferType::CP437 => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
-            icy_engine::BufferType::Petscii => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
-            icy_engine::BufferType::Atascii => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
-            icy_engine::BufferType::Viewdata => icy_engine::ascii::CP437Converter::default().convert_to_unicode(ch.ch),
-        };
+        let ch = buffer_type.convert_to_unicode(ch.ch);
         ch.to_string()
     }
 }
@@ -108,7 +96,7 @@ impl UserData for LuaBuffer {
             Ok(())
         });
 
-        fields.add_field_method_get("font_page", |_, this| Ok(this.caret.get_font_page()));
+        fields.add_field_method_get("font_page", |_, this| Ok(this.caret.font_page()));
         fields.add_field_method_set("font_page", |_, this, val| {
             this.caret.set_font_page(val);
             Ok(())
@@ -127,31 +115,27 @@ impl UserData for LuaBuffer {
             }
         });
 
-        fields.add_field_method_get("fg", |_, this| Ok(this.caret.get_attribute().get_foreground()));
+        fields.add_field_method_get("fg", |_, this| Ok(this.caret.attribute.get_foreground()));
         fields.add_field_method_set("fg", |_, this, val| {
-            let mut attr = this.caret.get_attribute();
-            attr.set_foreground(val);
-            this.caret.set_attr(attr);
+            this.caret.attribute.set_foreground(val);
             Ok(())
         });
 
-        fields.add_field_method_get("bg", |_, this| Ok(this.caret.get_attribute().get_background()));
+        fields.add_field_method_get("bg", |_, this| Ok(this.caret.attribute.get_background()));
         fields.add_field_method_set("bg", |_, this, val| {
-            let mut attr = this.caret.get_attribute();
-            attr.set_background(val);
-            this.caret.set_attr(attr);
+            this.caret.attribute.set_background(val);
             Ok(())
         });
 
-        fields.add_field_method_get("x", |_, this| Ok(this.caret.get_position().x));
+        fields.add_field_method_get("x", |_, this| Ok(this.caret.x));
         fields.add_field_method_set("x", |_, this, val| {
-            this.caret.set_x_position(val);
+            this.caret.x = val;
             Ok(())
         });
 
-        fields.add_field_method_get("y", |_, this| Ok(this.caret.get_position().y));
+        fields.add_field_method_get("y", |_, this| Ok(this.caret.y));
         fields.add_field_method_set("y", |_, this, val| {
-            this.caret.set_y_position(val);
+            this.caret.y = val;
             Ok(())
         });
         fields.add_field_method_get("layer_x", |_, this| {
@@ -236,10 +220,10 @@ impl UserData for LuaBuffer {
                     incomplete_input: false,
                 });
             }
-            let mut attr = this.caret.get_attribute();
+            let mut attr = this.caret.attribute;
             attr.attr &= !attribute::INVISIBLE;
             let ch = AttributedChar::new(this.convert_from_unicode(ch)?, attr);
-            this.buffer.layers[this.cur_layer].set_char((x, y), ch);
+            this.buffer.layers[this.cur_layer].set_char(Position::new(x, y), ch);
             Ok(())
         });
 
@@ -250,7 +234,7 @@ impl UserData for LuaBuffer {
                     incomplete_input: false,
                 });
             }
-            this.buffer.layers[this.cur_layer].set_char((x, y), AttributedChar::invisible());
+            this.buffer.layers[this.cur_layer].set_char(Position::new(x, y), AttributedChar::invisible());
             Ok(())
         });
 
@@ -261,10 +245,10 @@ impl UserData for LuaBuffer {
                     incomplete_input: false,
                 });
             }
-            let mut attr = this.caret.get_attribute();
+            let mut attr = this.caret.attribute;
             attr.attr &= !attribute::INVISIBLE;
             let ch = AttributedChar::new(this.convert_from_unicode(ch)?, attr);
-            this.buffer.layers[this.cur_layer].set_char((x, y), ch);
+            this.buffer.layers[this.cur_layer].set_char(Position::new(x, y), ch);
             Ok(())
         });
 
@@ -276,7 +260,7 @@ impl UserData for LuaBuffer {
                 });
             }
 
-            let ch = this.buffer.layers[this.cur_layer].get_char((x, y));
+            let ch = this.buffer.layers[this.cur_layer].get_char(Position::new(x, y));
             Ok(this.convert_to_unicode(ch))
         });
 
@@ -288,10 +272,10 @@ impl UserData for LuaBuffer {
                 });
             }
 
-            let ch = this.buffer.layers[this.cur_layer].get_char((x, y));
+            let ch = this.buffer.layers[this.cur_layer].get_char(Position::new(x, y));
             let mut attr = ch.attribute;
             attr.attr &= !attribute::INVISIBLE;
-            this.caret.set_attr(attr);
+            this.caret.attribute = attr;
             Ok(this.convert_to_unicode(ch))
         });
 
@@ -302,12 +286,12 @@ impl UserData for LuaBuffer {
                     incomplete_input: false,
                 });
             }
-            let mut ch = this.buffer.layers[this.cur_layer].get_char((x, y));
+            let mut ch = this.buffer.layers[this.cur_layer].get_char(Position::new(x, y));
             if !ch.is_visible() {
                 ch.attribute.attr = 0;
             }
             ch.attribute.set_foreground(col);
-            this.buffer.layers[this.cur_layer].set_char((x, y), ch);
+            this.buffer.layers[this.cur_layer].set_char(Position::new(x, y), ch);
             Ok(())
         });
 
@@ -319,7 +303,7 @@ impl UserData for LuaBuffer {
                 });
             }
 
-            let ch = this.buffer.layers[this.cur_layer].get_char((x, y));
+            let ch = this.buffer.layers[this.cur_layer].get_char(Position::new(x, y));
             Ok(ch.attribute.get_foreground())
         });
 
@@ -330,12 +314,12 @@ impl UserData for LuaBuffer {
                     incomplete_input: false,
                 });
             }
-            let mut ch = this.buffer.layers[this.cur_layer].get_char((x, y));
+            let mut ch = this.buffer.layers[this.cur_layer].get_char(Position::new(x, y));
             if !ch.is_visible() {
                 ch.attribute.attr = 0;
             }
             ch.attribute.set_background(col);
-            this.buffer.layers[this.cur_layer].set_char((x, y), ch);
+            this.buffer.layers[this.cur_layer].set_char(Position::new(x, y), ch);
             Ok(())
         });
 
@@ -347,17 +331,17 @@ impl UserData for LuaBuffer {
                 });
             }
 
-            let ch = this.buffer.layers[this.cur_layer].get_char((x, y));
+            let ch = this.buffer.layers[this.cur_layer].get_char(Position::new(x, y));
             Ok(ch.attribute.get_background())
         });
 
         methods.add_method_mut("print", |_, this, str: String| {
             for c in str.chars() {
-                let mut pos = this.caret.get_position();
-                let mut attribute = this.caret.get_attribute();
-                attribute.attr &= !attribute::INVISIBLE;
+                let mut pos = this.caret.position();
+                let mut attr = this.caret.attribute;
+                attr.attr &= !attribute::INVISIBLE;
 
-                let ch = AttributedChar::new(this.convert_from_unicode(c.to_string())?, attribute);
+                let ch = AttributedChar::new(this.convert_from_unicode(c.to_string())?, attr);
 
                 this.buffer.layers[this.cur_layer].set_char(pos, ch);
                 pos.x += 1;
@@ -365,7 +349,7 @@ impl UserData for LuaBuffer {
             }
             Ok(())
         });
- 
+
         methods.add_method_mut("gotoxy", |_, this, (x, y): (i32, i32)| {
             this.caret.set_position(Position::new(x, y));
             Ok(())
@@ -447,7 +431,7 @@ impl UserData for LuaBuffer {
 
         methods.add_method_mut("clear", |_, this, ()| {
             this.caret = Caret::default();
-            this.buffer = Buffer::new(this.buffer.get_size());
+            this.buffer = TextBuffer::new(this.buffer.get_size());
             Ok(())
         });
     }
@@ -458,13 +442,13 @@ lazy_static::lazy_static! {
 
 const MAX_FRAMES: usize = 4096;
 impl Animator {
-    pub(crate) fn lua_next_frame(&mut self, buffer: &Buffer) -> mlua::Result<()> {
+    pub(crate) fn lua_next_frame(&mut self, buffer: &TextBuffer) -> mlua::Result<()> {
         // Need to limit it a bit to avoid out of memory & slowness
         // Not sure how large the number should be but it's easy to define millions of frames
         if self.frames.len() > MAX_FRAMES {
             return Err(mlua::Error::RuntimeError("Maximum number of frames reached".to_string()));
         }
-        let mut frame = Buffer::new(buffer.get_size());
+        let mut frame = TextBuffer::new(buffer.get_size());
         frame.layers = buffer.layers.clone();
         frame.terminal_state = buffer.terminal_state.clone();
         frame.palette = buffer.palette.clone();
@@ -514,7 +498,7 @@ impl Animator {
                             return Err(mlua::Error::RuntimeError(format!("File not found {}", file)));
                         }
 
-                        if let Ok(buffer) = icy_engine::Buffer::load_buffer(&file_name, true, None) {
+                        if let Ok(buffer) = icy_engine::TextBuffer::load_buffer(&file_name, true, None) {
                             mlua::Result::Ok(LuaBuffer {
                                 caret: Caret::default(),
                                 buffer,
@@ -534,7 +518,7 @@ impl Animator {
                     lua.create_function(move |_lua, (width, height): (i32, i32)| {
                         mlua::Result::Ok(LuaBuffer {
                             caret: Caret::default(),
-                            buffer: Buffer::create((width, height)),
+                            buffer: TextBuffer::create((width, height)),
                             cur_layer: 0,
                         })
                     })
@@ -548,19 +532,19 @@ impl Animator {
                     "next_frame",
                     lua.create_function_mut(move |lua, buffer: Value<'_>| {
                         if let Value::UserData(data) = &buffer {
-                            lua.globals().set("cur_frame", a.lock().unwrap().frames.len() + 2)?;
+                            lua.globals().set("cur_frame", a.lock().frames.len() + 2)?;
                             let monitor_type: usize = lua.globals().get("monitor_type")?;
-                            a.lock().unwrap().current_monitor_settings.monitor_type = MonitorType::from(monitor_type as i32);
+                            a.lock().current_monitor_settings.monitor_type = MonitorType::from(monitor_type as i32);
 
-                            a.lock().unwrap().current_monitor_settings.gamma = lua.globals().get("monitor_gamma")?;
-                            a.lock().unwrap().current_monitor_settings.contrast = lua.globals().get("monitor_contrast")?;
-                            a.lock().unwrap().current_monitor_settings.saturation = lua.globals().get("monitor_saturation")?;
-                            a.lock().unwrap().current_monitor_settings.brightness = lua.globals().get("monitor_brightness")?;
-                            a.lock().unwrap().current_monitor_settings.blur = lua.globals().get("monitor_blur")?;
-                            a.lock().unwrap().current_monitor_settings.curvature = lua.globals().get("monitor_curvature")?;
-                            a.lock().unwrap().current_monitor_settings.scanlines = lua.globals().get("monitor_scanlines")?;
+                            a.lock().current_monitor_settings.gamma = lua.globals().get("monitor_gamma")?;
+                            a.lock().current_monitor_settings.contrast = lua.globals().get("monitor_contrast")?;
+                            a.lock().current_monitor_settings.saturation = lua.globals().get("monitor_saturation")?;
+                            a.lock().current_monitor_settings.brightness = lua.globals().get("monitor_brightness")?;
+                            a.lock().current_monitor_settings.blur = lua.globals().get("monitor_blur")?;
+                            a.lock().current_monitor_settings.curvature = lua.globals().get("monitor_curvature")?;
+                            a.lock().current_monitor_settings.scanlines = lua.globals().get("monitor_scanlines")?;
 
-                            a.lock().unwrap().lua_next_frame(&data.borrow::<LuaBuffer>()?.buffer)
+                            a.lock().lua_next_frame(&data.borrow::<LuaBuffer>()?.buffer)
                         } else {
                             Err(mlua::Error::RuntimeError(format!("UserData parameter required, got: {:?}", buffer)))
                         }
@@ -574,7 +558,7 @@ impl Animator {
                 .set(
                     "get_delay",
                     lua.create_function(move |_lua, ()| {
-                        let delay = luaanimator.lock().unwrap().get_delay();
+                        let delay = luaanimator.lock().get_delay();
                         mlua::Result::Ok(delay)
                     })
                     .unwrap(),
@@ -586,7 +570,7 @@ impl Animator {
                 .set(
                     "set_delay",
                     lua.create_function(move |_lua, delay: u32| {
-                        luaanimator.lock().unwrap().set_delay(delay);
+                        luaanimator.lock().set_delay(delay);
                         mlua::Result::Ok(())
                     })
                     .unwrap(),
@@ -597,9 +581,9 @@ impl Animator {
                 .set(
                     "log",
                     lua.create_function(move |_lua, text: String| {
-                        if luaanimator.lock().unwrap().log.len() < 1000 {
-                            let frame = luaanimator.lock().unwrap().frames.len();
-                            luaanimator.lock().unwrap().log.push(LogEntry { frame, text });
+                        if luaanimator.lock().log.len() < 1000 {
+                            let frame = luaanimator.lock().frames.len();
+                            luaanimator.lock().log.push(LogEntry { frame, text });
                         }
                         mlua::Result::Ok(())
                     })
@@ -609,7 +593,7 @@ impl Animator {
 
             globals.set("cur_frame", 1).unwrap();
             {
-                let lock = animator_thread.lock().unwrap();
+                let lock = animator_thread.lock();
                 let i: i32 = lock.current_monitor_settings.monitor_type as i32;
                 globals.set("monitor_type", i).unwrap();
                 globals.set("monitor_gamma", lock.current_monitor_settings.gamma).unwrap();
@@ -622,10 +606,10 @@ impl Animator {
             }
 
             if let Err(err) = lua.load(txt).exec() {
-                animator_thread.lock().unwrap().error = format!("{err}");
+                animator_thread.lock().error = format!("{err}");
             }
         });
-        animator.lock().unwrap().run_thread = Some(run_thread);
+        animator.lock().run_thread = Some(run_thread);
         animator
     }
 
@@ -670,48 +654,47 @@ impl Animator {
         self.delay = delay;
     }
 
-    pub fn update_frame(&mut self, buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>) -> MonitorSettings {
+    /// Update playback, returns true if frame changed
+    pub fn update_playback(&mut self) -> bool {
         if self.is_playing && self.instant.elapsed().as_millis() > self.delay as u128 {
             self.next_frame();
             self.instant = Instant::now();
-            self.current_monitor_settings = self.display_frame(buffer_view);
+            return true;
         }
-        self.current_monitor_settings.clone()
+        false
     }
 
-    pub fn start_playback(&mut self, buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>) -> MonitorSettings {
+    pub fn start_playback(&mut self) {
         self.is_playing = true;
         self.instant = Instant::now();
-        self.display_frame(buffer_view)
     }
 
-    pub fn display_frame(&self, buffer_view: Arc<eframe::epaint::mutex::Mutex<BufferView>>) -> MonitorSettings {
-        if let Some((scene, settings, _next_frame)) = self.frames.get(self.cur_frame) {
-            let mut frame = Buffer::new(scene.get_size());
-            frame.is_terminal_buffer = true;
-            frame.layers = scene.layers.clone();
-            frame.terminal_state = scene.terminal_state.clone();
-            frame.palette = scene.palette.clone();
-            frame.layers = scene.layers.clone();
-            frame.clear_font_table();
-            for f in scene.font_iter() {
-                frame.set_font(*f.0, f.1.clone());
-            }
-            buffer_view.lock().set_buffer(frame);
+    /// Get current frame's buffer and settings
+    pub fn get_current_frame(&self) -> Option<(&TextBuffer, &MonitorSettings)> {
+        if let Some((scene, settings, _)) = self.frames.get(self.cur_frame) {
+            Some((scene, settings))
+        } else {
+            None
+        }
+    }
+
+    /// Get current monitor settings
+    pub fn get_current_monitor_settings(&self) -> MonitorSettings {
+        if let Some((_, settings, _)) = self.frames.get(self.cur_frame) {
             settings.clone()
         } else {
             MonitorSettings::default()
         }
     }
 
-    pub fn get_cur_frame_buffer(&self) -> Option<(&Buffer, &MonitorSettings, &u32)> {
+    pub fn get_cur_frame_buffer(&self) -> Option<(&TextBuffer, &MonitorSettings, &u32)> {
         if let Some((scene, settings, next_frame)) = self.frames.get(self.cur_frame) {
             return Some((scene, settings, next_frame));
         }
         None
     }
 
-    pub fn get_cur_frame_buffer_mut(&mut self) -> Option<(&mut Buffer, &mut MonitorSettings, &mut u32)> {
+    pub fn get_cur_frame_buffer_mut(&mut self) -> Option<(&mut TextBuffer, &mut MonitorSettings, &mut u32)> {
         if let Some((scene, settings, next_frame)) = self.frames.get_mut(self.cur_frame) {
             return Some((scene, settings, next_frame));
         }

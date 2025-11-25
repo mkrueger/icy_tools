@@ -1,0 +1,10 @@
+-- 20forbeers.com:1337 login animation
+-- Just open a file & move layer positions.
+
+local buf = load_buffer("rocket.icy")
+buf:set_layer_visible(1, true)
+set_delay(200)
+for i = 0, 11, 1 do
+    buf:set_layer_position(1, -13 + i * 4, 1 - i * 2)
+    next_frame(buf)
+end

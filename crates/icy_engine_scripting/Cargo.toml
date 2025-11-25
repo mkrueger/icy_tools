@@ -1,6 +1,6 @@
 [package]
-name = "icy_engine_gui"
-version = "0.4.0"
+name = "icy_engine_scripting"
+version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,19 +12,10 @@ icy_engine = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
 mlua = { version = "0.9.1", features = ["lua54", "vendored"] }
-egui = { workspace = true }
-egui_glow = { workspace = true }
 image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
-eframe = { workspace = true }
+regex = { workspace = true }
+web-time = "1.1"
+parking_lot = { workspace = true }
 
 lazy_static = { workspace = true }
-
-glow= { workspace = true }
-web-time = "1.0.0"
 log = { workspace = true }
-
-i18n-embed = { workspace = true }
-i18n-embed-fl= { workspace = true }
-rust-embed = { workspace = true } 
-once_cell = { workspace = true } 
-regex = { workspace = true }

@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
-use icy_engine::{Buffer, SaveOptions, TextPane, editor::EditState, update_crc32};
-use icy_engine_gui::animations::Animator;
+use crc32fast::Hasher;
+use icy_engine::{SaveOptions, TextBuffer, TextPane};
+use icy_engine_scripting::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 
 use crate::com::Com;
@@ -52,25 +53,20 @@ enum Commands {
     ShowFrame { frame: usize },
 }
 
-pub fn get_line_checksums(buf: &Buffer) -> Vec<u32> {
+pub fn get_line_checksums(buf: &TextBuffer) -> Vec<u32> {
     let mut result = Vec::new();
     for y in 0..buf.get_height() {
-        let mut crc = 0;
+        let mut hasher = Hasher::new();
         for x in 0..buf.get_width() {
-            let ch = buf.get_char((x, y));
-            crc = update_crc32(crc, ch.ch as u8);
+            let ch = buf.get_char((x, y).into());
+            hasher.update(&[ch.ch as u8]);
             let fg = buf.palette.get_color(ch.attribute.get_foreground()).get_rgb();
-            crc = update_crc32(crc, fg.0);
-            crc = update_crc32(crc, fg.1);
-            crc = update_crc32(crc, fg.2);
+            hasher.update(&[fg.0, fg.1, fg.2]);
             let bg = buf.palette.get_color(ch.attribute.get_background()).get_rgb();
-            crc = update_crc32(crc, bg.0);
-            crc = update_crc32(crc, bg.1);
-            crc = update_crc32(crc, bg.2);
-            crc = update_crc32(crc, ch.attribute.attr as u8);
-            crc = update_crc32(crc, (ch.attribute.attr >> 8) as u8);
+            hasher.update(&[bg.0, bg.1, bg.2]);
+            hasher.update(&[ch.attribute.attr as u8, (ch.attribute.attr >> 8) as u8]);
         }
-        result.push(crc);
+        result.push(hasher.finalize());
     }
     result
 }
@@ -98,7 +94,7 @@ fn main() {
             "icyanim" => match fs::read_to_string(path) {
                 Ok(txt) => {
                     let animator = Animator::run(&parent, txt);
-                    animator.lock().unwrap().set_is_playing(true);
+                    animator.lock().set_is_playing(true);
 
                     let mut opt: SaveOptions = SaveOptions::default();
                     if args.utf8 {
@@ -129,13 +125,13 @@ fn main() {
                             // turn caret off
                             let _ = io.write(b"\x1b[?25l");
 
-                            while animator.lock().unwrap().is_playing() {
+                            while animator.lock().is_playing() {
                                 if let Ok(Some(v)) = io.read(false) {
                                     if v.contains(&b'\x1b') || v.contains(&b'\n') || v.contains(&b' ') {
                                         break;
                                     }
                                 }
-                                if let Some((buffer, _, delay)) = animator.lock().unwrap().get_cur_frame_buffer_mut() {
+                                if let Some((buffer, _, delay)) = animator.lock().get_cur_frame_buffer_mut() {
                                     let new_checksums = get_line_checksums(buffer);
                                     let mut skip_lines: Vec<usize> = Vec::new();
                                     if checksums.len() == new_checksums.len() {
@@ -151,14 +147,14 @@ fn main() {
                                 } else {
                                     thread::sleep(Duration::from_millis(10));
                                 }
-                                while !animator.lock().unwrap().next_frame() {
+                                while !animator.lock().next_frame() {
                                     thread::sleep(Duration::from_millis(10));
                                 }
                             }
                             let _ = io.write(b"\x1b[?25h\x1b[0;0 D");
                         }
                         Commands::ShowFrame { frame } => {
-                            show_buffer(&mut io, &mut animator.lock().unwrap().frames[frame].0, true, &args, &term, Vec::new()).unwrap();
+                            show_buffer(&mut io, &mut animator.lock().frames[frame].0, true, &args, &term, Vec::new()).unwrap();
                         }
                     }
                 }
@@ -167,16 +163,23 @@ fn main() {
                 }
             },
             _ => {
-                let mut buffer = Buffer::load_buffer(&path, true, None);
-                if let Ok(buffer) = &mut buffer {
-                    show_buffer(&mut io, buffer, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
+                let buffer = TextBuffer::load_buffer(&path, true, None);
+                if let Ok(mut buffer) = buffer {
+                    show_buffer(&mut io, &mut buffer, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
                 }
             }
         }
     }
 }
 
-fn show_buffer(io: &mut Box<dyn Com>, buffer: &mut Buffer, single_frame: bool, cli: &Cli, terminal: &Terminal, skip_lines: Vec<usize>) -> anyhow::Result<()> {
+fn show_buffer(
+    io: &mut Box<dyn Com>,
+    buffer: &mut TextBuffer,
+    single_frame: bool,
+    cli: &Cli,
+    terminal: &Terminal,
+    skip_lines: Vec<usize>,
+) -> anyhow::Result<()> {
     let mut opt: SaveOptions = SaveOptions::default();
     if cli.utf8 {
         opt.modern_terminal_output = true;
@@ -197,9 +200,9 @@ fn show_buffer(io: &mut Box<dyn Com>, buffer: &mut Buffer, single_frame: bool, c
         opt.control_char_handling = icy_engine::ControlCharHandling::IcyTerm;
     }
     let bytes = if cli.utf8 && buffer.ice_mode == icy_engine::IceMode::Ice {
-        let mut state = EditState::from_buffer(buffer.flat_clone(true));
-        let _ = state.set_ice_mode(icy_engine::IceMode::Unlimited);
-        state.get_buffer_mut().to_bytes("ans", &opt)?
+        // Convert ice mode to unlimited for proper UTF8 output
+        buffer.ice_mode = icy_engine::IceMode::Unlimited;
+        buffer.to_bytes("ans", &opt)?
     } else {
         buffer.to_bytes("ans", &opt)?
     };
