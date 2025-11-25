@@ -18,7 +18,8 @@ use std::{
     time::Instant,
 };
 
-use clap_i18n_richformatter::{ClapI18nLocalizations, ClapI18nRichFormatter};
+use clap_i18n_richformatter::clap_i18n;
+
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 //use ui::MainWindow;
@@ -48,7 +49,7 @@ pub mod ui;
 mod util;
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
@@ -93,19 +94,16 @@ fn get_log_file() -> anyhow::Result<PathBuf> {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "app-about"), long_about = None)]
+#[clap_i18n]
 struct Args {
-    /// Connect to a BBS using the specified URL
-    /// URL format is: [(telnet|ssh|raw)://][user[:password]@]domainname[:port]
-    #[arg(value_name = "URL")]
+    #[arg(value_name = "URL", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-url-help"), long_help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-url-format"))]
     url: Option<String>,
 
-    /// Run a Lua script after startup
-    #[arg(short, long, value_name = "SCRIPT")]
+    #[arg(short, long, value_name = "SCRIPT", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-run-help"))]
     run: Option<PathBuf>,
 
-    /// Enable MCP server on specified port
-    #[arg(long, value_name = "PORT")]
+    #[arg(long, value_name = "PORT", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-mcp-port-help"))]
     mcp_port: Option<u16>,
 }
 
@@ -116,12 +114,8 @@ pub static MCP_PORT: AtomicU16 = AtomicU16::new(0);
 fn main() {
     clap_i18n_richformatter::init_clap_rich_formatter_localizer();
     use std::fs;
-    let args = Args::try_parse()
-        .map_err(|e| {
-            let e = e.apply::<ClapI18nRichFormatter>();
-            e.exit();
-        })
-        .unwrap();
+
+    let args = Args::parse_i18n();
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big

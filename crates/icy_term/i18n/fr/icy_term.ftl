@@ -240,6 +240,13 @@ cli-error-url-parse=Erreur lors de l'analyse de l'URL '{ $url }' : { $error }
 cli-error-script-not-found=Impossible de lire '{ $file }' : Fichier introuvable
 cli-error-script-not-file=Impossible de lire '{ $file }' : C'est un répertoire
 
+# Aide de la ligne de commande
+app-about=Un émulateur de terminal pour se connecter aux systèmes de babillard électronique (BBS) avec support complet de CP437, PETSCII et ViewData
+arg-url-help=Se connecter à un BBS en utilisant l'URL spécifiée
+arg-url-format=Format de l'URL : [(telnet|ssh|raw)://][utilisateur[:mot_de_passe]@]domaine[:port]
+arg-run-help=Exécuter un script Lua après le démarrage
+arg-mcp-port-help=Activer le serveur MCP sur le port spécifié
+
 # Help dialog
 help-title = Raccourcis clavier
 help-subtitle = Référence rapide pour iCY TERM

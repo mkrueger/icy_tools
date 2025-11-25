@@ -241,6 +241,13 @@ cli-error-url-parse=Chyba při analýze URL '{ $url }': { $error }
 cli-error-script-not-found=Nelze přečíst '{ $file }': Soubor nenalezen
 cli-error-script-not-file=Nelze přečíst '{ $file }': Je to adresář
 
+# Nápověda příkazového řádku
+app-about=Terminálový emulátor pro připojení k systémům elektronických nástěnek (BBS) s plnou podporou CP437, PETSCII a ViewData
+arg-url-help=Připojit se k BBS pomocí zadané URL
+arg-url-format=Formát URL: [(telnet|ssh|raw)://][uživatel[:heslo]@]doména[:port]
+arg-run-help=Spustit Lua skript po spuštění
+arg-mcp-port-help=Povolit MCP server na zadaném portu
+
 # Help dialog
 help-title = Klávesové zkratky
 help-subtitle = Rychlá referenční příručka pro iCY TERM

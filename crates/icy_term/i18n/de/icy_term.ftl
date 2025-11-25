@@ -244,6 +244,13 @@ cli-error-url-parse=Fehler beim Parsen der URL '{ $url }': { $error }
 cli-error-script-not-found=Konnte '{ $file }' nicht lesen: Datei nicht gefunden
 cli-error-script-not-file=Konnte '{ $file }' nicht lesen: Ist ein Verzeichnis
 
+# Kommandozeilen-Hilfe
+app-about=Ein Terminal-Emulator zum Verbinden mit Mailbox-Systemen (BBS) mit vollständiger CP437-, PETSCII- und ViewData-Unterstützung
+arg-url-help=Verbinde zu einem BBS mit der angegebenen URL
+arg-url-format=URL-Format ist: [(telnet|ssh|raw)://][benutzer[:passwort]@]domainname[:port]
+arg-run-help=Führe ein Lua-Skript nach dem Start aus
+arg-mcp-port-help=Aktiviere MCP-Server auf dem angegebenen Port
+
 # Help dialog
 help-title = Tastaturkürzel
 help-subtitle = Schnellreferenz für iCY TERM

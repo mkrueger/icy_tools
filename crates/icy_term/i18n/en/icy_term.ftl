@@ -245,6 +245,13 @@ cli-error-url-parse=Error parsing URL '{ $url }': { $error }
 cli-error-script-not-found=Couldn't read '{ $file }': No such file
 cli-error-script-not-file=Couldn't read '{ $file }': Is a directory
 
+# Command line help
+app-about=A terminal emulator for connecting to Bulletin Board Systems (BBS) with full CP437, PETSCII, and ViewData support
+arg-url-help=Connect to a BBS using the specified URL
+arg-url-format=URL format is: [(telnet|ssh|raw)://][user[:password]@]domainname[:port]
+arg-run-help=Run a Lua script after startup
+arg-mcp-port-help=Enable MCP server on specified port
+
 # Help dialog
 help-title = Keyboard Shortcuts
 help-subtitle = Quick reference for iCY TERM

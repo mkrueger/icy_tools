@@ -241,6 +241,14 @@ cli-error-url-parse=Erro ao analisar URL '{ $url }': { $error }
 cli-error-script-not-found=Não foi possível ler '{ $file }': Arquivo não encontrado
 cli-error-script-not-file=Não foi possível ler '{ $file }': É um diretório
 
+# Ajuda da linha de comando
+app-about=Um emulador de terminal para conectar a Sistemas de Quadro de Avisos (BBS) com suporte completo a CP437, PETSCII e ViewData
+arg-url-help=Conectar a um BBS usando a URL especificada
+arg-url-format=Formato da URL: [(telnet|ssh|raw)://][usuário[:senha]@]dominio[:porta]
+arg-run-help=Executar um script Lua após a inicialização
+arg-mcp-port-help=Ativar servidor MCP na porta especificada
+arg-version-help=Exibir informações de versão e sair
+
 # Help dialog
 help-title = Atalhos de teclado
 help-subtitle = Referência rápida do iCY TERM

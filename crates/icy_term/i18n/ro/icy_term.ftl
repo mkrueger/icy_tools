@@ -241,6 +241,13 @@ cli-error-url-parse=Eroare la analizarea URL-ului '{ $url }': { $error }
 cli-error-script-not-found=Nu s-a putut citi '{ $file }': Fișier inexistent
 cli-error-script-not-file=Nu s-a putut citi '{ $file }': Este un director
 
+# Ajutor linie de comandă
+app-about=Un emulator de terminal pentru conectarea la Sisteme Bulletin Board (BBS) cu suport complet pentru CP437, PETSCII și ViewData
+arg-url-help=Conectează-te la un BBS folosind URL-ul specificat
+arg-url-format=Formatul URL: [(telnet|ssh|raw)://][utilizator[:parolă]@]domeniu[:port]
+arg-run-help=Execută un script Lua după pornire
+arg-mcp-port-help=Activează serverul MCP pe portul specificat
+
 # Help dialog
 help-title = Comenzi rapide de la tastatură
 help-subtitle = Referință rapidă pentru iCY TERM

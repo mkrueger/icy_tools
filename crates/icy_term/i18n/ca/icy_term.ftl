@@ -243,6 +243,13 @@ cli-error-url-parse=Error en analitzar l'URL '{ $url }': { $error }
 cli-error-script-not-found=No s'ha pogut llegir '{ $file }': Fitxer no trobat
 cli-error-script-not-file=No s'ha pogut llegir '{ $file }': És un directori
 
+# Ajuda de línia de comandes
+app-about=Un emulador de terminal per connectar a Sistemes de Tauler d'Anuncis (BBS) amb suport complet per CP437, PETSCII i ViewData
+arg-url-help=Connectar a un BBS utilitzant l'URL especificada
+arg-url-format=Format de l'URL: [(telnet|ssh|raw)://][usuari[:contrasenya]@]domini[:port]
+arg-run-help=Executar un script Lua després de l'inici
+arg-mcp-port-help=Activar servidor MCP al port especificat
+
 # Help dialog
 help-title = Dreceres de teclat
 help-subtitle = Referència ràpida per a iCY TERM

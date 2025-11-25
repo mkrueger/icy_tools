@@ -240,6 +240,13 @@ cli-error-url-parse=Errore nell'analisi dell'URL '{ $url }': { $error }
 cli-error-script-not-found=Impossibile leggere '{ $file }': File non trovato
 cli-error-script-not-file=Impossibile leggere '{ $file }': È una directory
 
+# Guida della riga di comando
+app-about=Un emulatore di terminale per connettersi a Sistemi Bulletin Board (BBS) con supporto completo per CP437, PETSCII e ViewData
+arg-url-help=Connetti a un BBS utilizzando l'URL specificato
+arg-url-format=Formato URL: [(telnet|ssh|raw)://][utente[:password]@]dominio[:porta]
+arg-run-help=Esegui uno script Lua dopo l'avvio
+arg-mcp-port-help=Abilita server MCP sulla porta specificata
+
 # Help dialog
 help-title = Scorciatoie da tastiera
 help-subtitle = Riferimento rapido per iCY TERM

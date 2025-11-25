@@ -241,6 +241,13 @@ cli-error-url-parse=Hiba az URL elemzésekor '{ $url }': { $error }
 cli-error-script-not-found=Nem sikerült olvasni '{ $file }': Fájl nem található
 cli-error-script-not-file=Nem sikerült olvasni '{ $file }': Ez egy könyvtár
 
+# Parancssori súgó
+app-about=Terminál emulátor Elektronikus Hirdetőtábla Rendszerekhez (BBS) való csatlakozáshoz teljes CP437, PETSCII és ViewData támogatással
+arg-url-help=Csatlakozás BBS-hez a megadott URL segítségével
+arg-url-format=URL formátum: [(telnet|ssh|raw)://][felhasználó[:jelszó]@]tartomány[:port]
+arg-run-help=Lua szkript futtatása indítás után
+arg-mcp-port-help=MCP szerver engedélyezése a megadott porton
+
 # Help dialog
 help-title = Gyorsbillentyűk
 help-subtitle = Gyors referencia az iCY TERM-hez

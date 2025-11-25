@@ -240,6 +240,13 @@ cli-error-url-parse=Błąd podczas analizowania URL '{ $url }': { $error }
 cli-error-script-not-found=Nie można odczytać '{ $file }': Plik nie istnieje
 cli-error-script-not-file=Nie można odczytać '{ $file }': To jest katalog
 
+# Pomoc wiersza poleceń
+app-about=Emulator terminala do łączenia się z systemami tablic ogłoszeń (BBS) z pełną obsługą CP437, PETSCII i ViewData
+arg-url-help=Połącz się z BBS przy użyciu podanego URL
+arg-url-format=Format URL: [(telnet|ssh|raw)://][użytkownik[:hasło]@]domena[:port]
+arg-run-help=Uruchom skrypt Lua po starcie
+arg-mcp-port-help=Włącz serwer MCP na podanym porcie
+
 # Help dialog
 help-title = Skróty klawiszowe
 help-subtitle = Szybka ściągawka dla iCY TERM
