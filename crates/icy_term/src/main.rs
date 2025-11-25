@@ -18,6 +18,7 @@ use std::{
     time::Instant,
 };
 
+use clap_i18n_richformatter::{ClapI18nLocalizations, ClapI18nRichFormatter};
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 //use ui::MainWindow;
@@ -42,6 +43,7 @@ pub mod auto_login;
 pub mod features;
 mod icons;
 pub mod mcp;
+pub mod scripting;
 pub mod ui;
 mod util;
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -98,6 +100,10 @@ struct Args {
     #[arg(value_name = "URL")]
     url: Option<String>,
 
+    /// Run a Lua script after startup
+    #[arg(short, long, value_name = "SCRIPT")]
+    run: Option<PathBuf>,
+
     /// Enable MCP server on specified port
     #[arg(long, value_name = "PORT")]
     mcp_port: Option<u16>,
@@ -108,8 +114,14 @@ pub type McpHandler = Option<tokio::sync::mpsc::UnboundedReceiver<mcp::McpComman
 pub static MCP_PORT: AtomicU16 = AtomicU16::new(0);
 
 fn main() {
+    clap_i18n_richformatter::init_clap_rich_formatter_localizer();
     use std::fs;
-    let args = Args::parse();
+    let args = Args::try_parse()
+        .map_err(|e| {
+            let e = e.apply::<ClapI18nRichFormatter>();
+            e.exit();
+        })
+        .unwrap();
 
     if let Ok(log_file) = get_log_file() {
         // delete log file when it is too big
@@ -183,13 +195,20 @@ fn main() {
     icy_net::websocket::init_websocket_providers();
 
     let url_for_closure = args.url;
+    let script_for_closure = args.run;
     let mcp_rx = Arc::new(mcp_rx);
 
     iced::daemon(
         move || {
             let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() { mutex.lock().take() } else { None };
             if let Some(ref url) = url_for_closure {
-                WindowManager::with_url(mcp_receiver, url.clone())
+                let mut manager = WindowManager::with_url(mcp_receiver, url.clone());
+                if let Some(ref script) = script_for_closure {
+                    manager.0.script_to_run = Some(script.clone());
+                }
+                manager
+            } else if let Some(ref script) = script_for_closure {
+                WindowManager::with_script(mcp_receiver, script.clone())
             } else {
                 WindowManager::new(mcp_receiver)
             }

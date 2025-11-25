@@ -70,6 +70,7 @@ anyhow = "1.0.100"
 webbrowser = "1.0.6"
 rayon = "1.11.0"
 notify = "8.2.0"
+mlua = { version = "0.11.5", features = ["lua54", "vendored"] }
 
 iced = "0.14.0-dev"
 #iced_aw = { git = "https://github.com/iced-rs/iced_aw.git" }

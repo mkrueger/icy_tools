@@ -2,6 +2,7 @@ use crate::ConnectionInformation;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
+use crate::scripting::ScriptRunner;
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_net::iemsi::EmsiISI;
@@ -45,6 +46,10 @@ pub enum TerminalCommand {
     StartCapture(String),
     StopCapture,
     SetDownloadDirectory(PathBuf),
+    /// Run a Lua script file
+    RunScript(PathBuf),
+    /// Stop the currently running script
+    StopScript,
 }
 
 /// Messages sent from the terminal thread to the UI
@@ -63,12 +68,19 @@ pub enum TerminalEvent {
     StopSound,
     Reconnect,
     Connect(String),
+    /// Send credentials from current address (mode: 0=both, 1=username, 2=password)
+    SendCredentials(i32),
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
     PlayIgs(Box<IgsCommand>),
     InformDelay(u64), // Delay in milliseconds
     ContinueAfterDelay,
+
+    /// Script execution started
+    ScriptStarted(PathBuf),
+    /// Script execution finished
+    ScriptFinished(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -232,6 +244,7 @@ pub struct TerminalThread {
 
     // Communication channels
     command_rx: mpsc::UnboundedReceiver<TerminalCommand>,
+    command_tx: mpsc::UnboundedSender<TerminalCommand>,
     event_tx: mpsc::UnboundedSender<TerminalEvent>,
 
     use_utf8: bool,
@@ -253,12 +266,22 @@ pub struct TerminalThread {
 
     /// Double-stepping mode for IGS G commands (0 = off, 1-3 = vsync delays)
     double_step_vsyncs: Option<u8>,
+
+    /// Script runner for Lua scripts
+    script_runner: Option<ScriptRunner>,
+
+    /// Address book for scripting
+    address_book: Arc<Mutex<crate::data::AddressBook>>,
+
+    /// Current terminal emulation type (shared for scripting)
+    terminal_emulation: Arc<Mutex<icy_net::telnet::TerminalEmulation>>,
 }
 
 impl TerminalThread {
     pub fn spawn(
         edit_screen: Arc<Mutex<Box<dyn Screen>>>,
         parser: Box<dyn CommandParser + Send>,
+        address_book: Arc<Mutex<crate::data::AddressBook>>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -270,6 +293,7 @@ impl TerminalThread {
             current_transfer: None,
             connection_time: None,
             command_rx,
+            command_tx: command_tx.clone(),
             event_tx: event_tx.clone(),
             use_utf8: false,
             utf8_buffer: Vec::new(),
@@ -282,6 +306,9 @@ impl TerminalThread {
             queueing_sink: QueueingSink::new(),
             download_directory: None,
             double_step_vsyncs: None,
+            script_runner: None,
+            address_book,
+            terminal_emulation: Arc::new(Mutex::new(icy_net::telnet::TerminalEmulation::Ansi)),
         };
 
         // Spawn the async runtime for the terminal thread
@@ -312,6 +339,9 @@ impl TerminalThread {
 
                 // Periodic tick for updates and reading
                 _ = interval.tick() => {
+                    // Check if script finished
+                    self.check_script_finished();
+
                     // Process any buffered data from baud emulation first
                     if self.baud_emulator.has_buffered_data() {
                         let data = self.baud_emulator.emulate(&[]);
@@ -469,6 +499,12 @@ impl TerminalThread {
             TerminalCommand::SetDownloadDirectory(dir) => {
                 self.download_directory = Some(dir);
             }
+            TerminalCommand::RunScript(path) => {
+                self.run_script(path);
+            }
+            TerminalCommand::StopScript => {
+                self.stop_script();
+            }
         }
     }
 
@@ -567,6 +603,8 @@ impl TerminalThread {
             *screen = new_screen;
         }
         self.parser = parser;
+        // Update terminal emulation for scripting
+        *self.terminal_emulation.lock() = config.terminal_type;
         // Reset auto-transfer state
         self.auto_file_transfer = AutoFileTransfer::default();
         self.send_event(TerminalEvent::Connected);
@@ -1590,10 +1628,13 @@ impl TerminalThread {
 }
 
 // Helper function to create a terminal thread for the UI
-pub fn create_terminal_thread(edit_screen: Arc<Mutex<Box<dyn Screen>>>) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
+pub fn create_terminal_thread(
+    edit_screen: Arc<Mutex<Box<dyn Screen>>>,
+    address_book: Arc<Mutex<crate::data::AddressBook>>,
+) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
     let parser = icy_parser_core::AnsiParser::new();
 
-    TerminalThread::spawn(edit_screen, Box::new(parser))
+    TerminalThread::spawn(edit_screen, Box::new(parser), address_book)
 }
 
 fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1634,4 +1675,54 @@ fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Optio
     }
 
     Ok(())
+}
+
+impl TerminalThread {
+    /// Start running a Lua script
+    fn run_script(&mut self, path: PathBuf) {
+        // Stop any existing script
+        self.stop_script();
+
+        // Create a new script runner
+        let mut runner = ScriptRunner::new(
+            self.edit_screen.clone(),
+            self.command_tx.clone(),
+            self.event_tx.clone(),
+            self.address_book.clone(),
+            self.terminal_emulation.clone(),
+        );
+
+        match runner.run_file(&path) {
+            Ok(()) => {
+                self.send_event(TerminalEvent::ScriptStarted(path));
+                self.script_runner = Some(runner);
+            }
+            Err(e) => {
+                self.send_event(TerminalEvent::ScriptFinished(Err(e)));
+            }
+        }
+    }
+
+    /// Stop the currently running script
+    fn stop_script(&mut self) {
+        if let Some(mut runner) = self.script_runner.take() {
+            runner.stop();
+            self.send_event(TerminalEvent::ScriptFinished(Ok(())));
+        }
+    }
+
+    /// Check if a script finished and send event
+    fn check_script_finished(&mut self) {
+        if let Some(runner) = &mut self.script_runner {
+            if let Some(result) = runner.get_result() {
+                let event = match result {
+                    crate::scripting::ScriptResult::Success => TerminalEvent::ScriptFinished(Ok(())),
+                    crate::scripting::ScriptResult::Error(e) => TerminalEvent::ScriptFinished(Err(e)),
+                    crate::scripting::ScriptResult::Stopped => TerminalEvent::ScriptFinished(Ok(())),
+                };
+                self.send_event(event);
+                self.script_runner = None;
+            }
+        }
+    }
 }

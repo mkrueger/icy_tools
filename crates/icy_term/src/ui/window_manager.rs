@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
@@ -24,6 +24,7 @@ pub struct WindowManager {
     options: Arc<Mutex<Options>>,
     temp_options: Arc<Mutex<Options>>,
     url: Option<String>,
+    pub script_to_run: Option<PathBuf>,
     mcp_rx: McpHandler,
 
     // sound thread
@@ -92,6 +93,7 @@ impl WindowManager {
                 options,
                 temp_options,
                 url: None,
+                script_to_run: None,
                 mcp_rx,
             },
             open.map(WindowManagerMessage::WindowOpened),
@@ -101,6 +103,12 @@ impl WindowManager {
     pub fn with_url(mcp_rx: McpHandler, url: String) -> (WindowManager, Task<WindowManagerMessage>) {
         let mut manager = Self::new(mcp_rx);
         manager.0.url = Some(url);
+        manager
+    }
+
+    pub fn with_script(mcp_rx: McpHandler, script: PathBuf) -> (WindowManager, Task<WindowManagerMessage>) {
+        let mut manager = Self::new(mcp_rx);
+        manager.0.script_to_run = Some(script);
         manager
     }
 
@@ -168,13 +176,32 @@ impl WindowManager {
 
                 self.windows.insert(id, window);
 
-                if let Some(url) = self.url.take() {
+                // Handle startup URL connection
+                let url_task = if let Some(url) = self.url.take() {
                     if let Ok(connection_info) = crate::ConnectionInformation::parse(&url) {
-                        return Task::done(WindowManagerMessage::WindowMessage(id, Message::Connect(connection_info.into())));
+                        Some(Task::done(WindowManagerMessage::WindowMessage(id, Message::Connect(connection_info.into()))))
+                    } else {
+                        None
                     }
-                }
+                } else {
+                    None
+                };
 
-                focus_input.map(move |_: ()| WindowManagerMessage::WindowOpened(id))
+                // Handle startup script
+                let script_task = if let Some(script) = self.script_to_run.take() {
+                    Some(Task::done(WindowManagerMessage::WindowMessage(id, Message::RunScript(script))))
+                } else {
+                    None
+                };
+
+                // Combine tasks
+                let focus_task = focus_input.map(move |_: ()| WindowManagerMessage::WindowOpened(id));
+                match (url_task, script_task) {
+                    (Some(url), Some(script)) => Task::batch([url, script, focus_task]),
+                    (Some(url), None) => Task::batch([url, focus_task]),
+                    (None, Some(script)) => Task::batch([script, focus_task]),
+                    (None, None) => focus_task,
+                }
             }
             WindowManagerMessage::WindowClosed(id) => {
                 self.windows.remove(&id);
@@ -310,6 +337,7 @@ impl WindowManager {
                                 match &key {
                                     keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
                                         "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
+                                        "r" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ShowRunScriptDialog)),
                                         _ => {}
                                     },
                                     _ => {}

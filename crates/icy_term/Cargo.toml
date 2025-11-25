@@ -12,11 +12,11 @@ icy_net = { workspace = true }
 icy_engine = { workspace = true }
 icy_engine_scripting = { workspace = true }
 icy_parser_core = { workspace = true }
-
+mlua = { workspace = true }
 iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 
 # iced_aw = { workspace = true, features = ["menu"]  }
-
+clap-i18n-richformatter = "0.1.4"
 image = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

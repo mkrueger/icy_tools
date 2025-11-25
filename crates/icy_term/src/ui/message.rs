@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use icy_engine::{MouseEvent, Position, Selection};
@@ -81,4 +82,9 @@ pub enum Message {
     FocusNext,
     FocusPrevious,
     RipCommand(bool, String),
+
+    // Scripting
+    ShowRunScriptDialog,
+    RunScript(PathBuf),
+    StopScript,
 }

@@ -119,7 +119,7 @@ impl MainWindow {
         let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
         let edit_screen = terminal_window.terminal.screen.clone();
 
-        let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone());
+        let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), addresses.clone());
 
         Self {
             effect: 0,
@@ -463,6 +463,34 @@ impl MainWindow {
                 self.terminal_window.is_capturing = false;
                 let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
                 self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            Message::ShowRunScriptDialog => {
+                self.switch_to_terminal_screen();
+                // Open file dialog to select a Lua script
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("Lua Scripts", &["lua"])
+                            .add_filter("All Files", &["*"])
+                            .set_title("Select Lua Script")
+                            .pick_file()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    |result| {
+                        if let Some(path) = result { Message::RunScript(path) } else { Message::None }
+                    },
+                );
+            }
+            Message::RunScript(path) => {
+                log::info!("Running script: {}", path.display());
+                let _ = self.terminal_tx.send(TerminalCommand::RunScript(path));
+                self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            Message::StopScript => {
+                let _ = self.terminal_tx.send(TerminalCommand::StopScript);
                 Task::none()
             }
             Message::ShowFindDialog => {
@@ -941,11 +969,34 @@ impl MainWindow {
             TerminalEvent::Reconnect => {
                 return self.update(Message::Reconnect);
             }
-            TerminalEvent::Connect(address) => {
-                if let Ok(e) = crate::ConnectionInformation::parse(&address) {
+            TerminalEvent::Connect(name_or_url) => {
+                let addresses = self.dialing_directory.addresses.lock();
+                if let Some(address) = addresses
+                    .addresses
+                    .iter()
+                    .find(|addr| addr.system_name.eq_ignore_ascii_case(&name_or_url) || addr.address.eq_ignore_ascii_case(&name_or_url))
+                {
+                    let address = address.clone();
+                    drop(addresses);
+                    return self.update(Message::Connect(address));
+                }
+                drop(addresses);
+
+                // First try to parse as URL
+                if let Ok(e) = crate::ConnectionInformation::parse(&name_or_url) {
                     return self.update(Message::Connect(e.into()));
                 }
+
+                // Not found - log error
+                log::warn!("Script connect: '{}' not found in address book and not a valid URL", name_or_url);
                 Task::none()
+            }
+            TerminalEvent::SendCredentials(mode) => {
+                // Send credentials from current_address
+                // Mode: 0 = username + password, 1 = username only, 2 = password only
+                let send_login = mode == 0 || mode == 1;
+                let send_password = mode == 0 || mode == 2;
+                return self.update(Message::SendLoginAndPassword(send_login, send_password));
             }
 
             TerminalEvent::TransferStarted(_state, is_download) => {
@@ -1026,6 +1077,27 @@ impl MainWindow {
             }
             TerminalEvent::EmsiLogin(isi) => {
                 self.terminal_window.iemsi_info = Some(*isi);
+                Task::none()
+            }
+            TerminalEvent::ScriptStarted(path) => {
+                log::info!("Script started: {}", path.display());
+                Task::none()
+            }
+            TerminalEvent::ScriptFinished(result) => {
+                match result {
+                    Ok(()) => {
+                        log::info!("Script finished successfully");
+                    }
+                    Err(e) => {
+                        log::error!("Script error: {}", e);
+                        self.state.mode = MainWindowMode::ShowErrorDialog(
+                            "Script Error".to_string(),
+                            "Script execution failed".to_string(),
+                            e,
+                            Box::new(MainWindowMode::ShowTerminal),
+                        );
+                    }
+                }
                 Task::none()
             }
         }
