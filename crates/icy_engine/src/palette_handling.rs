@@ -170,10 +170,16 @@ pub struct Palette {
 
     old_checksum: usize,
     checksum: u32,
-    palette_cache: Vec<(u8, u8, u8)>,
+    palette_cache_rgba: Vec<u32>,
 }
 
 impl Palette {
+    /// Convert RGB to packed RGBA u32 (little-endian: 0xAABBGGRR in memory)
+    #[inline(always)]
+    pub fn rgb_to_rgba_u32(r: u8, g: u8, b: u8) -> u32 {
+        u32::from_ne_bytes([r, g, b, 255])
+    }
+
     pub fn from_slice(colors: &[Color]) -> Self {
         Self {
             title: String::new(),
@@ -182,7 +188,7 @@ impl Palette {
             colors: colors.to_vec(),
             old_checksum: 0,
             checksum: 0,
-            palette_cache: colors.iter().map(|c| (c.r, c.g, c.b)).collect(),
+            palette_cache_rgba: colors.iter().map(|c| Self::rgb_to_rgba_u32(c.r, c.g, c.b)).collect(),
         }
     }
 
@@ -205,10 +211,12 @@ impl Palette {
         if size > self.colors.len() {
             self.fill_to_16();
             self.colors.resize(size, Color::default());
+            self.palette_cache_rgba.resize(size, Self::rgb_to_rgba_u32(0, 0, 0));
         }
 
         if size < self.colors.len() {
             self.colors.resize(size, Color::default());
+            self.palette_cache_rgba.resize(size, Self::rgb_to_rgba_u32(0, 0, 0));
         }
     }
 
@@ -230,16 +238,16 @@ impl Palette {
     }
 
     pub fn push(&mut self, color: Color) {
+        self.palette_cache_rgba.push(Self::rgb_to_rgba_u32(color.r, color.g, color.b));
         self.colors.push(color);
     }
 
     pub fn set_color(&mut self, color: u32, color_struct: Color) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
-            self.palette_cache.resize(color as usize + 1, (0, 0, 0));
+            self.palette_cache_rgba.resize(color as usize + 1, Self::rgb_to_rgba_u32(0, 0, 0));
         }
-
-        self.palette_cache[color as usize] = (color_struct.r, color_struct.g, color_struct.b);
+        self.palette_cache_rgba[color as usize] = Self::rgb_to_rgba_u32(color_struct.r, color_struct.g, color_struct.b);
         self.colors[color as usize] = color_struct;
     }
 
@@ -414,7 +422,7 @@ impl Palette {
             },
             PaletteFormat::Ase => todo!(),
         }
-        let palette_cache = colors.iter().map(|c| (c.r, c.g, c.b)).collect();
+        let palette_cache_rgba = colors.iter().map(|c| Self::rgb_to_rgba_u32(c.r, c.g, c.b)).collect();
         Ok(Self {
             title,
             description,
@@ -422,7 +430,7 @@ impl Palette {
             colors,
             old_checksum: 0,
             checksum: 0,
-            palette_cache,
+            palette_cache_rgba,
         })
     }
 
@@ -533,7 +541,7 @@ impl Palette {
             colors: vec![],
             old_checksum: 0,
             checksum: 0,
-            palette_cache: Vec::new(),
+            palette_cache_rgba: Vec::new(),
         }
     }
 
@@ -545,7 +553,7 @@ impl Palette {
             colors: DOS_DEFAULT_PALETTE.to_vec(),
             old_checksum: 0,
             checksum: 0,
-            palette_cache: DOS_DEFAULT_PALETTE.iter().map(|c| (c.r, c.g, c.b)).collect(),
+            palette_cache_rgba: DOS_DEFAULT_PALETTE.iter().map(|c| Self::rgb_to_rgba_u32(c.r, c.g, c.b)).collect(),
         }
     }
 
@@ -559,12 +567,15 @@ impl Palette {
 
     pub fn clear(&mut self) {
         self.colors.clear();
+        self.palette_cache_rgba.clear();
     }
 
     pub fn fill_to_16(&mut self) {
         if self.colors.len() < DOS_DEFAULT_PALETTE.len() {
             (self.colors.len()..DOS_DEFAULT_PALETTE.len()).for_each(|i| {
-                self.colors.push(DOS_DEFAULT_PALETTE[i].clone());
+                let c = &DOS_DEFAULT_PALETTE[i];
+                self.palette_cache_rgba.push(Self::rgb_to_rgba_u32(c.r, c.g, c.b));
+                self.colors.push(c.clone());
             });
         }
     }
@@ -582,23 +593,24 @@ impl Palette {
         true
     }
 
-    pub fn get_palette_cache(&self) -> &[(u8, u8, u8)] {
-        &self.palette_cache
+    /// Get palette cache as packed RGBA u32 values for fast pixel writing
+    pub fn get_palette_cache_rgba(&self) -> &[u32] {
+        &self.palette_cache_rgba
     }
 
     pub fn set_color_rgb(&mut self, color: u32, r: u8, g: u8, b: u8) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
-            self.palette_cache.resize(color as usize + 1, (0, 0, 0));
+            self.palette_cache_rgba.resize(color as usize + 1, Self::rgb_to_rgba_u32(0, 0, 0));
         }
         self.colors[color as usize] = Color { name: None, r, g, b };
-        self.palette_cache[color as usize] = (r, g, b);
+        self.palette_cache_rgba[color as usize] = Self::rgb_to_rgba_u32(r, g, b);
     }
 
     pub fn set_color_hsl(&mut self, color: u32, h: f32, s: f32, l: f32) {
         if self.colors.len() <= color as usize {
             self.colors.resize(color as usize + 1, Color::default());
-            self.palette_cache.resize(color as usize + 1, (0, 0, 0));
+            self.palette_cache_rgba.resize(color as usize + 1, Self::rgb_to_rgba_u32(0, 0, 0));
         }
 
         let (r, g, b) = if l == 0.0 {
@@ -617,7 +629,7 @@ impl Palette {
         };
 
         self.colors[color as usize] = Color { name: None, r, g, b };
-        self.palette_cache[color as usize] = (r, g, b);
+        self.palette_cache_rgba[color as usize] = Self::rgb_to_rgba_u32(r, g, b);
     }
 
     pub fn insert_color(&mut self, color: Color) -> u32 {
@@ -627,7 +639,7 @@ impl Palette {
                 return i as u32;
             }
         }
-        self.palette_cache.push(color.get_rgb());
+        self.palette_cache_rgba.push(Self::rgb_to_rgba_u32(color.r, color.g, color.b));
         self.colors.push(color);
         (self.colors.len() - 1) as u32
     }
@@ -638,7 +650,7 @@ impl Palette {
 
     pub fn from(pal: &[u8]) -> Self {
         let mut colors = Vec::new();
-        let mut palette_cache = Vec::new();
+        let mut palette_cache_rgba = Vec::new();
         let mut o = 0;
         while o < pal.len() {
             colors.push(Color {
@@ -647,7 +659,7 @@ impl Palette {
                 g: pal[o + 1],
                 b: pal[o + 2],
             });
-            palette_cache.push((pal[o], pal[o + 1], pal[o + 2]));
+            palette_cache_rgba.push(Self::rgb_to_rgba_u32(pal[o], pal[o + 1], pal[o + 2]));
             o += 3;
         }
 
@@ -658,7 +670,7 @@ impl Palette {
             colors,
             old_checksum: 0,
             checksum: 0,
-            palette_cache,
+            palette_cache_rgba,
         }
     }
 
@@ -674,19 +686,22 @@ impl Palette {
 
     pub fn from_63(pal: &[u8]) -> Self {
         let mut colors = Vec::new();
-        let mut palette_cache = Vec::new();
+        let mut palette_cache_rgba = Vec::new();
         let mut o = 0;
         while o < pal.len() {
             let r = pal[o];
             let g = pal[o + 1];
             let b = pal[o + 2];
+            let r_expanded = r << 2 | r >> 4;
+            let g_expanded = g << 2 | g >> 4;
+            let b_expanded = b << 2 | b >> 4;
             colors.push(Color {
                 name: None,
-                r: r << 2 | r >> 4,
-                g: g << 2 | g >> 4,
-                b: b << 2 | b >> 4,
+                r: r_expanded,
+                g: g_expanded,
+                b: b_expanded,
             });
-            palette_cache.push((r << 2 | r >> 4, g << 2 | g >> 4, b << 2 | b >> 4));
+            palette_cache_rgba.push(Self::rgb_to_rgba_u32(r_expanded, g_expanded, b_expanded));
 
             o += 3;
         }
@@ -698,7 +713,7 @@ impl Palette {
             colors,
             old_checksum: 0,
             checksum: 0,
-            palette_cache,
+            palette_cache_rgba,
         }
     }
 
@@ -4157,10 +4172,10 @@ fn convert_vector(temp2: f32, temp1: f32, mut x: f32) -> u8 {
 
 impl Default for Palette {
     fn default() -> Self {
-        let mut palette_cache = Vec::new();
+        let mut palette_cache_rgba = Vec::new();
 
         for c in DOS_DEFAULT_PALETTE.iter() {
-            palette_cache.push(c.get_rgb());
+            palette_cache_rgba.push(Palette::rgb_to_rgba_u32(c.r, c.g, c.b));
         }
 
         Palette {
@@ -4170,7 +4185,7 @@ impl Default for Palette {
             colors: DOS_DEFAULT_PALETTE.to_vec(),
             old_checksum: 0,
             checksum: 0,
-            palette_cache,
+            palette_cache_rgba,
         }
     }
 }

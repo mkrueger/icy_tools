@@ -297,66 +297,71 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
-        let pal = self.palette().clone();
+        // Use cached palette as packed RGBA u32 for single write per pixel
+        let palette_cache_rgba = self.palette.get_palette_cache_rgba();
 
         // Clamp region to screen bounds
-        let x = px_region.start.x.max(0).min(self.pixel_size.width);
-        let y = px_region.start.y.max(0).min(self.pixel_size.height);
-        let width = px_region.size.width.min(self.pixel_size.width - x);
-        let height = px_region.size.height.min(self.pixel_size.height - y);
+        let x = px_region.start.x.clamp(0, self.pixel_size.width);
+        let y = px_region.start.y.clamp(0, self.pixel_size.height);
+        let width = px_region.size.width.clamp(0, self.pixel_size.width - x);
+        let height = px_region.size.height.clamp(0, self.pixel_size.height - y);
 
         if width <= 0 || height <= 0 {
             return (Size::new(0, 0), Vec::new());
         }
 
         let scan_lines = options.override_scan_lines.unwrap_or(self.scan_lines);
+        let width_usize = width as usize;
+        let screen_width = self.pixel_size.width as usize;
+        let palette_len = palette_cache_rgba.len();
+        // Default color: black with full alpha (RGBA)
+        const DEFAULT_COLOR: u32 = 0xFF000000;
 
-        if scan_lines {
-            // Double the height for scan lines
-            let doubled_height = height * 2;
-            let mut pixels = Vec::with_capacity(width as usize * doubled_height as usize * 4);
+        let out_height = if scan_lines { height * 2 } else { height };
+        let total_pixels = width_usize * out_height as usize;
 
-            for py in 0..height {
-                let src_y = y + py;
-                let row_start = (src_y * self.pixel_size.width + x) as usize;
+        // Allocate as u32 array for single-write operations
+        let mut pixels_u32 = vec![0u32; total_pixels];
 
-                // Render the line once
-                let start_pos = pixels.len();
-                for px in 0..width {
-                    let idx = row_start + px as usize;
-                    let (r, g, b) = pal.get_rgb(self.screen[idx] as u32);
-                    pixels.push(r);
-                    pixels.push(g);
-                    pixels.push(b);
-                    pixels.push(255);
-                }
+        let mut dst_idx = 0usize;
+        for py in 0..height {
+            let src_y = (y + py) as usize;
+            let row_start = src_y * screen_width + x as usize;
 
-                // Copy the rendered line for scanline effect
-                let end_pos = pixels.len();
-                pixels.extend_from_within(start_pos..end_pos);
-            }
-
-            (Size::new(width, doubled_height), pixels)
-        } else {
-            // Standard rendering without scan lines
-            let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
-
-            for py in 0..height {
-                let src_y = y + py;
-                let row_start = (src_y * self.pixel_size.width + x) as usize;
-
-                for px in 0..width {
-                    let idx = row_start + px as usize;
-                    let (r, g, b) = pal.get_rgb(self.screen[idx] as u32);
-                    pixels.push(r);
-                    pixels.push(g);
-                    pixels.push(b);
-                    pixels.push(255);
+            // SAFETY: We've clamped x, y, width, height to screen bounds
+            // so row_start + px is always < screen.len()
+            // and palette_idx < palette_len is checked before access
+            unsafe {
+                for px in 0..width_usize {
+                    let palette_idx = *self.screen.get_unchecked(row_start + px) as usize;
+                    let rgba = if palette_idx < palette_len {
+                        *palette_cache_rgba.get_unchecked(palette_idx)
+                    } else {
+                        DEFAULT_COLOR
+                    };
+                    *pixels_u32.get_unchecked_mut(dst_idx) = rgba;
+                    dst_idx += 1;
                 }
             }
 
-            (Size::new(width, height), pixels)
+            if scan_lines {
+                // Copy the rendered line for scanline effect (same line duplicated)
+                let src_start = dst_idx - width_usize;
+                pixels_u32.copy_within(src_start..dst_idx, dst_idx);
+                dst_idx += width_usize;
+            }
         }
+
+        // SAFETY: Reinterpret Vec<u32> as Vec<u8> - u32 is 4 bytes, same memory layout
+        let pixels = unsafe {
+            let ptr = pixels_u32.as_mut_ptr() as *mut u8;
+            let len = pixels_u32.len() * 4;
+            let cap = pixels_u32.capacity() * 4;
+            std::mem::forget(pixels_u32);
+            Vec::from_raw_parts(ptr, len, cap)
+        };
+
+        (Size::new(width, out_height), pixels)
     }
 
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {

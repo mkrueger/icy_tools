@@ -9,60 +9,70 @@ impl TextBuffer {
         let rect = options.rect.as_rectangle_with_width(self.get_width());
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;
-        let line_bytes = px_width * 4;
-        let base_size = (px_width * px_height * 4) as usize;
+        let line_width = px_width as usize;
 
         let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
-        if scan_lines {
+        let mut pixels_u32 = if scan_lines {
             // Render to temporary buffer first
-            let mut pixels = vec![0u8; base_size];
-            self.render_to_rgba_into(options, &mut pixels, font_size, rect, px_width, px_height, line_bytes);
+            let mut pixels_u32 = vec![0u32; (px_width * px_height) as usize];
+            self.render_to_rgba_into(options, &mut pixels_u32, font_size, rect, px_width, px_height);
 
-            // Double the height by copying each scanline
-            let doubled_size = base_size * 2;
+            // Double the height by copying each scanline (working with u32)
+            let doubled_size = pixels_u32.len() * 2;
             let mut doubled_pixels = Vec::with_capacity(doubled_size);
 
-            // Process line by line for fast memory copy
-            for y in 0..px_height {
-                let row_start = (y * line_bytes) as usize;
-                let row_end = row_start + line_bytes as usize;
+            // Process line by line
+            for y in 0..px_height as usize {
+                let row_start = y * line_width;
+                let row_end = row_start + line_width;
 
-                // Render the line once
-                let start_pos = doubled_pixels.len();
-                doubled_pixels.extend_from_slice(&pixels[row_start..row_end]);
-
-                // Copy the rendered line immediately for scanline effect
-                let end_pos = doubled_pixels.len();
-                doubled_pixels.extend_from_within(start_pos..end_pos);
+                // Copy the line once
+                doubled_pixels.extend_from_slice(&pixels_u32[row_start..row_end]);
+                // Duplicate the line for scanline effect
+                doubled_pixels.extend_from_slice(&pixels_u32[row_start..row_end]);
             }
 
-            (Size::new(px_width, px_height * 2), doubled_pixels)
+            doubled_pixels
         } else {
-            let mut pixels = vec![0u8; base_size];
-            self.render_to_rgba_into(options, &mut pixels, font_size, rect, px_width, px_height, line_bytes);
-            (Size::new(px_width, px_height), pixels)
-        }
+            // Render directly with u32
+            let mut pixels_u32 = vec![0u32; (px_width * px_height) as usize];
+            self.render_to_rgba_into(options, &mut pixels_u32, font_size, rect, px_width, px_height);
+            pixels_u32
+        };
+
+        // Calculate output height
+        let out_height = if scan_lines { px_height * 2 } else { px_height };
+
+        // Convert Vec<u32> to Vec<u8> without copying
+        let pixels = unsafe {
+            let ptr = pixels_u32.as_mut_ptr().cast::<u8>();
+            let len = pixels_u32.len() * 4;
+            let cap = pixels_u32.capacity() * 4;
+            std::mem::forget(pixels_u32);
+            Vec::from_raw_parts(ptr, len, cap)
+        };
+        (Size::new(px_width, out_height), pixels)
     }
 
     /// Render only a specific pixel region (for viewport-based rendering)
-    /// More efficient than rendering full buffer and cropping
+    /// Renders the character region and crops to exact pixel bounds
     pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         let font_size = self.get_font(0).unwrap().size();
         let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
 
-        // Convert pixel region to character region (round outwards to include partial chars)
+        // Convert pixel region to character region (round outwards)
         let char_x = px_region.start.x / font_size.width;
         let char_y = px_region.start.y / font_size.height;
-        let char_width = ((px_region.start.x + px_region.size.width + font_size.width - 1) / font_size.width) - char_x;
-        let char_height = ((px_region.start.y + px_region.size.height + font_size.height - 1) / font_size.height) - char_y;
+        let char_right = (px_region.start.x + px_region.size.width + font_size.width - 1) / font_size.width;
+        let char_bottom = (px_region.start.y + px_region.size.height + font_size.height - 1) / font_size.height;
 
         // Clamp to buffer bounds
-        let char_x = char_x.max(0).min(self.get_width());
-        let char_y = char_y.max(0).min(self.get_height());
-        let char_width = char_width.max(0).min(self.get_width() - char_x);
-        let char_height = char_height.max(0).min(self.get_height() - char_y);
+        let char_x = char_x.clamp(0, self.get_width());
+        let char_y = char_y.clamp(0, self.get_height());
+        let char_width = (char_right - char_x).clamp(0, self.get_width() - char_x);
+        let char_height = (char_bottom - char_y).clamp(0, self.get_height() - char_y);
 
-        // Create new options with char-based rect
+        // Create render options
         let region_options = RenderOptions {
             rect: Rectangle::from_coords(char_x, char_y, char_x + char_width, char_y + char_height).into(),
             blink_on: options.blink_on,
@@ -73,78 +83,93 @@ impl TextBuffer {
         };
 
         // Render the character region
-        let (full_size, full_pixels) = self.render_to_rgba(&region_options, scan_lines);
+        let (full_size, mut full_pixels) = self.render_to_rgba(&region_options, scan_lines);
 
-        // Now crop to exact pixel bounds within the rendered region
-        let crop_x = px_region.start.x - (char_x * font_size.width);
-        let crop_y = px_region.start.y - (char_y * font_size.height);
+        // Calculate crop bounds
+        let crop_x = px_region.start.x - char_x * font_size.width;
+        let crop_y = px_region.start.y - char_y * font_size.height;
         let crop_width = px_region.size.width.min(full_size.width - crop_x);
         let crop_height = px_region.size.height.min(full_size.height - crop_y);
 
-        // If no cropping needed, return as-is
+        // Fast path: no cropping needed
         if crop_x == 0 && crop_y == 0 && crop_width == full_size.width && crop_height == full_size.height {
             return (full_size, full_pixels);
         }
 
-        // Extract the exact pixel region
-        let mut cropped_pixels = Vec::with_capacity((crop_width * crop_height * 4) as usize);
-        for y in 0..crop_height {
-            let src_row_start = ((crop_y + y) * full_size.width + crop_x) as usize * 4;
-            let src_row_end = src_row_start + (crop_width as usize * 4);
-            cropped_pixels.extend_from_slice(&full_pixels[src_row_start..src_row_end]);
+        let src_stride = full_size.width as usize * 4;
+        let dst_stride = crop_width as usize * 4;
+
+        // Fast path: only vertical cropping (no X offset, same width)
+        if crop_x == 0 && crop_width == full_size.width {
+            let src_start = crop_y as usize * src_stride;
+            let total_bytes = crop_height as usize * src_stride;
+            full_pixels.copy_within(src_start..src_start + total_bytes, 0);
+            full_pixels.truncate(total_bytes);
+            return (Size::new(crop_width, crop_height), full_pixels);
         }
 
-        (Size::new(crop_width, crop_height), cropped_pixels)
+        // General case: both X and Y cropping
+        let crop_x_bytes = crop_x as usize * 4;
+        let mut src_offset = crop_y as usize * src_stride + crop_x_bytes;
+        let mut dst_offset = 0usize;
+
+        for _ in 0..crop_height as usize {
+            full_pixels.copy_within(src_offset..src_offset + dst_stride, dst_offset);
+            src_offset += src_stride;
+            dst_offset += dst_stride;
+        }
+
+        full_pixels.truncate((crop_width * crop_height * 4) as usize);
+        (Size::new(crop_width, crop_height), full_pixels)
     }
 
-    pub fn render_to_rgba_into(
-        &self,
-        options: &RenderOptions,
-        pixels: &mut [u8],
-        font_size: Size,
-        rect: Rectangle,
-        px_width: i32,
-        px_height: i32,
-        line_bytes: i32,
-    ) {
+    fn render_to_rgba_into(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, px_width: i32, px_height: i32) {
         // Bail out early if buffer mismatched
-        if pixels.len() != (px_width * px_height * 4) as usize {
+        if pixels.len() != (px_width * px_height) as usize {
             log::error!(
                 "render_to_rgba_into: pixel buffer size mismatch (expected {}, got {})",
-                px_width * px_height * 4,
+                px_width * px_height,
                 pixels.len()
             );
             return;
         }
 
+        let line_width = px_width;
+
         match self.buffer_type {
-            super::BufferType::Viewdata => self.render_viewdata_to_rgba_into(options, pixels, font_size, rect, line_bytes),
+            super::BufferType::Viewdata => self.render_viewdata_u32(options, pixels, font_size, rect, line_width),
             _ => {
-                self.render_optimized_to_rgba_into(options, pixels, font_size, rect, line_bytes);
+                self.render_optimized_u32(options, pixels, font_size, rect, line_width);
             }
         }
-        self.render_sixel_overlay(pixels, font_size, rect, px_width, px_height, line_bytes);
+        // Sixel overlay now works on u32 directly
+        self.render_sixel_overlay(pixels, font_size, rect, px_width, px_height);
     }
 
-    pub fn render_optimized_to_rgba_into(&self, options: &RenderOptions, pixels: &mut [u8], font_size: Size, rect: Rectangle, line_bytes: i32) {
-        // Bail out early if buffer mismatched        // Palette cache
-        let palette_cache = self.palette.get_palette_cache();
+    fn render_optimized_u32(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, line_width: i32) {
+        use crate::Palette;
+
+        // Palette cache as u32 for direct pixel writes
+        let palette_cache = self.palette.get_palette_cache_rgba();
+        // Fallback colors as u32
+        let default_fg = Palette::rgb_to_rgba_u32(255, 255, 255);
+        let default_bg = Palette::rgb_to_rgba_u32(0, 0, 0);
 
         let selection_active = options.selection.is_some();
         let selection_ref = options.selection.as_ref();
 
-        // Optional selection colors (if both are set)
+        // Optional selection colors (if both are set) - pre-packed as u32
         let explicit_sel_colors = options.selection_fg.as_ref().zip(options.selection_bg.as_ref()).map(|(fg, bg)| {
             let (f_r, f_g, f_b) = fg.get_rgb();
             let (b_r, b_g, b_b) = bg.get_rgb();
-            (f_r, f_g, f_b, b_r, b_g, b_b)
+            (Palette::rgb_to_rgba_u32(f_r, f_g, f_b), Palette::rgb_to_rgba_u32(b_r, b_g, b_b))
         });
 
         use rayon::prelude::*;
 
         // Process each character row in parallel
-        // We need to split the pixels buffer into non-overlapping chunks
-        let row_size = (font_size.height * line_bytes) as usize;
+        // row_size is in u32 units (pixels per character row)
+        let row_size = (font_size.height * line_width) as usize;
 
         // Use par_chunks_mut to get parallel mutable access to disjoint slices
         pixels.par_chunks_mut(row_size).enumerate().for_each(|(y, row_pixels)| {
@@ -171,64 +196,36 @@ impl TextBuffer {
 
                 let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
 
-                let (f_r, f_g, f_b, b_r, b_g, b_b) = if is_selected {
-                    if let Some((efr, efg, efb, ebr, ebg, ebb)) = explicit_sel_colors {
-                        (efr, efg, efb, ebr, ebg, ebb)
+                // Get colors directly as u32
+                let (fg_u32, bg_u32) = if is_selected {
+                    if let Some((sel_fg, sel_bg)) = explicit_sel_colors {
+                        (sel_fg, sel_bg)
                     } else {
-                        // Invert fallback - handle transparent colors
+                        // Invert fallback - swap fg and bg
                         let bg_idx = bg as usize;
                         let fg_idx = fg as usize;
-
-                        // Use default colors for transparent/out-of-bounds indices
-                        let (f_r, f_g, f_b) = if bg_idx < palette_cache.len() {
-                            palette_cache[bg_idx]
-                        } else {
-                            (0, 0, 0) // Default to black for transparent background
-                        };
-
-                        let (b_r, b_g, b_b) = if fg_idx < palette_cache.len() {
-                            palette_cache[fg_idx]
-                        } else {
-                            (255, 255, 255) // Default to white for transparent foreground
-                        };
-
-                        (f_r, f_g, f_b, b_r, b_g, b_b)
+                        let fg_color = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg };
+                        let bg_color = if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg };
+                        (fg_color, bg_color)
                     }
                 } else {
                     let fg_idx = fg as usize;
                     let bg_idx = bg as usize;
-
-                    // Handle transparent colors
-                    let (f_r, f_g, f_b) = if fg_idx < palette_cache.len() {
-                        palette_cache[fg_idx]
-                    } else {
-                        (255, 255, 255) // Default to white for transparent foreground
-                    };
-
-                    let (b_r, b_g, b_b) = if bg_idx < palette_cache.len() {
-                        palette_cache[bg_idx]
-                    } else {
-                        (0, 0, 0) // Default to black for transparent background
-                    };
-
-                    (f_r, f_g, f_b, b_r, b_g, b_b)
+                    let fg_color = if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg };
+                    let bg_color = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg };
+                    (fg_color, bg_color)
                 };
 
                 let cell_pixel_w = font_size.width;
                 let cell_pixel_h = font_size.height;
                 let base_px = x * cell_pixel_w;
 
-                // Background fill first
+                // Background fill first - using unchecked access for performance
                 unsafe {
                     for cy in 0..cell_pixel_h {
-                        let line_offset = (cy * line_bytes + base_px * 4) as usize;
-                        let mut o = line_offset;
-                        for _cx in 0..cell_pixel_w {
-                            *row_pixels.get_unchecked_mut(o) = b_r;
-                            *row_pixels.get_unchecked_mut(o + 1) = b_g;
-                            *row_pixels.get_unchecked_mut(o + 2) = b_b;
-                            *row_pixels.get_unchecked_mut(o + 3) = 0xFF;
-                            o += 4;
+                        let line_offset = (cy * line_width + base_px) as usize;
+                        for cx in 0..cell_pixel_w as usize {
+                            *row_pixels.get_unchecked_mut(line_offset + cx) = bg_u32;
                         }
                     }
                 }
@@ -236,16 +233,13 @@ impl TextBuffer {
                 // Foreground glyph overlay
                 if let Some(glyph) = font.get_glyph(ch.ch) {
                     let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
-                    for cy in 0..max_cy {
-                        let row = &glyph.bitmap.pixels[cy];
-                        let line_offset = (cy as i32 * line_bytes + base_px * 4) as usize;
-                        unsafe {
-                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) {
-                                if row[cx as usize] {
-                                    let o: usize = line_offset + (cx * 4) as usize;
-                                    *row_pixels.get_unchecked_mut(o) = f_r;
-                                    *row_pixels.get_unchecked_mut(o + 1) = f_g;
-                                    *row_pixels.get_unchecked_mut(o + 2) = f_b;
+                    unsafe {
+                        for cy in 0..max_cy {
+                            let row = glyph.bitmap.pixels.get_unchecked(cy);
+                            let line_offset = (cy as i32 * line_width + base_px) as usize;
+                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) as usize {
+                                if *row.get_unchecked(cx) {
+                                    *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
                                 }
                             }
                         }
@@ -256,27 +250,16 @@ impl TextBuffer {
                     // Underline
                     if ch.attribute.is_underlined() {
                         let lines: &[i32] = if ch.attribute.is_double_underlined() {
-                            // last two pixel rows of the cell
                             &[cell_pixel_h - 2, cell_pixel_h - 1]
                         } else {
                             &[cell_pixel_h - 1]
                         };
-                        for ul_y in lines {
-                            if *ul_y >= 0 && *ul_y < cell_pixel_h {
-                                unsafe {
-                                    let line_offset = (*ul_y * line_bytes + base_px * 4) as usize;
-                                    if line_offset >= row_pixels.len() {
-                                        continue;
-                                    }
-                                    let mut o = line_offset;
-                                    for _cx in 0..cell_pixel_w {
-                                        if o + 2 >= row_pixels.len() {
-                                            break;
-                                        }
-                                        *row_pixels.get_unchecked_mut(o) = f_r;
-                                        *row_pixels.get_unchecked_mut(o + 1) = f_g;
-                                        *row_pixels.get_unchecked_mut(o + 2) = f_b;
-                                        o += 4;
+                        unsafe {
+                            for ul_y in lines {
+                                if *ul_y >= 0 && *ul_y < cell_pixel_h {
+                                    let line_offset = (*ul_y * line_width + base_px) as usize;
+                                    for cx in 0..cell_pixel_w as usize {
+                                        *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
                                     }
                                 }
                             }
@@ -284,38 +267,20 @@ impl TextBuffer {
                     }
                     // Overline
                     if ch.attribute.is_overlined() {
+                        let line_offset = base_px as usize;
                         unsafe {
-                            let line_offset = (base_px * 4) as usize;
-                            if line_offset < row_pixels.len() {
-                                let mut o = line_offset;
-                                for _cx in 0..cell_pixel_w {
-                                    if o + 2 >= row_pixels.len() {
-                                        break;
-                                    }
-                                    *row_pixels.get_unchecked_mut(o) = f_r;
-                                    *row_pixels.get_unchecked_mut(o + 1) = f_g;
-                                    *row_pixels.get_unchecked_mut(o + 2) = f_b;
-                                    o += 4;
-                                }
+                            for cx in 0..cell_pixel_w as usize {
+                                *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
                             }
                         }
                     }
                     // Strike-through
                     if ch.attribute.is_crossed_out() {
                         let mid_y = cell_pixel_h / 2;
+                        let line_offset = (mid_y * line_width + base_px) as usize;
                         unsafe {
-                            let line_offset = (mid_y * line_bytes + base_px * 4) as usize;
-                            if line_offset < row_pixels.len() {
-                                let mut o = line_offset;
-                                for _cx in 0..cell_pixel_w {
-                                    if o + 2 >= row_pixels.len() {
-                                        break;
-                                    }
-                                    *row_pixels.get_unchecked_mut(o) = f_r;
-                                    *row_pixels.get_unchecked_mut(o + 1) = f_g;
-                                    *row_pixels.get_unchecked_mut(o + 2) = f_b;
-                                    o += 4;
-                                }
+                            for cx in 0..cell_pixel_w as usize {
+                                *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
                             }
                         }
                     }
@@ -324,9 +289,11 @@ impl TextBuffer {
         });
     }
 
-    pub fn render_viewdata_to_rgba_into(&self, options: &RenderOptions, pixels: &mut [u8], font_size: Size, rect: Rectangle, line_bytes: i32) {
-        // Palette cache
-        let palette_cache = self.palette.get_palette_cache();
+    fn render_viewdata_u32(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, line_width: i32) {
+        use crate::Palette;
+
+        // Palette cache (u32 version for faster writes)
+        let palette_cache = self.palette.get_palette_cache_rgba();
 
         let selection_active = options.selection.is_some();
         let selection_ref = options.selection.as_ref();
@@ -335,7 +302,7 @@ impl TextBuffer {
         let explicit_sel_colors = options.selection_fg.as_ref().zip(options.selection_bg.as_ref()).map(|(fg, bg)| {
             let (f_r, f_g, f_b) = fg.get_rgb();
             let (b_r, b_g, b_b) = bg.get_rgb();
-            (f_r, f_g, f_b, b_r, b_g, b_b)
+            (Palette::rgb_to_rgba_u32(f_r, f_g, f_b), Palette::rgb_to_rgba_u32(b_r, b_g, b_b))
         });
 
         // Pre-scan lines to determine which are double-height
@@ -367,7 +334,7 @@ impl TextBuffer {
         }
 
         // Helper function to render a character
-        let render_char = |pixels: &mut [u8], x: i32, y: i32, pos: Position| {
+        let render_char = |pixels: &mut [u32], x: i32, y: i32, pos: Position| {
             // Check if this line is a bottom half
             if is_bottom_half_line[y as usize] {
                 // Get the character from the line above
@@ -381,7 +348,11 @@ impl TextBuffer {
                         // Background fill only (no glyph)
                         let bg = above_ch.attribute.get_background();
                         let bg_idx = bg as usize;
-                        let (b_r, b_g, b_b) = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { (0, 0, 0) };
+                        let bg_u32 = if bg_idx < palette_cache.len() {
+                            palette_cache[bg_idx]
+                        } else {
+                            Palette::rgb_to_rgba_u32(0, 0, 0)
+                        };
 
                         let cell_pixel_w = font_size.width;
                         let cell_pixel_h = font_size.height;
@@ -390,20 +361,9 @@ impl TextBuffer {
 
                         unsafe {
                             for cy in 0..cell_pixel_h {
-                                let line_start = ((base_pixel_y + cy) * line_bytes + base_pixel_x * 4) as usize;
-                                if line_start >= pixels.len() {
-                                    break;
-                                }
-                                let mut o = line_start;
-                                for _cx in 0..cell_pixel_w {
-                                    if o + 3 >= pixels.len() {
-                                        break;
-                                    }
-                                    *pixels.get_unchecked_mut(o) = b_r;
-                                    *pixels.get_unchecked_mut(o + 1) = b_g;
-                                    *pixels.get_unchecked_mut(o + 2) = b_b;
-                                    *pixels.get_unchecked_mut(o + 3) = 0xFF;
-                                    o += 4;
+                                let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
+                                for cx in 0..cell_pixel_w as usize {
+                                    *pixels.get_unchecked_mut(line_start + cx) = bg_u32;
                                 }
                             }
                         }
@@ -444,37 +404,43 @@ impl TextBuffer {
 
             let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
 
-            let (f_r, f_g, f_b, b_r, b_g, b_b) = if is_selected {
-                if let Some((efr, efg, efb, ebr, ebg, ebb)) = explicit_sel_colors {
-                    (efr, efg, efb, ebr, ebg, ebb)
+            let (fg_u32, bg_u32) = if is_selected {
+                if let Some((sel_fg_u32, sel_bg_u32)) = explicit_sel_colors {
+                    (sel_fg_u32, sel_bg_u32)
                 } else {
                     // Invert fallback - handle transparent colors
                     let bg_idx = bg as usize;
                     let fg_idx = fg as usize;
 
-                    let (f_r, f_g, f_b) = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { (0, 0, 0) };
-
-                    let (b_r, b_g, b_b) = if fg_idx < palette_cache.len() {
+                    let fg_u32 = if bg_idx < palette_cache.len() {
+                        palette_cache[bg_idx]
+                    } else {
+                        Palette::rgb_to_rgba_u32(0, 0, 0)
+                    };
+                    let bg_u32 = if fg_idx < palette_cache.len() {
                         palette_cache[fg_idx]
                     } else {
-                        (255, 255, 255)
+                        Palette::rgb_to_rgba_u32(255, 255, 255)
                     };
 
-                    (f_r, f_g, f_b, b_r, b_g, b_b)
+                    (fg_u32, bg_u32)
                 }
             } else {
                 let fg_idx = fg as usize;
                 let bg_idx = bg as usize;
 
-                let (f_r, f_g, f_b) = if fg_idx < palette_cache.len() {
+                let fg_u32 = if fg_idx < palette_cache.len() {
                     palette_cache[fg_idx]
                 } else {
-                    (255, 255, 255)
+                    Palette::rgb_to_rgba_u32(255, 255, 255)
+                };
+                let bg_u32 = if bg_idx < palette_cache.len() {
+                    palette_cache[bg_idx]
+                } else {
+                    Palette::rgb_to_rgba_u32(0, 0, 0)
                 };
 
-                let (b_r, b_g, b_b) = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { (0, 0, 0) };
-
-                (f_r, f_g, f_b, b_r, b_g, b_b)
+                (fg_u32, bg_u32)
             };
 
             let cell_pixel_w = font_size.width;
@@ -485,20 +451,9 @@ impl TextBuffer {
             // Background fill first
             unsafe {
                 for cy in 0..cell_pixel_h {
-                    let line_start = ((base_pixel_y + cy) * line_bytes + base_pixel_x * 4) as usize;
-                    if line_start >= pixels.len() {
-                        break;
-                    }
-                    let mut o = line_start;
-                    for _cx in 0..cell_pixel_w {
-                        if o + 3 >= pixels.len() {
-                            break;
-                        }
-                        *pixels.get_unchecked_mut(o) = b_r;
-                        *pixels.get_unchecked_mut(o + 1) = b_g;
-                        *pixels.get_unchecked_mut(o + 2) = b_b;
-                        *pixels.get_unchecked_mut(o + 3) = 0xFF;
-                        o += 4;
+                    let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
+                    for cx in 0..cell_pixel_w as usize {
+                        *pixels.get_unchecked_mut(line_start + cx) = bg_u32;
                     }
                 }
             }
@@ -524,21 +479,12 @@ impl TextBuffer {
                                 continue;
                             }
 
-                            let row = &glyph.bitmap.pixels[source_y];
-                            let line_start = ((base_pixel_y + cy) * line_bytes + base_pixel_x * 4) as usize;
-                            if line_start >= pixels.len() {
-                                break;
-                            }
+                            let row = glyph.bitmap.pixels.get_unchecked(source_y);
+                            let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
 
-                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) {
-                                if row[cx as usize] {
-                                    let o = line_start + (cx * 4) as usize;
-                                    if o + 3 >= pixels.len() {
-                                        break;
-                                    }
-                                    *pixels.get_unchecked_mut(o) = f_r;
-                                    *pixels.get_unchecked_mut(o + 1) = f_g;
-                                    *pixels.get_unchecked_mut(o + 2) = f_b;
+                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) as usize {
+                                if *row.get_unchecked(cx) {
+                                    *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                                 }
                             }
                         }
@@ -548,22 +494,14 @@ impl TextBuffer {
                 // Normal height rendering (including non-double-height chars in double-height lines)
                 if let Some(glyph) = font.get_glyph(render_ch.ch) {
                     let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
-                    for cy in 0..max_cy {
-                        let row = &glyph.bitmap.pixels[cy];
-                        let line_start = ((base_pixel_y + cy as i32) * line_bytes + base_pixel_x * 4) as usize;
-                        if line_start >= pixels.len() {
-                            break;
-                        }
-                        unsafe {
-                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) {
-                                if row[cx as usize] {
-                                    let o = line_start + (cx * 4) as usize;
-                                    if o + 3 >= pixels.len() {
-                                        break;
-                                    }
-                                    *pixels.get_unchecked_mut(o) = f_r;
-                                    *pixels.get_unchecked_mut(o + 1) = f_g;
-                                    *pixels.get_unchecked_mut(o + 2) = f_b;
+                    unsafe {
+                        for cy in 0..max_cy {
+                            let row = glyph.bitmap.pixels.get_unchecked(cy);
+                            let line_start = ((base_pixel_y + cy as i32) * line_width + base_pixel_x) as usize;
+
+                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) as usize {
+                                if *row.get_unchecked(cx) {
+                                    *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                                 }
                             }
                         }
@@ -580,59 +518,31 @@ impl TextBuffer {
                     } else {
                         vec![cell_pixel_h - 1]
                     };
-                    for ul_y in lines {
-                        if ul_y >= 0 && ul_y < cell_pixel_h {
-                            unsafe {
-                                let line_start = ((base_pixel_y + ul_y) * line_bytes + base_pixel_x * 4) as usize;
-                                if line_start >= pixels.len() {
-                                    continue;
-                                }
-                                let mut o = line_start;
-                                for _cx in 0..cell_pixel_w {
-                                    if o + 3 >= pixels.len() {
-                                        break;
-                                    }
-                                    *pixels.get_unchecked_mut(o) = f_r;
-                                    *pixels.get_unchecked_mut(o + 1) = f_g;
-                                    *pixels.get_unchecked_mut(o + 2) = f_b;
-                                    o += 4;
+                    unsafe {
+                        for ul_y in lines {
+                            if ul_y >= 0 && ul_y < cell_pixel_h {
+                                let line_start = ((base_pixel_y + ul_y) * line_width + base_pixel_x) as usize;
+                                for cx in 0..cell_pixel_w as usize {
+                                    *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                                 }
                             }
                         }
                     }
                 }
                 if ch.attribute.is_overlined() {
+                    let line_start = (base_pixel_y * line_width + base_pixel_x) as usize;
                     unsafe {
-                        let line_start = (base_pixel_y * line_bytes + base_pixel_x * 4) as usize;
-                        if line_start < pixels.len() {
-                            let mut o = line_start;
-                            for _cx in 0..cell_pixel_w {
-                                if o + 3 >= pixels.len() {
-                                    break;
-                                }
-                                *pixels.get_unchecked_mut(o) = f_r;
-                                *pixels.get_unchecked_mut(o + 1) = f_g;
-                                *pixels.get_unchecked_mut(o + 2) = f_b;
-                                o += 4;
-                            }
+                        for cx in 0..cell_pixel_w as usize {
+                            *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                         }
                     }
                 }
                 if ch.attribute.is_crossed_out() {
                     let mid_y = base_pixel_y + cell_pixel_h / 2;
+                    let line_start = (mid_y * line_width + base_pixel_x) as usize;
                     unsafe {
-                        let line_start = (mid_y * line_bytes + base_pixel_x * 4) as usize;
-                        if line_start < pixels.len() {
-                            let mut o = line_start;
-                            for _cx in 0..cell_pixel_w {
-                                if o + 3 >= pixels.len() {
-                                    break;
-                                }
-                                *pixels.get_unchecked_mut(o) = f_r;
-                                *pixels.get_unchecked_mut(o + 1) = f_g;
-                                *pixels.get_unchecked_mut(o + 2) = f_b;
-                                o += 4;
-                            }
+                        for cx in 0..cell_pixel_w as usize {
+                            *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                         }
                     }
                 }
@@ -648,7 +558,7 @@ impl TextBuffer {
         }
     }
 
-    fn render_sixel_overlay(&self, pixels: &mut [u8], font_size: Size, rect: Rectangle, _px_width: i32, px_height: i32, line_bytes: i32) {
+    fn render_sixel_overlay(&self, pixels: &mut [u32], font_size: Size, rect: Rectangle, line_width: i32, px_height: i32) {
         if self.layers.is_empty() {
             return;
         }
@@ -686,53 +596,75 @@ impl TextBuffer {
                 let dest_y_px = sy.max(0) * font_dims.height;
 
                 // Calculate how many pixels to copy
-                let sixel_line_bytes = (sixel.get_width() * 4) as usize;
                 let max_y = (dest_y_px + sixel.get_height() - skip_y_px).min(px_height);
-                let visible_width = (sixel.get_width() - skip_x_px).min(line_bytes / 4 - dest_x_px);
+                let visible_width = (sixel.get_width() - skip_x_px).min(line_width - dest_x_px);
 
                 if visible_width <= 0 {
                     continue;
                 }
 
-                let mut sixel_line = (skip_y_px) as usize;
+                let mut sixel_line = skip_y_px as usize;
+
+                // Sixel data as u32 slice
+                let sixel_u32 = unsafe { std::slice::from_raw_parts(sixel.picture_data.as_ptr().cast::<u32>(), sixel.picture_data.len() / 4) };
+                let sixel_line_width = sixel.get_width() as usize;
+                let line_width_usize = line_width as usize;
+
+                // Pre-compute limits for safe unchecked access
+                let pixels_len = pixels.len();
+                let sixel_len = sixel_u32.len();
 
                 for py in dest_y_px..max_y {
-                    let dest_line_start = (py * line_bytes) as usize;
-                    let src_line_start = sixel_line * sixel_line_bytes;
+                    let dest_line_start = py as usize * line_width_usize;
+                    let src_line_start = sixel_line * sixel_line_width;
 
                     // Bounds check before the inner loop
-                    if src_line_start >= sixel.picture_data.len() {
+                    if src_line_start >= sixel_len {
                         break;
                     }
 
-                    // Copy pixels with alpha blending
-                    for px in 0..visible_width {
-                        let dest_offset = dest_line_start + ((dest_x_px + px) * 4) as usize;
-                        let src_offset = src_line_start + ((skip_x_px + px) * 4) as usize;
+                    // Copy pixels with alpha blending - using unchecked access
+                    unsafe {
+                        for px in 0..visible_width as usize {
+                            let dest_idx = dest_line_start + dest_x_px as usize + px;
+                            let src_idx = src_line_start + skip_x_px as usize + px;
 
-                        // Bounds check for each pixel
-                        if src_offset + 4 > sixel.picture_data.len() || dest_offset + 4 > pixels.len() {
-                            break;
-                        }
+                            // Bounds check for each pixel
+                            if src_idx >= sixel_len || dest_idx >= pixels_len {
+                                break;
+                            }
 
-                        let src_alpha = sixel.picture_data[src_offset + 3];
+                            let src_pixel = *sixel_u32.get_unchecked(src_idx);
+                            // Alpha is in the high byte (RGBA format: 0xAABBGGRR in little-endian)
+                            let src_alpha = (src_pixel >> 24) as u8;
 
-                        // Only blend if alpha > 0 (visible pixel)
-                        if src_alpha > 0 {
-                            if src_alpha == 255 {
-                                // Fully opaque - direct copy
-                                pixels[dest_offset..dest_offset + 4].copy_from_slice(&sixel.picture_data[src_offset..src_offset + 4]);
-                            } else {
-                                // Alpha blending
-                                let alpha = src_alpha as f32 / 255.0;
-                                let inv_alpha = 1.0 - alpha;
+                            // Only blend if alpha > 0 (visible pixel)
+                            if src_alpha > 0 {
+                                if src_alpha == 255 {
+                                    // Fully opaque - direct u32 copy (fastest path)
+                                    *pixels.get_unchecked_mut(dest_idx) = src_pixel;
+                                } else {
+                                    // Alpha blending using u32 operations
+                                    let dest_pixel = *pixels.get_unchecked(dest_idx);
+                                    let alpha = src_alpha as u32;
+                                    let inv_alpha = 255 - alpha;
 
-                                pixels[dest_offset] = ((sixel.picture_data[src_offset] as f32 * alpha) + (pixels[dest_offset] as f32 * inv_alpha)) as u8;
-                                pixels[dest_offset + 1] =
-                                    ((sixel.picture_data[src_offset + 1] as f32 * alpha) + (pixels[dest_offset + 1] as f32 * inv_alpha)) as u8;
-                                pixels[dest_offset + 2] =
-                                    ((sixel.picture_data[src_offset + 2] as f32 * alpha) + (pixels[dest_offset + 2] as f32 * inv_alpha)) as u8;
-                                pixels[dest_offset + 3] = 255; // Keep destination fully opaque
+                                    // Extract RGBA components
+                                    let src_r = (src_pixel & 0xFF) as u32;
+                                    let src_g = ((src_pixel >> 8) & 0xFF) as u32;
+                                    let src_b = ((src_pixel >> 16) & 0xFF) as u32;
+
+                                    let dst_r = (dest_pixel & 0xFF) as u32;
+                                    let dst_g = ((dest_pixel >> 8) & 0xFF) as u32;
+                                    let dst_b = ((dest_pixel >> 16) & 0xFF) as u32;
+
+                                    // Blend
+                                    let r = (src_r * alpha + dst_r * inv_alpha) / 255;
+                                    let g = (src_g * alpha + dst_g * inv_alpha) / 255;
+                                    let b = (src_b * alpha + dst_b * inv_alpha) / 255;
+
+                                    *pixels.get_unchecked_mut(dest_idx) = r | (g << 8) | (b << 16) | 0xFF000000;
+                                }
                             }
                         }
                     }
