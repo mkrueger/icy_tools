@@ -66,7 +66,7 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
         .align_y(Alignment::Center),
         row![
             left_label(fl!(LANGUAGE_LOADER, "settings-integer-scaling-label")),
-            checkbox("", s.use_pixel_perfect_scaling)
+            checkbox(s.use_pixel_perfect_scaling)
                 .on_toggle(MonitorSettingsMessage::PixelPerfectScalingChanged)
                 .size(CHECKBOX_SIZE)
                 .text_size(TEXT_SIZE_NORMAL)
@@ -75,7 +75,7 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
         .align_y(Alignment::Center),
         row![
             left_label(fl!(LANGUAGE_LOADER, "settings-bilinear-filtering-label")),
-            checkbox("", s.use_bilinear_filtering)
+            checkbox(s.use_bilinear_filtering)
                 .on_toggle(MonitorSettingsMessage::BilinearFilteringChanged)
                 .size(CHECKBOX_SIZE)
                 .text_size(TEXT_SIZE_NORMAL)
@@ -305,7 +305,7 @@ fn toggle_row(label: &str, value: bool, msg: MonitorSettingsMessage) -> Element<
     let label_owned = label.to_string();
     row![
         left_label(label_owned),
-        checkbox("", value)
+        checkbox(value)
             .on_toggle(move |new_val| if new_val {
                 msg.clone()
             } else {

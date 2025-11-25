@@ -65,7 +65,7 @@ impl SettingsDialogState {
                 // Console Beep
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-console-beep-checkbox")),
-                    checkbox("", console_beep)
+                    checkbox(console_beep)
                         .on_toggle({
                             let temp_options = self.temp_options.clone();
                             move |checked| {

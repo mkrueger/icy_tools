@@ -384,7 +384,7 @@ impl super::DialingDirectoryState {
             } else if addr.terminal_type == TerminalEmulation::ATAscii {
                 // ATAscii: Provide XEP80 module checkbox to choose 80 vs 40 column mode.
                 let is_xep80 = matches!(addr.screen_mode, ScreenMode::Atascii(80));
-                let toggle = iced::widget::checkbox("", is_xep80)
+                let toggle = iced::widget::checkbox(is_xep80)
                     .on_toggle(move |checked| {
                         let width = if checked { 80 } else { 40 };
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -450,7 +450,7 @@ impl super::DialingDirectoryState {
                 );
 
                 // IGS (Interactive Graphics System) checkbox
-                let igs_toggle = iced::widget::checkbox("", current_igs)
+                let igs_toggle = iced::widget::checkbox(current_igs)
                     .on_toggle(move |checked| {
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {
                             id,

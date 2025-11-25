@@ -22,7 +22,7 @@ impl SettingsDialogState {
                     // Enabled checkbox
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "settings-enabled-checkbox")),
-                        checkbox("", iemsi.autologin)
+                        checkbox(iemsi.autologin)
                             .on_toggle({
                                 let temp_options = self.temp_options.clone();
                                 move |checked| {

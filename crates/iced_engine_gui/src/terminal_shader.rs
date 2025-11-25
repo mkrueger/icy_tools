@@ -65,11 +65,11 @@ pub struct TerminalShaderRenderer {
 static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static mut FILTER_MODE: iced::wgpu::FilterMode = iced::wgpu::FilterMode::Linear;
 
-impl shader::Primitive for TerminalShader {
-    type Renderer = TerminalShaderRenderer;
-
-    fn initialize(&self, device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self::Renderer {
+impl shader::Pipeline for TerminalShaderRenderer {
+    fn new(device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
         let renderer_id = RENDERER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let filter_mode = iced::wgpu::FilterMode::Linear;
+        unsafe { FILTER_MODE = filter_mode };
 
         // ...existing shader and pipeline creation code unchanged...
         let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
@@ -160,12 +160,6 @@ impl shader::Primitive for TerminalShader {
             cache: None,
         });
 
-        let filter_mode = if self.monitor_settings.use_bilinear_filtering {
-            iced::wgpu::FilterMode::Linear
-        } else {
-            iced::wgpu::FilterMode::Nearest
-        };
-        unsafe { FILTER_MODE = filter_mode };
         let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
             label: Some(&format!("Terminal Texture Sampler {}", renderer_id)),
             address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
@@ -181,13 +175,17 @@ impl shader::Primitive for TerminalShader {
             pipeline,
             bind_group_layout,
             sampler,
-            instances: HashMap::new(), // NEW: empty map of instances
+            instances: HashMap::new(),
         }
     }
+}
+
+impl shader::Primitive for TerminalShader {
+    type Pipeline = TerminalShaderRenderer;
 
     fn prepare(
         &self,
-        renderer: &mut Self::Renderer,
+        pipeline: &mut Self::Pipeline,
         device: &iced::wgpu::Device,
         queue: &iced::wgpu::Queue,
         bounds: &iced::Rectangle,
@@ -217,12 +215,12 @@ impl shader::Primitive for TerminalShader {
                 ..Default::default()
             });
 
-            renderer.sampler = new_sampler;
+            pipeline.sampler = new_sampler;
             // Update ALL existing instances' bind groups with the new sampler
-            for (_instance_id, resources) in renderer.instances.iter_mut() {
+            for (_instance_id, resources) in pipeline.instances.iter_mut() {
                 let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                     label: Some(&format!("Terminal BindGroup Instance {}", _instance_id)),
-                    layout: &renderer.bind_group_layout,
+                    layout: &pipeline.bind_group_layout,
                     entries: &[
                         iced::wgpu::BindGroupEntry {
                             binding: 0,
@@ -230,7 +228,7 @@ impl shader::Primitive for TerminalShader {
                         },
                         iced::wgpu::BindGroupEntry {
                             binding: 1,
-                            resource: iced::wgpu::BindingResource::Sampler(&renderer.sampler), // Use new sampler
+                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler), // Use new sampler
                         },
                         iced::wgpu::BindGroupEntry {
                             binding: 2,
@@ -248,7 +246,7 @@ impl shader::Primitive for TerminalShader {
 
         if let Ok(mut pending) = PENDING_INSTANCE_REMOVALS.lock() {
             for id in pending.drain(..) {
-                renderer.instances.remove(&id);
+                pipeline.instances.remove(&id);
             }
         }
 
@@ -256,7 +254,7 @@ impl shader::Primitive for TerminalShader {
         let (w, h) = self.terminal_size;
 
         // Get or create per-instance resources
-        let resources = renderer.instances.entry(id).or_insert_with(|| {
+        let resources = pipeline.instances.entry(id).or_insert_with(|| {
             // Create per-instance resources
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
                 label: Some(&format!("Terminal Uniforms Instance {}", id)),
@@ -291,7 +289,7 @@ impl shader::Primitive for TerminalShader {
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                 label: Some(&format!("Terminal BindGroup Instance {}", id)),
-                layout: &renderer.bind_group_layout,
+                layout: &pipeline.bind_group_layout,
                 entries: &[
                     iced::wgpu::BindGroupEntry {
                         binding: 0,
@@ -299,7 +297,7 @@ impl shader::Primitive for TerminalShader {
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: iced::wgpu::BindingResource::Sampler(&renderer.sampler),
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 2,
@@ -343,7 +341,7 @@ impl shader::Primitive for TerminalShader {
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                 label: Some(&format!("Terminal BindGroup Instance {}", id)),
-                layout: &renderer.bind_group_layout,
+                layout: &pipeline.bind_group_layout,
                 entries: &[
                     iced::wgpu::BindGroupEntry {
                         binding: 0,
@@ -351,7 +349,7 @@ impl shader::Primitive for TerminalShader {
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: iced::wgpu::BindingResource::Sampler(&renderer.sampler),
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 2,
@@ -493,11 +491,11 @@ impl shader::Primitive for TerminalShader {
         queue.write_buffer(&resources.monitor_color_buffer, 0, color_bytes);
     }
 
-    fn render(&self, renderer: &Self::Renderer, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         encoder.push_debug_group(&format!("Terminal Instance {} Render", self.instance_id));
 
         // Get this instance's resources
-        let Some(resources) = renderer.instances.get(&self.instance_id) else {
+        let Some(resources) = pipeline.instances.get(&self.instance_id) else {
             encoder.pop_debug_group();
             return;
         };
@@ -553,7 +551,7 @@ impl shader::Primitive for TerminalShader {
         if scissor_width > 0 && scissor_height > 0 && vp_w > 0.0 && vp_h > 0.0 {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             render_pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
-            render_pass.set_pipeline(&renderer.pipeline);
+            render_pass.set_pipeline(&pipeline.pipeline);
             render_pass.set_bind_group(0, &resources.bind_group, &[]); // Use instance-specific bind group
             render_pass.draw(0..3, 0..1);
         }
