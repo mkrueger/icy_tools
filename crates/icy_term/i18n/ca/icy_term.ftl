@@ -59,6 +59,7 @@ settings-paths-header = Camins del sistema
 settings-paths-config-dir = Directori de configuració
 settings-paths-config-file = Fitxer de configuració
 settings-paths-phonebook = Agenda
+settings-paths-log-file = Fitxer de registre
 settings-paths-editable-header = Camins d'usuari
 settings-paths-download-dir = Descàrregues
 settings-paths-capture-path = Camí de captura

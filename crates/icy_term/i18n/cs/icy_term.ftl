@@ -59,6 +59,7 @@ settings-paths-header = Systémové cesty
 settings-paths-config-dir = Adresář konfigurace
 settings-paths-config-file = Konfigurační soubor
 settings-paths-phonebook = Telefonní seznam
+settings-paths-log-file = Soubor protokolu
 settings-paths-editable-header = Uživatelské cesty
 settings-paths-download-dir = Stahování
 settings-paths-capture-path = Cesta pro záznam

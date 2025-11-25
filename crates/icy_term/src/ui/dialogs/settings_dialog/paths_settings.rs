@@ -20,7 +20,11 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
         .unwrap_or_else(|| "N/A".to_string());
 
     let phonebook_file = directories::ProjectDirs::from("com", "GitHub", "icy_term")
-        .map(|p| p.config_dir().join("addresses.json").display().to_string())
+        .map(|p| p.config_dir().join("phonebook.toml").display().to_string())
+        .unwrap_or_else(|| "N/A".to_string());
+
+    let log_file = directories::ProjectDirs::from("com", "GitHub", "icy_term")
+        .map(|p| p.config_dir().join("icy_term.log").display().to_string())
         .unwrap_or_else(|| "N/A".to_string());
 
     let content = column![
@@ -48,6 +52,16 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-phonebook")),
                     text_input("", &phonebook_file).size(14).width(Length::Fill),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                // Log file (read-only with open button)
+                row![
+                    left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-log-file")),
+                    text_input("", &log_file).size(14).width(Length::Fill),
+                    button(text("Open".to_string()).size(14).wrapping(text::Wrapping::None))
+                        .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::OpenLogFile))
+                        .padding([4, 8]),
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),

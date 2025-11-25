@@ -59,6 +59,7 @@ settings-paths-header = Chemins système
 settings-paths-config-dir = Répertoire de configuration
 settings-paths-config-file = Fichier de configuration
 settings-paths-phonebook = Annuaire
+settings-paths-log-file = Fichier journal
 settings-paths-editable-header = Chemins utilisateur
 settings-paths-download-dir = Téléchargements
 settings-paths-capture-path = Chemin de capture

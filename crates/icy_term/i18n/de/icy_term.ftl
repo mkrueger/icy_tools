@@ -60,6 +60,7 @@ settings-paths-header = Systempfade
 settings-paths-config-dir = Konfigurationsverzeichnis
 settings-paths-config-file = Konfigurationsdatei
 settings-paths-phonebook = Telefonbuch
+settings-paths-log-file = Protokolldatei
 settings-paths-editable-header = Benutzerpfade
 settings-paths-download-dir = Downloads
 settings-paths-capture-path = Aufnahmepfad

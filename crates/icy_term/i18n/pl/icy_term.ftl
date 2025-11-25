@@ -59,6 +59,7 @@ settings-paths-header = Ścieżki systemowe
 settings-paths-config-dir = Katalog konfiguracji
 settings-paths-config-file = Plik konfiguracyjny
 settings-paths-phonebook = Książka telefoniczna
+settings-paths-log-file = Plik dziennika
 settings-paths-editable-header = Ścieżki użytkownika
 settings-paths-download-dir = Pobrane
 settings-paths-capture-path = Ścieżka przechwytywania

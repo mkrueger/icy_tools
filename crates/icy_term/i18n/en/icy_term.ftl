@@ -59,6 +59,7 @@ settings-paths-header = System Paths
 settings-paths-config-dir = Config directory
 settings-paths-config-file = Config file
 settings-paths-phonebook = Phonebook
+settings-paths-log-file = Log file
 settings-paths-editable-header = User Paths
 settings-paths-download-dir = Downloads
 settings-paths-capture-path = Capture path

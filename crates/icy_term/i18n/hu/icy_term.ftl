@@ -59,6 +59,7 @@ settings-paths-header = Rendszerútvonalak
 settings-paths-config-dir = Konfigurációs könyvtár
 settings-paths-config-file = Konfigurációs fájl
 settings-paths-phonebook = Telefonkönyv
+settings-paths-log-file = Naplófájl
 settings-paths-editable-header = Felhasználói útvonalak
 settings-paths-download-dir = Letöltések
 settings-paths-capture-path = Rögzítési útvonal

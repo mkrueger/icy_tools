@@ -54,6 +54,7 @@ pub enum SettingsMsg {
     ResetCategory(SettingsCategory),
     MonitorSettings(MonitorSettingsMessage),
     OpenSettingsFolder,
+    OpenLogFile,
     SelectModem(usize),
     AddModem,
     RemoveModem(usize),
@@ -124,6 +125,13 @@ impl SettingsDialogState {
             SettingsMsg::OpenSettingsFolder => {
                 if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
                     let _ = open::that(proj_dirs.config_dir());
+                }
+                None
+            }
+            SettingsMsg::OpenLogFile => {
+                if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
+                    let log_file = proj_dirs.config_dir().join("icy_term.log");
+                    let _ = open::that(log_file);
                 }
                 None
             }
