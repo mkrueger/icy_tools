@@ -1,5 +1,4 @@
 use crate::ui::{MainWindowMode, Message};
-use crate::util::Rng;
 use crate::{Address, AddressBook};
 use i18n_embed_fl::fl;
 use iced::{
@@ -323,10 +322,9 @@ impl DialingDirectoryState {
 
             DialingDirectoryMsg::GeneratePassword => {
                 // Generate a random password
-                let mut rng = Rng::default();
                 let mut pw = String::new();
                 for _ in 0..16 {
-                    pw.push(unsafe { char::from_u32_unchecked(rng.gen_range(b'0'..=b'z')) });
+                    pw.push(unsafe { char::from_u32_unchecked(fastrand::u8(b'0'..=b'z') as u32) });
                 }
                 let mut lock = self.addresses.lock().unwrap();
                 let addr = if let Some(id) = self.selected_bbs {

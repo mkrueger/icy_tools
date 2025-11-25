@@ -2,7 +2,7 @@ use core::panic;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
     vec,
 };
 
@@ -220,7 +220,7 @@ impl MainWindow {
                     terminal_type: address.terminal_type,
                     baud_emulation: address.baud_emulation,
                     window_size: (80, 25),
-                    timeout: web_time::Duration::from_secs(30),
+                    timeout: Duration::from_secs(30),
                     user_name: if address.user_name.is_empty() {
                         None
                     } else {

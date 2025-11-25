@@ -12,7 +12,7 @@ minimal = []
 
 [dependencies]
 lazy_static = { workspace = true }
-base64 = "0.22.0"
+base64 =  { workspace = true }
 log = { workspace = true }
 rfind_url = "0.4.4"
 chrono = { workspace = true }
@@ -26,11 +26,8 @@ bstr = { workspace = true }
 codepages = { workspace = true }
 rayon = { workspace = true }
 icy_net = { workspace = true }
+parking_lot = { workspace = true }
 
-i18n-embed = { workspace = true }
-i18n-embed-fl = { workspace = true }
-rust-embed = { workspace = true }
-once_cell = { workspace = true }
 icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
 icy_parser_core = { workspace = true }

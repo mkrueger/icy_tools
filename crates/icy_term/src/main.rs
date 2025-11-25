@@ -15,12 +15,12 @@
 use std::{
     path::PathBuf,
     sync::{Arc, atomic::AtomicU16},
+    time::Instant,
 };
 
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 //use ui::MainWindow;
-use web_time::Instant;
 pub type TerminalResult<T> = Res<T>;
 use log4rs::{
     append::{
@@ -74,7 +74,7 @@ struct Localizations;
 
 use once_cell::sync::Lazy;
 
-use crate::{ui::WindowManager, util::Rng};
+use crate::ui::WindowManager;
 static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
     let loader = i18n_embed::fluent::fluent_language_loader!();
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
@@ -178,9 +178,6 @@ fn main() {
     } else {
         None
     };
-
-    let mut rng = Rng::default();
-    rng.next();
 
     log::info!("Starting iCY TERM {}", *VERSION);
     icy_net::websocket::init_websocket_providers();

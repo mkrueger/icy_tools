@@ -1,6 +1,3 @@
-pub mod rng;
-pub use rng::*;
-
 pub mod music;
 pub use music::*;
 

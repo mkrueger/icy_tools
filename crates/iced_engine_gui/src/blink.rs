@@ -1,5 +1,6 @@
+use std::time::Instant;
+
 use once_cell::sync::Lazy;
-use web_time::Instant;
 
 static BLINK_START: Lazy<Instant> = Lazy::new(Instant::now);
 

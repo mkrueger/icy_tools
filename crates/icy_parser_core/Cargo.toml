@@ -14,12 +14,12 @@ default = []
 
 [dependencies]
 log = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 memchr = "2.7"
 lazy_static = { workspace = true }
 serde = { workspace = true }
 bitflags = { workspace = true }
-fastrand = "2.3.0"
+fastrand = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["html_reports"] }

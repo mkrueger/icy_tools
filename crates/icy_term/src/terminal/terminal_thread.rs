@@ -23,9 +23,9 @@ use log::error;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
-use web_time::{Duration, Instant};
 
 /// Minimum pause duration in milliseconds to display in status bar
 const MIN_PAUSE_DISPLAY_MS: u64 = 500;

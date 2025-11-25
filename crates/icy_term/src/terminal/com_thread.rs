@@ -1,12 +1,11 @@
 #![allow(unsafe_code, clippy::wildcard_imports)]
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Instant};
 
 use icy_net::Connection;
 use tokio::sync::mpsc;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
-use web_time::Instant;
 
 use super::connect::SendData;
 

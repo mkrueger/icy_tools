@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::mpsc::{Receiver, SendError, Sender, TryRecvError, channel},
+    time::{Duration, Instant},
 };
 
 use once_cell::sync::Lazy;
@@ -14,12 +15,9 @@ use rodio::{
     Source,
     source::{Function, SignalGenerator, SineWave},
 };
-use web_time::{Duration, Instant};
 
 use crate::DialTone;
 use crate::TerminalResult;
-
-use super::Rng;
 
 // DTMF frequency pairs (low freq, high freq) for each key
 static DTMF_FREQUENCIES: Lazy<HashMap<char, (f32, f32)>> = Lazy::new(|| {
@@ -65,7 +63,6 @@ pub struct SoundThread {
     rx: Receiver<SoundData>,
     tx: Sender<SoundData>,
     is_playing: bool,
-    rng: Rng,
     pub stop_button: u32,
     last_stop_cycle: Instant,
     restart_count: usize,
@@ -73,15 +70,13 @@ pub struct SoundThread {
 
 impl SoundThread {
     pub fn new() -> Self {
-        let mut rng = Rng::default();
-        let stop_button = rng.gen_range(0..6);
+        let stop_button = fastrand::u32(0..6);
         let (tx, rx) = channel::<SoundData>();
         let mut res = SoundThread {
             rx,
             tx,
             is_playing: false,
             stop_button,
-            rng,
             last_stop_cycle: Instant::now(),
             restart_count: 0,
         };
@@ -105,7 +100,7 @@ impl SoundThread {
             return Ok(());
         }
         if self.last_stop_cycle.elapsed().as_secs() > 5 {
-            self.stop_button = self.rng.gen_range(0..6);
+            self.stop_button = fastrand::u32(0..6);
             self.last_stop_cycle = Instant::now();
         }
         loop {

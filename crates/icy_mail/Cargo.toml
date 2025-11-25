@@ -32,7 +32,7 @@ toml = { workspace = true }
 image = { workspace = true  }
 
 lazy_static = { workspace = true }
-notify = "8.2.0"
+notify = { workspace = true }
 human_bytes = { version = "0.4", default-features = false }
 
 clipboard-rs = "0.3.0"
@@ -67,8 +67,8 @@ webpki-roots = "1.0.3"
 getrandom =  { version = "0.3.3" }
 
 directories = { workspace = true }
-open = "5.3.2"
-rfd = "0.15.4"
+open =  { workspace = true }
+rfd =  { workspace = true }
 
 tracing-subscriber = "0.3"
 async-recursion = "1.1.1"
