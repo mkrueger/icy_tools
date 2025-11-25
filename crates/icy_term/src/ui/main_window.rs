@@ -857,6 +857,42 @@ impl MainWindow {
                 }
                 Task::none()
             }
+
+            Message::StartSelection(sel) => {
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    let _ = screen.set_selection(sel);
+                }
+                Task::none()
+            }
+
+            Message::UpdateSelection(pos) => {
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    if let Some(mut sel) = screen.get_selection().clone() {
+                        if !sel.locked {
+                            sel.lead = pos;
+                            let _ = screen.set_selection(sel);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::EndSelection => {
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    if let Some(mut sel) = screen.get_selection().clone() {
+                        sel.locked = true;
+                        let _ = screen.set_selection(sel);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ClearSelection => {
+                if let Ok(mut screen) = self.terminal_window.terminal.screen.lock() {
+                    let _ = screen.clear_selection();
+                }
+                Task::none()
+            }
         }
     }
 

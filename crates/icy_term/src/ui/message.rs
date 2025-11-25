@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use icy_engine::MouseEvent;
+use icy_engine::{MouseEvent, Position, Selection};
 use icy_net::protocol::TransferState;
 use icy_parser_core::BaudEmulation;
 
@@ -71,6 +71,12 @@ pub enum Message {
     McpCommand(Arc<crate::mcp::McpCommand>),
     ScrollbarHovered(bool), // Scrollbar hover state changed
     CursorLeftWindow,       // Cursor left the window
+
+    // Selection messages
+    StartSelection(Selection),
+    UpdateSelection(Position),
+    EndSelection,
+    ClearSelection,
 
     FocusNext,
     FocusPrevious,

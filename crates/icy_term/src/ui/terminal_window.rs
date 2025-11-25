@@ -58,6 +58,10 @@ impl TerminalWindow {
             iced_engine_gui::Message::RipCommand(clear_screen, cmd) => Message::RipCommand(clear_screen, cmd),
             iced_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
             iced_engine_gui::Message::ScrollViewport(dx, dy) => Message::ScrollViewport(dx, dy),
+            iced_engine_gui::Message::StartSelection(sel) => Message::StartSelection(sel),
+            iced_engine_gui::Message::UpdateSelection(pos) => Message::UpdateSelection(pos),
+            iced_engine_gui::Message::EndSelection => Message::EndSelection,
+            iced_engine_gui::Message::ClearSelection => Message::ClearSelection,
         });
 
         // Get scrollback info from Box<dyn Screen>

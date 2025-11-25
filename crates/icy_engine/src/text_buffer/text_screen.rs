@@ -204,11 +204,13 @@ impl Screen for TextScreen {
 
     fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
         self.selection_opt = Some(sel);
+        self.mark_dirty();
         Ok(())
     }
 
     fn clear_selection(&mut self) -> EngineResult<()> {
         self.selection_opt = None;
+        self.mark_dirty();
         Ok(())
     }
 

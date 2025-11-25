@@ -148,24 +148,12 @@ impl<'a> CRTShaderProgram<'a> {
                             }
                         }
 
-                        // Handle dragging for selection - needs mutable access
+                        // Handle dragging for selection - send message instead of direct modification
                         if state.dragging {
                             if let Some(cell) = state.hovered_cell {
                                 if state.last_drag_position != Some(cell) {
                                     state.last_drag_position = Some(cell);
-                                    if let Ok(mut edit_state) = self.term.screen.try_lock() {
-                                        if let Some(mut sel) = edit_state.get_selection().clone() {
-                                            if !sel.locked {
-                                                sel.lead = cell;
-                                                sel.shape = if state.alt_pressed {
-                                                    icy_engine::Shape::Rectangle
-                                                } else {
-                                                    icy_engine::Shape::Lines
-                                                };
-                                                let _ = edit_state.set_selection(sel);
-                                            }
-                                        }
-                                    }
+                                    return Some(iced::widget::Action::publish(Message::UpdateSelection(cell)));
                                 }
                             }
                         }
@@ -220,13 +208,9 @@ impl<'a> CRTShaderProgram<'a> {
                                 if let Some(url) = &state.hovered_link {
                                     return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
                                 } else {
-                                    // Start selection
-                                    if let Ok(mut screen) = self.term.screen.try_lock() {
-                                        // Clear existing selection unless shift is held
-                                        if !state.shift_pressed {
-                                            let _ = screen.clear_selection();
-                                        }
-
+                                    // Start selection - send message instead of direct modification
+                                    // Clear existing selection unless shift is held
+                                    if !state.shift_pressed {
                                         // Create new selection
                                         let mut sel = icy_engine::Selection::new(cell);
                                         sel.shape = if state.alt_pressed {
@@ -235,8 +219,14 @@ impl<'a> CRTShaderProgram<'a> {
                                             icy_engine::Shape::Lines
                                         };
                                         sel.locked = false;
-                                        let _ = screen.set_selection(sel);
 
+                                        state.dragging = true;
+                                        state.drag_anchor = Some(cell);
+                                        state.last_drag_position = Some(cell);
+
+                                        return Some(iced::widget::Action::publish(Message::StartSelection(sel)));
+                                    } else {
+                                        // Shift is held - just update drag state
                                         state.dragging = true;
                                         state.drag_anchor = Some(cell);
                                         state.last_drag_position = Some(cell);
@@ -256,10 +246,8 @@ impl<'a> CRTShaderProgram<'a> {
                             }
                             // Note: Removed middle click paste since Message::Paste doesn't exist
                         } else {
-                            // Clicked outside terminal area - clear selection
-                            if let Ok(mut screen) = self.term.screen.try_lock() {
-                                let _ = screen.clear_selection();
-                            }
+                            // Clicked outside terminal area - send clear selection message
+                            return Some(iced::widget::Action::publish(Message::ClearSelection));
                         }
                     }
                 }
@@ -308,16 +296,11 @@ impl<'a> CRTShaderProgram<'a> {
                         state.dragging = false;
                         state.shift_pressed_during_selection = state.shift_pressed;
 
-                        // Lock the selection
-                        if let Ok(mut screen) = self.term.screen.try_lock() {
-                            if let Some(mut sel) = screen.get_selection().clone() {
-                                sel.locked = true;
-                                let _ = screen.set_selection(sel);
-                            }
-                        }
-
                         state.drag_anchor = None;
                         state.last_drag_position = None;
+
+                        // Send message to lock the selection
+                        return Some(iced::widget::Action::publish(Message::EndSelection));
                     }
                 }
 

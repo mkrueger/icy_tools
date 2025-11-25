@@ -195,7 +195,9 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
                 }
                 pane.last_change_autosave_timer = undo_stack_len;
 
+                println!("Auto-save timer: {}", pane.instant.elapsed().as_secs());
                 if pane.instant.elapsed().as_secs() > 5 {
+                    
                     pane.auto_save_status = undo_stack_len;
                     if let Ok(bytes) = doc.get_bytes(path) {
                         store_auto_save(path, &bytes);

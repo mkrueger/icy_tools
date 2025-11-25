@@ -1,7 +1,7 @@
 #![allow(static_mut_refs)]
 use crate::{MonitorSettings, Terminal, create_crt_shader};
 use iced::Element;
-use icy_engine::MouseEvent;
+use icy_engine::{MouseEvent, Position, Selection};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -13,6 +13,12 @@ pub enum Message {
 
     SendMouseEvent(MouseEvent),
     ScrollViewport(f32, f32), // dx, dy in pixels
+
+    // Selection messages
+    StartSelection(Selection),
+    UpdateSelection(Position),
+    EndSelection,
+    ClearSelection,
 }
 
 pub struct TerminalView<'a> {
