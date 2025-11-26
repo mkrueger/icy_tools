@@ -314,3 +314,14 @@ help-action-about = About
 help-action-help = Help
 
 help-desc-run-script = Execute a Lua script
+help-action-open-serial = Open Serial
+help-desc-open-serial = Open serial port connection
+
+# Open Serial Dialog
+open-serial-dialog-title = Open Serial Port
+open-serial-dialog-device = Device
+open-serial-dialog-baud-rate = Baud Rate
+open-serial-dialog-format = Format
+open-serial-dialog-flow-control = Flow Control
+open-serial-dialog-connect = Connect
+open-serial-dialog-auto-detect = Auto Detect

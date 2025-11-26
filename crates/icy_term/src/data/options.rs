@@ -6,6 +6,7 @@ use std::{
 
 use directories::UserDirs;
 use icy_engine_gui::MonitorSettings;
+use icy_net::serial::Serial;
 use serde::{Deserialize, Serialize};
 
 use crate::{Modem, TerminalResult};
@@ -115,6 +116,9 @@ pub struct Options {
 
     #[serde(default = "default_max_scrollback_lines")]
     pub max_scrollback_lines: usize,
+
+    #[serde(default)]
+    pub serial: Serial,
 }
 
 fn default_max_scrollback_lines() -> usize {
@@ -162,6 +166,7 @@ impl Default for Options {
             capture_path: String::new(),
             download_path: String::new(),
             max_scrollback_lines: 2000,
+            serial: Serial::default(),
         }
     }
 }

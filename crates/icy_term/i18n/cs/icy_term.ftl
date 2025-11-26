@@ -310,3 +310,14 @@ help-action-about = O aplikaci
 help-action-help = Nápověda
 
 help-desc-run-script = Spustit Lua skript
+help-action-open-serial = Sériový port
+help-desc-open-serial = Otevřít připojení sériového portu
+
+# Open Serial Dialog
+open-serial-dialog-title = Otevřít Sériový Port
+open-serial-dialog-device = Zařízení
+open-serial-dialog-baud-rate = Přenosová rychlost
+open-serial-dialog-format = Formát
+open-serial-dialog-flow-control = Řízení toku
+open-serial-dialog-connect = Připojit
+open-serial-dialog-auto-detect = Automatická detekce

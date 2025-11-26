@@ -3,6 +3,7 @@ use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::scripting::ScriptRunner;
+use crate::ui::open_serial_dialog::BAUD_RATES;
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_net::iemsi::EmsiISI;
@@ -13,7 +14,7 @@ use icy_net::{
     modem::{ModemConfiguration, ModemConnection},
     protocol::{Protocol, TransferProtocolType, TransferState},
     raw::RawConnection,
-    serial::Serial,
+    serial::{Serial, SerialConnection},
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
 };
@@ -36,6 +37,8 @@ const MIN_PAUSE_DISPLAY_MS: u64 = 500;
 #[derive(Debug, Clone)]
 pub enum TerminalCommand {
     Connect(ConnectionConfig),
+    OpenSerial(Serial),
+    AutoDetectSerial(Serial),
     Disconnect,
     SendData(Vec<u8>),
     StartUpload(TransferProtocolType, Vec<PathBuf>),
@@ -85,6 +88,10 @@ pub enum TerminalEvent {
     ScriptFinished(Result<(), String>),
     /// Request to quit the application
     Quit,
+    /// Serial baud rate detected
+    SerialBaudDetected(u32),
+    /// Serial auto-detection complete (even if failed)
+    SerialAutoDetectComplete,
 }
 
 #[derive(Debug, Clone)]
@@ -380,6 +387,7 @@ impl TerminalThread {
                                 match conn.poll().await {
                                     Ok(state) => {
                                         if state == ConnectionState::Disconnected {
+                                            log::error!("Poll failed.");
                                             self.disconnect().await;
                                             continue;
                                         }
@@ -418,6 +426,7 @@ impl TerminalThread {
                 // let password = config.password.clone();
 
                 if let Err(e) = self.connect(config).await {
+                    log::error!("{}", e);
                     self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
                     self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                 }
@@ -432,6 +441,18 @@ impl TerminalThread {
                         }
                     }
                 }*/
+            }
+
+            TerminalCommand::OpenSerial(serial) => {
+                if let Err(e) = self.open_serial(serial).await {
+                    log::error!("{}", e);
+                    self.process_data(format!("FAILED.\r\n").as_bytes()).await;
+                    self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
+                }
+            }
+
+            TerminalCommand::AutoDetectSerial(serial) => {
+                self.auto_detect_serial(serial).await;
             }
 
             TerminalCommand::Disconnect => {
@@ -617,6 +638,96 @@ impl TerminalThread {
         self.send_event(TerminalEvent::Connected);
 
         Ok(())
+    }
+
+    async fn open_serial(&mut self, serial: Serial) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.connection.is_some() {
+            self.disconnect().await;
+        }
+
+        self.process_data(format!("Opening serial port {}...\r\n", serial.device).as_bytes()).await;
+
+        let connection: Box<dyn Connection> = Box::new(SerialConnection::open(serial)?);
+
+        self.connection = Some(connection);
+        self.connection_time = Some(Instant::now());
+
+        self.send_event(TerminalEvent::Connected);
+
+        Ok(())
+    }
+
+    async fn auto_detect_serial(&mut self, serial: Serial) {
+        // Disconnect any existing connection first
+        if self.connection.is_some() {
+            self.disconnect().await;
+        }
+
+        self.process_data(format!("Auto-detecting baud rate on {}...\r\n", serial.device).as_bytes())
+            .await;
+
+        // Common baud rates to try, ordered by likelihood
+        let mut detected_baud: Option<u32> = None;
+
+        for &baud_rate in BAUD_RATES.iter().rev() {
+            let mut test_serial = serial.clone();
+            test_serial.baud_rate = baud_rate;
+
+            self.process_data(format!("Trying {} baud...", baud_rate).as_bytes()).await;
+
+            match SerialConnection::open(test_serial) {
+                Ok(mut conn) => {
+                    // Flush any pending data first
+                    let mut flush_buf = [0u8; 256];
+                    let _ = tokio::time::timeout(Duration::from_millis(50), conn.read(&mut flush_buf)).await;
+
+                    // Send a CR and wait briefly for response
+                    if conn.send(b"Hello World!\r").await.is_ok() {
+                        // Wait a bit for response
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+
+                        // Try to read any response
+                        let mut buf = [0u8; 64];
+                        match tokio::time::timeout(Duration::from_millis(400), conn.read(&mut buf)).await {
+                            Ok(Ok(n)) if n >= "ERROR".len() => {
+                                // Check if response contains printable ASCII (valid at this baud rate)
+                                let printable_count = buf[..n].iter().filter(|&&b| b >= 0x20 && b <= 0x7E || b == b'\r' || b == b'\n').count();
+                                if printable_count == n {
+                                    // More than half printable - likely correct baud rate
+                                    self.process_data(format!(" detected!\r\n").as_bytes()).await;
+                                    detected_baud = Some(baud_rate);
+                                    let _ = conn.shutdown().await;
+                                    drop(conn);
+                                    break;
+                                } else {
+                                    self.process_data(format!(" garbage response\r\n").as_bytes()).await;
+                                }
+                            }
+                            _ => {
+                                self.process_data(format!(" no response\r\n").as_bytes()).await;
+                            }
+                        }
+                    }
+                    // Explicitly close connection before trying next baud rate
+                    let _ = conn.shutdown().await;
+                    drop(conn);
+                    // Small delay to let the port fully close
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Err(_) => {
+                    self.process_data(format!(" failed to open\r\n").as_bytes()).await;
+                }
+            }
+        }
+
+        if let Some(baud) = detected_baud {
+            self.send_event(TerminalEvent::SerialBaudDetected(baud));
+        } else {
+            self.process_data(format!("Auto-detection complete. No response detected.\r\n").as_bytes())
+                .await;
+        }
+        // Always notify that auto-detection is complete so the dialog can be shown again
+        self.send_event(TerminalEvent::SerialAutoDetectComplete);
     }
 
     fn setup_auto_login(&mut self, config: &ConnectionConfig) {

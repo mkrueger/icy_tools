@@ -5,6 +5,7 @@ use iced::{
 };
 use icy_engine::Screen;
 use icy_engine_gui::{ScrollbarOverlay, Terminal, terminal_view::TerminalView};
+use icy_net::serial::Serial;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
 use parking_lot::Mutex;
@@ -25,6 +26,7 @@ pub struct TerminalWindow {
     pub is_connected: bool,
     pub is_capturing: bool,
     pub current_address: Option<Address>,
+    pub serial_connected: Option<Serial>,
     pub terminal_emulation: TerminalEmulation,
     pub baud_emulation: BaudEmulation,
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -40,6 +42,7 @@ impl TerminalWindow {
             is_connected: false,
             is_capturing: false,
             current_address: None,
+            serial_connected: None,
             terminal_emulation: TerminalEmulation::Ansi,
             baud_emulation: BaudEmulation::Off,
             sound_thread,
@@ -368,7 +371,19 @@ impl TerminalWindow {
     }
 
     fn create_status_bar(&self, options: &Options, pause_message: &Option<String>) -> Element<'_, Message> {
-        let connection_status = if let Some(addr) = &self.current_address {
+        let connection_status = if let Some(serial) = &self.serial_connected {
+            // Serial connection
+            text(format!("{} ({} baud)", serial.device, serial.baud_rate))
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().success.strong.color),
+                    ..Default::default()
+                })
+                .size(16.0)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::default()
+                })
+        } else if let Some(addr) = &self.current_address {
             if !self.is_connected {
                 text("DIALING...").style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().background.base.text),
@@ -419,7 +434,11 @@ impl TerminalWindow {
             (size.width, size.height)
         };
 
-        let connection_string = if let Some(address) = &self.current_address {
+        let is_serial_mode = self.serial_connected.is_some();
+
+        let connection_string = if is_serial_mode {
+            "Serial".to_string()
+        } else if let Some(address) = &self.current_address {
             match address.protocol {
                 icy_net::ConnectionType::Telnet => "Telnet".to_string(),
                 icy_net::ConnectionType::SSH => "SSH".to_string(),
@@ -568,11 +587,14 @@ impl TerminalWindow {
             }
         });
 
-        if self.is_connected {
+        if self.is_connected && !is_serial_mode {
             baud_button = baud_button.on_press(Message::ShowBaudEmulationDialog);
         }
 
-        status_row = status_row.push(baud_button);
+        // Don't show baud emulation button in serial mode
+        if !is_serial_mode {
+            status_row = status_row.push(baud_button);
+        }
 
         // Only add IEMSI button if we have IEMSI info
         if self.iemsi_info.is_some() {
@@ -647,6 +669,7 @@ impl TerminalWindow {
     pub fn disconnect(&mut self) {
         self.is_connected = false;
         self.current_address = None;
+        self.serial_connected = None;
         self.iemsi_info = None;
     }
 

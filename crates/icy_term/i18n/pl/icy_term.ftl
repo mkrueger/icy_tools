@@ -309,3 +309,14 @@ help-action-about = O programie
 help-action-help = Pomoc
 
 help-desc-run-script = Uruchom skrypt Lua
+help-action-open-serial = Port Szeregowy
+help-desc-open-serial = Otwórz połączenie portu szeregowego
+
+# Open Serial Dialog
+open-serial-dialog-title = Otwórz Port Szeregowy
+open-serial-dialog-device = Urządzenie
+open-serial-dialog-baud-rate = Szybkość transmisji
+open-serial-dialog-format = Format
+open-serial-dialog-flow-control = Kontrola przepływu
+open-serial-dialog-connect = Połącz
+open-serial-dialog-auto-detect = Auto wykryj

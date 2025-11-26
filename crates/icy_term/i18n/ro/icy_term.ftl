@@ -311,3 +311,14 @@ help-action-about = Despre
 help-action-help = Ajutor
 
 help-desc-run-script = Execută un script Lua
+help-action-open-serial = Port Serial
+help-desc-open-serial = Deschide conexiune port serial
+
+# Open Serial Dialog
+open-serial-dialog-title = Deschide Port Serial
+open-serial-dialog-device = Dispozitiv
+open-serial-dialog-baud-rate = Rată baud
+open-serial-dialog-format = Format
+open-serial-dialog-flow-control = Control flux
+open-serial-dialog-connect = Conectare
+open-serial-dialog-auto-detect = Detectare auto

@@ -28,10 +28,23 @@ pub enum McpCommand {
     ListAddresses(SenderType<Vec<Address>>),
     CaptureScreen(ScreenCaptureFormat, SenderType<Vec<u8>>),
 
-    UploadFile { protocol: String, file_path: String },
-    DownloadFile { protocol: String, save_path: String },
-    RunMacro { name: String, commands: Vec<String> },
-    SearchBuffer { pattern: String, case_sensitive: bool, regex: bool },
+    UploadFile {
+        protocol: String,
+        file_path: String,
+    },
+    DownloadFile {
+        protocol: String,
+        save_path: String,
+    },
+    RunMacro {
+        name: String,
+        commands: Vec<String>,
+    },
+    SearchBuffer {
+        pattern: String,
+        case_sensitive: bool,
+        regex: bool,
+    },
     ClearScreen,
     /// Run a Lua script with optional response channel for the result
     RunScript(String, Option<SenderType<ScriptResult>>),

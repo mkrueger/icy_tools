@@ -284,6 +284,17 @@ help-action-about = Über iCY TERM
 help-action-help = Hilfe
 
 help-desc-run-script = Ein Lua-Skript ausführen
+help-action-open-serial = Serielle Verbindung
+help-desc-open-serial = Serielle Verbindung öffnen
+
+# Serieller Port Dialog
+open-serial-dialog-title = Seriellen Port öffnen
+open-serial-dialog-device = Gerät
+open-serial-dialog-baud-rate = Baudrate
+open-serial-dialog-format = Format
+open-serial-dialog-flow-control = Flusskontrolle
+open-serial-dialog-connect = Verbinden
+open-serial-dialog-auto-detect = Auto-Erkennung
 
 help-action-switch-window = Fenster wechseln
 help-action-smart-paste = Smart-Einfügen

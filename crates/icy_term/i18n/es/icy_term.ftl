@@ -309,3 +309,14 @@ help-action-about = Acerca de
 help-action-help = Ayuda
 
 help-desc-run-script = Ejecutar un script Lua
+help-action-open-serial = Puerto Serie
+help-desc-open-serial = Abrir conexión de puerto serie
+
+# Open Serial Dialog
+open-serial-dialog-title = Abrir Puerto Serie
+open-serial-dialog-device = Dispositivo
+open-serial-dialog-baud-rate = Velocidad en baudios
+open-serial-dialog-format = Formato
+open-serial-dialog-flow-control = Control de flujo
+open-serial-dialog-connect = Conectar
+open-serial-dialog-auto-detect = Detección auto

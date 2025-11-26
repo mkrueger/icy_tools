@@ -311,3 +311,14 @@ help-action-about = Névjegy
 help-action-help = Súgó
 
 help-desc-run-script = Lua szkript futtatása
+help-action-open-serial = Soros port
+help-desc-open-serial = Soros port kapcsolat megnyitása
+
+# Open Serial Dialog
+open-serial-dialog-title = Soros Port Megnyitása
+open-serial-dialog-device = Eszköz
+open-serial-dialog-baud-rate = Átviteli sebesség
+open-serial-dialog-format = Formátum
+open-serial-dialog-flow-control = Folyamatvezérlés
+open-serial-dialog-connect = Kapcsolódás
+open-serial-dialog-auto-detect = Auto észlelés

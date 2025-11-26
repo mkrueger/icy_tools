@@ -96,8 +96,7 @@ pub type McpHandler = Option<tokio::sync::mpsc::UnboundedReceiver<mcp::McpComman
 pub static MCP_PORT: AtomicU16 = AtomicU16::new(0);
 
 fn main() {
-    clap_i18n_richformatter::init_clap_rich_formatter_localizer();
-    let args = Args::parse_i18n();
+    let args = Args::parse_i18n_or_exit();
 
     if let Some(log_dir) = Options::get_log_dir() {
         let _logger = Logger::try_with_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error, zbus=error, zbus::connection=error")

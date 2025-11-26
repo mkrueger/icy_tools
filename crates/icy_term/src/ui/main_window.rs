@@ -52,6 +52,7 @@ pub enum MainWindowMode {
     ShowIEMSI,
     ShowFindDialog,
     ShowBaudEmulationDialog,
+    ShowOpenSerialDialog(bool),
     ShowErrorDialog(String, String, String, Box<MainWindowMode>),
 }
 
@@ -67,6 +68,7 @@ pub struct MainWindow {
     pub export_dialog: export_screen_dialog::ExportScreenDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
     pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
+    pub open_serial_dialog: super::open_serial_dialog::OpenSerialDialog,
     pub help_dialog: crate::ui::dialogs::help_dialog::HelpDialog,
     pub about_dialog: crate::ui::dialogs::about_dialog::AboutDialog,
 
@@ -124,6 +126,8 @@ impl MainWindow {
 
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), addresses.clone());
 
+        let serial = options.lock().serial.clone();
+
         Self {
             effect: 0,
             id,
@@ -142,6 +146,7 @@ impl MainWindow {
             export_dialog: export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
+            open_serial_dialog: super::open_serial_dialog::OpenSerialDialog::new(serial),
             help_dialog: crate::ui::dialogs::help_dialog::HelpDialog::new(),
             about_dialog: crate::ui::dialogs::about_dialog::AboutDialog::new(super::about_dialog::ABOUT_ANSI),
 
@@ -519,6 +524,37 @@ impl MainWindow {
                 self.terminal_window.baud_emulation = baud;
                 let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(baud));
                 self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            Message::ShowOpenSerialDialog => {
+                self.switch_to_terminal_screen();
+                self.state.mode = MainWindowMode::ShowOpenSerialDialog(true);
+                Task::none()
+            }
+            Message::OpenSerialMsg(msg) => {
+                if let Some(message) = self.open_serial_dialog.update(msg) {
+                    return self.update(message);
+                }
+                Task::none()
+            }
+            Message::ConnectSerial => {
+                let serial = self.open_serial_dialog.serial.clone();
+                // Save serial settings to options
+                self.settings_dialog.original_options.lock().serial = serial.clone();
+                if let Err(e) = self.settings_dialog.original_options.lock().store_options() {
+                    log::error!("Failed to save serial settings: {}", e);
+                }
+                // Set serial mode for status bar
+                self.terminal_window.serial_connected = Some(serial.clone());
+                let _ = self.terminal_tx.send(TerminalCommand::OpenSerial(serial));
+                self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            Message::AutoDetectSerial => {
+                let serial = self.open_serial_dialog.serial.clone();
+                let _ = self.terminal_tx.send(TerminalCommand::AutoDetectSerial(serial));
+                // Hide dialog during auto-detection so terminal output is visible
+                self.state.mode = MainWindowMode::ShowOpenSerialDialog(false);
                 Task::none()
             }
             Message::FindDialog(msg) => {
@@ -1125,6 +1161,16 @@ impl MainWindow {
             TerminalEvent::Quit => {
                 return self.update(Message::QuitIcyTerm);
             }
+            TerminalEvent::SerialBaudDetected(baud_rate) => {
+                // Update the open serial dialog with detected baud rate
+                self.open_serial_dialog.serial.baud_rate = baud_rate;
+                Task::none()
+            }
+            TerminalEvent::SerialAutoDetectComplete => {
+                // Show dialog again after auto-detection completes
+                self.state.mode = MainWindowMode::ShowOpenSerialDialog(true);
+                Task::none()
+            }
         }
     }
 
@@ -1182,6 +1228,13 @@ impl MainWindow {
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(terminal_view),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
+            MainWindowMode::ShowOpenSerialDialog(visible) => {
+                if *visible {
+                    self.open_serial_dialog.view(terminal_view)
+                } else {
+                    terminal_view
+                }
+            }
             MainWindowMode::ShowHelpDialog => self.help_dialog.view(terminal_view),
             MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => {
                 let dialog = ConfirmationDialog::new(title, error_message)
@@ -1392,6 +1445,7 @@ impl MainWindow {
                                     "c" => return Some(Message::ClearScreen),
                                     "b" => return Some(Message::ShowScrollback),
                                     "r" => return Some(Message::ShowRunScriptDialog),
+                                    "t" => return Some(Message::ShowOpenSerialDialog),
                                     _ => {}
                                 },
                                 _ => {}
@@ -1462,6 +1516,20 @@ impl MainWindow {
                 },
                 _ => None,
             },
+            MainWindowMode::ShowOpenSerialDialog(visible) => {
+                if *visible {
+                    match event {
+                        Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                            keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+                            keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::ConnectSerial),
+                            _ => None,
+                        },
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
             MainWindowMode::ShowHelpDialog | MainWindowMode::ShowAboutDialog => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
                 _ => None,

@@ -419,23 +419,15 @@ impl McpServer {
                         let script = script.unwrap();
 
                         let (response_tx, response_rx) = oneshot::channel();
-                        tx.send(McpCommand::RunScript(
-                            script.to_string(),
-                            Some(Arc::new(Mutex::new(Some(response_tx)))),
-                        ))
-                        .map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
+                        tx.send(McpCommand::RunScript(script.to_string(), Some(Arc::new(Mutex::new(Some(response_tx))))))
+                            .map_err(|e| Error {
+                                code: ErrorCode::InternalError,
+                                message: format!("Failed to send command: {}", e),
+                                data: None,
+                            })?;
 
                         // Wait for script to complete (with 5 minute timeout)
-                        match tokio::time::timeout(
-                            std::time::Duration::from_secs(300),
-                            response_rx,
-                        )
-                        .await
-                        {
+                        match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await {
                             Ok(Ok(result)) => match result {
                                 Ok(output) => Ok(serde_json::json!({
                                     "content": [{

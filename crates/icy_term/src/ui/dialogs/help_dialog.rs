@@ -50,6 +50,11 @@ impl HelpDialog {
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-dialing-directory"),
                     },
                     Shortcut {
+                        keys: format!("{mod_symbol} T"),
+                        action: fl!(crate::LANGUAGE_LOADER, "help-action-open-serial"),
+                        desc: fl!(crate::LANGUAGE_LOADER, "help-desc-open-serial"),
+                    },
+                    Shortcut {
                         keys: format!("{mod_symbol} H"),
                         action: fl!(crate::LANGUAGE_LOADER, "help-action-disconnect"),
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-disconnect"),
