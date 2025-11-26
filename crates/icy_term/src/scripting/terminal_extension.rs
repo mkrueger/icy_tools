@@ -110,11 +110,16 @@ impl LuaExtension for TerminalLuaExtension {
         // Register connect() function
         self.register_connect(lua, &globals)?;
 
-        // Register send_credentials() function
-        self.register_send_credentials(lua, &globals)?;
+        // Register send_login(), send_username(), send_password() functions
+        self.register_send_login(lua, &globals)?;
+        self.register_send_username(lua, &globals)?;
+        self.register_send_password(lua, &globals)?;
 
         // Register send_key() function
         self.register_send_key(lua, &globals)?;
+
+        // Register quit() function
+        self.register_quit(lua, &globals)?;
 
         Ok(())
     }
@@ -211,37 +216,8 @@ impl TerminalLuaExtension {
         let lua_screen = LuaScreen::new(screen);
         globals.set("screen", lua_screen)?;
 
-        // Register global wrapper functions that delegate to screen
-        lua.load(
-            r#"
-            function gotoxy(x, y) screen:gotoxy(x, y) end
-            function print(s) screen:print(s) end
-            function println(s) screen:println(s) end
-            function set_char(x, y, ch) screen:set_char(x, y, ch) end
-            function clear_char(x, y) screen:clear_char(x, y) end
-            function get_char(x, y) return screen:get_char(x, y) end
-            function pickup_char(x, y) return screen:pickup_char(x, y) end
-            function get_width() return screen.width end
-            function get_height() return screen.height end
-            function set_fg(x, y, col) screen:set_fg(x, y, col) end
-            function get_fg(x, y) return screen:get_fg(x, y) end
-            function set_bg(x, y, col) screen:set_bg(x, y, col) end
-            function get_bg(x, y) return screen:get_bg(x, y) end
-            function fg_rgb(r, g, b) return screen:fg_rgb(r, g, b) end
-            function bg_rgb(r, g, b) return screen:bg_rgb(r, g, b) end
-            function set_palette_color(col, r, g, b) screen:set_palette_color(col, r, g, b) end
-            function get_palette_color(col) return screen:get_palette_color(col) end
-            function clear_screen() screen:clear() end
-            function layer_count() return screen.layer_count end
-            function set_layer(l) screen.layer = l end
-            function get_layer() return screen.layer end
-            function set_layer_position(l, x, y) screen:set_layer_position(l, x, y) end
-            function get_layer_position(l) return screen:get_layer_position(l) end
-            function set_layer_visible(l, v) screen:set_layer_visible(l, v) end
-            function get_layer_visible(l) return screen:get_layer_visible(l) end
-        "#,
-        )
-        .exec()?;
+        // Load global wrapper functions from external Lua file
+        lua.load(include_str!("screen_api.lua")).exec()?;
 
         Ok(())
     }
@@ -296,27 +272,57 @@ impl TerminalLuaExtension {
         Ok(())
     }
 
-    fn register_send_credentials(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
+    fn register_send_login(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
         let event_tx = self.state.event_tx.clone();
 
         globals.set(
-            "send_credentials",
-            lua.create_function(move |_, mode: Option<i32>| {
-                // Mode: 0 = username + password (default), 1 = username only, 2 = password only
-                let mode = mode.unwrap_or(0);
-
-                // Send request to MainWindow which has the current_address
-                if event_tx.send(TerminalEvent::SendCredentials(mode)).is_err() {
-                    return Err(mlua::Error::RuntimeError("Failed to send credentials request".to_string()));
+            "send_login",
+            lua.create_function(move |_, ()| {
+                // Send username + password with delay
+                if event_tx.send(TerminalEvent::SendCredentials(0)).is_err() {
+                    return Err(mlua::Error::RuntimeError("Failed to send login credentials".to_string()));
                 }
 
-                // Wait a bit for the credentials to be sent
-                // Mode 0 sends username + password with 500ms delay between
-                if mode == 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(600));
-                } else {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                // Wait for credentials to be sent (username + 500ms delay + password)
+                std::thread::sleep(std::time::Duration::from_millis(600));
+
+                Ok(())
+            })?,
+        )?;
+        Ok(())
+    }
+
+    fn register_send_username(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
+        let event_tx = self.state.event_tx.clone();
+
+        globals.set(
+            "send_username",
+            lua.create_function(move |_, ()| {
+                // Send username only
+                if event_tx.send(TerminalEvent::SendCredentials(1)).is_err() {
+                    return Err(mlua::Error::RuntimeError("Failed to send username".to_string()));
                 }
+
+                std::thread::sleep(std::time::Duration::from_millis(100));
+
+                Ok(())
+            })?,
+        )?;
+        Ok(())
+    }
+
+    fn register_send_password(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
+        let event_tx = self.state.event_tx.clone();
+
+        globals.set(
+            "send_password",
+            lua.create_function(move |_, ()| {
+                // Send password only
+                if event_tx.send(TerminalEvent::SendCredentials(2)).is_err() {
+                    return Err(mlua::Error::RuntimeError("Failed to send password".to_string()));
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(100));
 
                 Ok(())
             })?,
@@ -343,6 +349,21 @@ impl TerminalLuaExtension {
                     }
                     None => Ok(false),
                 }
+            })?,
+        )?;
+        Ok(())
+    }
+
+    fn register_quit(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
+        let event_tx = self.state.event_tx.clone();
+
+        globals.set(
+            "quit",
+            lua.create_function(move |_, ()| {
+                if event_tx.send(TerminalEvent::Quit).is_err() {
+                    return Err(mlua::Error::RuntimeError("Failed to send quit request".to_string()));
+                }
+                Ok(())
             })?,
         )?;
         Ok(())

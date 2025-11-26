@@ -1101,6 +1101,9 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            TerminalEvent::Quit => {
+                return self.update(Message::QuitIcyTerm);
+            }
         }
     }
 

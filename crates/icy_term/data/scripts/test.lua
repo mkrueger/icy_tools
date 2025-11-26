@@ -1,7 +1,13 @@
-clear_screen()
+cls()
 
 if on_screen("Login failed") then
     println("Login failed, aborting...")
     return
 end
-println("@X0FDas sieht ok aus@X07!!!")
+caret_fg = 2
+
+println("FG: " .. caret_fg)
+caret_right()
+caret_right()
+caret_right()
+caret_right()

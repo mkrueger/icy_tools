@@ -310,7 +310,7 @@ impl UserData for LuaBufferView {
             Ok(this.convert_to_unicode(ch))
         });
 
-        methods.add_method_mut("pickup_char", |_, this, (x, y): (i32, i32)| {
+        methods.add_method_mut("grab_char", |_, this, (x, y): (i32, i32)| {
             let cur_layer = this.buffer_view.lock().get_edit_state_mut().get_current_layer().unwrap();
             let layer_len = this.buffer_view.lock().get_buffer_mut().layers.len();
             if cur_layer >= layer_len {

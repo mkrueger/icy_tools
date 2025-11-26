@@ -263,6 +263,35 @@ impl std::fmt::Display for TextBuffer {
     }
 }
 
+impl Clone for TextBuffer {
+    fn clone(&self) -> Self {
+        Self {
+            original_size: self.original_size,
+            size: self.size,
+            file_name: self.file_name.clone(),
+            terminal_state: self.terminal_state.clone(),
+            buffer_type: self.buffer_type,
+            ice_mode: self.ice_mode,
+            palette_mode: self.palette_mode,
+            font_mode: self.font_mode,
+            sauce_data: self.sauce_data.clone(),
+            palette: self.palette.clone(),
+            overlay_index: self.overlay_index,
+            overlay_layer: self.overlay_layer.clone(),
+            font_table: self.font_table.clone(),
+            is_font_table_dirty: self.is_font_table_dirty,
+            layers: self.layers.clone(),
+            use_letter_spacing: self.use_letter_spacing,
+            use_aspect_ratio: self.use_aspect_ratio,
+            show_tags: self.show_tags,
+            tags: self.tags.clone(),
+            max_scrollback_lines: self.max_scrollback_lines,
+            buffer_dirty: std::sync::atomic::AtomicBool::new(self.buffer_dirty.load(std::sync::atomic::Ordering::Relaxed)),
+            buffer_version: std::sync::atomic::AtomicU64::new(self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)),
+        }
+    }
+}
+
 impl TextBuffer {
     pub fn scan_buffer_features(&self) -> BufferFeatures {
         let mut result = BufferFeatures::default();

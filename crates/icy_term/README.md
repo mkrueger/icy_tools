@@ -7,48 +7,59 @@ Visit [Telnet BBS Guide](https://www.telnetbbsguide.com/) to explore active BBSe
 ## Features
 
 ### 🌐 Connectivity
+
 - **Protocols**: Telnet, SSH, RLogin, Raw TCP, WebSocket (including secure)
 - **Modems** still supported :).
 - **Baud emulation**: Authentic modem speeds for nostalgia
 
 ### 🖥️ Terminal Emulations
+
 - **ANSI/PC**: Full ANSI-BBS with iCE colors and extended attributes + Avatar
 - **Commodore**: PETSCII (C64/C128)
 - **Atari**: ATASCII (8-bit computers)
 - **Teletext**: Viewdata/Mode7
-- **Graphics**: RIPscrip, SkyPix
-- **Modern**: UTF-8, Sixel graphics, OSC8 Hyperlinks, Loadable fonts
-- **Experimental**: Atari ST IGS
+- **Atari ST**: Atari ST VT52 + IGS 2.19
+- **Graphics**: RIPscrip, SkyPix (experimental)
+- **UTF8**: Experimental
+- **Modern**: Sixel graphics, OSC8 Hyperlinks, Loadable fonts
 
 ### 📁 File Transfers
+
 - **Protocols**: ZModem (including 8k), XModem (Classic/1k/1k-G), YModem/YModem-G
 - **Features**: Auto-download detection, batch transfers, resume support
 - **UI**: Real-time statistics, transfer logs, protocol details
 
 ### 🎨 Rendering Engine
+
 - **3D accelerated** WGPU pipeline
 - **Font support**: Loadable fonts, multiple fonts per session
 - **Color depth**: 24-bit RGB, extended palettes, iCE colors
 - **Special effects**: CRT filter simulation, customizable scaling
 
 ### 🤖 Automation & Control
+
 - **IEMSI**: Automatic login support
 - **MCP Server**: JSON-RPC automation API
+- **Lua Scripting**: Full automation scripts (see [SCRIPTING.md](SCRIPTING.md))
 
 ### 🎵 Multimedia
+
 - **ANSI Music**: PlayMod, MIDI support
 - **Sound effects**: Beep patterns, system sounds
 
 ### 🌍 International
+
 - **Multi-language**: Fluent-based localization system
 - **Supported languages**: English, German, Italian, Spanish, Portuguese, and more
 
 ## Installation
 
 ### Download Binaries
+
 Get the latest release: [GitHub Releases](https://github.com/mkrueger/icy_tools/releases)
 
 ### Build from Source
+
 ```bash
 git clone https://github.com/mkrueger/icy_tools.git
 cd icy_tools
@@ -57,6 +68,7 @@ cargo build -p icy_term --release
 ```
 
 ### System Requirements
+
 - **GPU**: OpenGL 3.3+ support (2010 or newer)
 - **OS**: Windows 10+, macOS 10.14+, Linux (X11/Wayland)
 - **Windows**: Requires VCRUNTIME140.dll (usually pre-installed)
@@ -64,6 +76,7 @@ cargo build -p icy_term --release
 ## Quick Start
 
 ### Connect via Command Line
+
 ```bash
 # Simple connection
 icy_term bbs.example.com
@@ -79,6 +92,7 @@ icy_term rlogin://retrobbs.org
 ```
 
 ### Using the Dialing Directory
+
 1. Press `Alt+D` to open the dialing directory
 2. Click "Add" to create a new entry
 3. Configure connection settings, terminal type, and auto-login
@@ -95,6 +109,7 @@ icy_term --mcp-port 3000
 ```
 
 Available tools:
+
 - `connect` / `disconnect` - Session management
 - `send_text` / `send_key` - Input control
 - `capture_screen` - Screen capture (text/ANSI)
@@ -104,6 +119,7 @@ Available tools:
 ## Configuration
 
 Settings are stored in platform-specific locations:
+
 - **Linux**: `~/.config/icy_term/`
 - **macOS**: `~/Library/Application Support/icy_term/`
 - **Windows**: `%APPDATA%\icy_term\`
@@ -111,12 +127,14 @@ Settings are stored in platform-specific locations:
 ## Contributing
 
 Contributions are welcome! Areas where help is appreciated:
+
 - Testing on various BBSes and reporting compatibility issues
 - Translations to new languages
 - Protocol implementation improvements
 - Documentation and tutorials
 
 ### Development
+
 ```bash
 # Run in development
 cargo run -p icy_term
@@ -151,6 +169,7 @@ grep -r "fl!(.*\"key-name\"" crates/icy_term/src/
 ## License
 
 Licensed under either of:
+
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
 - MIT license ([LICENSE-MIT](LICENSE-MIT))
 
@@ -159,6 +178,7 @@ at your option.
 ## About
 
 IcyTERM started as a test project for an ANSI rendering engine but evolved into a full-featured BBS terminal. It's part of the larger Icy Tools suite, which includes:
+
 - **IcyDraw** - ANSI/ASCII art editor
 - **IcyView** - File viewer for ANSI/ASCII art
 - **IcyPlay** - ANSI animation player

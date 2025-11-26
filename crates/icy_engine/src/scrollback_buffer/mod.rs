@@ -3,6 +3,15 @@ use crate::{
     SelectionMask, Size, TerminalState, TextPane, bgi::MouseField,
 };
 
+/// Render a region from (0,0) with specified height for scrollback buffer.
+/// This is a helper function to avoid code duplication across screen buffer types.
+pub fn render_scrollback_region(screen: &dyn Screen, height: i32) -> (Size, Vec<u8>) {
+    let region = Rectangle::from(0, 0, screen.get_resolution().width, height);
+    let mut opt = RenderOptions::default();
+    opt.override_scan_lines = Some(false);
+    screen.render_region_to_rgba(region, &opt)
+}
+
 #[derive(Clone)]
 pub struct ScrollbackChunk {
     pub rgba_data: Vec<u8>,
@@ -54,6 +63,9 @@ impl ScrollbackBuffer {
     }
 
     pub fn add_chunk(&mut self, rgba_data: Vec<u8>, size: Size) {
+        if rgba_data.is_empty() {
+            return;
+        }
         let chunk = ScrollbackChunk { rgba_data, size };
         self.chunks.push(chunk);
         if self.chunks.len() > self.buffer_size {
@@ -387,4 +399,20 @@ impl Screen for ScrollbackBuffer {
     fn screen(&self) -> &[u8] {
         &self.cur_screen.rgba_data
     }
+
+    fn clone_box(&self) -> Box<dyn Screen> {
+        Box::new(self.clone())
+    }
+
+    fn set_scrollback_buffer_size(&mut self, _buffer_size: usize) {}
+}
+
+/// Helper method to render a region from a screen and add it to the scrollback buffer.
+/// Always starts at x=0, renders full width with the specified height.
+pub fn add_screen_region(buffer: &mut ScrollbackBuffer, screen: &dyn Screen, height: i32) {
+    let region = Rectangle::from(0, 0, screen.get_resolution().width, height);
+    let mut opt = RenderOptions::default();
+    opt.override_scan_lines = Some(false);
+    let (size, rgba_data) = screen.render_region_to_rgba(region, &opt);
+    buffer.add_chunk(rgba_data, size);
 }

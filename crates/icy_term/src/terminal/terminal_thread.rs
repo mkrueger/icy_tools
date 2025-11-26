@@ -81,6 +81,8 @@ pub enum TerminalEvent {
     ScriptStarted(PathBuf),
     /// Script execution finished
     ScriptFinished(Result<(), String>),
+    /// Request to quit the application
+    Quit,
 }
 
 #[derive(Debug, Clone)]

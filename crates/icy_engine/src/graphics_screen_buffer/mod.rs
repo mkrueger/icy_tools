@@ -735,6 +735,12 @@ impl EditableScreen for GraphicsScreenBuffer {
             return;
         }
 
+        // Add top line to scrollback BEFORE scrolling (while data is still there)
+        if self.terminal_state().get_margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, line_height as i32);
+            self.scrollback_buffer.add_chunk(rgba_data, size);
+        }
+
         let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
         let movable_rows = screen_height - line_height;
 
@@ -816,6 +822,12 @@ impl EditableScreen for GraphicsScreenBuffer {
     }
 
     fn clear_screen(&mut self) {
+        // Add entire screen to scrollback BEFORE clearing
+        if self.terminal_state.is_terminal_buffer {
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.pixel_size.height);
+            self.scrollback_buffer.add_chunk(rgba_data, size);
+        }
+
         self.set_caret_position(Position::default());
         self.terminal_state_mut().cleared_screen = true;
 

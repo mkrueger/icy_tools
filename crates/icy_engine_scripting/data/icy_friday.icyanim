@@ -4,7 +4,7 @@ local star_colors = { 15, 14, 7, 7, 8, 9 }
 function move_left()
     for y = 0, buf.height, 1 do
        for x = 1, buf.width , 1 do
-			local c = buf:pickup_char(x, y)
+			local c = buf:grab_char(x, y)
 			if c ~= ' ' then
                buf:set_char(x - 1, y, c)
                buf:clear_char(x, y)

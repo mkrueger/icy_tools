@@ -9,6 +9,7 @@ use crate::{
     SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
 };
 
+#[derive(Clone)]
 pub struct TextScreen {
     pub caret: Caret,
     pub buffer: TextBuffer,
@@ -40,22 +41,6 @@ impl TextScreen {
             scan_lines: false,
             scrollback_buffer: ScrollbackBuffer::new(),
         }
-    }
-
-    fn add_line_to_scrollback(&mut self, i: i32) {
-        let width = self.buffer.get_width();
-
-        // Create render options for a single line
-        let options = RenderOptions {
-            rect: crate::Rectangle::from_coords(0, i, width, i + 1).into(),
-            ..RenderOptions::default()
-        };
-
-        // Render just this line
-        let (size, rgba_data) = self.buffer.render_to_rgba(&options, self.scan_lines);
-
-        // Add the line to the scrollback buffer
-        self.scrollback_buffer.add_chunk(rgba_data, size);
     }
 }
 
@@ -219,6 +204,10 @@ impl Screen for TextScreen {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+
+    fn clone_box(&self) -> Box<dyn Screen> {
+        Box::new(self.clone())
+    }
 }
 
 impl EditableScreen for TextScreen {
@@ -342,8 +331,11 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_up(&mut self) {
-        if self.terminal_state().get_margins_top_bottom().is_none() {
-            self.add_line_to_scrollback(0);
+        // Add top line to scrollback before scrolling (while data is still there)
+        if self.terminal_state().get_margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
+            let font_height = self.get_font_dimensions().height;
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, font_height);
+            self.scrollback_buffer.add_chunk(rgba_data, size);
         }
 
         let font_dims = self.get_font_dimensions();
@@ -587,12 +579,14 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_screen(&mut self) {
-        for i in 0..self.get_height() {
-            self.add_line_to_scrollback(i);
+        // Add entire screen to scrollback
+        if self.terminal_state().is_terminal_buffer {
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.get_resolution().height);
+            self.scrollback_buffer.add_chunk(rgba_data, size);
         }
 
         self.set_caret_position(Position::default());
-        let layer = &mut self.buffer.layers[self.current_layer];
+        let layer: &mut Layer = &mut self.buffer.layers[self.current_layer];
         layer.clear();
         if self.terminal_state().is_terminal_buffer {
             self.buffer.set_size(self.terminal_state().get_size());

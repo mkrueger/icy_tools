@@ -122,8 +122,12 @@ pub trait Screen: TextPane + Send + Sync {
     fn screen(&self) -> &[u8];
 
     // Scrollback buffer management
-    fn set_scrollback_buffer_size(&mut self, _buffer_size: usize) {
-        // Default implementation does nothing
+    fn set_scrollback_buffer_size(&mut self, _buffer_size: usize);
+
+    /// Clone the screen into a Box for frame storage in animations
+    /// Note: Some screen types may not support cloning (e.g., graphics screens)
+    fn clone_box(&self) -> Box<dyn Screen> {
+        unimplemented!("clone_box not supported for this screen type")
     }
 }
 

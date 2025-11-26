@@ -24,6 +24,7 @@ connect("telnet://bbs.example.com:23")  -- Connect by full URL
 ```
 
 **Parameters:**
+
 - `name_or_url` (string): Address book entry name or connection URL
 
 **Returns:** The connection string used
@@ -36,6 +37,16 @@ Disconnects from the current BBS.
 
 ```lua
 disconnect()
+```
+
+---
+
+#### `quit()`
+
+Exits iCY TERM completely.
+
+```lua
+quit()
 ```
 
 ---
@@ -66,6 +77,7 @@ send("myusername\r\n")   -- Send username with CR+LF
 ```
 
 **Parameters:**
+
 - `text` (string): The text to send (can include escape sequences like `\n`, `\r`)
 
 ---
@@ -81,6 +93,7 @@ send_key("up")       -- Send arrow up
 ```
 
 **Supported keys:**
+
 - Navigation: `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`
 - Editing: `enter`, `return`, `tab`, `backspace`, `delete`, `escape`
 - Function keys: `f1` through `f12`
@@ -89,22 +102,33 @@ send_key("up")       -- Send arrow up
 
 ---
 
-#### `send_credentials(mode)`
+#### `send_login()`
 
-Sends the stored credentials from the current address book entry.
+Sends the stored username and password from the current address book entry with a delay between them.
 
 ```lua
-send_credentials()     -- Send username + password (with delay)
-send_credentials(0)    -- Same as above
-send_credentials(1)    -- Send username only
-send_credentials(2)    -- Send password only
+send_login()  -- Send username, wait 500ms, then send password
 ```
 
-**Parameters:**
-- `mode` (optional, integer):
-  - `0` (default): Send username, wait 500ms, send password
-  - `1`: Send username only
-  - `2`: Send password only
+---
+
+#### `send_username()`
+
+Sends only the stored username from the current address book entry.
+
+```lua
+send_username()
+```
+
+---
+
+#### `send_password()`
+
+Sends only the stored password from the current address book entry.
+
+```lua
+send_password()
+```
 
 ---
 
@@ -129,6 +153,7 @@ end
 ```
 
 **Parameters:**
+
 - `pattern` (string): Text or regex pattern to search for
 - `timeout_ms` (optional, integer): Timeout in milliseconds (default: 30000)
 
@@ -152,6 +177,7 @@ end
 ```
 
 **Parameters:**
+
 - `pattern` (string): Text or regex pattern to search for
 
 **Returns:** `true` if pattern is found, `false` otherwise
@@ -185,6 +211,7 @@ gotoxy(40, 12)    -- Move to center of 80x25 screen
 ```
 
 **Parameters:**
+
 - `x` (integer): Column (0-based)
 - `y` (integer): Row (0-based)
 
@@ -201,23 +228,97 @@ println("@X0FWhite text on black background")
 ```
 
 **Parameters:**
+
 - `text` (string): Text to print (supports PCBoard color codes and escape sequences)
 
 ---
 
-#### `get_width()` / `get_height()`
+### Screen Dimension Variables
 
-Returns the screen dimensions.
+#### `screen_width` / `screen_height`
+
+Global read-only variables that return the screen dimensions.
 
 ```lua
-local w = get_width()   -- Usually 80
-local h = get_height()  -- Usually 25
-println("Screen size: " .. w .. "x" .. h)
+println("Screen size: " .. screen_width .. "x" .. screen_height)
+
+-- Center text on screen
+gotoxy((screen_width - 10) / 2, screen_height / 2)
+println("Centered!")
+
+-- Loop through all positions
+for y = 0, screen_height - 1 do
+    for x = 0, screen_width - 1 do
+        -- process each cell
+    end
+end
 ```
 
-**Returns:** Width or height in characters
+**Values:**
+
+- `screen_width`: Screen width in characters (usually 80)
+- `screen_height`: Screen height in characters (usually 25)
 
 ---
+
+### Caret Color Variables
+
+#### `caret_fg` / `caret_bg`
+
+Global read/write variables for the current foreground and background color.
+
+```lua
+-- Set colors for subsequent print operations
+caret_fg = 14  -- Yellow
+caret_bg = 1   -- Blue
+println("Yellow on blue!")
+
+-- Read current colors
+local old_fg = caret_fg
+local old_bg = caret_bg
+
+-- Temporarily change color
+caret_fg = 12  -- Light red
+println("Warning!")
+
+-- Restore
+caret_fg = old_fg
+caret_bg = old_bg
+```
+
+**Values:**
+
+- `caret_fg`: Foreground color index (0-15 for standard, 0-255 for extended)
+- `caret_bg`: Background color index (0-15 for standard, 0-255 for extended)
+
+---
+
+#### `caret_visible` / `caret_blinking`
+
+Global read/write variables for caret visibility and blinking state.
+
+```lua
+-- Hide the caret
+caret_visible = false
+
+-- Show the caret again
+caret_visible = true
+
+-- Disable caret blinking
+caret_blinking = false
+
+-- Enable caret blinking
+caret_blinking = true
+```
+
+**Values:**
+
+- `caret_visible`: Boolean - whether the caret is visible
+- `caret_blinking`: Boolean - whether the caret blinks
+
+---
+
+### Character Functions
 
 #### `set_char(x, y, char)` / `get_char(x, y)`
 
@@ -229,6 +330,7 @@ local ch = get_char(10, 5)    -- Get character at position
 ```
 
 **Parameters:**
+
 - `x`, `y` (integer): Position (0-based)
 - `char` (string): Single character to set
 
@@ -246,14 +348,23 @@ clear_char(10, 5)
 
 ---
 
-#### `pickup_char(x, y)`
+#### `grab_char(x, y)`
 
-Picks up the character and its attributes at the specified position, setting them as current.
+Gets the character at the specified position and sets the current foreground/background colors to match.
 
 ```lua
-pickup_char(10, 5)  -- Pick up character, color, etc.
-print("X")          -- Print with picked-up attributes
+local ch = grab_char(10, 5)  -- Get char and adopt its colors
+print("X")                   -- Print with same colors as grabbed char
+println(ch)                  -- Print the grabbed character itself
 ```
+
+**Parameters:**
+
+- `x`, `y` (integer): Position (0-based)
+
+**Returns:** The character at the position (string)
+
+**Side effect:** Sets `screen.fg` and `screen.bg` to the colors of the grabbed character.
 
 ---
 
@@ -267,6 +378,7 @@ local fg = get_fg(10, 5)    -- Get foreground color index
 ```
 
 **Parameters:**
+
 - `x`, `y` (integer): Position (0-based)
 - `color` (integer): Color index (0-15 for standard colors)
 
@@ -294,6 +406,7 @@ println("Colored text!")
 ```
 
 **Parameters:**
+
 - `r`, `g`, `b` (integer): RGB values (0-255)
 
 ---
@@ -308,6 +421,7 @@ local r, g, b = get_palette_color(1) -- Get color 1's RGB values
 ```
 
 **Parameters:**
+
 - `index` (integer): Palette index (0-15 for standard, 0-255 for extended)
 - `r`, `g`, `b` (integer): RGB values (0-255)
 
@@ -315,12 +429,12 @@ local r, g, b = get_palette_color(1) -- Get color 1's RGB values
 
 ---
 
-#### `clear_screen()`
+#### `cls()`
 
 Clears the entire screen.
 
 ```lua
-clear_screen()
+cls()
 ```
 
 ---
@@ -372,6 +486,147 @@ local vis = get_layer_visible(1)    -- Check if visible
 
 ---
 
+### Cursor Position Variables
+
+#### `where_x` / `where_y`
+
+Global variables that return the current cursor position.
+
+```lua
+println("Cursor at: " .. where_x .. ", " .. where_y)
+
+if where_x > 40 then
+    caret_home()  -- Go back to start of line
+end
+
+-- Use in conditions
+while where_y < 10 do
+    caret_down()
+end
+```
+
+**Values:**
+
+- `where_x`: Current column (0-based)
+- `where_y`: Current row (0-based)
+
+---
+
+### Caret Movement Functions
+
+These functions move the cursor relative to its current position.
+
+#### `caret_left(n)` / `caret_right(n)` / `caret_up(n)` / `caret_down(n)`
+
+Moves the cursor in the specified direction.
+
+```lua
+caret_right(5)    -- Move 5 columns right
+caret_down(2)     -- Move 2 rows down
+caret_left()      -- Move 1 column left (default)
+caret_up(1)       -- Move 1 row up
+```
+
+**Parameters:**
+
+- `n` (optional, integer): Number of positions to move (default: 1)
+
+---
+
+#### `caret_home()` / `caret_eol()`
+
+Moves the cursor to the beginning or end of the current line.
+
+```lua
+caret_home()      -- Move to beginning of line (column 0)
+caret_eol()       -- Move to end of line
+```
+
+---
+
+#### `caret_cr()` / `caret_lf()` / `caret_next_line()`
+
+Line control functions.
+
+```lua
+caret_cr()        -- Carriage return (move to column 0)
+caret_lf()        -- Line feed (move down one row)
+caret_next_line() -- Move to beginning of next line (CR + LF)
+```
+
+---
+
+### Caret Editing Functions
+
+#### `caret_bs()` / `caret_del()`
+
+Delete characters.
+
+```lua
+caret_bs()        -- Backspace: delete character before cursor, move left
+caret_del()       -- Delete: delete character at cursor
+```
+
+---
+
+#### `caret_ins()`
+
+Toggle insert mode.
+
+```lua
+caret_ins()       -- Toggle insert/overwrite mode
+```
+
+---
+
+#### `caret_tab()`
+
+Move to next tab stop.
+
+```lua
+caret_tab()       -- Move cursor to next tab position (every 8 columns)
+```
+
+---
+
+### Caret State Functions
+
+#### `save_caret()` / `restore_caret()`
+
+Save and restore the complete cursor state (position, colors, font page).
+
+```lua
+save_caret()              -- Save current cursor state
+gotoxy(0, 0)
+screen.fg = 15            -- Set white foreground
+println("Header")
+restore_caret()           -- Restore cursor to saved position and colors
+```
+
+Useful for temporarily moving the cursor and changing attributes without losing the original state.
+
+---
+
+### Caret Properties
+
+These properties can be accessed via the `screen` object:
+
+```lua
+-- Insert mode
+screen.insert_mode = true     -- Enable insert mode
+local mode = screen.insert_mode
+
+-- Cursor visibility
+screen.caret_visible = false  -- Hide cursor
+local visible = screen.caret_visible
+
+-- Cursor blinking
+screen.caret_blinking = true  -- Enable blinking
+local blink = screen.caret_blinking
+```
+
+---
+
 ### PCBoard Color Codes
 
 The `print()` and `println()` functions support PCBoard color codes for colorized output:
@@ -395,7 +650,7 @@ The `print()` and `println()` functions support PCBoard color codes for colorize
 | 6    | Brown         | E    | Yellow          |
 | 7    | Light Gray    | F    | White           |
 
-#### Examples
+#### Color Code Examples
 
 ```lua
 println("@X0FWhite on Black")
@@ -419,7 +674,7 @@ Standard escape sequences are supported in all string functions:
 | `\\`     | Backslash       |
 | `\"`     | Double quote    |
 
-#### Examples
+#### Usage Examples
 
 ```lua
 send("username\r\n")     -- Send with CR+LF
@@ -441,6 +696,7 @@ sleep(500)     -- Wait 500 milliseconds
 ```
 
 **Parameters:**
+
 - `ms` (integer): Duration in milliseconds
 
 ---
@@ -455,10 +711,10 @@ connect("My Favorite BBS")
 
 -- Wait for connection and login prompt
 if wait_for("login:", 15000) then
-    send_credentials(1)      -- Send username
+    send_username()
     
     if wait_for("Password:", 5000) then
-        send_credentials(2)  -- Send password
+        send_password()
         
         -- Check for successful login
         sleep(2000)
@@ -503,7 +759,7 @@ elseif on_screen("refused") or on_screen("busy") then
     println("Could not connect: " .. result)
 else
     -- Proceed with login
-    send_credentials()
+    send_login()
 end
 ```
 
@@ -512,7 +768,7 @@ end
 1. **Use `sleep()` between actions** - Many BBS systems need time to process input
 2. **Use `on_screen()` for error handling** - Check for error messages after critical operations
 3. **Use regex patterns** - Both `wait_for()` and `on_screen()` support regex
-4. **Store credentials in address book** - Use `send_credentials()` instead of hardcoding passwords
+4. **Store credentials in address book** - Use `send_login()` instead of hardcoding passwords
 5. **Handle timeouts** - `wait_for()` returns `nil` on timeout, check for this
 
 ## Terminal Emulation

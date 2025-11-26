@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use icy_engine::{Caret, TextBuffer};
+use icy_engine::{Screen, TextBuffer, TextPane, TextScreen};
 use mlua::{Lua, Value};
 use parking_lot::Mutex;
 use regex::Regex;
 
-use super::lua_buffer::LuaBuffer;
+use super::lua_layer::LuaLayer;
 use super::{Animator, LogEntry};
 use crate::MonitorType;
 
@@ -89,11 +89,10 @@ fn register_load_buffer(lua: &Lua, globals: &mlua::Table, parent: &Option<PathBu
                 }
 
                 if let Ok(buffer) = TextBuffer::load_buffer(&file_name, true, None) {
-                    mlua::Result::Ok(LuaBuffer {
-                        caret: Caret::default(),
-                        buffer,
-                        cur_layer: 0,
-                    })
+                    let mut text_screen = TextScreen::new(buffer.get_size());
+                    text_screen.buffer = buffer;
+                    let screen: Box<dyn Screen> = Box::new(text_screen);
+                    mlua::Result::Ok(LuaLayer::new(Arc::new(Mutex::new(screen))))
                 } else {
                     Err(mlua::Error::RuntimeError(format!("Could not load file {}", file)))
                 }
@@ -108,11 +107,9 @@ fn register_new_buffer(lua: &Lua, globals: &mlua::Table) {
         .set(
             "new_buffer",
             lua.create_function(move |_lua, (width, height): (i32, i32)| {
-                mlua::Result::Ok(LuaBuffer {
-                    caret: Caret::default(),
-                    buffer: TextBuffer::create((width, height)),
-                    cur_layer: 0,
-                })
+                let text_screen = TextScreen::new((width, height));
+                let screen: Box<dyn Screen> = Box::new(text_screen);
+                mlua::Result::Ok(LuaLayer::new(Arc::new(Mutex::new(screen))))
             })
             .unwrap(),
         )
@@ -138,7 +135,8 @@ fn register_next_frame(lua: &Lua, globals: &mlua::Table, animator: &Arc<Mutex<An
                     a.lock().current_monitor_settings.curvature = lua.globals().get("monitor_curvature")?;
                     a.lock().current_monitor_settings.scanlines = lua.globals().get("monitor_scanlines")?;
 
-                    a.lock().lua_next_frame(&data.borrow::<LuaBuffer>()?.buffer)
+                    let lua_screen = data.borrow::<LuaLayer>()?;
+                    a.lock().lua_next_frame(&lua_screen.screen)
                 } else {
                     Err(mlua::Error::RuntimeError(format!("UserData parameter required, got: {:?}", buffer)))
                 }

@@ -5,12 +5,14 @@
 
 mod lua_runtime;
 
-pub mod lua_buffer;
-pub use lua_buffer::{LuaBuffer, LuaScreen};
+pub mod lua_layer;
+pub use lua_layer::{LuaLayer, LuaScreen};
 
+use std::sync::Arc;
 use std::thread;
 
-use icy_engine::{TextBuffer, TextPane};
+use icy_engine::{Screen, TextBuffer};
+use parking_lot::Mutex;
 use web_time::Instant;
 
 use crate::MonitorSettings;
@@ -34,7 +36,7 @@ pub struct Animator {
     /// Optional scene buffer
     pub scene: Option<TextBuffer>,
     /// Stored animation frames with monitor settings and delay
-    pub frames: Vec<(TextBuffer, MonitorSettings, u32)>,
+    pub frames: Vec<(Box<dyn Screen>, MonitorSettings, u32)>,
     /// Current monitor settings for rendering
     pub(crate) current_monitor_settings: MonitorSettings,
     /// Additional buffers
@@ -75,21 +77,13 @@ impl Default for Animator {
 }
 
 impl Animator {
-    /// Add a new frame from the current buffer state
-    pub(crate) fn lua_next_frame(&mut self, buffer: &TextBuffer) -> mlua::Result<()> {
+    /// Add a new frame from the current screen state
+    pub(crate) fn lua_next_frame(&mut self, screen: &Arc<Mutex<Box<dyn Screen>>>) -> mlua::Result<()> {
         if self.frames.len() > MAX_FRAMES {
             return Err(mlua::Error::RuntimeError("Maximum number of frames reached".to_string()));
         }
 
-        let mut frame = TextBuffer::new(buffer.get_size());
-        frame.terminal_state = buffer.terminal_state.clone();
-        frame.palette = buffer.palette.clone();
-        frame.layers = buffer.layers.clone();
-        frame.clear_font_table();
-        for f in buffer.font_iter() {
-            frame.set_font(*f.0, f.1.clone());
-        }
-
+        let frame = screen.lock().clone_box();
         self.frames.push((frame, self.current_monitor_settings.clone(), self.delay));
         Ok(())
     }
@@ -164,7 +158,7 @@ impl Animator {
     }
 
     /// Get current frame's buffer and settings
-    pub fn get_current_frame(&self) -> Option<(&TextBuffer, &MonitorSettings)> {
+    pub fn get_current_frame(&self) -> Option<(&Box<dyn Screen>, &MonitorSettings)> {
         self.frames.get(self.cur_frame).map(|(scene, settings, _)| (scene, settings))
     }
 
@@ -174,12 +168,12 @@ impl Animator {
     }
 
     /// Get current frame buffer with all metadata (immutable)
-    pub fn get_cur_frame_buffer(&self) -> Option<(&TextBuffer, &MonitorSettings, &u32)> {
+    pub fn get_cur_frame_buffer(&self) -> Option<(&Box<dyn Screen>, &MonitorSettings, &u32)> {
         self.frames.get(self.cur_frame).map(|(scene, settings, delay)| (scene, settings, delay))
     }
 
     /// Get current frame buffer with all metadata (mutable)
-    pub fn get_cur_frame_buffer_mut(&mut self) -> Option<(&mut TextBuffer, &mut MonitorSettings, &mut u32)> {
+    pub fn get_cur_frame_buffer_mut(&mut self) -> Option<(&mut Box<dyn Screen>, &mut MonitorSettings, &mut u32)> {
         self.frames.get_mut(self.cur_frame).map(|(scene, settings, delay)| (scene, settings, delay))
     }
 

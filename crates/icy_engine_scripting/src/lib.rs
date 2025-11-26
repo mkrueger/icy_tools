@@ -1,5 +1,5 @@
 pub mod animator;
-pub use animator::{Animator, LogEntry, LuaBuffer, LuaScreen};
+pub use animator::{Animator, LogEntry, LuaLayer, LuaScreen};
 
 pub mod lua_extension;
 pub use lua_extension::{LuaExtension, NoExtension};

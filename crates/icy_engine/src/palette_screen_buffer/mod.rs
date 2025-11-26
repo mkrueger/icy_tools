@@ -226,23 +226,6 @@ impl PaletteScreenBuffer {
     pub fn get_pixel_dimensions(&self) -> (usize, usize) {
         (self.char_screen_size.width as usize, self.char_screen_size.height as usize)
     }
-
-    fn add_line_to_scrollback(&mut self, i: i32) {
-        let width = self.get_resolution().width;
-
-        // Create render options for a single line
-        let options = RenderOptions {
-            override_scan_lines: Some(false),
-            ..RenderOptions::default()
-        };
-        let font_size = self.get_font_dimensions();
-        let region = Rectangle::from(0, i * font_size.width, width, font_size.height);
-
-        let (size, rgba_data) = self.render_region_to_rgba(region, &options);
-
-        // Add the line to the scrollback buffer
-        self.scrollback_buffer.add_chunk(rgba_data, size);
-    }
 }
 
 impl TextPane for PaletteScreenBuffer {
@@ -647,10 +630,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
     /// Scroll the screen up by one line (move content up, clear bottom line)
     fn scroll_up(&mut self) {
-        if self.terminal_state().get_margins_top_bottom().is_none() {
-            self.add_line_to_scrollback(0);
-        }
-
         let font = self.get_font_dimensions();
         let line_height = font.height as usize;
         let screen_width = self.pixel_size.width as usize;
@@ -658,6 +637,12 @@ impl EditableScreen for PaletteScreenBuffer {
 
         if line_height == 0 || line_height >= screen_height {
             return;
+        }
+
+        // Add top line to scrollback before scrolling (while data is still there)
+        if self.terminal_state().get_margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, line_height as i32);
+            self.scrollback_buffer.add_chunk(rgba_data, size);
         }
 
         let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
@@ -741,8 +726,10 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_screen(&mut self) {
-        for i in 0..self.get_height() {
-            self.add_line_to_scrollback(i);
+        // Add entire screen to scrollback
+        if self.terminal_state.is_terminal_buffer {
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.pixel_size.height);
+            self.scrollback_buffer.add_chunk(rgba_data, size);
         }
 
         self.set_caret_position(Position::default());

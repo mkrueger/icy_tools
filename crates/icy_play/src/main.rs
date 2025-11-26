@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crc32fast::Hasher;
-use icy_engine::{SaveOptions, TextBuffer, TextPane};
+use icy_engine::{SaveOptions, Screen, TextBuffer, TextPane, TextScreen};
 use icy_engine_scripting::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 
@@ -53,16 +53,16 @@ enum Commands {
     ShowFrame { frame: usize },
 }
 
-pub fn get_line_checksums(buf: &TextBuffer) -> Vec<u32> {
+pub fn get_line_checksums(screen: &dyn Screen) -> Vec<u32> {
     let mut result = Vec::new();
-    for y in 0..buf.get_height() {
+    for y in 0..screen.get_height() {
         let mut hasher = Hasher::new();
-        for x in 0..buf.get_width() {
-            let ch = buf.get_char((x, y).into());
+        for x in 0..screen.get_width() {
+            let ch = screen.get_char((x, y).into());
             hasher.update(&[ch.ch as u8]);
-            let fg = buf.palette.get_color(ch.attribute.get_foreground()).get_rgb();
+            let fg = screen.palette().get_color(ch.attribute.get_foreground()).get_rgb();
             hasher.update(&[fg.0, fg.1, fg.2]);
-            let bg = buf.palette.get_color(ch.attribute.get_background()).get_rgb();
+            let bg = screen.palette().get_color(ch.attribute.get_background()).get_rgb();
             hasher.update(&[bg.0, bg.1, bg.2]);
             hasher.update(&[ch.attribute.attr as u8, (ch.attribute.attr >> 8) as u8]);
         }
@@ -131,8 +131,8 @@ fn main() {
                                         break;
                                     }
                                 }
-                                if let Some((buffer, _, delay)) = animator.lock().get_cur_frame_buffer_mut() {
-                                    let new_checksums = get_line_checksums(buffer);
+                                if let Some((screen, _, delay)) = animator.lock().get_cur_frame_buffer_mut() {
+                                    let new_checksums = get_line_checksums(screen.as_ref());
                                     let mut skip_lines: Vec<usize> = Vec::new();
                                     if checksums.len() == new_checksums.len() {
                                         for i in 0..checksums.len() {
@@ -141,7 +141,7 @@ fn main() {
                                             }
                                         }
                                     }
-                                    show_buffer(&mut io, buffer, false, &args, &term, skip_lines).unwrap();
+                                    show_buffer(&mut io, screen.as_mut(), false, &args, &term, skip_lines).unwrap();
                                     checksums = new_checksums;
                                     std::thread::sleep(Duration::from_millis(*delay as u64));
                                 } else {
@@ -154,7 +154,7 @@ fn main() {
                             let _ = io.write(b"\x1b[?25h\x1b[0;0 D");
                         }
                         Commands::ShowFrame { frame } => {
-                            show_buffer(&mut io, &mut animator.lock().frames[frame].0, true, &args, &term, Vec::new()).unwrap();
+                            show_buffer(&mut io, animator.lock().frames[frame].0.as_mut(), true, &args, &term, Vec::new()).unwrap();
                         }
                     }
                 }
@@ -164,8 +164,10 @@ fn main() {
             },
             _ => {
                 let buffer = TextBuffer::load_buffer(&path, true, None);
-                if let Ok(mut buffer) = buffer {
-                    show_buffer(&mut io, &mut buffer, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
+                if let Ok(buffer) = buffer {
+                    let mut screen = TextScreen::new(buffer.get_size());
+                    screen.buffer = buffer;
+                    show_buffer(&mut io, &mut screen, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
                 }
             }
         }
@@ -174,7 +176,7 @@ fn main() {
 
 fn show_buffer(
     io: &mut Box<dyn Com>,
-    buffer: &mut TextBuffer,
+    screen: &mut dyn Screen,
     single_frame: bool,
     cli: &Cli,
     terminal: &Terminal,
@@ -199,12 +201,14 @@ fn show_buffer(
     if matches!(terminal, Terminal::IcyTerm) {
         opt.control_char_handling = icy_engine::ControlCharHandling::IcyTerm;
     }
-    let bytes = if cli.utf8 && buffer.ice_mode == icy_engine::IceMode::Ice {
+    let bytes = if cli.utf8 && screen.ice_mode() == icy_engine::IceMode::Ice {
         // Convert ice mode to unlimited for proper UTF8 output
-        buffer.ice_mode = icy_engine::IceMode::Unlimited;
-        buffer.to_bytes("ans", &opt)?
+        if let Some(editable) = screen.as_editable() {
+            *editable.ice_mode_mut() = icy_engine::IceMode::Unlimited;
+        }
+        screen.to_bytes("ans", &opt)?
     } else {
-        buffer.to_bytes("ans", &opt)?
+        screen.to_bytes("ans", &opt)?
     };
 
     if !single_frame && terminal.use_dcs() {
