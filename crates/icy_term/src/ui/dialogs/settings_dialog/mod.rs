@@ -129,8 +129,7 @@ impl SettingsDialogState {
                 None
             }
             SettingsMsg::OpenLogFile => {
-                if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
-                    let log_file = proj_dirs.config_dir().join("icy_term.log");
+                if let Some(log_file) = Options::get_log_file() {
                     let _ = open::that(log_file);
                 }
                 None

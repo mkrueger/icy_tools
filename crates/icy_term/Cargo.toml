@@ -55,7 +55,7 @@ once_cell = { workspace = true }
 url = "2.5.7"
 
 log = { workspace = true }
-log4rs = "1.4.0"
+flexi_logger = { workspace = true }
 
 directories = { workspace = true }
 open = { workspace = true }

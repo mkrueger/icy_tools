@@ -20,20 +20,12 @@ use std::{
 
 use clap_i18n_richformatter::clap_i18n;
 
-use directories::ProjectDirs;
+use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use lazy_static::lazy_static;
+use semver::Version;
+
 //use ui::MainWindow;
 pub type TerminalResult<T> = Res<T>;
-use log4rs::{
-    append::{
-        console::{ConsoleAppender, Target},
-        file::FileAppender,
-    },
-    config::{Appender, Config, Root},
-    encode::pattern::PatternEncoder,
-    filter::threshold::ThresholdFilter,
-};
-use semver::Version;
 
 pub mod data;
 pub use data::*;
@@ -49,7 +41,7 @@ pub mod ui;
 mod util;
 pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 
 lazy_static! {
     static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
@@ -85,14 +77,6 @@ static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::n
     loader
 });
 
-fn get_log_file() -> anyhow::Result<PathBuf> {
-    if let Some(proj_dirs) = ProjectDirs::from("com", "GitHub", "icy_term") {
-        let dir = proj_dirs.config_dir().join("icy_term.log");
-        return Ok(dir);
-    }
-    Err(anyhow::anyhow!("Error getting log directory"))
-}
-
 #[derive(Parser, Debug)]
 #[command(author, version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "app-about"), long_about = None)]
 #[clap_i18n]
@@ -113,45 +97,20 @@ pub static MCP_PORT: AtomicU16 = AtomicU16::new(0);
 
 fn main() {
     clap_i18n_richformatter::init_clap_rich_formatter_localizer();
-    use std::fs;
-
     let args = Args::parse_i18n();
 
-    if let Ok(log_file) = get_log_file() {
-        // delete log file when it is too big
-        if let Ok(data) = fs::metadata(&log_file) {
-            if data.len() > 1024 * 256 {
-                fs::remove_file(&log_file).unwrap();
-            }
-        }
-
-        let level = log::LevelFilter::Warn;
-
-        // Build a stderr logger.
-        let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
-
-        // Logging to log file.
-        let logfile = FileAppender::builder()
-            // Pattern: https://docs.rs/log4rs/*/log4rs/encode/pattern/index.html
-            .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
-            .build(log_file)
-            .unwrap();
-
-        let config = Config::builder()
-            .appender(Appender::builder().build("logfile", Box::new(logfile)))
-            .appender(
-                Appender::builder()
-                    .filter(Box::new(ThresholdFilter::new(level)))
-                    .build("stderr", Box::new(stderr)),
+    if let Some(log_dir) = Options::get_log_dir() {
+        let _logger = Logger::try_with_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error, zbus=error, zbus::connection=error")
+            .unwrap()
+            .log_to_file(FileSpec::default().directory(&log_dir).basename("icy_term").suffix("log").suppress_timestamp())
+            .rotate(
+                Criterion::Size(64 * 1024), // 64 KB should be enough for everyone
+                Naming::Numbers,
+                Cleanup::KeepLogFiles(3),
             )
-            .build(Root::builder().appender("logfile").appender("stderr").build(level))
-            .unwrap();
-
-        // Use this to change log levels at runtime.
-        // This means you can change the default log level to trace
-        // if you are trying to debug an issue and need more logs on then turn it off
-        // once you are done.
-        let _handle = log4rs::init_config(config);
+            .create_symlink(log_dir.join("icy_term.log"))
+            .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
+            .start();
     } else {
         eprintln!("Failed to create log file");
     }

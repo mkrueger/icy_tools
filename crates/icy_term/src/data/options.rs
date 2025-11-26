@@ -167,6 +167,25 @@ impl Default for Options {
 }
 
 impl Options {
+    /// Returns the log directory path (for flexi_logger configuration).
+    pub fn get_log_dir() -> Option<PathBuf> {
+        directories::ProjectDirs::from("com", "GitHub", "icy_term").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
+    }
+
+    /// Returns the path to the current log file.
+    /// On Windows, this returns the rotated file name (icy_term_rCURRENT.log)
+    /// since symlinks don't work reliably there.
+    /// On other platforms, this returns the symlink (icy_term.log).
+    pub fn get_log_file() -> Option<PathBuf> {
+        Self::get_log_dir().map(|log_dir| {
+            if cfg!(windows) {
+                log_dir.join("icy_term_rCURRENT.log")
+            } else {
+                log_dir.join("icy_term.log")
+            }
+        })
+    }
+
     /// .
     ///
     /// # Errors

@@ -8,6 +8,7 @@ use icy_engine_gui::{
     settings::{effect_box, left_label},
 };
 
+use crate::Options;
 use crate::ui::dialogs::settings_dialog::SettingsMsg;
 
 pub fn paths_settings_content(download_path: String, capture_path: String) -> Element<'static, crate::ui::Message> {
@@ -23,9 +24,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
         .map(|p| p.config_dir().join("phonebook.toml").display().to_string())
         .unwrap_or_else(|| "N/A".to_string());
 
-    let log_file = directories::ProjectDirs::from("com", "GitHub", "icy_term")
-        .map(|p| p.config_dir().join("icy_term.log").display().to_string())
-        .unwrap_or_else(|| "N/A".to_string());
+    let log_file = Options::get_log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
     let content = column![
         section_header(fl!(crate::LANGUAGE_LOADER, "settings-paths-header")),
