@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use iced::keyboard;
 use icy_engine::Screen;
-use icy_engine_scripting::{LuaBuffer, LuaExtension};
+use icy_engine_scripting::{LuaExtension, LuaScreen};
 use icy_net::telnet::TerminalEmulation;
-use mlua::{Lua, UserData};
+use mlua::Lua;
 use parking_lot::Mutex;
 use regex::Regex;
 use tokio::sync::mpsc;
@@ -64,6 +64,24 @@ impl TerminalLuaExtension {
     }
 }
 
+/// Extracts the current screen content as a String
+fn get_screen_text(screen: &Arc<Mutex<Box<dyn Screen>>>) -> String {
+    let screen_guard = screen.lock();
+    let width = screen_guard.get_width();
+    let height = screen_guard.get_height();
+    let buffer_type = screen_guard.buffer_type();
+
+    let mut text = String::new();
+    for y in 0..height {
+        for x in 0..width {
+            let ch = screen_guard.get_char(icy_engine::Position::new(x, y));
+            text.push(buffer_type.convert_to_unicode(ch.ch));
+        }
+        text.push('\n');
+    }
+    text
+}
+
 impl LuaExtension for TerminalLuaExtension {
     fn register(&self, lua: &Lua) -> mlua::Result<()> {
         let globals = lua.globals();
@@ -76,6 +94,9 @@ impl LuaExtension for TerminalLuaExtension {
 
         // Register wait_for() function
         self.register_wait_for(lua, &globals)?;
+
+        // Register on_screen() function
+        self.register_on_screen(lua, &globals)?;
 
         // Register get_screen() function
         self.register_get_screen(lua, &globals)?;
@@ -150,22 +171,7 @@ impl TerminalLuaExtension {
                     }
 
                     // Get screen content as text
-                    let screen_text = {
-                        let screen_guard = screen.lock();
-                        let width = screen_guard.get_width();
-                        let height = screen_guard.get_height();
-                        let buffer_type = screen_guard.buffer_type();
-
-                        let mut text = String::new();
-                        for y in 0..height {
-                            for x in 0..width {
-                                let ch = screen_guard.get_char(icy_engine::Position::new(x, y));
-                                text.push(buffer_type.convert_to_unicode(ch.ch));
-                            }
-                            text.push('\n');
-                        }
-                        text
-                    };
+                    let screen_text = get_screen_text(&screen);
 
                     // Search for pattern in screen text
                     if let Some(m) = regex.find(&screen_text) {
@@ -180,37 +186,63 @@ impl TerminalLuaExtension {
         Ok(())
     }
 
-    fn register_get_screen(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
+    fn register_on_screen(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
         let screen = self.state.screen.clone();
 
         globals.set(
-            "get_screen",
-            lua.create_function(move |_, ()| {
-                let screen_guard = screen.lock();
+            "on_screen",
+            lua.create_function(move |_, pattern: String| {
+                // Get screen content as text
+                let screen_text = get_screen_text(&screen);
 
-                // Create a LuaBuffer from the current screen state
-                let width = screen_guard.get_width();
-                let height = screen_guard.get_height();
+                // Check if pattern exists in screen text (supports regex)
+                let regex = Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(format!("Invalid regex pattern: {}", e)))?;
 
-                let mut buffer = icy_engine::TextBuffer::create((width, height));
-
-                // Copy screen content to buffer
-                for y in 0..height {
-                    for x in 0..width {
-                        let ch = screen_guard.get_char(icy_engine::Position::new(x, y));
-                        if buffer.layers.len() > 0 {
-                            buffer.layers[0].set_char(icy_engine::Position::new(x, y), ch);
-                        }
-                    }
-                }
-
-                Ok(LuaBuffer {
-                    cur_layer: 0,
-                    caret: icy_engine::Caret::default(),
-                    buffer,
-                })
+                Ok(regex.is_match(&screen_text))
             })?,
         )?;
+        Ok(())
+    }
+
+    fn register_get_screen(&self, lua: &Lua, globals: &mlua::Table) -> mlua::Result<()> {
+        let screen = self.state.screen.clone();
+
+        // Register screen as global LuaScreen object
+        let lua_screen = LuaScreen::new(screen);
+        globals.set("screen", lua_screen)?;
+
+        // Register global wrapper functions that delegate to screen
+        lua.load(
+            r#"
+            function gotoxy(x, y) screen:gotoxy(x, y) end
+            function print(s) screen:print(s) end
+            function println(s) screen:println(s) end
+            function set_char(x, y, ch) screen:set_char(x, y, ch) end
+            function clear_char(x, y) screen:clear_char(x, y) end
+            function get_char(x, y) return screen:get_char(x, y) end
+            function pickup_char(x, y) return screen:pickup_char(x, y) end
+            function get_width() return screen.width end
+            function get_height() return screen.height end
+            function set_fg(x, y, col) screen:set_fg(x, y, col) end
+            function get_fg(x, y) return screen:get_fg(x, y) end
+            function set_bg(x, y, col) screen:set_bg(x, y, col) end
+            function get_bg(x, y) return screen:get_bg(x, y) end
+            function fg_rgb(r, g, b) return screen:fg_rgb(r, g, b) end
+            function bg_rgb(r, g, b) return screen:bg_rgb(r, g, b) end
+            function set_palette_color(col, r, g, b) screen:set_palette_color(col, r, g, b) end
+            function get_palette_color(col) return screen:get_palette_color(col) end
+            function clear_screen() screen:clear() end
+            function layer_count() return screen.layer_count end
+            function set_layer(l) screen.layer = l end
+            function get_layer() return screen.layer end
+            function set_layer_position(l, x, y) screen:set_layer_position(l, x, y) end
+            function get_layer_position(l) return screen:get_layer_position(l) end
+            function set_layer_visible(l, v) screen:set_layer_visible(l, v) end
+            function get_layer_visible(l) return screen:get_layer_visible(l) end
+        "#,
+        )
+        .exec()?;
+
         Ok(())
     }
 
@@ -371,56 +403,4 @@ fn map_key_to_bytes(
     };
 
     icy_engine_gui::key_map::lookup_key(key, physical, modifiers, key_map)
-}
-
-/// Wrapper for screen content that can be passed to Lua
-/// (Reserved for future use with direct screen access)
-#[allow(dead_code)]
-pub struct LuaScreen {
-    screen: Arc<Mutex<Box<dyn Screen>>>,
-}
-
-impl UserData for LuaScreen {
-    fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("width", |_, this| Ok(this.screen.lock().get_width()));
-
-        fields.add_field_method_get("height", |_, this| Ok(this.screen.lock().get_height()));
-    }
-
-    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("get_char", |_, this, (x, y): (i32, i32)| {
-            let screen = this.screen.lock();
-            let ch = screen.get_char(icy_engine::Position::new(x, y));
-            let buffer_type = screen.buffer_type();
-            Ok(buffer_type.convert_to_unicode(ch.ch).to_string())
-        });
-
-        methods.add_method("get_line", |_, this, y: i32| {
-            let screen = this.screen.lock();
-            let width = screen.get_width();
-            let buffer_type = screen.buffer_type();
-            let mut line = String::new();
-            for x in 0..width {
-                let ch = screen.get_char(icy_engine::Position::new(x, y));
-                line.push(buffer_type.convert_to_unicode(ch.ch));
-            }
-            Ok(line.trim_end().to_string())
-        });
-
-        methods.add_method("get_text", |_, this, ()| {
-            let screen = this.screen.lock();
-            let width = screen.get_width();
-            let height = screen.get_height();
-            let buffer_type = screen.buffer_type();
-            let mut text = String::new();
-            for y in 0..height {
-                for x in 0..width {
-                    let ch = screen.get_char(icy_engine::Position::new(x, y));
-                    text.push(buffer_type.convert_to_unicode(ch.ch));
-                }
-                text.push('\n');
-            }
-            Ok(text)
-        });
-    }
 }

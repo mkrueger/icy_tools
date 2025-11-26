@@ -155,6 +155,11 @@ impl HelpDialog {
                 name: fl!(crate::LANGUAGE_LOADER, "help-category-tools"),
                 shortcuts: vec![
                     Shortcut {
+                        keys: format!("{mod_symbol} R"),
+                        action: fl!(crate::LANGUAGE_LOADER, "help-action-run-script"),
+                        desc: fl!(crate::LANGUAGE_LOADER, "help-desc-run-script"),
+                    },
+                    Shortcut {
                         keys: format!("{mod_symbol} F"),
                         action: fl!(crate::LANGUAGE_LOADER, "help-action-find"),
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-find"),

@@ -306,5 +306,8 @@ help-action-scrollback = Afișează istoric
 help-action-capture-screen = Capturează ecranul
 help-action-capture-session = Capturează sesiunea
 help-action-find = Caută
+help-action-run-script = Execută script
 help-action-about = Despre
 help-action-help = Ajutor
+
+help-desc-run-script = Execută un script Lua

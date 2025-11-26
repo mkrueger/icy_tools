@@ -304,5 +304,8 @@ help-action-scrollback = Pokaż historię
 help-action-capture-screen = Przechwyć ekran
 help-action-capture-session = Przechwyć sesję
 help-action-find = Szukaj
+help-action-run-script = Uruchom skrypt
 help-action-about = O programie
 help-action-help = Pomoc
+
+help-desc-run-script = Uruchom skrypt Lua

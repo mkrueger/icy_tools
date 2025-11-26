@@ -5,7 +5,7 @@ use std::{sync::Arc, u32};
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
+    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
     SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
 };
 
@@ -602,6 +602,31 @@ impl EditableScreen for TextScreen {
 
     fn mark_dirty(&self) {
         self.buffer.mark_dirty()
+    }
+
+    fn layer_count(&self) -> usize {
+        self.buffer.layers.len()
+    }
+
+    fn get_current_layer(&self) -> usize {
+        self.current_layer
+    }
+
+    fn set_current_layer(&mut self, layer: usize) -> EngineResult<()> {
+        if layer < self.buffer.layers.len() {
+            self.current_layer = layer;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Layer {} out of range (0..{})", layer, self.buffer.layers.len()).into())
+        }
+    }
+
+    fn get_layer(&self, layer: usize) -> Option<&Layer> {
+        self.buffer.layers.get(layer)
+    }
+
+    fn get_layer_mut(&mut self, layer: usize) -> Option<&mut Layer> {
+        self.buffer.layers.get_mut(layer)
     }
 
     fn saved_caret_pos(&mut self) -> &mut Position {

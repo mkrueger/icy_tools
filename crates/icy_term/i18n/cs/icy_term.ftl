@@ -305,5 +305,8 @@ help-action-scrollback = Zobrazit historii
 help-action-capture-screen = Zachytit obrazovku
 help-action-capture-session = Zachytit relaci
 help-action-find = Najít
+help-action-run-script = Spustit skript
 help-action-about = O aplikaci
 help-action-help = Nápověda
+
+help-desc-run-script = Spustit Lua skript

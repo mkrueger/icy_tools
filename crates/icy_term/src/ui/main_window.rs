@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use crate::{
     McpHandler,
     mcp::{self, McpCommand, types::ScreenCaptureFormat},
+    scripting::parse_key_string,
     ui::{
         Message,
         dialogs::find_dialog,
@@ -373,7 +374,7 @@ impl MainWindow {
                         if !address.user_name.is_empty() && login {
                             let username_data = address.user_name.as_bytes().to_vec();
                             let mut username_with_cr = username_data;
-                            let enter_bytes = self.parse_key_string("enter").unwrap_or(vec![b'\r']);
+                            let enter_bytes = parse_key_string(self.terminal_emulation, "enter").unwrap_or(vec![b'\r']);
                             username_with_cr.extend(&enter_bytes);
 
                             let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
@@ -391,7 +392,7 @@ impl MainWindow {
                             }
                         } else if pw && !address.password.is_empty() {
                             let mut password_with_cr = address.password.as_bytes().to_vec();
-                            let enter_bytes = self.parse_key_string("enter").unwrap_or(vec![b'\r']);
+                            let enter_bytes = parse_key_string(self.terminal_emulation, "enter").unwrap_or(vec![b'\r']);
                             password_with_cr.extend(enter_bytes);
                             let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
                         }
@@ -778,7 +779,7 @@ impl MainWindow {
                     }
                     McpCommand::SendKey(key) => {
                         // Parse special keys and send appropriate bytes
-                        let bytes = self.parse_key_string(key);
+                        let bytes = crate::scripting::parse_key_string(self.terminal_emulation, key);
                         if let Some(data) = bytes {
                             return self.update(Message::SendData(data));
                         }
@@ -1366,6 +1367,7 @@ impl MainWindow {
                                     "a" => return Some(Message::ShowAboutDialog),
                                     "c" => return Some(Message::ClearScreen),
                                     "b" => return Some(Message::ShowScrollback),
+                                    "r" => return Some(Message::ShowRunScriptDialog),
                                     _ => {}
                                 },
                                 _ => {}
@@ -1467,51 +1469,5 @@ impl MainWindow {
                 }
             }
         }
-    }
-
-    fn parse_key_string(&self, key_str: &str) -> Option<Vec<u8>> {
-        let key = match key_str.to_lowercase().as_str() {
-            "enter" => keyboard::Key::Named(keyboard::key::Named::Enter),
-            "escape" | "esc" => keyboard::Key::Named(keyboard::key::Named::Escape),
-            "tab" => keyboard::Key::Named(keyboard::key::Named::Tab),
-            "backspace" => keyboard::Key::Named(keyboard::key::Named::Backspace),
-            "delete" | "del" => keyboard::Key::Named(keyboard::key::Named::Delete),
-            "home" => keyboard::Key::Named(keyboard::key::Named::Home),
-            "end" => keyboard::Key::Named(keyboard::key::Named::End),
-            "pageup" | "pgup" => keyboard::Key::Named(keyboard::key::Named::PageUp),
-            "pagedown" | "pgdn" => keyboard::Key::Named(keyboard::key::Named::PageDown),
-            "up" | "arrowup" => keyboard::Key::Named(keyboard::key::Named::ArrowUp),
-            "down" | "arrowdown" => keyboard::Key::Named(keyboard::key::Named::ArrowDown),
-            "left" | "arrowleft" => keyboard::Key::Named(keyboard::key::Named::ArrowLeft),
-            "right" | "arrowright" => keyboard::Key::Named(keyboard::key::Named::ArrowRight),
-            "f1" => keyboard::Key::Named(keyboard::key::Named::F1),
-            "f2" => keyboard::Key::Named(keyboard::key::Named::F2),
-            "f3" => keyboard::Key::Named(keyboard::key::Named::F3),
-            "f4" => keyboard::Key::Named(keyboard::key::Named::F4),
-            "f5" => keyboard::Key::Named(keyboard::key::Named::F5),
-            "f6" => keyboard::Key::Named(keyboard::key::Named::F6),
-            "f7" => keyboard::Key::Named(keyboard::key::Named::F7),
-            "f8" => keyboard::Key::Named(keyboard::key::Named::F8),
-            "f9" => keyboard::Key::Named(keyboard::key::Named::F9),
-            "f10" => keyboard::Key::Named(keyboard::key::Named::F10),
-            "f11" => keyboard::Key::Named(keyboard::key::Named::F11),
-            "f12" => keyboard::Key::Named(keyboard::key::Named::F12),
-            _ => return None,
-        };
-
-        // Check for modifiers in the key string (e.g., "Ctrl+C", "Alt+F4")
-        let modifiers = if key_str.contains("ctrl+") || key_str.contains("control+") {
-            keyboard::Modifiers::CTRL
-        } else if key_str.contains("alt+") {
-            keyboard::Modifiers::ALT
-        } else if key_str.contains("shift+") {
-            keyboard::Modifiers::SHIFT
-        } else {
-            keyboard::Modifiers::empty()
-        };
-
-        let physical = keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
-
-        Self::map_key_event_to_bytes(self.terminal_emulation, &key, &physical, modifiers)
     }
 }

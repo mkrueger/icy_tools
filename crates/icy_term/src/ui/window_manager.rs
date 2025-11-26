@@ -337,7 +337,6 @@ impl WindowManager {
                                 match &key {
                                     keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
                                         "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
-                                        "r" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ShowRunScriptDialog)),
                                         _ => {}
                                     },
                                     _ => {}

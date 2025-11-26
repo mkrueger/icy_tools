@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 icy_engine = { workspace = true }
+icy_parser_core = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
 mlua = { workspace = true }

@@ -279,8 +279,11 @@ help-action-scrollback = Scrollback anzeigen
 help-action-capture-screen = Bildschirm aufnehmen
 help-action-capture-session = Sitzung aufnehmen
 help-action-find = Suchen
+help-action-run-script = Skript ausführen
 help-action-about = Über iCY TERM
 help-action-help = Hilfe
+
+help-desc-run-script = Ein Lua-Skript ausführen
 
 help-action-switch-window = Fenster wechseln
 help-action-smart-paste = Smart-Einfügen

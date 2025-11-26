@@ -6,7 +6,7 @@
 mod lua_runtime;
 
 pub mod lua_buffer;
-pub use lua_buffer::LuaBuffer;
+pub use lua_buffer::{LuaBuffer, LuaScreen};
 
 use std::thread;
 

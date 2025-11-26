@@ -309,5 +309,8 @@ help-action-scrollback = Show Scrollback
 help-action-capture-screen = Capture Screen
 help-action-capture-session = Capture Session
 help-action-find = Find
+help-action-run-script = Run Script
 help-action-about = About
 help-action-help = Help
+
+help-desc-run-script = Execute a Lua script

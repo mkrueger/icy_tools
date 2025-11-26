@@ -306,5 +306,8 @@ help-action-scrollback = Előzmények megjelenítése
 help-action-capture-screen = Képernyő rögzítése
 help-action-capture-session = Munkamenet rögzítése
 help-action-find = Keresés
+help-action-run-script = Szkript futtatása
 help-action-about = Névjegy
 help-action-help = Súgó
+
+help-desc-run-script = Lua szkript futtatása

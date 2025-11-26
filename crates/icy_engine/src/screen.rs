@@ -4,8 +4,8 @@ use std::{cmp::max, sync::Arc};
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection, Sixel,
-    Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret,
+    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection,
+    Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret,
 };
 
 #[repr(u8)]
@@ -197,6 +197,32 @@ pub trait EditableScreen: Screen {
 
     // Change tracking
     fn mark_dirty(&self);
+
+    // Layer management
+    /// Returns the number of layers
+    fn layer_count(&self) -> usize {
+        1 // Default: single layer
+    }
+
+    /// Returns the current layer index
+    fn get_current_layer(&self) -> usize {
+        0 // Default: layer 0
+    }
+
+    /// Sets the current layer index
+    fn set_current_layer(&mut self, _layer: usize) -> EngineResult<()> {
+        Ok(()) // Default: no-op (single layer)
+    }
+
+    /// Returns a reference to the layer at the given index, if it exists
+    fn get_layer(&self, _layer: usize) -> Option<&Layer> {
+        None // Default: no layers
+    }
+
+    /// Returns a mutable reference to the layer at the given index, if it exists
+    fn get_layer_mut(&mut self, _layer: usize) -> Option<&mut Layer> {
+        None // Default: no layers
+    }
 
     // Line operations
     fn insert_line(&mut self, line: usize, new_line: Line);
