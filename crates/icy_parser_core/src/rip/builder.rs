@@ -12,12 +12,17 @@ pub struct CommandBuilder {
 
     // Reusable buffers for command parameters
     pub u16_params: Vec<u16>,
-    pub string_param: String,
+    pub string_param: Vec<u8>,
     pub char_param: u8,
     pub got_escape: bool,
 }
 
 impl CommandBuilder {
+    #[inline(always)]
+    pub fn take_string(&mut self) -> String {
+        String::from_utf8_lossy(&self.string_param).into_owned()
+    }
+
     #[inline(always)]
     pub fn reset(&mut self) {
         self.cmd_char = 0;

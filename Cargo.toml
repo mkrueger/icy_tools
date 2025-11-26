@@ -87,6 +87,11 @@ codegen-units = 1   # Reduce number of codegen units to increase optimizations
 panic = 'abort'     # Abort on panic
 strip = true        # Strip symbols from binary*
 
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
 [patch.crates-io]
 iced.git = "https://github.com/iced-rs/iced.git"
 iced_aw.git = "https://github.com/iced-rs/iced_aw.git"

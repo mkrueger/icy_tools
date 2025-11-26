@@ -48,6 +48,8 @@ pub enum TerminalCommand {
     SetDownloadDirectory(PathBuf),
     /// Run a Lua script file
     RunScript(PathBuf),
+    /// Run Lua script code directly (from string)
+    RunScriptCode(String),
     /// Stop the currently running script
     StopScript,
 }
@@ -503,6 +505,9 @@ impl TerminalThread {
             }
             TerminalCommand::RunScript(path) => {
                 self.run_script(path);
+            }
+            TerminalCommand::RunScriptCode(code) => {
+                self.run_script_code(code);
             }
             TerminalCommand::StopScript => {
                 self.stop_script();
@@ -1680,7 +1685,7 @@ fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Optio
 }
 
 impl TerminalThread {
-    /// Start running a Lua script
+    /// Start running a Lua script from file
     fn run_script(&mut self, path: PathBuf) {
         // Stop any existing script
         self.stop_script();
@@ -1697,6 +1702,32 @@ impl TerminalThread {
         match runner.run_file(&path) {
             Ok(()) => {
                 self.send_event(TerminalEvent::ScriptStarted(path));
+                self.script_runner = Some(runner);
+            }
+            Err(e) => {
+                self.send_event(TerminalEvent::ScriptFinished(Err(e)));
+            }
+        }
+    }
+
+    /// Start running Lua script code directly (from string)
+    fn run_script_code(&mut self, code: String) {
+        // Stop any existing script
+        self.stop_script();
+
+        // Create a new script runner
+        let mut runner = ScriptRunner::new(
+            self.edit_screen.clone(),
+            self.command_tx.clone(),
+            self.event_tx.clone(),
+            self.address_book.clone(),
+            self.terminal_emulation.clone(),
+        );
+
+        match runner.run_script(code) {
+            Ok(()) => {
+                // Use a placeholder path for code-based scripts
+                self.send_event(TerminalEvent::ScriptStarted(PathBuf::from("<mcp_script>")));
                 self.script_runner = Some(runner);
             }
             Err(e) => {

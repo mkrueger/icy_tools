@@ -6,6 +6,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::types::*;
 
+/// Embedded scripting documentation for MCP resources
+const SCRIPTING_DOC: &str = include_str!("../../SCRIPTING.md");
+
 impl McpServer {
     pub fn new() -> (Self, mpsc::UnboundedReceiver<McpCommand>) {
         let mut handler: IoHandler = IoHandler::new();
@@ -131,6 +134,28 @@ impl McpServer {
                         {
                             "name": "clear_screen",
                             "description": "Clear the terminal screen",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "name": "run_script",
+                            "description": "Run a Lua script for terminal automation.\n\nIMPORTANT API Functions (use ONLY these):\n- connect(url) - Connect to BBS\n- disconnect() - Disconnect\n- send(text) - Send text (use \\r for Enter)\n- send_key(key) - Send special key: enter, tab, escape, up, down, left, right, f1-f12\n- send_login() - Send stored username + password from address book\n- send_username() / send_password() - Send credentials separately\n- wait_for(pattern, timeout_ms) - Wait for text on screen (regex supported, default 30000ms)\n- on_screen(pattern) - Check if text is visible (returns true/false, no wait)\n- sleep(ms) - Wait milliseconds\n- println(text) - Print debug message\n- is_connected() - Check connection status\n\nExample login script:\n```lua\nwait_for('login:', 10000)\nsend_username()\nsend('\\r')\nwait_for('password:', 5000)\nsend_password()\nsend('\\r')\n```",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "script": {
+                                        "type": "string",
+                                        "description": "The Lua script code to execute"
+                                    }
+                                },
+                                "required": ["script"]
+                            }
+                        },
+                        {
+                            "name": "get_scripting_api",
+                            "description": "Get the complete Lua scripting API documentation for IcyTerm terminal automation. Call this before writing scripts to learn the available functions.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {}
@@ -382,6 +407,77 @@ impl McpServer {
                         }
                     }
 
+                    "run_script" => {
+                        let script = arguments["script"].as_str();
+                        if script.is_none() {
+                            return Err(Error {
+                                code: ErrorCode::InvalidParams,
+                                message: "Missing required 'script' parameter".to_string(),
+                                data: None,
+                            });
+                        }
+                        let script = script.unwrap();
+
+                        let (response_tx, response_rx) = oneshot::channel();
+                        tx.send(McpCommand::RunScript(
+                            script.to_string(),
+                            Some(Arc::new(Mutex::new(Some(response_tx)))),
+                        ))
+                        .map_err(|e| Error {
+                            code: ErrorCode::InternalError,
+                            message: format!("Failed to send command: {}", e),
+                            data: None,
+                        })?;
+
+                        // Wait for script to complete (with 5 minute timeout)
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(300),
+                            response_rx,
+                        )
+                        .await
+                        {
+                            Ok(Ok(result)) => match result {
+                                Ok(output) => Ok(serde_json::json!({
+                                    "content": [{
+                                        "type": "text",
+                                        "text": if output.is_empty() {
+                                            "Script executed successfully".to_string()
+                                        } else {
+                                            format!("Script output:\n{}", output)
+                                        }
+                                    }]
+                                })),
+                                Err(error) => Ok(serde_json::json!({
+                                    "content": [{
+                                        "type": "text",
+                                        "text": format!("Script error: {}", error)
+                                    }],
+                                    "isError": true
+                                })),
+                            },
+                            Ok(Err(_)) => Err(Error {
+                                code: ErrorCode::InternalError,
+                                message: "Script execution channel closed unexpectedly".to_string(),
+                                data: None,
+                            }),
+                            Err(_) => Err(Error {
+                                code: ErrorCode::InternalError,
+                                message: "Script execution timed out (5 minutes)".to_string(),
+                                data: None,
+                            }),
+                        }
+                    }
+
+                    "get_scripting_api" => {
+                        println!("Providing scripting API documentation via MCP");
+                        Ok(serde_json::json!({
+                            "content": [{
+                                "type": "text",
+                                "text": SCRIPTING_DOC
+                            }]
+                        }))
+                    }
+
                     _ => Err(Error {
                         code: ErrorCode::MethodNotFound,
                         message: format!("Unknown tool: {}", tool_name),
@@ -391,12 +487,51 @@ impl McpServer {
             })
         });
 
-        // 4. List resources (optional, but VS Code might query it)
+        // 4. List resources - expose scripting documentation
         handler.add_method("resources/list", |_| {
             Box::pin(async move {
                 Ok(serde_json::json!({
-                    "resources": []
+                    "resources": [
+                        {
+                            "uri": "icy_term://scripting_api",
+                            "name": "IcyTerm Scripting API",
+                            "description": "Lua scripting API documentation for terminal automation",
+                            "mimeType": "text/markdown"
+                        }
+                    ]
                 }))
+            })
+        });
+
+        // 4b. Read resources - return scripting documentation content
+        handler.add_method("resources/read", |params: Params| {
+            Box::pin(async move {
+                let request: serde_json::Value = params.parse().map_err(|e| Error {
+                    code: ErrorCode::InvalidParams,
+                    message: format!("Invalid params: {}", e),
+                    data: None,
+                })?;
+
+                let uri = request["uri"].as_str().ok_or_else(|| Error {
+                    code: ErrorCode::InvalidParams,
+                    message: "Missing 'uri' parameter".to_string(),
+                    data: None,
+                })?;
+
+                match uri {
+                    "icy_term://scripting_api" => Ok(serde_json::json!({
+                        "contents": [{
+                            "uri": uri,
+                            "mimeType": "text/markdown",
+                            "text": SCRIPTING_DOC
+                        }]
+                    })),
+                    _ => Err(Error {
+                        code: ErrorCode::InvalidParams,
+                        message: format!("Unknown resource: {}", uri),
+                        data: None,
+                    }),
+                }
             })
         });
 

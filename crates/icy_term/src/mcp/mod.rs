@@ -15,6 +15,9 @@ use crate::{
 
 pub type SenderType<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;
 
+/// Result type for script execution: Ok(output) or Err(error_message)
+pub type ScriptResult = Result<String, String>;
+
 #[derive(Debug)]
 pub enum McpCommand {
     Connect(String),
@@ -30,4 +33,6 @@ pub enum McpCommand {
     RunMacro { name: String, commands: Vec<String> },
     SearchBuffer { pattern: String, case_sensitive: bool, regex: bool },
     ClearScreen,
+    /// Run a Lua script with optional response channel for the result
+    RunScript(String, Option<SenderType<ScriptResult>>),
 }

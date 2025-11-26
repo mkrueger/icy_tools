@@ -37,7 +37,7 @@ impl RipParser {
 
             // Text commands (consume rest as string)
             (0, b'T') | (0, b'$') | (1, b'R') => {
-                self.builder.string_param.push(ch as char);
+                self.builder.string_param.push(ch);
                 Ok(false)
             }
 
@@ -52,7 +52,7 @@ impl RipParser {
                 }
             }
             (1, b'F') => {
-                self.builder.string_param.push(ch as char);
+                self.builder.string_param.push(ch);
                 Ok(false)
             }
 
@@ -66,7 +66,7 @@ impl RipParser {
                 }
             }
             (0, b'@') => {
-                self.builder.string_param.push(ch as char);
+                self.builder.string_param.push(ch);
                 Ok(false)
             }
 
@@ -116,7 +116,7 @@ impl RipParser {
                 } else {
                     // Text part: Don't add terminator characters to the text
                     // The main parse_params function handles | and \n terminators
-                    self.builder.string_param.push(ch as char);
+                    self.builder.string_param.push(ch);
                     Ok(false)
                 }
             }
@@ -170,7 +170,7 @@ impl RipParser {
                     }
                 } else {
                     // After 17 digits, rest is text
-                    self.builder.string_param.push(ch as char);
+                    self.builder.string_param.push(ch);
                     Ok(false)
                 }
             }
@@ -182,7 +182,7 @@ impl RipParser {
                 Ok(false)
             }
             (1, b'W') => {
-                self.builder.string_param.push(ch as char);
+                self.builder.string_param.push(ch);
                 Ok(false)
             }
 
@@ -227,7 +227,7 @@ impl RipParser {
                     }
                 } else {
                     // Filename text
-                    self.builder.string_param.push(ch as char);
+                    self.builder.string_param.push(ch);
                     Ok(false)
                 }
             }
@@ -383,7 +383,7 @@ impl RipParser {
                 }
             }
             (1, b't') => {
-                self.builder.string_param.push(ch as char);
+                self.builder.string_param.push(ch);
                 Ok(false)
             }
 
@@ -474,7 +474,7 @@ impl RipParser {
                 }
                 // state >= 5: everything is text
                 else {
-                    self.builder.string_param.push(ch as char);
+                    self.builder.string_param.push(ch);
                     Ok(false)
                 }
             }
@@ -497,12 +497,12 @@ impl RipParser {
                         Ok(false)
                     } else {
                         // first non-digit belongs to text
-                        self.builder.string_param.push(ch as char);
+                        self.builder.string_param.push(ch);
                         self.builder.param_state = 4;
                         Ok(false)
                     }
                 } else {
-                    self.builder.string_param.push(ch as char);
+                    self.builder.string_param.push(ch);
                     Ok(false)
                 }
             }
@@ -523,13 +523,13 @@ impl RipParser {
                     Ok(false)
                 } else {
                     // non-digit starts filename
-                    self.builder.string_param.push(ch as char);
+                    self.builder.string_param.push(ch);
                     self.builder.param_state = 8;
                     Ok(false)
                 }
             }
             (9, 0x1B) => {
-                self.builder.string_param.push(ch as char);
+                self.builder.string_param.push(ch);
                 Ok(false)
             }
 

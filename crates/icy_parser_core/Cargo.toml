@@ -50,7 +50,7 @@ name = "renegade"
 harness = false
 
 [[bench]]
-name = "rip"
+name = "rip_parser"
 harness = false
 
 [[bench]]

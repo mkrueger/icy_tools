@@ -95,6 +95,8 @@ pub struct MainWindow {
     show_disconnect: bool,
 
     pub mcp_rx: McpHandler,
+    /// Pending MCP script response channel
+    pub pending_script_response: Option<crate::mcp::SenderType<crate::mcp::ScriptResult>>,
     pub title: String,
     pub effect: i32,
 }
@@ -161,6 +163,7 @@ impl MainWindow {
             show_disconnect: false,
             sound_thread,
             mcp_rx: None,
+            pending_script_response: None,
             terminal_emulation: TerminalEmulation::Ansi,
         }
     }
@@ -884,6 +887,13 @@ impl MainWindow {
                             }
                         }
                     }
+
+                    McpCommand::RunScript(script, response_tx) => {
+                        // Store the response channel to send result when script finishes
+                        self.pending_script_response = response_tx.clone();
+                        // Run the Lua script code directly
+                        let _ = self.terminal_tx.send(TerminalCommand::RunScriptCode(script.clone()));
+                    }
                 }
                 Task::none()
             }
@@ -1085,6 +1095,17 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::ScriptFinished(result) => {
+                // Send result to MCP if there's a pending response channel
+                if let Some(response_tx) = self.pending_script_response.take() {
+                    if let Some(tx) = response_tx.lock().take() {
+                        let mcp_result = match &result {
+                            Ok(()) => Ok(String::new()),
+                            Err(e) => Err(e.clone()),
+                        };
+                        let _ = tx.send(mcp_result);
+                    }
+                }
+
                 match result {
                     Ok(()) => {
                         log::info!("Script finished successfully");

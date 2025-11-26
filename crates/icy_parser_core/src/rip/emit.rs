@@ -59,12 +59,12 @@ impl RipParser {
                 y: self.builder.u16_params[1],
             },
             (0, b'T') => RipCommand::Text {
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (0, b'@') if self.builder.u16_params.len() >= 2 => RipCommand::TextXY {
                 x: self.builder.u16_params[0],
                 y: self.builder.u16_params[1],
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (0, b'Y') if self.builder.u16_params.len() >= 4 => RipCommand::FontStyle {
                 font: self.builder.u16_params[0],
@@ -226,7 +226,7 @@ impl RipParser {
                 col: self.builder.u16_params[8],
             },
             (0, b'$') => RipCommand::TextVariable {
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (0, b'#') => RipCommand::NoMore,
 
@@ -240,7 +240,7 @@ impl RipParser {
                 clk: self.builder.u16_params[5],
                 clr: self.builder.u16_params[6],
                 res: self.builder.u16_params[7],
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (1, b'K') => RipCommand::MouseFields,
             (1, b'T') if self.builder.u16_params.len() >= 5 => RipCommand::BeginText {
@@ -252,7 +252,7 @@ impl RipParser {
             },
             (1, b't') => RipCommand::RegionText {
                 justify: !self.builder.u16_params.is_empty() && self.builder.u16_params[0] != 0,
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (1, b'E') => RipCommand::EndText,
             (1, b'C') if self.builder.u16_params.len() >= 5 => RipCommand::GetImage {
@@ -287,7 +287,7 @@ impl RipParser {
             }
             (1, b'W') => RipCommand::WriteIcon {
                 res: self.builder.char_param,
-                data: self.builder.string_param.clone(),
+                data: self.builder.take_string(),
             },
             (1, b'I') if self.builder.u16_params.len() >= 5 => {
                 let mode_value = self.builder.u16_params[2];
@@ -311,7 +311,7 @@ impl RipParser {
                     mode,
                     clipboard: self.builder.u16_params[3],
                     res: self.builder.u16_params[4],
-                    file_name: self.builder.string_param.clone(),
+                    file_name: self.builder.take_string(),
                 }
             }
             (1, b'B') if self.builder.u16_params.len() >= 15 => RipCommand::ButtonStyle {
@@ -339,12 +339,12 @@ impl RipParser {
                 hotkey: self.builder.u16_params[4],
                 flags: self.builder.u16_params[5],
                 res: self.builder.u16_params[6],
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (1, b'D') if self.builder.u16_params.len() >= 2 => RipCommand::Define {
                 flags: self.builder.u16_params[0],
                 res: self.builder.u16_params[1],
-                text: self.builder.string_param.clone(),
+                text: self.builder.take_string(),
             },
             (1, 0x1B) if self.builder.u16_params.len() >= 2 => {
                 let mode_value = self.builder.u16_params[0];
@@ -365,7 +365,7 @@ impl RipParser {
                 RipCommand::Query {
                     mode,
                     res: self.builder.u16_params[1],
-                    text: self.builder.string_param.clone(),
+                    text: self.builder.take_string(),
                 }
             }
             (1, b'G') if self.builder.u16_params.len() >= 6 => RipCommand::CopyRegion {
@@ -377,7 +377,7 @@ impl RipParser {
                 dest_line: self.builder.u16_params[5],
             },
             (1, b'R') => RipCommand::ReadScene {
-                file_name: self.builder.string_param.clone(),
+                file_name: self.builder.take_string(),
             },
             (1, b'F') if self.builder.u16_params.len() >= 2 => {
                 let mode_value = self.builder.u16_params[0];
@@ -398,7 +398,7 @@ impl RipParser {
                 RipCommand::FileQuery {
                     mode,
                     res: self.builder.u16_params[1],
-                    file_name: self.builder.string_param.clone(),
+                    file_name: self.builder.take_string(),
                 }
             }
 
@@ -424,7 +424,7 @@ impl RipParser {
                     proto: self.builder.u16_params[1],
                     file_type: self.builder.u16_params[2],
                     res: self.builder.u16_params[3],
-                    file_name: self.builder.string_param.clone(),
+                    file_name: self.builder.take_string(),
                 }
             }
 
