@@ -4,6 +4,7 @@ use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
+use crate::util::sound_effects::sound_data;
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_net::iemsi::EmsiISI;
@@ -77,7 +78,17 @@ pub enum TerminalEvent {
 
     AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
-    PlayIgs(Box<IgsCommand>),
+
+    /// Play a GIST sound effect (BellsAndWhistles)
+    PlayGist(Vec<i16>),
+    /// Play chip music on a specific voice
+    PlayChipMusic {
+        sound_data: Vec<i16>,
+        voice: u8,
+        volume: u8,
+        pitch: u8,
+    },
+
     InformDelay(u64), // Delay in milliseconds
     ContinueAfterDelay,
 
@@ -282,8 +293,11 @@ pub struct TerminalThread {
     /// Current terminal emulation type (shared for scripting)
     terminal_emulation: Arc<Mutex<icy_net::telnet::TerminalEmulation>>,
 
-    // igs
+    // IGS sound state
+    /// Loop count for effects 0-4
     igs_effect_loop: u32,
+    /// Mutable copy of all 20 IGS sound effects (can be altered at runtime)
+    igs_sound_data: Vec<Vec<i16>>,
 }
 
 impl TerminalThread {
@@ -319,6 +333,7 @@ impl TerminalThread {
             address_book,
             terminal_emulation: Arc::new(Mutex::new(icy_net::telnet::TerminalEmulation::Ansi)),
             igs_effect_loop: 5,
+            igs_sound_data: Self::init_sound_data(),
         };
 
         // Spawn the async runtime for the terminal thread
@@ -334,6 +349,13 @@ impl TerminalThread {
         });
 
         (command_tx, event_rx)
+    }
+
+    /// Initialize mutable copy of all 20 IGS sound effects
+    fn init_sound_data() -> Vec<Vec<i16>> {
+        (0..20)
+            .map(|i| sound_data(i).map(|data| data.to_vec()).unwrap_or_else(|| vec![0i16; 56]))
+            .collect()
     }
 
     async fn run(&mut self) {
@@ -968,8 +990,46 @@ impl TerminalThread {
                     self.igs_effect_loop = *count;
                     continue;
                 }
-                QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. }) => {
-                    // TODO
+                QueuedCommand::Igs(IgsCommand::AlterSoundEffect {
+                    play,
+                    sound_effect,
+                    element_num,
+                    negative_flag,
+                    thousands,
+                    hundreds,
+                }) => {
+                    // Port of IG217.C alter sound effect logic
+                    let snd_num = (*sound_effect as usize).min(19);
+                    let elem_num = (*element_num as usize).min(55);
+                    let thousands_clamped = (*thousands as i32).min(32) * 1000;
+                    let mut value = thousands_clamped + (*hundreds as i32);
+                    if *negative_flag != 0 {
+                        value = -value;
+                    }
+
+                    // Modify the sound data
+                    if let Some(sound) = self.igs_sound_data.get_mut(snd_num) {
+                        if elem_num < sound.len() {
+                            sound[elem_num] = value as i16;
+                        }
+                    }
+
+                    // If play is set, play the modified sound
+                    if *play {
+                        if let Some(sound) = self.igs_sound_data.get(snd_num) {
+                            let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                        }
+                    }
+                    continue;
+                }
+                QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { sound_effect }) => {
+                    // Restore original sound data from static array
+                    let snd_num = (*sound_effect as usize).min(19);
+                    if let Some(original) = sound_data(snd_num) {
+                        if let Some(sound) = self.igs_sound_data.get_mut(snd_num) {
+                            *sound = original.to_vec();
+                        }
+                    }
                     continue;
                 }
 
@@ -986,14 +1046,15 @@ impl TerminalThread {
                 }) => {
                     // Only start sound if pitch > 0 (pitch=0 is just a timing/wait command)
                     if *pitch > 0 {
-                        let _ = self.event_tx.send(TerminalEvent::PlayIgs(Box::new(IgsCommand::ChipMusic {
-                            sound_effect: *sound_effect,
-                            voice: *voice,
-                            volume: *volume,
-                            pitch: *pitch,
-                            timing: *timing,
-                            stop_type: *stop_type,
-                        })));
+                        let snd_num = (*sound_effect as usize).min(19);
+                        if let Some(sound) = self.igs_sound_data.get(snd_num) {
+                            let _ = self.event_tx.send(TerminalEvent::PlayChipMusic {
+                                sound_data: sound.clone(),
+                                voice: *voice,
+                                volume: *volume,
+                                pitch: *pitch,
+                            });
+                        }
                     }
 
                     // Only wait if timing > 0
@@ -1027,14 +1088,18 @@ impl TerminalThread {
                     let _ = self.event_tx.send(TerminalEvent::StopSndAll);
                 }
 
-                // Other sound commands don't block
-                QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
-                | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
-                | QueuedCommand::Igs(IgsCommand::Noise { .. })
-                | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. }) => {
-                    if let QueuedCommand::Igs(igs_cmd) = cmd {
-                        let _ = self.event_tx.send(TerminalEvent::PlayIgs(Box::new(igs_cmd)));
+                // BellsAndWhistles - send sound data directly
+                QueuedCommand::Igs(IgsCommand::BellsAndWhistles { sound_effect }) => {
+                    let snd_num = (*sound_effect as usize).min(19);
+                    if let Some(sound) = self.igs_sound_data.get(snd_num) {
+                        let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
                     }
+                    continue;
+                }
+
+                // Other sound commands are not yet implemented
+                QueuedCommand::Igs(IgsCommand::Noise { .. }) | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. }) => {
+                    // TODO: Implement these
                     continue;
                 }
                 QueuedCommand::Music(music) => {

@@ -886,7 +886,7 @@ impl IgsCommandType {
                                     );
                                 }
                                 Some(IgsCommand::AlterSoundEffect {
-                                    play_flag: params[1].value() as u8,
+                                    play: params[1].value() != 0,
                                     sound_effect: SoundEffect::try_from(params[2].value()).unwrap_or_else(|_| {
                                         sink.report_error(
                                             crate::ParseError::InvalidParameter {

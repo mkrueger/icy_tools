@@ -10,7 +10,7 @@ use std::thread;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
 
-use icy_parser_core::{AnsiMusic, IgsCommand, MusicAction, MusicStyle};
+use icy_parser_core::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
     Source,
     buffer::SamplesBuffer,
@@ -20,7 +20,6 @@ use ym2149::Ym2149;
 
 use super::gist::gist_data::GistSoundData;
 use super::gist::gist_driver::GistDriver;
-use super::sound_effects::sound_data;
 
 use crate::DialTone;
 use crate::TerminalResult;
@@ -62,7 +61,16 @@ pub enum SoundData {
 
     StartPlay,
     StopPlay,
-    PlayIgs(Box<IgsCommand>),
+
+    /// Play a GIST sound effect (BellsAndWhistles)
+    PlayGist(Vec<i16>),
+    /// Play chip music on a specific voice
+    ChipMusic {
+        sound_data: Vec<i16>,
+        voice: u8,
+        volume: u8,
+        pitch: u8,
+    },
 
     /// Fade out sound on specific voice (soft stop)
     SndOff(u8),
@@ -157,8 +165,19 @@ impl SoundThread {
         self.send_data(SoundData::PlayMusic(music))
     }
 
-    pub fn play_igs(&mut self, music: Box<IgsCommand>) -> TerminalResult<()> {
-        self.send_data(SoundData::PlayIgs(music))
+    /// Play a GIST sound effect (BellsAndWhistles)
+    pub fn play_gist(&mut self, sound_data: Vec<i16>) -> TerminalResult<()> {
+        self.send_data(SoundData::PlayGist(sound_data))
+    }
+
+    /// Play chip music on a specific voice
+    pub fn play_chip_music(&mut self, sound_data: Vec<i16>, voice: u8, volume: u8, pitch: u8) -> TerminalResult<()> {
+        self.send_data(SoundData::ChipMusic {
+            sound_data,
+            voice,
+            volume,
+            pitch,
+        })
     }
 
     /// Fade out sound on specific voice (soft stop)
@@ -319,9 +338,23 @@ impl SoundBackgroundThreadData {
                         self.line_sound_playing = false;
                         self.music.push_back(SoundData::PlayMusic(m));
                     }
-                    SoundData::PlayIgs(igs) => {
+                    SoundData::PlayGist(data) => {
                         self.line_sound_playing = false;
-                        self.music.push_back(SoundData::PlayIgs(igs));
+                        self.music.push_back(SoundData::PlayGist(data));
+                    }
+                    SoundData::ChipMusic {
+                        sound_data,
+                        voice,
+                        volume,
+                        pitch,
+                    } => {
+                        self.line_sound_playing = false;
+                        self.music.push_back(SoundData::ChipMusic {
+                            sound_data,
+                            voice,
+                            volume,
+                            pitch,
+                        });
                     }
                     SoundData::Beep => {
                         self.line_sound_playing = false;
@@ -401,7 +434,13 @@ impl SoundBackgroundThreadData {
         };
         match data {
             SoundData::PlayMusic(music) => self.play_music(&music),
-            SoundData::PlayIgs(music) => self.play_igs(&music),
+            SoundData::PlayGist(sound_data) => self.play_gist_sound(&sound_data),
+            SoundData::ChipMusic {
+                sound_data,
+                voice,
+                volume,
+                pitch,
+            } => self.play_chip_music_sound(&sound_data, voice, volume, pitch),
             SoundData::Beep => self.beep(),
             SoundData::LineSound(tone) => self.play_line_sound(tone),
             SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
@@ -419,7 +458,6 @@ impl SoundBackgroundThreadData {
         if !self.gist_driver.is_playing() {
             self.gist_playing = false;
             self.stop_gist();
-            println!("!PLAYING");
             return;
         }
 
@@ -718,60 +756,34 @@ impl SoundBackgroundThreadData {
         let _ = self.tx.send(SoundData::StopPlay);
     }
 
-    fn play_igs(&mut self, music: &IgsCommand) {
-        match music {
-            IgsCommand::BellsAndWhistles { sound_effect } => {
-                self.queue_gist_sound(*sound_effect as usize, None, -1);
-            }
-            IgsCommand::ChipMusic {
-                sound_effect,
-                voice,
-                volume,
-                pitch,
-                ..
-            } => {
-                // Only start the sound here - timing and stop_type are handled by terminal_thread
-                self.queue_chip_music(*sound_effect as usize, *voice, *volume, *pitch);
-            }
-            _ => {
-                log::warn!("Unsupported IGS command for music playback: {:?}", music);
-            }
-        }
-    }
-
-    /// Queue a GIST sound effect - will be mixed with any currently playing sounds
-    fn queue_gist_sound(&mut self, sound_index: usize, volume: Option<i16>, pitch: i16) {
-        let Some(sound_words) = sound_data(sound_index) else {
-            log::warn!("Invalid GIST sound index: {}", sound_index);
+    /// Play a GIST sound effect from raw sound data (BellsAndWhistles)
+    fn play_gist_sound(&mut self, sound_words: &[i16]) {
+        if sound_words.len() < 56 {
+            log::warn!("Invalid GIST sound data length: {}", sound_words.len());
             return;
-        };
+        }
 
-        let sound = GistSoundData::from_words(sound_words);
+        let sound = GistSoundData::from_words(sound_words.try_into().unwrap_or(&[0i16; 56]));
         if sound.duration() == 0 {
             return;
         }
 
         // Start the sound on the persistent chip/driver (finds free voice automatically)
-        if self
-            .gist_driver
-            .snd_on(&mut self.gist_chip, &sound, None, volume, pitch, i16::MAX - 1)
-            .is_some()
-        {
+        if self.gist_driver.snd_on(&mut self.gist_chip, &sound, None, None, -1, i16::MAX - 1).is_some() {
             self.gist_playing = true;
         } else {
-            log::warn!("Failed to start GIST sound {}", sound_index);
+            log::warn!("Failed to start GIST sound");
         }
     }
 
-    /// Queue chip music - uses persistent state
-    /// Only starts the sound - timing and stop_type are handled by terminal_thread
-    fn queue_chip_music(&mut self, sound_index: usize, voice: u8, volume: u8, pitch: u8) {
-        let Some(sound_words) = sound_data(sound_index) else {
-            log::warn!("Invalid GIST sound index for ChipMusic: {}", sound_index);
+    /// Play chip music on a specific voice from raw sound data
+    fn play_chip_music_sound(&mut self, sound_words: &[i16], voice: u8, volume: u8, pitch: u8) {
+        if sound_words.len() < 56 {
+            log::warn!("Invalid ChipMusic sound data length: {}", sound_words.len());
             return;
-        };
+        }
 
-        let sound = GistSoundData::from_words(sound_words);
+        let sound = GistSoundData::from_words(sound_words.try_into().unwrap_or(&[0i16; 56]));
         let voice_idx = (voice as usize).min(2);
 
         // Only start sound if pitch > 0

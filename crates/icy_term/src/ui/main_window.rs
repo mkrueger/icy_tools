@@ -1067,10 +1067,22 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            TerminalEvent::PlayIgs(music) => {
-                let r = self.sound_thread.lock().play_igs(music);
+            TerminalEvent::PlayGist(sound_data) => {
+                let r = self.sound_thread.lock().play_gist(sound_data);
                 if let Err(r) = r {
-                    log::error!("TerminalEvent::PlayIgs: {r}");
+                    log::error!("TerminalEvent::PlayGist: {r}");
+                }
+                Task::none()
+            }
+            TerminalEvent::PlayChipMusic {
+                sound_data,
+                voice,
+                volume,
+                pitch,
+            } => {
+                let r = self.sound_thread.lock().play_chip_music(sound_data, voice, volume, pitch);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::PlayChipMusic: {r}");
                 }
                 Task::none()
             }

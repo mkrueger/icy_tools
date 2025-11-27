@@ -389,7 +389,7 @@ pub enum IgsCommand {
     /// # Example
     /// `G#b>20,1,0,0,0,1,500:` - Alters element 0 of Alien Invasion to 1500, then plays
     AlterSoundEffect {
-        play_flag: u8,
+        play: bool,
         sound_effect: SoundEffect,
         element_num: u8,
         negative_flag: u8,
@@ -1173,7 +1173,7 @@ impl fmt::Display for IgsCommand {
             }
             IgsCommand::BellsAndWhistles { sound_effect } => write!(f, "G#b>{}:", *sound_effect as u8),
             IgsCommand::AlterSoundEffect {
-                play_flag,
+                play,
                 sound_effect,
                 element_num,
                 negative_flag,
@@ -1183,7 +1183,12 @@ impl fmt::Display for IgsCommand {
                 write!(
                     f,
                     "G#b>20,{},{},{},{},{},{}:",
-                    play_flag, *sound_effect as u8, element_num, negative_flag, thousands, hundreds
+                    if *play { 1 } else { 0 },
+                    *sound_effect as u8,
+                    element_num,
+                    negative_flag,
+                    thousands,
+                    hundreds
                 )
             }
             IgsCommand::StopAllSound => write!(f, "G#b>21:"),
