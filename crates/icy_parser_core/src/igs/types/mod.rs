@@ -42,6 +42,9 @@ pub use ask_query::*;
 mod screen_clear;
 pub use screen_clear::*;
 
+mod stop_type;
+pub use stop_type::*;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IgsParameter {
     Value(i32),

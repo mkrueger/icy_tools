@@ -4,7 +4,6 @@ mod igs_runner;
 pub mod vdi_paint;
 pub use vdi_paint::*;
 
-pub mod sound;
 pub mod util;
 
 mod fonts;

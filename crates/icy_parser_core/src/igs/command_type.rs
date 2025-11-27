@@ -1,7 +1,7 @@
 use crate::{
     ArrowEnd, AskQuery, BlitMode, BlitOperation, CommandSink, CursorMode, Direction, DrawingMode, GraphicsScalingMode, IgsCommand, IgsParameter,
     InitializationType, LineKind, LineMarkerStyle, MousePointerType, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, RandomRangeType,
-    ScreenClearMode, SoundEffect, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
+    ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
 };
 
 #[repr(u8)]
@@ -624,6 +624,18 @@ impl IgsCommandType {
                     );
                     SoundEffect::default()
                 });
+                let stop_type = params.get(5).map(|p| p.value() as u8).unwrap_or(0);
+                let stop_type = StopType::try_from(stop_type).unwrap_or_else(|_| {
+                    sink.report_error(
+                        crate::ParseError::InvalidParameter {
+                            command: "ChipMusic",
+                            value: format!("{}", params.get(5).map(|p| p.value()).unwrap_or(0)),
+                            expected: Some("valid StopType (0-4)".to_string()),
+                        },
+                        crate::ErrorLevel::Warning,
+                    );
+                    StopType::default()
+                });
                 Self::check_parameters(params, sink, "ChipMusic", 6, |_sink| {
                     Some(IgsCommand::ChipMusic {
                         sound_effect,
@@ -631,7 +643,7 @@ impl IgsCommandType {
                         volume: params[2].value() as u8,
                         pitch: params[3].value() as u8,
                         timing: params[4].value(),
-                        stop_type: params[5].value() as u8,
+                        stop_type,
                     })
                 })
             }

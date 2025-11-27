@@ -81,6 +81,15 @@ pub enum TerminalEvent {
     InformDelay(u64), // Delay in milliseconds
     ContinueAfterDelay,
 
+    /// Fade out sound on specific voice (soft stop)
+    SndOff(u8),
+    /// Immediately stop sound on specific voice (hard stop)
+    StopSnd(u8),
+    /// Fade out all voices
+    SndOffAll,
+    /// Immediately stop all voices
+    StopSndAll,
+
     /// Script execution started
     ScriptStarted(PathBuf),
     /// Script execution finished
@@ -272,6 +281,9 @@ pub struct TerminalThread {
 
     /// Current terminal emulation type (shared for scripting)
     terminal_emulation: Arc<Mutex<icy_net::telnet::TerminalEmulation>>,
+
+    // igs
+    igs_effect_loop: u32,
 }
 
 impl TerminalThread {
@@ -306,6 +318,7 @@ impl TerminalThread {
             script_runner: None,
             address_book,
             terminal_emulation: Arc::new(Mutex::new(icy_net::telnet::TerminalEmulation::Ansi)),
+            igs_effect_loop: 5,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -951,13 +964,72 @@ impl TerminalThread {
                     continue;
                 }
 
-                // Sound commands should also not block
+                QueuedCommand::Igs(IgsCommand::SetEffectLoops { count }) => {
+                    self.igs_effect_loop = *count;
+                    continue;
+                }
+                QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. }) => {
+                    // TODO
+                    continue;
+                }
+
+                // ChipMusic needs special handling for timing
+                // Pattern: Multiple voices are started with timing=0, then a "dummy" command
+                // with pitch=0 and timing>0 provides the actual wait period.
+                QueuedCommand::Igs(IgsCommand::ChipMusic {
+                    sound_effect,
+                    voice,
+                    volume,
+                    pitch,
+                    timing,
+                    stop_type,
+                }) => {
+                    // Only start sound if pitch > 0 (pitch=0 is just a timing/wait command)
+                    if *pitch > 0 {
+                        let _ = self.event_tx.send(TerminalEvent::PlayIgs(Box::new(IgsCommand::ChipMusic {
+                            sound_effect: *sound_effect,
+                            voice: *voice,
+                            volume: *volume,
+                            pitch: *pitch,
+                            timing: *timing,
+                            stop_type: *stop_type,
+                        })));
+                    }
+
+                    // Only wait if timing > 0
+                    if *timing > 0 {
+                        let wait_ms = (*timing as u64 * 1000) / 200;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
+
+                        // Apply stop type ONLY after timing period (not for timing=0 commands)
+                        match *stop_type {
+                            StopType::SndOff => {
+                                let _ = self.event_tx.send(TerminalEvent::SndOff(*voice));
+                            }
+                            StopType::StopSnd => {
+                                let _ = self.event_tx.send(TerminalEvent::StopSnd(*voice));
+                            }
+                            StopType::SndOffAll => {
+                                let _ = self.event_tx.send(TerminalEvent::SndOffAll);
+                            }
+                            StopType::StopSndAll => {
+                                let _ = self.event_tx.send(TerminalEvent::StopSndAll);
+                            }
+                            StopType::NoEffect => {}
+                        }
+                    }
+                    // For timing=0: Don't apply stop_type - the sound continues playing
+                    // The stop_type in timing=0 commands is typically ignored; the timing command's
+                    // stop_type (usually NoEffect or SndOffAll) controls when voices stop.
+                    continue;
+                }
+                QueuedCommand::Igs(IgsCommand::StopAllSound) => {
+                    let _ = self.event_tx.send(TerminalEvent::StopSndAll);
+                }
+
+                // Other sound commands don't block
                 QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
-                | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
-                | QueuedCommand::Igs(IgsCommand::StopAllSound)
                 | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
-                | QueuedCommand::Igs(IgsCommand::SetEffectLoops { .. })
-                | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
                 | QueuedCommand::Igs(IgsCommand::Noise { .. })
                 | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. }) => {
                     if let QueuedCommand::Igs(igs_cmd) = cmd {

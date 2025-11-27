@@ -520,19 +520,14 @@ pub enum IgsCommand {
     /// * `volume` - Volume level (0-15)
     /// * `pitch` - Note pitch (0-255, 0 = no sound but processes timing)
     /// * `timing` - Duration in 200ths of a second (0-9999)
-    /// * `stop_type` - How to stop the note:
-    ///   - 0: No effect, sound continues
-    ///   - 1: Move voice to release phase
-    ///   - 2: Stop voice immediately
-    ///   - 3: Move all voices to release
-    ///   - 4: Stop all voices immediately
+    /// * `stop_type` - How to stop the note (see StopType enum)
     ChipMusic {
         sound_effect: SoundEffect,
         voice: u8,
         volume: u8,
         pitch: u8,
         timing: i32,
-        stop_type: u8,
+        stop_type: StopType,
     },
 
     /// Noise/MIDI command (N)

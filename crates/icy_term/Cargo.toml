@@ -63,6 +63,8 @@ rfd = { workspace = true }
 
 async-recursion = "1.1.1"
 
+# for Atari ST GIST sounds (IGS)
+ym2149 = { version ="0.6.1", features = ["streaming"] }
 
 # MCP
 rmcp = { workspace = true }

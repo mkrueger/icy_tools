@@ -1070,7 +1070,35 @@ impl MainWindow {
             TerminalEvent::PlayIgs(music) => {
                 let r = self.sound_thread.lock().play_igs(music);
                 if let Err(r) = r {
-                    log::error!("TerminalEvent::PlayMusic: {r}");
+                    log::error!("TerminalEvent::PlayIgs: {r}");
+                }
+                Task::none()
+            }
+            TerminalEvent::SndOff(voice) => {
+                let r = self.sound_thread.lock().snd_off(voice);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::SndOff: {r}");
+                }
+                Task::none()
+            }
+            TerminalEvent::StopSnd(voice) => {
+                let r = self.sound_thread.lock().stop_snd(voice);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::StopSnd: {r}");
+                }
+                Task::none()
+            }
+            TerminalEvent::SndOffAll => {
+                let r = self.sound_thread.lock().snd_off_all();
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::SndOffAll: {r}");
+                }
+                Task::none()
+            }
+            TerminalEvent::StopSndAll => {
+                let r = self.sound_thread.lock().stop_snd_all();
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::StopSndAll: {r}");
                 }
                 Task::none()
             }

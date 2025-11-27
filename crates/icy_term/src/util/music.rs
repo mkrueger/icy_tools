@@ -13,8 +13,14 @@ use wasm_thread as thread;
 use icy_parser_core::{AnsiMusic, IgsCommand, MusicAction, MusicStyle};
 use rodio::{
     Source,
+    buffer::SamplesBuffer,
     source::{Function, SignalGenerator, SineWave},
 };
+use ym2149::Ym2149;
+
+use super::gist::gist_data::GistSoundData;
+use super::gist::gist_driver::GistDriver;
+use super::sound_effects::sound_data;
 
 use crate::DialTone;
 use crate::TerminalResult;
@@ -57,6 +63,15 @@ pub enum SoundData {
     StartPlay,
     StopPlay,
     PlayIgs(Box<IgsCommand>),
+
+    /// Fade out sound on specific voice (soft stop)
+    SndOff(u8),
+    /// Immediately stop sound on specific voice (hard stop)
+    StopSnd(u8),
+    /// Stop all voices (soft fade)
+    SndOffAll,
+    /// Stop all voices (hard stop)
+    StopSndAll,
 }
 
 pub struct SoundThread {
@@ -146,6 +161,26 @@ impl SoundThread {
         self.send_data(SoundData::PlayIgs(music))
     }
 
+    /// Fade out sound on specific voice (soft stop)
+    pub fn snd_off(&mut self, voice: u8) -> TerminalResult<()> {
+        self.send_data(SoundData::SndOff(voice))
+    }
+
+    /// Immediately stop sound on specific voice (hard stop)
+    pub fn stop_snd(&mut self, voice: u8) -> TerminalResult<()> {
+        self.send_data(SoundData::StopSnd(voice))
+    }
+
+    /// Fade out all voices (soft stop)
+    pub fn snd_off_all(&mut self) -> TerminalResult<()> {
+        self.send_data(SoundData::SndOffAll)
+    }
+
+    /// Immediately stop all voices (hard stop)
+    pub fn stop_snd_all(&mut self) -> TerminalResult<()> {
+        self.send_data(SoundData::StopSndAll)
+    }
+
     fn send_data(&mut self, data: SoundData) -> TerminalResult<()> {
         if self.no_thread_running() {
             // prevent error spew.
@@ -167,6 +202,19 @@ impl SoundThread {
 
         self.rx = rx2;
         self.tx = tx;
+        // Create audio stream before spawning thread
+        let (stream, mixer, sample_rate) = match rodio::OutputStreamBuilder::open_default_stream() {
+            Ok(handle) => {
+                let rate = handle.config().sample_rate();
+                let mixer = handle.mixer().clone();
+                (Some(handle), Some(mixer), rate)
+            }
+            Err(e) => {
+                log::error!("Failed to open audio stream: {}", e);
+                (None, None, 44100)
+            }
+        };
+
         let mut data = SoundBackgroundThreadData {
             rx,
             tx: tx2,
@@ -174,13 +222,20 @@ impl SoundThread {
             thread_is_running: true,
             last_beep: Instant::now(),
             line_sound_playing: false,
+            stream,
+            mixer,
+            sample_rate,
+            gist_chip: Ym2149::new(),
+            gist_driver: GistDriver::new(),
+            gist_playing: false,
+            gist_tick_accumulator: 0,
         };
 
         if let Err(err) = std::thread::Builder::new().name("music_thread".to_string()).spawn(move || {
             while data.thread_is_running {
                 data.handle_queue();
                 data.handle_receive();
-                if data.music.is_empty() {
+                if data.music.is_empty() && !data.gist_playing {
                     thread::sleep(Duration::from_millis(100));
                 }
             }
@@ -214,9 +269,47 @@ pub struct SoundBackgroundThreadData {
     last_beep: Instant,
 
     line_sound_playing: bool,
+
+    // Persistent audio stream - we keep both the OutputStream (to prevent drop)
+    // and a cloned Mixer for direct access without borrow conflicts
+    #[allow(dead_code)]
+    stream: Option<rodio::OutputStream>,
+    mixer: Option<rodio::mixer::Mixer>,
+    sample_rate: u32,
+
+    // Persistent GIST state
+    gist_chip: Ym2149,
+    gist_driver: GistDriver,
+    gist_playing: bool,
+    gist_tick_accumulator: u32,
 }
 
 impl SoundBackgroundThreadData {
+    /// Recreate the audio stream to stop all playing sounds
+    fn reset_audio_stream(&mut self) {
+        // Dropping the old stream stops all sounds
+        self.stream = None;
+        self.mixer = None;
+
+        // Create new stream
+        match rodio::OutputStreamBuilder::open_default_stream() {
+            Ok(handle) => {
+                self.sample_rate = handle.config().sample_rate();
+                self.mixer = Some(handle.mixer().clone());
+                self.stream = Some(handle);
+            }
+            Err(e) => {
+                log::error!("Failed to recreate audio stream: {}", e);
+            }
+        }
+
+        // Reset GIST state
+        self.gist_playing = false;
+        self.gist_driver = GistDriver::new();
+        self.gist_chip = Ym2149::new();
+        self.gist_tick_accumulator = 0;
+    }
+
     pub fn handle_receive(&mut self) -> bool {
         let mut result = false;
         loop {
@@ -246,12 +339,31 @@ impl SoundBackgroundThreadData {
                     }
                     SoundData::StopPlay => {
                         self.line_sound_playing = false;
+                        self.reset_audio_stream();
                         result = true;
                     }
                     SoundData::Clear => {
-                        result = true;
                         self.music.clear();
                         self.line_sound_playing = false;
+                        self.reset_audio_stream();
+                        result = true;
+                    }
+                    SoundData::SndOff(voice) => {
+                        self.gist_driver.snd_off(voice as usize);
+                    }
+                    SoundData::StopSnd(voice) => {
+                        self.gist_driver.stop_snd(&mut self.gist_chip, voice as usize);
+                        if !self.gist_driver.is_playing() {
+                            self.gist_playing = false;
+                        }
+                    }
+                    SoundData::SndOffAll => {
+                        for i in 0..3 {
+                            self.gist_driver.snd_off(i);
+                        }
+                    }
+                    SoundData::StopSndAll => {
+                        self.stop_gist();
                     }
                     _ => {}
                 },
@@ -274,7 +386,17 @@ impl SoundBackgroundThreadData {
             return;
         }
 
+        // Process GIST audio if playing
+        if self.gist_playing {
+            self.process_gist_tick();
+            // Don't block - process other sounds too
+        }
+
         let Some(data) = self.music.pop_front() else {
+            // If GIST is playing, sleep briefly to avoid busy-waiting
+            if self.gist_playing {
+                thread::sleep(Duration::from_millis(5));
+            }
             return;
         };
         match data {
@@ -292,11 +414,58 @@ impl SoundBackgroundThreadData {
         }
     }
 
+    /// Process one GIST tick - called frequently from handle_queue
+    fn process_gist_tick(&mut self) {
+        if !self.gist_driver.is_playing() {
+            self.gist_playing = false;
+            self.stop_gist();
+            println!("!PLAYING");
+            return;
+        }
+
+        let Some(mixer) = &self.mixer else {
+            self.gist_playing = false;
+            return;
+        };
+        let mixer = mixer.clone();
+
+        // Generate enough samples for ~50ms at 200Hz tick rate
+        const TICK_RATE: u32 = 200;
+        const SAMPLES_PER_TICK: usize = 2205; // ~50ms at 44100Hz for smooth playback
+
+        let mut samples_buffer = Vec::with_capacity(SAMPLES_PER_TICK);
+
+        for _ in 0..SAMPLES_PER_TICK {
+            self.gist_tick_accumulator += TICK_RATE;
+            if self.gist_tick_accumulator >= self.sample_rate {
+                self.gist_tick_accumulator -= self.sample_rate;
+                self.gist_driver.tick(&mut self.gist_chip);
+            }
+            self.gist_chip.clock();
+            samples_buffer.push(self.gist_chip.get_sample());
+        }
+
+        // Add samples to mixer
+        let source = SamplesBuffer::new(1, self.sample_rate, samples_buffer);
+        mixer.add(source);
+
+        // Wait for the buffer to play (prevents flooding)
+        thread::sleep(Duration::from_millis(45));
+
+        // Check if still playing after tick
+        if !self.gist_driver.is_playing() {
+            self.gist_playing = false;
+        }
+    }
+
     fn play_busysound(&mut self, tone: DialTone) {
         let _ = self.tx.send(SoundData::StartPlay);
 
-        let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
-        let sample_rate = stream_handle.config().sample_rate();
+        let Some(mixer) = &self.mixer else {
+            return;
+        };
+        let mixer = mixer.clone();
+        let sample_rate = self.sample_rate;
 
         // Region-specific busy signal parameters
         let (freq1, freq2, on_ms, off_ms, cycles) = match tone {
@@ -348,7 +517,7 @@ impl SoundBackgroundThreadData {
             };
 
             // Play the tone
-            stream_handle.mixer().add(busy_tone);
+            mixer.add(busy_tone);
 
             // Wait for tone duration
             thread::sleep(Duration::from_millis(on_ms));
@@ -364,11 +533,14 @@ impl SoundBackgroundThreadData {
         let mut res = true;
         let _ = self.tx.send(SoundData::StartPlay);
 
-        let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
-        let sample_rate = stream_handle.config().sample_rate();
+        let Some(mixer) = &self.mixer else {
+            return false;
+        };
+        let mixer = mixer.clone();
+        let sample_rate = self.sample_rate;
 
         let dial_tone = mix_dial_tone(tone, sample_rate).take_duration(Duration::from_millis(500));
-        stream_handle.mixer().add(dial_tone);
+        mixer.add(dial_tone);
 
         thread::sleep(Duration::from_millis(500));
 
@@ -406,7 +578,7 @@ impl SoundBackgroundThreadData {
                     let dtmf_tone = low_tone.mix(high_tone).take_duration(Duration::from_millis(TONE_DURATION_MS));
 
                     // Play the tone
-                    stream_handle.mixer().add(dtmf_tone);
+                    mixer.add(dtmf_tone);
 
                     // Wait for tone duration
                     thread::sleep(Duration::from_millis(TONE_DURATION_MS));
@@ -458,7 +630,7 @@ impl SoundBackgroundThreadData {
                     }
 
                     let click = PulseClick::new_kind(kind, sample_rate, click_ms);
-                    stream_handle.mixer().add(click);
+                    mixer.add(click);
                     thread::sleep(Duration::from_millis(click_ms));
 
                     if pulse_idx < num_pulses - 1 && quiet_ms > 0 {
@@ -479,11 +651,13 @@ impl SoundBackgroundThreadData {
         self.line_sound_playing = true;
         let _ = self.tx.send(SoundData::StartPlay);
 
-        let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
-        let sample_rate = stream_handle.config().sample_rate();
+        let Some(mixer) = &self.mixer else {
+            return;
+        };
+        let mixer = mixer.clone();
 
-        let dial_tone = mix_dial_tone(tone, sample_rate);
-        stream_handle.mixer().add(dial_tone);
+        let dial_tone = mix_dial_tone(tone, self.sample_rate);
+        mixer.add(dial_tone);
 
         // Keep checking for stop signal
         while self.line_sound_playing {
@@ -493,19 +667,16 @@ impl SoundBackgroundThreadData {
             thread::sleep(Duration::from_millis(50));
         }
 
-        // Clear the mixer when stopping
-        //        stream_handle.mixer().clear();
         let _ = self.tx.send(SoundData::StopPlay);
     }
 
     fn beep(&mut self) {
         if self.last_beep.elapsed().as_millis() > 500 {
-            let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
-            let wave = SineWave::new(740.0).amplify(0.2).take_duration(Duration::from_secs(3));
-
-            stream_handle.mixer().add(wave);
-
-            thread::sleep(std::time::Duration::from_millis(200));
+            if let Some(mixer) = &self.mixer {
+                let wave = SineWave::new(740.0).amplify(0.2).take_duration(Duration::from_secs(3));
+                mixer.add(wave);
+                thread::sleep(std::time::Duration::from_millis(200));
+            }
         }
         self.last_beep = Instant::now();
     }
@@ -514,8 +685,11 @@ impl SoundBackgroundThreadData {
         let _ = self.tx.send(SoundData::StartPlay);
         let mut i = 0;
         let mut cur_style = MusicStyle::Normal;
-        let stream_handle = rodio::OutputStreamBuilder::open_default_stream().unwrap();
-        let sample_rate = stream_handle.config().sample_rate();
+        let Some(mixer) = &self.mixer else {
+            return;
+        };
+        let mixer = mixer.clone();
+        let sample_rate = self.sample_rate;
         while i < music.music_actions.len() {
             let act = &music.music_actions[i];
             i += 1;
@@ -530,7 +704,7 @@ impl SoundBackgroundThreadData {
                 MusicAction::PlayNote(freq, _length, _dotted) => {
                     let f = *freq;
                     let pause_length = cur_style.get_pause_length(duration);
-                    stream_handle.mixer().add(
+                    mixer.add(
                         SignalGenerator::new(sample_rate, f, Function::Square)
                             .amplify(0.1)
                             .take_duration(std::time::Duration::from_millis(duration as u64 - pause_length as u64)),
@@ -544,36 +718,84 @@ impl SoundBackgroundThreadData {
         let _ = self.tx.send(SoundData::StopPlay);
     }
 
-    fn play_igs(&self, music: &IgsCommand) {
+    fn play_igs(&mut self, music: &IgsCommand) {
         match music {
-            IgsCommand::BellsAndWhistles { .. } => {
-                log::info!("todo BellsAndWhistles");
+            IgsCommand::BellsAndWhistles { sound_effect } => {
+                self.queue_gist_sound(*sound_effect as usize, None, -1);
             }
-            IgsCommand::AlterSoundEffect { .. } => {
-                log::info!("todo AlterSoundEffect");
-            }
-            IgsCommand::StopAllSound => {
-                log::info!("todo StopAllSound");
-            }
-            IgsCommand::RestoreSoundEffect { .. } => {
-                log::info!("todo RestoreSoundEffect");
-            }
-            IgsCommand::SetEffectLoops { .. } => {
-                log::info!("todo SetEffectLoops");
-            }
-            IgsCommand::ChipMusic { .. } => {
-                log::info!("todo ChipMusic");
-            }
-            IgsCommand::Noise { .. } => {
-                log::info!("todo Noise");
-            }
-            IgsCommand::LoadMidiBuffer { .. } => {
-                log::info!("todo LoadMidiBuffer");
+            IgsCommand::ChipMusic {
+                sound_effect,
+                voice,
+                volume,
+                pitch,
+                ..
+            } => {
+                // Only start the sound here - timing and stop_type are handled by terminal_thread
+                self.queue_chip_music(*sound_effect as usize, *voice, *volume, *pitch);
             }
             _ => {
                 log::warn!("Unsupported IGS command for music playback: {:?}", music);
             }
         }
+    }
+
+    /// Queue a GIST sound effect - will be mixed with any currently playing sounds
+    fn queue_gist_sound(&mut self, sound_index: usize, volume: Option<i16>, pitch: i16) {
+        let Some(sound_words) = sound_data(sound_index) else {
+            log::warn!("Invalid GIST sound index: {}", sound_index);
+            return;
+        };
+
+        let sound = GistSoundData::from_words(sound_words);
+        if sound.duration() == 0 {
+            return;
+        }
+
+        // Start the sound on the persistent chip/driver (finds free voice automatically)
+        if self
+            .gist_driver
+            .snd_on(&mut self.gist_chip, &sound, None, volume, pitch, i16::MAX - 1)
+            .is_some()
+        {
+            self.gist_playing = true;
+        } else {
+            log::warn!("Failed to start GIST sound {}", sound_index);
+        }
+    }
+
+    /// Queue chip music - uses persistent state
+    /// Only starts the sound - timing and stop_type are handled by terminal_thread
+    fn queue_chip_music(&mut self, sound_index: usize, voice: u8, volume: u8, pitch: u8) {
+        let Some(sound_words) = sound_data(sound_index) else {
+            log::warn!("Invalid GIST sound index for ChipMusic: {}", sound_index);
+            return;
+        };
+
+        let sound = GistSoundData::from_words(sound_words);
+        let voice_idx = (voice as usize).min(2);
+
+        // Only start sound if pitch > 0
+        if pitch > 0 {
+            let actual_pitch = pitch as i16;
+            let actual_volume = Some(volume.min(15) as i16);
+
+            // Start on the requested voice channel
+            if self
+                .gist_driver
+                .snd_on(&mut self.gist_chip, &sound, Some(voice_idx), actual_volume, actual_pitch, 1)
+                .is_some()
+            {
+                self.gist_playing = true;
+            } else {
+                log::warn!("Failed to start ChipMusic sound");
+            }
+        }
+    }
+
+    /// Stop all GIST sounds
+    fn stop_gist(&mut self) {
+        self.gist_driver.stop_all(&mut self.gist_chip);
+        self.gist_playing = false;
     }
 }
 

@@ -1,4 +1,36 @@
-pub static mut SOUND_DATA: [[i16; 56]; 20] = [
+//! GIST Sound Effects Data
+//!
+//! Contains the 20 predefined GIST sound effects from the Atari ST IGS system.
+//! Each sound effect is defined as 56 i16 values representing envelope and
+//! modulation parameters for the YM2149 sound chip.
+
+/// Sound effect names for display purposes
+#[allow(dead_code)]
+const SOUND_NAMES: [&str; 20] = [
+    "Alien Invasion",
+    "Red Alert",
+    "Gunshot",
+    "Laser 1",
+    "Jackhammer",
+    "Teleport",
+    "Explosion",
+    "Laser 2",
+    "Longbell",
+    "Surprise",
+    "Radio Broadcast",
+    "Bounce Ball",
+    "Eerie Sound",
+    "Harley Motorcycle",
+    "Helicopter",
+    "Steam Locomotive",
+    "Wave",
+    "Robot Walk",
+    "Passing Plane",
+    "Landing",
+];
+
+/// GIST sound effect data - 20 sounds, each with 56 i16 parameters
+static SOUND_DATA: [[i16; 56]; 20] = [
     // Alien Invasion
     [
         28, 477, -1, 15, 1, 1, 4681, -5, 27853, 5, -9830, -1, -1278, 7, -32768, 7, -32768, 14, 1, -4080, -256, -4080, -256, 0, 0, -4080, -256, 18, -30086,
@@ -100,3 +132,20 @@ pub static mut SOUND_DATA: [[i16; 56]; 20] = [
         -25803, 3612, -29621, 3612, -29621, -2374, -17340, -1519, 7252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ],
 ];
+
+/// Returns the total number of sound effects (20)
+#[allow(dead_code)]
+pub fn sound_count() -> usize {
+    SOUND_DATA.len()
+}
+
+/// Returns a reference to the sound data for the given index
+pub fn sound_data(index: usize) -> Option<&'static [i16; 56]> {
+    SOUND_DATA.get(index)
+}
+
+/// Returns the name of the sound effect at the given index
+#[allow(dead_code)]
+pub fn sound_name(index: usize) -> Option<&'static str> {
+    SOUND_NAMES.get(index).copied()
+}
