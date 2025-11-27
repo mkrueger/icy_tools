@@ -33,7 +33,6 @@ use tokio::sync::mpsc;
 use crate::{
     Address, AddressBook, Options,
     terminal::terminal_thread::{ConnectionConfig, TerminalCommand, TerminalEvent, create_terminal_thread},
-    terminal_thread::ModemConfig,
     ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, show_iemsi, terminal_window},
 };
 
@@ -183,16 +182,7 @@ impl MainWindow {
                     let modem_opt = options.modems.iter().find(|m| m.name == address.address);
 
                     if let Some(modem_config) = modem_opt {
-                        Some(ModemConfig {
-                            device: modem_config.device.clone(),
-                            baud_rate: modem_config.baud_rate,
-                            char_size: modem_config.char_size,
-                            parity: modem_config.parity,
-                            stop_bits: modem_config.stop_bits,
-                            flow_control: modem_config.flow_control,
-                            init_string: modem_config.init_string.clone(),
-                            dial_string: modem_config.dial_string.clone(),
-                        })
+                        Some(modem_config.clone())
                     } else {
                         // No modem configured - show error and abort connection
                         let error_msg = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "connect-error-no-modem-configured");

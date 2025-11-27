@@ -203,12 +203,12 @@ impl SettingsDialogState {
                             // Data Format
                             row![
                                 left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-char_size")),
-                                pick_list(&CharSizeOption::ALL[..], Some(CharSizeOption::from(modem.char_size)), {
+                                pick_list(&CharSizeOption::ALL[..], Some(CharSizeOption::from(modem.format.char_size)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
                                         let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                            m.char_size = value.into();
+                                            m.format.char_size = value.into();
                                         }
                                         crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                     }
@@ -222,12 +222,12 @@ impl SettingsDialogState {
                             // Data Format
                             row![
                                 left_label("Stopbits".to_string()),
-                                pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption::from(modem.stop_bits)), {
+                                pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption::from(modem.format.stop_bits)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
                                         let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                            m.stop_bits = value.into();
+                                            m.format.stop_bits = value.into();
                                         }
                                         crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                     }
@@ -241,12 +241,12 @@ impl SettingsDialogState {
                             // Parity
                             row![
                                 left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-parity")),
-                                pick_list(&ParityOption::ALL[..], Some(ParityOption::from(modem.parity)), {
+                                pick_list(&ParityOption::ALL[..], Some(ParityOption::from(modem.format.parity)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
                                         let mut new_options = temp_options_arc.lock().clone();
                                         if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                            m.parity = value.into();
+                                            m.format.parity = value.into();
                                         }
                                         crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                     }

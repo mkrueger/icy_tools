@@ -6,10 +6,10 @@ use std::{
 
 use directories::UserDirs;
 use icy_engine_gui::MonitorSettings;
-use icy_net::serial::Serial;
+use icy_net::{modem::ModemConfiguration, serial::Serial};
 use serde::{Deserialize, Serialize};
 
-use crate::{Modem, TerminalResult};
+use crate::TerminalResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Scaling {
@@ -112,7 +112,7 @@ pub struct Options {
 
     // pub window_rect: Option<Rect>,
     #[serde(default)]
-    pub modems: Vec<Modem>,
+    pub modems: Vec<ModemConfiguration>,
 
     #[serde(default = "default_max_scrollback_lines")]
     pub max_scrollback_lines: usize,

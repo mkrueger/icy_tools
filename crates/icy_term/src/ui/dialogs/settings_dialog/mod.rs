@@ -8,7 +8,10 @@ use iced::{
 };
 use icy_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
 use icy_engine_gui::ui::*;
-use icy_net::serial::{CharSize, Parity, StopBits};
+use icy_net::{
+    modem::ModemConfiguration,
+    serial::{CharSize, Parity, StopBits},
+};
 
 use crate::{Options, ui::MainWindowMode};
 
@@ -163,7 +166,7 @@ impl SettingsDialogState {
             }
             SettingsMsg::AddModem => {
                 let len = self.temp_options.lock().modems.len();
-                let new_modem = crate::data::modem::Modem {
+                let new_modem = ModemConfiguration {
                     name: format!("Modem {}", len + 1),
                     ..Default::default()
                 };

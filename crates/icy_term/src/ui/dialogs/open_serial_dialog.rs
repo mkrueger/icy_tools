@@ -43,15 +43,15 @@ impl OpenSerialDialog {
                 None
             }
             OpenSerialMsg::CharSizeChanged(size) => {
-                self.serial.char_size = size.0;
+                self.serial.format.char_size = size.0;
                 None
             }
             OpenSerialMsg::ParityChanged(parity) => {
-                self.serial.parity = parity.0;
+                self.serial.format.parity = parity.0;
                 None
             }
             OpenSerialMsg::StopBitsChanged(stop_bits) => {
-                self.serial.stop_bits = stop_bits.0;
+                self.serial.format.stop_bits = stop_bits.0;
                 None
             }
             OpenSerialMsg::FlowControlChanged(flow_control) => {
@@ -96,21 +96,21 @@ impl OpenSerialDialog {
             .align_y(Alignment::Center);
 
         // Data bits (char size) picker
-        let char_size_pick = pick_list(&CharSizeOption::ALL[..], Some(CharSizeOption(self.serial.char_size)), |size| {
+        let char_size_pick = pick_list(&CharSizeOption::ALL[..], Some(CharSizeOption(self.serial.format.char_size)), |size| {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::CharSizeChanged(size))
         })
         .width(Length::Fixed(80.0))
         .text_size(14);
 
         // Parity picker
-        let parity_pick = pick_list(&ParityOption::ALL[..], Some(ParityOption(self.serial.parity)), |parity| {
+        let parity_pick = pick_list(&ParityOption::ALL[..], Some(ParityOption(self.serial.format.parity)), |parity| {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::ParityChanged(parity))
         })
         .width(Length::Fixed(80.0))
         .text_size(14);
 
         // Stop bits picker
-        let stop_bits_pick = pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption(self.serial.stop_bits)), |stop_bits| {
+        let stop_bits_pick = pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption(self.serial.format.stop_bits)), |stop_bits| {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::StopBitsChanged(stop_bits))
         })
         .width(Length::Fixed(80.0))

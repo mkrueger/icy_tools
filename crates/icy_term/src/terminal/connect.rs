@@ -1,6 +1,6 @@
-use crate::{Address, Modem};
+use crate::Address;
 use icy_engine::ScreenMode;
-use icy_net::{ConnectionType, protocol::TransferProtocolType, telnet::TermCaps};
+use icy_net::{ConnectionType, modem::ModemConfiguration, protocol::TransferProtocolType, telnet::TermCaps};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use std::{path::PathBuf, time::Duration};
 
@@ -16,13 +16,13 @@ pub struct OpenConnectionData {
     pub baud_emulation: BaudEmulation,
     pub use_ansi_music: MusicOption,
     pub term_caps: TermCaps,
-    pub modem: Option<Modem>,
+    pub modem: Option<ModemConfiguration>,
     pub proxy_command: Option<String>,
     pub screen_mode: ScreenMode,
 }
 
 impl OpenConnectionData {
-    pub fn from(call_adr: &Address, timeout: Duration, window_size: icy_engine::Size, modem: Option<Modem>) -> Self {
+    pub fn from(call_adr: &Address, timeout: Duration, window_size: icy_engine::Size, modem: Option<ModemConfiguration>) -> Self {
         if timeout.as_secs() == 0 {
             panic!("Timeout must be greater than 0");
         }

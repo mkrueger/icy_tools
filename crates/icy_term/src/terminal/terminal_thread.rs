@@ -8,7 +8,6 @@ use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
-use icy_net::serial::CharSize;
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection},
@@ -110,7 +109,7 @@ pub struct ConnectionConfig {
     pub password: Option<String>,
 
     pub proxy_command: Option<String>,
-    pub modem: Option<ModemConfig>,
+    pub modem: Option<ModemConfiguration>,
 
     pub ansi_music: MusicOption,
     pub screen_mode: ScreenMode,
@@ -121,19 +120,6 @@ pub struct ConnectionConfig {
     pub iemsi_auto_login: bool,
     pub auto_login_exp: String,
     pub max_scrollback_lines: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModemConfig {
-    pub device: String,
-    pub baud_rate: u32,
-    pub char_size: CharSize,
-    pub parity: icy_net::serial::Parity,
-    pub stop_bits: icy_net::serial::StopBits,
-    pub flow_control: icy_net::serial::FlowControl,
-    // Support multiple init lines (safer & closer to original patterns)
-    pub init_string: String,
-    pub dial_string: String,
 }
 
 /// Queued command for processing
@@ -578,19 +564,7 @@ impl TerminalThread {
                 let Some(m) = &config.modem else {
                     return Err("Modem configuration is required for modem connections".into());
                 };
-                let serial = Serial {
-                    device: m.device.clone(),
-                    baud_rate: m.baud_rate,
-                    char_size: m.char_size,
-                    parity: m.parity,
-                    stop_bits: m.stop_bits,
-                    flow_control: m.flow_control,
-                };
-                let modem = ModemConfiguration {
-                    init_string: m.init_string.clone(),
-                    dial_string: m.dial_string.clone(),
-                };
-                Box::new(ModemConnection::open(serial, modem, config.connection_info.host.clone()).await?)
+                Box::new(ModemConnection::open(m.clone(), config.connection_info.host.clone()).await?)
             }
             ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), false).await?),
             ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), true).await?),
