@@ -8,7 +8,9 @@ use iced::{
     widget::{Id, button, column, container, row, text, text_input},
 };
 use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection};
-use icy_engine_gui::ui::{BUTTON_FONT_SIZE, danger_button_style, primary_button_style, secondary_button_style};
+use icy_engine_gui::ui::{
+    BUTTON_FONT_SIZE, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, danger_button_style, primary_button_style, secondary_button_style,
+};
 
 use crate::ui::{MainWindowMode, Message};
 
@@ -314,12 +316,12 @@ impl DialogState {
             .style(danger_button_style);
 
         let case_button = if self.case_sensitive {
-            button(text("🗛").size(12).wrapping(text::Wrapping::None))
+            button(text("🗛").size(TEXT_SIZE_SMALL).wrapping(text::Wrapping::None))
                 .on_press(Message::FindDialog(FindDialogMsg::SetCasing(false)))
                 .padding([2, 4])
                 .style(primary_button_style)
         } else {
-            button(text("🗛").size(12).wrapping(text::Wrapping::None))
+            button(text("🗛").size(TEXT_SIZE_SMALL).wrapping(text::Wrapping::None))
                 .on_press(Message::FindDialog(FindDialogMsg::SetCasing(true)))
                 .padding([2, 4])
                 .style(secondary_button_style)
@@ -328,25 +330,25 @@ impl DialogState {
         let results_label = if self.results.is_empty() {
             if !self.pattern.is_empty() {
                 row![
-                    text("⚠").size(14).color(Color::from_rgb(0.8, 0.2, 0.2)),
+                    text("⚠").size(TEXT_SIZE_NORMAL).color(Color::from_rgb(0.8, 0.2, 0.2)),
                     text(fl!(crate::LANGUAGE_LOADER, "terminal-find-no-results"))
-                        .size(12)
+                        .size(TEXT_SIZE_SMALL)
                         .color(Color::from_rgb(0.8, 0.2, 0.2))
                 ]
                 .spacing(4)
             } else {
-                row![text("").size(12)]
+                row![text("").size(TEXT_SIZE_SMALL)]
             }
         } else {
             row![
-                text("✓").size(14).color(Color::from_rgb(0.2, 0.8, 0.2)),
+                text("✓").size(TEXT_SIZE_NORMAL).color(Color::from_rgb(0.2, 0.8, 0.2)),
                 text(fl!(
                     crate::LANGUAGE_LOADER,
                     "terminal-find-results",
                     cur = (self.cur_sel + 1).to_string(),
                     total = self.results.len().to_string()
                 ))
-                .size(12)
+                .size(TEXT_SIZE_SMALL)
                 .color(Color::from_rgb(0.2, 0.8, 0.2))
             ]
             .spacing(4)
@@ -355,11 +357,11 @@ impl DialogState {
         let content = column![
             row![search_input, prev_button, next_button, close_button,].spacing(4).align_y(Vertical::Center),
             row![case_button, iced::widget::Space::new().width(Length::Fill), results_label,]
-                .spacing(8)
+                .spacing(DIALOG_SPACING)
                 .align_y(Vertical::Center)
                 .padding([0, 4]),
         ]
-        .spacing(8)
+        .spacing(DIALOG_SPACING)
         .padding(12);
 
         container(content)

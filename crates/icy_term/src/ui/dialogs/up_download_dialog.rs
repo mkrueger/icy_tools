@@ -7,7 +7,7 @@ use iced::{
     Alignment, Border, Color, Element, Length, Padding, gradient,
     widget::{Space, button, column, container, progress_bar, row, scrollable, text},
 };
-use icy_engine_gui::ui::{danger_button_style, success_button_style};
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, danger_button_style, success_button_style};
 use icy_net::protocol::{OutputLogMessage, TransferState};
 
 use crate::ui::MainWindowMode;
@@ -121,7 +121,7 @@ impl FileTransferDialogState {
                         human_bytes(transfer_info.cur_bytes_transfered as f64),
                         human_bytes(transfer_info.file_size as f64)
                     ))
-                    .size(14)
+                    .size(TEXT_SIZE_NORMAL)
                     .style(text::secondary),
                 ]
                 .align_y(Alignment::Center),
@@ -183,9 +183,9 @@ impl FileTransferDialogState {
 
             let action_button = button(
                 row![
-                    text(if state.is_finished { "✓" } else { "✕" }).size(14),
+                    text(if state.is_finished { "✓" } else { "✕" }).size(TEXT_SIZE_NORMAL),
                     Space::new().width(4.0),
-                    text(button_label).size(14),
+                    text(button_label).size(TEXT_SIZE_NORMAL),
                 ]
                 .align_y(Alignment::Center),
             )
@@ -283,7 +283,11 @@ impl FileTransferDialogState {
 
     fn create_stat_card<'a>(&self, icon: &'a str, label: String, value: String) -> Element<'a, crate::ui::Message> {
         container(column![
-            row![text(icon).size(14), Space::new().width(4.0), text(label).size(11).style(text::secondary),],
+            row![
+                text(icon).size(TEXT_SIZE_NORMAL),
+                Space::new().width(4.0),
+                text(label).size(11).style(text::secondary),
+            ],
             Space::new().height(4.0),
             text(value).size(13).style(text::primary),
         ])
@@ -380,17 +384,24 @@ impl FileTransferDialogState {
     ) -> Element<'a, crate::ui::Message> {
         let is_selected = self.selected_log == tab;
 
-        button(row![text(icon).size(12), Space::new().width(4.0), text(format!("{} ({})", label, count)).size(12)].align_y(Alignment::Center))
-            .on_press(crate::ui::Message::TransferDialog(TransferMsg::SelectLogTab(tab)))
-            .padding([6, 12])
-            .style(move |theme: &iced::Theme, status| {
-                if is_selected {
-                    button::primary(theme, status)
-                } else {
-                    button::secondary(theme, status)
-                }
-            })
-            .into()
+        button(
+            row![
+                text(icon).size(TEXT_SIZE_SMALL),
+                Space::new().width(4.0),
+                text(format!("{} ({})", label, count)).size(TEXT_SIZE_SMALL)
+            ]
+            .align_y(Alignment::Center),
+        )
+        .on_press(crate::ui::Message::TransferDialog(TransferMsg::SelectLogTab(tab)))
+        .padding([6, 12])
+        .style(move |theme: &iced::Theme, status| {
+            if is_selected {
+                button::primary(theme, status)
+            } else {
+                button::secondary(theme, status)
+            }
+        })
+        .into()
     }
 
     fn create_log_entry(&self, msg: OutputLogMessage) -> Element<'_, crate::ui::Message> {
@@ -403,7 +414,7 @@ impl FileTransferDialogState {
         container(row![
             text(icon).size(10).style(text_style),
             Space::new().width(8.0),
-            text(message).size(12).style(text::default),
+            text(message).size(TEXT_SIZE_SMALL).style(text::default),
         ])
         .padding(Padding::from([4.0, 8.0]))
         .style(move |theme: &iced::Theme| {
@@ -445,9 +456,9 @@ impl FileTransferDialogState {
                 Space::new().height(24.0),
                 container(
                     row![
-                        text("⏳").size(14).style(text::secondary),
+                        text("⏳").size(TEXT_SIZE_NORMAL).style(text::secondary),
                         Space::new().width(6.0),
-                        text(waiting_text).size(14).style(text::secondary),
+                        text(waiting_text).size(TEXT_SIZE_NORMAL).style(text::secondary),
                     ]
                     .align_y(Alignment::Center)
                 )
@@ -465,9 +476,9 @@ impl FileTransferDialogState {
                 row![
                     Space::new().width(Length::Fill),
                     button(row![
-                        text("✕").size(14),
+                        text("✕").size(TEXT_SIZE_NORMAL),
                         Space::new().width(4.0),
-                        text(format!("{}", icy_engine_gui::ButtonType::Cancel)).size(14),
+                        text(format!("{}", icy_engine_gui::ButtonType::Cancel)).size(TEXT_SIZE_NORMAL),
                     ])
                     .on_press(crate::ui::Message::TransferDialog(TransferMsg::Close))
                     .padding([10, 20])
@@ -475,7 +486,7 @@ impl FileTransferDialogState {
                 ]
             ]
             .padding(24)
-            .spacing(8),
+            .spacing(DIALOG_SPACING),
         )
         .width(Length::Fixed(420.0))
         .height(Length::Shrink)

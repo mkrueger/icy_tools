@@ -32,6 +32,7 @@ settings-scaling-nearest = Legközelebbi
 settings-scaling-linear = Lineáris
 
 settings-terminal-category = Terminál
+settings-terminal-general-section = Általános
 settings-terminal-console-beep-checkbox = Konzol beep
 settings-terminal-open-settings-dir-button = Beállítások könyvtár megnyitása
 settings-terminal-dial-tone = Tárcsahang
@@ -78,9 +79,7 @@ settings-modem-add-button = Hozzáadás
 settings-modem-remove-button = Eltávolítás
 settings-modem-no-selection-hint = Adj hozzá egy modemet vagy válassz egyet a listából
 settings-modem-dial_prefix = Tárcsázási előtag
-settings-modem-char_size = Karakter méret
-settings-modem-stop_bits = Stop bitek
-settings-modem-parity = Paritás
+settings-modem-format = Formátum
 settings-modem-baud_rate-quick = Gyakori
 
 dialing_directory-connect-to = Gyors csatlakozás…

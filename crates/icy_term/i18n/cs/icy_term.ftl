@@ -32,6 +32,7 @@ settings-scaling-nearest = Nejbližší
 settings-scaling-linear = Lineární
 
 settings-terminal-category = Terminál
+settings-terminal-general-section = Obecné
 settings-terminal-console-beep-checkbox = Zvuk konzole
 settings-terminal-open-settings-dir-button = Otevřít adresář nastavení
 settings-terminal-dial-tone = Oznamovací tón
@@ -78,9 +79,7 @@ settings-modem-add-button = Přidat
 settings-modem-remove-button = Odebrat
 settings-modem-no-selection-hint = Přidejte modem nebo vyberte jeden ze seznamu
 settings-modem-dial_prefix = Předvolba vytáčení
-settings-modem-char_size = Velikost znaku
-settings-modem-stop_bits = Stop bity
-settings-modem-parity = Parita
+settings-modem-format = Formát
 settings-modem-baud_rate-quick = Běžné
 
 dialing_directory-connect-to = Rychlé připojení k…

@@ -32,6 +32,7 @@ settings-scaling-nearest = Cel mai apropiat
 settings-scaling-linear = Liniar
 
 settings-terminal-category = Terminal
+settings-terminal-general-section = General
 settings-terminal-console-beep-checkbox = Beep consolă
 settings-terminal-open-settings-dir-button = Deschide directorul de setări
 settings-terminal-dial-tone = Ton de apelare
@@ -78,9 +79,7 @@ settings-modem-add-button = Adaugă
 settings-modem-remove-button = Elimină
 settings-modem-no-selection-hint = Adaugă un modem sau selectează unul din listă
 settings-modem-dial_prefix = Prefix de apelare
-settings-modem-char_size = Dimensiune caracter
-settings-modem-stop_bits = Biți de stop
-settings-modem-parity = Paritate
+settings-modem-format = Format
 settings-modem-baud_rate-quick = Comun
 
 dialing_directory-connect-to = Conectare rapidă la…

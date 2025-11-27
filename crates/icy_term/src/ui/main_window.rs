@@ -1438,6 +1438,7 @@ impl MainWindow {
                                     "p" => return Some(Message::ShowCaptureDialog),
                                     "x" => return Some(Message::QuitIcyTerm),
                                     "a" => return Some(Message::ShowAboutDialog),
+                                    #[cfg(not(target_os = "macos"))]
                                     "c" => return Some(Message::ClearScreen),
                                     "b" => return Some(Message::ShowScrollback),
                                     "r" => return Some(Message::ShowRunScriptDialog),
@@ -1446,13 +1447,21 @@ impl MainWindow {
                                 },
                                 _ => {}
                             }
-                        } else if modifiers.command() {
+                        } else if modifiers.control() {
+                            #[cfg(not(target_os = "macos"))]
+                            if let keyboard::Key::Character(s) = &key {
+                                match s.to_lowercase().as_str() {
+                                    "c" => return Some(Message::Copy),
+                                    "v" => return Some(Message::Paste),
+                                    _ => {}
+                                }
+                            }
+                        } else if modifiers.alt() {
+                            // On macOS, use Option (Alt) for clear screen to avoid conflict with Cmd+C (copy)
+                            #[cfg(target_os = "macos")]
                             if let keyboard::Key::Character(s) = &key {
                                 if s.to_lowercase() == "c" {
-                                    return Some(Message::Copy);
-                                }
-                                if s.to_lowercase() == "v" {
-                                    return Some(Message::Paste);
+                                    return Some(Message::ClearScreen);
                                 }
                             }
                         } else if modifiers.is_empty() {

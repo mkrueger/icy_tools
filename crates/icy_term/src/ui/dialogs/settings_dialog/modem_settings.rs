@@ -4,9 +4,9 @@ use iced::{
     widget::{Space, button, column, container, pick_list, row, scrollable, text, text_input},
 };
 use icy_engine_gui::{
-    SECTION_PADDING, section_header,
-    settings::{effect_box, left_label},
-    ui::DIALOG_SPACING as INPUT_SPACING,
+    SECTION_PADDING, TEXT_SIZE_NORMAL, section_header,
+    settings::effect_box,
+    ui::{DIALOG_SPACING, TEXT_SIZE_SMALL, left_label_small},
 };
 
 use crate::ui::{
@@ -65,16 +65,16 @@ impl SettingsDialogState {
         }
 
         // Add/Remove buttons with icons
-        let add_button = button(row![text("+").size(14)].align_y(Alignment::Center))
+        let add_button = button(row![text("+").size(TEXT_SIZE_NORMAL)].align_y(Alignment::Center))
             .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::AddModem))
             .padding([6, 10]);
 
         let remove_button: button::Button<'_, crate::ui::Message> = if !modems.is_empty() {
-            button(row![text("-").size(14)].align_y(Alignment::Center))
+            button(row![text("-").size(TEXT_SIZE_NORMAL)].align_y(Alignment::Center))
                 .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::RemoveModem(selected_index)))
                 .padding([6, 10])
         } else {
-            button(row![text("-").size(14)].align_y(Alignment::Center)).padding([6, 10])
+            button(row![text("-").size(TEXT_SIZE_NORMAL)].align_y(Alignment::Center)).padding([6, 10])
         };
 
         let left_panel = container(column![
@@ -115,7 +115,7 @@ impl SettingsDialogState {
                     effect_box(
                         column![
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-name")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-name")),
                                 text_input("", &modem.name)
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
@@ -128,12 +128,12 @@ impl SettingsDialogState {
                                         }
                                     })
                                     .width(Length::Fill)
-                                    .size(14),
+                                    .size(TEXT_SIZE_NORMAL),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-device")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-device")),
                                 text_input("", &modem.device)
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
@@ -146,13 +146,13 @@ impl SettingsDialogState {
                                         }
                                     })
                                     .width(Length::Fill)
-                                    .size(14),
+                                    .size(TEXT_SIZE_NORMAL),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                             // Baud Rate
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-baud_rate")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-baud_rate")),
                                 text_input("", &modem.baud_rate.to_string())
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
@@ -169,7 +169,7 @@ impl SettingsDialogState {
                                         }
                                     })
                                     .width(Length::Fixed(100.0))
-                                    .size(14),
+                                    .size(TEXT_SIZE_NORMAL),
                                 pick_list(baud_options, selected_baud, {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
@@ -186,13 +186,13 @@ impl SettingsDialogState {
                                 })
                                 .placeholder(fl!(crate::LANGUAGE_LOADER, "settings-modem-baud_rate-quick"))
                                 .width(Length::Fixed(100.0))
-                                .text_size(14),
+                                .text_size(TEXT_SIZE_NORMAL),
                                 Space::new().width(Length::Fill),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                         ]
-                        .spacing(INPUT_SPACING)
+                        .spacing(DIALOG_SPACING)
                         .into()
                     ),
                     Space::new().height(24.0),
@@ -200,9 +200,9 @@ impl SettingsDialogState {
                     section_header(fl!(crate::LANGUAGE_LOADER, "settings-modem-connection-section")),
                     effect_box(
                         column![
-                            // Data Format
+                            // Data Format (combined row like in serial dialog)
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-char_size")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-format")),
                                 pick_list(&CharSizeOption::ALL[..], Some(CharSizeOption::from(modem.format.char_size)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
@@ -214,33 +214,8 @@ impl SettingsDialogState {
                                     }
                                 })
                                 .width(Length::Fixed(60.0))
-                                .text_size(14),
-                                Space::new().width(12.0),
-                            ]
-                            .spacing(12)
-                            .align_y(Alignment::Center),
-                            // Data Format
-                            row![
-                                left_label("Stopbits".to_string()),
-                                pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption::from(modem.format.stop_bits)), {
-                                    let temp_options_arc = self.temp_options.clone();
-                                    move |value| {
-                                        let mut new_options = temp_options_arc.lock().clone();
-                                        if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                            m.format.stop_bits = value.into();
-                                        }
-                                        crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
-                                    }
-                                })
-                                .width(Length::Fixed(60.0))
-                                .text_size(14),
-                                Space::new().width(Length::Fill),
-                            ]
-                            .spacing(12)
-                            .align_y(Alignment::Center),
-                            // Parity
-                            row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-parity")),
+                                .text_size(TEXT_SIZE_NORMAL),
+                                text("-").size(TEXT_SIZE_NORMAL),
                                 pick_list(&ParityOption::ALL[..], Some(ParityOption::from(modem.format.parity)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
@@ -251,15 +226,27 @@ impl SettingsDialogState {
                                         crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                     }
                                 })
-                                .width(Length::Fixed(120.0))
-                                .text_size(14),
-                                Space::new().width(Length::Fill),
+                                .width(Length::Fixed(70.0))
+                                .text_size(TEXT_SIZE_NORMAL),
+                                text("-").size(TEXT_SIZE_NORMAL),
+                                pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption::from(modem.format.stop_bits)), {
+                                    let temp_options_arc = self.temp_options.clone();
+                                    move |value| {
+                                        let mut new_options = temp_options_arc.lock().clone();
+                                        if let Some(m) = new_options.modems.get_mut(selected_index) {
+                                            m.format.stop_bits = value.into();
+                                        }
+                                        crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                    }
+                                })
+                                .width(Length::Fixed(50.0))
+                                .text_size(TEXT_SIZE_NORMAL),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                             // Flow control
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-flow_control")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-flow_control")),
                                 pick_list(&FlowControlOption::ALL[..], Some(FlowControlOption::from(modem.flow_control)), {
                                     let temp_options_arc = self.temp_options.clone();
                                     move |value| {
@@ -270,14 +257,13 @@ impl SettingsDialogState {
                                         crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                     }
                                 })
-                                .width(Length::Fixed(120.0))
-                                .text_size(14),
-                                Space::new().width(Length::Fill),
+                                .width(Length::Fixed(100.0))
+                                .text_size(TEXT_SIZE_NORMAL),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                         ]
-                        .spacing(INPUT_SPACING)
+                        .spacing(DIALOG_SPACING)
                         .into()
                     ),
                     Space::new().height(24.0),
@@ -286,7 +272,7 @@ impl SettingsDialogState {
                     effect_box(
                         column![
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-init_string")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-init_string")),
                                 text_input("ATZ", &modem.init_string)
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
@@ -299,12 +285,12 @@ impl SettingsDialogState {
                                         }
                                     })
                                     .width(Length::Fill)
-                                    .size(14),
+                                    .size(TEXT_SIZE_NORMAL),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                             row![
-                                left_label(fl!(crate::LANGUAGE_LOADER, "settings-modem-dial_prefix")),
+                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-dial_prefix")),
                                 text_input("ATDT", &modem.dial_string)
                                     .on_input({
                                         let temp_options_arc = self.temp_options.clone();
@@ -317,12 +303,12 @@ impl SettingsDialogState {
                                         }
                                     })
                                     .width(Length::Fill)
-                                    .size(14),
+                                    .size(TEXT_SIZE_NORMAL),
                             ]
-                            .spacing(12)
+                            .spacing(DIALOG_SPACING)
                             .align_y(Alignment::Center),
                         ]
-                        .spacing(INPUT_SPACING)
+                        .spacing(DIALOG_SPACING)
                         .into()
                     ),
                 ]
@@ -337,9 +323,9 @@ impl SettingsDialogState {
                     column![
                         text("📡").size(32),
                         Space::new().height(8.0),
-                        text(fl!(crate::LANGUAGE_LOADER, "settings-modem-nothing_selected")).size(14),
+                        text(fl!(crate::LANGUAGE_LOADER, "settings-modem-nothing_selected")).size(TEXT_SIZE_NORMAL),
                         Space::new().height(4.0),
-                        text(fl!(crate::LANGUAGE_LOADER, "settings-modem-no-selection-hint")).size(12),
+                        text(fl!(crate::LANGUAGE_LOADER, "settings-modem-no-selection-hint")).size(TEXT_SIZE_SMALL),
                     ]
                     .align_x(Alignment::Center)
                 )

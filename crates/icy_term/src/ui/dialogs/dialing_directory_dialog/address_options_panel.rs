@@ -10,7 +10,7 @@ use iced::{
 };
 use icy_engine::{ScreenMode, TerminalResolutionExt, VGA_MODES};
 use icy_engine_gui::settings::{effect_box, left_label};
-use icy_engine_gui::ui::{primary_button, secondary_button, text_button_style};
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button, text_button_style};
 use icy_engine_gui::{LABEL_WIDTH, SECTION_SPACING, section_header};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::{BaudEmulation, MusicOption};
@@ -146,7 +146,7 @@ impl super::DialingDirectoryState {
             };
 
             column![
-                row![name_input, star_btn].spacing(8).align_y(Alignment::Center),
+                row![name_input, star_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
                 row![
                     container(text(format!("✆ {calls}")).style(|theme: &iced::Theme| iced::widget::text::Style {
                         color: Some(theme.extended_palette().secondary.base.color),
@@ -169,7 +169,7 @@ impl super::DialingDirectoryState {
 
         // Server Settings Section
         let server_section: Element<'_, Message> = {
-            let mut server_content = column![].spacing(12);
+            let mut server_content = column![].spacing(DIALOG_SPACING);
 
             // Address/Modem row
             if addr.protocol == ConnectionType::Modem {
@@ -184,10 +184,10 @@ impl super::DialingDirectoryState {
                 })
                 .placeholder(fl!(crate::LANGUAGE_LOADER, "dialing_directory-select-modem"))
                 .width(Length::Fill)
-                .text_size(14);
+                .text_size(TEXT_SIZE_NORMAL);
 
                 let modem_row = row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")), modem_picker,]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center);
 
                 server_content = server_content.push(modem_row);
@@ -202,12 +202,14 @@ impl super::DialingDirectoryState {
 
                     let error_row = row![
                         left_label(String::new()), // Offset to align with the field
-                        text(format!("⚠ {}", err_msg)).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().danger.base.color),
-                            ..Default::default()
-                        })
+                        text(format!("⚠ {}", err_msg))
+                            .size(TEXT_SIZE_SMALL)
+                            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                                color: Some(theme.extended_palette().danger.base.color),
+                                ..Default::default()
+                            })
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center);
 
                     server_content = server_content.push(error_row);
@@ -221,12 +223,12 @@ impl super::DialingDirectoryState {
                         })
                     })
                     .padding(6)
-                    .size(14)
+                    .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fill);
 
                 server_content = server_content.push(
                     row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-address")), address_field]
-                        .spacing(12)
+                        .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
             }
@@ -256,11 +258,11 @@ impl super::DialingDirectoryState {
                     })
                 })
                 .width(Length::Fixed(180.0))
-                .text_size(14);
+                .text_size(TEXT_SIZE_NORMAL);
 
                 server_content = server_content.push(
                     row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-protocol")), protocol_pick,]
-                        .spacing(12)
+                        .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
             }
@@ -275,11 +277,11 @@ impl super::DialingDirectoryState {
                     })
                 })
                 .width(Length::Fixed(COMBO_WIDTH))
-                .text_size(14);
+                .text_size(TEXT_SIZE_NORMAL);
 
                 server_content = server_content.push(
                     row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-baud-emulation")), baud_pick]
-                        .spacing(12)
+                        .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
             }
@@ -306,11 +308,11 @@ impl super::DialingDirectoryState {
                 })
             })
             .width(Length::Fixed(COMBO_WIDTH))
-            .text_size(14);
+            .text_size(TEXT_SIZE_NORMAL);
 
             server_content = server_content.push(
                 row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type")), term_pick,]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
             );
 
@@ -333,11 +335,11 @@ impl super::DialingDirectoryState {
                     })
                 })
                 .width(Length::Fixed(120.0))
-                .text_size(14);
+                .text_size(TEXT_SIZE_NORMAL);
 
                 server_content = server_content.push(
                     row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode")), screen_mode_pick]
-                        .spacing(12)
+                        .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
 
@@ -358,7 +360,7 @@ impl super::DialingDirectoryState {
                                 })
                             })
                             .padding(6)
-                            .size(14)
+                            .size(TEXT_SIZE_NORMAL)
                             .width(Length::Fixed(70.0));
 
                         // Rows input
@@ -371,12 +373,12 @@ impl super::DialingDirectoryState {
                                 })
                             })
                             .padding(6)
-                            .size(14)
+                            .size(TEXT_SIZE_NORMAL)
                             .width(Length::Fixed(70.0));
 
                         server_content = server_content.push(
                             row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-resolution")), cols_input, rows_input,]
-                                .spacing(12)
+                                .spacing(DIALOG_SPACING)
                                 .align_y(Alignment::Center),
                         );
                     }
@@ -392,11 +394,11 @@ impl super::DialingDirectoryState {
                             field: AddressFieldChange::ScreenMode(ScreenMode::Atascii(width)),
                         })
                     })
-                    .text_size(14);
+                    .text_size(TEXT_SIZE_NORMAL);
 
                 server_content = server_content.push(
                     row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-xep80-module")), toggle]
-                        .spacing(12)
+                        .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
             } else if addr.terminal_type == TerminalEmulation::AtariST {
@@ -424,7 +426,7 @@ impl super::DialingDirectoryState {
                     },
                 )
                 .width(Length::Fixed(100.0))
-                .text_size(14);
+                .text_size(TEXT_SIZE_NORMAL);
 
                 // Resolution info label
                 let size = current_resolution.get_resolution();
@@ -438,14 +440,14 @@ impl super::DialingDirectoryState {
                     cols = cols,
                     colors = colors
                 );
-                let info_label = text(info_text).size(12).style(text::secondary);
+                let info_label = text(info_text).size(TEXT_SIZE_SMALL).style(text::secondary);
                 server_content = server_content.push(
                     row![
                         left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-resolution")),
                         resolution_pick,
                         info_label
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                 );
 
@@ -457,9 +459,9 @@ impl super::DialingDirectoryState {
                             field: AddressFieldChange::ScreenMode(ScreenMode::AtariST(current_resolution, checked)),
                         })
                     })
-                    .text_size(14);
+                    .text_size(TEXT_SIZE_NORMAL);
 
-                let igs_link = button(text("Enable IGS").size(14).wrapping(text::Wrapping::None))
+                let igs_link = button(text("Enable IGS").size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
                     .on_press(Message::OpenLink(
                         "https://breakintochat.com/blog/category/instant-graphics-and-sound".to_string(),
                     ))
@@ -483,7 +485,7 @@ impl super::DialingDirectoryState {
                     .width(Length::Fixed(LABEL_WIDTH))
                     .padding(0);
 
-                server_content = server_content.push(row![igs_link, igs_toggle].spacing(12).align_y(Alignment::Center));
+                server_content = server_content.push(row![igs_link, igs_toggle].spacing(DIALOG_SPACING).align_y(Alignment::Center));
             }
 
             // Music option row (only for ANSI/UTF8ANSI)
@@ -499,11 +501,11 @@ impl super::DialingDirectoryState {
                     },
                 )
                 .width(Length::Fixed(COMBO_WIDTH))
-                .text_size(14);
+                .text_size(TEXT_SIZE_NORMAL);
 
                 server_content = server_content.push(
                     row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option")), music_pick]
-                        .spacing(12)
+                        .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
             }
@@ -513,7 +515,7 @@ impl super::DialingDirectoryState {
 
         // Login Settings Section (only for non-quick connect)
         let login_section: Option<Element<'_, Message>> = if !is_quick {
-            let mut login_content = column![].spacing(12);
+            let mut login_content = column![].spacing(DIALOG_SPACING);
 
             // User field
             let user_field = text_input("", &addr.user_name)
@@ -524,12 +526,12 @@ impl super::DialingDirectoryState {
                     })
                 })
                 .padding(6)
-                .size(14)
+                .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fill);
 
             login_content = login_content.push(
                 row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-user")), user_field]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
             );
 
@@ -543,7 +545,7 @@ impl super::DialingDirectoryState {
                 })
                 .secure(!self.show_passwords)
                 .padding(6)
-                .size(14)
+                .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fill);
 
             let visibility_icon = if self.show_passwords {
@@ -576,7 +578,7 @@ impl super::DialingDirectoryState {
 
             let generate_btn = tooltip(
                 generate_btn,
-                container(text(tooltip_label).size(12)).style(container::rounded_box),
+                container(text(tooltip_label).size(TEXT_SIZE_SMALL)).style(container::rounded_box),
                 tooltip::Position::Bottom,
             )
             .gap(10)
@@ -590,7 +592,7 @@ impl super::DialingDirectoryState {
                     toggler_pw,
                     generate_btn
                 ]
-                .spacing(12)
+                .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
             );
 
@@ -626,11 +628,11 @@ impl super::DialingDirectoryState {
                 })
             })
             .width(Length::Fill)
-            .text_size(14);
+            .text_size(TEXT_SIZE_NORMAL);
 
             login_content = login_content.push(
                 row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-autologin")), auto_login_picker]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
             );*/
 
@@ -649,7 +651,7 @@ impl super::DialingDirectoryState {
                     })
                 })
                 .padding(6)
-                .size(14)
+                .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fill);
 
             Some(effect_box(comment.into()).into())

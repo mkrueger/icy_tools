@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, column, container, row, scrollable, text, text_input},
 };
-use icy_engine_gui::ui::primary_button;
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, primary_button};
 use icy_net::iemsi::EmsiISI;
 
 use crate::ui::MainWindowMode;
@@ -60,7 +60,7 @@ impl ShowIemsiDialog {
             text_input("", value)
                 .width(Length::Fill)
                 .padding(8)
-                .size(14)
+                .size(TEXT_SIZE_NORMAL)
                 .style(|theme: &iced::Theme, status| {
                     let palette = theme.extended_palette();
                     let focused = matches!(status, text_input::Status::Focused { .. });
@@ -89,7 +89,7 @@ impl ShowIemsiDialog {
         .width(Length::Fill);
 
         // Assemble row with consistent spacing; no ad‑hoc Space elements
-        let row_line = row![icon_col, label_col, value_col].spacing(8).align_y(Alignment::Center);
+        let row_line = row![icon_col, label_col, value_col].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
         container(row_line).padding([6.0, 12.0]).into()
     }

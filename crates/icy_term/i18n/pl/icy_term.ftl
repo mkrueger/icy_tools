@@ -32,6 +32,7 @@ settings-scaling-nearest = Najbliższy
 settings-scaling-linear = Liniowy
 
 settings-terminal-category = Terminal
+settings-terminal-general-section = Ogólne
 settings-terminal-console-beep-checkbox = Beep konsoli
 settings-terminal-open-settings-dir-button = Otwórz katalog ustawień
 settings-terminal-dial-tone = Ton wybierania
@@ -78,9 +79,7 @@ settings-modem-add-button = Dodaj
 settings-modem-remove-button = Usuń
 settings-modem-no-selection-hint = Dodaj modem lub wybierz jeden z listy
 settings-modem-dial_prefix = Prefiks wybierania
-settings-modem-char_size = Rozmiar znaku
-settings-modem-stop_bits = Bity stopu
-settings-modem-parity = Parzystość
+settings-modem-format = Format
 settings-modem-baud_rate-quick = Typowe
 
 dialing_directory-connect-to = Szybkie połączenie z…

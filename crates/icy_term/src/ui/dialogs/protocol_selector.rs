@@ -113,7 +113,7 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
                             ..Default::default()
                         })
                 ]
-                .spacing(12)
+                .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
             )
             .width(Length::Fill),

@@ -127,7 +127,9 @@ impl SettingsDialogState {
             }
             SettingsMsg::OpenSettingsFolder => {
                 if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
-                    let _ = open::that(proj_dirs.config_dir());
+                    if let Err(err) = open::that(proj_dirs.config_dir()) {
+                        log::error!("Failed to open settings folder: {}", err);
+                    }
                 }
                 None
             }
@@ -149,7 +151,9 @@ impl SettingsDialogState {
                         }
                     } else if let Some(parent) = log_file.parent() {
                         // If log file doesn't exist yet, open the log directory
-                        let _ = open::that(parent);
+                        if let Err(err) = open::that(parent) {
+                            log::error!("Failed to open log file directory: {}", err);
+                        }
                     }
                 }
                 None
@@ -279,7 +283,7 @@ impl SettingsDialogState {
         for category in SettingsCategory::all() {
             let is_selected = self.current_category == category;
             let cat = category.clone();
-            let cat_button = button(text(category.name()).size(14).wrapping(text::Wrapping::None))
+            let cat_button = button(text(category.name()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
                 .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::SwitchCategory(cat)))
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
@@ -454,7 +458,7 @@ impl SettingsDialogState {
 
     fn keybinds_settings_content(&self) -> Element<'_, crate::ui::Message> {
         // TODO: Implement keybindings editor
-        column![text("Keybindings editor - TODO: Implement keybinding controls").size(14),].into()
+        column![text("Keybindings editor - TODO: Implement keybinding controls").size(TEXT_SIZE_NORMAL),].into()
     }
 }
 

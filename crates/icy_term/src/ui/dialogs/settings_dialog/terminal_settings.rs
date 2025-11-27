@@ -1,12 +1,12 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, checkbox, column, pick_list, row, text_input},
+    widget::{checkbox, column, pick_list, row, text_input},
 };
 use icy_engine_gui::{
-    SECTION_PADDING,
+    SECTION_PADDING, TEXT_SIZE_NORMAL, section_header,
     settings::{effect_box, left_label},
-    ui::DIALOG_SPACING as INPUT_SPACING,
+    ui::DIALOG_SPACING,
 };
 
 use crate::{
@@ -60,70 +60,72 @@ impl SettingsDialogState {
         let max_scrollback_lines = temp_options.max_scrollback_lines;
         drop(temp_options); // Release the lock early
 
-        column![effect_box(
-            column![
-                // Console Beep
-                row![
-                    left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-console-beep-checkbox")),
-                    checkbox(console_beep)
-                        .on_toggle({
+        column![
+            section_header(fl!(crate::LANGUAGE_LOADER, "settings-terminal-general-section")),
+            effect_box(
+                column![
+                    // Console Beep
+                    row![
+                        left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-console-beep-checkbox")),
+                        checkbox(console_beep)
+                            .on_toggle({
+                                let temp_options = self.temp_options.clone();
+                                move |checked| {
+                                    let mut new_options = temp_options.lock().clone();
+                                    new_options.console_beep = checked;
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
+                            })
+                            .size(18),
+                    ]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center),
+                    // Dial Tone selection
+                    row![
+                        left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-dial-tone")),
+                        pick_list(&DialToneOption::ALL[..], Some(DialToneOption::from(dial_tone)), {
                             let temp_options = self.temp_options.clone();
-                            move |checked| {
+                            move |value: DialToneOption| {
                                 let mut new_options = temp_options.lock().clone();
-                                new_options.console_beep = checked;
+                                new_options.dial_tone = value.into();
                                 crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                             }
                         })
-                        .size(18),
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-                // Dial Tone selection
-                row![
-                    left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-dial-tone")),
-                    pick_list(&DialToneOption::ALL[..], Some(DialToneOption::from(dial_tone)), {
-                        let temp_options = self.temp_options.clone();
-                        move |value: DialToneOption| {
-                            let mut new_options = temp_options.lock().clone();
-                            new_options.dial_tone = value.into();
-                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
-                        }
-                    })
-                    .width(Length::Fixed(200.0))
-                    .text_size(14),
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-                // Scrollback Buffer Size
-                row![
-                    left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines")),
-                    text_input("2000", &max_scrollback_lines.to_string())
-                        .on_input({
-                            let temp_options = self.temp_options.clone();
-                            move |value: String| {
-                                if let Ok(lines) = value.parse::<usize>() {
-                                    let lines = lines.clamp(100, 100000);
-                                    let mut new_options = temp_options.lock().clone();
-                                    new_options.max_scrollback_lines = lines;
-                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
-                                } else {
-                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(temp_options.lock().clone()))
+                        .width(Length::Fixed(200.0))
+                        .text_size(TEXT_SIZE_NORMAL),
+                    ]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center),
+                    // Scrollback Buffer Size
+                    row![
+                        left_label(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines")),
+                        text_input("2000", &max_scrollback_lines.to_string())
+                            .on_input({
+                                let temp_options = self.temp_options.clone();
+                                move |value: String| {
+                                    if let Ok(lines) = value.parse::<usize>() {
+                                        let lines = lines.clamp(100, 100000);
+                                        let mut new_options = temp_options.lock().clone();
+                                        new_options.max_scrollback_lines = lines;
+                                        crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                    } else {
+                                        crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(temp_options.lock().clone()))
+                                    }
                                 }
-                            }
-                        })
-                        .width(Length::Fixed(100.0))
-                        .size(14),
-                    iced::widget::text(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines-unit"))
-                        .size(14)
-                        .width(Length::Shrink),
+                            })
+                            .width(Length::Fixed(100.0))
+                            .size(TEXT_SIZE_NORMAL),
+                        iced::widget::text(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines-unit"))
+                            .size(TEXT_SIZE_NORMAL)
+                            .width(Length::Shrink),
+                    ]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center),
                 ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-                Space::new().height(12.0),
-            ]
-            .spacing(INPUT_SPACING)
-            .into()
-        ),]
+                .spacing(DIALOG_SPACING)
+                .into()
+            ),
+        ]
         .padding(SECTION_PADDING as u16)
         .width(Length::Fill)
         .into()

@@ -8,6 +8,7 @@ use iced::{
     Alignment, Element, Length,
     widget::{Column, Space, button, column, container, row, scrollable, text, text_input},
 };
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use once_cell::sync::Lazy;
 use std::mem::swap;
 
@@ -102,7 +103,7 @@ impl super::DialingDirectoryState {
         };
         column![
             space().height(Length::Fixed(4.0)),
-            row![filter_input, clear_btn].spacing(8).align_y(Alignment::Center),
+            row![filter_input, clear_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
             container(list_scroll)
                 .style(|_theme: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.15))),
@@ -118,7 +119,7 @@ impl super::DialingDirectoryState {
                 .padding(4),
         ]
         .width(Length::Fixed(320.0))
-        .spacing(8)
+        .spacing(DIALOG_SPACING)
         .into()
     }
 }
@@ -159,14 +160,14 @@ fn address_row_entry<'a>(
     let name_element = if !search_text.is_empty() && truncated_name.to_lowercase().contains(&search_text.to_lowercase()) {
         highlight_name_text(truncated_name, search_text)
     } else {
-        text(truncated_name).size(14).font(iced::Font::MONOSPACE).into()
+        text(truncated_name).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into()
     };
 
     let addr_element = if !search_text.is_empty() && truncated_addr.to_lowercase().contains(&search_text.to_lowercase()) {
         highlight_addr_text(truncated_addr, search_text)
     } else {
         text(truncated_addr)
-            .size(12)
+            .size(TEXT_SIZE_SMALL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().secondary.weak.color),
                 ..Default::default()
@@ -175,7 +176,7 @@ fn address_row_entry<'a>(
             .into()
     };
 
-    let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {}", calls) }).size(12);
+    let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {}", calls) }).size(TEXT_SIZE_SMALL);
 
     let content = column![
         row![name_element, Space::new().width(Length::Fill), star].align_y(Alignment::Center),
@@ -240,7 +241,7 @@ fn address_row_entry<'a>(
 // Helper function to highlight text in name (larger font) - now takes owned String
 fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Message> {
     if search.is_empty() || !text_str.to_lowercase().contains(&search.to_lowercase()) {
-        return text(text_str).size(14).font(iced::Font::MONOSPACE).into();
+        return text(text_str).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into();
     }
 
     let lower_text = text_str.to_lowercase();
@@ -252,12 +253,12 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
     for (idx, _) in lower_text.match_indices(&lower_search) {
         if idx > last {
             // Add non-highlighted part
-            row_elements.push(text(text_str[last..idx].to_string()).size(14).font(iced::Font::MONOSPACE).into());
+            row_elements.push(text(text_str[last..idx].to_string()).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into());
         }
         // Add highlighted part with different style
         row_elements.push(
             text(text_str[idx..idx + search.len()].to_string())
-                .size(14)
+                .size(TEXT_SIZE_NORMAL)
                 .font(iced::Font::MONOSPACE)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().primary.strong.color),
@@ -268,7 +269,7 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         last = idx + search.len();
     }
     if last < text_str.len() {
-        row_elements.push(text(text_str[last..].to_string()).size(14).font(iced::Font::MONOSPACE).into());
+        row_elements.push(text(text_str[last..].to_string()).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into());
     }
 
     row(row_elements).into()
@@ -278,7 +279,7 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
 fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Message> {
     if search.is_empty() || !text_str.to_lowercase().contains(&search.to_lowercase()) {
         return text(text_str)
-            .size(12)
+            .size(TEXT_SIZE_SMALL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().secondary.base.color),
                 ..Default::default()
@@ -298,7 +299,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
             // Add non-highlighted part
             row_elements.push(
                 text(text_str[last..idx].to_string())
-                    .size(12)
+                    .size(TEXT_SIZE_SMALL)
                     .style(|theme: &iced::Theme| iced::widget::text::Style {
                         color: Some(theme.extended_palette().secondary.base.color),
                         ..Default::default()
@@ -310,7 +311,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         // Add highlighted part with warning color
         row_elements.push(
             text(text_str[idx..idx + search.len()].to_string())
-                .size(12)
+                .size(TEXT_SIZE_SMALL)
                 .font(iced::Font::MONOSPACE)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().primary.strong.color),
@@ -323,7 +324,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
     if last < text_str.len() {
         row_elements.push(
             text(text_str[last..].to_string())
-                .size(12)
+                .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().secondary.base.color),
                     ..Default::default()

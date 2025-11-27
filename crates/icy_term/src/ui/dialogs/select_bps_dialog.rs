@@ -139,9 +139,9 @@ impl SelectBpsDialog {
                 },
                 |idx| crate::ui::Message::SelectBpsMsg(SelectBpsMsg::SelectBps(idx)),
             )
-            .size(14)
-            .spacing(8)
-            .text_size(14)
+            .size(TEXT_SIZE_NORMAL)
+            .spacing(DIALOG_SPACING)
+            .text_size(TEXT_SIZE_NORMAL)
             .style(move |theme: &iced::Theme, _status| {
                 let palette = theme.extended_palette();
                 iced::widget::radio::Style {
@@ -173,9 +173,9 @@ impl SelectBpsDialog {
                 Some(self.selected_index),
                 |idx| crate::ui::Message::SelectBpsMsg(SelectBpsMsg::SelectBps(idx)),
             )
-            .size(14)
-            .spacing(8)
-            .text_size(14)
+            .size(TEXT_SIZE_NORMAL)
+            .spacing(DIALOG_SPACING)
+            .text_size(TEXT_SIZE_NORMAL)
             .style(move |theme: &iced::Theme, _| {
                 let palette = theme.extended_palette();
                 iced::widget::radio::Style {
@@ -198,7 +198,7 @@ impl SelectBpsDialog {
             let input = text_input("", &self.custom_rate)
                 .on_input(|s| crate::ui::Message::SelectBpsMsg(SelectBpsMsg::CustomBpsChanged(s)))
                 .padding(6)
-                .size(14)
+                .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fixed(110.0))
                 .style(move |theme: &iced::Theme, status| {
                     let palette = theme.extended_palette();
@@ -231,7 +231,9 @@ impl SelectBpsDialog {
                     }
                 });
 
-            row![radio_custom, input, text("BPS").size(14)].spacing(8).align_y(Alignment::Center)
+            row![radio_custom, input, text("BPS").size(TEXT_SIZE_NORMAL)]
+                .spacing(DIALOG_SPACING)
+                .align_y(Alignment::Center)
         };
 
         let scrollable_list = scrollable(column![list, Space::new().height(4), custom_row,].spacing(6).padding([4, 8])).height(Length::Fixed(280.0));

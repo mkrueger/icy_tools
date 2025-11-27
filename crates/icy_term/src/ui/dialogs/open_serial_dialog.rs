@@ -77,7 +77,7 @@ impl OpenSerialDialog {
         let device_input = text_input("", &self.serial.device)
             .on_input(|s| crate::ui::Message::OpenSerialMsg(OpenSerialMsg::DeviceChanged(s)))
             .padding(8)
-            .size(14)
+            .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
         let device_row = row![left_label_small(fl!(crate::LANGUAGE_LOADER, "open-serial-dialog-device")), device_input,]
@@ -89,7 +89,7 @@ impl OpenSerialDialog {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::BaudRateChanged(rate))
         })
         .width(Length::Fixed(120.0))
-        .text_size(14);
+        .text_size(TEXT_SIZE_NORMAL);
 
         let baud_row = row![left_label_small(fl!(crate::LANGUAGE_LOADER, "open-serial-dialog-baud-rate")), baud_pick,]
             .spacing(DIALOG_SPACING)
@@ -100,32 +100,32 @@ impl OpenSerialDialog {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::CharSizeChanged(size))
         })
         .width(Length::Fixed(80.0))
-        .text_size(14);
+        .text_size(TEXT_SIZE_NORMAL);
 
         // Parity picker
         let parity_pick = pick_list(&ParityOption::ALL[..], Some(ParityOption(self.serial.format.parity)), |parity| {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::ParityChanged(parity))
         })
         .width(Length::Fixed(80.0))
-        .text_size(14);
+        .text_size(TEXT_SIZE_NORMAL);
 
         // Stop bits picker
         let stop_bits_pick = pick_list(&StopBitsOption::ALL[..], Some(StopBitsOption(self.serial.format.stop_bits)), |stop_bits| {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::StopBitsChanged(stop_bits))
         })
         .width(Length::Fixed(80.0))
-        .text_size(14);
+        .text_size(TEXT_SIZE_NORMAL);
 
         // Combined row for data format (8N1 style)
         let format_row = row![
             left_label_small(fl!(crate::LANGUAGE_LOADER, "open-serial-dialog-format")),
             char_size_pick,
-            text("-").size(14),
+            text("-").size(TEXT_SIZE_NORMAL),
             parity_pick,
-            text("-").size(14),
+            text("-").size(TEXT_SIZE_NORMAL),
             stop_bits_pick,
         ]
-        .spacing(8)
+        .spacing(DIALOG_SPACING)
         .align_y(Alignment::Center);
 
         // Flow control picker
@@ -133,7 +133,7 @@ impl OpenSerialDialog {
             crate::ui::Message::OpenSerialMsg(OpenSerialMsg::FlowControlChanged(fc))
         })
         .width(Length::Fixed(120.0))
-        .text_size(14);
+        .text_size(TEXT_SIZE_NORMAL);
 
         let flow_row = row![
             left_label_small(fl!(crate::LANGUAGE_LOADER, "open-serial-dialog-flow-control")),

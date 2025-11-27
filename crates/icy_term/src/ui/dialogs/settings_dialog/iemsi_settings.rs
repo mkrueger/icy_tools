@@ -6,7 +6,7 @@ use iced::{
 use icy_engine_gui::{
     SECTION_PADDING, section_header,
     settings::{effect_box_toggleable, left_label},
-    ui::DIALOG_SPACING as INPUT_SPACING,
+    ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL},
 };
 
 use crate::ui::settings_dialog::{SettingsDialogState, SettingsMsg};
@@ -33,7 +33,7 @@ impl SettingsDialogState {
                             })
                             .size(18),
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                     // Alias
                     row![
@@ -48,9 +48,9 @@ impl SettingsDialogState {
                                 }
                             })
                             .width(Length::Fill)
-                            .size(14),
+                            .size(TEXT_SIZE_NORMAL),
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                     // Location
                     row![
@@ -65,9 +65,9 @@ impl SettingsDialogState {
                                 }
                             })
                             .width(Length::Fill)
-                            .size(14),
+                            .size(TEXT_SIZE_NORMAL),
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                     // Data Phone
                     row![
@@ -82,9 +82,9 @@ impl SettingsDialogState {
                                 }
                             })
                             .width(Length::Fill)
-                            .size(14),
+                            .size(TEXT_SIZE_NORMAL),
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                     // Voice Phone
                     row![
@@ -99,9 +99,9 @@ impl SettingsDialogState {
                                 }
                             })
                             .width(Length::Fill)
-                            .size(14),
+                            .size(TEXT_SIZE_NORMAL),
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                     // Birth Date
                     row![
@@ -116,12 +116,12 @@ impl SettingsDialogState {
                                 }
                             })
                             .width(Length::Fill)
-                            .size(14),
+                            .size(TEXT_SIZE_NORMAL),
                     ]
-                    .spacing(12)
+                    .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
                 ]
-                .spacing(INPUT_SPACING)
+                .spacing(DIALOG_SPACING)
                 .into(), // Convert column to Element
                 !iemsi.autologin // Disable if not enabled
             ),

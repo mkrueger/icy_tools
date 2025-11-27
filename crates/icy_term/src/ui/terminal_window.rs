@@ -4,6 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use icy_engine::Screen;
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use icy_engine_gui::{ScrollbarOverlay, Terminal, terminal_view::TerminalView};
 use icy_net::serial::Serial;
 use icy_net::telnet::TerminalEmulation;
@@ -103,24 +104,25 @@ impl TerminalWindow {
                 .view();
 
                 // Add scroll position indicator if not at bottom
-                let scroll_indicator = container(
-                    text(format!("↑ {:04}", scrollback_lines))
-                        .size(12)
-                        .style(|theme: &iced::Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().primary.weak.color),
-                            ..Default::default()
-                        }),
-                )
-                .padding([2, 8])
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
-                    border: Border {
-                        color: theme.extended_palette().background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                });
+                let scroll_indicator =
+                    container(
+                        text(format!("↑ {:04}", scrollback_lines))
+                            .size(TEXT_SIZE_SMALL)
+                            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                                color: Some(theme.extended_palette().primary.weak.color),
+                                ..Default::default()
+                            }),
+                    )
+                    .padding([2, 8])
+                    .style(|theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                        border: Border {
+                            color: theme.extended_palette().background.strong.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    });
 
                 // Overlay both indicator and scrollbar on top of terminal
                 container(iced::widget::stack![
@@ -160,8 +162,8 @@ impl TerminalWindow {
         container(
             button(
                 row![
-                    text(fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string())).size(12),
-                    text(" →").size(12)
+                    text(fl!(crate::LANGUAGE_LOADER, "menu-upgrade_version", version = LATEST_VERSION.to_string())).size(TEXT_SIZE_SMALL),
+                    text(" →").size(TEXT_SIZE_SMALL)
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center),
@@ -208,7 +210,7 @@ impl TerminalWindow {
                     svg(svg::Handle::from_memory(PHONEBOOK_SVG))
                         .width(Length::Fixed(16.0))
                         .height(Length::Fixed(16.0)),
-                    text(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).size(12)
+                    text(fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory")).size(TEXT_SIZE_SMALL)
                 ]
                 .spacing(3)
                 .align_y(Alignment::Center),
@@ -222,7 +224,7 @@ impl TerminalWindow {
         let mut upload_btn = button(
             row![
                 svg(svg::Handle::from_memory(UPLOAD_SVG)).width(Length::Fixed(16.0)).height(Length::Fixed(16.0)),
-                text(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).size(12)
+                text(fl!(crate::LANGUAGE_LOADER, "terminal-upload")).size(TEXT_SIZE_SMALL)
             ]
             .spacing(3)
             .align_y(Alignment::Center),
@@ -235,7 +237,7 @@ impl TerminalWindow {
                 svg(svg::Handle::from_memory(DOWNLOAD_SVG))
                     .width(Length::Fixed(16.0))
                     .height(Length::Fixed(16.0)),
-                text(fl!(crate::LANGUAGE_LOADER, "terminal-download")).size(12)
+                text(fl!(crate::LANGUAGE_LOADER, "terminal-download")).size(TEXT_SIZE_SMALL)
             ]
             .spacing(3)
             .align_y(Alignment::Center),
@@ -269,8 +271,8 @@ impl TerminalWindow {
 
                 let stop_sound_btn = button(
                     row![
-                        text("🔇").size(14), // Music stop icon
-                        text(button_text).size(12)
+                        text("🔇").size(TEXT_SIZE_NORMAL), // Music stop icon
+                        text(button_text).size(TEXT_SIZE_SMALL)
                     ]
                     .spacing(3)
                     .align_y(Alignment::Center),
@@ -335,7 +337,7 @@ impl TerminalWindow {
                     svg(svg::Handle::from_memory(DISCONNECT_SVG))
                         .width(Length::Fixed(16.0))
                         .height(Length::Fixed(16.0)),
-                    text(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).size(12)
+                    text(fl!(crate::LANGUAGE_LOADER, "terminal-hangup")).size(TEXT_SIZE_SMALL)
                 ]
                 .spacing(3)
                 .align_y(Alignment::Center),
@@ -467,19 +469,22 @@ impl TerminalWindow {
             String::new()
         };
 
-        let mut status_row = row![connection_status].spacing(8).align_y(Alignment::Center);
+        let mut status_row = row![connection_status].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
         if self.terminal.is_in_scrollback_mode() {
-            status_row = status_row.push(container(text(" | SCROLLBACK").size(14)).padding([0, 2]));
+            status_row = status_row.push(container(text(" | SCROLLBACK").size(TEXT_SIZE_NORMAL)).padding([0, 2]));
         }
 
         status_row = status_row.push(Space::new().width(Length::Fill));
 
         if self.is_capturing {
             let stop_capture_btn = button(
-                row![text("⏹").size(14), text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(12)]
-                    .spacing(3)
-                    .align_y(Alignment::Center),
+                row![
+                    text("⏹").size(TEXT_SIZE_NORMAL),
+                    text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(TEXT_SIZE_SMALL)
+                ]
+                .spacing(3)
+                .align_y(Alignment::Center),
             )
             .on_press(Message::StopCapture)
             .padding([2, 8])
@@ -539,53 +544,55 @@ impl TerminalWindow {
             }
         };
 
-        let mut baud_button = button(text(baud_text).size(12)).padding([2, 8]).style(move |theme: &iced::Theme, status| {
-            use iced::widget::button::{Status, Style};
+        let mut baud_button = button(text(baud_text).size(TEXT_SIZE_SMALL))
+            .padding([2, 8])
+            .style(move |theme: &iced::Theme, status| {
+                use iced::widget::button::{Status, Style};
 
-            let palette = theme.extended_palette();
+                let palette = theme.extended_palette();
 
-            // Different styling for disabled state (not connected)
-            if !self.is_connected {
-                return Style {
+                // Different styling for disabled state (not connected)
+                if !self.is_connected {
+                    return Style {
+                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                        text_color: palette.secondary.base.color.scale_alpha(0.5),
+                        border: Border {
+                            color: palette.secondary.base.color.scale_alpha(0.3),
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        shadow: Default::default(),
+                        snap: false,
+                    };
+                }
+
+                // Normal styling when connected
+                let base = Style {
                     background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                    text_color: palette.secondary.base.color.scale_alpha(0.5),
+                    text_color: palette.primary.strong.color,
                     border: Border {
-                        color: palette.secondary.base.color.scale_alpha(0.3),
+                        color: palette.primary.weak.color,
                         width: 1.0,
                         radius: 4.0.into(),
                     },
                     shadow: Default::default(),
                     snap: false,
                 };
-            }
 
-            // Normal styling when connected
-            let base = Style {
-                background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                text_color: palette.primary.strong.color,
-                border: Border {
-                    color: palette.primary.weak.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                shadow: Default::default(),
-                snap: false,
-            };
-
-            match status {
-                Status::Active | Status::Disabled => base,
-                Status::Hovered => Style {
-                    background: Some(iced::Background::Color(palette.primary.weak.color)),
-                    text_color: palette.primary.weak.text,
-                    ..base
-                },
-                Status::Pressed => Style {
-                    background: Some(iced::Background::Color(palette.primary.strong.color)),
-                    text_color: palette.primary.strong.text,
-                    ..base
-                },
-            }
-        });
+                match status {
+                    Status::Active | Status::Disabled => base,
+                    Status::Hovered => Style {
+                        background: Some(iced::Background::Color(palette.primary.weak.color)),
+                        text_color: palette.primary.weak.text,
+                        ..base
+                    },
+                    Status::Pressed => Style {
+                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                        text_color: palette.primary.strong.text,
+                        ..base
+                    },
+                }
+            });
 
         if self.is_connected && !is_serial_mode {
             baud_button = baud_button.on_press(Message::ShowBaudEmulationDialog);
@@ -598,7 +605,7 @@ impl TerminalWindow {
 
         // Only add IEMSI button if we have IEMSI info
         if self.iemsi_info.is_some() {
-            let iemsi_button = button(text("IEMSI").size(12))
+            let iemsi_button = button(text("IEMSI").size(TEXT_SIZE_SMALL))
                 .on_press(Message::ShowIemsiDialog)
                 .padding([2, 8])
                 .style(|theme: &iced::Theme, status| {
@@ -637,7 +644,8 @@ impl TerminalWindow {
         }
 
         // Add separator and terminal info
-        status_row = status_row.push(text(format!(" | {emulation_str} • {buffer_width}x{buffer_height} • {connection_string}{pause_text}")).size(12));
+        status_row =
+            status_row.push(text(format!(" | {emulation_str} • {buffer_width}x{buffer_height} • {connection_string}{pause_text}")).size(TEXT_SIZE_SMALL));
 
         container(status_row.padding([4, 12]))
             .style(|theme: &iced::Theme| container::Style {

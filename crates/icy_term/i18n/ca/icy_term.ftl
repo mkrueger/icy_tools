@@ -32,6 +32,7 @@ settings-scaling-nearest = Més proper
 settings-scaling-linear = Lineal
 
 settings-terminal-category = Terminal
+settings-terminal-general-section = General
 settings-terminal-console-beep-checkbox = So de consola
 settings-terminal-open-settings-dir-button = Obrir directori de configuració
 settings-terminal-dial-tone = To de marcatge
@@ -78,9 +79,7 @@ settings-modem-add-button = Afegeix
 settings-modem-remove-button = Elimina
 settings-modem-no-selection-hint = Afegeix un mòdem o selecciona’n un de la llista
 settings-modem-dial_prefix = Prefix de marcatge
-settings-modem-char_size = Mida caràcter
-settings-modem-stop_bits = Bits d’aturada
-settings-modem-parity = Paritat
+settings-modem-format = Format
 settings-modem-baud_rate-quick = Comú
 
 dialing_directory-connect-to = Connexió ràpida a…

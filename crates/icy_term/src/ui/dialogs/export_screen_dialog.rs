@@ -226,7 +226,7 @@ impl ExportScreenDialogState {
         // Directory input with browse button
         let dir_input = text_input("", &self.temp_directory)
             .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeDirectory(s)))
-            .size(14)
+            .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
         let browse_btn = browse_button(crate::ui::Message::ExportDialog(ExportScreenMsg::BrowseDirectory));
@@ -240,7 +240,7 @@ impl ExportScreenDialogState {
         // Filename input with format picker
         let file_input = text_input("", &self.temp_filename)
             .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeFileName(s)))
-            .size(14)
+            .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
         let format_picker = pick_list(&ExportFormat::ALL[..], Some(self.temp_format), |format| {
@@ -264,14 +264,14 @@ impl ExportScreenDialogState {
             row![
                 error_tooltip(error),
                 Space::new().width(4.0),
-                text(error_msg).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
+                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().danger.base.color),
                 })
             ]
         } else {
             row![
                 text(format!("→ {}", self.get_temp_full_path().display()))
-                    .size(12)
+                    .size(TEXT_SIZE_SMALL)
                     .style(|theme: &iced::Theme| iced::widget::text::Style {
                         color: Some(theme.extended_palette().secondary.base.color),
                     })

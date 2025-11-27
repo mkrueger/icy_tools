@@ -3,7 +3,7 @@ use iced::{
     Alignment, Border, Color, Element, Length, Padding, Theme,
     widget::{Space, column, container, row, scrollable, text},
 };
-use icy_engine_gui::ui::primary_button;
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button};
 
 pub struct HelpDialog;
 
@@ -134,7 +134,7 @@ impl HelpDialog {
                 name: fl!(crate::LANGUAGE_LOADER, "help-category-display"),
                 shortcuts: vec![
                     Shortcut {
-                        keys: format!("{mod_symbol} C"),
+                        keys: if is_mac { "⌥ C".to_string() } else { format!("{mod_symbol} C") },
                         action: fl!(crate::LANGUAGE_LOADER, "help-action-clear-screen"),
                         desc: fl!(crate::LANGUAGE_LOADER, "help-desc-clear-screen"),
                     },
@@ -212,7 +212,7 @@ impl HelpDialog {
         fn pill(content: &str) -> Element<'static, crate::ui::Message> {
             container(
                 text(content.to_owned())
-                    .size(14)
+                    .size(TEXT_SIZE_NORMAL)
                     .font(iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::default()
@@ -247,11 +247,11 @@ impl HelpDialog {
                 })
                 .collect::<Vec<_>>();
 
-            let mut r = row![].spacing(8).align_y(Alignment::Center);
+            let mut r = row![].spacing(DIALOG_SPACING).align_y(Alignment::Center);
             for (i, p) in parts.iter().enumerate() {
                 r = r.push(pill(p));
                 if i + 1 < parts.len() {
-                    r = r.push(text("+").size(14).style(|theme: &Theme| text::Style {
+                    r = r.push(text("+").size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
                         color: Some(theme.extended_palette().background.base.text),
                         ..Default::default()
                     }));
@@ -302,10 +302,12 @@ impl HelpDialog {
                         color: Some(theme.palette().text),
                         ..Default::default()
                     }),
-                    text(fl!(crate::LANGUAGE_LOADER, "help-subtitle")).size(12).style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
-                        ..Default::default()
-                    }),
+                    text(fl!(crate::LANGUAGE_LOADER, "help-subtitle"))
+                        .size(TEXT_SIZE_SMALL)
+                        .style(|theme: &Theme| text::Style {
+                            color: Some(theme.extended_palette().secondary.base.color),
+                            ..Default::default()
+                        }),
                 ]
                 .spacing(2)
             ]
@@ -331,7 +333,7 @@ impl HelpDialog {
                     row![
                         container(key_group(&sc.keys.clone())).width(Length::Fixed(200.0)), // Clone keys
                         Space::new().width(16),
-                        container(text(sc.action.clone()).size(14).style(|theme: &Theme| text::Style {
+                        container(text(sc.action.clone()).size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
                             // Clone action
                             color: Some(theme.palette().text),
                             ..Default::default()
@@ -339,7 +341,7 @@ impl HelpDialog {
                         .width(Length::Fixed(140.0)),
                         Space::new().width(12),
                         text(sc.desc.clone()) // Clone desc
-                            .size(14)
+                            .size(TEXT_SIZE_NORMAL)
                             .style(|theme: &Theme| text::Style {
                                 color: Some(theme.palette().text),
                                 ..Default::default()

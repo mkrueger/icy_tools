@@ -227,7 +227,7 @@ impl CaptureDialogState {
         // Directory input with browse button
         let dir_input = text_input("", &self.temp_directory)
             .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeDirectory(s)))
-            .size(14)
+            .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
         let browse_btn = browse_button(crate::ui::Message::CaptureDialog(CaptureMsg::BrowseDirectory));
@@ -245,7 +245,7 @@ impl CaptureDialogState {
         // Filename input
         let file_input: text_input::TextInput<'_, crate::ui::Message> = text_input("", &self.temp_filename)
             .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeFileName(s)))
-            .size(14)
+            .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
         let file_row = row![left_label_small(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")), file_input,]
@@ -258,7 +258,7 @@ impl CaptureDialogState {
             row![
                 error_tooltip(error),
                 Space::new().width(4.0),
-                text(error_msg).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
+                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().danger.base.color),
                 })
             ]
@@ -268,12 +268,14 @@ impl CaptureDialogState {
             row![
                 warning_tooltip(file_warning_msg.clone()),
                 Space::new().width(4.0),
-                text(file_warning_msg).size(12).style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().warning.base.color),
-                })
+                text(file_warning_msg)
+                    .size(TEXT_SIZE_SMALL)
+                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().warning.base.color),
+                    })
             ]
         } else {
-            row![text(String::new()).size(12)]
+            row![text(String::new()).size(TEXT_SIZE_SMALL)]
         };
 
         let warning_row = row![Space::new().width(LABEL_SMALL_WIDTH + DIALOG_SPACING), warning_content];
