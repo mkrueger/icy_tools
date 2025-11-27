@@ -441,14 +441,26 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             }
 
             match mode {
-                ScreenClearMode::ClearAndHome
-                | ScreenClearMode::ClearWholeScreen
-                | ScreenClearMode::ClearWholeScreenAndHome
-                | ScreenClearMode::QuickVt52Reset => buf.clear_screen(),
-                ScreenClearMode::ClearCursorToBottom => buf.clear_buffer_down(),
-                ScreenClearMode::ClearHomeToToCursor => {
-                    // TODO: Implement clear from home to cursor
+                ScreenClearMode::ClearAndHome => {
+                    paint.clear_screen(buf);
+                    buf.home();
+                    buf.mark_dirty();
                 }
+                ScreenClearMode::ClearWholeScreen => {
+                    paint.clear_screen(buf);
+                    buf.mark_dirty();
+                }
+                ScreenClearMode::ClearWholeScreenAndHome => {
+                    paint.clear_screen(buf);
+                    buf.home();
+                    buf.mark_dirty();
+                }
+                ScreenClearMode::QuickVt52Reset => {
+                    buf.clear_screen();
+                    buf.reset_terminal();
+                }
+                ScreenClearMode::ClearCursorToBottom => buf.clear_buffer_down(),
+                ScreenClearMode::ClearHomeToToCursor => buf.clear_buffer_up(),
             }
         }
 

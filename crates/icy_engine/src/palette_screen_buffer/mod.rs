@@ -606,6 +606,7 @@ impl EditableScreen for PaletteScreenBuffer {
     fn reset_terminal(&mut self) {
         self.terminal_state.reset_terminal(self.terminal_state.get_size());
         self.caret.reset();
+        self.caret.set_foreground(self.default_foreground_color());
     }
 
     fn insert_line(&mut self, _line: usize, _new_line: Line) {

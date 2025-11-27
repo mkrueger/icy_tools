@@ -236,4 +236,8 @@ impl VdiPaint {
             self.drawing_mode = mode;
         }
     }
+
+    pub fn clear_screen(&self, buf: &mut dyn EditableScreen) {
+        buf.screen_mut().fill(0);
+    }
 }

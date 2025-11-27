@@ -169,6 +169,16 @@ impl IgsParser {
 
         // Parse loop command from self.loop_tokens which now includes TEXT: markers
         if self.loop_tokens.len() < 6 {
+            sink.report_error(
+                crate::ParseError::InvalidParameter {
+                    command: "IGS:Loop",
+                    value: format!("tokens: {}", self.loop_tokens.len()),
+                    expected: Some("at least 6 tokens".to_string()),
+                },
+                crate::ErrorLevel::Error,
+            );
+            self.loop_tokens.clear();
+            self.loop_token_buffer.clear();
             return;
         }
 
@@ -244,8 +254,10 @@ impl IgsParser {
 
         // Convert parameters including text strings to typed tokens
         let mut params: Vec<LoopParamToken> = Vec::new();
-        for token in &self.loop_tokens[params_start..] {
-            params.push(Self::parse_loop_param_token(token, sink));
+        if params_start < self.loop_tokens.len() {
+            for token in &self.loop_tokens[params_start..] {
+                params.push(Self::parse_loop_param_token(token, sink));
+            }
         }
 
         let data = LoopCommandData {
@@ -477,7 +489,11 @@ impl CommandParser for IgsParser {
                             if self.loop_tokens.len() >= 6 {
                                 let param_count = Self::parse_i32_from_bytes(&self.loop_tokens[5]) as usize;
                                 // Count actual parameters (excluding ':' markers)
-                                let current_param_count = self.loop_tokens[6..].iter().filter(|s| s.as_slice() != b":").count();
+                                let current_param_count = if self.loop_tokens.len() > 6 {
+                                    self.loop_tokens[6..].iter().filter(|s| s.as_slice() != b":").count()
+                                } else {
+                                    0
+                                };
 
                                 // Check if this is a W@ loop that expects text strings
                                 let raw_identifier = &self.loop_tokens[4];
@@ -609,8 +625,10 @@ impl CommandParser for IgsParser {
 
                                     // Convert parameters into typed tokens, preserving ':' position
                                     let mut params: Vec<LoopParamToken> = Vec::new();
-                                    for token in &self.loop_tokens[params_start..] {
-                                        params.push(Self::parse_loop_param_token(token, sink));
+                                    if params_start < self.loop_tokens.len() {
+                                        for token in &self.loop_tokens[params_start..] {
+                                            params.push(Self::parse_loop_param_token(token, sink));
+                                        }
                                     }
 
                                     let data = LoopCommandData {
@@ -720,8 +738,10 @@ impl CommandParser for IgsParser {
                                 let params_start = if param_count_from_token.is_some() { 5 } else { 6 };
 
                                 let mut params: Vec<LoopParamToken> = Vec::new();
-                                for token in &self.loop_tokens[params_start..] {
-                                    params.push(Self::parse_loop_param_token(token.as_slice(), sink));
+                                if params_start < self.loop_tokens.len() {
+                                    for token in &self.loop_tokens[params_start..] {
+                                        params.push(Self::parse_loop_param_token(token.as_slice(), sink));
+                                    }
                                 }
 
                                 let data = LoopCommandData {
@@ -859,6 +879,22 @@ impl CommandParser for IgsParser {
                 State::ReadLoopTextStrings => {
                     // Reading text strings for W@ loops
                     // Each text is terminated by @, and we continue until we have collected all expected texts
+                    // Validate we have enough tokens for loop parameters
+                    if self.loop_tokens.len() < 3 {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "IGS:Loop",
+                                value: format!("tokens: {}", self.loop_tokens.len()),
+                                expected: Some("at least 3 tokens (from, to, step)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        self.loop_tokens.clear();
+                        self.loop_token_buffer.clear();
+                        self.text_buffer.clear();
+                        self.state = State::Default;
+                        continue;
+                    }
                     match byte {
                         b':' => {
                             // Colon can be part of text OR terminate the loop
