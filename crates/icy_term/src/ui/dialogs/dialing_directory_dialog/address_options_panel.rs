@@ -549,9 +549,9 @@ impl super::DialingDirectoryState {
                 .width(Length::Fill);
 
             let visibility_icon = if self.show_passwords {
-                svg(svg::Handle::from_memory(VISIBILITY_OFF_SVG))
-            } else {
                 svg(svg::Handle::from_memory(VISIBILITY_SVG))
+            } else {
+                svg(svg::Handle::from_memory(VISIBILITY_OFF_SVG))
             }
             .width(Length::Fixed(20.0))
             .height(Length::Fixed(20.0));

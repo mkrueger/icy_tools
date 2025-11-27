@@ -1,12 +1,12 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, button, column, row, text, text_input},
+    widget::{Space, column, row, text_input},
 };
 use icy_engine_gui::{
     section_header,
     settings::{effect_box, left_label},
-    ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL},
+    ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, browse_button, secondary_button},
 };
 
 use crate::Options;
@@ -35,9 +35,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-config-dir")),
                     text_input("", &config_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-                    button(text("…".to_string()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
-                        .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::OpenSettingsFolder))
-                        .padding([4, 8]),
+                    browse_button(crate::ui::Message::SettingsDialog(SettingsMsg::OpenSettingsFolder)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -59,9 +57,10 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-log-file")),
                     text_input("", &log_file).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-                    button(text("Open".to_string()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
-                        .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::OpenLogFile))
-                        .padding([4, 8]),
+                    secondary_button(
+                        fl!(crate::LANGUAGE_LOADER, "settings-paths-open"),
+                        Some(crate::ui::Message::SettingsDialog(SettingsMsg::OpenLogFile))
+                    ),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -80,9 +79,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                         .on_input(|value| { crate::ui::Message::SettingsDialog(SettingsMsg::UpdateDownloadPath(value)) })
                         .size(TEXT_SIZE_NORMAL)
                         .width(Length::Fill),
-                    button(text("…").size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
-                        .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseDownloadPath))
-                        .padding([4, 8]),
+                    browse_button(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseDownloadPath)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -93,9 +90,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                         .on_input(|value| { crate::ui::Message::SettingsDialog(SettingsMsg::UpdateCapturePath(value)) })
                         .size(TEXT_SIZE_NORMAL)
                         .width(Length::Fill),
-                    button(text("…").size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
-                        .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseCapturePath))
-                        .padding([4, 8]),
+                    browse_button(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseCapturePath)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
