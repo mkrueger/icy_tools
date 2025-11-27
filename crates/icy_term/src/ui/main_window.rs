@@ -598,15 +598,19 @@ impl MainWindow {
             Message::Copy => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
+
+                    let text = match screen.get_copy_text() {
+                        Some(t) => t,
+                        None => return Task::none(),
+                    };
+
                     let mut contents = Vec::with_capacity(4);
-                    if let Some(text) = screen.get_copy_text() {
-                        contents.push(ClipboardContent::Text(text.clone()));
-                    } else {
-                        return Task::none();
+
+                    // On windows the ordering is important - text must be last to be recognized properly
+                    if let Some(data) = screen.get_clipboard_data() {
+                        contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
                     }
-                    if let Some(rich_text) = screen.get_copy_rich_text() {
-                        contents.push(ClipboardContent::Rtf(rich_text));
-                    }
+
                     if let Some(selection) = screen.get_selection() {
                         let (size, data) = screen.render_to_rgba(&RenderOptions {
                             rect: selection,
@@ -616,22 +620,24 @@ impl MainWindow {
                             selection_bg: None,
                             override_scan_lines: None,
                         });
-                        // Avoid DynamicImage hop if API allows raw RGBA; if not, keep as-is.
                         let dynamic_image =
                             DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("rgba create"));
                         let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
                         contents.push(ClipboardContent::Image(img));
                     }
-                    if let Some(data) = screen.get_clipboard_data() {
-                        contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+
+                    if let Some(rich_text) = screen.get_copy_rich_text() {
+                        contents.push(ClipboardContent::Rtf(rich_text));
                     }
-                    let _ = screen.clear_selection();
-                    self.shift_pressed_during_selection = false;
-                    drop(screen);
+
+                    contents.push(ClipboardContent::Text(text));
 
                     if let Err(err) = crate::CLIPBOARD_CONTEXT.set(contents) {
                         log::error!("Failed to set clipboard: {err}");
                     }
+
+                    let _ = screen.clear_selection();
+                    self.shift_pressed_during_selection = false;
                 }
                 Task::none()
             }

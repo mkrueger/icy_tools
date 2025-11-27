@@ -133,7 +133,24 @@ impl SettingsDialogState {
             }
             SettingsMsg::OpenLogFile => {
                 if let Some(log_file) = Options::get_log_file() {
-                    let _ = open::that(log_file);
+                    if log_file.exists() {
+                        #[cfg(windows)]
+                        {
+                            // open::that doesn't work for me for unknown reason - their opening string should work.
+                            if let Err(err) = std::process::Command::new("notepad").arg(&log_file).spawn() {
+                                log::error!("Failed to open log file: {}", err);
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            if let Err(err) = open::that(&log_file) {
+                                log::error!("Failed to open log file: {}", err);
+                            }
+                        }
+                    } else if let Some(parent) = log_file.parent() {
+                        // If log file doesn't exist yet, open the log directory
+                        let _ = open::that(parent);
+                    }
                 }
                 None
             }
