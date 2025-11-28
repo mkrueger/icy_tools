@@ -10,7 +10,7 @@ use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
     Rectangle, RenderOptions, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
-    graphics_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
+    amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
 use parking_lot::Mutex;

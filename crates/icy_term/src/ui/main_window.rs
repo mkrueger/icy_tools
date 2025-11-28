@@ -575,6 +575,7 @@ impl MainWindow {
                 self.sound_thread.lock().clear();
                 Task::none()
             }
+
             Message::None => Task::none(),
 
             Message::ToggleFullscreen => {

@@ -73,7 +73,7 @@ fn test_skypix_area_fill() {
     assert_eq!(sink.skypix_commands.len(), 1);
     match &sink.skypix_commands[0] {
         SkypixCommand::AreaFill { mode, x, y } => {
-            assert_eq!(*mode, 1);
+            assert_eq!(*mode, icy_parser_core::FillMode::Color);
             assert_eq!(*x, 50);
             assert_eq!(*y, 75);
         }
@@ -319,6 +319,21 @@ fn test_skypix_set_font() {
 }
 
 #[test]
+fn test_skypix_reset_font() {
+    let mut parser = SkypixParser::new();
+    let mut sink = TestSink::new();
+
+    // Reset font: size 0 is a special case
+    parser.parse(b"\x1B[10;0!", &mut sink);
+
+    assert_eq!(sink.skypix_commands.len(), 1);
+    match &sink.skypix_commands[0] {
+        SkypixCommand::ResetFont => {}
+        _ => panic!("Expected ResetFont command"),
+    }
+}
+
+#[test]
 fn test_skypix_new_palette() {
     let mut parser = SkypixParser::new();
     let mut sink = TestSink::new();
@@ -422,4 +437,77 @@ fn test_regular_text_passthrough() {
 
     // Should have emitted printable characters
     assert!(sink.ansi_commands.len() > 0);
+}
+
+#[test]
+fn test_skypix_comment() {
+    let mut parser = SkypixParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[0!This is a comment!", &mut sink);
+
+    assert_eq!(sink.skypix_commands.len(), 1);
+    match &sink.skypix_commands[0] {
+        SkypixCommand::Comment { text } => {
+            assert_eq!(text, "This is a comment");
+        }
+        _ => panic!("Expected Comment command"),
+    }
+}
+
+#[test]
+fn test_skypix_comment_with_special_chars() {
+    let mut parser = SkypixParser::new();
+    let mut sink = TestSink::new();
+
+    // Comment can contain any characters except !
+    parser.parse(b"\x1B[0!Line1\nLine2\tTab;semicolon!", &mut sink);
+
+    assert_eq!(sink.skypix_commands.len(), 1);
+    match &sink.skypix_commands[0] {
+        SkypixCommand::Comment { text } => {
+            assert_eq!(text, "Line1\nLine2\tTab;semicolon");
+        }
+        _ => panic!("Expected Comment command"),
+    }
+}
+
+#[test]
+fn test_skypix_comment_followed_by_command() {
+    let mut parser = SkypixParser::new();
+    let mut sink = TestSink::new();
+
+    // Comment followed by another command
+    parser.parse(b"\x1B[0!comment!\x1B[15;5!", &mut sink);
+
+    assert_eq!(sink.skypix_commands.len(), 2);
+    match &sink.skypix_commands[0] {
+        SkypixCommand::Comment { text } => {
+            assert_eq!(text, "comment");
+        }
+        _ => panic!("Expected Comment command"),
+    }
+    match &sink.skypix_commands[1] {
+        SkypixCommand::SetPenA { color } => {
+            assert_eq!(*color, 5);
+        }
+        _ => panic!("Expected SetPenA command"),
+    }
+}
+
+#[test]
+fn test_skypix_draw_line_negative() {
+    let mut parser = SkypixParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[2;0;-1!", &mut sink);
+
+    assert_eq!(sink.skypix_commands.len(), 1);
+    match &sink.skypix_commands[0] {
+        SkypixCommand::DrawLine { x, y } => {
+            assert_eq!(*x, 0);
+            assert_eq!(*y, -1);
+        }
+        _ => panic!("Expected DrawLine command"),
+    }
 }

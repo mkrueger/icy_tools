@@ -1,11 +1,36 @@
 use crate::{
-    BACKSPACE, BELL, Blink, CARRIAGE_RETURN, Color, CommandParser, CommandSink, DELETE, Direction, EraseInDisplayMode, EraseInLineMode, FORM_FEED, Intensity,
-    LINE_FEED, SgrAttribute, TAB, TerminalCommand, flush_input,
+    BACKSPACE, BELL, Blink, CARRIAGE_RETURN, Color, CommandParser, CommandSink, DELETE, Direction, EraseInDisplayMode,
+    EraseInLineMode, FORM_FEED, Intensity, LINE_FEED, SgrAttribute, TAB, TerminalCommand, flush_input,
 };
 
 mod commands;
-pub use commands::*;
+pub use commands::{CrcTransferMode, DisplayMode, FillMode, SkypixCommand, command_numbers};
 
+/// ANSI color to Amiga/Skypix color mapping (normal intensity)
+/// ANSI: Black=0, Red=1, Green=2, Yellow=3, Blue=4, Magenta=5, Cyan=6, White=7
+/// Maps to Skypix palette indices for normal colors
+const AMIGA_COLOR_OFFSETS: [u8; 8] = [
+    0, // 30/40
+    3, // 31/41.. 
+    4, 
+    6, 
+    1, 
+    7, 
+    5, 
+    2];
+
+/// ANSI color to Amiga/Skypix color mapping (bold/bright intensity)
+/// Maps to Skypix palette indices for bright colors when Bold attribute is set
+const AMIGA_COLOR_OFFSETS_BOLD: [u8; 8] = [
+    8, 
+    11,
+    12,
+    14,
+    9,
+    15, 
+    13, 
+    10
+];
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum State {
     Default,
@@ -19,6 +44,7 @@ struct CommandBuilder {
     params: Vec<i32>,
     current_param: i32,
     has_param: bool,
+    is_negative: bool,
     cmd_num: i32,
     string_param: String,
 }
@@ -29,6 +55,7 @@ impl CommandBuilder {
             params: Vec::new(),
             current_param: 0,
             has_param: false,
+            is_negative: false,
             cmd_num: 0,
             string_param: String::new(),
         }
@@ -38,20 +65,28 @@ impl CommandBuilder {
         self.params.clear();
         self.current_param = 0;
         self.has_param = false;
+        self.is_negative = false;
         self.cmd_num = 0;
         self.string_param.clear();
     }
 
     fn push_param(&mut self) {
         if self.has_param {
-            self.params.push(self.current_param);
+            let value = if self.is_negative { -self.current_param } else { self.current_param };
+            self.params.push(value);
             self.current_param = 0;
             self.has_param = false;
+            self.is_negative = false;
         }
     }
 
     fn add_digit(&mut self, digit: i32) {
         self.current_param = self.current_param.wrapping_mul(10).wrapping_add(digit);
+        self.has_param = true;
+    }
+
+    fn set_negative(&mut self) {
+        self.is_negative = true;
         self.has_param = true;
     }
 }
@@ -95,6 +130,13 @@ impl SkypixParser {
         self.builder.push_param();
         use commands::command_numbers::*;
         let cmd = match self.builder.cmd_num {
+            COMMENT => {
+                // Command 0: Comment - just ignore the text, no command emitted
+                // The comment text is in self.builder.string_param but we discard it
+                Some(SkypixCommand::Comment {
+                    text: self.builder.string_param.clone(),
+                })
+            }
             SET_PIXEL => {
                 if !self.check_params(sink, "SetPixel", 2) {
                     return;
@@ -117,11 +159,24 @@ impl SkypixParser {
                 if !self.check_params(sink, "AreaFill", 3) {
                     return;
                 }
-                Some(SkypixCommand::AreaFill {
-                    mode: self.builder.params[0],
-                    x: self.builder.params[1],
-                    y: self.builder.params[2],
-                })
+                match FillMode::try_from(self.builder.params[0]) {
+                    Ok(mode) => Some(SkypixCommand::AreaFill {
+                        mode,
+                        x: self.builder.params[1],
+                        y: self.builder.params[2],
+                    }),
+                    Err(_e) => {
+                        sink.report_error(
+                            crate::ParseError::InvalidParameter {
+                                command: "AreaFill",
+                                value: format!("{}", self.builder.params[0]),
+                                expected: Some("0 (Outline) or 1 (Color)".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                        None
+                    }
+                }
             }
             RECTANGLE_FILL => {
                 if !self.check_params(sink, "RectangleFill", 4) {
@@ -195,10 +250,16 @@ impl SkypixParser {
                 if !self.check_params(sink, "SetFont", 1) {
                     return;
                 }
-                Some(SkypixCommand::SetFont {
-                    size: self.builder.params[0],
-                    name: self.builder.string_param.clone(),
-                })
+                let size = self.builder.params[0];
+                if size == 0 {
+                    // Special case: font reset
+                    Some(SkypixCommand::ResetFont)
+                } else {
+                    Some(SkypixCommand::SetFont {
+                        size,
+                        name: self.builder.string_param.clone(),
+                    })
+                }
             }
             NEW_PALETTE => {
                 if !self.check_params(sink, "NewPalette", 16) {
@@ -375,7 +436,9 @@ impl SkypixParser {
                 match n {
                     0 => sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::CursorToEnd)),
                     1 => sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::StartToCursor)),
-                    2 => sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All)),
+                    2 => {
+                        sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All));
+                    }
                     _ => {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
@@ -410,24 +473,33 @@ impl SkypixParser {
             b'm' => {
                 // SGR - Select Graphic Rendition (colors and text effects)
                 // Note: This is a simplified ANSI subset for SkyPix compatibility.
-                // Multi-part SGR sequences (e.g., 38;5;n for 256-color, 38;2;r;g;b for RGB)
-                // are intentionally not supported as they're not part of the SkyPix spec.
+                // Bold mode persists until reset with SGR 0.
                 if self.builder.params.is_empty() {
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
                 } else {
                     for &param in &self.builder.params {
                         match param {
-                            0 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset)),
-                            1 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Intensity(Intensity::Bold))),
+                            0 => {
+                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
+                            }
+                            1 => {
+                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Intensity(Intensity::Bold)));
+                            }
                             3 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Italic(true))),
                             5 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(Blink::Slow))),
                             7 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(true))),
-                            30..=37 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
-                                (param - 30) as u8,
-                            )))),
-                            40..=47 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
-                                (param - 40) as u8,
-                            )))),
+                            30..=37 => {
+                                // Use bold color table if Bold mode is active
+                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
+                                    AMIGA_COLOR_OFFSETS[(param - 30) as usize],
+                                ))));
+                            }
+                            40..=47 => {
+                                // Background colors don't have bold variants in Skypix
+                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
+                                    AMIGA_COLOR_OFFSETS[(param - 40) as usize],
+                                ))));
+                            }
                             _ => {
                                 sink.report_error(
                                     crate::ParseError::InvalidParameter {
@@ -526,6 +598,10 @@ impl CommandParser for SkypixParser {
                     if ch.is_ascii_digit() {
                         self.builder.add_digit((ch - b'0') as i32);
                         self.state = State::ReadingParams;
+                    } else if ch == b'-' {
+                        // Handle negative number at start
+                        self.builder.set_negative();
+                        self.state = State::ReadingParams;
                     } else if ch == b'!' {
                         // SkyPix command with no params
                         self.emit_skypix_command(sink);
@@ -553,6 +629,9 @@ impl CommandParser for SkypixParser {
                 State::ReadingParams => {
                     if ch.is_ascii_digit() {
                         self.builder.add_digit((ch - b'0') as i32);
+                    } else if ch == b'-' {
+                        // Handle negative number sign
+                        self.builder.set_negative();
                     } else if ch == b';' {
                         self.builder.push_param();
                     } else if ch == b'!' {
@@ -568,9 +647,19 @@ impl CommandParser for SkypixParser {
                             self.builder.cmd_num = self.builder.params[0];
                             self.builder.params.remove(0);
 
-                            if self.builder.cmd_num == command_numbers::SET_FONT || self.builder.cmd_num == command_numbers::CRC_TRANSFER {
+                            if self.builder.cmd_num == command_numbers::COMMENT
+                                || self.builder.cmd_num == command_numbers::SET_FONT
+                                || self.builder.cmd_num == command_numbers::CRC_TRANSFER
+                            {
                                 // Commands that have string parameters
-                                self.state = State::ReadingString;
+                                // Special case: SET_FONT with size 0 is a font reset and has no string parameter
+                                if self.builder.cmd_num == command_numbers::SET_FONT && !self.builder.params.is_empty() && self.builder.params[0] == 0 {
+                                    self.emit_skypix_command(sink);
+                                    self.state = State::Default;
+                                    start = i + 1;
+                                } else {
+                                    self.state = State::ReadingString;
+                                }
                             } else {
                                 self.emit_skypix_command(sink);
                                 self.state = State::Default;

@@ -3,10 +3,10 @@ use std::fmt::{self, Display};
 use crate::{
     ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED,
     C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen,
-    VIEWDATA, VIEWDATA_PALETTE, graphics_screen_buffer,
+    VIEWDATA, VIEWDATA_PALETTE, amiga_screen_buffer,
 };
 use icy_net::telnet::TerminalEmulation;
-use icy_parser_core::{CommandParser, MusicOption};
+use icy_parser_core::{CaretShape, CommandParser, MusicOption};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
@@ -291,6 +291,7 @@ impl ScreenMode {
             }
             ScreenMode::SkyPix => {
                 *screen.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
+                screen.caret_mut().shape = CaretShape::Underline;
             }
             ScreenMode::AtariST(_x, _igs) => {
                 *screen.buffer_type_mut() = BufferType::Atascii;
@@ -324,7 +325,7 @@ impl ScreenMode {
                 Box::new(buf)
             }
             TerminalEmulation::Skypix => {
-                let buf = graphics_screen_buffer::GraphicsScreenBuffer::new(GraphicsType::Skypix);
+                let buf = amiga_screen_buffer::AmigaScreenBuffer::new(GraphicsType::Skypix);
                 Box::new(buf)
             }
             TerminalEmulation::AtariST => {

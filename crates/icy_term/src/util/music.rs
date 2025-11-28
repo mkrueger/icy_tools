@@ -1,6 +1,9 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::mpsc::{Receiver, SendError, Sender, TryRecvError, channel},
+    sync::{
+        Arc,
+        mpsc::{Receiver, SendError, Sender, TryRecvError, channel},
+    },
     time::{Duration, Instant},
 };
 
@@ -13,13 +16,10 @@ use wasm_thread as thread;
 use icy_parser_core::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
     Source,
-    buffer::SamplesBuffer,
     source::{Function, SignalGenerator, SineWave},
 };
-use ym2149::Ym2149;
-
-use super::gist::gist_data::GistSoundData;
-use super::gist::gist_driver::GistDriver;
+use ym2149::{AudioDevice, RingBuffer, StreamConfig};
+use ym2149_gist_replayer::{GistPlayer, GistSound};
 
 use crate::DialTone;
 use crate::TerminalResult;
@@ -221,39 +221,47 @@ impl SoundThread {
 
         self.rx = rx2;
         self.tx = tx;
-        // Create audio stream before spawning thread
-        let (stream, mixer, sample_rate) = match rodio::OutputStreamBuilder::open_default_stream() {
-            Ok(handle) => {
-                let rate = handle.config().sample_rate();
-                let mixer = handle.mixer().clone();
-                (Some(handle), Some(mixer), rate)
-            }
-            Err(e) => {
-                log::error!("Failed to open audio stream: {}", e);
-                (None, None, 44100)
-            }
-        };
-
-        let mut data = SoundBackgroundThreadData {
-            rx,
-            tx: tx2,
-            music: VecDeque::new(),
-            thread_is_running: true,
-            last_beep: Instant::now(),
-            line_sound_playing: false,
-            stream,
-            mixer,
-            sample_rate,
-            gist_chip: Ym2149::new(),
-            gist_driver: GistDriver::new(),
-            gist_playing: false,
-            gist_tick_accumulator: 0,
-        };
 
         if let Err(err) = std::thread::Builder::new().name("music_thread".to_string()).spawn(move || {
+            // Create audio stream inside the thread (OutputStream is not Send)
+            let (stream, mixer, sample_rate) = match rodio::OutputStreamBuilder::open_default_stream() {
+                Ok(handle) => {
+                    let rate = handle.config().sample_rate();
+                    let mixer = handle.mixer().clone();
+                    (Some(handle), Some(mixer), rate)
+                }
+                Err(e) => {
+                    log::error!("Failed to open audio stream: {}", e);
+                    (None, None, 44100)
+                }
+            };
+
+            let mut data = SoundBackgroundThreadData {
+                rx,
+                tx: tx2,
+                music: VecDeque::new(),
+                thread_is_running: true,
+                last_beep: Instant::now(),
+                line_sound_playing: false,
+                stream,
+                mixer,
+                sample_rate,
+                ym_audio_device: None,
+                ym_ring_buffer: None,
+                gist_player: GistPlayer::with_sample_rate(sample_rate),
+                gist_playing: false,
+            };
+
+            // Initialize YM2149 audio device
+            data.init_ym_audio();
+
             while data.thread_is_running {
                 data.handle_queue();
                 data.handle_receive();
+                // Process GIST samples if playing
+                if data.gist_playing {
+                    data.process_gist_samples();
+                }
                 if data.music.is_empty() && !data.gist_playing {
                     thread::sleep(Duration::from_millis(100));
                 }
@@ -289,21 +297,101 @@ pub struct SoundBackgroundThreadData {
 
     line_sound_playing: bool,
 
-    // Persistent audio stream - we keep both the OutputStream (to prevent drop)
-    // and a cloned Mixer for direct access without borrow conflicts
+    // Persistent audio stream for ANSI music, beeps, dial tones etc.
     #[allow(dead_code)]
     stream: Option<rodio::OutputStream>,
     mixer: Option<rodio::mixer::Mixer>,
     sample_rate: u32,
 
-    // Persistent GIST state
-    gist_chip: Ym2149,
-    gist_driver: GistDriver,
+    // YM2149 audio device for GIST sounds (uses the real chip emulator)
+    #[allow(dead_code)]
+    ym_audio_device: Option<AudioDevice>,
+    ym_ring_buffer: Option<Arc<parking_lot::Mutex<RingBuffer>>>,
+    gist_player: GistPlayer,
     gist_playing: bool,
-    gist_tick_accumulator: u32,
 }
 
 impl SoundBackgroundThreadData {
+    /// Initialize YM2149 audio device for GIST sounds
+    fn init_ym_audio(&mut self) {
+        let config = StreamConfig::default();
+        let buffer = Arc::new(parking_lot::Mutex::new(match RingBuffer::new(config.ring_buffer_size) {
+            Ok(buf) => buf,
+            Err(e) => {
+                log::error!("Failed to create YM2149 ring buffer: {}", e);
+                return;
+            }
+        }));
+
+        match AudioDevice::new(config.sample_rate, config.channels, Arc::clone(&buffer)) {
+            Ok(device) => {
+                self.ym_audio_device = Some(device);
+                self.ym_ring_buffer = Some(buffer);
+                self.gist_player = GistPlayer::with_sample_rate(config.sample_rate as u32);
+                log::info!("YM2149 audio device initialized at {}Hz", config.sample_rate);
+            }
+            Err(e) => {
+                log::error!("Failed to initialize YM2149 audio device: {}", e);
+            }
+        }
+    }
+
+    /// Process GIST samples and write to ring buffer
+    fn process_gist_samples(&mut self) {
+        let Some(buffer) = &self.ym_ring_buffer else {
+            self.gist_playing = false;
+            return;
+        };
+
+        // Check if sound is still playing
+        if !self.gist_player.is_playing() {
+            // Generate tail samples for proper fade-out (500ms)
+            self.generate_gist_tail();
+            self.gist_playing = false;
+            return;
+        }
+
+        // Generate samples
+        let mut samples_buffer = [0.0f32; 512];
+        self.gist_player.generate_samples_into(&mut samples_buffer);
+
+        // Write to ring buffer, waiting if buffer is full
+        loop {
+            let written = buffer.lock().write(&samples_buffer);
+            if written == samples_buffer.len() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// Generate tail samples after sound ends for proper fade-out
+    fn generate_gist_tail(&mut self) {
+        let Some(buffer) = &self.ym_ring_buffer else {
+            return;
+        };
+
+        // 500ms tail like reference player
+        let config = StreamConfig::default();
+        let tail_samples = (config.sample_rate / 2) as usize;
+        let mut remaining = tail_samples;
+        let mut samples_buffer = [0.0f32; 512];
+
+        while remaining > 0 {
+            let to_generate = remaining.min(512);
+            self.gist_player.generate_samples_into(&mut samples_buffer[..to_generate]);
+
+            loop {
+                let written = buffer.lock().write(&samples_buffer[..to_generate]);
+                if written == to_generate {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            remaining -= to_generate;
+        }
+    }
+
     /// Recreate the audio stream to stop all playing sounds
     fn reset_audio_stream(&mut self) {
         // Dropping the old stream stops all sounds
@@ -324,9 +412,7 @@ impl SoundBackgroundThreadData {
 
         // Reset GIST state
         self.gist_playing = false;
-        self.gist_driver = GistDriver::new();
-        self.gist_chip = Ym2149::new();
-        self.gist_tick_accumulator = 0;
+        self.gist_player.reset();
     }
 
     pub fn handle_receive(&mut self) -> bool {
@@ -348,13 +434,10 @@ impl SoundBackgroundThreadData {
                         volume,
                         pitch,
                     } => {
+                        // ChipMusic is played IMMEDIATELY, not queued
+                        // This allows multiple voices to start simultaneously
                         self.line_sound_playing = false;
-                        self.music.push_back(SoundData::ChipMusic {
-                            sound_data,
-                            voice,
-                            volume,
-                            pitch,
-                        });
+                        self.play_chip_music_sound(&sound_data, voice, volume, pitch);
                     }
                     SoundData::Beep => {
                         self.line_sound_playing = false;
@@ -382,21 +465,30 @@ impl SoundBackgroundThreadData {
                         result = true;
                     }
                     SoundData::SndOff(voice) => {
-                        self.gist_driver.snd_off(voice as usize);
+                        // Immediate voice control
+                        self.gist_player.stop_voice(voice as usize);
+                        if !self.gist_player.is_playing() {
+                            self.gist_playing = false;
+                        }
                     }
                     SoundData::StopSnd(voice) => {
-                        self.gist_driver.stop_snd(&mut self.gist_chip, voice as usize);
-                        if !self.gist_driver.is_playing() {
+                        // Immediate voice control
+                        self.gist_player.stop_voice(voice as usize);
+                        if !self.gist_player.is_playing() {
                             self.gist_playing = false;
                         }
                     }
                     SoundData::SndOffAll => {
-                        for i in 0..3 {
-                            self.gist_driver.snd_off(i);
+                        // Immediate voice control
+                        for voice in 0..3 {
+                            self.gist_player.stop_voice(voice as usize);
                         }
                     }
                     SoundData::StopSndAll => {
-                        self.stop_gist();
+                        // Immediate voice control
+                        self.gist_player.stop_all();
+                        self.gist_player.reset();
+                        self.gist_playing = false;
                     }
                     _ => {}
                 },
@@ -419,28 +511,14 @@ impl SoundBackgroundThreadData {
             return;
         }
 
-        // Process GIST audio if playing
-        if self.gist_playing {
-            self.process_gist_tick();
-            // Don't block - process other sounds too
-        }
-
         let Some(data) = self.music.pop_front() else {
-            // If GIST is playing, sleep briefly to avoid busy-waiting
-            if self.gist_playing {
-                thread::sleep(Duration::from_millis(5));
-            }
             return;
         };
         match data {
             SoundData::PlayMusic(music) => self.play_music(&music),
             SoundData::PlayGist(sound_data) => self.play_gist_sound(&sound_data),
-            SoundData::ChipMusic {
-                sound_data,
-                voice,
-                volume,
-                pitch,
-            } => self.play_chip_music_sound(&sound_data, voice, volume, pitch),
+            // ChipMusic is now handled immediately in handle_receive, not queued
+            SoundData::ChipMusic { .. } => {}
             SoundData::Beep => self.beep(),
             SoundData::LineSound(tone) => self.play_line_sound(tone),
             SoundData::PlayDialSound(tone_dial, tone, phone_number) => {
@@ -450,49 +528,6 @@ impl SoundBackgroundThreadData {
             }
             SoundData::_PlayBusySound => self.play_busysound(DialTone::US),
             _ => {}
-        }
-    }
-
-    /// Process one GIST tick - called frequently from handle_queue
-    fn process_gist_tick(&mut self) {
-        if !self.gist_driver.is_playing() {
-            self.gist_playing = false;
-            self.stop_gist();
-            return;
-        }
-
-        let Some(mixer) = &self.mixer else {
-            self.gist_playing = false;
-            return;
-        };
-        let mixer = mixer.clone();
-
-        // Generate enough samples for ~50ms at 200Hz tick rate
-        const TICK_RATE: u32 = 200;
-        const SAMPLES_PER_TICK: usize = 2205; // ~50ms at 44100Hz for smooth playback
-
-        let mut samples_buffer = Vec::with_capacity(SAMPLES_PER_TICK);
-
-        for _ in 0..SAMPLES_PER_TICK {
-            self.gist_tick_accumulator += TICK_RATE;
-            if self.gist_tick_accumulator >= self.sample_rate {
-                self.gist_tick_accumulator -= self.sample_rate;
-                self.gist_driver.tick(&mut self.gist_chip);
-            }
-            self.gist_chip.clock();
-            samples_buffer.push(self.gist_chip.get_sample());
-        }
-
-        // Add samples to mixer
-        let source = SamplesBuffer::new(1, self.sample_rate, samples_buffer);
-        mixer.add(source);
-
-        // Wait for the buffer to play (prevents flooding)
-        thread::sleep(Duration::from_millis(45));
-
-        // Check if still playing after tick
-        if !self.gist_driver.is_playing() {
-            self.gist_playing = false;
         }
     }
 
@@ -711,9 +746,11 @@ impl SoundBackgroundThreadData {
     fn beep(&mut self) {
         if self.last_beep.elapsed().as_millis() > 500 {
             if let Some(mixer) = &self.mixer {
-                let wave = SineWave::new(740.0).amplify(0.2).take_duration(Duration::from_secs(3));
+                const BEEP_FREQUENCY: f32 = 740.0;
+                const BEEP_LENGTH: u64 = 200;
+                let wave = SineWave::new(BEEP_FREQUENCY).amplify(0.2).take_duration(Duration::from_millis(BEEP_LENGTH));
                 mixer.add(wave);
-                thread::sleep(std::time::Duration::from_millis(200));
+                thread::sleep(std::time::Duration::from_millis(BEEP_LENGTH));
             }
         }
         self.last_beep = Instant::now();
@@ -763,17 +800,25 @@ impl SoundBackgroundThreadData {
             return;
         }
 
-        let sound = GistSoundData::from_words(sound_words.try_into().unwrap_or(&[0i16; 56]));
-        if sound.duration() == 0 {
+        if self.ym_ring_buffer.is_none() {
+            log::warn!("No YM2149 audio device available for GIST sound");
             return;
         }
 
-        // Start the sound on the persistent chip/driver (finds free voice automatically)
-        if self.gist_driver.snd_on(&mut self.gist_chip, &sound, None, None, -1, i16::MAX - 1).is_some() {
-            self.gist_playing = true;
-        } else {
-            log::warn!("Failed to start GIST sound");
+        let words: &[i16; 56] = sound_words[..56].try_into().unwrap();
+        let sound = GistSound::from(words);
+        if sound.duration == 0 {
+            return;
         }
+
+        // Use the persistent player
+        if self.gist_player.play_sound(&sound, None, None).is_none() {
+            log::warn!("Failed to start GIST sound");
+            return;
+        }
+
+        // Start processing GIST samples
+        self.gist_playing = true;
     }
 
     /// Play chip music on a specific voice from raw sound data
@@ -783,31 +828,39 @@ impl SoundBackgroundThreadData {
             return;
         }
 
-        let sound = GistSoundData::from_words(sound_words.try_into().unwrap_or(&[0i16; 56]));
-        let voice_idx = (voice as usize).min(2);
+        if self.ym_ring_buffer.is_none() {
+            log::warn!("No YM2149 audio device available for ChipMusic sound");
+            return;
+        }
 
         // Only start sound if pitch > 0
-        if pitch > 0 {
-            let actual_pitch = pitch as i16;
-            let actual_volume = Some(volume.min(15) as i16);
+        if pitch == 0 {
+            return;
+        }
 
-            // Start on the requested voice channel
-            if self
-                .gist_driver
-                .snd_on(&mut self.gist_chip, &sound, Some(voice_idx), actual_volume, actual_pitch, 1)
-                .is_some()
-            {
-                self.gist_playing = true;
-            } else {
-                log::warn!("Failed to start ChipMusic sound");
+        let words: &[i16; 56] = sound_words[..56].try_into().unwrap();
+        let sound = GistSound::from(words);
+
+        let actual_pitch = pitch as i16;
+        let actual_volume = Some(volume.min(15) as i16);
+        let voice_idx = (voice as usize).min(2);
+
+        // Use the persistent player with voice channel
+        match self
+            .gist_player
+            .play_sound_pitched(&sound, actual_pitch, Some(voice_idx), actual_volume, Some(1))
+        {
+            Some(v) => {
+                println!("ChipMusic started on voice {}", v);
+            }
+            None => {
+                println!("FAILED to start ChipMusic sound on voice {}", voice_idx);
+                return;
             }
         }
-    }
 
-    /// Stop all GIST sounds
-    fn stop_gist(&mut self) {
-        self.gist_driver.stop_all(&mut self.gist_chip);
-        self.gist_playing = false;
+        // Start processing GIST samples
+        self.gist_playing = true;
     }
 }
 

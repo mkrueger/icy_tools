@@ -461,7 +461,6 @@ impl McpServer {
                     }
 
                     "get_scripting_api" => {
-                        println!("Providing scripting API documentation via MCP");
                         Ok(serde_json::json!({
                             "content": [{
                                 "type": "text",

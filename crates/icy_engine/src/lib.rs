@@ -31,7 +31,7 @@ pub use text_buffer::*;
 mod scrollback_buffer;
 pub use scrollback_buffer::*;
 
-pub mod graphics_screen_buffer;
+pub mod amiga_screen_buffer;
 
 mod palette_screen_buffer;
 pub use palette_screen_buffer::*;

@@ -4,7 +4,7 @@
 
 use crate::{Blink, Color, CommandSink, Frame, Intensity, ParseError, SgrAttribute, TerminalCommand, Underline};
 
-pub const ANSI_COLOR_OFFSETS: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
+pub const ANSI_COLOR_OFFSETS: [u8; 8] = [0, 2, 5, 7, 1, 3, 6, 15];
 
 /// SGR lookup table entry - describes what a particular SGR parameter code means
 #[repr(u8)]

@@ -1,27 +1,33 @@
+@database ANSI.guide
+@author "Spiny Norman"
+@$VER: ANSI.guide v1.12 (9/1/94)
+@width 75
+@height 30
+@wordwrap
 
-[1mANSI/SkyPix Documentation v1.12 - 01 Sep 1994[0m
+@node main "ANSI/SkyPix Documentation v1.12 - 01 Sep 1994"
+@toc menu
 
+    �������     ����    �����   �����������  �����         ///
+   ���   ���     ����    ���   ���      ���   ���         /// Compiled by:
+  ���     ���    �����   ���   ���            ���        ///
+  ���     ���    ������  ���    ����������    ���       ///       ^ ^
+  �����������    ��� ��� ���            ���   ���      ///       \// ^
+  ���     ���    ���  ������            ���   ���     ///       --  /^
+  ���     ���    ���   �����   ���      ���   ���    ///         mm(/
+ ����     ����  �����   �����  �����������   �����  ///   @{"  Spiny Norman  " link spiny}
 
-    »»»»»»»     »»»»    »»»»»   »»»»»»»»»»»  »»»»»         ///
-   »»»   »»»     »»»»    »»»   »»»      »»»   »»»         /// Compiled by:
-  »»»     »»»    »»»»»   »»»   »»»            »»»        ///
-  »»»     »»»    »»»»»»  »»»    »»»»»»»»»»    »»»       ///       ^ ^
-  »»»»»»»»»»»    »»» »»» »»»            »»»   »»»      ///       \// ^
-  »»»     »»»    »»»  »»»»»»            »»»   »»»     ///       --  /^
-  »»»     »»»    »»»   »»»»»   »»»      »»»   »»»    ///         mm(/
- »»»»     »»»»  »»»»»   »»»»»  »»»»»»»»»»»   »»»»»  ///   [7m  Spiny Norman  [0m
-
-  ®®®®®®®®®®®  ®®®®                         ®®®®®®®®®®    ®®®
- ®®®      ®®®   ®®®                          ®®®    ®®®
- ®®®            ®®®  ®®®®  ®®®®   ®®®        ®®®    ®®®  ®®®®®  ®®®®   ®®®®
-  ®®®®®®®®®®    ®®® ®®®     ®®®   ®®®        ®®®    ®®®   ®®®     ®®® ®®®
-          ®®®   ®®®®®®      ®®®   ®®®        ®®®®®®®®®    ®®®      ®®®®®
-          ®®®   ®®® ®®®     ®®®   ®®®        ®®®          ®®®     ®®®®®®®
- ®®®      ®®®   ®®®  ®®®    ®®®   ®®®        ®®®          ®®®    ®®®   ®®®
- ®®®®®®®®®®®   ®®®®   ®®®    ®®®®®®®®       ®®®®®        ®®®®®  ®®®     ®®®
-                                  ®®®
-                                  ®®®               v 1 . 1 2
-                            ®®®®®®®®
+  �����������  ����                         ����������    ���
+ ���      ���   ���                          ���    ���
+ ���            ���  ����  ����   ���        ���    ���  �����  ����   ����
+  ����������    ��� ���     ���   ���        ���    ���   ���     ��� ���
+          ���   ������      ���   ���        ���������    ���      �����
+          ���   ��� ���     ���   ���        ���          ���     �������
+ ���      ���   ���  ���    ���   ���        ���          ���    ���   ���
+ �����������   ����   ���    ��������       �����        �����  ���     ���
+                                  ���
+                                  ���               v 1 . 1 2
+                            ��������
 
             SOME USEFUL INFORMATION TO HELP YOU DEAL WITH IT...
 
@@ -31,10 +37,11 @@
 
       COMING SOON: C-Net MCI for Morons, the Complete AmigaGuide Dox
 
-[7m                            O P E N   M E ! !                             [0m
+@{"                            O P E N   M E ! !                             " link menu}
+@endnode
 
-[1mTable of Contents[0m
-
+@node menu "Table of Contents"
+@toc menu
 ######### ######### ####    ## ####### ######## ####    ## ####### ########
 ##     ## ##    ### ## ##   ##   ##    ###      ## ##   ##   ##    ##
 ##        ##    ### ##  ##  ##   ##    #######  ##  ##  ##   ##    ########
@@ -42,17 +49,18 @@
 ###    ## ##     ## ###   ####   ###   ##       ###   ####   ###   ##   ###
 ######### ######### ###    ###   ###   ######## ###    ###   ###   ########
 
-[7m      Introduction      [0m Words of philosophical enlightenment
-[7m ANSI Command Structure [0m What is this ANSI thing anyway?
-[7m     ANSI Commands      [0m How to make ANSI do household chores
-[7m      'Smart' Code      [0m Optimising commands to save space and time
-[7m    SkyPix Commands     [0m The SkyPix ANSI subset as defined by Michael Cox
-[7m IBM Graphic Characters [0m Those little squigglies and how to generate them
-[7m Programmes to Look For [0m What you need to get started and where to find it
-[7m  Where to Contact Me   [0m Where I can be reached (usually)
+@{"      Introduction      " link intro} Words of philosophical enlightenment
+@{" ANSI Command Structure " link commstruct} What is this ANSI thing anyway?
+@{"     ANSI Commands      " link ansicommands} How to make ANSI do household chores
+@{"      'Smart' Code      " link smart} Optimising commands to save space and time
+@{"    SkyPix Commands     " link skypixcommands} The SkyPix ANSI subset as defined by Michael Cox
+@{" IBM Graphic Characters " link ibmgraphics} Those little squigglies and how to generate them
+@{" Programmes to Look For " link editors} What you need to get started and where to find it
+@{"  Where to Contact Me   " link spiny} Where I can be reached (usually)
+@endnode
 
-[1mA Few Tiresome Words From Yours Truly[0m
-
+@node intro "A Few Tiresome Words From Yours Truly"
+@toc menu
         ####
         ##
        ##  ==============================================================
@@ -73,9 +81,9 @@ ubiquitous in the Amiga market (such as RIP for instance.)
 
 TO C-NET USERS: the ANSI portion of this document is basically useless to
 you (other than as a technical reference), since C-Net's [M]essage
-[C]ommand [I]nterpreter mirrors all of the standard [7mANSI commands[0m.
+[C]ommand [I]nterpreter mirrors all of the standard @{"ANSI commands" link ansicommands}.
 However, SkyPix commands are not covered by MCI, and BBS artists must still
-enter them the old-fashioned way (or with [7mSKYPAINT[0m.)  As of version 2.63,
+enter them the old-fashioned way (or with @{"SKYPAINT" link editors}.)  As of version 2.63,
 the only way to use ANSI/SkyPix while on-line is through the line editor
 (the visual editor will not respond to ESC sequences for some reason, but
 this may have been fixed in CNet/3.)  Also, you must press ESC twice for
@@ -114,13 +122,14 @@ their right mind would ever type by mistake.  Also like PetSCII, it is
 designed so that terminal and host should (ideally) respond identically
 to the same command (this is rarely the case, however.)  Since all 16-
 colour ANSI terminals (including ones on the Amiga) are designed to
-emulate the [7mstandard ANSI palette[0m, it is possible to view the
+emulate the @{"standard ANSI palette" link ansicommands3}, it is possible to view the
 same graphics using vastly different machines.
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link commstruct}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mHow The Stuff's Put Together[0m
-
+@node commstruct "How The Stuff's Put Together"
+@toc menu
         ####
       ##
     ##     ==============================================================
@@ -135,16 +144,17 @@ Terminator is generally a letter (ANSI) or an exclamation point (SkyPix.)
 
 Confused yet?
 
-The ";" key can also be used within a [7mcomplex command[0m to join 2 command
+The ";" key can also be used within a @{"complex command" link smart} to join 2 command
 strings together.  I know this sounds awfully naughty and complex, but
 just study the command charts in the following section and I think you'll
 see where I'm driving.  The key sequences are spelled out key-for-key (they
 must be entered exactly.)
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link ansicommands}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mThe Section You've All Been Waiting For[0m
-
+@node ansicommands "The Section You've All Been Waiting For"
+@toc menu
          ####
        ##  ##
       ##  ## ============================================================
@@ -155,36 +165,37 @@ must be entered exactly.)
 
 NOTES:
 ------
-· [ ]  -  refers to optional parts of a command.
+� [ ]  -  refers to optional parts of a command.
 
-· '[n]' or '[m]'  -  always decimal numbers, containing one or more ASCII
+� '[n]' or '[m]'  -  always decimal numbers, containing one or more ASCII
   digits to express their value.
 
-· Where '[n]' occurs in a command and the value of 'n' is not explicitly
+� Where '[n]' occurs in a command and the value of 'n' is not explicitly
   defined, it usually defaults to 1.
 
-· 'ESC'  -  an ESCape key press (HEX $1B or DECIMAL 27) - Use CTRL-[ if you
+� 'ESC'  -  an ESCape key press (HEX $1B or DECIMAL 27) - Use CTRL-[ if you
   don't have an ESCape key (Commodore 64's, for instance) - in some
   implementations, $DB also works as a command introducer, but ESC is much
   more widely-used
 
-· Commands involving upper or lower-case letters are always case-sensitive.
+� Commands involving upper or lower-case letters are always case-sensitive.
 
-· Where applicable, the equivalent C-Net MCI commands (version 2.0 and
+� Where applicable, the equivalent C-Net MCI commands (version 2.0 and
   beyond) have been included for reference.
 
-· All sequences should be entered WITHOUT SPACES - the spaces are included
+� All sequences should be entered WITHOUT SPACES - the spaces are included
   for readability only.
 
 
-[7m Cursor Positioning [0m Making your screen do the tango
-[7m      Text F/X      [0m Italics, Boldface, and international intrigue
-[7m  Changing Colours  [0m Monochrome users may skip this part
+@{" Cursor Positioning " link ansicommands1} Making your screen do the tango
+@{"      Text F/X      " link ansicommands2} Italics, Boldface, and international intrigue
+@{"  Changing Colours  " link ansicommands3} Monochrome users may skip this part
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link smart}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mCursor Positioning Commands, or Watch the Bouncing Letters[0m
-
+@node ansicommands1 "Cursor Positioning Commands, or Watch the Bouncing Letters"
+@toc menu
 CURSOR POSITIONING COMMANDS
 ===========================
 
@@ -195,7 +206,7 @@ Up (Up One Line)                                    Up Arrow Key   (CTRL-K)
 Clear Screen (Form Feed) [MCI \f1]                  CTRL-L
 Carriage Return (Move To First Column)              Return Key     (CTRL-M)
 
-Insert n Characters [MCI \-n]                       ESC [ [n] @
+Insert n Characters [MCI \-n]                       ESC [ [n] @@
 Cursor Up n Lines [MCI \^n]                         ESC [ [n] A
 Cursor Down n Lines [MCI \!n]                       ESC [ [n] B
 Cursor Forward n Spaces [MCI \>n]                   ESC [ [n] C
@@ -223,22 +234,23 @@ Set Carriage Return Mode (What Is Transmitted
    RETURN = Line Feed + Carriage Return             ESC [ 20 h
    RETURN = Carriage Return Only                    ESC [ 20 l
 
-    [7m  Next Sub-Section  [0m   [7m'ANSI Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"  Next Sub-Section  " link ansicommands2}   @{"'ANSI Commands' Menu" link ansicommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mText F/X, or Emphasis Made Easy[0m
-
+@node ansicommands2 "Text F/X, or Emphasis Made Easy"
+@toc menu
 TEXT F/X
 ========
 
 Normal Display (clear all F/X)                                    ESC [ 0 m
 
   (turns off reverse, brightness, and boldface; sets text and background to
-  [7mdefault colours[0m.  In SkyPix, this will also reset the [7mfont[0m to Topaz-8.)
+  @{"default colours" link ansicommands3}.  In SkyPix, this will also reset the @{"font" link sky10} to Topaz-8.)
 ---------------------------------------------------------------------------
 
 Activate Bright Colours (STANDARD ANSI ONLY)                      ESC [ 1 m
 
-  (forces the next [7mcolour change[0m to use the second 8 colours instead of
+  (forces the next @{"colour change" link ansicommands3} to use the second 8 colours instead of
   the first.  This command is ignored in SkyPix mode.)
 ---------------------------------------------------------------------------
 
@@ -269,26 +281,27 @@ colours (TERM, for instance, uses flashing text to represent the second
 second 8 colours by Boldface text.  You will need to experiment to figure
 out how your terminal implements each of the above commands.
 
-    [7m  Next Sub-Section  [0m   [7m'ANSI Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"  Next Sub-Section  " link ansicommands3}   @{"'ANSI Commands' Menu" link ansicommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mChanging Colours, or Chartreuse Your Way to Social Ridicule[0m
-
+@node ansicommands3 "Changing Colours, or Chartreuse Your Way to Social Ridicule"}
+@toc menu
 CHANGING COLOURS
 ================
 
 NOTES:
 ------
-· If Reverse Display is activated, the foreground colour becomes the
+� If Reverse Display is activated, the foreground colour becomes the
   background colour
 
-· In SkyPix mode, the first 8 colours can be accessed with standard ANSI
+� In SkyPix mode, the first 8 colours can be accessed with standard ANSI
   commands (to allow compatibility with ANSI screens), however the second
-  8 SkyPix colours can only be accessed by changing the SkyPix [7mPen Colour[0m,
+  8 SkyPix colours can only be accessed by changing the SkyPix @{"Pen Colour" link sky15},
   which is discussed later in this text.
 
-· Only the first 8 colours may be used as a background.
+� Only the first 8 colours may be used as a background.
 
-· The foreground and background colours can be mixed and matched to achieve
+� The foreground and background colours can be mixed and matched to achieve
   128 total colour combinations.
 
 
@@ -343,10 +356,12 @@ approximates the original CGA text colours) is as follows:
    6 =  00  10  10   Cyan            |  14 =  00  15  00   Bright Cyan
    7 =  11  11  11   Light Grey      |  15 =  15  15  15   White
 
-    [7m    Next Section    [0m   [7m'ANSI Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Section    " link smart}   @{"'ANSI Commands' Menu" link ansicommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1m'Smart' Code and What it Can Do For Your Social Life[0m
-
+@node smart "'Smart' Code and What it Can Do For Your Social Life"
+@toc menu
+@next skypixcommands
         ####
       ##  ##
      ##     =============================================================
@@ -355,15 +370,15 @@ approximates the original CGA text colours) is as follows:
   ##  ##
   #####
 
-Often in generating long ANSI screens with many [7mcolour changes[0m, it is
+Often in generating long ANSI screens with many @{"colour changes" link ansicommands3}, it is
 important to consider the time that the screen will take to display over
-the modem (especially at 2400 baud.)  Programmes like [7mBBS-DRAW[0m will
+the modem (especially at 2400 baud.)  Programmes like @{"BBS-DRAW" link bbsdraw} will
 automatically generate 'smart' ANSI code which transmits in the least
 amount of time possible, but generating such code by hand takes a little
 bit of ingenuity on the part of the BBS artist.
 
 The first thing to bear in mind when generating 'smart' code is that any
-two (or more) ANSI codes which have the same command [7mterminator[0m may be
+two (or more) ANSI codes which have the same command @{"terminator" link commstruct} may be
 combined into a single command.
 
 Example:  To set the text to bright cyan and the background to violet on an
@@ -417,12 +432,13 @@ machine quote Monty Python.
    ESC [ 7 ; 1 ; 33 ; 41 m     the only way to use a bright colour as a
                                background is through Reverse Mode
 
-   type "I didn't expect a kind of [7mSpanish Inquisition[0m!"
+   type "I didn't expect a kind of @{"Spanish Inquisition" link spanish}!"
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link skypixcommands}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mExtremely Silly Reference[0m
-
+@node spanish "Extremely Silly Reference"
+@toc menu
 NOBODY expects the Spanish Inquisition!  Our chief weapon is surprise...
 surprise and fear... fear and surprise....  Our two weapons are fear and
 surprise... and ruthless efficiency...  Our THREE weapons are fear,
@@ -430,10 +446,12 @@ surprise, and ruthless efficiency... and an almost fanatical devotion to
 the Pope...  Our FOUR... no... AMONGST our weapons...  Amongst our
 weaponry... are such elements as fear, surprise...  I'll come in again.
 
-[7m Jane! Stop This Crazy Thing! [0m
+@{" Jane! Stop This Crazy Thing! " link smart}
+@endnode
 
-[1mSkyPix Commands, or Cox's Folly[0m
-
+@node skypixcommands "SkyPix Commands, or Cox's Folly"
+@toc menu
+@prev smart
         ####
       ##  ##
      ###    =============================================================
@@ -450,82 +468,89 @@ SkyPix protocol (all 2 of 'em ;)
 
 NOTES:
 ------
-· All SkyPix graphics are implemented on a default screen of 640x200
-  (8 colours) with the [7mdefault palette[0m described below (unless the palette
-  or number of number of [7mbitplanes[0m is changed.)
+� All SkyPix graphics are implemented on a default screen of 640x200
+  (8 colours) with the @{"default palette" link sky12} described below (unless the palette
+  or number of number of @{"bitplanes" link sky17} is changed.)
 
-· All sequences should be entered WITHOUT SPACES - the spaces are included
+� All sequences should be entered WITHOUT SPACES - the spaces are included
   for readability only.
 
 Commands:
-[7m 1 - SET PIXEL          [0m [7m 9 - PLAY SAMPLE        [0m [7m16 - XMODEM TRANSFER    [0m
-[7m 2 - DRAW LINE          [0m [7m10 - SET FONT           [0m [7m17 - SET DISPLAY MODE   [0m
-[7m 3 - AREA FILL          [0m [7m11 - NEW PALETTE        [0m [7m18 - SET PEN B COLOUR   [0m
-[7m 4 - RECTANGLE FILL     [0m [7m12 - RESET PALETTE      [0m [7m19 - POSITION CURSOR    [0m
-[7m 5 - ELLIPSE            [0m [7m13 - FILLED ELLIPSE     [0m 20 - (NOT IMPLEMENTED)
-[7m 6 - GRAB BRUSH         [0m [7m14 - DELAY (PAUSE)      [0m [7m21 - CONTROLLER RETURN  [0m
-[7m 7 - USE BRUSH (BLIT)   [0m [7m15 - SET PEN A COLOUR   [0m [7m22 - DEFINE GADGET      [0m
-[7m 8 - MOVE PEN           [0m
+@{" 1 - SET PIXEL          " link sky1} @{" 9 - PLAY SAMPLE        " link sky9} @{"16 - XMODEM TRANSFER    " link sky16}
+@{" 2 - DRAW LINE          " link sky2} @{"10 - SET FONT           " link sky10} @{"17 - SET DISPLAY MODE   " link sky17}
+@{" 3 - AREA FILL          " link sky3} @{"11 - NEW PALETTE        " link sky11} @{"18 - SET PEN B COLOUR   " link sky18}
+@{" 4 - RECTANGLE FILL     " link sky4} @{"12 - RESET PALETTE      " link sky12} @{"19 - POSITION CURSOR    " link sky19}
+@{" 5 - ELLIPSE            " link sky5} @{"13 - FILLED ELLIPSE     " link sky13} 20 - (NOT IMPLEMENTED)
+@{" 6 - GRAB BRUSH         " link sky6} @{"14 - DELAY (PAUSE)      " link sky14} @{"21 - CONTROLLER RETURN  " link sky21}
+@{" 7 - USE BRUSH (BLIT)   " link sky7} @{"15 - SET PEN A COLOUR   " link sky15} @{"22 - DEFINE GADGET      " link sky22}
+@{" 8 - MOVE PEN           " link sky8}
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link ibmgraphics}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #1[0m
-
+@node sky1 "Command #1"
+@toc menu
 1 - SET PIXEL                                             ESC [ 1 ; x ; y !
 
     (Sets the pixel at the specified X and Y coordinates to whatever colour
     is in Pen A)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky2}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #2[0m
-
+@node sky2 "Command #2"
+@toc menu
 2 - DRAW LINE                                             ESC [ 2 ; x ; y !
 
     (Draws a line in the current A pen colour from the existing pen
     position to the point X,Y)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky3}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #3[0m
-
+@node sky3 "Command #3"
+@toc menu
 3 - AREA FILL                                         ESC [ 3 ; m ; x ; y !
 
     (Floods, in mode m, the area beginning at X,Y)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky4}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #4[0m
-
+@node sky4 "Command #4"
+@toc menu
 4 - RECTANGLE FILL                            ESC [ 4 ; x1 ; y1 ; x2 ; y2 !
 
     (Draws a filled rectangle in the current colour.  Numeric parameters
     are the top left X and Y coordinates followed by the lower right X and
     Y coordinates)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky5}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #5[0m
-
+@node sky5 "Command #5"
+@toc menu
 5 - ELLIPSE                                       ESC [ 5 ; x ; y ; a ; b !
 
     (Draws Ellipse with center at X,Y; major [horizontal] axis A pixels,
     and minor [vertical] axis B pixels)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky6}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #6[0m
-
+@node sky6 "Command #6"
+@toc menu
 6 - GRAB BRUSH                                  ESC [ 6 ; x1 ; y1 ; a ; b !
 
     (Stores a piece of the screen as a brush in memory.  From there it will
     behave exactly like a brush that has been received remotely.  X1 and Y1
     define the starting point, A the width and B the height)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky7}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #7[0m
-
+@node sky7 "Command #7"
+@toc menu
 7 - USE BRUSH (BLIT)              ESC [ 7 ; a ; b ; c ; d ; e ; f ; g ; h !
 
     A = upper-left X coord. of the source bitmap
@@ -542,21 +567,23 @@ Commands:
     H = MASK to be supplied to the blitter (commonly 255)
 
     The above commands blit what is in the brush buffer (following a
-    [7mCRC Transfer[0m or a [7mGRAB BRUSH[0m command) - if no brush is found, the
+    @{"CRC Transfer" link sky16} or a @{"GRAB BRUSH" link sky6} command) - if no brush is found, the
     command aborts.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky8}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #8[0m
-
+@node sky8 "Command #8"
+@toc menu
 8 - MOVE PEN                                              ESC [ 8 ; x ; y !
 
     (Move the drawing pen to X,Y - NOT the cursor)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky9}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #9[0m
-
+@node sky9 "Command #9"
+@toc menu
 9 - PLAY SAMPLE                                   ESC [ 9 ; a ; b ; c ; d !
 
     (Plays a simple sample.  A is the "speed" of the sample, B is the
@@ -569,10 +596,11 @@ Commands:
     implemented.  Hopefully it will be added by the developers in the
     future.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky10}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #10[0m
-
+@node sky10 "Command #10"
+@toc menu
 10- SET FONT                                 ESC [ 10 ; y ! fontname.font !
 
     (Y is the size of the font, and fontname is the name of the font - the
@@ -582,31 +610,33 @@ Commands:
     SPINY'S NOTE: It's wise to stick to just the basic 7 Workbench fonts,
     since you know everyone will have them available on their system disk.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky11}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #11[0m
-
+@node sky11 "Command #11"
+@toc menu
 11- NEW PALETTE                 ESC [ 11 ; c1 ; c2 ; c3 ; ... ; c15 ; c16 !
 
     Sets the palette to the sixteen colours C1-C16 [you must enter all 16
-    colours even if you are just in [7m8-colour mode[0m!]  The parameters C1-C16
+    colours even if you are just in @{"8-colour mode" link sky17}!]  The parameters C1-C16
     are decimal numbers arrived at in the following way:
 
     Take a grey, for instance, whose R-G-B value is 12-12-12.  Then convert
     that to C-C-C (since 12 is hex $0C).  Now take the hex number CCC and
     convert back into Decimal, which gives you 3276.
 
-    NOTE: Unless you are a massochist, I'd suggest using [7mSKYPAINT[0m since it
+    NOTE: Unless you are a massochist, I'd suggest using @{"SKYPAINT" link editors} since it
     does all of the above automatically.  Even if you just need to set the
     palette, load up SKYPAINT and begin recording, go to the palette screen
     and set it to what you want, then end recording.  You can then look at
     the tiny file you created and tell what ESC [ 11 command is needed in
     your final project.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky12}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #12[0m
-
+@node sky12 "Command #12"
+@toc menu
 12- RESET PALETTE                                                ESC [ 12 !
 
     Resets to the SkyPix standard palette, which is
@@ -622,42 +652,46 @@ Commands:
     ESC [ 11 ; 0 ; 287 ; 3549 ; 3840 ; 241 ; 943 ; 4082 ; 3086 ; 182 ;
           221 ; 175 ; 124 ; 15 ; 1807 ; 3086 ; 3080 !
 
-    [See also [7mCommand #15[0m for info on the default palette]
+    [See also @{"Command #15" link sky15} for info on the default palette]
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky13}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #13[0m
-
+@node sky13 "Command #13"
+@toc menu
 13- FILLED ELLIPSE                               ESC [ 13 ; x ; y ; a ; b !
 
-    (Same as standard Ellipse [[7mCommand #5[0m], except this one is filled-in)
+    (Same as standard Ellipse [@{"Command #5" link sky5}], except this one is filled-in)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky14}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #14[0m
-
+@node sky14 "Command #14"
+@toc menu
 14- DELAY (PAUSE)                                            ESC [ 14 ; a !
 
     (A is a value in jiffies [60ths of a second])
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky15}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #15[0m
-
+@node sky15 "Command #15"
+@toc menu
 15- SET COLOUR OF PEN A                                       ESC [ 15 ; a !
 
     Sets Pen A to colour a, where a is one of the following (assumes
-    [7mdefault palette[0m)
+    @{"default palette" link sky12})
 
     0 = black         4 = bright green   8 = dark green    12 = dark blue 2
     1 = dark blue 1   5 = med. blue 1    9 = cyan          13 = indigo
     2 = white         6 = yellow        10 = med. blue 2   14 = violet 2
     3 = bright red    7 = violet 1      11 = grey-blue     15 = magenta
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky16}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #16[0m
-
+@node sky16 "Command #16"
+@toc menu
 16- CRC XMODEM TRANSFER                   ESC [ 16 ; m ; a ; b ! filename !
 
     Files will be sent to whichever directory BRU: is assigned.
@@ -670,41 +704,45 @@ Commands:
     A & B are the X and Y size of the IFF brush, if that is what is being
     transmitted.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky17}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #17[0m
-
+@node sky17 "Command #17"
+@toc menu
 17- SELECT DISPLAY MODE                                      ESC [ 17 ; m !
 
     M is 1 for a 3-bitplane display (first 8 colours) or 2 for a 4-bitplane
     display (all 16 colours allowed).  Note that if M is 1, then the second
-    8 colours (see [7mCommand #15[0m) are disabled.
+    8 colours (see @{"Command #15" link sky15}) are disabled.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky18}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #18[0m
-
+@node sky18 "Command #18"
+@toc menu
 18- SET B PEN                                                ESC [ 18 ; b !
 
-    (Sets background pen to colour B [see [7mCommand #15[0m] - this is useful
+    (Sets background pen to colour B [see @{"Command #15" link sky15}] - this is useful
     for allowing ANSI commands to access more colours)
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky19}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #19[0m
-
+@node sky19 "Command #19"
+@toc menu
 19- POSITION CURSOR                                      ESC [ 19 ; x ; y !
 
     (Moves text cursor to X,Y.  Does NOT affect the position of the
     drawing pen)
 
-    NOTE: This is not the same as [7mESC [ [n] ; [m] H[0m.  In this case x and y
+    NOTE: This is not the same as @{"ESC [ [n] ; [m] H" link ansicommands1}.  In this case x and y
     refer to pixels on the screen and not to rows and columns of text.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky21}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #21[0m
-
+@node sky21 "Command #21"
+@toc menu
 21- CONTROLLER RETURN                                ESC [ 21 ; c ; x ; y !
 
     (This is SENT from the terminal every time a controller is activated -
@@ -715,20 +753,22 @@ Commands:
     the ESC code is not sent with this command.  This should be taken into
     consideration when adding mouse control to your own applications.
 
-    [7m    Next Command    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Command    " link sky22}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mCommand #22[0m
-
+@node sky22 "Command #22"
+@toc menu
 22- DEFINE A SKYPIX GADGET           ESC [ 22 ; n ; c ; x1 ; y1 ; x2 ; y2 !
 
     (N is the gadget # (1-20), C is the command # associated with it; X1,Y1
     defines the top left corner and X2,Y2 the lower right.  The gadget
-    appears in the colour of Pen A [see [7mCommand #15[0m])
+    appears in the colour of Pen A [see @{"Command #15" link sky15}])
 
-    [7m    Next Section    [0m   [7m'SkyPix Commands' Menu[0m    [7m Table of Contents  [0m
+    @{"    Next Section    " link ibmgraphics}   @{"'SkyPix Commands' Menu" link skypixcommands}    @{" Table of Contents  " link menu}
+@endnode
 
-[1mIBM Graphics, or IBM ASCII's Better Half[0m
-
+@node ibmgraphics "IBM Graphics, or IBM ASCII's Better Half"
+@toc menu
         ####
         ##
        ##  ==============================================================
@@ -754,7 +794,7 @@ of the necessary characters.
 THE BBS END
 ===========
 
-IBM Graphic characters can be generated easily in most [7mANSI editors[0m using
+IBM Graphic characters can be generated easily in most @{"ANSI editors" link editors} using
 point-and-click gadgets, but they can also be generated the old-fashioned
 way by using special key sequences entered in a text editor or terminal
 which has an IBM Graphic font selected as its default.  An IFF-ILBM screen
@@ -763,7 +803,7 @@ key sequences (assumes keymap 'usa0') has been included in this archive for
 your viewing pleasure.  You can display it either by clicking below or by
 using a viewer of your own devising.
 
-[7m Click Here to View! [0m
+@{" Click Here to View! " system "Viewer IBM_Graphics"}
 
 
 THE TERMINAL END
@@ -785,10 +825,11 @@ the FONTS:Pearl/ subdirectory and running FixFonts (for good measure.)
 NOTE: If your terminal has an option for 'High-Bit Stripping' or '8th-Bit
 Stripping', it must be turned off for IBM Graphics to function.
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link editors}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mKeeping Up With the Joneses[0m
-
+@node editors "Keeping Up With the Joneses"
+@toc menu
         ##  ##
        ##  ##
       ##  ## ============================================================
@@ -806,22 +847,22 @@ most of the nuts-and-bolts ANSI code generation automatically.  For
 instance, the user would simply click on a gadget to change text colours
 rather than entering the full ANSI code.
 
-For non-animated ANSI screens, I would highly recommend using [7mBBS-DRAW[0m.
+For non-animated ANSI screens, I would highly recommend using @{"BBS-DRAW" link bbsdraw}.
 It is extremely easy to use and is available through most Public Domain/
 Shareware archives.  I have used this programme for close to a year and
 have found that it generates code very nearly as 'smart' as my own with
 only a very few exceptions (plus working with it is considerably easier
 than pounding out ESC codes blindly in a text editor.)
 
-I'd also highly recommend getting a copy of [7mSKYPAINT[0m.  SKYPAINT has the
+I'd also highly recommend getting a copy of @{"SKYPAINT" link skypaint}.  SKYPAINT has the
 virtue of being the only ANSI editor equipped to interpret and generate
 standard SkyPix code.  It is also relatively versatile and easy to use and
-it implements most of the [7mSkyPix commands[0m automatically using a
+it implements most of the @{"SkyPix commands" link skypixcommands} automatically using a
 point-and-click gadget box.  At any rate, it's a GREAT DEAL faster than
 trying to enter them by hand and you can see the immediate results of each
 command as you create your file.
 
-For ANSI animations (ANSI-Mations), I generally use [7mDIANE[0m (Digital
+For ANSI animations (ANSI-Mations), I generally use @{"DIANE" link diane} (Digital
 Intelligence Animation Editor.)  This programme also uses an intuition-
 based interface, but it employs a clever device which treats each
 character placed on the screen as a separate 'frame' in the animation,
@@ -830,24 +871,25 @@ like a real animation program.  Backdrops for the entire animation can
 also be loaded.  The only drawback of DIANE is that it is limited to 8
 colours, but it is still my first choice.
 
-For the other end of the line, I would recommend getting [7mTERMINUS[0m v2 or
-[7mTERM[0m v4 (Workbench 2 and above) for emulating IBM ANSI.  If you use
+For the other end of the line, I would recommend getting @{"TERMINUS" link terminus} v2 or
+@{"TERM" link term} v4 (Workbench 2 and above) for emulating IBM ANSI.  If you use
 TERM, I would also recommend using the (included) xemibm.library, since it
 seems to provide better ANSI compliance than TERM's built-in ANSI/VT-102
-routines.  For SkyPix, [7mJR-COMM[0m is still your best bet.  SKYTERM is
+routines.  For SkyPix, @{"JR-COMM" link terminus} is still your best bet.  SKYTERM is
 another option, although (surprisingly enough, since Michael Cox wrote it)
 it does not conform as well to the SkyPix standard as JR-COMM.  Most
 SkyPix-supporting BBS's (mine included) are designed to work with JR-COMM
 rather than SKYTERM.
 
-    [7m    Next Section    [0m                           [7m Table of Contents  [0m
+    @{"    Next Section    " link spiny}                           @{" Table of Contents  " link menu}
+@endnode
 
-[1mWhere to find TERM[0m
-
+@node term "Where to find TERM"
+@toc menu
                                  TERM v4.0
                                  =========
 
-     Copyright ©1990-93 by Olaf 'Olsen' Barthel, All Rights Reserved.
+     Copyright �1990-93 by Olaf 'Olsen' Barthel, All Rights Reserved.
 
      TERM can be downloaded from most Public Domain/Shareware archives
                        including wuarchive.wustl.edu
@@ -864,13 +906,14 @@ rather than SKYTERM.
                              Brabeckstrasse 35
                              D-30559 Hannover
                         Federal Republic of Germany
+@endnode
 
-[1mWhere to find TERMINUS and JR-COMM[0m
-
+@node terminus "Where to find TERMINUS and JR-COMM"
+@toc menu
                        TERMINUS v2.0d, JR-COMM 1.02a
                        =============================
 
-         Copyright ©1993 by John P. Radigan, All Rights Reserved.
+         Copyright �1993 by John P. Radigan, All Rights Reserved.
 
 The unregistered version of TERMINUS (with auto-dialer disabled) is freely-
       redistributable and can be found in most PD/ShareWare archives
@@ -907,9 +950,10 @@ For SkyPix fans, I'm not sure whether Radigan still supports JR-COMM 1.02a
    JR-COMM 1.02a (unregistered) can also be found on the [A]miga [U]ser
  [I]nternational Userdisk #6 (11/91) Magazine Disk, and my BBS carries the
                    original archive as a free download.
+@endnode
 
-[1mWell, Now Comes the Bad News...[0m
-
+@node skypaint "Well, Now Comes the Bad News..."
+@toc menu
 SKYPAINT
 ========
 
@@ -922,30 +966,32 @@ still technically a no-no.
 Perhaps someone more proficient in programming than I could design a
 freely-redistributable SkyPix editor and win my life-long friendship (hint
 hint.)
+@endnode
 
-[1mWhere to find BBS-DRAW[0m
-
+@node bbsdraw "Where to find BBS-DRAW"
+@toc menu
                               BBS-DRAW v4.01
                               ==============
 
-         Copyright ©1991-92 Henrik Lindqvist, All Rights Reserved.
+         Copyright �1991-92 Henrik Lindqvist, All Rights Reserved.
 
       BBS-DRAW is freely-redistributable ShareWare with a fee of $10.
 
               Its author can be reached through Snail-Mail at
 
                              Henrik Lindqvist
-                             Ullângergatan 19
-                              16228 Vällingby
+                             Ull�ngergatan 19
+                              16228 V�llingby
                              Stockholm, Sweden
+@endnode
 
-[1mWhere to find DIANE[0m
-
+@node diane "Where to find DIANE"
+@toc menu
                    DIGITAL INTELLIGENCE ANIMATION EDITOR
                    =====================================
 
                   Written by PER of Digital Intelligence
-        Copyright ©1991 Digital Intelligence, All Rights Reserved.
+        Copyright �1991 Digital Intelligence, All Rights Reserved.
 
   DIAne is freely-redistributable ShareWare with a suggested fee of $15.
 
@@ -955,9 +1001,10 @@ hint.)
                                 Bieslook 92
                              1422 RS Uithoorn
                               The Netherlands
+@endnode
 
-[1mWhereabouts I Can Be Found (On Odd Thursdays)[0m
-
+@node spiny "Whereabouts I Can Be Found (On Odd Thursdays)"
+@toc menu
         ##   ##
        ##   ##
       ##   ## ===========================================================
@@ -996,4 +1043,5 @@ ______/ /  \_/ / / / / /  \_/ / / ^ ^/ /  \_/ / /  / // // /  \_/ / /  / /
          \ \______  ______/ /   --  /^                         \/
           \______/  \______/     mm(/ --DINSDALE!
 
-                            [7m Table of Contents [0m
+                            @{" Table of Contents " link menu}
+@endnode

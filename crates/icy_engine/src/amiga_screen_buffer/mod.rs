@@ -1,5 +1,6 @@
 use icy_parser_core::{RipCommand, SkypixCommand};
 
+pub mod sky_paint;
 pub mod skypix_impl;
 
 use libyaff::GlyphDefinition;
@@ -13,12 +14,12 @@ use crate::{
     rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
 use parking_lot::Mutex;
-use skypix_impl::SKYPIX_SCREEN_SIZE;
+use skypix_impl::{SKYPIX_DEFAULT_FONT, SKYPIX_SCREEN_SIZE};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub struct GraphicsScreenBuffer {
+pub struct AmigaScreenBuffer {
     pub pixel_size: Size,
     pub screen: Vec<u8>,
     pub char_screen_size: Size,
@@ -39,6 +40,9 @@ pub struct GraphicsScreenBuffer {
     // BGI graphics handler
     pub bgi: Bgi,
 
+    // SkyPaint graphics handler (for Skypix protocol)
+    pub sky_paint: sky_paint::SkyPaint,
+
     // IGS state (only used for IGS graphics)
     _igs_state: Option<igs::vdi_paint::VdiPaint>,
 
@@ -55,7 +59,22 @@ pub struct GraphicsScreenBuffer {
     pub scrollback_buffer: ScrollbackBuffer,
 }
 
-impl GraphicsScreenBuffer {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextMode {
+    Jam1,
+    Jam2
+}
+
+impl AmigaScreenBuffer {
+
+    pub fn get_text_mode(&self) -> TextMode {
+        if self.caret.font_page() == 0 {
+            TextMode::Jam2
+        } else {
+            TextMode::Jam1
+        }
+    }   
+
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(graphics_type: GraphicsType) -> Self {
@@ -84,7 +103,7 @@ impl GraphicsScreenBuffer {
                 font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());
             }
             GraphicsType::Skypix => {
-                font_table.insert(0, RIP_FONT.clone());
+                font_table.insert(0, SKYPIX_DEFAULT_FONT.clone());
             }
             GraphicsType::Text => unreachable!(),
         };
@@ -140,6 +159,7 @@ impl GraphicsScreenBuffer {
             selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
             bgi: Bgi::new(PathBuf::new(), Size::new(px_width, px_height)),
+            sky_paint: sky_paint::SkyPaint::new(),
             _igs_state: None,
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
@@ -163,11 +183,8 @@ impl GraphicsScreenBuffer {
 
         // Get colors from palette
         let mut fg_color = ch.attribute.get_foreground() as u32;
-        if ch.attribute.is_bold() && fg_color < 8 {
-            fg_color += 8;
-        }
-
         let bg_color = ch.attribute.get_background() as u32; // Apply color limit
+        println!("'{}': FG: {} BG: {} Bold:{} ", ch.ch, fg_color, bg_color, ch.attribute.is_bold());
 
         let font = if let Some(font) = self.get_font(ch.get_font_page()) {
             font
@@ -184,10 +201,23 @@ impl GraphicsScreenBuffer {
             return None;
         };
 
-        let fill_width = if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
-            // For proportional fonts, use the actual advance width
-            let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
-            let left_bearing = glyph.left_bearing.unwrap_or(0);
+        // For proportional fonts, get bearing values
+        let left_bearing = if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
+            glyph.left_bearing.unwrap_or(0)
+        } else {
+            0
+        };
+
+        let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
+
+        let transparent_bg = self.get_text_mode() == TextMode::Jam1;
+
+        // Render width differs for Skypix vs other modes:
+        // - Skypix: render only the glyph bitmap (no bearing padding)
+        // - Other modes: render full advance width with left/right bearing as background
+        let render_width = if transparent_bg {
+            glyph_width
+        } else if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
             let right_bearing = glyph.right_bearing.unwrap_or(0);
             // Special handling for empty glyphs (like space)
             if glyph_width == 0 && left_bearing > 0 {
@@ -199,22 +229,33 @@ impl GraphicsScreenBuffer {
             font_size.width as i32
         };
 
-        // Render the character (always fill font_size area with background/foreground)
         for row in 0..font_size.height {
-            for col in 0..fill_width {
+            for col in 0..render_width {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
-                if px >= self.pixel_size.width || py >= self.pixel_size.height {
+                if px < 0 || px >= self.pixel_size.width || py < 0 || py >= self.pixel_size.height {
                     continue;
                 }
 
+                // For Skypix: glyph bitmap starts at cursor (col 0 = bitmap col 0)
+                // For other modes: glyph bitmap starts after left_bearing
+                let glyph_col = if transparent_bg { col } else { col - left_bearing };
+
                 // Check if pixel is set in font glyph
-                let is_foreground = if row < glyph.bitmap.pixels.len() as i32 && col < glyph.bitmap.pixels[row as usize].len() as i32 {
-                    glyph.bitmap.pixels[row as usize][col as usize]
+                let is_foreground = if glyph_col >= 0
+                    && row < glyph.bitmap.pixels.len() as i32
+                    && glyph_col < glyph.bitmap.pixels.get(row as usize).map(|r| r.len()).unwrap_or(0) as i32
+                {
+                    glyph.bitmap.pixels[row as usize][glyph_col as usize]
                 } else {
                     false
                 };
+
+                // Skip background pixels for transparent mode (Skypix)
+                if transparent_bg && !is_foreground {
+                    continue;
+                }
 
                 let color = if is_foreground { fg_color } else { bg_color };
 
@@ -231,7 +272,7 @@ impl GraphicsScreenBuffer {
     }
 }
 
-impl TextPane for GraphicsScreenBuffer {
+impl TextPane for AmigaScreenBuffer {
     fn get_char(&self, _pos: Position) -> AttributedChar {
         // won't work for rgba screens.
         AttributedChar::default()
@@ -263,7 +304,7 @@ impl TextPane for GraphicsScreenBuffer {
     }
 }
 
-impl Screen for GraphicsScreenBuffer {
+impl Screen for AmigaScreenBuffer {
     fn ice_mode(&self) -> IceMode {
         self.ice_mode
     }
@@ -455,7 +496,7 @@ impl Screen for GraphicsScreenBuffer {
     }
 }
 
-impl EditableScreen for GraphicsScreenBuffer {
+impl EditableScreen for AmigaScreenBuffer {
     fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
         let mut scrollback = self.scrollback_buffer.clone();
         scrollback.snapshot_current_screen(self);

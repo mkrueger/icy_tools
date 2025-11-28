@@ -1036,6 +1036,9 @@ impl TerminalThread {
                 // ChipMusic needs special handling for timing
                 // Pattern: Multiple voices are started with timing=0, then a "dummy" command
                 // with pitch=0 and timing>0 provides the actual wait period.
+                //
+                // For timing=0: Apply stop_type BEFORE starting the sound (stop old, start new)
+                // For timing>0: Wait first, then apply stop_type AFTER (controls when sounds end)
                 QueuedCommand::Igs(IgsCommand::ChipMusic {
                     sound_effect,
                     voice,
@@ -1044,9 +1047,9 @@ impl TerminalThread {
                     timing,
                     stop_type,
                 }) => {
-                    // Only start sound if pitch > 0 (pitch=0 is just a timing/wait command)
+                    // Start sound if pitch > 0 (rarely used with timing>0)
                     if *pitch > 0 {
-                        let snd_num = (*sound_effect as usize).min(19);
+                        let snd_num = *sound_effect as usize;
                         if let Some(sound) = self.igs_sound_data.get(snd_num) {
                             let _ = self.event_tx.send(TerminalEvent::PlayChipMusic {
                                 sound_data: sound.clone(),
@@ -1056,32 +1059,29 @@ impl TerminalThread {
                             });
                         }
                     }
-
-                    // Only wait if timing > 0
+                    // timing > 0: Wait first, then apply stop_type
                     if *timing > 0 {
                         let wait_ms = (*timing as u64 * 1000) / 200;
                         tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
-
-                        // Apply stop type ONLY after timing period (not for timing=0 commands)
-                        match *stop_type {
-                            StopType::SndOff => {
-                                let _ = self.event_tx.send(TerminalEvent::SndOff(*voice));
-                            }
-                            StopType::StopSnd => {
-                                let _ = self.event_tx.send(TerminalEvent::StopSnd(*voice));
-                            }
-                            StopType::SndOffAll => {
-                                let _ = self.event_tx.send(TerminalEvent::SndOffAll);
-                            }
-                            StopType::StopSndAll => {
-                                let _ = self.event_tx.send(TerminalEvent::StopSndAll);
-                            }
-                            StopType::NoEffect => {}
-                        }
                     }
-                    // For timing=0: Don't apply stop_type - the sound continues playing
-                    // The stop_type in timing=0 commands is typically ignored; the timing command's
-                    // stop_type (usually NoEffect or SndOffAll) controls when voices stop.
+
+                    // Apply stop type AFTER timing period
+                    match *stop_type {
+                        StopType::SndOff => {
+                            let _ = self.event_tx.send(TerminalEvent::SndOff(*voice));
+                        }
+                        StopType::StopSnd => {
+                            let _ = self.event_tx.send(TerminalEvent::StopSnd(*voice));
+                        }
+                        StopType::SndOffAll => {
+                            let _ = self.event_tx.send(TerminalEvent::SndOffAll);
+                        }
+                        StopType::StopSndAll => {
+                            let _ = self.event_tx.send(TerminalEvent::StopSndAll);
+                        }
+                        StopType::NoEffect => {}
+                    }
+
                     continue;
                 }
                 QueuedCommand::Igs(IgsCommand::StopAllSound) => {
@@ -1092,7 +1092,14 @@ impl TerminalThread {
                 QueuedCommand::Igs(IgsCommand::BellsAndWhistles { sound_effect }) => {
                     let snd_num = (*sound_effect as usize).min(19);
                     if let Some(sound) = self.igs_sound_data.get(snd_num) {
-                        let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                        if snd_num <= 4 {
+                            for _ in 0..self.igs_effect_loop {
+                                let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                            }
+                        } else {
+                            let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                        }
                     }
                     continue;
                 }

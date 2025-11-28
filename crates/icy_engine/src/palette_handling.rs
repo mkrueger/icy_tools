@@ -4111,7 +4111,7 @@ macro_rules! amiga_color {
         }
     };
 }
-
+/* 
 pub const AMIGA_PALETTE: [Color; 16] = [
     amiga_color!(00, 00, 00), // Black
     amiga_color!(10, 00, 00), // Red
@@ -4129,25 +4129,48 @@ pub const AMIGA_PALETTE: [Color; 16] = [
     amiga_color!(15, 00, 15), // Bright Violet
     amiga_color!(00, 15, 00), // Bright Cyan
     amiga_color!(15, 15, 15), // White
-];
+];*/
 
 pub const SKYPIX_PALETTE: [Color; 16] = [
-    amiga_color!(00, 00, 00),
-    amiga_color!(01, 01, 15),
-    amiga_color!(13, 13, 13),
-    amiga_color!(15, 00, 00),
-    amiga_color!(00, 15, 01),
-    amiga_color!(03, 10, 15),
-    amiga_color!(15, 15, 02),
-    amiga_color!(12, 00, 14),
-    amiga_color!(00, 11, 06),
-    amiga_color!(00, 13, 13),
-    amiga_color!(00, 10, 15),
-    amiga_color!(00, 07, 12),
-    amiga_color!(00, 00, 15),
-    amiga_color!(07, 00, 15),
-    amiga_color!(12, 00, 14),
-    amiga_color!(12, 00, 08),
+    amiga_color!(00, 00, 00), // Black
+    amiga_color!(01, 01, 15), // Dark Blue
+    amiga_color!(13, 13, 13), // Light Gray
+    amiga_color!(15, 00, 00), // Red
+    amiga_color!(00, 15, 01), // Green
+    amiga_color!(03, 10, 15), // Sky Blue
+    amiga_color!(15, 15, 02), // Yellow
+    amiga_color!(12, 00, 14), // Magenta
+    amiga_color!(00, 11, 06), // Sea Green
+    amiga_color!(00, 13, 13), // Cyan
+    amiga_color!(00, 10, 15), // Light Blue
+    amiga_color!(00, 07, 12), // Steel Blue
+    amiga_color!(00, 00, 15), // Blue
+    amiga_color!(07, 00, 15), // Purple
+    amiga_color!(12, 00, 14), // Violet
+    amiga_color!(12, 00, 08), // Maroon
+];
+
+/// 8-color Skypix palette (3-bitplane mode)
+/// In 8-color mode, only the first 8 colors are available
+/// Colors 8-15 wrap around to 0-7
+pub const SKYPIX_PALETTE_8: [Color; 16] = [
+    amiga_color!(00, 00, 00), // 0: Black
+    amiga_color!(01, 01, 15), // 1: Dark Blue
+    amiga_color!(13, 13, 13), // 2: Light Gray
+    amiga_color!(15, 00, 00), // 3: Red
+    amiga_color!(00, 15, 01), // 4: Green
+    amiga_color!(03, 10, 15), // 5: Sky Blue
+    amiga_color!(15, 15, 02), // 6: Yellow
+    amiga_color!(12, 00, 14), // 7: Magenta
+    // Colors 8-15 wrap to 0-7
+    amiga_color!(00, 00, 00), // 8: Black (= 0)
+    amiga_color!(01, 01, 15), // 9: Dark Blue (= 1)
+    amiga_color!(13, 13, 13), // 10: Light Gray (= 2)
+    amiga_color!(15, 00, 00), // 11: Red (= 3)
+    amiga_color!(00, 15, 01), // 12: Green (= 4)
+    amiga_color!(03, 10, 15), // 13: Sky Blue (= 5)
+    amiga_color!(15, 15, 02), // 14: Yellow (= 6)
+    amiga_color!(12, 00, 14), // 15: Magenta (= 7)
 ];
 
 fn convert_vector(temp2: f32, temp1: f32, mut x: f32) -> u8 {
