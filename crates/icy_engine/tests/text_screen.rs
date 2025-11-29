@@ -1017,3 +1017,80 @@ fn test_insert_mode_no_gaps() {
     assert_eq!(screen.get_char(Position::new(9, 0)).ch, 'L');
     assert_eq!(screen.get_char(Position::new(10, 0)).ch, 'D');
 }
+
+#[test]
+fn test_insert_line_in_scroll_region() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    screen.terminal_state_mut().set_margins_top_bottom(1, 20); // 0-based, rows 1-20
+
+    // Put text on row 1
+    screen.set_char(Position::new(0, 1), AttributedChar::new('A', TextAttribute::default()));
+
+    // Insert a line at row 1 - should push 'A' to row 2
+    screen.insert_terminal_line(1);
+
+    // Row 1 should be empty, row 2 should have 'A'
+    let ch1 = screen.get_char(Position::new(0, 1));
+    let ch2 = screen.get_char(Position::new(0, 2));
+
+    assert!(ch1.is_transparent() || ch1.ch == '\0' || ch1.ch == ' ', "Row 1 should be empty, got: {:?}", ch1);
+    assert_eq!(ch2.ch, 'A', "Row 2 should have 'A', got: {:?}", ch2);
+}
+
+#[test]
+fn test_insert_line_outside_scroll_region() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    screen.terminal_state_mut().set_margins_top_bottom(1, 20); // 0-based, rows 1-20
+
+    // Put text on row 1
+    screen.set_char(Position::new(0, 1), AttributedChar::new('A', TextAttribute::default()));
+
+    // Try to insert a line at row 0 (outside scroll region) - should do nothing
+    screen.insert_terminal_line(0);
+
+    // Row 1 should still have 'A'
+    let ch1 = screen.get_char(Position::new(0, 1));
+    assert_eq!(ch1.ch, 'A', "Row 1 should still have 'A', got: {:?}", ch1);
+}
+
+#[test]
+fn test_cpbug2_sequence() {
+    use icy_engine::parsers::ansi;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+
+    // The sequence from cpbug2.ans end:
+    // 1. Set scroll region [2;21r (1-based) = rows 1-20 (0-based)
+    screen.terminal_state_mut().set_margins_top_bottom(1, 20);
+
+    // 2. Move to row 2 (1-based) = row 1 (0-based)
+    screen.set_caret_position(Position::new(0, 1));
+
+    // 3. Insert 20 lines - should clear the scroll region
+    for _ in 0..20 {
+        screen.insert_terminal_line(1);
+    }
+
+    // 4. Write "Screen END !" on row 1
+    let text = "Screen END !";
+    for (i, c) in text.chars().enumerate() {
+        screen.set_char(Position::new(i as i32, 1), AttributedChar::new(c, TextAttribute::default()));
+    }
+
+    // 5. Do the [A[L[B sequence 18 times (cursor at row 1)
+    // [A - cursor up to row 0 (outside scroll region!)
+    // [L - insert line (should have NO effect since row 0 is outside region)
+    // [B - cursor down to row 1
+    for _ in 0..18 {
+        // These insert lines should have NO effect since cursor is at row 0
+        screen.insert_terminal_line(0); // This should do nothing!
+    }
+
+    // "Screen END !" should still be on row 1
+    let ch = screen.get_char(Position::new(0, 1));
+    assert_eq!(ch.ch, 'S', "Expected 'S' at row 1, col 0, got: {:?}", ch);
+
+    // Row 2 should be empty
+    let ch2 = screen.get_char(Position::new(0, 2));
+    assert!(ch2.is_transparent() || ch2.ch == ' ' || ch2.ch == '\0', "Row 2 should be empty, got: {:?}", ch2);
+}

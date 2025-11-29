@@ -300,6 +300,16 @@ impl TerminalState {
         self.margins_left_right = None;
     }
 
+    /// Returns true if the given position is within the scroll region (top/bottom margins).
+    /// This is used for scrolling operations which should respect margins regardless of origin mode.
+    pub fn in_scroll_region(&self, pos: Position) -> bool {
+        if let Some((top, bottom)) = self.margins_top_bottom {
+            pos.y >= top && pos.y <= bottom
+        } else {
+            false
+        }
+    }
+
     /// Returns true if the given position is within the current text margins.
     /// Retruns false if origin mode is UpperLeftCorner or position is outside margins.
     pub fn in_margin(&self, pos: Position) -> bool {

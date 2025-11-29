@@ -558,24 +558,76 @@ impl EditableScreen for TextScreen {
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
-        if line >= self.buffer.get_line_count() {
-            return;
-        }
-        self.buffer.layers[self.current_layer].remove_line(line);
-        if let Some((_, end)) = self.terminal_state_mut().get_margins_top_bottom() {
-            let buffer_width = self.buffer.layers[self.current_layer].get_width();
-            self.buffer.layers[self.current_layer].insert_line(end, Line::with_capacity(buffer_width));
+        // DL (Delete Line) - Delete lines at cursor position
+        // Lines are scrolled up within the scroll region, blank line added at bottom
+        // If cursor is outside scroll region, the operation has no effect.
+        let start_column = self.get_first_editable_column();
+        let end_column = self.get_last_editable_column();
+
+        let top = self.get_first_editable_line();
+        let bottom = self.get_last_editable_line();
+
+        if self.terminal_state().get_margins_top_bottom().is_some() {
+            // If cursor is outside scroll region, do nothing
+            if line < top || line > bottom {
+                return;
+            }
+
+            // Shift lines up within the scroll region
+            let layer_ref = &mut self.buffer.layers[self.current_layer];
+            for x in start_column..=end_column {
+                // Move from delete position to bottom
+                for y in line..bottom {
+                    let ch = layer_ref.get_char((x, y + 1).into());
+                    layer_ref.set_char((x, y), ch);
+                }
+                // Clear the bottom line
+                layer_ref.set_char((x, bottom), AttributedChar::default());
+            }
+        } else {
+            // No scroll region - just remove the line
+            if line >= self.buffer.get_line_count() {
+                return;
+            }
+            self.buffer.layers[self.current_layer].remove_line(line);
         }
     }
 
     fn insert_terminal_line(&mut self, line: i32) {
-        if let Some((_, end)) = self.terminal_state_mut().get_margins_top_bottom() {
-            if end < self.buffer.layers[self.current_layer].lines.len() as i32 {
-                self.buffer.layers[self.current_layer].lines.remove(end as usize);
+        // IL (Insert Line) - Insert blank lines at cursor position
+        // Lines are scrolled down within the scroll region, bottom line is lost
+        // If cursor is outside scroll region, the operation has no effect.
+        let start_column = self.get_first_editable_column();
+        let end_column = self.get_last_editable_column();
+
+        let top = self.get_first_editable_line();
+        let bottom = self.get_last_editable_line();
+
+        if self.terminal_state().get_margins_top_bottom().is_some() {
+            // If cursor is outside scroll region, do nothing
+            if line < top || line > bottom {
+                return;
             }
+
+            // Shift lines down within the scroll region (bottom line is lost)
+            let layer_ref = &mut self.buffer.layers[self.current_layer];
+            for x in start_column..=end_column {
+                // Move from bottom-1 to cursor position (in reverse to avoid overwriting)
+                // Note: bottom is the last line in scroll region (0-based, inclusive)
+                // We shift lines line..bottom down to line+1..bottom+1
+                // The content at 'bottom' is lost (pushed out of scroll region)
+                for y in (line..bottom).rev() {
+                    let ch = layer_ref.get_char((x, y).into());
+                    layer_ref.set_char((x, y + 1), ch);
+                }
+                // Clear the inserted line
+                layer_ref.set_char((x, line), AttributedChar::default());
+            }
+        } else {
+            // No scroll region - insert line at cursor, pushing everything down
+            let buffer_width = self.buffer.layers[self.current_layer].get_width();
+            self.buffer.layers[self.current_layer].insert_line(line, Line::with_capacity(buffer_width));
         }
-        let buffer_width = self.buffer.layers[self.current_layer].get_width();
-        self.buffer.layers[self.current_layer].insert_line(line, Line::with_capacity(buffer_width));
     }
 
     fn clear_screen(&mut self) {
