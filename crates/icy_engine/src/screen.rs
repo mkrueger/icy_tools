@@ -357,9 +357,7 @@ pub trait EditableScreen: Screen {
 
     // Terminal control sequences
     fn lf(&mut self) {
-        let _was_ooe = self.caret().y > self.get_last_editable_line();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
-
         let mut pos = self.caret().position();
 
         pos.x = self.get_first_editable_column();
@@ -378,9 +376,8 @@ pub trait EditableScreen: Screen {
             self.set_caret_position(pos);
             return;
         }
-
         self.set_caret_position(pos);
-        self.check_scrolling_on_caret_down(false);
+        self.check_scrolling_on_caret_down(false, in_margin);
         self.limit_caret_pos(in_margin);
     }
 
@@ -509,7 +506,7 @@ pub trait EditableScreen: Screen {
             self.caret_mut().x = x;
         }
         if scroll {
-            self.check_scrolling_on_caret_down(false);
+            self.check_scrolling_on_caret_down(false, in_margin);
         }
         self.limit_caret_pos(in_margin);
     }
@@ -529,7 +526,7 @@ pub trait EditableScreen: Screen {
             self.caret_mut().x = x;
         }
         if scroll {
-            self.check_scrolling_on_caret_down(false);
+            self.check_scrolling_on_caret_down(false, in_margin);
         }
         self.limit_caret_pos(in_margin);
     }
@@ -539,7 +536,7 @@ pub trait EditableScreen: Screen {
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().y = y;
         if scroll {
-            self.check_scrolling_on_caret_up(false);
+            self.check_scrolling_on_caret_up(false, in_margin);
         }
         self.limit_caret_pos(in_margin);
     }
@@ -549,7 +546,7 @@ pub trait EditableScreen: Screen {
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().y = y;
         if scroll {
-            self.check_scrolling_on_caret_down(false);
+            self.check_scrolling_on_caret_down(false, in_margin);
         }
         self.limit_caret_pos(in_margin);
     }
@@ -559,7 +556,7 @@ pub trait EditableScreen: Screen {
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         pos.y += 1;
         self.set_caret_position(pos);
-        self.check_scrolling_on_caret_down(true);
+        self.check_scrolling_on_caret_down(true, in_margin);
         self.limit_caret_pos(in_margin);
     }
 
@@ -570,14 +567,14 @@ pub trait EditableScreen: Screen {
         pos.x = 0;
         self.set_caret_position(pos);
         if scroll {
-            self.check_scrolling_on_caret_down(true);
+            self.check_scrolling_on_caret_down(true, in_margin);
         }
         self.limit_caret_pos(in_margin);
     }
 
-    fn check_scrolling_on_caret_up(&mut self, force: bool) {
+    fn check_scrolling_on_caret_up(&mut self, force: bool, was_in_margin: bool) {
         if self.terminal_state().needs_scrolling() || force {
-            let last: i32 = self.get_first_editable_line();
+            let last: i32 = if was_in_margin { self.get_first_editable_line() } else { 0 };
             while self.caret_position().y < last {
                 self.scroll_down();
                 let mut pos = self.caret_position();
@@ -587,8 +584,13 @@ pub trait EditableScreen: Screen {
         }
     }
 
-    fn check_scrolling_on_caret_down(&mut self, force: bool) {
-        if (self.terminal_state().needs_scrolling() || force) && self.caret_position().y > self.get_last_editable_line() {
+    fn check_scrolling_on_caret_down(&mut self, force: bool, was_in_margin: bool) {
+        let last = if was_in_margin {
+            self.get_last_editable_line()
+        } else {
+            self.get_height() - 1
+        };
+        if (self.terminal_state().needs_scrolling() || force) && self.caret_position().y > last {
             self.scroll_up();
             let mut pos = self.caret_position();
             pos.y -= 1;

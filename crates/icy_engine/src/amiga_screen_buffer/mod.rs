@@ -1052,7 +1052,7 @@ impl EditableScreen for AmigaScreenBuffer {
                 self.caret.y -= font_size.height;
                 self.caret.x = (self.pixel_size.width - font_size.width).max(0);
                 if scroll {
-                    self.check_scrolling_on_caret_up(false);
+                    self.check_scrolling_on_caret_up(false, false);
                 }
                 self.limit_caret_pos(false);
                 return;
@@ -1062,7 +1062,7 @@ impl EditableScreen for AmigaScreenBuffer {
         // Move left by num characters (in pixels)
         self.caret.x = (self.caret.x - num * font_size.width).max(0);
         if scroll {
-            self.check_scrolling_on_caret_up(false);
+            self.check_scrolling_on_caret_up(false, false);
         }
         self.limit_caret_pos(false);
     }
@@ -1086,9 +1086,9 @@ impl EditableScreen for AmigaScreenBuffer {
                 self.caret.x = 0;
                 self.caret.y += font_size.height;
                 // Use existing scrolling logic to handle terminal buffers
-                self.check_scrolling_on_caret_down(true);
+                self.check_scrolling_on_caret_down(true, false);
                 if scroll {
-                    self.check_scrolling_on_caret_up(false);
+                    self.check_scrolling_on_caret_up(false, false);
                 }
                 self.limit_caret_pos(false);
                 return;
@@ -1098,7 +1098,7 @@ impl EditableScreen for AmigaScreenBuffer {
         // Move right by num characters (in pixels)
         self.caret.x = (self.caret.x + num * font_size.width).min(self.pixel_size.width - 1);
         if scroll {
-            self.check_scrolling_on_caret_up(false);
+            self.check_scrolling_on_caret_up(false, false);
         }
         self.limit_caret_pos(false);
     }
@@ -1108,7 +1108,7 @@ impl EditableScreen for AmigaScreenBuffer {
         let font_size = self.get_font_dimensions();
         self.caret_mut().y -= num * font_size.height;
         if scroll {
-            self.check_scrolling_on_caret_up(false);
+            self.check_scrolling_on_caret_up(false, false);
         }
     }
 
@@ -1117,11 +1117,11 @@ impl EditableScreen for AmigaScreenBuffer {
         let font_size = self.get_font_dimensions();
         self.caret_mut().y += num * font_size.height;
         if scroll {
-            self.check_scrolling_on_caret_down(false);
+            self.check_scrolling_on_caret_down(false, false);
         }
     }
 
-    fn check_scrolling_on_caret_up(&mut self, force: bool) {
+    fn check_scrolling_on_caret_up(&mut self, force: bool, _in_margin: bool) {
         let font_size = self.get_font_dimensions();
         if self.terminal_state().needs_scrolling() || force {
             while self.caret.y < 0 {
@@ -1131,7 +1131,7 @@ impl EditableScreen for AmigaScreenBuffer {
         }
     }
 
-    fn check_scrolling_on_caret_down(&mut self, force: bool) {
+    fn check_scrolling_on_caret_down(&mut self, force: bool, _in_margin: bool) {
         let font_size = self.get_font_dimensions();
         // Scroll up if caret.y + font_height would exceed screen height
         if self.terminal_state().needs_scrolling() || force {
