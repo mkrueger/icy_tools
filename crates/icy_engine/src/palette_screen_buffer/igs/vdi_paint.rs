@@ -53,12 +53,6 @@ unsafe impl Send for VdiPaint {}
 
 unsafe impl Sync for VdiPaint {}
 
-impl Default for VdiPaint {
-    fn default() -> Self {
-        VdiPaint::new(TerminalResolution::Low)
-    }
-}
-
 impl VdiPaint {
     pub fn new(terminal_resolution: TerminalResolution) -> Self {
         let default_color = terminal_resolution.default_fg_color();

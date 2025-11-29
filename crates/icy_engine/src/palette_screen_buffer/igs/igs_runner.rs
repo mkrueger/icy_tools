@@ -21,6 +21,7 @@ fn get_color_map(buf: &dyn EditableScreen) -> (usize, &'static [u8; 16]) {
 }
 
 fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsCommand) {
+    //  println!("Executing IGS command: {:?}", cmd); // --- IGNORE ---
     match cmd {
         IgsCommand::Box { x1, y1, x2, y2, rounded } => {
             let (x1, y1, x2, y2) = (
@@ -466,7 +467,6 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         IgsCommand::SetResolution { resolution, palette } => {
             use icy_parser_core::PaletteMode;
-
             buf.set_graphics_type(GraphicsType::IGS(resolution));
 
             // Update executor's terminal resolution
@@ -671,7 +671,12 @@ impl crate::PaletteScreenBuffer {
     pub(crate) fn handle_igs_command_impl(&mut self, cmd: IgsCommand) {
         // Initialize IGS state if not present
         if self.igs_state.is_none() {
-            self.igs_state = Some(VdiPaint::default());
+            let res = if let GraphicsType::IGS(term_res) = self.graphics_type {
+                term_res
+            } else {
+                icy_parser_core::TerminalResolution::Low
+            };
+            self.igs_state = Some(VdiPaint::new(res));
         }
 
         // Take ownership temporarily to avoid borrow conflicts

@@ -17,7 +17,7 @@ pub fn test_skypix() {
             continue;
         }
         let cur_entry = entry.path();
-        println!("Testing file: {:?}", cur_entry);
+        log::info!("Testing file: {:?}", cur_entry);
 
         let data = fs::read(cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 

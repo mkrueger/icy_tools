@@ -695,14 +695,14 @@ impl IgsCommandType {
                 // p2 = style (1-6 for polymarker, 1-7 for line)
                 // p3 = size/thickness/endpoints
 
-                let m_type = params.get(0).map(|p| p.value()).unwrap_or(0);
-                let style = params.get(1).map(|p| p.value()).unwrap_or(1);
-                let value = params.get(2).map(|p| p.value()).unwrap_or(1);
-                if m_type < 1 || m_type > 2 {
+                let p1 = params.get(0).map(|p| p.value()).unwrap_or(0);
+                let p2 = params.get(1).map(|p| p.value()).unwrap_or(1);
+                let p3 = params.get(2).map(|p| p.value()).unwrap_or(1);
+                if p1 < 1 || p1 > 2 {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "LineType",
-                            value: format!("{}", m_type),
+                            value: format!("{}", p1),
                             expected: Some("type: 1=polymarker, 2=line".to_string()),
                         },
                         crate::ErrorLevel::Error,
@@ -710,9 +710,9 @@ impl IgsCommandType {
                     return None;
                 }
 
-                let style = if m_type == 1 {
+                let style = if p1 == 1 {
                     // Polymarker: p2=type(1-6), p3=size(1-8)
-                    let mut poly_kind = style;
+                    let mut poly_kind = p2;
                     if poly_kind < 1 || poly_kind > 6 {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
@@ -725,12 +725,12 @@ impl IgsCommandType {
                         poly_kind = 1;
                     }
 
-                    let mut poly_size = value;
+                    let mut poly_size = p3;
                     if poly_size < 1 || poly_size > 8 {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
-                                value: format!("{}", value),
+                                value: format!("{}", p3),
                                 expected: Some("polymarker size (1-8)".to_string()),
                             },
                             crate::ErrorLevel::Warning,
@@ -742,12 +742,12 @@ impl IgsCommandType {
                     LineMarkerStyle::PolyMarkerSize(kind, poly_size as u8)
                 } else {
                     // Line: p2=type(1-7), p3=thickness(1-41) or endpoints(0,50-54,60-64)
-                    let mut line_kind = style;
+                    let mut line_kind = p2;
                     if line_kind < 1 || line_kind > 7 {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
-                                value: format!("{}", style),
+                                value: format!("{}", p2),
                                 expected: Some("valid LineKind (1-7)".to_string()),
                             },
                             crate::ErrorLevel::Warning,
@@ -758,13 +758,13 @@ impl IgsCommandType {
                     let kind = LineKind::try_from(line_kind).unwrap_or_default();
 
                     // Parse p3 based on C code logic
-                    if value > 0 && value < 42 {
+                    if p3 > 0 && p3 < 42 {
                         // Thickness mode: force non-solid lines to thickness 1
-                        let thickness = if line_kind > 1 { 1 } else { value as u8 };
+                        let thickness = if line_kind > 1 { 1 } else { p3 as u8 };
                         LineMarkerStyle::LineThickness(kind, thickness)
                     } else {
                         // Endpoint mode
-                        let (left, right) = match value {
+                        let (left, right) = match p3 {
                             0 => (ArrowEnd::Square, ArrowEnd::Square),
                             50 => (ArrowEnd::Arrow, ArrowEnd::Arrow),
                             51 => (ArrowEnd::Arrow, ArrowEnd::Square),
@@ -780,7 +780,7 @@ impl IgsCommandType {
                                 sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "LineType",
-                                        value: format!("{}", value),
+                                        value: format!("{}", p3),
                                         expected: Some("thickness (1-41) or endpoints (0,50-54,60-64)".to_string()),
                                     },
                                     crate::ErrorLevel::Warning,

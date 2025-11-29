@@ -8,9 +8,7 @@ impl VdiPaint {
     pub(super) fn calc_circle_y_radius(&self, radius: i32) -> i32 {
         let (xsize, ysize) = match self.terminal_resolution {
             TerminalResolution::Low => (338, 372),
-            // We've 2 cases for y_rad: not sure how to determine which one is correct in which situation
-            // TerminalResolution::Medium  => (338, 372 * 2),
-            TerminalResolution::Medium => (372, 372),
+            TerminalResolution::Medium => (169, 372),
             TerminalResolution::High => (372, 372),
         };
 
@@ -30,7 +28,6 @@ impl VdiPaint {
     }
 
     fn draw_ellipse_border(&mut self, buf: &mut dyn EditableScreen, center_x: i32, center_y: i32, radius_x: i32, radius_y: i32, color: u8) {
-        let radius_y = self.calc_circle_y_radius(radius_y);
         let points: Vec<i32> = gdp_curve(center_x, center_y, radius_x, radius_y, 0, TWOPI as i32);
         self.draw_poly(buf, &points, color, false);
     }
@@ -82,7 +79,6 @@ impl VdiPaint {
     }
 
     fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, center_x: i32, center_y: i32, radius_x: i32, radius_y: i32) {
-        let radius_y = self.calc_circle_y_radius(radius_y);
         let points: Vec<i32> = gdp_curve(center_x, center_y, radius_x, radius_y, 0, TWOPI as i32);
         self.fill_poly(buf, &points);
     }

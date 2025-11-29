@@ -52,7 +52,6 @@ pub struct PaletteScreenBuffer {
     graphics_type: GraphicsType,
 
     // Scan lines for Atari ST Medium resolution (doubles line height)
-    pub scan_lines: bool,
     pub scrollback_buffer: ScrollbackBuffer,
 }
 
@@ -120,12 +119,6 @@ impl PaletteScreenBuffer {
             }
         }
 
-        let scan_lines = match graphics_type {
-            GraphicsType::IGS(term_res) => term_res.use_scanlines(),
-            GraphicsType::Skypix => true,
-            _ => false,
-        };
-
         Self {
             pixel_size: Size::new(px_width, px_height),        // Store character dimensions
             char_screen_size: Size::new(char_cols, char_rows), // Store pixel dimensions
@@ -146,7 +139,6 @@ impl PaletteScreenBuffer {
             saved_pos: Position::default(),
             saved_cursor_state: SavedCaretState::default(),
             graphics_type,
-            scan_lines,
             scrollback_buffer: ScrollbackBuffer::new(),
         }
     }
@@ -274,7 +266,7 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn scan_lines(&self) -> bool {
-        self.scan_lines
+        self.graphics_type().scan_lines()
     }
 
     fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
@@ -291,7 +283,7 @@ impl Screen for PaletteScreenBuffer {
             return (Size::new(0, 0), Vec::new());
         }
 
-        let scan_lines = options.override_scan_lines.unwrap_or(self.scan_lines);
+        let scan_lines = options.override_scan_lines.unwrap_or(self.scan_lines());
         let width_usize = width as usize;
         let screen_width = self.pixel_size.width as usize;
         let palette_len = palette_cache_rgba.len();
@@ -511,11 +503,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType) {
         self.graphics_type = graphics_type;
-
-        self.scan_lines = match graphics_type {
-            GraphicsType::IGS(term_res) => term_res.use_scanlines(),
-            _ => false,
-        };
 
         match graphics_type {
             GraphicsType::IGS(res) => {

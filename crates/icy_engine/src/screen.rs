@@ -18,6 +18,19 @@ pub enum GraphicsType {
 }
 
 impl GraphicsType {
+    pub fn scan_lines(&self) -> bool {
+        match self {
+            GraphicsType::Text => false,
+            GraphicsType::Rip => false,
+            GraphicsType::IGS(res) => match res {
+                TerminalResolution::Low => false,
+                TerminalResolution::Medium => true,
+                TerminalResolution::High => false,
+            },
+            GraphicsType::Skypix => false,
+        }
+    }
+
     pub fn default_fg_color(&self) -> u32 {
         match self {
             GraphicsType::Text => 7,

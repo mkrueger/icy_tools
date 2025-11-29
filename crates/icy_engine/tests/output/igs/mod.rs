@@ -26,6 +26,7 @@ pub fn test_igs_midres() {
         if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("ig") {
             continue;
         }
+        log::info!("Testing IGS file: {:?}", cur_entry);
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
         let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, true).create_screen(TerminalEmulation::AtariST, None);
