@@ -322,25 +322,21 @@ impl WindowManager {
                             }
                         }
 
-                        if modifiers.shift() {
-                            if modifiers.command() {
-                                match &key {
-                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                        "n" => return Some(WindowManagerMessage::OpenWindow),
-                                        _ => {}
-                                    },
+                        if modifiers.command() {
+                            match &key {
+                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
+                                    #[cfg(target_os = "macos")]
+                                    "n" => return Some(WindowManagerMessage::OpenWindow),
+                                    #[cfg(not(target_os = "macos"))]
+                                    "n" => {
+                                        if modifiers.shift() {
+                                            return Some(WindowManagerMessage::OpenWindow);
+                                        }
+                                    }
+                                    "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
                                     _ => {}
-                                }
-                            }
-                        } else {
-                            if modifiers.command() {
-                                match &key {
-                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                        "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
-                                        _ => {}
-                                    },
-                                    _ => {}
-                                }
+                                },
+                                _ => {}
                             }
                         }
 

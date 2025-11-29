@@ -604,7 +604,6 @@ impl MainWindow {
                         Some(t) => t,
                         None => return Task::none(),
                     };
-
                     let mut contents = Vec::with_capacity(4);
 
                     // On windows the ordering is important - text must be last to be recognized properly
@@ -1481,6 +1480,11 @@ impl MainWindow {
                                     "a" => return Some(Message::ShowAboutDialog),
                                     #[cfg(not(target_os = "macos"))]
                                     "c" => return Some(Message::ClearScreen),
+                                    #[cfg(target_os = "macos")]
+                                    "c" => return Some(Message::Copy),
+                                    #[cfg(target_os = "macos")]
+                                    "v" => return Some(Message::Paste),
+
                                     "b" => return Some(Message::ShowScrollback),
                                     "r" => return Some(Message::ShowRunScriptDialog),
                                     "t" => return Some(Message::ShowOpenSerialDialog),
