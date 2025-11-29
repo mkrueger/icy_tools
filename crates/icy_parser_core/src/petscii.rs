@@ -564,7 +564,9 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::Backspace);
+                    // Backspace on C64 wraps around to end of previous line
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
+                    sink.emit(TerminalCommand::Delete);
                     start = i + 1;
                 }
 
