@@ -145,7 +145,7 @@ pub struct ConnectionConfig {
 /// Queued command for processing
 #[derive(Debug, Clone)]
 enum QueuedCommand {
-    Print(Vec<u8>, bool), // text, inverse_video
+    Print(Vec<u8>),
     Command(ParserCommand),
     Music(AnsiMusic),
     Rip(RipCommand),
@@ -161,87 +161,67 @@ enum QueuedCommand {
 }
 
 /// Custom CommandSink that queues commands instead of executing them immediately
-struct QueueingSink {
-    command_queue: Arc<Mutex<VecDeque<QueuedCommand>>>,
-    inverse_video: bool,
+struct QueueingSink<'a> {
+    command_queue: &'a mut VecDeque<QueuedCommand>,
 }
 
-impl QueueingSink {
-    fn new() -> Self {
-        Self {
-            command_queue: Arc::new(Mutex::new(VecDeque::new())),
-            inverse_video: false,
-        }
+impl<'a> QueueingSink<'a> {
+    fn new(queue: &'a mut VecDeque<QueuedCommand>) -> Self {
+        Self { command_queue: queue }
     }
 }
 
-impl CommandSink for QueueingSink {
+impl CommandSink for QueueingSink<'_> {
     fn print(&mut self, text: &[u8]) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::Print(text.to_vec(), self.inverse_video));
+        self.command_queue.push_back(QueuedCommand::Print(text.to_vec()));
     }
 
     fn emit(&mut self, cmd: ParserCommand) {
-        // Track inverse video state for SGR commands
-        if let ParserCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(on)) = &cmd {
-            self.inverse_video = *on;
-        }
-
-        // Handle special commands that need immediate processing
-        let mut queue = self.command_queue.lock();
         match &cmd {
             ParserCommand::Bell => {
-                queue.push_back(QueuedCommand::Bell);
+                self.command_queue.push_back(QueuedCommand::Bell);
             }
             ParserCommand::CsiResizeTerminal(height, width) => {
-                queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
+                self.command_queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
             }
             _ => {
-                queue.push_back(QueuedCommand::Command(cmd));
+                self.command_queue.push_back(QueuedCommand::Command(cmd));
             }
         }
     }
 
     fn play_music(&mut self, music: AnsiMusic) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::Music(music));
+        self.command_queue.push_back(QueuedCommand::Music(music));
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::Rip(cmd));
+        self.command_queue.push_back(QueuedCommand::Rip(cmd));
     }
 
     fn emit_skypix(&mut self, cmd: SkypixCommand) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::Skypix(cmd));
+        self.command_queue.push_back(QueuedCommand::Skypix(cmd));
     }
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::Igs(cmd));
+        self.command_queue.push_back(QueuedCommand::Igs(cmd));
     }
 
     fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::ViewData(cmd));
+        self.command_queue.push_back(QueuedCommand::ViewData(cmd));
         // Return false since we can't check row change here - it will be done when command is executed
         false
     }
 
     fn device_control(&mut self, dcs: DeviceControlString) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::DeviceControl(dcs));
+        self.command_queue.push_back(QueuedCommand::DeviceControl(dcs));
     }
 
     fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::OperatingSystemCommand(osc));
+        self.command_queue.push_back(QueuedCommand::OperatingSystemCommand(osc));
     }
 
     fn aps(&mut self, data: &[u8]) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::Aps(data.to_vec()));
+        self.command_queue.push_back(QueuedCommand::Aps(data.to_vec()));
     }
 
     fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
@@ -249,8 +229,7 @@ impl CommandSink for QueueingSink {
     }
 
     fn request(&mut self, request: TerminalRequest) {
-        let mut queue = self.command_queue.lock();
-        queue.push_back(QueuedCommand::TerminalRequest(request));
+        self.command_queue.push_back(QueuedCommand::TerminalRequest(request));
     }
 }
 
@@ -284,7 +263,7 @@ pub struct TerminalThread {
     capture_writer: Option<BufWriter<tokio::fs::File>>,
 
     // Command queue for granular locking
-    queueing_sink: QueueingSink,
+    command_queue: VecDeque<QueuedCommand>,
 
     // Download directory
     download_directory: Option<PathBuf>,
@@ -334,7 +313,7 @@ impl TerminalThread {
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
             capture_writer: None,
-            queueing_sink: QueueingSink::new(),
+            command_queue: VecDeque::new(),
             download_directory: None,
             double_step_vsyncs: None,
             script_runner: None,
@@ -918,480 +897,358 @@ impl TerminalThread {
             }
 
             // Parse the complete UTF-8 data
-            self.parser.parse(&to_process, &mut self.queueing_sink);
+            let mut sink = QueueingSink::new(&mut self.command_queue);
+            self.parser.parse(&to_process, &mut sink);
         } else {
             // Legacy mode: parse bytes directly - this preserves high-ASCII
-            self.parser.parse(data, &mut self.queueing_sink);
+            let mut sink = QueueingSink::new(&mut self.command_queue);
+            self.parser.parse(data, &mut sink);
         }
 
         // Process the command queue with granular locking
         self.process_command_queue().await;
     }
 
+    /// Check if command needs async processing (delays, sound, etc.)
+    /// Returns true if command was handled
+    async fn try_process_async_command(&mut self, cmd: &QueuedCommand) -> bool {
+        match cmd {
+            QueuedCommand::Igs(IgsCommand::Pause { pause_type }) => {
+                if pause_type.is_double_step_config() {
+                    self.double_step_vsyncs = pause_type.get_double_step_vsyncs();
+                } else {
+                    let delay_ms = pause_type.ms().min(10_000);
+                    if delay_ms > MIN_PAUSE_DISPLAY_MS {
+                        self.send_event(TerminalEvent::InformDelay(delay_ms));
+                    }
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    if delay_ms > MIN_PAUSE_DISPLAY_MS {
+                        self.send_event(TerminalEvent::ContinueAfterDelay);
+                    }
+                }
+                true
+            }
+
+            QueuedCommand::Skypix(SkypixCommand::Delay { jiffies }) => {
+                let delay_ms = 1000 * (*jiffies) as u64 / 60;
+                self.send_event(TerminalEvent::InformDelay(delay_ms));
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                self.send_event(TerminalEvent::ContinueAfterDelay);
+                true
+            }
+
+            QueuedCommand::Skypix(SkypixCommand::CrcTransfer { mode, filename, .. }) => {
+                let file_name = if filename.is_empty() { None } else { Some(filename.clone()) };
+                log::info!("SkyPix CRC transfer initiated: mode={:?}, filename={:?}", mode, file_name);
+                self.send_event(TerminalEvent::AutoTransferTriggered(TransferProtocolType::XModem, true, file_name));
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::SetEffectLoops { count }) => {
+                self.igs_effect_loop = *count;
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::AlterSoundEffect {
+                play,
+                sound_effect,
+                element_num,
+                negative_flag,
+                thousands,
+                hundreds,
+            }) => {
+                let snd_num = (*sound_effect as usize).min(19);
+                let elem_num = (*element_num as usize).min(55);
+                let thousands_clamped = (*thousands as i32).min(32) * 1000;
+                let mut value = thousands_clamped + (*hundreds as i32);
+                if *negative_flag != 0 {
+                    value = -value;
+                }
+                if let Some(sound) = self.igs_sound_data.get_mut(snd_num) {
+                    if elem_num < sound.len() {
+                        sound[elem_num] = value as i16;
+                    }
+                }
+                if *play {
+                    if let Some(sound) = self.igs_sound_data.get(snd_num) {
+                        let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                    }
+                }
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { sound_effect }) => {
+                let snd_num = (*sound_effect as usize).min(19);
+                if let Some(original) = sound_data(snd_num) {
+                    if let Some(sound) = self.igs_sound_data.get_mut(snd_num) {
+                        *sound = original.to_vec();
+                    }
+                }
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::ChipMusic {
+                sound_effect,
+                voice,
+                volume,
+                pitch,
+                timing,
+                stop_type,
+            }) => {
+                if *pitch > 0 {
+                    let snd_num = *sound_effect as usize;
+                    if let Some(sound) = self.igs_sound_data.get(snd_num) {
+                        let _ = self.event_tx.send(TerminalEvent::PlayChipMusic {
+                            sound_data: sound.clone(),
+                            voice: *voice,
+                            volume: *volume,
+                            pitch: *pitch,
+                        });
+                    }
+                }
+                if *timing > 0 {
+                    let wait_ms = (*timing as u64 * 1000) / 200;
+                    tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+                }
+                match *stop_type {
+                    StopType::SndOff => {
+                        let _ = self.event_tx.send(TerminalEvent::SndOff(*voice));
+                    }
+                    StopType::StopSnd => {
+                        let _ = self.event_tx.send(TerminalEvent::StopSnd(*voice));
+                    }
+                    StopType::SndOffAll => {
+                        let _ = self.event_tx.send(TerminalEvent::SndOffAll);
+                    }
+                    StopType::StopSndAll => {
+                        let _ = self.event_tx.send(TerminalEvent::StopSndAll);
+                    }
+                    StopType::NoEffect => {}
+                }
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::StopAllSound) => {
+                let _ = self.event_tx.send(TerminalEvent::StopSndAll);
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::BellsAndWhistles { sound_effect }) => {
+                let snd_num = (*sound_effect as usize).min(19);
+                if let Some(sound) = self.igs_sound_data.get(snd_num) {
+                    if snd_num <= 4 {
+                        for _ in 0..self.igs_effect_loop {
+                            let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                    } else {
+                        let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
+                    }
+                }
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::Noise { .. }) | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. }) => true,
+
+            QueuedCommand::Music(music) => {
+                let _ = self.event_tx.send(TerminalEvent::PlayMusic(music.clone()));
+                true
+            }
+
+            QueuedCommand::Bell => {
+                let _ = self.event_tx.send(TerminalEvent::Beep);
+                true
+            }
+
+            QueuedCommand::DeviceControl(DeviceControlString::Sixel {
+                aspect_ratio,
+                zero_color,
+                grid_size,
+                sixel_data,
+            }) => {
+                match Sixel::parse_from(aspect_ratio.clone(), zero_color.clone(), grid_size.clone(), sixel_data) {
+                    Ok(sixel) => {
+                        {
+                            let mut screen = self.edit_screen.lock();
+                            let pos = screen.caret_position();
+                            if let Some(editable) = screen.as_editable() {
+                                editable.add_sixel(pos, sixel);
+                            }
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                    Err(err) => {
+                        log::error!("Error loading sixel: {}", err);
+                    }
+                }
+                true
+            }
+
+            QueuedCommand::TerminalRequest(request) => {
+                self.handle_terminal_request(request.clone()).await;
+                true
+            }
+
+            QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
+                match query {
+                    AskQuery::VersionNumber => {
+                        if let Some(conn) = &mut self.connection {
+                            let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
+                        }
+                    }
+                    AskQuery::CurrentResolution => {
+                        let screen = self.edit_screen.lock();
+                        if let GraphicsType::IGS(mode) = screen.graphics_type() {
+                            if let Some(conn) = &mut self.connection {
+                                let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                true
+            }
+
+            QueuedCommand::ResizeTerminal(width, height) => {
+                let mut screen = self.edit_screen.lock();
+                if let Some(editable) = screen.as_editable() {
+                    editable.set_size(icy_engine::Size::new(*width as i32, *height as i32));
+                }
+                true
+            }
+
+            // These need screen lock
+            _ => false,
+        }
+    }
+
+    /// Check if command needs async processing (for peeking in inner loop)
+    fn needs_async_processing(cmd: &QueuedCommand) -> bool {
+        matches!(
+            cmd,
+            QueuedCommand::Igs(IgsCommand::Pause { .. })
+                | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
+                | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
+                | QueuedCommand::Igs(IgsCommand::StopAllSound)
+                | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
+                | QueuedCommand::Igs(IgsCommand::SetEffectLoops { .. })
+                | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
+                | QueuedCommand::Igs(IgsCommand::Noise { .. })
+                | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
+                | QueuedCommand::Igs(IgsCommand::AskIG { .. })
+                | QueuedCommand::Skypix(SkypixCommand::Delay { .. })
+                | QueuedCommand::Skypix(SkypixCommand::CrcTransfer { .. })
+                | QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })
+                | QueuedCommand::Music(_)
+                | QueuedCommand::Bell
+                | QueuedCommand::TerminalRequest(_)
+                | QueuedCommand::ResizeTerminal(_, _)
+        )
+    }
+
+    /// Process a command that requires screen access
+    /// Returns true if GrabScreen was encountered
+    fn process_screen_command(cmd: QueuedCommand, screen_sink: &mut ScreenSink<'_>) -> bool {
+        match cmd {
+            QueuedCommand::Print(text) => {
+                screen_sink.print(&text);
+            }
+            QueuedCommand::Command(parser_cmd) => {
+                screen_sink.emit(parser_cmd);
+            }
+            QueuedCommand::Rip(rip_cmd) => {
+                screen_sink.screen().mark_dirty();
+                screen_sink.emit_rip(rip_cmd);
+            }
+            QueuedCommand::Skypix(skypix_cmd) => {
+                screen_sink.screen().mark_dirty();
+                screen_sink.emit_skypix(skypix_cmd);
+            }
+            QueuedCommand::ViewData(vd_cmd) => {
+                screen_sink.emit_view_data(vd_cmd);
+            }
+            QueuedCommand::Igs(ref igs_cmd) => {
+                screen_sink.screen().mark_dirty();
+                let had_grab = matches!(igs_cmd, IgsCommand::GrabScreen { .. });
+                screen_sink.emit_igs(igs_cmd.clone());
+                return had_grab;
+            }
+            QueuedCommand::DeviceControl(dcs) => {
+                screen_sink.device_control(dcs);
+            }
+            QueuedCommand::OperatingSystemCommand(osc) => {
+                screen_sink.operating_system_command(osc);
+            }
+            QueuedCommand::Aps(data) => {
+                screen_sink.aps(&data);
+            }
+            _ => {}
+        }
+        false
+    }
+
     /// Process commands from queue with granular locking
     /// Commands are processed in batches with max 10ms lock duration
-    /// IGS delays are always processed outside of locks
+    /// Async commands (delays, sound) are processed outside of locks
     async fn process_command_queue(&mut self) {
         const MAX_LOCK_DURATION_MS: u64 = 10;
 
         loop {
-            // Get next command with queue lock
-            let cmd = {
-                let mut queue = self.queueing_sink.command_queue.lock();
-                queue.pop_front()
-            };
-
-            // Exit loop if no more commands
-            let Some(cmd) = cmd else {
+            // Get next command
+            let Some(cmd) = self.command_queue.pop_front() else {
                 break;
             };
-            // Check if this is a delay command that should be processed outside lock
-            match &cmd {
-                QueuedCommand::Igs(IgsCommand::Pause { pause_type }) => {
-                    if pause_type.is_double_step_config() {
-                        self.double_step_vsyncs = pause_type.get_double_step_vsyncs();
-                    } else {
-                        let delay_ms = pause_type.ms().min(10_000); // max 10s 
-                        if delay_ms > MIN_PAUSE_DISPLAY_MS {
-                            self.send_event(TerminalEvent::InformDelay(delay_ms));
-                        }
-                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                        if delay_ms > MIN_PAUSE_DISPLAY_MS {
-                            self.send_event(TerminalEvent::ContinueAfterDelay);
-                        }
-                    }
-                    continue;
-                }
 
-                QueuedCommand::Skypix(SkypixCommand::Delay { jiffies }) => {
-                    let delay_ms = 1000 * (*jiffies) as u64 / 60;
-                    self.send_event(TerminalEvent::InformDelay(delay_ms));
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    self.send_event(TerminalEvent::ContinueAfterDelay);
-                    continue;
-                }
-
-                QueuedCommand::Skypix(SkypixCommand::CrcTransfer {
-                    mode,
-                    width: _,
-                    height: _,
-                    filename,
-                }) => {
-                    // CrcTransferMode determines the file type being transferred
-                    // width, height: image dimensions (used for IFF Brush mode)
-                    // filename: name of file to transfer
-
-                    // For now, all modes trigger a download - in the future this could be enhanced
-                    // to handle different transfer types based on the mode
-                    let is_download = true; // Always download for SkyPix CRC transfers
-                    let file_name = if filename.is_empty() { None } else { Some(filename.clone()) };
-
-                    // Log the transfer mode for debugging
-                    log::info!("SkyPix CRC transfer initiated: mode={:?}, filename={:?}", mode, file_name);
-
-                    // Trigger XMODEM-CRC file transfer via the event system
-                    self.send_event(TerminalEvent::AutoTransferTriggered(TransferProtocolType::XModem, is_download, file_name));
-                    continue;
-                }
-
-                QueuedCommand::Igs(IgsCommand::SetEffectLoops { count }) => {
-                    self.igs_effect_loop = *count;
-                    continue;
-                }
-                QueuedCommand::Igs(IgsCommand::AlterSoundEffect {
-                    play,
-                    sound_effect,
-                    element_num,
-                    negative_flag,
-                    thousands,
-                    hundreds,
-                }) => {
-                    // Port of IG217.C alter sound effect logic
-                    let snd_num = (*sound_effect as usize).min(19);
-                    let elem_num = (*element_num as usize).min(55);
-                    let thousands_clamped = (*thousands as i32).min(32) * 1000;
-                    let mut value = thousands_clamped + (*hundreds as i32);
-                    if *negative_flag != 0 {
-                        value = -value;
-                    }
-
-                    // Modify the sound data
-                    if let Some(sound) = self.igs_sound_data.get_mut(snd_num) {
-                        if elem_num < sound.len() {
-                            sound[elem_num] = value as i16;
-                        }
-                    }
-
-                    // If play is set, play the modified sound
-                    if *play {
-                        if let Some(sound) = self.igs_sound_data.get(snd_num) {
-                            let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
-                        }
-                    }
-                    continue;
-                }
-                QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { sound_effect }) => {
-                    // Restore original sound data from static array
-                    let snd_num = (*sound_effect as usize).min(19);
-                    if let Some(original) = sound_data(snd_num) {
-                        if let Some(sound) = self.igs_sound_data.get_mut(snd_num) {
-                            *sound = original.to_vec();
-                        }
-                    }
-                    continue;
-                }
-
-                // ChipMusic needs special handling for timing
-                // Pattern: Multiple voices are started with timing=0, then a "dummy" command
-                // with pitch=0 and timing>0 provides the actual wait period.
-                //
-                // For timing=0: Apply stop_type BEFORE starting the sound (stop old, start new)
-                // For timing>0: Wait first, then apply stop_type AFTER (controls when sounds end)
-                QueuedCommand::Igs(IgsCommand::ChipMusic {
-                    sound_effect,
-                    voice,
-                    volume,
-                    pitch,
-                    timing,
-                    stop_type,
-                }) => {
-                    // Start sound if pitch > 0 (rarely used with timing>0)
-                    if *pitch > 0 {
-                        let snd_num = *sound_effect as usize;
-                        if let Some(sound) = self.igs_sound_data.get(snd_num) {
-                            let _ = self.event_tx.send(TerminalEvent::PlayChipMusic {
-                                sound_data: sound.clone(),
-                                voice: *voice,
-                                volume: *volume,
-                                pitch: *pitch,
-                            });
-                        }
-                    }
-                    // timing > 0: Wait first, then apply stop_type
-                    if *timing > 0 {
-                        let wait_ms = (*timing as u64 * 1000) / 200;
-                        tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
-                    }
-
-                    // Apply stop type AFTER timing period
-                    match *stop_type {
-                        StopType::SndOff => {
-                            let _ = self.event_tx.send(TerminalEvent::SndOff(*voice));
-                        }
-                        StopType::StopSnd => {
-                            let _ = self.event_tx.send(TerminalEvent::StopSnd(*voice));
-                        }
-                        StopType::SndOffAll => {
-                            let _ = self.event_tx.send(TerminalEvent::SndOffAll);
-                        }
-                        StopType::StopSndAll => {
-                            let _ = self.event_tx.send(TerminalEvent::StopSndAll);
-                        }
-                        StopType::NoEffect => {}
-                    }
-
-                    continue;
-                }
-                QueuedCommand::Igs(IgsCommand::StopAllSound) => {
-                    let _ = self.event_tx.send(TerminalEvent::StopSndAll);
-                }
-
-                // BellsAndWhistles - send sound data directly
-                QueuedCommand::Igs(IgsCommand::BellsAndWhistles { sound_effect }) => {
-                    let snd_num = (*sound_effect as usize).min(19);
-                    if let Some(sound) = self.igs_sound_data.get(snd_num) {
-                        if snd_num <= 4 {
-                            for _ in 0..self.igs_effect_loop {
-                                let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
-                                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                            }
-                        } else {
-                            let _ = self.event_tx.send(TerminalEvent::PlayGist(sound.clone()));
-                        }
-                    }
-                    continue;
-                }
-
-                // Other sound commands are not yet implemented
-                QueuedCommand::Igs(IgsCommand::Noise { .. }) | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. }) => {
-                    // TODO: Implement these
-                    continue;
-                }
-                QueuedCommand::Music(music) => {
-                    let _ = self.event_tx.send(TerminalEvent::PlayMusic(music.clone()));
-                    continue;
-                }
-                QueuedCommand::Bell => {
-                    let _ = self.event_tx.send(TerminalEvent::Beep);
-                    continue;
-                }
-                QueuedCommand::DeviceControl(dcs) => {
-                    match dcs {
-                        DeviceControlString::Sixel {
-                            aspect_ratio,
-                            zero_color,
-                            grid_size,
-                            sixel_data,
-                        } => {
-                            match Sixel::parse_from(aspect_ratio.clone(), zero_color.clone(), grid_size.clone(), sixel_data) {
-                                Ok(sixel) => {
-                                    {
-                                        let mut screen = self.edit_screen.lock();
-                                        let pos = screen.caret_position();
-                                        if let Some(editable) = screen.as_editable() {
-                                            editable.add_sixel(pos, sixel);
-                                        }
-                                    }
-                                    // let the sixel update.
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-                                }
-                                Err(err) => {
-                                    log::error!("Error loading sixel: {}", err);
-                                }
-                            }
-                            continue;
-                        }
-                        _ => {}
-                    }
-                }
-
-                QueuedCommand::TerminalRequest(request) => {
-                    // Handle terminal request and store response in output buffer
-                    self.handle_terminal_request(request.clone()).await;
-                    continue;
-                }
-                _ => {}
+            // Try to process as async command first
+            if self.try_process_async_command(&cmd).await {
+                continue;
             }
 
-            // Process command with lock, but release after max duration
-            let lock_start = Instant::now();
+            // Process commands that need screen lock
             let mut had_grab_screen = false;
-
             {
+                let lock_start = Instant::now();
                 let mut screen = self.edit_screen.lock();
-                // Handle commands that need direct screen access first
-                match &cmd {
-                    QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
-                        match query {
-                            AskQuery::VersionNumber => {
-                                if let Some(conn) = &mut self.connection {
-                                    let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
-                                }
-                            }
-                            AskQuery::CurrentResolution => {
-                                if let GraphicsType::IGS(mode) = screen.graphics_type() {
-                                    if let Some(conn) = &mut self.connection {
-                                        let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
-                                    }
-                                }
-                            }
+
+                if let Some(editable) = screen.as_editable() {
+                    let mut screen_sink = ScreenSink::new(editable);
+
+                    // Process first command
+                    had_grab_screen |= Self::process_screen_command(cmd, &mut screen_sink);
+
+                    // Process more commands while within time budget
+                    while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
+                        // Check if next command needs async processing (without removing)
+                        match self.command_queue.front() {
+                            None => break,
+                            Some(cmd) if Self::needs_async_processing(cmd) => break,
                             _ => {}
                         }
-                        // Don't process further, AskIG is complete
-                        drop(screen);
-                        continue;
-                    }
-                    QueuedCommand::ResizeTerminal(width, height) => {
-                        if let Some(editable) = screen.as_editable() {
-                            editable.set_size(icy_engine::Size::new(*width as i32, *height as i32));
-                        }
-                        drop(screen);
-                        continue;
-                    }
-                    _ => {}
-                }
 
-                //let inverse = screen.terminal_state().inverse_video;
-                // Get editable screen for command processing
-                if let Some(editable) = screen.as_editable() {
-                    // Now create sink for normal command processing
-                    let mut screen_sink = ScreenSink::new(editable);
-                    // Process this command
-                    match cmd {
-                        QueuedCommand::Print(text, _inverse_video) => {
-                            screen_sink.print(&text);
-                        }
-                        QueuedCommand::Command(parser_cmd) => {
-                            screen_sink.emit(parser_cmd);
-                        }
-                        QueuedCommand::Rip(rip_cmd) => {
-                            screen_sink.screen().mark_dirty();
-                            screen_sink.emit_rip(rip_cmd);
-                        }
-                        QueuedCommand::Skypix(skypix_cmd) => {
-                            screen_sink.screen().mark_dirty();
-                            screen_sink.emit_skypix(skypix_cmd);
-                        }
-                        QueuedCommand::ViewData(vd_cmd) => {
-                            screen_sink.emit_view_data(vd_cmd);
-                        }
-                        QueuedCommand::Igs(ref igs_cmd) => {
-                            screen_sink.screen().mark_dirty();
+                        // Safe to pop - we know it exists and doesn't need async
+                        let next_cmd = self.command_queue.pop_front().unwrap();
 
-                            // Track GrabScreen commands for double-stepping
-                            if matches!(igs_cmd, IgsCommand::GrabScreen { .. }) {
-                                had_grab_screen = true;
-                            }
-                            screen_sink.emit_igs(igs_cmd.clone());
-                        }
-                        QueuedCommand::DeviceControl(dcs) => {
-                            screen_sink.device_control(dcs);
-                        }
-                        QueuedCommand::OperatingSystemCommand(osc) => {
-                            screen_sink.operating_system_command(osc);
-                        }
-                        QueuedCommand::Aps(data) => {
-                            screen_sink.aps(&data);
-                        }
-                        _ => {}
-                    }
+                        had_grab_screen |= Self::process_screen_command(next_cmd, &mut screen_sink);
 
-                    // Process more commands if we haven't exceeded max lock time
-                    while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
-                        let next_cmd = {
-                            let mut queue = self.queueing_sink.command_queue.lock();
-                            queue.pop_front()
-                        };
-                        if let Some(next_cmd) = next_cmd {
-                            // Check if next command needs to be outside lock
-                            match &next_cmd {
-                                QueuedCommand::Igs(IgsCommand::Pause { .. })
-                                | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
-                                | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
-                                | QueuedCommand::Igs(IgsCommand::StopAllSound)
-                                | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
-                                | QueuedCommand::Igs(IgsCommand::SetEffectLoops { .. })
-                                | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
-                                | QueuedCommand::Igs(IgsCommand::Noise { .. })
-                                | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
-                                | QueuedCommand::Music(_)
-                                | QueuedCommand::Bell
-                                | QueuedCommand::TerminalRequest(_) => {
-                                    // Put it back and break to process outside lock
-                                    let mut queue = self.queueing_sink.command_queue.lock();
-                                    queue.push_front(next_cmd);
-                                    break;
-                                }
-                                _ => {}
-                            }
-
-                            // Handle special commands that need direct screen access
-                            match &next_cmd {
-                                QueuedCommand::Igs(IgsCommand::AskIG { query }) => {
-                                    // Need to drop sink temporarily for immutable borrow
-                                    drop(screen_sink);
-                                    match query {
-                                        AskQuery::VersionNumber => {
-                                            if let Some(conn) = &mut self.connection {
-                                                let _ = conn.send(icy_engine::igs::IGS_VERSION.as_bytes()).await;
-                                            }
-                                        }
-                                        AskQuery::CurrentResolution => {
-                                            if let GraphicsType::IGS(mode) = editable.graphics_type() {
-                                                if let Some(conn) = &mut self.connection {
-                                                    let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
-                                                }
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                    // Recreate sink for remaining commands
-                                    screen_sink = ScreenSink::new(editable);
-                                    continue;
-                                }
-                                QueuedCommand::ResizeTerminal(width, height) => {
-                                    // Need to drop sink for mutable access
-                                    drop(screen_sink);
-                                    editable.set_size(icy_engine::Size::new(*width as i32, *height as i32));
-                                    // Recreate sink
-                                    screen_sink = ScreenSink::new(editable);
-                                    continue;
-                                }
-                                _ => {}
-                            }
-
-                            // Process normal command
-                            match next_cmd {
-                                QueuedCommand::Print(text, inverse_video) => {
-                                    if inverse_video {
-                                        // Drop sink for direct screen access
-                                        drop(screen_sink);
-
-                                        // Apply inverse video
-                                        let mut attr = editable.caret().attribute;
-                                        let fg = attr.get_foreground();
-                                        let bg = attr.get_background();
-                                        attr.set_foreground(bg);
-                                        attr.set_background(fg);
-
-                                        // Print each character with swapped colors
-                                        for &byte in &text {
-                                            let ch = icy_engine::AttributedChar::new(byte as char, attr);
-                                            editable.print_char(ch);
-                                        }
-
-                                        // Recreate sink
-                                        screen_sink = ScreenSink::new(editable);
-                                    } else {
-                                        screen_sink.print(&text);
-                                    }
-                                }
-                                QueuedCommand::Command(parser_cmd) => {
-                                    screen_sink.emit(parser_cmd);
-                                }
-                                QueuedCommand::Rip(rip_cmd) => {
-                                    screen_sink.emit_rip(rip_cmd);
-                                }
-                                QueuedCommand::Skypix(skypix_cmd) => {
-                                    screen_sink.emit_skypix(skypix_cmd);
-                                }
-                                QueuedCommand::ViewData(vd_cmd) => {
-                                    screen_sink.emit_view_data(vd_cmd);
-                                }
-                                QueuedCommand::Igs(ref igs_cmd) => {
-                                    screen_sink.emit_igs(igs_cmd.clone());
-                                    // Track GrabScreen commands for double-stepping
-                                    if matches!(igs_cmd, IgsCommand::GrabScreen { .. }) {
-                                        had_grab_screen = self.double_step_vsyncs.is_some();
-                                        if had_grab_screen {
-                                            break;
-                                        }
-                                    }
-                                }
-                                QueuedCommand::DeviceControl(dcs) => {
-                                    screen_sink.device_control(dcs);
-                                }
-                                QueuedCommand::OperatingSystemCommand(osc) => {
-                                    screen_sink.operating_system_command(osc);
-                                }
-                                QueuedCommand::Aps(data) => {
-                                    screen_sink.aps(&data);
-                                }
-                                _ => {
-                                    unreachable!("command {:?} not handled", next_cmd);
-                                }
-                            }
-                        } else {
+                        // Break early on GrabScreen for double-stepping
+                        if had_grab_screen && self.double_step_vsyncs.is_some() {
                             break;
                         }
                     }
 
                     // Update hyperlinks before releasing lock
-                    if let Some(editable) = screen.as_editable() {
-                        editable.update_hyperlinks();
-                    }
-                } // End of as_editable() block
+                    editable.update_hyperlinks();
+                }
             }
 
             // Apply double-stepping delay if GrabScreen was processed
             if had_grab_screen {
                 if let Some(vsyncs) = self.double_step_vsyncs {
-                    // Calculate delay: vsyncs * (1000ms / 60Hz)
                     let delay_ms = (vsyncs as u64) * 1000 / 60;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 }
             }
-        } // End of main command processing loop
+        }
     }
 
     async fn start_upload(&mut self, protocol: TransferProtocolType, files: Vec<PathBuf>) {

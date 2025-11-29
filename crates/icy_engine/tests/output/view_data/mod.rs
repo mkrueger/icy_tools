@@ -12,7 +12,7 @@ pub fn test_viewdata() {
 
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
-
+        log::info!("Testing file: {:?}…", cur_entry);
         let mut screen = ScreenMode::Videotex.create_screen(TerminalEmulation::ViewData, None);
         super::run_parser_compare(&mut screen, &cur_entry, &data);
     }

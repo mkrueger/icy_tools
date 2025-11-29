@@ -179,8 +179,6 @@ impl AmigaScreenBuffer {
         // Get colors from palette, swap if inverse video mode is
         let (fg_color, bg_color) = (ch.attribute.get_foreground() as u32, ch.attribute.get_background() as u32);
 
-        println!("fg:{}", ch.attribute.get_foreground());
-
         let font = if let Some(font) = self.get_font(ch.get_font_page()) {
             font
         } else if let Some(font) = self.get_font(0) {
