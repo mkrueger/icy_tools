@@ -252,20 +252,45 @@ impl AnsiMode {
 }
 
 /// DEC Private Mode for DECSET/DECRST commands (ESC[?nh / ESC[?nl)
-/// These are terminal-specific modes distinct from standard ANSI modes
+///
+/// These are DEC terminal-specific modes distinct from standard ANSI modes.
+/// Use DECSET (ESC[?{n}h) to enable and DECRST (ESC[?{n}l) to disable.
+///
+/// # Examples
+/// - `ESC[?25h` - Show cursor (DECTCEM)
+/// - `ESC[?25l` - Hide cursor
+/// - `ESC[?7h` - Enable auto-wrap (DECAWM)
+/// - `ESC[?1000h` - Enable VT200 mouse tracking
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecMode {
     // Scrolling and Display Modes
-    /// DECSCLM - Smooth Scroll (Mode 4)
+    /// DECSCLM - Smooth Scroll Mode (Mode 4)
+    ///
+    /// When set: Smooth scrolling (slower, animated)
+    /// When reset: Jump scrolling (instant, default)
     SmoothScroll = 4,
+
     /// DECOM - Origin Mode (Mode 6)
-    /// When set: cursor addressing is relative to scrolling region
-    /// When reset: cursor addressing is absolute (relative to upper-left corner)
+    ///
+    /// Controls how cursor positioning commands interpret coordinates.
+    ///
+    /// When set: Cursor addressing is relative to the scroll region.
+    ///   - Row 1 refers to the first line of the scroll region
+    ///   - Cursor cannot move outside the scroll region
+    /// When reset: Cursor addressing is absolute (relative to screen origin 1,1).
+    ///   - Row 1 refers to the first line of the screen
+    ///   - Cursor can move anywhere on screen
     OriginMode = 6,
+
     /// DECAWM - Auto Wrap Mode (Mode 7)
-    /// When set: cursor wraps to next line at right margin
-    /// When reset: cursor stops at right margin
+    ///
+    /// Controls cursor behavior when writing past the right margin.
+    ///
+    /// When set: Cursor wraps to the first column of the next line.
+    ///   - At bottom-right, causes scroll before wrap
+    /// When reset: Cursor stays at the right margin.
+    ///   - Characters overwrite the last column
     AutoWrap = 7,
 
     // Video Modes
@@ -550,6 +575,11 @@ pub enum TerminalCommand {
     /// CHA - Cursor Horizontal Absolute: ESC[{n}G
     CsiCursorHorizontalAbsolute(u16),
     /// CUP - Cursor Position: ESC[{row};{col}H or ESC[{row};{col}f
+    ///
+    /// Moves the cursor to the specified row and column position.
+    /// Row and column are 1-based (origin is 1,1 at top-left).
+    /// If DECOM (Origin Mode) is set, row is relative to the scroll region.
+    /// Parameters: (row, column)
     CsiCursorPosition(u16, u16),
 
     /// ED - Erase in Display: ESC[{n}J
@@ -565,7 +595,24 @@ pub enum TerminalCommand {
     /// Emitted once per attribute in a sequence (e.g., ESC[1;31m emits Bold then ForegroundRed)
     CsiSelectGraphicRendition(SgrAttribute),
 
-    /// DECSTBM - Set Scrolling Region: ESC[{top};{bottom};{left};[{right}]r
+    /// DECSTBM - Set Scrolling Region: ESC[{top};{bottom}r
+    /// DECSLRM - Set Left and Right Margins: ESC[{left};{right}s (when DECLRMM is set)
+    ///
+    /// Defines the scrolling region boundaries. When the cursor reaches
+    /// the bottom of the scroll region, content scrolls up.
+    ///
+    /// # Behavior
+    /// - `top` and `bottom` define vertical scroll boundaries (1-based, inclusive)
+    /// - `left` and `right` define horizontal margins (only when DECLRMM mode 69 is enabled)
+    /// - After setting, cursor moves to origin (home position)
+    /// - If DECOM is set, cursor moves to top-left of scroll region
+    /// - Default values: top=1, bottom=screen_height, left=1, right=screen_width
+    ///
+    /// # Parameters
+    /// - `top`: First row of scrolling region (1-based)
+    /// - `bottom`: Last row of scrolling region (1-based)
+    /// - `left`: Left margin column (1-based, requires DECLRMM)
+    /// - `right`: Right margin column (1-based, requires DECLRMM)
     CsiSetScrollingRegion {
         top: u16,
         bottom: u16,
@@ -574,14 +621,63 @@ pub enum TerminalCommand {
     },
 
     /// ICH - Insert Character: ESC[{n}@
+    ///
+    /// Inserts `n` blank characters at the cursor position.
+    ///
+    /// # Behavior
+    /// - Shifts existing characters to the right
+    /// - Characters that shift past the right margin are lost
+    /// - Cursor position does NOT change
+    /// - New characters have current attributes
+    /// - Default n=1 if omitted
     CsiInsertCharacter(u16),
+
     /// DCH - Delete Character: ESC[{n}P
+    ///
+    /// Deletes `n` characters starting at the cursor position.
+    ///
+    /// # Behavior
+    /// - Characters to the right shift left to fill the gap
+    /// - Blank characters (with current attributes) fill from the right
+    /// - Cursor position does NOT change
+    /// - Default n=1 if omitted
     CsiDeleteCharacter(u16),
+
     /// ECH - Erase Character: ESC[{n}X
+    ///
+    /// Erases `n` characters starting at the cursor position.
+    ///
+    /// # Behavior
+    /// - Replaces characters with blanks (spaces)
+    /// - Does NOT shift remaining characters
+    /// - Cursor position does NOT change
+    /// - Uses current background color for erased cells
+    /// - Default n=1 if omitted
     CsiEraseCharacter(u16),
+
     /// IL - Insert Line: ESC[{n}L
+    ///
+    /// Inserts `n` blank lines at the cursor row.
+    ///
+    /// # Behavior
+    /// - Cursor row and lines below shift down within scroll region
+    /// - Lines that shift past the bottom scroll margin are lost
+    /// - New lines are blank with current attributes
+    /// - Cursor moves to column 1 (left margin)
+    /// - Only affects lines within the current scroll region
+    /// - Default n=1 if omitted
     CsiInsertLine(u16),
+
     /// DL - Delete Line: ESC[{n}M
+    ///
+    /// Deletes `n` lines starting at the cursor row.
+    ///
+    /// # Behavior
+    /// - Lines below shift up to fill the gap within scroll region
+    /// - Blank lines (with current attributes) fill from the bottom
+    /// - Cursor moves to column 1 (left margin)
+    /// - Only affects lines within the current scroll region
+    /// - Default n=1 if omitted
     CsiDeleteLine(u16),
 
     /// VPA - Line Position Absolute: ESC[{n}d
@@ -613,9 +709,24 @@ pub enum TerminalCommand {
     /// Special keys: ESC[{n}~
     CsiSpecialKey(SpecialKey),
 
-    /// DECSET/DECRST - DEC Mode Set/Reset: ESC[?{n}h or ESC[?{n}l
+    /// DECSET/DECRST - DEC Private Mode Set/Reset: ESC[?{n}h or ESC[?{n}l
+    ///
+    /// Enables or disables DEC terminal-specific modes.
+    ///
+    /// # Common Modes
+    /// - Mode 6 (DECOM): Origin mode - relative cursor positioning
+    /// - Mode 7 (DECAWM): Auto-wrap at right margin
+    /// - Mode 25 (DECTCEM): Cursor visibility
+    /// - Mode 33: iCE colors (background intensity instead of blink)
+    /// - Mode 69 (DECLRMM): Enable left/right margins
+    /// - Mode 1000+: Mouse tracking modes
+    ///
+    /// # Parameters
+    /// - First: The DEC mode to modify
+    /// - Second: `true` = set/enable (h), `false` = reset/disable (l)
+    ///
+    /// # Notes
     /// Emitted once per mode (e.g., ESC[?25;1000h emits two commands)
-    /// Second parameter: true = set (h), false = reset (l)
     CsiDecSetMode(DecMode, bool),
 
     /// SM - Set Mode: ESC[{n}h
@@ -626,9 +737,21 @@ pub enum TerminalCommand {
     CsiResetMode(AnsiMode),
 
     // CSI with intermediate bytes
-    /// DECSCUSR - Set Caret Style: ESC[{Ps} q
-    /// First parameter: blinking (true) or steady (false)
-    /// Second parameter: shape (Block, Underline, or Bar)
+    /// DECSCUSR - Set Cursor Style: ESC[{Ps} SP q
+    ///
+    /// Changes the cursor (caret) appearance.
+    ///
+    /// # Ps Values
+    /// - 0 or 1: Blinking block (default)
+    /// - 2: Steady block
+    /// - 3: Blinking underline
+    /// - 4: Steady underline  
+    /// - 5: Blinking bar (vertical line)
+    /// - 6: Steady bar
+    ///
+    /// # Parameters
+    /// - First: `true` if blinking, `false` if steady
+    /// - Second: cursor shape (Block, Underline, or Bar)
     CsiSetCaretStyle(bool, CaretShape),
 
     /// Font Selection: ESC[{Ps1};{Ps2} D
@@ -645,7 +768,23 @@ pub enum TerminalCommand {
     /// Ps1 = communication line type, Ps2 = baud rate
     CsiSelectCommunicationSpeed(CommunicationLine, BaudEmulation),
 
-    /// DECFRA - Fill Rectangular Area: ESC[{Pchar};{Pt};{Pl};{Pb};{Pr} $x
+    /// DECFRA - Fill Rectangular Area: ESC[{Pch};{Pt};{Pl};{Pb};{Pr}$x
+    ///
+    /// Fills a rectangular region with a specified character.
+    ///
+    /// # Behavior
+    /// - Fills all character positions within the rectangle with `char`
+    /// - Uses current text attributes (colors, bold, etc.)
+    /// - Does NOT move the cursor position
+    /// - Coordinates are 1-based and inclusive
+    /// - If DECOM is set, coordinates are relative to scroll region
+    ///
+    /// # Parameters
+    /// - `char`: ASCII code of fill character (32-126 for printable)
+    /// - `top`: Top row of rectangle (1-based)
+    /// - `left`: Left column of rectangle (1-based)
+    /// - `bottom`: Bottom row of rectangle (1-based)
+    /// - `right`: Right column of rectangle (1-based)
     CsiFillRectangularArea {
         char: u8,
         top: u16,
@@ -655,6 +794,22 @@ pub enum TerminalCommand {
     },
 
     /// DECERA - Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}$z
+    ///
+    /// Erases all characters in a rectangular region, replacing them with spaces.
+    ///
+    /// # Behavior
+    /// - Replaces all characters in the rectangle with space (0x20)
+    /// - Resets character attributes to default within the area
+    /// - Does NOT move the cursor position
+    /// - Coordinates are 1-based and inclusive
+    /// - If DECOM is set, coordinates are relative to scroll region
+    /// - Erases ALL characters regardless of protection attribute (DECSCA)
+    ///
+    /// # Parameters
+    /// - `top`: Top row of rectangle (1-based)
+    /// - `left`: Left column of rectangle (1-based)
+    /// - `bottom`: Bottom row of rectangle (1-based)
+    /// - `right`: Right column of rectangle (1-based)
     CsiEraseRectangularArea {
         top: u16,
         left: u16,
@@ -663,6 +818,26 @@ pub enum TerminalCommand {
     },
 
     /// DECSERA - Selective Erase Rectangular Area: ESC[{Pt};{Pl};{Pb};{Pr}${
+    ///
+    /// Selectively erases characters in a rectangular region.
+    /// Unlike DECERA, this only erases characters that are NOT protected.
+    ///
+    /// # Behavior
+    /// - Replaces unprotected characters in the rectangle with space (0x20)
+    /// - Characters marked as protected (via DECSCA SGR 1) are preserved
+    /// - Resets character attributes to default for erased cells
+    /// - Does NOT move the cursor position
+    /// - Coordinates are 1-based and inclusive
+    /// - If DECOM is set, coordinates are relative to scroll region
+    ///
+    /// # Parameters
+    /// - `top`: Top row of rectangle (1-based)
+    /// - `left`: Left column of rectangle (1-based)
+    /// - `bottom`: Bottom row of rectangle (1-based)
+    /// - `right`: Right column of rectangle (1-based)
+    ///
+    /// # Related
+    /// - DECSCA (ESC[{Ps}"q) sets character protection attribute
     CsiSelectiveEraseRectangularArea {
         top: u16,
         left: u16,
@@ -680,17 +855,80 @@ pub enum TerminalCommand {
     CsiEqualsSetSpecificMargins(MarginType, u16),
 
     // ANSI ESC sequences (non-CSI)
-    /// IND - Index: ESC D (move cursor down, scroll if at bottom)
+    /// IND - Index: ESC D
+    ///
+    /// Moves the cursor down one line.
+    ///
+    /// # Behavior
+    /// - If cursor is at the bottom margin of scroll region: scroll content up
+    /// - If cursor is not at bottom margin: move cursor down one line
+    /// - Column position is preserved
+    /// - A new blank line appears at the bottom when scrolling
     EscIndex,
+
     /// NEL - Next Line: ESC E
+    ///
+    /// Moves the cursor to the first column of the next line.
+    ///
+    /// # Behavior
+    /// - Equivalent to CR + LF (carriage return + line feed)
+    /// - If at bottom of scroll region: scroll content up
+    /// - Cursor column is set to 1 (or left margin)
     EscNextLine,
+
     /// HTS - Horizontal Tab Set: ESC H
+    ///
+    /// Sets a tab stop at the current cursor column.
+    ///
+    /// # Behavior
+    /// - Adds current column to the tab stop list
+    /// - Future TAB (0x09) characters will move to this column
+    /// - Use TBC (ESC[0g or ESC[3g) to clear tab stops
     EscSetTab,
-    /// RI - Reverse Index: ESC M (move cursor up, scroll if at top)
+
+    /// RI - Reverse Index: ESC M
+    ///
+    /// Moves the cursor up one line.
+    ///
+    /// # Behavior
+    /// - If cursor is at the top margin of scroll region: scroll content down
+    /// - If cursor is not at top margin: move cursor up one line
+    /// - Column position is preserved
+    /// - A new blank line appears at the top when scrolling
     EscReverseIndex,
     /// DECSC - Save Cursor: ESC 7
+    ///
+    /// Saves the current cursor state to memory.
+    ///
+    /// # Saved State Includes
+    /// - Cursor position (row, column)
+    /// - Character attributes (SGR: colors, bold, italic, etc.)
+    /// - Character set designations (G0-G3)
+    /// - Autowrap mode (DECAWM)
+    /// - Origin mode (DECOM)
+    /// - Selective erase attribute (DECSCA)
+    ///
+    /// # Notes
+    /// - Only one cursor state can be saved at a time
+    /// - Saving again overwrites the previous saved state
+    /// - Use DECRC (ESC 8) to restore
     EscSaveCursor,
+
     /// DECRC - Restore Cursor: ESC 8
+    ///
+    /// Restores the cursor state previously saved with DECSC.
+    ///
+    /// # Restored State Includes
+    /// - Cursor position (row, column)
+    /// - Character attributes (SGR)
+    /// - Character set designations (G0-G3)
+    /// - Autowrap mode (DECAWM)
+    /// - Origin mode (DECOM)
+    /// - Selective erase attribute (DECSCA)
+    ///
+    /// # Notes
+    /// - If no state was saved, behavior is undefined (typically resets to defaults)
+    /// - Cursor is constrained to screen boundaries after restore
     EscRestoreCursor,
     /// RIS - Reset to Initial State: ESC c
     EscReset,

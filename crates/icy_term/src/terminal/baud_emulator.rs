@@ -28,14 +28,14 @@ impl BaudEmulator {
         self.baud_emulation = baud;
     }
 
-    pub fn emulate(&mut self, data: &[u8]) -> Vec<u8> {
+    pub fn emulate(&mut self, data: Vec<u8>) -> Vec<u8> {
         if self.bytes_per_second == 0.0 {
             // No emulation, return all data immediately
-            return data.to_vec();
+            return data;
         }
 
         // Add to buffer
-        self.buffer.extend_from_slice(data);
+        self.buffer.extend_from_slice(&data);
 
         // Calculate how many bytes we can send based on elapsed time
         let now = Instant::now();

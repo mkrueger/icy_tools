@@ -318,7 +318,8 @@ pub trait EditableScreen: Screen {
             ..Default::default()
         };
 
-        for y in pos.y..self.get_last_visible_line() {
+        for y in pos.y..=self.get_last_visible_line() {
+            // <= statt <
             for x in 0..self.get_width() {
                 self.set_char((x, y).into(), ch);
             }
@@ -336,6 +337,9 @@ pub trait EditableScreen: Screen {
             for x in 0..self.get_width() {
                 self.set_char((x, y).into(), ch);
             }
+        }
+        for x in 0..=pos.x {
+            self.set_char((x, pos.y).into(), ch);
         }
     }
 
@@ -443,9 +447,6 @@ pub trait EditableScreen: Screen {
             let to_write = src.unwrap_or(AttributedChar::new(' ', blank_attr));
             self.set_char((x, pos.y).into(), to_write);
         }
-        // Advance caret after inserted blank
-        let x = self.get_width().saturating_sub(1);
-        self.caret_mut().x = (pos.x + 1).min(x);
     }
 
     fn bs(&mut self) {
@@ -597,7 +598,7 @@ pub trait EditableScreen: Screen {
 
     fn tab_forward(&mut self) {
         let mut pos = self.caret_position();
-        let x = (pos.x / 8 + 1) * 8;
+        let x = self.terminal_state().next_tab_stop(pos.x);
         let w = self.get_width() - 1;
         pos.x = x.min(w);
         self.set_caret_position(pos);

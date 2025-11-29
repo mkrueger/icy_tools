@@ -363,7 +363,7 @@ impl TerminalThread {
 
                     // Process any buffered data from baud emulation first
                     if self.baud_emulator.has_buffered_data() {
-                        let data = self.baud_emulator.emulate(&[]);
+                        let data = self.baud_emulator.emulate(Vec::new());
                         if !data.is_empty() {
                             self.write_to_capture(&data).await;
                             self.process_data(&data).await;
@@ -805,10 +805,8 @@ impl TerminalThread {
                 Ok(0) => Vec::new(),
                 Ok(size) => {
                     let mut data = buffer[..size].to_vec();
-
                     // Apply baud emulation if enabled
-                    data = self.baud_emulator.emulate(&data);
-
+                    data = self.baud_emulator.emulate(data);
                     if !data.is_empty() {
                         self.write_to_capture(&data).await;
                         self.process_data(&data).await;
