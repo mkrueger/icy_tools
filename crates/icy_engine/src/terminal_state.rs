@@ -355,6 +355,7 @@ impl TerminalState {
 
         // Screen cleared flag (buffer will usually act on this)
         self.cleared_screen = true;
+        self.inverse_video = false;
 
         // Recompute tab stops
         self.reset_tabs();

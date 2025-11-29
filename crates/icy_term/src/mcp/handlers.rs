@@ -460,14 +460,12 @@ impl McpServer {
                         }
                     }
 
-                    "get_scripting_api" => {
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": SCRIPTING_DOC
-                            }]
-                        }))
-                    }
+                    "get_scripting_api" => Ok(serde_json::json!({
+                        "content": [{
+                            "type": "text",
+                            "text": SCRIPTING_DOC
+                        }]
+                    })),
 
                     _ => Err(Error {
                         code: ErrorCode::MethodNotFound,

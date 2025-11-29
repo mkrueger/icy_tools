@@ -1,7 +1,7 @@
 use icy_parser_core::{DisplayMode, SkypixCommand};
 
 use super::sky_paint::SkyPaint;
-use crate::{BitFont, EditableScreen, Palette, SKYPIX_PALETTE, SKYPIX_PALETTE_8, Size, get_amiga_font_by_name};
+use crate::{BitFont, EditableScreen, Palette, SKYPIX_PALETTE, SKYPIX_PALETTE_8, Screen, Size, get_amiga_font_by_name};
 
 /// Amiga 8x8 IBM compatible font for Skypix
 pub const SKYPIX_DEFAULT_FONT_DATA: &str = include_str!("../../data/fonts/Amiga/Amiga8x8_IBM.yaff");
@@ -13,29 +13,32 @@ lazy_static::lazy_static! {
 pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
 fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPaint, cmd: SkypixCommand) {
+    // Get current pen colors from caret attribute
+    let pen_a = buf.caret().attribute.get_foreground() as u8;
+
     match cmd {
         SkypixCommand::Comment { .. } => {
             // Command 0: Comments are ignored
         }
 
         SkypixCommand::SetPixel { x, y } => {
-            paint.put_pixel(buf, x, y, paint.pen_a);
+            paint.put_pixel(buf, x, y, pen_a);
         }
 
         SkypixCommand::DrawLine { x, y } => {
-            paint.line_to(buf, x, y);
+            paint.line_to(buf, x, y, pen_a);
         }
 
         SkypixCommand::AreaFill { mode, x, y } => {
-            paint.flood_fill(buf, x, y, mode);
+            paint.flood_fill(buf, x, y, mode, pen_a);
         }
 
         SkypixCommand::RectangleFill { x1, y1, x2, y2 } => {
-            paint.bar(buf, x1, y1, x2, y2);
+            paint.bar(buf, x1, y1, x2, y2, pen_a);
         }
 
         SkypixCommand::Ellipse { x, y, a, b } => {
-            paint.ellipse(buf, x, y, a, b);
+            paint.ellipse(buf, x, y, a, b, pen_a);
         }
 
         SkypixCommand::GrabBrush { x1, y1, width, height } => {
@@ -73,8 +76,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
                 buf.set_font(1, font);
                 buf.caret_mut().set_font_page(1);
                 buf.caret_mut().visible = false; // Hide text caret in JAM1 mode.
-                // JAM1 mode: CR moves to beginning of next line, LF is ignored
-                buf.terminal_state_mut().cr_is_if = true;
+            // JAM1 mode: CR moves to beginning of next line, LF is ignored
             } else {
                 log::warn!("SKYPIX_SET_FONT: Font '{}' size {} not found", name, size);
                 buf.caret_mut().set_font_page(0);
@@ -83,8 +85,6 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         SkypixCommand::ResetFont => {
             buf.caret_mut().set_font_page(0);
             buf.caret_mut().visible = true; // Show text in JAM2 mode.
-            // JAM2 mode: Standard ANSI CR/LF behavior
-            buf.terminal_state_mut().cr_is_if = false;
         }
 
         SkypixCommand::NewPalette { colors } => {
@@ -106,7 +106,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         }
 
         SkypixCommand::FilledEllipse { x, y, a, b } => {
-            paint.fill_ellipse(buf, x, y, a, b);
+            paint.fill_ellipse(buf, x, y, a, b, pen_a);
         }
 
         SkypixCommand::Delay { .. } => {
@@ -114,31 +114,24 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         }
 
         SkypixCommand::SetPenA { color } => {
-            let col = color as u8;
-            paint.pen_a = col;
-            paint.pen_a = col;
-            buf.caret_mut().set_foreground(col as u32);
+            buf.caret_mut().set_foreground(color as u32);
         }
 
         SkypixCommand::CrcTransfer { .. } => {
             // Handled at terminal level
         }
 
-        SkypixCommand::SetDisplayMode { mode } => {
-            match mode {
-                DisplayMode::EightColors => {
-                    *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE_8);
-                }
-                DisplayMode::SixteenColors => {
-                    *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
-                }
+        SkypixCommand::SetDisplayMode { mode } => match mode {
+            DisplayMode::EightColors => {
+                *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE_8);
             }
-        }
+            DisplayMode::SixteenColors => {
+                *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
+            }
+        },
 
         SkypixCommand::SetPenB { color } => {
-            let col = color as u8;
-            paint.pen_b = col;
-            buf.caret_mut().set_background(col as u32);
+            buf.caret_mut().set_background(color as u32);
         }
 
         SkypixCommand::PositionCursor { x, y } => {
@@ -152,6 +145,17 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
 
         SkypixCommand::DefineGadget { .. } => {
             log::warn!("SKYPIX_DEFINE_GADGET not implemented");
+        }
+
+        SkypixCommand::EndSkypix => {
+            *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
+
+            buf.terminal_state.reset_terminal(buf.terminal_state.get_size());
+            buf.caret.visible = true;
+            buf.caret.shape = crate::CaretShape::Underline;
+            buf.caret.set_foreground(buf.default_foreground_color());
+            buf.caret.set_background(0);
+            buf.caret.set_font_page(0);
         }
     }
 }

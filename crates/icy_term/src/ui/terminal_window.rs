@@ -480,7 +480,7 @@ impl TerminalWindow {
         if self.is_capturing {
             let stop_capture_btn = button(
                 row![
-                    text("⏹").size(TEXT_SIZE_NORMAL),
+                    text("⏹").size(TEXT_SIZE_SMALL),
                     text(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")).size(TEXT_SIZE_SMALL)
                 ]
                 .spacing(3)

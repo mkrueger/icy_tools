@@ -300,6 +300,12 @@ pub mod command_numbers {
     pub const CONTROLLER_RETURN: i32 = 21;
     /// Command 22: Define a clickable gadget region
     pub const DEFINE_GADGET: i32 = 22;
+
+    /// Command 99: End SkyPix mode (unofficial extension)
+    ///
+    /// This is an unofficial extension used by some BBS software to signal
+    /// the end of a SkyPix graphics sequence and return to normal ANSI mode.
+    pub const END_SKYPIX: i32 = 99;
 }
 
 /// SkyPix graphics commands
@@ -560,10 +566,13 @@ pub enum SkypixCommand {
     /// Command 15: SET A PEN
     ///
     /// # Syntax
-    /// `<ESC>[15;a!`
+    /// `<ESC>[15;a!` or `<ESC>[15!`
     ///
     /// Sets the A Pen (foreground drawing color) to color index a.
     /// Valid values are 0-15 for 16-color mode, 0-7 for 8-color mode.
+    ///
+    /// If no color parameter is provided, resets to the default foreground
+    /// color 2 (white/light gray).
     SetPenA { color: i32 },
 
     /// Command 16: CRC XMODEM TRANSFER
@@ -599,11 +608,14 @@ pub enum SkypixCommand {
     /// Command 18: SET B PEN
     ///
     /// # Syntax
-    /// `<ESC>[18;b!`
+    /// `<ESC>[18;b!` or `<ESC>[18!`
     ///
     /// Sets the B Pen (background color) to color index b.
     /// This is useful mainly in the default font, to allow ANSI backgrounds
     /// access to more colors than the standard 8 ANSI background colors.
+    ///
+    /// If no color parameter is provided, resets to the default background
+    /// color 0 (black).
     SetPenB { color: i32 },
 
     /// Command 19: POSITION CURSOR
@@ -655,4 +667,24 @@ pub enum SkypixCommand {
     /// can simply be interpreted as a DrawFilledRectangle command, and
     /// the n and c parameters can be discarded.
     DefineGadget { num: i32, cmd: i32, x1: i32, y1: i32, x2: i32, y2: i32 },
+
+    /// Command 99: END SKYPIX (Unofficial Extension)
+    ///
+    /// # Syntax
+    /// `<ESC>[99!`
+    ///
+    /// **Note: This is an unofficial extension, not part of the original
+    /// SkyPix specification.** It was used by some BBS software (e.g., C-Net)
+    /// to explicitly signal the end of a SkyPix graphics sequence.
+    ///
+    /// This command performs the following actions:
+    /// - Resets the font to the default (font page 0)
+    /// - Restores the cursor visibility
+    /// - Resets pen colors to defaults (PenA=7, PenB=0)
+    /// - Returns to JAM2 mode (normal ANSI background colors work)
+    ///
+    /// This is functionally equivalent to [`ResetFont`](SkypixCommand::ResetFont)
+    /// combined with default color restoration, but serves as an explicit
+    /// "end of SkyPix content" marker.
+    EndSkypix,
 }

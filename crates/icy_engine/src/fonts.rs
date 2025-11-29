@@ -697,7 +697,7 @@ lazy_static::lazy_static! {
 
 pub fn get_amiga_font_by_name(name: &str, size: i32) -> Option<BitFont> {
     for (font_name, font_size, font_data, opt_font) in AMIGA_FONTS.iter() {
-        if font_name == name && size == *font_size {
+        if font_name.eq_ignore_ascii_case(name) && size == *font_size {
             let mut font_cache = opt_font.lock();
 
             // Check if font is already cached
@@ -746,6 +746,8 @@ amiga_fonts![
     (AMIGA_TIMES_15, "workbench-3.1/Times_15.yaff", "Times.font", 15),
     (AMIGA_TIMES_18, "workbench-3.1/Times_18.yaff", "Times.font", 18),
     (AMIGA_TIMES_24, "workbench-3.1/Times_24.yaff", "Times.font", 24),
+    (AMIGA_TIMES_30, "workbench-3.1/Times_30.yaff", "Times.font", 30),
+    (AMIGA_TIMES_36, "workbench-3.1/Times_36.yaff", "Times.font", 36),
     (AMIGA_COURIER_11, "workbench-3.1/Courier_11.yaff", "Courier.font", 11),
     (AMIGA_COURIER_13, "workbench-3.1/Courier_13.yaff", "Courier.font", 13),
     (AMIGA_COURIER_15, "workbench-3.1/Courier_15.yaff", "Courier.font", 15),

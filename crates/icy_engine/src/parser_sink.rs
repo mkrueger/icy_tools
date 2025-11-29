@@ -85,6 +85,8 @@ impl<'a> ScreenSink<'a> {
         match sgr {
             SgrAttribute::Reset => {
                 self.screen.caret_default_colors();
+                self.screen.caret_mut().attribute.set_is_bold(false);
+                self.screen.terminal_state_mut().inverse_video = false;
             }
             SgrAttribute::Intensity(intensity) => match intensity {
                 Intensity::Normal => {
@@ -341,7 +343,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn emit(&mut self, cmd: TerminalCommand) {
-        println!("TerminalCommand: {:?}", cmd);
         match cmd {
             // Basic control characters
             TerminalCommand::CarriageReturn => {

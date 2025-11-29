@@ -1,6 +1,6 @@
 use crate::{
-    BACKSPACE, BELL, Blink, CARRIAGE_RETURN, Color, CommandParser, CommandSink, DELETE, Direction, EraseInDisplayMode,
-    EraseInLineMode, FORM_FEED, Intensity, LINE_FEED, SgrAttribute, TAB, TerminalCommand, flush_input,
+    BACKSPACE, BELL, Blink, CARRIAGE_RETURN, Color, CommandParser, CommandSink, DELETE, Direction, EraseInDisplayMode, EraseInLineMode, FORM_FEED, Intensity,
+    LINE_FEED, SgrAttribute, TAB, TerminalCommand, VERTICAL_TAB, flush_input,
 };
 
 mod commands;
@@ -9,28 +9,8 @@ pub use commands::{CrcTransferMode, DisplayMode, FillMode, SkypixCommand, comman
 /// ANSI color to Amiga/Skypix color mapping (normal intensity)
 /// ANSI: Black=0, Red=1, Green=2, Yellow=3, Blue=4, Magenta=5, Cyan=6, White=7
 /// Maps to Skypix palette indices for normal colors
-const AMIGA_COLOR_OFFSETS: [u8; 8] = [
-    0, // 30/40
-    3, // 31/41.. 
-    4, 
-    6, 
-    1, 
-    7, 
-    5, 
-    2];
+const AMIGA_COLOR_OFFSETS: [u8; 8] = [0, 3, 4, 6, 1, 7, 5, 2];
 
-/// ANSI color to Amiga/Skypix color mapping (bold/bright intensity)
-/// Maps to Skypix palette indices for bright colors when Bold attribute is set
-const AMIGA_COLOR_OFFSETS_BOLD: [u8; 8] = [
-    8, 
-    11,
-    12,
-    14,
-    9,
-    15, 
-    13, 
-    10
-];
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum State {
     Default,
@@ -290,10 +270,9 @@ impl SkypixParser {
                 })
             }
             SET_PEN_A => {
-                if !self.check_params(sink, "SetPenA", 1) {
-                    return;
-                }
-                Some(SkypixCommand::SetPenA { color: self.builder.params[0] })
+                // If no parameter provided, default to color 7 (white/default foreground)
+                let color = self.builder.params.get(0).copied().unwrap_or(2);
+                Some(SkypixCommand::SetPenA { color })
             }
             CRC_TRANSFER => {
                 if !self.check_params(sink, "CrcTransfer", 3) {
@@ -341,10 +320,9 @@ impl SkypixParser {
                 }
             }
             SET_PEN_B => {
-                if !self.check_params(sink, "SetPenB", 1) {
-                    return;
-                }
-                Some(SkypixCommand::SetPenB { color: self.builder.params[0] })
+                // If no parameter provided, default to color 0 (black/default background)
+                let color = self.builder.params.get(0).copied().unwrap_or(0);
+                Some(SkypixCommand::SetPenB { color })
             }
             POSITION_CURSOR => {
                 if !self.check_params(sink, "PositionCursor", 2) {
@@ -377,6 +355,10 @@ impl SkypixParser {
                     x2: self.builder.params[4],
                     y2: self.builder.params[5],
                 })
+            }
+            END_SKYPIX => {
+                // Unofficial extension: End SkyPix mode and return to ANSI
+                Some(SkypixCommand::EndSkypix)
             }
             _ => {
                 if self.builder.cmd_num > 0 {
@@ -481,6 +463,7 @@ impl SkypixParser {
                         match param {
                             0 => {
                                 sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
+                                sink.emit(TerminalCommand::SetFontPage(0));
                             }
                             1 => {
                                 sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Intensity(Intensity::Bold)));
@@ -515,6 +498,51 @@ impl SkypixParser {
                         }
                     }
                 }
+            }
+            b'E' => {
+                // CNL - Cursor Next Line: Move cursor down n lines and to column 1
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiCursorNextLine(n as u16));
+            }
+            b'F' => {
+                // CPL - Cursor Previous Line: Move cursor up n lines and to column 1
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiCursorPreviousLine(n as u16));
+            }
+            b'G' => {
+                // CHA - Cursor Horizontal Absolute: Move cursor to column n
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n as u16 - 1));
+            }
+            b'L' => {
+                // IL - Insert Line: Insert n blank lines at cursor position
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiInsertLine(n as u16));
+            }
+            b'M' => {
+                // DL - Delete Line: Delete n lines at cursor position
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiDeleteLine(n as u16));
+            }
+            b'P' => {
+                // DCH - Delete Character: Delete n characters at cursor position
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiDeleteCharacter(n as u16));
+            }
+            b'S' => {
+                // SU - Scroll Up: Scroll display up n lines
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiScroll(Direction::Up, n as u16));
+            }
+            b'T' => {
+                // SD - Scroll Down: Scroll display down n lines
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiScroll(Direction::Down, n as u16));
+            }
+            b'@' => {
+                // ICH - Insert Character: Insert n blank characters at cursor position
+                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                sink.emit(TerminalCommand::CsiInsertCharacter(n as u16));
             }
             _ => {}
         }
@@ -560,6 +588,12 @@ impl CommandParser for SkypixParser {
                         LINE_FEED => {
                             flush_input(input, sink, i, start);
                             sink.emit(TerminalCommand::LineFeed);
+                            start = i + 1;
+                        }
+                        VERTICAL_TAB => {
+                            // CTRL-K - Cursor Up (as per ANSI.TXT spec for SkyPix)
+                            flush_input(input, sink, i, start);
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
                             start = i + 1;
                         }
                         FORM_FEED => {

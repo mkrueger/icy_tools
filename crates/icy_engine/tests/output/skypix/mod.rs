@@ -1,22 +1,27 @@
 use icy_engine::ScreenMode;
 use icy_net::telnet::TerminalEmulation;
-use std::fs::{self};
+use std::fs;
+use walkdir::WalkDir;
 
 #[test]
 pub fn test_skypix() {
     crate::init_logging();
-    for entry in fs::read_dir("tests/output/skypix/files").expect("Error reading test_data directory.") {
-        let cur_entry = entry.unwrap().path();
-        if !cur_entry.is_file() || cur_entry.extension().and_then(|e| e.to_str()) != Some("ans") {
+
+    for entry in WalkDir::new("tests/output/skypix/files")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("ans"))
+    {
+        if entry.file_name() != "camera2.ans" {
+            // This test file is known to be broken currently
             continue;
         }
-        if cur_entry.file_name().and_then(|n| n.to_str()) != Some("basic_ansi.ans") {
-            // This test file is broken (LF handling in JAM2 mode is not implemented yet)
-            continue;
-        }
-        let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
+        let cur_entry = entry.path();
+        println!("Testing file: {:?}", cur_entry);
+
+        let data = fs::read(cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 
         let mut screen = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
-        super::run_parser_compare(&mut screen, &cur_entry, &data);
+        super::run_parser_compare(&mut screen, cur_entry, &data);
     }
 }

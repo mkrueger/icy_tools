@@ -14,8 +14,6 @@ pub struct Image {
 
 /// SkyPaint graphics state - minimal for Skypix protocol
 pub struct SkyPaint {
-    pub pen_a: u8,
-    pub pen_b: u8,
     pen_pos: Position,
     viewport: Rectangle,
     pub rip_image: Option<Image>,
@@ -30,8 +28,6 @@ impl Default for SkyPaint {
 impl SkyPaint {
     pub fn new() -> Self {
         Self {
-            pen_a: 1,
-            pen_b: 0,
             pen_pos: Position::new(0, 0),
             viewport: Rectangle::from(0, 0, 640, 200),
             rip_image: None,
@@ -70,7 +66,7 @@ impl SkyPaint {
         if offset < screen.len() { screen[offset] } else { 0 }
     }
 
-    pub fn line(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) {
+    pub fn line(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32, color: u8) {
         let dx = (x1 - x0).abs();
         let dy = (y1 - y0).abs();
         let sx = if x0 < x1 { 1 } else { -1 };
@@ -80,7 +76,7 @@ impl SkyPaint {
         let mut y = y0;
 
         loop {
-            self.put_pixel(buf, x, y, self.pen_a);
+            self.put_pixel(buf, x, y, color);
             if x == x1 && y == y1 {
                 break;
             }
@@ -96,8 +92,8 @@ impl SkyPaint {
         }
     }
 
-    pub fn line_to(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32) {
-        self.line(buf, self.pen_pos.x, self.pen_pos.y, x, y);
+    pub fn line_to(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, color: u8) {
+        self.line(buf, self.pen_pos.x, self.pen_pos.y, x, y, color);
         self.move_pen(x, y);
     }
 
@@ -109,7 +105,7 @@ impl SkyPaint {
     ///   All pixels NOT of the outline color are filled.
     /// - `FillMode::Color`: Fill replaces all connected pixels that are the
     ///   SAME color as the starting pixel (x, y).
-    pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, mode: FillMode) {
+    pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, mode: FillMode, fill_color: u8) {
         let res = buf.get_resolution();
 
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
@@ -117,13 +113,12 @@ impl SkyPaint {
         }
 
         let start_color = self.get_pixel(buf, x, y);
-        let fill_color = self.pen_a;
 
         match mode {
             FillMode::Outline => {
-                // Outline mode: fill all pixels that are NOT the outline color (pen_a)
-                // The fill stops when it encounters pixels matching pen_a
-                let outline_color = self.pen_a;
+                // Outline mode: fill all pixels that are NOT the outline color (fill_color)
+                // The fill stops when it encounters pixels matching fill_color
+                let outline_color = fill_color;
                 if start_color == outline_color {
                     return; // Starting point is on the outline, nothing to fill
                 }
@@ -190,7 +185,7 @@ impl SkyPaint {
         }
     }
 
-    pub fn bar(&mut self, buf: &mut dyn EditableScreen, left: i32, top: i32, right: i32, bottom: i32) {
+    pub fn bar(&mut self, buf: &mut dyn EditableScreen, left: i32, top: i32, right: i32, bottom: i32, color: u8) {
         let rect = Rectangle::from(left, top, right - left + 1, bottom - top + 1).intersect(&self.viewport);
         if rect.get_width() <= 0 || rect.get_height() <= 0 {
             return;
@@ -201,12 +196,12 @@ impl SkyPaint {
             let start = (y * width + rect.left()) as usize;
             let end = start + rect.get_width() as usize;
             if end <= screen.len() {
-                screen[start..end].fill(self.pen_a);
+                screen[start..end].fill(color);
             }
         }
     }
 
-    pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, cx: i32, cy: i32, rx: i32, ry: i32) {
+    pub fn ellipse(&mut self, buf: &mut dyn EditableScreen, cx: i32, cy: i32, rx: i32, ry: i32, color: u8) {
         if rx <= 0 || ry <= 0 {
             return;
         }
@@ -219,10 +214,10 @@ impl SkyPaint {
 
         let mut p = ry2 - rx2 * ry as i64 + rx2 / 4;
         while px < py {
-            self.put_pixel(buf, cx + x, cy + y, self.pen_a);
-            self.put_pixel(buf, cx - x, cy + y, self.pen_a);
-            self.put_pixel(buf, cx + x, cy - y, self.pen_a);
-            self.put_pixel(buf, cx - x, cy - y, self.pen_a);
+            self.put_pixel(buf, cx + x, cy + y, color);
+            self.put_pixel(buf, cx - x, cy + y, color);
+            self.put_pixel(buf, cx + x, cy - y, color);
+            self.put_pixel(buf, cx - x, cy - y, color);
             x += 1;
             px += 2 * ry2;
             if p < 0 {
@@ -236,10 +231,10 @@ impl SkyPaint {
 
         p = ry2 * (x as i64 * 2 + 1) * (x as i64 * 2 + 1) / 4 + rx2 * (y as i64 - 1) * (y as i64 - 1) - rx2 * ry2;
         while y >= 0 {
-            self.put_pixel(buf, cx + x, cy + y, self.pen_a);
-            self.put_pixel(buf, cx - x, cy + y, self.pen_a);
-            self.put_pixel(buf, cx + x, cy - y, self.pen_a);
-            self.put_pixel(buf, cx - x, cy - y, self.pen_a);
+            self.put_pixel(buf, cx + x, cy + y, color);
+            self.put_pixel(buf, cx - x, cy + y, color);
+            self.put_pixel(buf, cx + x, cy - y, color);
+            self.put_pixel(buf, cx - x, cy - y, color);
             y -= 1;
             py -= 2 * rx2;
             if p > 0 {
@@ -252,7 +247,7 @@ impl SkyPaint {
         }
     }
 
-    pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, cx: i32, cy: i32, rx: i32, ry: i32) {
+    pub fn fill_ellipse(&mut self, buf: &mut dyn EditableScreen, cx: i32, cy: i32, rx: i32, ry: i32, color: u8) {
         if rx <= 0 || ry <= 0 {
             return;
         }
@@ -260,10 +255,10 @@ impl SkyPaint {
             let y_ratio = (y as f64) / (ry as f64);
             let x_extent = ((1.0 - y_ratio * y_ratio).sqrt() * rx as f64).round() as i32;
             for x in -x_extent..=x_extent {
-                self.put_pixel(buf, cx + x, cy + y, self.pen_a);
+                self.put_pixel(buf, cx + x, cy + y, color);
             }
         }
-        self.ellipse(buf, cx, cy, rx, ry);
+        self.ellipse(buf, cx, cy, rx, ry, color);
     }
 
     pub fn get_image(&self, buf: &dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {

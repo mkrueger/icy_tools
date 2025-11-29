@@ -850,11 +850,9 @@ impl SoundBackgroundThreadData {
             .gist_player
             .play_sound_pitched(&sound, actual_pitch, Some(voice_idx), actual_volume, Some(1))
         {
-            Some(v) => {
-                println!("ChipMusic started on voice {}", v);
-            }
+            Some(_v) => {}
             None => {
-                println!("FAILED to start ChipMusic sound on voice {}", voice_idx);
+                eprintln!("FAILED to start ChipMusic sound on voice {}", voice_idx);
                 return;
             }
         }

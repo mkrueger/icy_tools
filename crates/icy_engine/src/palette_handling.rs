@@ -4111,7 +4111,7 @@ macro_rules! amiga_color {
         }
     };
 }
-/* 
+/*
 pub const AMIGA_PALETTE: [Color; 16] = [
     amiga_color!(00, 00, 00), // Black
     amiga_color!(10, 00, 00), // Red

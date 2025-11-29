@@ -62,18 +62,13 @@ pub struct AmigaScreenBuffer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextMode {
     Jam1,
-    Jam2
+    Jam2,
 }
 
 impl AmigaScreenBuffer {
-
-    pub fn get_text_mode(&self) -> TextMode {
-        if self.caret.font_page() == 0 {
-            TextMode::Jam2
-        } else {
-            TextMode::Jam1
-        }
-    }   
+    pub fn text_mode(&self) -> TextMode {
+        if self.caret.font_page() == 0 { TextMode::Jam2 } else { TextMode::Jam1 }
+    }
 
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
@@ -181,10 +176,10 @@ impl AmigaScreenBuffer {
         let pixel_x = pos.x;
         let pixel_y = pos.y;
 
-        // Get colors from palette
-        let mut fg_color = ch.attribute.get_foreground() as u32;
-        let bg_color = ch.attribute.get_background() as u32; // Apply color limit
-        println!("'{}': FG: {} BG: {} Bold:{} ", ch.ch, fg_color, bg_color, ch.attribute.is_bold());
+        // Get colors from palette, swap if inverse video mode is
+        let (fg_color, bg_color) = (ch.attribute.get_foreground() as u32, ch.attribute.get_background() as u32);
+
+        println!("fg:{}", ch.attribute.get_foreground());
 
         let font = if let Some(font) = self.get_font(ch.get_font_page()) {
             font
@@ -209,9 +204,7 @@ impl AmigaScreenBuffer {
         };
 
         let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
-
-        let transparent_bg = self.get_text_mode() == TextMode::Jam1;
-
+        let transparent_bg = self.text_mode() == TextMode::Jam1;
         // Render width differs for Skypix vs other modes:
         // - Skypix: render only the glyph bitmap (no bearing padding)
         // - Other modes: render full advance width with left/right bearing as background
@@ -317,6 +310,7 @@ impl Screen for AmigaScreenBuffer {
     fn caret_position(&self) -> Position {
         let pixel_pos = self.caret.position();
         let font_size = self.get_font_dimensions();
+        // Position::new(pixel_pos.x / font_size.width, ((pixel_pos.y as f32) / font_size.height as f32).ceil() as i32)
         Position::new(pixel_pos.x / font_size.width, pixel_pos.y / font_size.height)
     }
 
@@ -447,7 +441,7 @@ impl Screen for AmigaScreenBuffer {
     }
 
     fn default_foreground_color(&self) -> u32 {
-        self.graphics_type.default_fg_color()
+        2
     }
 
     fn max_base_colors(&self) -> u32 {
@@ -611,6 +605,14 @@ impl EditableScreen for AmigaScreenBuffer {
     fn print_char(&mut self, ch: AttributedChar) {
         let font_size = self.get_font_dimensions();
 
+        // Check if we need to scroll BEFORE rendering to avoid cutting off text
+        if self.terminal_state.is_terminal_buffer && self.caret.y + font_size.height > self.pixel_size.height {
+            while self.caret.y + font_size.height > self.pixel_size.height {
+                self.scroll_up();
+                self.caret.y -= font_size.height;
+            }
+        }
+
         if self.caret.insert_mode {
             self.ins();
         }
@@ -674,6 +676,9 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Line feed - move down by font height in pixels
     fn lf(&mut self) {
+        if self.text_mode() == TextMode::Jam1 {
+            return; // No LF in Jam1 mode
+        }
         let font_size = self.get_font_dimensions();
         let in_margin = self.terminal_state.in_margin(self.caret.position());
         self.caret.x = 0;
@@ -687,6 +692,14 @@ impl EditableScreen for AmigaScreenBuffer {
             // Call limit_caret_pos to respect margins
             self.limit_caret_pos(in_margin);
         }
+    }
+
+    fn cr(&mut self) {
+        if self.text_mode() == TextMode::Jam1 {
+            return; // No LF in Jam1 mode
+        }
+        self.caret_mut().x = 0;
+        self.limit_caret_pos(false);
     }
 
     fn reset_resolution(&mut self) {
@@ -742,7 +755,11 @@ impl EditableScreen for AmigaScreenBuffer {
 
     fn reset_terminal(&mut self) {
         self.terminal_state.reset_terminal(self.terminal_state.get_size());
+        self.terminal_state_mut().cr_is_if = false;
         self.caret.reset();
+        self.caret.set_foreground(self.default_foreground_color());
+        self.caret.set_font_page(0);
+        self.caret.shape = crate::CaretShape::Underline;
     }
 
     fn insert_line(&mut self, _line: usize, _new_line: Line) {
@@ -874,6 +891,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
         // Clear pixel buffer
         self.screen.fill(self.caret.attribute.get_background() as u8);
+        self.terminal_state_mut().cr_is_if = false;
         self.mark_dirty();
     }
 
@@ -1025,99 +1043,103 @@ impl EditableScreen for AmigaScreenBuffer {
     /// Override: Move left, handling autowrap and pixel coordinates
     fn left(&mut self, num: i32, scroll: bool) {
         let font_size = self.get_font_dimensions();
-        let in_margin = self.terminal_state.in_margin(self.caret.position());
 
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
-            if self.caret().x == 0 {
+            if self.caret.x == 0 {
                 // At column 0: wrap to previous line end if above origin line
-                let origin_line = match self.terminal_state().origin_mode {
-                    crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
-                    crate::OriginMode::WithinMargins => self.get_first_editable_line(),
-                };
-
-                let char_y = self.caret().y / font_size.height;
-                if char_y <= origin_line {
+                if self.caret.y <= 0 {
                     // Already at origin line -> no-op
                     return;
                 }
 
-                self.caret_mut().y -= font_size.height;
-                self.caret_mut().x = ((self.get_width() - 1).max(0)) * font_size.width;
+                self.caret.y -= font_size.height;
+                self.caret.x = (self.pixel_size.width - font_size.width).max(0);
                 if scroll {
                     self.check_scrolling_on_caret_up(false);
                 }
-                self.limit_caret_pos(in_margin);
+                self.limit_caret_pos(false);
                 return;
             }
         }
 
         // Move left by num characters (in pixels)
-        let char_x = self.caret().x / font_size.width;
-        let new_char_x = char_x.saturating_sub(num);
-        self.caret_mut().x = new_char_x * font_size.width;
+        self.caret.x = (self.caret.x - num * font_size.width).max(0);
         if scroll {
             self.check_scrolling_on_caret_up(false);
         }
-        self.limit_caret_pos(in_margin);
+        self.limit_caret_pos(false);
     }
 
     /// Override: Move right, handling autowrap and pixel coordinates
     fn right(&mut self, num: i32, scroll: bool) {
         let font_size = self.get_font_dimensions();
-        let last_col = (self.get_width() - 1).max(0);
-        let in_margin = self.terminal_state.in_margin(self.caret.position());
+        let last_pixel_x = self.pixel_size.width - font_size.width;
 
         if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
-            let char_x = self.caret().x / font_size.width;
-            if char_x >= last_col {
+            if self.caret.x >= last_pixel_x {
                 // At end of line: move to start of next line, scrolling if needed
-                self.caret_mut().x = 0;
-                self.caret_mut().y += font_size.height;
+                self.caret.x = 0;
+                self.caret.y += font_size.height;
                 // Use existing scrolling logic to handle terminal buffers
                 self.check_scrolling_on_caret_down(true);
                 if scroll {
                     self.check_scrolling_on_caret_up(false);
                 }
-                self.limit_caret_pos(in_margin);
+                self.limit_caret_pos(false);
                 return;
             }
         }
 
         // Move right by num characters (in pixels)
-        let char_x = self.caret().x / font_size.width;
-        let new_char_x = char_x.saturating_add(num);
-        self.caret_mut().x = new_char_x * font_size.width;
+        self.caret.x = (self.caret.x + num * font_size.width).min(self.pixel_size.width - 1);
         if scroll {
             self.check_scrolling_on_caret_up(false);
         }
-        self.limit_caret_pos(in_margin);
+        self.limit_caret_pos(false);
     }
 
     /// Override: Move up, handling pixel coordinates
     fn up(&mut self, num: i32, scroll: bool) {
-        let in_margin: bool = self.terminal_state.in_margin(self.caret.position());
-
         let font_size = self.get_font_dimensions();
-        let char_y = self.caret().y / font_size.height;
-        let new_char_y = char_y.saturating_sub(num);
-        self.caret_mut().y = new_char_y * font_size.height;
+        self.caret_mut().y -= num * font_size.height;
         if scroll {
             self.check_scrolling_on_caret_up(false);
         }
-        self.limit_caret_pos(in_margin);
     }
 
     /// Override: Move down, handling pixel coordinates
     fn down(&mut self, num: i32, scroll: bool) {
-        let in_margin = self.terminal_state.in_margin(self.caret.position());
-
         let font_size = self.get_font_dimensions();
-        let char_y = self.caret().y / font_size.height;
-        let new_char_y = char_y + num;
-        self.caret_mut().y = new_char_y * font_size.height;
+        self.caret_mut().y += num * font_size.height;
         if scroll {
             self.check_scrolling_on_caret_down(false);
         }
-        self.limit_caret_pos(in_margin);
+    }
+
+    fn check_scrolling_on_caret_up(&mut self, force: bool) {
+        let font_size = self.get_font_dimensions();
+        if self.terminal_state().needs_scrolling() || force {
+            while self.caret.y < 0 {
+                self.scroll_down();
+                self.caret.y += font_size.height;
+            }
+        }
+    }
+
+    fn check_scrolling_on_caret_down(&mut self, force: bool) {
+        let font_size = self.get_font_dimensions();
+        // Scroll up if caret.y + font_height would exceed screen height
+        if self.terminal_state().needs_scrolling() || force {
+            while self.caret.y + font_size.height > self.pixel_size.height {
+                self.scroll_up();
+                self.caret.y -= font_size.height;
+            }
+        }
+    }
+
+    fn limit_caret_pos(&mut self, _was_in_margin: bool) {
+        // Amiga screens have no margins - just clamp to screen bounds in pixel coordinates
+        self.caret.x = self.caret.x.clamp(0, (self.pixel_size.width - 1).max(0));
+        self.caret.y = self.caret.y.clamp(0, (self.pixel_size.height - 1).max(0));
     }
 }
