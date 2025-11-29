@@ -1055,8 +1055,6 @@ fn test_insert_line_outside_scroll_region() {
 
 #[test]
 fn test_cpbug2_sequence() {
-    use icy_engine::parsers::ansi;
-
     let mut screen = TextScreen::new(Size::new(80, 25));
 
     // The sequence from cpbug2.ans end:
