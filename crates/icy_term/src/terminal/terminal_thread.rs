@@ -673,40 +673,17 @@ impl TerminalThread {
 
             match SerialConnection::open(test_serial) {
                 Ok(mut conn) => {
-                    // Flush any pending data first
-                    let mut flush_buf = [0u8; 256];
-                    let _ = tokio::time::timeout(Duration::from_millis(50), conn.read(&mut flush_buf)).await;
-
                     // Send a CR and wait briefly for response
-                    if conn.send(b"Hello World!\r").await.is_ok() {
-                        // Wait a bit for response
-                        tokio::time::sleep(Duration::from_millis(200)).await;
-
+                    if conn.send(b"Hello World\r").await.is_ok() {
                         // Try to read any response
-                        let mut buf = [0u8; 64];
-                        match tokio::time::timeout(Duration::from_millis(400), conn.read(&mut buf)).await {
-                            Ok(Ok(n)) if n >= "ERROR".len() => {
-                                // Check if response contains printable ASCII (valid at this baud rate)
-                                let printable_count = buf[..n].iter().filter(|&&b| b >= 0x20 && b <= 0x7E || b == b'\r' || b == b'\n').count();
-                                if printable_count == n {
-                                    // More than half printable - likely correct baud rate
-                                    self.process_data(format!(" detected!\r\n").as_bytes()).await;
-                                    detected_baud = Some(baud_rate);
-                                    let _ = conn.shutdown().await;
-                                    drop(conn);
-                                    break;
-                                } else {
-                                    self.process_data(format!(" garbage response\r\n").as_bytes()).await;
-                                }
-                            }
-                            _ => {
-                                self.process_data(format!(" no response\r\n").as_bytes()).await;
-                            }
+                        let found_res = self.try_read_response(&mut detected_baud, baud_rate, &mut conn).await;
+                        // Explicitly close connection before trying next baud rate
+                        let _ = conn.shutdown().await;
+                        drop(conn);
+                        if found_res {
+                            break;
                         }
                     }
-                    // Explicitly close connection before trying next baud rate
-                    let _ = conn.shutdown().await;
-                    drop(conn);
                     // Small delay to let the port fully close
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
@@ -724,6 +701,37 @@ impl TerminalThread {
         }
         // Always notify that auto-detection is complete so the dialog can be shown again
         self.send_event(TerminalEvent::SerialAutoDetectComplete);
+    }
+
+    async fn try_read_response(&mut self, detected_baud: &mut Option<u32>, baud_rate: u32, conn: &mut SerialConnection) -> bool {
+        let mut buf = [0u8; 64];
+        for _ in 0..3 {
+            match tokio::time::timeout(Duration::from_millis(1000), conn.read(&mut buf)).await {
+                Ok(Ok(n)) if n > 0 => {
+                    // Check if response contains printable ASCII (valid at this baud rate)
+                    let printable_count = buf[..n]
+                        .iter()
+                        .filter(|&&b| (b as char).is_ascii_alphabetic() || b == b'\r' || b == b'\n')
+                        .count();
+                    // println!("Read {}/{} bytes at {} baud: {}", n, printable_count, baud_rate, String::from_utf8_lossy(&buf[..n]));
+                    if printable_count == n {
+                        // More than half printable - likely correct baud rate
+                        self.process_data(format!(" detected!\r\n").as_bytes()).await;
+                        *detected_baud = Some(baud_rate);
+                        let _ = conn.shutdown().await;
+                        return true;
+                    } else {
+                        self.process_data(format!(" garbage response\r\n").as_bytes()).await;
+                        return false;
+                    }
+                }
+                _ => {
+                    self.process_data(format!(" no response\r\n").as_bytes()).await;
+                    return false;
+                }
+            }
+        }
+        return false;
     }
 
     fn setup_auto_login(&mut self, config: &ConnectionConfig) {
