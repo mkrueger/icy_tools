@@ -652,16 +652,7 @@ impl MainWindow {
                 self.clear_selection();
                 match crate::CLIPBOARD_CONTEXT.get_text() {
                     Ok(text) => {
-                        // Convert text to bytes using the current unicode converter
-                        let mut data: Vec<u8> = Vec::new();
-                        let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
-                        for ch in text.chars() {
-                            let converted_byte = buffer_type.convert_from_unicode(ch);
-                            // Skip NUL characters (used to indicate unmappable characters)
-                            if converted_byte != '\0' {
-                                data.push(converted_byte as u8);
-                            }
-                        }
+                        let data = self.convert_clipboard_text(text);
 
                         // Send the data to the terminal
                         if !data.is_empty() {
@@ -982,6 +973,35 @@ impl MainWindow {
                 Task::none()
             }
         }
+    }
+
+    fn convert_clipboard_text(&mut self, text: String) -> Vec<u8> {
+        let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
+        let enter_bytes = parse_key_string(self.terminal_emulation, "enter").unwrap_or(vec![b'\r']);
+
+        let mut result = Vec::new();
+        // Normalize line endings: replace \r\n and \n with terminal-specific enter
+        let mut chars = text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\r' {
+                // Check if this is \r\n (Windows EOL)
+                if chars.peek() == Some(&'\n') {
+                    chars.next(); // consume the \n
+                }
+                // Add terminal-specific enter sequence
+                result.extend(&enter_bytes);
+            } else if ch == '\n' {
+                // Unix EOL
+                result.extend(&enter_bytes);
+            } else {
+                let converted_byte = buffer_type.convert_from_unicode(ch);
+                // Skip NUL characters (used to indicate unmappable characters)
+                if converted_byte != '\0' {
+                    result.push(converted_byte as u8);
+                }
+            }
+        }
+        result
     }
 
     fn initiate_file_transfer(&mut self, protocol: icy_net::protocol::TransferProtocolType, is_download: bool) {
