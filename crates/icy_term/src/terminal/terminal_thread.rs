@@ -151,6 +151,7 @@ enum QueuedCommand {
     Rip(RipCommand),
     Skypix(SkypixCommand),
     Igs(IgsCommand),
+    ViewData(ViewDataCommand),
     Bell,
     ResizeTerminal(u16, u16),
     TerminalRequest(TerminalRequest),
@@ -219,6 +220,13 @@ impl CommandSink for QueueingSink {
     fn emit_igs(&mut self, cmd: IgsCommand) {
         let mut queue = self.command_queue.lock();
         queue.push_back(QueuedCommand::Igs(cmd));
+    }
+
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+        let mut queue = self.command_queue.lock();
+        queue.push_back(QueuedCommand::ViewData(cmd));
+        // Return false since we can't check row change here - it will be done when command is executed
+        false
     }
 
     fn device_control(&mut self, dcs: DeviceControlString) {
@@ -1214,6 +1222,9 @@ impl TerminalThread {
                             screen_sink.screen().mark_dirty();
                             screen_sink.emit_skypix(skypix_cmd);
                         }
+                        QueuedCommand::ViewData(vd_cmd) => {
+                            screen_sink.emit_view_data(vd_cmd);
+                        }
                         QueuedCommand::Igs(ref igs_cmd) => {
                             screen_sink.screen().mark_dirty();
 
@@ -1333,6 +1344,9 @@ impl TerminalThread {
                                 }
                                 QueuedCommand::Skypix(skypix_cmd) => {
                                     screen_sink.emit_skypix(skypix_cmd);
+                                }
+                                QueuedCommand::ViewData(vd_cmd) => {
+                                    screen_sink.emit_view_data(vd_cmd);
                                 }
                                 QueuedCommand::Igs(ref igs_cmd) => {
                                     screen_sink.emit_igs(igs_cmd.clone());
