@@ -629,7 +629,13 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         } else if state.dragging {
             mouse::Interaction::Crosshair
         } else if state.hovered_cell.is_some() {
-            mouse::Interaction::Text
+            // Only show text cursor for text mode screens (selection not yet supported for graphics)
+            let info = state.cached_screen_info.lock();
+            if info.graphics_type == icy_engine::GraphicsType::Text {
+                mouse::Interaction::Text
+            } else {
+                mouse::Interaction::default()
+            }
         } else {
             mouse::Interaction::default()
         }

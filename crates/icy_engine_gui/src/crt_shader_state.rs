@@ -7,6 +7,7 @@ use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, Unicode
 use iced::Element;
 use iced::Rectangle;
 use iced::widget::shader;
+use icy_engine::GraphicsType;
 use icy_engine::MouseField;
 use icy_engine::MouseState;
 use icy_engine::Position;
@@ -32,6 +33,8 @@ pub struct CachedScreenInfo {
     pub last_selection_state: (Option<Position>, Option<Position>, bool),
     /// Last buffer version for cache invalidation
     pub last_buffer_version: u64,
+    /// Graphics type of the screen (Text, IGS, Skypix, Rip)
+    pub graphics_type: GraphicsType,
 }
 
 impl Default for CachedScreenInfo {
@@ -46,6 +49,7 @@ impl Default for CachedScreenInfo {
             render_size: (0, 0),
             last_selection_state: (None, None, false),
             last_buffer_version: u64::MAX,
+            graphics_type: GraphicsType::Text,
         }
     }
 }
@@ -102,6 +106,7 @@ impl CRTShaderState {
         info.screen_height = screen.get_height();
         info.resolution = screen.get_resolution();
         info.scan_lines = screen.scan_lines();
+        info.graphics_type = screen.graphics_type();
     }
 
     /// Map mouse coordinates to cell position using cached screen info
