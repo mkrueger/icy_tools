@@ -729,12 +729,9 @@ pub enum TerminalCommand {
     /// Emitted once per mode (e.g., ESC[?25;1000h emits two commands)
     CsiDecSetMode(DecMode, bool),
 
-    /// SM - Set Mode: ESC[{n}h
+    /// SM - Set Mode: ESC[{n}h / RM - Reset Mode: ESC[{n}l
     /// Emitted once per mode
-    CsiSetMode(AnsiMode),
-    /// RM - Reset Mode: ESC[{n}l
-    /// Emitted once per mode
-    CsiResetMode(AnsiMode),
+    CsiSetMode(AnsiMode, bool),
 
     // CSI with intermediate bytes
     /// DECSCUSR - Set Cursor Style: ESC[{Ps} SP q

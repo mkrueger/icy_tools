@@ -409,14 +409,16 @@ pub trait EditableScreen: Screen {
     }
 
     fn del(&mut self) {
-        let pos = self.caret_position();
-        let line_len = self.get_line_length(pos.y);
+        let caret_position = self.caret_position();
+        let pos = caret_position;
+        let line_len = self.get_last_editable_column();
         if pos.x < 0 || pos.y < 0 {
             return;
         }
         if pos.x >= line_len {
             return;
         }
+
         // Shift characters left from pos.x+1 .. line_len-1
         for x in pos.x..(line_len - 1) {
             let next = self.get_char((x + 1, pos.y).into());
@@ -453,42 +455,14 @@ pub trait EditableScreen: Screen {
     }
 
     fn bs(&mut self) {
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
-            && self.caret().x == 0
-        {
-            // At column 0: decide if we can wrap to previous line.
-            // Determine the "origin" (first line) depending on origin mode.
-            let origin_line = match self.terminal_state().origin_mode {
-                crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
-                crate::OriginMode::WithinMargins => self.get_first_editable_line(),
-            };
-
-            // If already at origin line -> no operation (NOP).
-            if self.caret().y <= origin_line {
-                return;
-            }
-
-            // Move to previous line.
-            let prev_y = self.caret().y - 1;
-            self.caret_mut().y = prev_y;
-
-            // Choose target column: last used character on that line if any, else 0.
-            let last_len = self.get_line_length(prev_y);
-            let target_x = if last_len > 0 {
-                // We delete the last logical character cell.
-                (last_len - 1).min(self.get_width() - 1)
-            } else {
-                0
-            };
-            self.caret_mut().x = target_x;
-
-            // Delete (blank) that character.
-            self.set_char(self.caret_position(), AttributedChar::new(' ', self.caret().attribute));
+        // BS (0x08): Non-destructive backspace
+        let min_x = if self.terminal_state().in_margin(self.caret().position()) {
+            self.get_first_editable_column()
         } else {
-            let x = max(0, self.caret_mut().x - 1);
-            self.caret_mut().x = x;
-            self.set_char(self.caret_position(), AttributedChar::new(' ', self.caret().attribute));
-        }
+            0
+        };
+        let x = max(min_x, self.caret().x - 1);
+        self.caret_mut().x = x;
     }
 
     fn left(&mut self, num: i32, scroll: bool) {

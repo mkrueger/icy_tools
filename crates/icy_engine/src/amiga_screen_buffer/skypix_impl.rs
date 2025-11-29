@@ -115,7 +115,6 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         }
         SkypixCommand::ResetFont => {
             reset_to_default_font(buf);
-            println!("SKYPIX_RESET_FONT executed");
         }
 
         SkypixCommand::NewPalette { colors } => {

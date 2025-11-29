@@ -565,7 +565,8 @@ impl<'a> CRTShaderProgram<'a> {
                         match caret.shape {
                             CaretShape::Bar => {
                                 // Draw a vertical bar on the left edge of the character cell
-                                let bar_width = 2.min(font_w); // 2 pixels wide or font width if smaller
+                                let bar_width = if caret.insert_mode { font_w / 2 } else { 2.min(font_w) };
+
                                 for row in 0..actual_font_h {
                                     let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                     let slice = &mut rgba_data[row_offset..row_offset + bar_width * 4];
@@ -577,7 +578,8 @@ impl<'a> CRTShaderProgram<'a> {
                                 }
                             }
                             CaretShape::Block => {
-                                for row in 0..actual_font_h {
+                                let start = if caret.insert_mode { actual_font_h / 2 } else { 0 };
+                                for row in start..actual_font_h {
                                     let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                     let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
                                     for p in slice.chunks_exact_mut(4) {
@@ -588,7 +590,11 @@ impl<'a> CRTShaderProgram<'a> {
                                 }
                             }
                             CaretShape::Underline => {
-                                let start_row = actual_font_h.saturating_sub(2);
+                                let start_row = if caret.insert_mode {
+                                    actual_font_h / 2
+                                } else {
+                                    actual_font_h.saturating_sub(2)
+                                };
                                 for row in start_row..actual_font_h {
                                     let row_offset = (px_y + row) * line_bytes + px_x * 4;
                                     let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];

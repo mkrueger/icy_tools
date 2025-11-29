@@ -1776,7 +1776,7 @@ impl AnsiParser {
                 for &param in &self.params {
                     match AnsiMode::from_u16(param) {
                         Some(mode) => {
-                            sink.emit(TerminalCommand::CsiSetMode(mode));
+                            sink.emit(TerminalCommand::CsiSetMode(mode, true));
                         }
                         None => {
                             sink.report_error(
@@ -1795,12 +1795,12 @@ impl AnsiParser {
                 for &param in &self.params {
                     match AnsiMode::from_u16(param) {
                         Some(mode) => {
-                            sink.emit(TerminalCommand::CsiResetMode(mode));
+                            sink.emit(TerminalCommand::CsiSetMode(mode, false));
                         }
                         None => {
                             sink.report_error(
                                 ParseError::InvalidParameter {
-                                    command: "CsiResetMode",
+                                    command: "CsiSetMode",
                                     value: format!("{}", param).to_string(),
                                     expected: None,
                                 },

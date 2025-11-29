@@ -363,8 +363,9 @@ fn test_ansi_modes() {
     // ESC[4h - Set Insert/Replace Mode
     parser.parse(b"\x1B[4h", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiSetMode(mode) = sink.cmds[0] {
+    if let TerminalCommand::CsiSetMode(mode, enabled) = sink.cmds[0] {
         assert_eq!(mode, AnsiMode::InsertReplace);
+        assert!(enabled);
     } else {
         panic!("Expected CsiSetMode");
     }
@@ -374,10 +375,11 @@ fn test_ansi_modes() {
     // ESC[4l - Reset Insert/Replace Mode
     parser.parse(b"\x1B[4l", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiResetMode(mode) = sink.cmds[0] {
+    if let TerminalCommand::CsiSetMode(mode, enabled) = sink.cmds[0] {
         assert_eq!(mode, AnsiMode::InsertReplace);
+        assert!(!enabled);
     } else {
-        panic!("Expected CsiResetMode");
+        panic!("Expected CsiSetMode");
     }
 
     sink.cmds.clear();
@@ -385,13 +387,15 @@ fn test_ansi_modes() {
     // ESC[4;4h - Set mode twice (duplicate) - emits 2 individual commands
     parser.parse(b"\x1B[4;4h", &mut sink);
     assert_eq!(sink.cmds.len(), 2);
-    if let TerminalCommand::CsiSetMode(mode) = sink.cmds[0] {
+    if let TerminalCommand::CsiSetMode(mode, enabled) = sink.cmds[0] {
         assert_eq!(mode, AnsiMode::InsertReplace);
+        assert!(enabled);
     } else {
         panic!("Expected CsiSetMode for first command");
     }
-    if let TerminalCommand::CsiSetMode(mode) = sink.cmds[1] {
+    if let TerminalCommand::CsiSetMode(mode, enabled) = sink.cmds[1] {
         assert_eq!(mode, AnsiMode::InsertReplace);
+        assert!(enabled);
     } else {
         panic!("Expected CsiSetMode for second command");
     }
@@ -420,13 +424,15 @@ fn test_ansi_modes() {
     parser.parse(b"\x1B[4;99;4h", &mut sink);
     assert_eq!(sink.errors.len(), 1); // Error for mode 99
     assert_eq!(sink.cmds.len(), 2); // Two valid mode 4 commands
-    if let TerminalCommand::CsiSetMode(mode) = sink.cmds[0] {
+    if let TerminalCommand::CsiSetMode(mode, enabled) = sink.cmds[0] {
         assert_eq!(mode, AnsiMode::InsertReplace);
+        assert!(enabled);
     } else {
         panic!("Expected CsiSetMode for first command");
     }
-    if let TerminalCommand::CsiSetMode(mode) = sink.cmds[1] {
+    if let TerminalCommand::CsiSetMode(mode, enabled) = sink.cmds[1] {
         assert_eq!(mode, AnsiMode::InsertReplace);
+        assert!(enabled);
     } else {
         panic!("Expected CsiSetMode for second command");
     }

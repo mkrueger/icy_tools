@@ -308,7 +308,7 @@ impl CommandParser for AvatarParser {
                     }
                     INSERT_MODE => {
                         self.insert_mode = true;
-                        sink.emit(TerminalCommand::CsiSetMode(crate::AnsiMode::InsertReplace));
+                        sink.emit(TerminalCommand::CsiSetMode(crate::AnsiMode::InsertReplace, true));
                         self.reset();
                         i += 1;
                         printable_start = i;

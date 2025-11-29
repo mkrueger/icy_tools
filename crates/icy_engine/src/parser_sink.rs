@@ -569,11 +569,8 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
 
             // ANSI Modes
-            TerminalCommand::CsiSetMode(mode) => {
-                self.set_ansi_mode(mode, true);
-            }
-            TerminalCommand::CsiResetMode(mode) => {
-                self.set_ansi_mode(mode, false);
+            TerminalCommand::CsiSetMode(mode, enabled) => {
+                self.set_ansi_mode(mode, enabled);
             }
 
             // Caret style
