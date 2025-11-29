@@ -27,12 +27,11 @@ use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, MouseMo
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
     screen: &'a mut dyn EditableScreen,
-    vd_last_row: i32,
 }
 
 impl<'a> ScreenSink<'a> {
     pub fn new(screen: &'a mut dyn EditableScreen) -> Self {
-        Self { screen, vd_last_row: 0 }
+        Self { screen }
     }
 
     /// Get mutable reference to the underlying screen
@@ -766,7 +765,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 // For Viewdata, default foreground is white (color 7), not black
                 self.screen.caret_mut().attribute.set_foreground(7);
                 self.screen.caret_mut().attribute.set_background(0);
-                self.vd_last_row = 0;
+                self.screen.terminal_state_mut().vd_last_row = 0;
             }
             ViewDataCommand::FillToEol => {
                 self.vd_fill_to_eol();
@@ -779,15 +778,15 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 // For Viewdata, default foreground is white (color 7), not black
                 self.screen.caret_mut().attribute.set_foreground(7);
                 self.screen.caret_mut().attribute.set_background(0);
-                self.vd_last_row = self.screen.caret_position().y;
+                self.screen.terminal_state_mut().vd_last_row = self.screen.caret_position().y;
             }
             ViewDataCommand::CheckAndResetOnRowChange => {
                 let current_row = self.screen.caret_position().y;
-                if current_row != self.vd_last_row {
+                if current_row != self.screen.terminal_state_mut().vd_last_row {
                     // For Viewdata, default foreground is white (color 7), not black
                     self.screen.caret_mut().attribute.set_foreground(7);
                     self.screen.caret_mut().attribute.set_background(0);
-                    self.vd_last_row = current_row;
+                    self.screen.terminal_state_mut().vd_last_row = current_row;
                 }
             }
             ViewDataCommand::MoveCaret(direction) => match direction {

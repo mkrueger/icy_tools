@@ -87,8 +87,11 @@ pub struct TerminalState {
     dec_left_right_margins: bool,
 
     // Attributes used for determining the real current device attribute:
-    pub(crate) inverse_video: bool,
-    pub(crate) ice_colors: bool,
+    pub inverse_video: bool,
+    pub ice_colors: bool,
+
+    // Special for Viewdata terminals - they reset colors on row change.
+    pub(crate) vd_last_row: i32,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -141,6 +144,7 @@ impl TerminalState {
             inverse_video: false,
             ice_colors: false,
             dec_left_right_margins: false,
+            vd_last_row: 0,
         };
         ret.reset_tabs();
         ret

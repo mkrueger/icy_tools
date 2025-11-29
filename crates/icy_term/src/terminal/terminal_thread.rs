@@ -1193,36 +1193,15 @@ impl TerminalThread {
                     _ => {}
                 }
 
+                //let inverse = screen.terminal_state().inverse_video;
                 // Get editable screen for command processing
                 if let Some(editable) = screen.as_editable() {
                     // Now create sink for normal command processing
                     let mut screen_sink = ScreenSink::new(editable);
-
                     // Process this command
                     match cmd {
-                        QueuedCommand::Print(text, inverse_video) => {
-                            if inverse_video {
-                                // Drop sink to get direct mutable access
-                                drop(screen_sink);
-
-                                // Apply inverse video: swap fg/bg in the attribute
-                                let mut attr = editable.caret().attribute;
-                                let fg = attr.get_foreground();
-                                let bg = attr.get_background();
-                                attr.set_foreground(bg);
-                                attr.set_background(fg);
-
-                                // Print each character with swapped colors
-                                for &byte in &text {
-                                    let ch = icy_engine::AttributedChar::new(byte as char, attr);
-                                    editable.print_char(ch);
-                                }
-
-                                // Recreate sink for following commands
-                                screen_sink = ScreenSink::new(editable);
-                            } else {
-                                screen_sink.print(&text);
-                            }
+                        QueuedCommand::Print(text, _inverse_video) => {
+                            screen_sink.print(&text);
                         }
                         QueuedCommand::Command(parser_cmd) => {
                             screen_sink.emit(parser_cmd);
