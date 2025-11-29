@@ -755,6 +755,14 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+        let current_row = self.screen.caret_position().y;
+        if current_row != self.screen.terminal_state_mut().vd_last_row {
+            // For Viewdata, default foreground is white (color 7), not black
+            self.screen.caret_mut().attribute.set_foreground(7);
+            self.screen.caret_mut().attribute.set_background(0);
+            self.screen.terminal_state_mut().vd_last_row = current_row;
+        }
+
         match cmd {
             ViewDataCommand::ViewDataClearScreen => {
                 // Preserve caret visibility (e.g., if hidden by 0x14)
@@ -780,15 +788,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.caret_mut().attribute.set_background(0);
                 self.screen.terminal_state_mut().vd_last_row = self.screen.caret_position().y;
             }
-            ViewDataCommand::CheckAndResetOnRowChange => {
-                let current_row = self.screen.caret_position().y;
-                if current_row != self.screen.terminal_state_mut().vd_last_row {
-                    // For Viewdata, default foreground is white (color 7), not black
-                    self.screen.caret_mut().attribute.set_foreground(7);
-                    self.screen.caret_mut().attribute.set_background(0);
-                    self.screen.terminal_state_mut().vd_last_row = current_row;
-                }
-            }
+            ViewDataCommand::CheckAndResetOnRowChange => {}
             ViewDataCommand::MoveCaret(direction) => match direction {
                 Direction::Up => {
                     let current_y = self.screen.caret_position().y;
