@@ -125,7 +125,10 @@ impl BufferType {
                 }
                 match UNICODE_TO_VIEWDATA.get(&ch) {
                     Some(out_ch) => *out_ch,
-                    _ => ch,
+                    // For Viewdata/Mode7, unknown characters should be filtered
+                    // to prevent sending invalid bytes to the BBS.
+                    // Return NUL character to indicate the character should be skipped.
+                    _ => '\0',
                 }
             }
         }

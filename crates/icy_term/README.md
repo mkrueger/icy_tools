@@ -16,12 +16,12 @@ Visit [Telnet BBS Guide](https://www.telnetbbsguide.com/) to explore active BBSe
 
 - **ANSI/PC**: Full ANSI-BBS with iCE colors and extended attributes + Avatar
 - **Commodore**: PETSCII (C64/C128)
-- **Atari**: ATASCII (8-bit computers)
 - **Teletext**: Viewdata/Mode7
 - **Atari ST**: Atari ST VT52 + IGS 2.19
-- **Graphics**: RIPscrip, SkyPix (experimental)
+- **Atari 8Bit**: ATASCII + XEP80
+- **Graphics**: RIPscrip, SkyPix
 - **UTF8**: Experimental
-- **Modern**: Sixel graphics, OSC8 Hyperlinks, Loadable fonts
+- **Modern**: Sixel graphics, OSC8 Hyperlinks, Loadable fonts, loadable Palettes & many more
 
 ### 📁 File Transfers
 
@@ -156,15 +156,19 @@ grep -r "fl!(.*\"key-name\"" crates/icy_term/src/
 
 | CP437 (DOS) | PETSCII (C64) |
 |-------------|---------------|
-| ![DOS](assets/dos_bbs.png?raw=true) | ![PETSCII](assets/c64_bbs.png?raw=true) |
+| ![CP437](assets/cp437.png?raw=true) | ![PETSCII](assets/c64.png?raw=true) |
 
 | ATASCII | Viewdata |
-|---------|----------|
-| ![ATASCII](assets/atascii_bbs.png?raw=true) | ![Viewdata](assets/viewdata_bbs.png?raw=true) |
+|---------|----------------|
+| ![ATASCII](assets/atascii.png?raw=true) | ![Viewdata](assets/viewdata.png?raw=true) |
 
 | RIPscrip | SkyPix |
 |----------|--------|
-| ![RIPscrip](assets/ripscrip_bbs.png?raw=true) | ![SkyPix](assets/skypix_bbs.png?raw=true) |
+| ![RIPscrip](assets/ripscript.png?raw=true) | ![SkyPix](assets/skypix.png?raw=true) |
+
+| VT52 (Atari ST) | IGS Graphics |
+|-----------------|--------------|
+| ![VT52](assets/vt52.png?raw=true) | ![IGS](assets/igs.png?raw=true) |
 
 ## License
 

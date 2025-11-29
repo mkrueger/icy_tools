@@ -83,9 +83,7 @@ impl<'a> ScreenSink<'a> {
         let attr = &mut self.screen.caret_mut().attribute;
         match sgr {
             SgrAttribute::Reset => {
-                self.screen.caret_default_colors();
-                self.screen.caret_mut().attribute.set_is_bold(false);
-                self.screen.terminal_state_mut().inverse_video = false;
+                self.screen.sgr_reset();
             }
             SgrAttribute::Intensity(intensity) => match intensity {
                 Intensity::Normal => {

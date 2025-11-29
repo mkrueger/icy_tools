@@ -57,6 +57,7 @@ pub struct AmigaScreenBuffer {
     // Scan lines for Atari ST Medium resolution (doubles line height)
     pub scan_lines: bool,
     pub scrollback_buffer: ScrollbackBuffer,
+    pub text_mode: TextMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,10 +67,6 @@ pub enum TextMode {
 }
 
 impl AmigaScreenBuffer {
-    pub fn text_mode(&self) -> TextMode {
-        if self.caret.font_page() == 0 { TextMode::Jam2 } else { TextMode::Jam1 }
-    }
-
     /// Creates a new PaletteScreenBuffer with pixel dimensions
     /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(graphics_type: GraphicsType) -> Self {
@@ -163,6 +160,7 @@ impl AmigaScreenBuffer {
             graphics_type,
             scan_lines,
             scrollback_buffer: ScrollbackBuffer::new(),
+            text_mode: TextMode::Jam2,
         }
     }
 
@@ -202,7 +200,7 @@ impl AmigaScreenBuffer {
         };
 
         let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
-        let transparent_bg = self.text_mode() == TextMode::Jam1;
+        let transparent_bg = self.text_mode == TextMode::Jam1;
         // Render width differs for Skypix vs other modes:
         // - Skypix: render only the glyph bitmap (no bearing padding)
         // - Other modes: render full advance width with left/right bearing as background
@@ -674,7 +672,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Line feed - move down by font height in pixels
     fn lf(&mut self) {
-        if self.text_mode() == TextMode::Jam1 {
+        if self.text_mode == TextMode::Jam1 {
             return; // No LF in Jam1 mode
         }
         let font_size = self.get_font_dimensions();
@@ -693,7 +691,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn cr(&mut self) {
-        if self.text_mode() == TextMode::Jam1 {
+        if self.text_mode == TextMode::Jam1 {
             return; // No LF in Jam1 mode
         }
         self.caret_mut().x = 0;
@@ -758,6 +756,7 @@ impl EditableScreen for AmigaScreenBuffer {
         self.caret.set_foreground(self.default_foreground_color());
         self.caret.set_font_page(0);
         self.caret.shape = crate::CaretShape::Underline;
+        self.text_mode = TextMode::Jam2;
     }
 
     fn insert_line(&mut self, _line: usize, _new_line: Line) {
@@ -1066,6 +1065,14 @@ impl EditableScreen for AmigaScreenBuffer {
             self.check_scrolling_on_caret_up(false);
         }
         self.limit_caret_pos(false);
+    }
+
+    fn sgr_reset(&mut self) {
+        self.caret_default_colors();
+        self.caret.set_font_page(0);
+        self.caret_mut().attribute.set_is_bold(false);
+        self.terminal_state_mut().inverse_video = false;
+        self.text_mode = TextMode::Jam2;
     }
 
     /// Override: Move right, handling autowrap and pixel coordinates

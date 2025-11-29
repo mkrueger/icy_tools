@@ -203,6 +203,12 @@ pub trait EditableScreen: Screen {
         };
     }
 
+    fn sgr_reset(&mut self) {
+        self.caret_default_colors();
+        self.caret_mut().attribute.set_is_bold(false);
+        self.terminal_state_mut().inverse_video = false;
+    }
+
     // Font management
     fn set_font(&mut self, font_number: usize, font: BitFont);
     fn remove_font(&mut self, font_number: usize) -> Option<BitFont>;

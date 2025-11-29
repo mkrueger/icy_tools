@@ -12,10 +12,6 @@ pub fn test_skypix() {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("ans"))
     {
-        if entry.file_name() != "camera2.ans" {
-            // This test file is known to be broken currently
-            continue;
-        }
         let cur_entry = entry.path();
         log::info!("Testing file: {:?}", cur_entry);
 

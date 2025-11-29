@@ -272,7 +272,10 @@ impl MainWindow {
                 let mut data: Vec<u8> = Vec::new();
                 for ch in s.chars() {
                     let converted_byte = buffer_type.convert_from_unicode(ch);
-                    data.push(converted_byte as u8);
+                    // Skip NUL characters (used to indicate unmappable characters)
+                    if converted_byte != '\0' {
+                        data.push(converted_byte as u8);
+                    }
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
 
@@ -291,7 +294,10 @@ impl MainWindow {
                 let mut data: Vec<u8> = Vec::new();
                 for ch in cmd.chars() {
                     let converted_byte = buffer_type.convert_from_unicode(ch);
-                    data.push(converted_byte as u8);
+                    // Skip NUL characters (used to indicate unmappable characters)
+                    if converted_byte != '\0' {
+                        data.push(converted_byte as u8);
+                    }
                 }
                 let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 Task::none()
@@ -651,7 +657,10 @@ impl MainWindow {
                         let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
                         for ch in text.chars() {
                             let converted_byte = buffer_type.convert_from_unicode(ch);
-                            data.push(converted_byte as u8);
+                            // Skip NUL characters (used to indicate unmappable characters)
+                            if converted_byte != '\0' {
+                                data.push(converted_byte as u8);
+                            }
                         }
 
                         // Send the data to the terminal
@@ -739,7 +748,10 @@ impl MainWindow {
                     let mut data: Vec<u8> = Vec::new();
                     for ch in seq.chars() {
                         let converted_byte = buffer_type.convert_from_unicode(ch);
-                        data.push(converted_byte as u8);
+                        // Skip NUL characters (used to indicate unmappable characters)
+                        if converted_byte != '\0' {
+                            data.push(converted_byte as u8);
+                        }
                     }
                     let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                 }

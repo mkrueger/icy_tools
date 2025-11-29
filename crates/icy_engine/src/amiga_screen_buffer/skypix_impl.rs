@@ -3,6 +3,39 @@ use icy_parser_core::{DisplayMode, SkypixCommand};
 use super::sky_paint::SkyPaint;
 use crate::{BitFont, EditableScreen, Palette, SKYPIX_PALETTE, SKYPIX_PALETTE_8, Screen, Size, get_amiga_font_by_name};
 
+/// Resets font page from a custom font (page 1) back to the default font (page 0).
+/// Corrects the Y position so the caret stays at the baseline rather than the top
+/// of the previous larger character cell.
+///
+/// When switching from a larger font to the default 8x8 font, the Y position needs
+/// adjustment: y += old_font_height - base_font_height
+fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
+    let current_page = buf.caret().font_page();
+
+    // Only adjust if we're on a custom font page
+    if current_page != 0 {
+        if let Some(current_font) = buf.get_font(current_page) {
+            let current_height = current_font.size().height;
+            let default_height = buf.get_font(0).map(|f| f.size().height).unwrap_or(8);
+
+            let mut pos = buf.caret().position();
+            pos.y += current_height - default_height;
+            buf.caret_mut().set_position(pos);
+        }
+    }
+
+    buf.caret_mut().set_font_page(0);
+    buf.caret_mut().visible = true;
+    buf.text_mode = super::TextMode::Jam2;
+}
+
+/// Switches to a custom font (page 1).
+fn switch_to_custom_font(buf: &mut super::AmigaScreenBuffer, font: BitFont) {
+    buf.set_font(1, font);
+    buf.caret_mut().set_font_page(1);
+    buf.caret_mut().visible = false; // Hide text caret in JAM1 mode.
+}
+
 /// Amiga 8x8 IBM compatible font for Skypix
 pub const SKYPIX_DEFAULT_FONT_DATA: &str = include_str!("../../data/fonts/Amiga/Amiga8x8_IBM.yaff");
 
@@ -15,7 +48,7 @@ pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPaint, cmd: SkypixCommand) {
     // Get current pen colors from caret attribute
     let pen_a = buf.caret().attribute.get_foreground() as u8;
-
+    buf.text_mode = super::TextMode::Jam1;
     match cmd {
         SkypixCommand::Comment { .. } => {
             // Command 0: Comments are ignored
@@ -73,9 +106,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
 
         SkypixCommand::SetFont { size, name } => {
             if let Some(font) = get_amiga_font_by_name(&name, size) {
-                buf.set_font(1, font);
-                buf.caret_mut().set_font_page(1);
-                buf.caret_mut().visible = false; // Hide text caret in JAM1 mode.
+                switch_to_custom_font(buf, font);
             // JAM1 mode: CR moves to beginning of next line, LF is ignored
             } else {
                 log::warn!("SKYPIX_SET_FONT: Font '{}' size {} not found", name, size);
@@ -83,13 +114,13 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
             }
         }
         SkypixCommand::ResetFont => {
-            buf.caret_mut().set_font_page(0);
-            buf.caret_mut().visible = true; // Show text in JAM2 mode.
+            reset_to_default_font(buf);
+            println!("SKYPIX_RESET_FONT executed");
         }
 
         SkypixCommand::NewPalette { colors } => {
             if colors.len() >= 16 {
-                let mut palette = Palette::new();
+                let mut palette: Palette = Palette::new();
                 for i in 0..16 {
                     let color_val = colors[i];
                     let r = ((color_val & 0xF) * 17) as u8;
@@ -156,6 +187,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
             buf.caret.set_foreground(buf.default_foreground_color());
             buf.caret.set_background(0);
             buf.caret.set_font_page(0);
+            buf.text_mode = super::TextMode::Jam2;
         }
     }
 }
