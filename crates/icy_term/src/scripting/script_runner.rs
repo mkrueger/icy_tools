@@ -22,13 +22,6 @@ lazy_static::lazy_static! {
     static ref HEX_REGEX: Regex = Regex::new(r"#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap();
 }
 
-/// Log entry from script execution
-#[derive(Debug, Clone)]
-pub struct ScriptLogEntry {
-    pub timestamp: std::time::Instant,
-    pub message: String,
-}
-
 /// Result of script execution
 #[derive(Debug)]
 pub enum ScriptResult {
@@ -41,8 +34,6 @@ pub enum ScriptResult {
 pub struct ScriptRunner {
     /// Shared state with terminal
     state: Arc<ScriptState>,
-    /// Log entries from script
-    pub log: Arc<Mutex<Vec<ScriptLogEntry>>>,
     /// Running script thread handle
     run_thread: Option<thread::JoinHandle<ScriptResult>>,
 }
@@ -57,11 +48,7 @@ impl ScriptRunner {
         terminal_emulation: Arc<Mutex<TerminalEmulation>>,
     ) -> Self {
         let state = Arc::new(ScriptState::new(screen, command_tx, event_tx, address_book, terminal_emulation));
-        Self {
-            state,
-            log: Arc::new(Mutex::new(Vec::new())),
-            run_thread: None,
-        }
+        Self { state, run_thread: None }
     }
 
     /// Run a script from a file
@@ -79,12 +66,10 @@ impl ScriptRunner {
 
         // Reset state
         *self.state.should_stop.lock() = false;
-        self.log.lock().clear();
 
         let state = self.state.clone();
-        let log = self.log.clone();
 
-        let handle = thread::spawn(move || run_lua_script(state, log, script));
+        let handle = thread::spawn(move || run_lua_script(state, script));
 
         self.run_thread = Some(handle);
         Ok(())
@@ -118,7 +103,7 @@ impl ScriptRunner {
     }
 }
 
-fn run_lua_script(state: Arc<ScriptState>, log: Arc<Mutex<Vec<ScriptLogEntry>>>, script: String) -> ScriptResult {
+fn run_lua_script(state: Arc<ScriptState>, script: String) -> ScriptResult {
     let lua = Lua::new();
     let globals = lua.globals();
 
@@ -139,14 +124,10 @@ fn run_lua_script(state: Arc<ScriptState>, log: Arc<Mutex<Vec<ScriptLogEntry>>>,
     }
 
     // Register log function
-    let log_clone = log.clone();
     if let Err(e) = globals.set(
         "log",
         lua.create_function(move |_, msg: String| {
-            log_clone.lock().push(ScriptLogEntry {
-                timestamp: std::time::Instant::now(),
-                message: msg,
-            });
+            log::info!("{}", msg);
             Ok(())
         })
         .unwrap(),
@@ -155,15 +136,11 @@ fn run_lua_script(state: Arc<ScriptState>, log: Arc<Mutex<Vec<ScriptLogEntry>>>,
     }
 
     // Register print override to also log
-    let log_clone = log.clone();
     if let Err(e) = globals.set(
         "print",
         lua.create_function(move |_, args: mlua::Variadic<String>| {
             let msg = args.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\t");
-            log_clone.lock().push(ScriptLogEntry {
-                timestamp: std::time::Instant::now(),
-                message: msg,
-            });
+            log::info!("{}", msg);
             Ok(())
         })
         .unwrap(),
