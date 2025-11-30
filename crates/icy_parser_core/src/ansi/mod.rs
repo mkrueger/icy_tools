@@ -529,6 +529,21 @@ impl CommandParser for AnsiParser {
                             i += 1;
                             printable_start = i;
                         }
+                        ESC => {
+                            // Malformed sequence - report error and fall back to ESC state
+                            sink.report_error(
+                                ParseError::MalformedSequence {
+                                    description: "Incomplete CSI sequence interrupted by ESC",
+                                    sequence: Some("CSI <incomplete>".to_string()),
+                                    context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                                },
+                                crate::ErrorLevel::Warning,
+                            );
+                            self.reset();
+                            self.state = ParserState::Escape;
+                            i += 1;
+                            printable_start = i;
+                        }
                         _ => {
                             // Invalid CSI sequence
                             self.reset();
@@ -585,6 +600,21 @@ impl CommandParser for AnsiParser {
                             i += 1;
                             printable_start = i;
                         }
+                        ESC => {
+                            // Malformed sequence - report error and fall back to ESC state
+                            sink.report_error(
+                                ParseError::MalformedSequence {
+                                    description: "Incomplete CSI sequence interrupted by ESC",
+                                    sequence: Some(format!("CSI {:?} <incomplete>", self.params)),
+                                    context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                                },
+                                crate::ErrorLevel::Warning,
+                            );
+                            self.reset();
+                            self.state = ParserState::Escape;
+                            i += 1;
+                            printable_start = i;
+                        }
                         _ => {
                             // Invalid character
                             self.reset();
@@ -613,6 +643,21 @@ impl CommandParser for AnsiParser {
                         // TODO: inline DEC private mode CSI handling here
                         self.handle_dec_private_csi_final(byte, sink);
                         self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI ? sequence interrupted by ESC",
+                                sequence: Some(format!("CSI ? {:?} <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
                         i += 1;
                         printable_start = i;
                     }
@@ -678,6 +723,21 @@ impl CommandParser for AnsiParser {
                             right,
                         });
                         self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI * sequence interrupted by ESC",
+                                sequence: Some(format!("CSI {:?} * <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
                         i += 1;
                         printable_start = i;
                     }
@@ -776,6 +836,21 @@ impl CommandParser for AnsiParser {
                         i += 1;
                         printable_start = i;
                     }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI $ sequence interrupted by ESC",
+                                sequence: Some(format!("CSI {:?} $ <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
+                        i += 1;
+                        printable_start = i;
+                    }
                     _ => {
                         sink.report_error(
                             ParseError::MalformedSequence {
@@ -871,6 +946,21 @@ impl CommandParser for AnsiParser {
                         i += 1;
                         printable_start = i;
                     }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI SP sequence interrupted by ESC",
+                                sequence: Some(format!("CSI {:?} SP <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
+                        i += 1;
+                        printable_start = i;
+                    }
                     _ => {
                         sink.report_error(
                             ParseError::MalformedSequence {
@@ -908,6 +998,21 @@ impl CommandParser for AnsiParser {
                     b';' => {
                         self.params.push(0);
                         i += 1;
+                    }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI > sequence interrupted by ESC",
+                                sequence: Some(format!("CSI > {:?} <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
+                        i += 1;
+                        printable_start = i;
                     }
                     _ => {
                         // CSI > sequences
@@ -963,6 +1068,21 @@ impl CommandParser for AnsiParser {
                         i += 1;
                         printable_start = i;
                     }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI < sequence interrupted by ESC",
+                                sequence: Some(format!("CSI < {:?} <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
+                        i += 1;
+                        printable_start = i;
+                    }
                     _ => {
                         sink.report_error(
                             ParseError::MalformedSequence {
@@ -1000,16 +1120,17 @@ impl CommandParser for AnsiParser {
                         self.params.push(0);
                         i += 1;
                     }
-                    0x1B => {
-                        // probably a RIP request - reset to Escape state and go on
+                    ESC => {
+                        // CSI ! is a valid RIP (Remote Imaging Protocol) sequence
+                        // Silently fall back to ESC state without error reporting
                         self.reset();
+                        self.state = ParserState::Escape;
                         i += 1;
                         printable_start = i;
-                        self.state = ParserState::Escape;
                     }
                     _ => {
                         // No specific commands implemented for CSI ! sequences - it's a RIP request
-                        // ignore it.
+                        // Silently ignore it.
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1098,6 +1219,21 @@ impl CommandParser for AnsiParser {
                             );
                         }
                         self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    ESC => {
+                        // Malformed sequence - report error and fall back to ESC state
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Incomplete CSI = sequence interrupted by ESC",
+                                sequence: Some(format!("CSI = {:?} <incomplete>", self.params)),
+                                context: Some("Falling back to ESC state to parse next sequence".to_string()),
+                            },
+                            crate::ErrorLevel::Warning,
+                        );
+                        self.reset();
+                        self.state = ParserState::Escape;
                         i += 1;
                         printable_start = i;
                     }

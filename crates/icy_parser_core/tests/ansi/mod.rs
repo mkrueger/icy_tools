@@ -1,8 +1,8 @@
 use std::u16;
 
 use icy_parser_core::{
-    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecMode, DeviceControlString, EraseInDisplayMode, EraseInLineMode, ErrorLevel, Frame,
-    Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
+    AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel,
+    Frame, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,
 };
 
 mod requests;
@@ -472,4 +472,131 @@ fn test_csi_asterisk_sequences() {
     } else {
         panic!("Expected RequestChecksumRectangularArea");
     }
+}
+
+#[test]
+fn test_csi_incomplete_sequence_recovery() {
+    // Test that CSI ! (incomplete sequence) followed by another CSI sequence
+    // correctly falls back to ESC state and parses the next sequence.
+    // Bug: CSI ! CSI 6n should parse the CSI 6n correctly after abandoning CSI !
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // CSI ! is incomplete (expects a final character like 'p' for DECSTR)
+    // When followed by ESC (0x1B), the parser should abandon the incomplete
+    // sequence and start parsing the new ESC sequence.
+    // CSI 6n is Device Status Report - Cursor Position Report
+    parser.parse(b"\x1B[!\x1B[6n", &mut sink);
+
+    // Should have exactly one request: CursorPositionReport (CSI 6n)
+    assert_eq!(sink.requests.len(), 1, "Should have parsed CSI 6n after incomplete CSI !");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+
+    // No text should have been printed
+    assert!(sink.text.is_empty(), "No text should be printed");
+
+    sink.requests.clear();
+
+    // Test with CSI > (another intermediate byte) followed by ESC
+    // CSI > without proper sequence should be abandoned on ESC
+    parser.parse(b"\x1B[>\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "Should have parsed CSI 6n after incomplete CSI >");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+
+    sink.requests.clear();
+
+    // Test multiple incomplete sequences in a row with !
+    parser.parse(b"\x1B[!\x1B[!\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "Should have parsed CSI 6n after multiple CSI ! sequences");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+
+    sink.requests.clear();
+
+    // Test CSI with parameters but interrupted by ESC before final byte
+    // CSI 1 ESC [ 6 n - the CSI 1 is incomplete (no final byte), should parse CSI 6n
+    parser.parse(b"\x1B[1\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "Should have parsed CSI 6n after incomplete CSI with parameter");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+}
+
+#[test]
+fn test_csi_esc_fallback_all_intermediate_states() {
+    // Test ESC fallback in all CSI intermediate states
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // CSI ? (DEC Private Mode) - incomplete, followed by new sequence
+    parser.parse(b"\x1B[?25\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "CSI ? ESC fallback failed");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+    sink.requests.clear();
+    sink.cmds.clear();
+
+    // CSI $ (Dollar sequences) - incomplete, followed by new sequence
+    parser.parse(b"\x1B[1$\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "CSI $ ESC fallback failed");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+    sink.requests.clear();
+
+    // CSI * (Asterisk sequences) - incomplete, followed by new sequence
+    parser.parse(b"\x1B[5*\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "CSI * ESC fallback failed");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+    sink.requests.clear();
+
+    // CSI SP (Space sequences) - incomplete, followed by new sequence
+    parser.parse(b"\x1B[1 \x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "CSI SP ESC fallback failed");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+    sink.requests.clear();
+
+    // CSI = (Equals sequences) - incomplete, followed by new sequence
+    parser.parse(b"\x1B[=1\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "CSI = ESC fallback failed");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+    sink.requests.clear();
+
+    // CSI < (Less sequences) - incomplete, followed by new sequence
+    parser.parse(b"\x1B[<1\x1B[6n", &mut sink);
+    assert_eq!(sink.requests.len(), 1, "CSI < ESC fallback failed");
+    assert_eq!(sink.requests[0], TerminalRequest::CursorPositionReport);
+    sink.requests.clear();
+
+    // No text should have been printed for any of these
+    assert!(sink.text.is_empty(), "No text should be printed during CSI ESC recovery");
+}
+
+#[test]
+fn test_esc_fallback_preserves_next_sequence() {
+    // Test that various escape sequences are correctly parsed after malformed ones
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // Test: malformed CSI followed by cursor movement
+    parser.parse(b"\x1B[!\x1B[5A", &mut sink);
+    assert_eq!(sink.cmds.len(), 1, "Should parse cursor up after malformed CSI");
+    assert!(matches!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Up, 5)));
+    sink.cmds.clear();
+
+    // Test: malformed CSI followed by SGR (color)
+    parser.parse(b"\x1B[>\x1B[31m", &mut sink);
+    assert_eq!(sink.cmds.len(), 1, "Should parse SGR after malformed CSI >");
+    sink.cmds.clear();
+
+    // Test: malformed CSI followed by erase
+    parser.parse(b"\x1B[=\x1B[2J", &mut sink);
+    assert_eq!(sink.cmds.len(), 1, "Should parse erase after malformed CSI =");
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All));
+    sink.cmds.clear();
+
+    // Test: malformed CSI followed by ESC command (not CSI)
+    parser.parse(b"\x1B[!\x1BM", &mut sink);
+    assert_eq!(sink.cmds.len(), 1, "Should parse ESC M after malformed CSI");
+    assert_eq!(sink.cmds[0], TerminalCommand::EscReverseIndex);
+    sink.cmds.clear();
+
+    // Test: multiple malformed sequences followed by valid one
+    parser.parse(b"\x1B[!\x1B[>\x1B[<\x1B[H", &mut sink);
+    assert_eq!(sink.cmds.len(), 1, "Should parse cursor position after multiple malformed CSIs");
+    assert!(matches!(sink.cmds[0], TerminalCommand::CsiCursorPosition(1, 1)));
 }
