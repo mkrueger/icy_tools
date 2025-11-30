@@ -32,6 +32,17 @@ pub enum LogTab {
 pub struct FileTransferDialogState {
     pub selected_log: LogTab,
     pub transfer_state: Option<TransferState>,
+    /// For external protocols: just show a simple "in progress" view
+    pub external_protocol: Option<ExternalTransferState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalTransferState {
+    pub protocol_name: String,
+    pub is_download: bool,
+    pub is_finished: bool,
+    pub success: bool,
+    pub error_message: Option<String>,
 }
 
 impl FileTransferDialogState {
@@ -39,7 +50,30 @@ impl FileTransferDialogState {
         Self {
             selected_log: LogTab::All,
             transfer_state: None,
+            external_protocol: None,
         }
+    }
+
+    pub fn set_external_transfer(&mut self, protocol_name: String, is_download: bool) {
+        self.external_protocol = Some(ExternalTransferState {
+            protocol_name,
+            is_download,
+            is_finished: false,
+            success: false,
+            error_message: None,
+        });
+    }
+
+    pub fn complete_external_transfer(&mut self, success: bool, error_message: Option<String>) {
+        if let Some(ext) = &mut self.external_protocol {
+            ext.is_finished = true;
+            ext.success = success;
+            ext.error_message = error_message;
+        }
+    }
+
+    pub fn clear_external_transfer(&mut self) {
+        self.external_protocol = None;
     }
 
     pub fn update_transfer_state(&mut self, state: TransferState) {
@@ -53,6 +87,16 @@ impl FileTransferDialogState {
                 None
             }
             TransferMsg::Cancel => {
+                // Handle external protocol close
+                if let Some(ext) = &self.external_protocol {
+                    if ext.is_finished {
+                        return Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
+                    } else {
+                        // TODO: For external protocols, we could try to kill the process
+                        return Some(crate::ui::Message::CancelFileTransfer);
+                    }
+                }
+
                 if let Some(state) = &self.transfer_state {
                     if state.is_finished {
                         Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
@@ -68,6 +112,12 @@ impl FileTransferDialogState {
     }
 
     pub fn view<'a>(&'a self, is_download: bool, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
+        // Check if this is an external protocol transfer
+        if let Some(ext) = &self.external_protocol {
+            let overlay = self.create_external_protocol_content(ext);
+            return crate::ui::modal(terminal_content, overlay, crate::ui::Message::TransferDialog(TransferMsg::Close));
+        }
+
         let overlay = self.create_modal_content(is_download);
         crate::ui::modal(terminal_content, overlay, crate::ui::Message::TransferDialog(TransferMsg::Close))
     }
@@ -510,6 +560,170 @@ impl FileTransferDialogState {
         });
 
         container(loading_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
+    }
+
+    fn create_external_protocol_content<'a>(&'a self, ext: &'a ExternalTransferState) -> Element<'a, crate::ui::Message> {
+        let icon = if ext.is_download { "⬇" } else { "⬆" };
+        let title = if ext.is_download {
+            fl!(crate::LANGUAGE_LOADER, "transfer-download")
+        } else {
+            fl!(crate::LANGUAGE_LOADER, "transfer-upload")
+        };
+
+        let status_content: Element<'a, crate::ui::Message> = if ext.is_finished {
+            if ext.success {
+                container(
+                    row![
+                        text("✓").size(TEXT_SIZE_NORMAL).style(text::success),
+                        Space::new().width(8.0),
+                        text(fl!(crate::LANGUAGE_LOADER, "transfer-external-complete"))
+                            .size(TEXT_SIZE_NORMAL)
+                            .style(text::success),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .padding(16)
+                .style(|theme: &iced::Theme| {
+                    let success_color = theme.palette().success;
+                    container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(
+                            success_color.r,
+                            success_color.g,
+                            success_color.b,
+                            0.1,
+                        ))),
+                        border: Border {
+                            color: success_color,
+                            width: 1.0,
+                            radius: 8.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into()
+            } else {
+                let error_msg = ext.error_message.clone().unwrap_or_else(|| "Unknown error".to_string());
+                container(column![
+                    row![
+                        text("✕").size(TEXT_SIZE_NORMAL).style(text::danger),
+                        Space::new().width(8.0),
+                        text(fl!(crate::LANGUAGE_LOADER, "transfer-external-failed"))
+                            .size(TEXT_SIZE_NORMAL)
+                            .style(text::danger),
+                    ]
+                    .align_y(Alignment::Center),
+                    Space::new().height(8.0),
+                    text(error_msg).size(TEXT_SIZE_SMALL).style(text::secondary),
+                ])
+                .padding(16)
+                .style(|theme: &iced::Theme| {
+                    let danger_color = theme.palette().danger;
+                    container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(danger_color.r, danger_color.g, danger_color.b, 0.1))),
+                        border: Border {
+                            color: danger_color,
+                            width: 1.0,
+                            radius: 8.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into()
+            }
+        } else {
+            container(
+                row![
+                    text("⏳").size(TEXT_SIZE_NORMAL).style(text::secondary),
+                    Space::new().width(8.0),
+                    text(fl!(crate::LANGUAGE_LOADER, "transfer-external-in-progress"))
+                        .size(TEXT_SIZE_NORMAL)
+                        .style(text::secondary),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .padding(16)
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                border: Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
+        };
+
+        let button_label = if ext.is_finished {
+            format!("{}", icy_engine_gui::ButtonType::Ok)
+        } else {
+            format!("{}", icy_engine_gui::ButtonType::Cancel)
+        };
+
+        let action_button = button(
+            row![
+                text(if ext.is_finished { "✓" } else { "✕" }).size(TEXT_SIZE_NORMAL),
+                Space::new().width(4.0),
+                text(button_label).size(TEXT_SIZE_NORMAL),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .on_press(crate::ui::Message::TransferDialog(TransferMsg::Cancel))
+        .padding([10, 20])
+        .style(if ext.is_finished { success_button_style } else { danger_button_style });
+
+        let modal_content = container(
+            column![
+                row![
+                    text(icon).size(32).style(if ext.is_download { text::primary } else { text::success }),
+                    Space::new().width(12.0),
+                    text(title).size(20),
+                ]
+                .align_y(Alignment::Center),
+                Space::new().height(16.0),
+                row![
+                    text(fl!(crate::LANGUAGE_LOADER, "transfer-protocol"))
+                        .size(TEXT_SIZE_SMALL)
+                        .style(text::secondary),
+                    Space::new().width(8.0),
+                    text(&ext.protocol_name).size(TEXT_SIZE_NORMAL),
+                ]
+                .align_y(Alignment::Center),
+                Space::new().height(24.0),
+                status_content,
+                Space::new().height(24.0),
+                row![Space::new().width(Length::Fill), action_button,]
+            ]
+            .padding(24)
+            .spacing(DIALOG_SPACING),
+        )
+        .width(Length::Fixed(420.0))
+        .height(Length::Shrink)
+        .style(|theme: &iced::Theme| {
+            let palette = theme.palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background)),
+                border: Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                text_color: Some(palette.text),
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                    offset: iced::Vector::new(0.0, 8.0),
+                    blur_radius: 20.0,
+                },
+                snap: false,
+            }
+        });
+
+        container(modal_content)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

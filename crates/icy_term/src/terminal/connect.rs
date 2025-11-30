@@ -1,6 +1,7 @@
 use crate::Address;
+use crate::TransferProtocol;
 use icy_engine::ScreenMode;
-use icy_net::{ConnectionType, modem::ModemConfiguration, protocol::TransferProtocolType, telnet::TermCaps};
+use icy_net::{ConnectionType, modem::ModemConfiguration, telnet::TermCaps};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use std::{path::PathBuf, time::Duration};
 
@@ -57,7 +58,7 @@ pub enum SendData {
 
     SetBaudRate(u32),
 
-    Upload(TransferProtocolType, Vec<PathBuf>),
-    Download(TransferProtocolType, Option<String>),
+    Upload(TransferProtocol, Vec<PathBuf>),
+    Download(TransferProtocol, Option<String>),
     CancelTransfer,
 }

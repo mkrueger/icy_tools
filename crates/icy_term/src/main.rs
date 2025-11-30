@@ -29,6 +29,7 @@ pub type TerminalResult<T> = Res<T>;
 
 pub mod data;
 pub use data::*;
+pub mod protocol;
 pub mod terminal;
 pub use terminal::*;
 

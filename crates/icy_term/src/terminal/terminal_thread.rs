@@ -1,7 +1,8 @@
 use crate::ConnectionInformation;
+use crate::TransferProtocol;
 use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
-use crate::features::{AutoFileTransfer, IEmsiAutoLogin};
+use crate::features::{AutoTransferScanner, IEmsiAutoLogin};
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
 use crate::util::sound_effects::sound_data;
@@ -12,7 +13,7 @@ use icy_net::rlogin::RloginConfig;
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection},
-    protocol::{Protocol, TransferProtocolType, TransferState},
+    protocol::{Protocol, TransferState},
     raw::RawConnection,
     serial::{Serial, SerialConnection},
     ssh::{Credentials, SSHConnection},
@@ -41,8 +42,8 @@ pub enum TerminalCommand {
     AutoDetectSerial(Serial),
     Disconnect,
     SendData(Vec<u8>),
-    StartUpload(TransferProtocolType, Vec<PathBuf>),
-    StartDownload(TransferProtocolType, Option<String>),
+    StartUpload(TransferProtocol, Vec<PathBuf>),
+    StartDownload(TransferProtocol, Option<String>),
     CancelTransfer,
     Resize(u16, u16),
     SetBaudEmulation(BaudEmulation),
@@ -65,6 +66,10 @@ pub enum TerminalEvent {
     TransferStarted(TransferState, bool),
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
+    /// External protocol transfer started (protocol_name, is_download)
+    ExternalTransferStarted(String, bool),
+    /// External protocol transfer completed (protocol_name, is_download, success, error_message)
+    ExternalTransferCompleted(String, bool, bool, Option<String>),
     Error(String, String),
     PlayMusic(AnsiMusic),
     Beep,
@@ -76,7 +81,7 @@ pub enum TerminalEvent {
     /// Send credentials from current address (mode: 0=both, 1=username, 2=password)
     SendCredentials(i32),
 
-    AutoTransferTriggered(TransferProtocolType, bool, Option<String>),
+    AutoTransferTriggered(String, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
 
     /// Play a GIST sound effect (BellsAndWhistles)
@@ -140,6 +145,9 @@ pub struct ConnectionConfig {
     pub iemsi_auto_login: bool,
     pub auto_login_exp: String,
     pub max_scrollback_lines: usize,
+
+    /// Transfer protocols for auto-transfer detection
+    pub transfer_protocols: Vec<crate::TransferProtocol>,
 }
 
 /// Queued command for processing
@@ -255,9 +263,9 @@ pub struct TerminalThread {
     utf8_buffer: Vec<u8>,
 
     // Auto-features
-    auto_file_transfer: AutoFileTransfer,
+    auto_transfer_scanner: AutoTransferScanner,
     iemsi_auto_login: Option<IEmsiAutoLogin>,
-    auto_transfer: Option<(TransferProtocolType, bool, Option<String>)>, // For pending auto-transfers
+    auto_transfer: Option<(String, bool, Option<String>)>, // For pending auto-transfers (protocol_id, is_download, filename)
 
     // Capture state with buffering
     capture_writer: Option<BufWriter<tokio::fs::File>>,
@@ -307,7 +315,7 @@ impl TerminalThread {
             event_tx: event_tx.clone(),
             use_utf8: false,
             utf8_buffer: Vec::new(),
-            auto_file_transfer: AutoFileTransfer::default(),
+            auto_transfer_scanner: AutoTransferScanner::default(),
             baud_emulator: BaudEmulator::new(),
             iemsi_auto_login: None,
             auto_transfer: None,
@@ -371,12 +379,16 @@ impl TerminalThread {
                     }
 
                     // Check for pending auto-transfers
-                    if let Some((protocol, is_download, filename)) = self.auto_transfer.take() {
-                        if is_download {
-                            self.start_download(protocol, filename).await;
+                    if let Some((protocol_id, is_download, filename)) = self.auto_transfer.take() {
+                        if let Some(protocol) = TransferProtocol::from_internal_id(&protocol_id) {
+                            if is_download {
+                                self.start_download(protocol, filename).await;
+                            } else {
+                                // For uploads, we'd need file selection - just notify UI
+                                self.send_event(TerminalEvent::AutoTransferTriggered(protocol_id, is_download, filename));
+                            }
                         } else {
-                            // For uploads, we'd need file selection - just notify UI
-                            self.send_event(TerminalEvent::AutoTransferTriggered(protocol, is_download, filename));
+                            log::warn!("Unknown protocol id for auto-transfer: {}", protocol_id);
                         }
                     }
 
@@ -629,8 +641,8 @@ impl TerminalThread {
         self.parser = parser;
         // Update terminal emulation for scripting
         *self.terminal_emulation.lock() = config.terminal_type;
-        // Reset auto-transfer state
-        self.auto_file_transfer = AutoFileTransfer::default();
+        // Build auto-transfer scanner from protocol list
+        self.auto_transfer_scanner = AutoTransferScanner::from_protocols(&config.transfer_protocols);
         self.send_event(TerminalEvent::Connected);
 
         Ok(())
@@ -795,7 +807,7 @@ impl TerminalThread {
         self.connection_time = None;
         self.utf8_buffer.clear();
         self.iemsi_auto_login = None;
-        self.auto_file_transfer = AutoFileTransfer::default();
+        self.auto_transfer_scanner = AutoTransferScanner::default();
         self.send_event(TerminalEvent::Disconnected(None));
     }
 
@@ -829,8 +841,8 @@ impl TerminalThread {
     async fn process_data(&mut self, data: &[u8]) {
         // Check for auto-features before parsing
         for &byte in data {
-            if let Some((protocol_type, download)) = self.auto_file_transfer.try_transfer(byte) {
-                self.auto_transfer = Some((protocol_type, download, None));
+            if let Some((protocol_id, is_download)) = self.auto_transfer_scanner.try_transfer(byte) {
+                self.auto_transfer = Some((protocol_id, is_download, None));
             }
 
             let mut logged_in = false;
@@ -946,7 +958,7 @@ impl TerminalThread {
             QueuedCommand::Skypix(SkypixCommand::CrcTransfer { mode, filename, .. }) => {
                 let file_name = if filename.is_empty() { None } else { Some(filename.clone()) };
                 log::info!("SkyPix CRC transfer initiated: mode={:?}, filename={:?}", mode, file_name);
-                self.send_event(TerminalEvent::AutoTransferTriggered(TransferProtocolType::XModem, true, file_name));
+                self.send_event(TerminalEvent::AutoTransferTriggered("@xmodem".to_string(), true, file_name));
                 true
             }
 
@@ -1257,11 +1269,36 @@ impl TerminalThread {
         }
     }
 
-    async fn start_upload(&mut self, protocol: TransferProtocolType, files: Vec<PathBuf>) {
-        if let Some(conn) = &mut self.connection {
-            let mut prot = protocol.create();
-            match prot.initiate_send(&mut **conn, &files).await {
-                Ok(state) => {
+    async fn start_upload(&mut self, protocol: TransferProtocol, files: Vec<PathBuf>) {
+        let download_dir = self.download_directory.clone().unwrap_or_else(|| PathBuf::from("."));
+        let is_external = !protocol.is_internal();
+        let protocol_name = protocol.get_name();
+
+        let Some(mut prot) = protocol.create(download_dir) else {
+            self.send_event(TerminalEvent::Error(
+                format!("Upload failed."),
+                format!("Protocol '{}' not configured", protocol.id),
+            ));
+            return;
+        };
+
+        // For external protocols, send the event before initiating to show UI immediately
+        if is_external {
+            self.send_event(TerminalEvent::ExternalTransferStarted(protocol_name.clone(), false));
+        }
+
+        let result = if let Some(conn) = &mut self.connection {
+            prot.initiate_send(&mut **conn, &files).await
+        } else {
+            return;
+        };
+
+        match result {
+            Ok(state) => {
+                if is_external {
+                    // External protocol completed
+                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, false, true, None));
+                } else {
                     self.current_transfer = Some(state.clone());
                     self.send_event(TerminalEvent::TransferStarted(state.clone(), false));
 
@@ -1271,18 +1308,47 @@ impl TerminalThread {
                         self.send_event(TerminalEvent::Error(format!("Upload failed."), format!("{}", e)));
                     }
                 }
-                Err(e) => {
+            }
+            Err(e) => {
+                if is_external {
+                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, false, false, Some(format!("{}", e))));
+                } else {
                     self.send_event(TerminalEvent::Error(format!("Upload failed."), format!("{}", e)));
                 }
             }
         }
     }
 
-    async fn start_download(&mut self, protocol: TransferProtocolType, filename: Option<String>) {
-        if let Some(conn) = &mut self.connection {
-            let mut prot = protocol.create();
-            match prot.initiate_recv(&mut **conn).await {
-                Ok(mut state) => {
+    async fn start_download(&mut self, protocol: TransferProtocol, filename: Option<String>) {
+        let download_dir = self.download_directory.clone().unwrap_or_else(|| PathBuf::from("."));
+        let is_external = !protocol.is_internal();
+        let protocol_name = protocol.get_name();
+
+        let Some(mut prot) = protocol.create(download_dir) else {
+            self.send_event(TerminalEvent::Error(
+                format!("Download failed."),
+                format!("Protocol '{}' not configured", protocol.id),
+            ));
+            return;
+        };
+
+        // For external protocols, send the event before initiating to show UI immediately
+        if is_external {
+            self.send_event(TerminalEvent::ExternalTransferStarted(protocol_name.clone(), true));
+        }
+
+        let result = if let Some(conn) = &mut self.connection {
+            prot.initiate_recv(&mut **conn).await
+        } else {
+            return;
+        };
+
+        match result {
+            Ok(mut state) => {
+                if is_external {
+                    // External protocol completed
+                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, true, true, None));
+                } else {
                     if let Some(name) = filename {
                         state.recieve_state.file_name = name;
                     }
@@ -1295,7 +1361,11 @@ impl TerminalThread {
                         self.send_event(TerminalEvent::Error(format!("Download failed."), format!("{}", e)));
                     }
                 }
-                Err(e) => {
+            }
+            Err(e) => {
+                if is_external {
+                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, true, false, Some(format!("{}", e))));
+                } else {
                     self.send_event(TerminalEvent::Error(format!("Download failed."), format!("{}", e)));
                 }
             }

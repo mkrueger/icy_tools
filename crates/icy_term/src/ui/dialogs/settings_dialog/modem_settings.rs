@@ -8,10 +8,11 @@ use icy_engine_gui::{
     settings::effect_box,
     ui::{DIALOG_SPACING, TEXT_SIZE_SMALL, left_label_small, secondary_button_style},
 };
+use icy_net::modem::ModemCommand;
 
 use crate::ui::{
     select_bps_dialog::STANDARD_RATES,
-    settings_dialog::{CharSizeOption, FlowControlOption, ParityOption, SettingsDialogState, SettingsMsg, StopBitsOption},
+    settings_dialog::{CharSizeOption, FlowControlOption, ParityOption, SettingsDialogState, SettingsMsg, StopBitsOption, modem_command_input},
 };
 
 const ADD_SVG: &[u8] = include_bytes!("../../../../data/icons/add.svg");
@@ -305,78 +306,59 @@ impl SettingsDialogState {
                     section_header(fl!(crate::LANGUAGE_LOADER, "settings-modem-commands-section")),
                     effect_box(
                         column![
-                            row![
-                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-init_command")),
-                                text_input("ATZ^M", &modem.init_command)
-                                    .on_input({
-                                        let temp_options_arc = self.temp_options.clone();
-                                        move |value| {
-                                            let mut new_options = temp_options_arc.lock().clone();
-                                            if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                                m.init_command = value;
-                                            }
-                                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                            modem_command_input(fl!(crate::LANGUAGE_LOADER, "settings-modem-init_command"), "ATZ^M", &modem.init_command, {
+                                let temp_options_arc = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = temp_options_arc.lock().clone();
+                                    if let Some(m) = new_options.modems.get_mut(selected_index) {
+                                        if let Ok(cmd) = value.parse::<ModemCommand>() {
+                                            m.init_command = cmd;
                                         }
-                                    })
-                                    .width(Length::Fill)
-                                    .size(TEXT_SIZE_NORMAL),
-                            ]
-                            .spacing(DIALOG_SPACING)
-                            .align_y(Alignment::Center),
-                            row![
-                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-dial_prefix")),
-                                text_input("ATDT", &modem.dial_prefix)
-                                    .on_input({
-                                        let temp_options_arc = self.temp_options.clone();
-                                        move |value| {
-                                            let mut new_options = temp_options_arc.lock().clone();
-                                            if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                                m.dial_prefix = value;
-                                            }
-                                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                    }
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
+                            }),
+                            modem_command_input(fl!(crate::LANGUAGE_LOADER, "settings-modem-dial_prefix"), "ATDT", &modem.dial_prefix, {
+                                let temp_options_arc = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = temp_options_arc.lock().clone();
+                                    if let Some(m) = new_options.modems.get_mut(selected_index) {
+                                        if let Ok(cmd) = value.parse::<ModemCommand>() {
+                                            m.dial_prefix = cmd;
                                         }
-                                    })
-                                    .width(Length::Fill)
-                                    .size(TEXT_SIZE_NORMAL),
-                            ]
-                            .spacing(DIALOG_SPACING)
-                            .align_y(Alignment::Center),
-                            row![
-                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-dial_suffix")),
-                                text_input("^M", &modem.dial_suffix)
-                                    .on_input({
-                                        let temp_options_arc = self.temp_options.clone();
-                                        move |value| {
-                                            let mut new_options = temp_options_arc.lock().clone();
-                                            if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                                m.dial_suffix = value;
-                                            }
-                                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                    }
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
+                            }),
+                            modem_command_input(fl!(crate::LANGUAGE_LOADER, "settings-modem-dial_suffix"), "^M", &modem.dial_suffix, {
+                                let temp_options_arc = self.temp_options.clone();
+                                move |value| {
+                                    let mut new_options = temp_options_arc.lock().clone();
+                                    if let Some(m) = new_options.modems.get_mut(selected_index) {
+                                        if let Ok(cmd) = value.parse::<ModemCommand>() {
+                                            m.dial_suffix = cmd;
                                         }
-                                    })
-                                    .width(Length::Fill)
-                                    .size(TEXT_SIZE_NORMAL),
-                            ]
-                            .spacing(DIALOG_SPACING)
-                            .align_y(Alignment::Center),
-                            row![
-                                left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-modem-hangup_command")),
-                                text_input("+++ATH0^M", &modem.hangup_command)
-                                    .on_input({
-                                        let temp_options_arc = self.temp_options.clone();
-                                        move |value| {
-                                            let mut new_options = temp_options_arc.lock().clone();
-                                            if let Some(m) = new_options.modems.get_mut(selected_index) {
-                                                m.hangup_command = value;
+                                    }
+                                    crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                }
+                            }),
+                            modem_command_input(
+                                fl!(crate::LANGUAGE_LOADER, "settings-modem-hangup_command"),
+                                "+++ATH0^M",
+                                &modem.hangup_command,
+                                {
+                                    let temp_options_arc = self.temp_options.clone();
+                                    move |value| {
+                                        let mut new_options = temp_options_arc.lock().clone();
+                                        if let Some(m) = new_options.modems.get_mut(selected_index) {
+                                            if let Ok(cmd) = value.parse::<ModemCommand>() {
+                                                m.hangup_command = cmd;
                                             }
-                                            crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
                                         }
-                                    })
-                                    .width(Length::Fill)
-                                    .size(TEXT_SIZE_NORMAL),
-                            ]
-                            .spacing(DIALOG_SPACING)
-                            .align_y(Alignment::Center),
+                                        crate::ui::Message::SettingsDialog(SettingsMsg::UpdateOptions(new_options))
+                                    }
+                                }
+                            ),
                         ]
                         .spacing(DIALOG_SPACING)
                         .into()

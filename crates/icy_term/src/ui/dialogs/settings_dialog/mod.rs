@@ -16,9 +16,13 @@ use icy_net::{
 use crate::{Options, ui::MainWindowMode};
 
 mod iemsi_settings;
+mod modem_command_input;
 mod modem_settings;
 mod paths_settings;
+mod protocol_settings;
 mod terminal_settings;
+
+pub use modem_command_input::*;
 
 // Settings-specific constants
 const SETTINGS_CONTENT_HEIGHT: f32 = 410.0;
@@ -30,6 +34,7 @@ pub enum SettingsCategory {
     Terminal,
     Keybinds,
     Modem,
+    Protocols,
     Paths,
 }
 
@@ -41,12 +46,20 @@ impl SettingsCategory {
             Self::Terminal => fl!(crate::LANGUAGE_LOADER, "settings-terminal-category"),
             Self::Keybinds => fl!(crate::LANGUAGE_LOADER, "settings-keybinds-category"),
             Self::Modem => fl!(crate::LANGUAGE_LOADER, "settings-modem-category"),
+            Self::Protocols => fl!(crate::LANGUAGE_LOADER, "settings-protocol-category"),
             Self::Paths => fl!(crate::LANGUAGE_LOADER, "settings-paths-category"),
         }
     }
 
     fn all() -> Vec<Self> {
-        vec![Self::Monitor, Self::IEMSI, Self::Terminal, /*Self::Keybinds,*/ Self::Modem, Self::Paths]
+        vec![
+            Self::Monitor,
+            Self::IEMSI,
+            Self::Terminal,
+            /*Self::Keybinds,*/ Self::Modem,
+            Self::Protocols,
+            Self::Paths,
+        ]
     }
 }
 
@@ -61,6 +74,12 @@ pub enum SettingsMsg {
     SelectModem(usize),
     AddModem,
     RemoveModem(usize),
+    SelectProtocol(usize),
+    AddProtocol,
+    RemoveProtocol(usize),
+    MoveProtocolUp(usize),
+    MoveProtocolDown(usize),
+    ToggleProtocolEnabled(usize),
     UpdateDownloadPath(String),
     UpdateCapturePath(String),
     BrowseDownloadPath,
@@ -76,6 +95,7 @@ pub struct SettingsDialogState {
     pub temp_options: Arc<Mutex<Options>>,
     pub original_options: Arc<Mutex<Options>>,
     pub selected_modem_index: usize,
+    pub selected_protocol_index: usize,
 }
 
 impl SettingsDialogState {
@@ -85,6 +105,7 @@ impl SettingsDialogState {
             temp_options,
             original_options,
             selected_modem_index: 0,
+            selected_protocol_index: 0,
         }
     }
 
@@ -268,6 +289,63 @@ impl SettingsDialogState {
                 options.capture_path = String::new();
                 None
             }
+            SettingsMsg::SelectProtocol(index) => {
+                self.selected_protocol_index = index;
+                None
+            }
+            SettingsMsg::AddProtocol => {
+                use crate::data::TransferProtocol;
+                let len = self.temp_options.lock().transfer_protocols.len();
+                let new_protocol = TransferProtocol {
+                    enabled: true,
+                    id: format!("protocol_{}", len + 1),
+                    name: format!("Protocol {}", len + 1),
+                    ..Default::default()
+                };
+                self.temp_options.lock().transfer_protocols.push(new_protocol);
+                self.selected_protocol_index = len;
+                None
+            }
+            SettingsMsg::RemoveProtocol(index) => {
+                let mut temp_options = self.temp_options.lock();
+                if index < temp_options.transfer_protocols.len() {
+                    // Don't allow removing internal protocols
+                    if !temp_options.transfer_protocols[index].is_internal() {
+                        temp_options.transfer_protocols.remove(index);
+                        let new_len = temp_options.transfer_protocols.len();
+                        if new_len > 0 {
+                            self.selected_protocol_index = index.min(new_len - 1);
+                        } else {
+                            self.selected_protocol_index = 0;
+                        }
+                    }
+                }
+                None
+            }
+            SettingsMsg::MoveProtocolUp(index) => {
+                let mut temp_options = self.temp_options.lock();
+                if index > 0 && index < temp_options.transfer_protocols.len() {
+                    temp_options.transfer_protocols.swap(index, index - 1);
+                    self.selected_protocol_index = index - 1;
+                }
+                None
+            }
+            SettingsMsg::MoveProtocolDown(index) => {
+                let mut temp_options = self.temp_options.lock();
+                if index + 1 < temp_options.transfer_protocols.len() {
+                    temp_options.transfer_protocols.swap(index, index + 1);
+                    self.selected_protocol_index = index + 1;
+                }
+                None
+            }
+            SettingsMsg::ToggleProtocolEnabled(index) => {
+                let mut temp_options = self.temp_options.lock();
+                if index < temp_options.transfer_protocols.len() {
+                    let protocol = &mut temp_options.transfer_protocols[index];
+                    protocol.enabled = !protocol.enabled;
+                }
+                None
+            }
             SettingsMsg::Noop => None,
         }
     }
@@ -339,6 +417,7 @@ impl SettingsDialogState {
             SettingsCategory::Terminal => self.terminal_settings_content(),
             SettingsCategory::Keybinds => self.keybinds_settings_content(),
             SettingsCategory::Modem => self.modem_settings_content(),
+            SettingsCategory::Protocols => self.protocol_settings_content(),
             SettingsCategory::Paths => {
                 let options = self.temp_options.lock();
                 let download_path = options.download_path();
@@ -429,8 +508,8 @@ impl SettingsDialogState {
 
         let button_area_row = button_row_with_left(buttons_left, buttons_right);
 
-        // For modem settings, don't wrap in scrollable since it has its own layout
-        let content_container = if matches!(self.current_category, SettingsCategory::Modem) {
+        // For modem and protocol settings, don't wrap in scrollable since they have their own layout
+        let content_container = if matches!(self.current_category, SettingsCategory::Modem | SettingsCategory::Protocols) {
             container(settings_content).height(Length::Fixed(SETTINGS_CONTENT_HEIGHT)).width(Length::Fill)
         } else {
             container(scrollable(settings_content).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))

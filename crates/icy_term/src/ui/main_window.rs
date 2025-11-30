@@ -240,6 +240,7 @@ impl MainWindow {
                     iemsi_auto_login: options.iemsi.autologin,
                     auto_login_exp: address.auto_login.clone(),
                     max_scrollback_lines: options.max_scrollback_lines,
+                    transfer_protocols: options.transfer_protocols.clone(),
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
@@ -356,6 +357,9 @@ impl MainWindow {
                 Task::none()
             }
             Message::CloseDialog(mode) => {
+                // Clear external transfer state when closing file transfer dialog
+                self.file_transfer_dialog.clear_external_transfer();
+                self.file_transfer_dialog.transfer_state = None;
                 self.state.mode = *mode;
                 Task::none()
             }
@@ -884,19 +888,41 @@ impl MainWindow {
                         }
                     }
                     McpCommand::UploadFile { protocol, file_path } => {
-                        // Start file upload
-                        if let Ok(protocol_type) = protocol.parse::<icy_net::protocol::TransferProtocolType>() {
+                        // Start file upload - lookup protocol by id
+                        let transfer_protocol = self
+                            .settings_dialog
+                            .original_options
+                            .lock()
+                            .transfer_protocols
+                            .iter()
+                            .find(|p| p.id == *protocol)
+                            .cloned()
+                            .or_else(|| crate::TransferProtocol::from_internal_id(protocol));
+
+                        if let Some(transfer_protocol) = transfer_protocol {
                             let path = PathBuf::from(file_path);
                             if path.exists() {
-                                let _ = self.terminal_tx.send(TerminalCommand::StartUpload(protocol_type, vec![path]));
+                                let _ = self.terminal_tx.send(TerminalCommand::StartUpload(transfer_protocol, vec![path]));
                                 self.state.mode = MainWindowMode::FileTransfer(false);
                             }
                         }
                     }
                     McpCommand::DownloadFile { protocol, save_path } => {
-                        // Start file download
-                        if let Ok(protocol_type) = protocol.parse::<icy_net::protocol::TransferProtocolType>() {
-                            let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol_type, Some(save_path.clone())));
+                        // Start file download - lookup protocol by id
+                        let transfer_protocol = self
+                            .settings_dialog
+                            .original_options
+                            .lock()
+                            .transfer_protocols
+                            .iter()
+                            .find(|p| p.id == *protocol)
+                            .cloned()
+                            .or_else(|| crate::TransferProtocol::from_internal_id(protocol));
+
+                        if let Some(transfer_protocol) = transfer_protocol {
+                            let _ = self
+                                .terminal_tx
+                                .send(TerminalCommand::StartDownload(transfer_protocol, Some(save_path.clone())));
                             self.state.mode = MainWindowMode::FileTransfer(true);
                         }
                     }
@@ -1045,7 +1071,7 @@ impl MainWindow {
         result
     }
 
-    fn initiate_file_transfer(&mut self, protocol: icy_net::protocol::TransferProtocolType, is_download: bool) {
+    fn initiate_file_transfer(&mut self, protocol: crate::TransferProtocol, is_download: bool) {
         if is_download {
             // Set download directory from options
             let download_path = self.settings_dialog.original_options.lock().download_path();
@@ -1127,6 +1153,16 @@ impl MainWindow {
             TerminalEvent::TransferCompleted(_state) => {
                 self.file_transfer_dialog.transfer_state = Some(_state);
                 self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            TerminalEvent::ExternalTransferStarted(protocol_name, is_download) => {
+                self.file_transfer_dialog.set_external_transfer(protocol_name, is_download);
+                self.state.mode = MainWindowMode::FileTransfer(is_download);
+                Task::none()
+            }
+            TerminalEvent::ExternalTransferCompleted(_protocol_name, _is_download, success, error_message) => {
+                self.file_transfer_dialog.complete_external_transfer(success, error_message);
+                // Keep the dialog open so user can see the result
                 Task::none()
             }
             TerminalEvent::Error(error, txt) => {
@@ -1227,8 +1263,23 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            TerminalEvent::AutoTransferTriggered(protocol, is_download, _) => {
-                self.initiate_file_transfer(protocol, is_download);
+            TerminalEvent::AutoTransferTriggered(protocol_id, is_download, _) => {
+                // First check user-configured protocols
+                let protocol = self
+                    .settings_dialog
+                    .original_options
+                    .lock()
+                    .transfer_protocols
+                    .iter()
+                    .find(|p| p.id == protocol_id)
+                    .cloned()
+                    .or_else(|| crate::TransferProtocol::from_internal_id(&protocol_id));
+
+                if let Some(protocol) = protocol {
+                    self.initiate_file_transfer(protocol, is_download);
+                } else {
+                    log::error!("Unknown protocol id for auto-transfer: {}", protocol_id);
+                }
                 Task::none()
             }
             TerminalEvent::EmsiLogin(isi) => {
@@ -1330,7 +1381,10 @@ impl MainWindow {
         match &self.state.mode {
             MainWindowMode::ShowTerminal => terminal_view,
             MainWindowMode::ShowSettings => self.settings_dialog.view(terminal_view),
-            MainWindowMode::SelectProtocol(download) => crate::ui::dialogs::protocol_selector::view_selector(*download, terminal_view),
+            MainWindowMode::SelectProtocol(download) => {
+                let protocols = self.settings_dialog.original_options.lock().transfer_protocols.clone();
+                crate::ui::dialogs::protocol_selector::view_selector(*download, protocols, terminal_view)
+            }
             MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, terminal_view),
             MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(terminal_view),
             MainWindowMode::ShowExportDialog => self.export_dialog.view(terminal_view),

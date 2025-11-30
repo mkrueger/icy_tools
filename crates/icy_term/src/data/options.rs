@@ -9,7 +9,7 @@ use icy_engine_gui::MonitorSettings;
 use icy_net::{modem::ModemConfiguration, serial::Serial};
 use serde::{Deserialize, Serialize};
 
-use crate::TerminalResult;
+use crate::{TerminalResult, TransferProtocol, default_protocols};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Scaling {
@@ -29,8 +29,6 @@ impl Scaling {
         }
     }*/
 }
-
-// ...existing code...
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IEMSISettings {
@@ -119,6 +117,10 @@ pub struct Options {
 
     #[serde(default)]
     pub serial: Serial,
+
+    /// External/custom transfer protocols
+    #[serde(default = "default_protocols")]
+    pub transfer_protocols: Vec<TransferProtocol>,
 }
 
 fn default_max_scrollback_lines() -> usize {
@@ -167,6 +169,7 @@ impl Default for Options {
             download_path: String::new(),
             max_scrollback_lines: 2000,
             serial: Serial::default(),
+            transfer_protocols: default_protocols(),
         }
     }
 }

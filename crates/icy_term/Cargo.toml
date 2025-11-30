@@ -62,6 +62,7 @@ open = { workspace = true }
 rfd = { workspace = true }
 
 async-recursion = "1.1.1"
+async-trait = "0.1"
 
 # for Atari ST GIST sounds (IGS)
 ym2149 = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound", features = ["streaming"] }

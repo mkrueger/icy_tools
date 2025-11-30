@@ -4,72 +4,28 @@ use iced::{
     widget::{Space, button, column, container, row, scrollable, text},
 };
 use icy_engine_gui::ui::*;
-use icy_net::protocol::TransferProtocolType;
 
-use crate::ui::{MainWindowMode, Message};
-
-use once_cell::sync::Lazy;
+use crate::{
+    TransferProtocol,
+    ui::{MainWindowMode, Message},
+};
 
 // Text size constants
 const PROTOCOL_NAME_SIZE: u32 = 16;
 const PROTOCOL_DESCRIPTION_SIZE: u32 = 14;
 
-static PROTOCOL_TABLE: Lazy<[(TransferProtocolType, String, String); 8]> = Lazy::new(|| {
-    [
-        (
-            TransferProtocolType::ZModem,
-            "Zmodem".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-zmodem-description"),
-        ),
-        (
-            TransferProtocolType::ZModem8k,
-            "ZedZap".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-zmodem8k-description"),
-        ),
-        (
-            TransferProtocolType::XModem,
-            "Xmodem".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-xmodem-description"),
-        ),
-        (
-            TransferProtocolType::XModem1k,
-            "Xmodem 1k".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1k-description"),
-        ),
-        (
-            TransferProtocolType::XModem1kG,
-            "Xmodem 1k-G".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description"),
-        ),
-        (
-            TransferProtocolType::YModem,
-            "Ymodem".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
-        ),
-        (
-            TransferProtocolType::YModemG,
-            "Ymodem-G".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
-        ),
-        (
-            TransferProtocolType::ASCII,
-            "Text".to_string(),
-            fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
-        ),
-    ]
-});
-
 pub struct ProtocolSelector {
     pub is_download: bool,
+    pub protocols: Vec<TransferProtocol>,
 }
 
 impl ProtocolSelector {
-    pub fn new(is_download: bool) -> Self {
-        Self { is_download }
+    pub fn new(is_download: bool, protocols: Vec<TransferProtocol>) -> Self {
+        Self { is_download, protocols }
     }
 
     pub fn view<'a>(&self, terminal_content: Element<'a, Message>) -> Element<'a, Message> {
-        let overlay = create_modal_content(self.is_download);
+        let overlay = create_modal_content(self.is_download, &self.protocols);
         crate::ui::modal(
             terminal_content,
             overlay,
@@ -78,27 +34,45 @@ impl ProtocolSelector {
     }
 }
 
-fn create_modal_content(is_download: bool) -> Element<'static, Message> {
+fn get_protocol_description(protocol_id: &str) -> String {
+    match protocol_id {
+        "@zmodem" => fl!(crate::LANGUAGE_LOADER, "protocol-zmodem-description"),
+        "@zmodem8k" => fl!(crate::LANGUAGE_LOADER, "protocol-zmodem8k-description"),
+        "@xmodem" => fl!(crate::LANGUAGE_LOADER, "protocol-xmodem-description"),
+        "@xmodem1k" => fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1k-description"),
+        "@xmodem1kg" => fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description"),
+        "@ymodem" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
+        "@ymodemg" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
+        "@text" => fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
+        _ => String::new(),
+    }
+}
+
+fn create_modal_content(is_download: bool, protocols: &[TransferProtocol]) -> Element<'static, Message> {
     let title = dialog_title(if is_download {
         fl!(crate::LANGUAGE_LOADER, "protocol-select-download")
     } else {
         fl!(crate::LANGUAGE_LOADER, "protocol-select-upload")
     });
 
+    // Filter to only enabled protocols
+    let enabled_protocols: Vec<_> = protocols
+        .iter()
+        .filter(|p| p.enabled)
+        .filter(|p| !(is_download && p.id == "@text")) // Skip Text protocol for downloads
+        .collect();
+
     // Create protocol list
     let mut protocol_rows = column![].spacing(0);
 
-    for (protocol, title, descr) in PROTOCOL_TABLE.iter() {
-        // Skip ASCII protocol for downloads
-        if is_download && matches!(protocol, TransferProtocolType::ASCII) {
-            continue;
-        }
+    for protocol in enabled_protocols {
+        let description = get_protocol_description(&protocol.id);
 
         let protocol_button = button(
             container(
                 row![
                     container(
-                        text(title.clone())
+                        text(protocol.get_name())
                             .size(PROTOCOL_NAME_SIZE)
                             .style(|theme: &iced::Theme| iced::widget::text::Style {
                                 color: Some(theme.extended_palette().primary.strong.color),
@@ -106,7 +80,7 @@ fn create_modal_content(is_download: bool) -> Element<'static, Message> {
                             })
                     )
                     .width(Length::Fixed(120.0)),
-                    text(descr.clone())
+                    text(description)
                         .size(PROTOCOL_DESCRIPTION_SIZE)
                         .style(|theme: &iced::Theme| iced::widget::text::Style {
                             color: Some(theme.extended_palette().secondary.base.color),
@@ -205,7 +179,7 @@ fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button:
 }
 
 // Helper function to create the selector and wrap terminal content
-pub fn view_selector(is_download: bool, terminal_content: Element<'_, Message>) -> Element<'_, Message> {
-    let selector = ProtocolSelector::new(is_download);
+pub fn view_selector(is_download: bool, protocols: Vec<TransferProtocol>, terminal_content: Element<'_, Message>) -> Element<'_, Message> {
+    let selector = ProtocolSelector::new(is_download, protocols);
     selector.view(terminal_content)
 }

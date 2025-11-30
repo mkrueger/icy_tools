@@ -6,7 +6,7 @@ use icy_net::protocol::TransferState;
 use icy_parser_core::BaudEmulation;
 
 use crate::{
-    Address,
+    Address, TransferProtocol,
     terminal_thread::TerminalEvent,
     ui::{MainWindowMode, export_screen_dialog, find_dialog, open_serial_dialog, select_bps_dialog, terminal_info_dialog, up_download_dialog},
 };
@@ -45,10 +45,7 @@ pub enum Message {
     Upload,
     Download,
     SendLoginAndPassword(bool, bool),
-    InitiateFileTransfer {
-        protocol: icy_net::protocol::TransferProtocolType,
-        is_download: bool,
-    },
+    InitiateFileTransfer { protocol: TransferProtocol, is_download: bool },
     OpenReleaseLink,
     StartCapture(String),
     StopCapture,
