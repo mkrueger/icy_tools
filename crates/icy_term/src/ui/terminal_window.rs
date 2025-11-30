@@ -643,9 +643,40 @@ impl TerminalWindow {
             status_row = status_row.push(iemsi_button);
         }
 
-        // Add separator and terminal info
-        status_row =
-            status_row.push(text(format!(" | {emulation_str} • {buffer_width}x{buffer_height} • {connection_string}{pause_text}")).size(TEXT_SIZE_SMALL));
+        // Add separator and terminal info as clickable button (without connection status)
+        let info_text = format!("{emulation_str} • {buffer_width}x{buffer_height}");
+        let info_button = button(text(info_text).size(TEXT_SIZE_SMALL))
+            .on_press(Message::ShowTerminalInfoDialog)
+            .padding(0)
+            .style(|theme: &iced::Theme, status| {
+                use iced::widget::button::{Status, Style};
+
+                let palette = theme.extended_palette();
+                let base = Style {
+                    text_color: palette.secondary.base.color,
+                    border: Border::default(),
+                    background: None,
+                    ..Style::default()
+                };
+
+                match status {
+                    Status::Active => base,
+                    Status::Hovered => Style {
+                        text_color: palette.primary.base.color,
+                        ..base
+                    },
+                    Status::Pressed => Style {
+                        text_color: palette.primary.strong.color,
+                        ..base
+                    },
+                    Status::Disabled => base,
+                }
+            });
+        status_row = status_row.push(text(" | ").size(TEXT_SIZE_SMALL));
+        status_row = status_row.push(info_button);
+
+        // Add connection status as non-clickable text
+        status_row = status_row.push(text(format!(" • {connection_string}{pause_text}")).size(TEXT_SIZE_SMALL));
 
         container(status_row.padding([4, 12]))
             .style(|theme: &iced::Theme| container::Style {

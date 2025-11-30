@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length,
-    widget::{Space, column, container, radio, row, scrollable, text, text_input},
+    widget::{Space, column, container, radio, row, text, text_input},
 };
 use icy_engine_gui::ui::*;
 use icy_parser_core::BaudEmulation;
@@ -236,7 +236,7 @@ impl SelectBpsDialog {
                 .align_y(Alignment::Center)
         };
 
-        let scrollable_list = scrollable(column![list, Space::new().height(4), custom_row,].spacing(6).padding([4, 8])).height(Length::Fixed(280.0));
+        let scrollable_list = column![list, Space::new().height(4), custom_row,].spacing(6).padding([4, 8]);
 
         // Buttons
         let cancel_button = secondary_button(

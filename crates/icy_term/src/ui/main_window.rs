@@ -14,7 +14,7 @@ use crate::{
     scripting::parse_key_string,
     ui::{
         Message,
-        dialogs::find_dialog,
+        dialogs::{find_dialog, terminal_info_dialog},
         export_screen_dialog,
         up_download_dialog::{self, FileTransferDialogState},
     },
@@ -49,6 +49,7 @@ pub enum MainWindowMode {
     ShowCaptureDialog,
     ShowExportDialog,
     ShowIEMSI,
+    ShowTerminalInfo,
     ShowFindDialog,
     ShowBaudEmulationDialog,
     ShowOpenSerialDialog(bool),
@@ -63,6 +64,7 @@ pub struct MainWindow {
     pub capture_dialog: capture_dialog::CaptureDialogState,
     pub terminal_window: terminal_window::TerminalWindow,
     pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
+    pub terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog,
     pub find_dialog: find_dialog::DialogState,
     pub export_dialog: export_screen_dialog::ExportScreenDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
@@ -141,6 +143,7 @@ impl MainWindow {
             capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
             terminal_window,
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
+            terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog::new(super::terminal_info_dialog::TerminalInfo::default()),
             find_dialog: find_dialog::DialogState::new(),
             export_dialog: export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string()),
             file_transfer_dialog: FileTransferDialogState::new(),
@@ -579,6 +582,44 @@ impl MainWindow {
             }
             Message::StopSound => {
                 self.sound_thread.lock().clear();
+                Task::none()
+            }
+
+            Message::TerminalInfo(msg) => {
+                if let Some(_close_msg) = self.terminal_info_dialog.update(msg) {
+                    self.state.mode = MainWindowMode::ShowTerminal;
+                }
+                Task::none()
+            }
+            Message::ShowTerminalInfoDialog => {
+                self.switch_to_terminal_screen();
+                // Gather terminal info
+                let screen = self.terminal_window.terminal.screen.lock();
+                let caret = screen.caret();
+                let terminal_state = screen.terminal_state();
+
+                let info = terminal_info_dialog::TerminalInfo {
+                    buffer_size: terminal_state.get_size(),
+                    screen_resolution: screen.get_resolution(),
+                    font_size: screen.get_font(caret.font_page()).map(|f| f.size()).unwrap_or_default(),
+                    caret_position: caret.position(),
+                    caret_visible: caret.visible,
+                    caret_blinking: caret.blinking,
+                    caret_shape: caret.shape,
+                    insert_mode: caret.insert_mode,
+                    auto_wrap: terminal_state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap,
+                    scroll_mode: terminal_state.scroll_state,
+                    margins_top_bottom: terminal_state.get_margins_top_bottom(),
+                    margins_left_right: terminal_state.get_margins_left_right(),
+                    mouse_mode: format!("{:?}", terminal_state.mouse_state.mouse_mode),
+                    inverse_mode: terminal_state.inverse_video,
+                    ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
+                    baud_emulation: self.terminal_window.baud_emulation,
+                };
+                drop(screen);
+
+                self.terminal_info_dialog = terminal_info_dialog::TerminalInfoDialog::new(info);
+                self.state.mode = MainWindowMode::ShowTerminalInfo;
                 Task::none()
             }
 
@@ -1304,6 +1345,7 @@ impl MainWindow {
                 }
             }
             MainWindowMode::ShowHelpDialog => self.help_dialog.view(terminal_view),
+            MainWindowMode::ShowTerminalInfo => self.terminal_info_dialog.view(terminal_view),
             MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => {
                 let dialog = ConfirmationDialog::new(title, error_message)
                     .dialog_type(DialogType::Error)
@@ -1425,6 +1467,15 @@ impl MainWindow {
             MainWindowMode::ShowIEMSI => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ShowIemsi(show_iemsi::IemsiMsg::Close)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            MainWindowMode::ShowTerminalInfo => match event {
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
+                    keyboard::Key::Named(keyboard::key::Named::Escape) | keyboard::Key::Named(keyboard::key::Named::Enter) => {
+                        Some(Message::TerminalInfo(terminal_info_dialog::TerminalInfoMsg::Close))
+                    }
                     _ => None,
                 },
                 _ => None,

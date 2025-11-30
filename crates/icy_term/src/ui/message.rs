@@ -8,7 +8,7 @@ use icy_parser_core::BaudEmulation;
 use crate::{
     Address,
     terminal_thread::TerminalEvent,
-    ui::{MainWindowMode, export_screen_dialog, find_dialog, open_serial_dialog, select_bps_dialog, up_download_dialog},
+    ui::{MainWindowMode, export_screen_dialog, find_dialog, open_serial_dialog, select_bps_dialog, terminal_info_dialog, up_download_dialog},
 };
 
 #[derive(Debug, Clone)]
@@ -22,6 +22,7 @@ pub enum Message {
     TransferDialog(up_download_dialog::TransferMsg),
     SelectBpsMsg(select_bps_dialog::SelectBpsMsg),
     OpenSerialMsg(open_serial_dialog::OpenSerialMsg),
+    TerminalInfo(terminal_info_dialog::TerminalInfoMsg),
     ApplyBaudEmulation,
 
     CancelFileTransfer,
@@ -52,6 +53,7 @@ pub enum Message {
     StartCapture(String),
     StopCapture,
     ShowIemsiDialog,
+    ShowTerminalInfoDialog,
     // Terminal thread events
     TerminalEvent(TerminalEvent),
     SendData(Vec<u8>),

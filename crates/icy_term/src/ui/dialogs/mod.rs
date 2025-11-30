@@ -9,4 +9,5 @@ pub mod protocol_selector;
 pub mod select_bps_dialog;
 pub mod settings_dialog;
 pub mod show_iemsi;
+pub mod terminal_info_dialog;
 pub mod up_download_dialog;
