@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length,
-    widget::{Space, column, container, pick_list, row, text, text_input},
+    widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::{SaveOptions, Screen};
 use icy_engine_gui::settings::effect_box;
@@ -16,15 +16,17 @@ use crate::ui::MainWindowMode;
 pub enum ExportFormat {
     IcyDraw,
     Ansi,
+    Ascii,
 }
 
 impl ExportFormat {
-    const ALL: [ExportFormat; 2] = [ExportFormat::IcyDraw, ExportFormat::Ansi];
+    const ALL: [ExportFormat; 3] = [ExportFormat::IcyDraw, ExportFormat::Ansi, ExportFormat::Ascii];
 
     fn extension(&self) -> &str {
         match self {
             ExportFormat::IcyDraw => "icy",
             ExportFormat::Ansi => "ans",
+            ExportFormat::Ascii => "asc",
         }
     }
 }
@@ -34,6 +36,7 @@ impl std::fmt::Display for ExportFormat {
         match self {
             ExportFormat::IcyDraw => write!(f, ".icy (IcyDraw)"),
             ExportFormat::Ansi => write!(f, ".ans (ANSI)"),
+            ExportFormat::Ascii => write!(f, ".asc (ASCII)"),
         }
     }
 }
@@ -44,6 +47,7 @@ pub enum ExportScreenMsg {
     ChangeDirectory(String),
     ChangeFileName(String),
     ChangeFormat(ExportFormat),
+    ToggleUtf8Output(bool),
     BrowseDirectory,
     RestoreDefaults,
     Cancel,
@@ -53,9 +57,11 @@ pub struct ExportScreenDialogState {
     pub export_directory: String,
     pub export_filename: String,
     pub export_format: ExportFormat,
+    pub utf8_output: bool,
     temp_directory: String,
     temp_filename: String,
     temp_format: ExportFormat,
+    temp_utf8_output: bool,
 }
 
 impl ExportScreenDialogState {
@@ -69,6 +75,7 @@ impl ExportScreenDialogState {
             .map(|ext| match ext.to_lowercase().as_str() {
                 "icy" => ExportFormat::IcyDraw,
                 "ans" => ExportFormat::Ansi,
+                "asc" => ExportFormat::Ascii,
                 _ => ExportFormat::Ansi,
             })
             .unwrap_or(ExportFormat::Ansi);
@@ -89,7 +96,7 @@ impl ExportScreenDialogState {
         };
 
         // Remove extension from filename if it's there
-        if file.ends_with(".icy") || file.ends_with(".ans") {
+        if file.ends_with(".icy") || file.ends_with(".ans") || file.ends_with(".asc") {
             file = file.rsplit_once('.').map(|(name, _)| name.to_string()).unwrap_or(file);
         }
 
@@ -97,9 +104,11 @@ impl ExportScreenDialogState {
             export_directory: dir.clone(),
             export_filename: file.clone(),
             export_format: format,
+            utf8_output: false,
             temp_directory: dir,
             temp_filename: file,
             temp_format: format,
+            temp_utf8_output: false,
         }
     }
 
@@ -127,9 +136,13 @@ impl ExportScreenDialogState {
         // Get the file extension for format
         let ext = self.export_format.extension();
 
+        // Create save options with UTF-8 setting
+        let mut options = SaveOptions::new();
+        options.modern_terminal_output = self.utf8_output;
+
         // Convert buffer to bytes based on format
         let content = screen
-            .to_bytes(ext, &SaveOptions::new())
+            .to_bytes(ext, &options)
             .map_err(|e| format!("Failed to convert buffer: {}", e))?;
 
         // Write the bytes to file
@@ -145,6 +158,7 @@ impl ExportScreenDialogState {
                 self.export_directory = self.temp_directory.clone();
                 self.export_filename = self.temp_filename.clone();
                 self.export_format = self.temp_format;
+                self.utf8_output = self.temp_utf8_output;
 
                 // Perform the export
                 match self.export_buffer(edit_screen) {
@@ -170,6 +184,14 @@ impl ExportScreenDialogState {
             }
             ExportScreenMsg::ChangeFormat(format) => {
                 self.temp_format = format;
+                // Disable UTF-8 output for IcyDraw format (binary format doesn't use it)
+                if format == ExportFormat::IcyDraw {
+                    self.temp_utf8_output = false;
+                }
+                None
+            }
+            ExportScreenMsg::ToggleUtf8Output(enabled) => {
+                self.temp_utf8_output = enabled;
                 None
             }
             ExportScreenMsg::BrowseDirectory => {
@@ -280,6 +302,23 @@ impl ExportScreenDialogState {
 
         let preview_row = row![Space::new().width(LABEL_SMALL_WIDTH + DIALOG_SPACING), warning_content];
 
+        // UTF-8 output checkbox (disabled for IcyDraw format)
+        let utf8_checkbox_enabled = self.temp_format != ExportFormat::IcyDraw;
+        let utf8_checkbox = checkbox(self.temp_utf8_output)
+            .on_toggle_maybe(if utf8_checkbox_enabled {
+                Some(|checked| crate::ui::Message::ExportDialog(ExportScreenMsg::ToggleUtf8Output(checked)))
+            } else {
+                None
+            })
+            .size(18);
+
+        let utf8_row = row![
+            left_label_small(fl!(crate::LANGUAGE_LOADER, "export-dialog-utf8-output")),
+            utf8_checkbox
+        ]
+        .spacing(DIALOG_SPACING)
+        .align_y(Alignment::Center);
+
         // Check if settings are at defaults for restore button
         let default_dir = crate::data::Options::default_capture_directory();
         let is_at_defaults = default_dir.to_str().map(|s| s == self.temp_directory).unwrap_or(true);
@@ -323,6 +362,8 @@ impl ExportScreenDialogState {
                 file_row,
                 Space::new().height(DIALOG_SPACING),
                 preview_row,
+                Space::new().height(DIALOG_SPACING),
+                utf8_row,
             ]
             .spacing(0)
             .into(),

@@ -202,6 +202,7 @@ export-dialog-title = Puffer exportálása fájlba
 export-dialog-export-button = Exportálás
 export-dialog-dir-not-exist = A könyvtár nem létezik
 export-dialog-not-directory = Az elérési út nem könyvtár
+export-dialog-utf8-output = UTF-8 kimenet
 
 show-iemsi-dialog-heading=IEMSI szerver információk
 show-iemsi-dialog-name=Név

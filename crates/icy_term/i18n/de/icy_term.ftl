@@ -206,6 +206,7 @@ export-dialog-title = Buffer in Datei exportieren
 export-dialog-export-button = Exportieren
 export-dialog-dir-not-exist = Verzeichnis existiert nicht
 export-dialog-not-directory = Pfad ist kein Verzeichnis
+export-dialog-utf8-output = UTF-8 Ausgabe
 
 show-iemsi-dialog-heading=IEMSI Server-Information
 show-iemsi-dialog-name=Name

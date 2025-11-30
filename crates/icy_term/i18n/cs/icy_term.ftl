@@ -202,6 +202,7 @@ export-dialog-title = Exportovat buffer do souboru
 export-dialog-export-button = Exportovat
 export-dialog-dir-not-exist = Adresář neexistuje
 export-dialog-not-directory = Cesta není adresářem
+export-dialog-utf8-output = Výstup UTF-8
 
 show-iemsi-dialog-heading=Informace o serveru IEMSI
 show-iemsi-dialog-name=Jméno

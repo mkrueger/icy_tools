@@ -202,6 +202,7 @@ export-dialog-title = Exportă buffer în fișier
 export-dialog-export-button = Exportă
 export-dialog-dir-not-exist = Directorul nu există
 export-dialog-not-directory = Calea nu este un director
+export-dialog-utf8-output = Ieșire UTF-8
 
 show-iemsi-dialog-heading=Informații server IEMSI
 show-iemsi-dialog-name=Nume

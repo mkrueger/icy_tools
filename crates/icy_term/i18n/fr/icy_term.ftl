@@ -202,6 +202,7 @@ export-dialog-title = Exporter le tampon vers un fichier
 export-dialog-export-button = Exporter
 export-dialog-dir-not-exist = Le répertoire n'existe pas
 export-dialog-not-directory = Le chemin n'est pas un répertoire
+export-dialog-utf8-output = Sortie UTF-8
 
 show-iemsi-dialog-heading=Informations sur le serveur IEMSI
 show-iemsi-dialog-name=Nom

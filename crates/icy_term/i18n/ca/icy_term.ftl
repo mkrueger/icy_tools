@@ -204,6 +204,7 @@ export-dialog-title = Exportar memòria intermèdia a fitxer
 export-dialog-export-button = Exportar
 export-dialog-dir-not-exist = El directori no existeix
 export-dialog-not-directory = El camí no és un directori
+export-dialog-utf8-output = Sortida UTF-8
 
 show-iemsi-dialog-heading=Informació del servidor IEMSI
 show-iemsi-dialog-name=Nom

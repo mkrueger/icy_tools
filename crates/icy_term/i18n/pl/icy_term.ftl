@@ -202,6 +202,7 @@ export-dialog-title = Eksportuj bufor do pliku
 export-dialog-export-button = Eksportuj
 export-dialog-dir-not-exist = Katalog nie istnieje
 export-dialog-not-directory = Ścieżka nie jest katalogiem
+export-dialog-utf8-output = Wyjście UTF-8
 
 show-iemsi-dialog-heading=Informacje o serwerze IEMSI
 show-iemsi-dialog-name=Nazwa
