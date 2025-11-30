@@ -185,7 +185,7 @@ impl CommandParser for RipParser {
                                 return;
                             }
                             _ => {
-                                // Unknown number - pass to ANSI parser
+                                log::warn!("Unknown RIP ANSI request: ESC[{}!", digit as char);
                             }
                         }
                     }

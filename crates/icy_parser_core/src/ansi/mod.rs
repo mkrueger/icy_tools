@@ -106,7 +106,7 @@ impl AnsiParser {
         if self.parse_buffer.starts_with(b"CTerm:Font:") {
             let start_index = b"CTerm:Font:".len();
             if let Some(colon_pos) = self.parse_buffer[start_index..].iter().position(|&b| b == b':') {
-                let slot_end = start_index + colon_pos;
+                let slot_end: usize = start_index + colon_pos;
                 // Parse slot number
                 if let Ok(slot_str) = std::str::from_utf8(&self.parse_buffer[start_index..slot_end]) {
                     if let Ok(slot) = slot_str.parse::<usize>() {
@@ -1000,23 +1000,16 @@ impl CommandParser for AnsiParser {
                         self.params.push(0);
                         i += 1;
                     }
+                    0x1B => {
+                        // probably a RIP request - reset to Escape state and go on
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                        self.state = ParserState::Escape;
+                    }
                     _ => {
-                        // No specific commands implemented for CSI ! sequences
-                        sink.report_error(
-                            ParseError::MalformedSequence {
-                                description: "Unsupported CSI ! sequence",
-                                sequence: Some(format!(
-                                    "CSI ! {}",
-                                    if byte.is_ascii_graphic() {
-                                        format!("'{}'", byte as char)
-                                    } else {
-                                        format!("0x{:02X}", byte)
-                                    }
-                                )),
-                                context: Some(format!("CSI ! with params {:?}", self.params)),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
+                        // No specific commands implemented for CSI ! sequences - it's a RIP request
+                        // ignore it.
                         self.reset();
                         i += 1;
                         printable_start = i;
