@@ -32,6 +32,7 @@ icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
 icy_parser_core = { workspace = true }
 bitflags = { workspace = true }
+utf8parse = "0.2"
 
 zip = { workspace = true }
 libyaff = { workspace = true }

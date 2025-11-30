@@ -93,8 +93,8 @@ pub struct TerminalState {
     // Special for Viewdata terminals - they reset colors on row change.
     pub(crate) vd_last_row: i32,
 
-    /// Buffer for incomplete UTF-8 sequences that span multiple print calls
-    pub(crate) utf8_buffer: Vec<u8>,
+    /// UTF-8 parser for handling multi-byte sequences across print calls
+    pub(crate) utf8_parser: utf8parse::Parser,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -148,7 +148,7 @@ impl TerminalState {
             ice_colors: false,
             dec_left_right_margins: false,
             vd_last_row: 0,
-            utf8_buffer: Vec::new(),
+            utf8_parser: utf8parse::Parser::new(),
         };
         ret.reset_tabs();
         ret

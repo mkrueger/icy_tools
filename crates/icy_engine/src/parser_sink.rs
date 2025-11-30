@@ -335,58 +335,31 @@ impl<'a> CommandSink for ScreenSink<'a> {
     fn print(&mut self, text: &[u8]) {
         match self.screen.buffer_type() {
             BufferType::Unicode => {
-                // UTF-8 mode: decode multi-byte sequences
-                // Get any incomplete sequence from previous call and append new data
-                let utf8_buf = &mut self.screen.terminal_state_mut().utf8_buffer;
-                utf8_buf.extend_from_slice(text);
-
-                // Take ownership of buffer to avoid borrow issues
-                let buffer = std::mem::take(utf8_buf);
-                let mut i = 0;
-
-                while i < buffer.len() {
-                    let remaining = &buffer[i..];
-
-                    // Try to decode UTF-8 starting at position i
-                    match std::str::from_utf8(remaining) {
-                        Ok(valid_str) => {
-                            // All remaining bytes form valid UTF-8
-                            for ch in valid_str.chars() {
-                                let attr_char = AttributedChar::new(ch, self.get_display_attribute());
-                                self.screen.print_char(attr_char);
-                            }
-                            i = buffer.len(); // Consumed everything
+                // UTF-8 mode: use utf8parse for proper multi-byte sequence handling
+                // Collect decoded characters first to avoid borrow issues
+                let mut chars = Vec::new();
+                {
+                    struct CharCollector<'b>(&'b mut Vec<char>);
+                    impl utf8parse::Receiver for CharCollector<'_> {
+                        fn codepoint(&mut self, c: char) {
+                            self.0.push(c);
                         }
-                        Err(e) => {
-                            // Process valid part first
-                            if e.valid_up_to() > 0 {
-                                let valid_str = std::str::from_utf8(&remaining[..e.valid_up_to()]).unwrap();
-                                for ch in valid_str.chars() {
-                                    let attr_char = AttributedChar::new(ch, self.get_display_attribute());
-                                    self.screen.print_char(attr_char);
-                                }
-                                i += e.valid_up_to();
-                            }
-
-                            if let Some(error_len) = e.error_len() {
-                                // Invalid UTF-8 sequence - output replacement char
-                                let attr_char = AttributedChar::new('\u{FFFD}', self.get_display_attribute());
-                                self.screen.print_char(attr_char);
-                                i += error_len;
-                            } else {
-                                // Incomplete sequence at end - keep for next call
-                                break;
-                            }
+                        fn invalid_sequence(&mut self) {
+                            self.0.push('\u{FFFD}');
                         }
+                    }
+
+                    let parser = &mut self.screen.terminal_state_mut().utf8_parser;
+                    let mut receiver = CharCollector(&mut chars);
+                    for &byte in text {
+                        parser.advance(&mut receiver, byte);
                     }
                 }
 
-                // Keep any incomplete sequence for next call
-                let utf8_buf = &mut self.screen.terminal_state_mut().utf8_buffer;
-                if i < buffer.len() {
-                    *utf8_buf = buffer[i..].to_vec();
-                } else {
-                    utf8_buf.clear();
+                // Now output the collected characters
+                for ch in chars {
+                    let attr_char = AttributedChar::new(ch, self.get_display_attribute());
+                    self.screen.print_char(attr_char);
                 }
             }
             _ => {

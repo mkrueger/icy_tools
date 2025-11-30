@@ -53,10 +53,10 @@ end
 log("Found username prompt, sending credentials...")
 
 -- Send username and password from address book
--- Mode 0 = send both username and password (with 500ms delay between)
--- Mode 1 = send username only
--- Mode 2 = send password only
-send_credentials(0)
+-- send_login() sends both username and password (with delay between)
+-- send_username() sends username only
+-- send_password() sends password only
+send_login()
 
 -- invisible login 
 sleep(100)
