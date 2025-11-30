@@ -189,6 +189,7 @@ fn main() {
         WindowManager::update,
         WindowManager::view,
     )
+    .antialiasing(true)
     .theme(WindowManager::theme)
     .subscription(WindowManager::subscription)
     .title(WindowManager::title)
