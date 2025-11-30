@@ -196,13 +196,12 @@ impl<'a> CRTShaderProgram<'a> {
                                         modifiers,
                                     };
 
-                                    // Send the mouse event, but continue to handle selection
-                                    // Note: We don't return here to allow selection to work
-                                    let _ = Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
+                                    // When mouse tracking is enabled, send the event and skip local selection handling
+                                    return Some(iced::widget::Action::publish(Message::SendMouseEvent(mouse_event)));
                                 }
                             }
 
-                            // Handle selection regardless of mouse tracking
+                            // Handle selection only when mouse tracking is NOT enabled
                             if matches!(button, mouse::Button::Left) {
                                 // Check if clicking on a hyperlink
                                 if let Some(url) = &state.hovered_link {
