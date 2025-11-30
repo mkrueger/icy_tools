@@ -34,8 +34,9 @@ impl ProtocolSelector {
     }
 }
 
-fn get_protocol_description(protocol_id: &str) -> String {
-    match protocol_id {
+fn get_protocol_description(protocol: &TransferProtocol) -> String {
+    // For internal protocols, use localized descriptions
+    match protocol.id.as_str() {
         "@zmodem" => fl!(crate::LANGUAGE_LOADER, "protocol-zmodem-description"),
         "@zmodem8k" => fl!(crate::LANGUAGE_LOADER, "protocol-zmodem8k-description"),
         "@xmodem" => fl!(crate::LANGUAGE_LOADER, "protocol-xmodem-description"),
@@ -44,7 +45,8 @@ fn get_protocol_description(protocol_id: &str) -> String {
         "@ymodem" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
         "@ymodemg" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
         "@text" => fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
-        _ => String::new(),
+        // For external protocols, use their description field
+        _ => protocol.description.clone(),
     }
 }
 
@@ -66,7 +68,7 @@ fn create_modal_content(is_download: bool, protocols: &[TransferProtocol]) -> El
     let mut protocol_rows = column![].spacing(0);
 
     for protocol in enabled_protocols {
-        let description = get_protocol_description(&protocol.id);
+        let description = get_protocol_description(protocol);
 
         let protocol_button = button(
             container(

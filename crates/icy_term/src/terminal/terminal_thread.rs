@@ -266,6 +266,7 @@ pub struct TerminalThread {
     auto_transfer_scanner: AutoTransferScanner,
     iemsi_auto_login: Option<IEmsiAutoLogin>,
     auto_transfer: Option<(String, bool, Option<String>)>, // For pending auto-transfers (protocol_id, is_download, filename)
+    transfer_protocols: Vec<TransferProtocol>,             // Stored protocol list for auto-transfer lookup
 
     // Capture state with buffering
     capture_writer: Option<BufWriter<tokio::fs::File>>,
@@ -316,6 +317,7 @@ impl TerminalThread {
             use_utf8: false,
             utf8_buffer: Vec::new(),
             auto_transfer_scanner: AutoTransferScanner::default(),
+            transfer_protocols: Vec::new(),
             baud_emulator: BaudEmulator::new(),
             iemsi_auto_login: None,
             auto_transfer: None,
@@ -380,7 +382,13 @@ impl TerminalThread {
 
                     // Check for pending auto-transfers
                     if let Some((protocol_id, is_download, filename)) = self.auto_transfer.take() {
-                        if let Some(protocol) = TransferProtocol::from_internal_id(&protocol_id) {
+                        // First try to find protocol in the stored list, then fall back to internal protocols
+                        let protocol = self.transfer_protocols.iter()
+                            .find(|p| p.id == protocol_id)
+                            .cloned()
+                            .or_else(|| TransferProtocol::from_internal_id(&protocol_id));
+
+                        if let Some(protocol) = protocol {
                             if is_download {
                                 self.start_download(protocol, filename).await;
                             } else {
@@ -641,8 +649,9 @@ impl TerminalThread {
         self.parser = parser;
         // Update terminal emulation for scripting
         *self.terminal_emulation.lock() = config.terminal_type;
-        // Build auto-transfer scanner from protocol list
-        self.auto_transfer_scanner = AutoTransferScanner::from_protocols(&config.transfer_protocols);
+        // Build auto-transfer scanner from protocol list and store protocols for later lookup
+        self.transfer_protocols = config.transfer_protocols.clone();
+        self.auto_transfer_scanner = AutoTransferScanner::from_protocols(&self.transfer_protocols);
         self.send_event(TerminalEvent::Connected);
 
         Ok(())
@@ -808,6 +817,7 @@ impl TerminalThread {
         self.utf8_buffer.clear();
         self.iemsi_auto_login = None;
         self.auto_transfer_scanner = AutoTransferScanner::default();
+        self.transfer_protocols.clear();
         self.send_event(TerminalEvent::Disconnected(None));
     }
 

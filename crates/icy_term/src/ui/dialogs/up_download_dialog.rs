@@ -7,7 +7,10 @@ use iced::{
     Alignment, Border, Color, Element, Length, Padding, gradient,
     widget::{Space, button, column, container, progress_bar, row, scrollable, text},
 };
-use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, danger_button_style, success_button_style};
+use icy_engine_gui::ui::{
+    DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, danger_button_style, dialog_area, dialog_title, modal_container,
+    primary_button, secondary_button, separator, success_button_style,
+};
 use icy_net::protocol::{OutputLogMessage, TransferState};
 
 use crate::ui::MainWindowMode;
@@ -568,26 +571,66 @@ impl FileTransferDialogState {
     }
 
     fn create_external_protocol_content<'a>(&'a self, ext: &'a ExternalTransferState) -> Element<'a, crate::ui::Message> {
-        let icon = if ext.is_download { "⬇" } else { "⬆" };
-        let title = if ext.is_download {
+        // Title with icon
+        let title_text = if ext.is_download {
             fl!(crate::LANGUAGE_LOADER, "transfer-download")
         } else {
             fl!(crate::LANGUAGE_LOADER, "transfer-upload")
         };
+        let title = dialog_title(title_text);
 
+        // Protocol info row
+        let protocol_info = container(
+            row![
+                text(fl!(crate::LANGUAGE_LOADER, "transfer-protocol"))
+                    .size(TEXT_SIZE_NORMAL)
+                    .style(text::secondary),
+                Space::new().width(DIALOG_SPACING),
+                text(&ext.protocol_name).size(TEXT_SIZE_NORMAL).font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::default()
+                }),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding([12, 16])
+        .width(Length::Fill)
+        .style(|theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+            border: Border {
+                color: theme.extended_palette().background.strong.color,
+                width: 1.0,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        });
+
+        // Status content based on state
         let status_content: Element<'a, crate::ui::Message> = if ext.is_finished {
             if ext.success {
+                // Success state
                 container(
                     row![
-                        text("✓").size(TEXT_SIZE_NORMAL).style(text::success),
-                        Space::new().width(8.0),
-                        text(fl!(crate::LANGUAGE_LOADER, "transfer-external-complete"))
-                            .size(TEXT_SIZE_NORMAL)
-                            .style(text::success),
+                        text("✓").size(24).style(text::success),
+                        Space::new().width(12.0),
+                        column![
+                            text(fl!(crate::LANGUAGE_LOADER, "transfer-external-complete"))
+                                .size(TEXT_SIZE_NORMAL)
+                                .style(text::success)
+                                .font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..iced::Font::default()
+                                }),
+                            text(fl!(crate::LANGUAGE_LOADER, "transfer-external-success-hint"))
+                                .size(TEXT_SIZE_SMALL)
+                                .style(text::secondary),
+                        ]
+                        .spacing(4),
                     ]
                     .align_y(Alignment::Center),
                 )
                 .padding(16)
+                .width(Length::Fill)
                 .style(|theme: &iced::Theme| {
                     let success_color = theme.palette().success;
                     container::Style {
@@ -598,37 +641,48 @@ impl FileTransferDialogState {
                             0.1,
                         ))),
                         border: Border {
-                            color: success_color,
+                            color: success_color.scale_alpha(0.5),
                             width: 1.0,
-                            radius: 8.0.into(),
+                            radius: 6.0.into(),
                         },
                         ..Default::default()
                     }
                 })
                 .into()
             } else {
-                let error_msg = ext.error_message.clone().unwrap_or_else(|| "Unknown error".to_string());
-                container(column![
+                // Error state
+                let error_msg = ext
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| fl!(crate::LANGUAGE_LOADER, "transfer-external-unknown-error"));
+                container(
                     row![
-                        text("✕").size(TEXT_SIZE_NORMAL).style(text::danger),
-                        Space::new().width(8.0),
-                        text(fl!(crate::LANGUAGE_LOADER, "transfer-external-failed"))
-                            .size(TEXT_SIZE_NORMAL)
-                            .style(text::danger),
+                        text("✕").size(24).style(text::danger),
+                        Space::new().width(12.0),
+                        column![
+                            text(fl!(crate::LANGUAGE_LOADER, "transfer-external-failed"))
+                                .size(TEXT_SIZE_NORMAL)
+                                .style(text::danger)
+                                .font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..iced::Font::default()
+                                }),
+                            text(error_msg).size(TEXT_SIZE_SMALL).style(text::secondary),
+                        ]
+                        .spacing(4),
                     ]
                     .align_y(Alignment::Center),
-                    Space::new().height(8.0),
-                    text(error_msg).size(TEXT_SIZE_SMALL).style(text::secondary),
-                ])
+                )
                 .padding(16)
+                .width(Length::Fill)
                 .style(|theme: &iced::Theme| {
                     let danger_color = theme.palette().danger;
                     container::Style {
                         background: Some(iced::Background::Color(Color::from_rgba(danger_color.r, danger_color.g, danger_color.b, 0.1))),
                         border: Border {
-                            color: danger_color,
+                            color: danger_color.scale_alpha(0.5),
                             width: 1.0,
-                            radius: 8.0.into(),
+                            radius: 6.0.into(),
                         },
                         ..Default::default()
                     }
@@ -636,94 +690,71 @@ impl FileTransferDialogState {
                 .into()
             }
         } else {
+            // In progress state with animated indicator
             container(
                 row![
-                    text("⏳").size(TEXT_SIZE_NORMAL).style(text::secondary),
-                    Space::new().width(8.0),
-                    text(fl!(crate::LANGUAGE_LOADER, "transfer-external-in-progress"))
-                        .size(TEXT_SIZE_NORMAL)
-                        .style(text::secondary),
+                    text("◐").size(24).style(text::primary),
+                    Space::new().width(12.0),
+                    column![
+                        text(fl!(crate::LANGUAGE_LOADER, "transfer-external-in-progress"))
+                            .size(TEXT_SIZE_NORMAL)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..iced::Font::default()
+                            }),
+                        text(fl!(crate::LANGUAGE_LOADER, "transfer-external-wait-hint"))
+                            .size(TEXT_SIZE_SMALL)
+                            .style(text::secondary),
+                    ]
+                    .spacing(4),
                 ]
                 .align_y(Alignment::Center),
             )
             .padding(16)
+            .width(Length::Fill)
             .style(|theme: &iced::Theme| container::Style {
                 background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.extended_palette().primary.weak.color,
                     width: 1.0,
-                    radius: 8.0.into(),
+                    radius: 6.0.into(),
                 },
                 ..Default::default()
             })
             .into()
         };
 
-        let button_label = if ext.is_finished {
-            format!("{}", icy_engine_gui::ButtonType::Ok)
+        // Buttons
+        let action_button: Element<'a, crate::ui::Message> = if ext.is_finished {
+            primary_button(
+                format!("{}", icy_engine_gui::ButtonType::Ok),
+                Some(crate::ui::Message::TransferDialog(TransferMsg::Cancel)),
+            )
+            .into()
         } else {
-            format!("{}", icy_engine_gui::ButtonType::Cancel)
+            secondary_button(
+                format!("{}", icy_engine_gui::ButtonType::Cancel),
+                Some(crate::ui::Message::TransferDialog(TransferMsg::Cancel)),
+            )
+            .into()
         };
 
-        let action_button = button(
-            row![
-                text(if ext.is_finished { "✓" } else { "✕" }).size(TEXT_SIZE_NORMAL),
-                Space::new().width(4.0),
-                text(button_label).size(TEXT_SIZE_NORMAL),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .on_press(crate::ui::Message::TransferDialog(TransferMsg::Cancel))
-        .padding([10, 20])
-        .style(if ext.is_finished { success_button_style } else { danger_button_style });
+        // Build dialog content
+        let content = column![
+            title,
+            Space::new().height(DIALOG_SPACING),
+            protocol_info,
+            Space::new().height(DIALOG_SPACING * 2.0),
+            status_content,
+        ]
+        .spacing(DIALOG_SPACING);
 
-        let modal_content = container(
-            column![
-                row![
-                    text(icon).size(32).style(if ext.is_download { text::primary } else { text::success }),
-                    Space::new().width(12.0),
-                    text(title).size(20),
-                ]
-                .align_y(Alignment::Center),
-                Space::new().height(16.0),
-                row![
-                    text(fl!(crate::LANGUAGE_LOADER, "transfer-protocol"))
-                        .size(TEXT_SIZE_SMALL)
-                        .style(text::secondary),
-                    Space::new().width(8.0),
-                    text(&ext.protocol_name).size(TEXT_SIZE_NORMAL),
-                ]
-                .align_y(Alignment::Center),
-                Space::new().height(24.0),
-                status_content,
-                Space::new().height(24.0),
-                row![Space::new().width(Length::Fill), action_button,]
-            ]
-            .padding(24)
-            .spacing(DIALOG_SPACING),
-        )
-        .width(Length::Fixed(420.0))
-        .height(Length::Shrink)
-        .style(|theme: &iced::Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background)),
-                border: Border {
-                    color: theme.extended_palette().background.strong.color,
-                    width: 1.0,
-                    radius: 12.0.into(),
-                },
-                text_color: Some(palette.text),
-                shadow: iced::Shadow {
-                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                    offset: iced::Vector::new(0.0, 8.0),
-                    blur_radius: 20.0,
-                },
-                snap: false,
-            }
-        });
+        let dialog_content = dialog_area(content.into());
+        let button_area_content = dialog_area(button_row(vec![action_button]));
 
-        container(modal_content)
+        let modal = modal_container(column![dialog_content, separator(), button_area_content].into(), DIALOG_WIDTH_SMALL);
+
+        container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

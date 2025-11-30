@@ -196,8 +196,11 @@ transfer-log-warnings = Warnings
 transfer-log-errors = Errors
 transfer-waiting = Waiting for transfer to start…
 transfer-external-in-progress = External protocol in progress…
-transfer-external-complete = Transfer completed
+transfer-external-complete = Transfer completed successfully
 transfer-external-failed = Transfer failed
+transfer-external-success-hint = Files have been transferred.
+transfer-external-wait-hint = Please wait while the external protocol processes the transfer.
+transfer-external-unknown-error = Unknown error occurred
 
 menu-item-discuss=Forum
 menu-item-report-bug=Report a bug
