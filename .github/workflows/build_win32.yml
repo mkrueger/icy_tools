@@ -1,0 +1,110 @@
+name: Build Windows 32-bit (Experimental)
+
+on:
+  workflow_dispatch:  # Manual trigger only - this is experimental
+  push:
+    branches: [win32-test]  # Only on dedicated test branch
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_windows_32bit:
+    name: Windows 32-bit Build Test
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Rust 32-bit target
+      run: |
+        rustup target add i686-pc-windows-msvc
+        rustup show
+    
+    - name: Check dependencies compatibility
+      run: |
+        echo "Checking if key dependencies support i686-pc-windows-msvc..."
+        echo "Note: wgpu/iced may fail on 32-bit Windows"
+    
+    - name: Build icy_engine (core library)
+      id: build-engine
+      continue-on-error: true
+      run: |
+        cd crates\icy_engine
+        cargo build --target i686-pc-windows-msvc --release 2>&1 | Tee-Object -Variable buildOutput
+        if ($LASTEXITCODE -ne 0) {
+          echo "::warning::icy_engine failed to build for 32-bit"
+          echo "ENGINE_BUILD=failed" >> $env:GITHUB_ENV
+        } else {
+          echo "ENGINE_BUILD=success" >> $env:GITHUB_ENV
+        }
+    
+    - name: Build icy_parser_core
+      id: build-parser
+      continue-on-error: true
+      run: |
+        cd crates\icy_parser_core
+        cargo build --target i686-pc-windows-msvc --release 2>&1 | Tee-Object -Variable buildOutput
+        if ($LASTEXITCODE -ne 0) {
+          echo "::warning::icy_parser_core failed to build for 32-bit"
+          echo "PARSER_BUILD=failed" >> $env:GITHUB_ENV
+        } else {
+          echo "PARSER_BUILD=success" >> $env:GITHUB_ENV
+        }
+    
+    - name: Build icy_engine_gui (likely to fail - uses wgpu)
+      id: build-gui
+      continue-on-error: true
+      run: |
+        cd crates\icy_engine_gui
+        cargo build --target i686-pc-windows-msvc --release 2>&1 | Tee-Object -Variable buildOutput
+        if ($LASTEXITCODE -ne 0) {
+          echo "::error::icy_engine_gui failed to build for 32-bit (expected - wgpu doesn't support 32-bit)"
+          echo "GUI_BUILD=failed" >> $env:GITHUB_ENV
+        } else {
+          echo "GUI_BUILD=success" >> $env:GITHUB_ENV
+        }
+    
+    - name: Build icy_term (full application)
+      id: build-term
+      continue-on-error: true
+      run: |
+        cd crates\icy_term
+        cargo build --target i686-pc-windows-msvc --release 2>&1 | Tee-Object -Variable buildOutput
+        if ($LASTEXITCODE -ne 0) {
+          echo "::error::icy_term failed to build for 32-bit"
+          echo "TERM_BUILD=failed" >> $env:GITHUB_ENV
+        } else {
+          echo "TERM_BUILD=success" >> $env:GITHUB_ENV
+        }
+    
+    - name: Build Summary
+      run: |
+        echo "========================================"
+        echo "Windows 32-bit Build Results"
+        echo "========================================"
+        echo "icy_engine:       ${{ env.ENGINE_BUILD }}"
+        echo "icy_parser_core:  ${{ env.PARSER_BUILD }}"
+        echo "icy_engine_gui:   ${{ env.GUI_BUILD }}"
+        echo "icy_term:         ${{ env.TERM_BUILD }}"
+        echo "========================================"
+        
+        if ("${{ env.GUI_BUILD }}" -eq "failed") {
+          echo ""
+          echo "NOTE: icy_engine_gui failure is expected because:"
+          echo "  - wgpu (GPU library) dropped 32-bit Windows support"
+          echo "  - iced framework depends on wgpu"
+          echo ""
+          echo "Possible workarounds:"
+          echo "  1. Use software renderer (tiny-skia) - requires iced feature changes"
+          echo "  2. Fork older wgpu version that supported 32-bit"
+          echo "  3. Accept that 32-bit Windows is not supported"
+        }
+    
+    - name: Upload 32-bit executable (if successful)
+      if: env.TERM_BUILD == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: icy_term_windows_32bit_experimental
+        path: target/i686-pc-windows-msvc/release/icy_term.exe
