@@ -178,6 +178,14 @@ impl<'a> CRTShaderProgram<'a> {
                                 }
                             }
 
+                            // clicking on links should always have prio.
+                            if matches!(button, mouse::Button::Left) {
+                                // Check if clicking on a hyperlink
+                                if let Some(url) = &state.hovered_link {
+                                    return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
+                                }
+                            }
+
                             // Send mouse press event if mouse tracking is enabled
                             if let Some(ref ms) = mouse_state {
                                 if mouse_tracking_enabled {
@@ -203,33 +211,28 @@ impl<'a> CRTShaderProgram<'a> {
 
                             // Handle selection only when mouse tracking is NOT enabled
                             if matches!(button, mouse::Button::Left) {
-                                // Check if clicking on a hyperlink
-                                if let Some(url) = &state.hovered_link {
-                                    return Some(iced::widget::Action::publish(Message::OpenLink(url.clone())));
-                                } else {
-                                    // Start selection - send message instead of direct modification
-                                    // Clear existing selection unless shift is held
-                                    if !state.shift_pressed {
-                                        // Create new selection
-                                        let mut sel = icy_engine::Selection::new(cell);
-                                        sel.shape = if state.alt_pressed {
-                                            icy_engine::Shape::Rectangle
-                                        } else {
-                                            icy_engine::Shape::Lines
-                                        };
-                                        sel.locked = false;
-
-                                        state.dragging = true;
-                                        state.drag_anchor = Some(cell);
-                                        state.last_drag_position = Some(cell);
-
-                                        return Some(iced::widget::Action::publish(Message::StartSelection(sel)));
+                                // Start selection - send message instead of direct modification
+                                // Clear existing selection unless shift is held
+                                if !state.shift_pressed {
+                                    // Create new selection
+                                    let mut sel = icy_engine::Selection::new(cell);
+                                    sel.shape = if state.alt_pressed {
+                                        icy_engine::Shape::Rectangle
                                     } else {
-                                        // Shift is held - just update drag state
-                                        state.dragging = true;
-                                        state.drag_anchor = Some(cell);
-                                        state.last_drag_position = Some(cell);
-                                    }
+                                        icy_engine::Shape::Lines
+                                    };
+                                    sel.locked = false;
+
+                                    state.dragging = true;
+                                    state.drag_anchor = Some(cell);
+                                    state.last_drag_position = Some(cell);
+
+                                    return Some(iced::widget::Action::publish(Message::StartSelection(sel)));
+                                } else {
+                                    // Shift is held - just update drag state
+                                    state.dragging = true;
+                                    state.drag_anchor = Some(cell);
+                                    state.last_drag_position = Some(cell);
                                 }
                             } else if matches!(button, mouse::Button::Middle) {
                                 // Middle click: copy if selection exists, paste if no selection
