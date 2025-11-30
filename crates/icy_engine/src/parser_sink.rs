@@ -22,7 +22,7 @@ use icy_parser_core::{
     Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
 };
 
-use crate::{AttributedChar, BitFont, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
+use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
@@ -333,9 +333,69 @@ impl<'a> ScreenSink<'a> {
 
 impl<'a> CommandSink for ScreenSink<'a> {
     fn print(&mut self, text: &[u8]) {
-        for &byte in text {
-            let ch = AttributedChar::new(byte as char, self.get_display_attribute());
-            self.screen.print_char(ch);
+        match self.screen.buffer_type() {
+            BufferType::Unicode => {
+                // UTF-8 mode: decode multi-byte sequences
+                // Get any incomplete sequence from previous call and append new data
+                let utf8_buf = &mut self.screen.terminal_state_mut().utf8_buffer;
+                utf8_buf.extend_from_slice(text);
+
+                // Take ownership of buffer to avoid borrow issues
+                let buffer = std::mem::take(utf8_buf);
+                let mut i = 0;
+
+                while i < buffer.len() {
+                    let remaining = &buffer[i..];
+
+                    // Try to decode UTF-8 starting at position i
+                    match std::str::from_utf8(remaining) {
+                        Ok(valid_str) => {
+                            // All remaining bytes form valid UTF-8
+                            for ch in valid_str.chars() {
+                                let attr_char = AttributedChar::new(ch, self.get_display_attribute());
+                                self.screen.print_char(attr_char);
+                            }
+                            i = buffer.len(); // Consumed everything
+                        }
+                        Err(e) => {
+                            // Process valid part first
+                            if e.valid_up_to() > 0 {
+                                let valid_str = std::str::from_utf8(&remaining[..e.valid_up_to()]).unwrap();
+                                for ch in valid_str.chars() {
+                                    let attr_char = AttributedChar::new(ch, self.get_display_attribute());
+                                    self.screen.print_char(attr_char);
+                                }
+                                i += e.valid_up_to();
+                            }
+
+                            if let Some(error_len) = e.error_len() {
+                                // Invalid UTF-8 sequence - output replacement char
+                                let attr_char = AttributedChar::new('\u{FFFD}', self.get_display_attribute());
+                                self.screen.print_char(attr_char);
+                                i += error_len;
+                            } else {
+                                // Incomplete sequence at end - keep for next call
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Keep any incomplete sequence for next call
+                let utf8_buf = &mut self.screen.terminal_state_mut().utf8_buffer;
+                if i < buffer.len() {
+                    *utf8_buf = buffer[i..].to_vec();
+                } else {
+                    utf8_buf.clear();
+                }
+            }
+            _ => {
+                // Legacy mode: treat each byte as a character (CP437, Petscii, Atascii, Viewdata)
+                for &byte in text {
+                    let ch = AttributedChar::new(byte as char, self.get_display_attribute());
+                    self.screen.print_char(ch);
+                }
+            }
         }
     }
 
