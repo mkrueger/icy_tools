@@ -4,11 +4,35 @@ use super::Size;
 
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
-        let font_size = self.get_font(0).unwrap().size();
+        let Some(font) = self.get_font(0) else {
+            log::error!("render_to_rgba: no font available");
+            return (Size::new(0, 0), Vec::new());
+        };
+        let font_size = font.size();
+
+        // Validate buffer dimensions
+        if self.get_width() <= 0 || self.get_height() <= 0 {
+            log::error!("render_to_rgba: invalid buffer dimensions {}x{}", self.get_width(), self.get_height());
+            return (Size::new(0, 0), Vec::new());
+        }
 
         let rect = options.rect.as_rectangle_with_width(self.get_width());
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;
+
+        // Check for overflow before allocation
+        let total_pixels = (px_width as u64).checked_mul(px_height as u64);
+        if total_pixels.is_none() || total_pixels.unwrap() > 100_000_000 {
+            log::error!(
+                "render_to_rgba: dimensions too large {}x{} ({}x{} chars)",
+                px_width,
+                px_height,
+                rect.get_width(),
+                rect.get_height()
+            );
+            return (Size::new(0, 0), Vec::new());
+        }
+
         let line_width = px_width as usize;
 
         let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
@@ -56,8 +80,31 @@ impl TextBuffer {
 
     /// Render only a specific pixel region (for viewport-based rendering)
     /// Renders the character region and crops to exact pixel bounds
+    /// Render only a specific pixel region (for viewport-based rendering)
+    /// Renders the character region and crops to exact pixel bounds
     pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
-        let font_size = self.get_font(0).unwrap().size();
+        let Some(font) = self.get_font(0) else {
+            log::error!("render_region_to_rgba: no font available");
+            return (Size::new(0, 0), Vec::new());
+        };
+        let font_size = font.size();
+
+        // Validate buffer dimensions
+        if self.get_width() <= 0 || self.get_height() <= 0 {
+            log::error!("render_region_to_rgba: invalid buffer dimensions {}x{}", self.get_width(), self.get_height());
+            return (Size::new(0, 0), Vec::new());
+        }
+
+        // Validate px_region dimensions
+        if px_region.size.width <= 0 || px_region.size.height <= 0 {
+            log::warn!(
+                "render_region_to_rgba: invalid region dimensions {}x{}",
+                px_region.size.width,
+                px_region.size.height
+            );
+            return (Size::new(0, 0), Vec::new());
+        }
+
         let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
 
         // Convert pixel region to character region (round outwards)
@@ -72,6 +119,11 @@ impl TextBuffer {
         let char_width = (char_right - char_x).clamp(0, self.get_width() - char_x);
         let char_height = (char_bottom - char_y).clamp(0, self.get_height() - char_y);
 
+        // Early exit if nothing to render
+        if char_width <= 0 || char_height <= 0 {
+            return (Size::new(0, 0), Vec::new());
+        }
+
         // Create render options
         let region_options = RenderOptions {
             rect: Rectangle::from_coords(char_x, char_y, char_x + char_width, char_y + char_height).into(),
@@ -83,13 +135,25 @@ impl TextBuffer {
         };
 
         // Render the character region
-        let (full_size, mut full_pixels) = self.render_to_rgba(&region_options, scan_lines);
+        let (full_size, full_pixels) = self.render_to_rgba(&region_options, scan_lines);
 
-        // Calculate crop bounds
-        let crop_x = px_region.start.x - char_x * font_size.width;
-        let crop_y = px_region.start.y - char_y * font_size.height;
-        let crop_width = px_region.size.width.min(full_size.width - crop_x);
-        let crop_height = px_region.size.height.min(full_size.height - crop_y);
+        // Check if render produced valid output
+        if full_size.width <= 0 || full_size.height <= 0 || full_pixels.is_empty() {
+            return (Size::new(0, 0), Vec::new());
+        }
+
+        // Calculate crop bounds with safe arithmetic
+        let crop_x = (px_region.start.x - char_x * font_size.width).max(0);
+        let crop_y = (px_region.start.y - char_y * font_size.height).max(0);
+
+        // Ensure we don't go out of bounds
+        let crop_width = px_region.size.width.min(full_size.width.saturating_sub(crop_x)).max(0);
+        let crop_height = px_region.size.height.min(full_size.height.saturating_sub(crop_y)).max(0);
+
+        // Early exit if crop dimensions are invalid
+        if crop_width <= 0 || crop_height <= 0 {
+            return (Size::new(0, 0), Vec::new());
+        }
 
         // Fast path: no cropping needed
         if crop_x == 0 && crop_y == 0 && crop_width == full_size.width && crop_height == full_size.height {
@@ -99,13 +163,27 @@ impl TextBuffer {
         let src_stride = full_size.width as usize * 4;
         let dst_stride = crop_width as usize * 4;
 
+        // Check for potential overflow before allocation
+        let total_bytes = (crop_width as u64).saturating_mul(crop_height as u64).saturating_mul(4);
+        if total_bytes > 100_000_000 || total_bytes == 0 {
+            log::error!("render_region_to_rgba: crop dimensions too large or zero {}x{}", crop_width, crop_height);
+            return (Size::new(0, 0), Vec::new());
+        }
+
+        let mut full_pixels = full_pixels;
+
         // Fast path: only vertical cropping (no X offset, same width)
         if crop_x == 0 && crop_width == full_size.width {
             let src_start = crop_y as usize * src_stride;
             let total_bytes = crop_height as usize * src_stride;
-            full_pixels.copy_within(src_start..src_start + total_bytes, 0);
-            full_pixels.truncate(total_bytes);
-            return (Size::new(crop_width, crop_height), full_pixels);
+            if src_start + total_bytes <= full_pixels.len() {
+                full_pixels.copy_within(src_start..src_start + total_bytes, 0);
+                full_pixels.truncate(total_bytes);
+                return (Size::new(crop_width, crop_height), full_pixels);
+            } else {
+                log::error!("render_region_to_rgba: vertical crop out of bounds");
+                return (Size::new(0, 0), Vec::new());
+            }
         }
 
         // General case: both X and Y cropping
@@ -114,12 +192,17 @@ impl TextBuffer {
         let mut dst_offset = 0usize;
 
         for _ in 0..crop_height as usize {
+            if src_offset + dst_stride > full_pixels.len() {
+                log::error!("render_region_to_rgba: general crop out of bounds");
+                break;
+            }
             full_pixels.copy_within(src_offset..src_offset + dst_stride, dst_offset);
             src_offset += src_stride;
             dst_offset += dst_stride;
         }
 
-        full_pixels.truncate((crop_width * crop_height * 4) as usize);
+        let final_size = (crop_width as usize * crop_height as usize * 4).min(full_pixels.len());
+        full_pixels.truncate(final_size);
         (Size::new(crop_width, crop_height), full_pixels)
     }
 

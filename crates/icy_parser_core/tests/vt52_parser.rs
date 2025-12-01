@@ -1,4 +1,6 @@
-use icy_parser_core::{Color, CommandParser, CommandSink, DecMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, Vt52Parser};
+use icy_parser_core::{
+    Color, CommandParser, CommandSink, DecMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, Vt52Parser, Wrapping,
+};
 
 struct TestSink {
     text: Vec<String>,
@@ -44,7 +46,7 @@ fn test_vt52_cursor_up() {
     parser.parse(b"\x1BA", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiMoveCursor(Direction::Up, 1)));
+    assert!(matches!(sink.commands[0], TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Always)));
 }
 
 #[test]
@@ -55,7 +57,7 @@ fn test_vt52_cursor_down() {
     parser.parse(b"\x1BB", &mut sink);
 
     assert_eq!(sink.commands.len(), 1);
-    assert!(matches!(sink.commands[0], TerminalCommand::CsiMoveCursor(Direction::Down, 1)));
+    assert!(matches!(sink.commands[0], TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Always)));
 }
 
 #[test]

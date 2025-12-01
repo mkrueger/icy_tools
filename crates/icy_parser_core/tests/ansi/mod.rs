@@ -575,7 +575,7 @@ fn test_esc_fallback_preserves_next_sequence() {
     // Test: malformed CSI followed by cursor movement
     parser.parse(b"\x1B[!\x1B[5A", &mut sink);
     assert_eq!(sink.cmds.len(), 1, "Should parse cursor up after malformed CSI");
-    assert!(matches!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Up, 5)));
+    assert!(matches!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Up, 5, _)));
     sink.cmds.clear();
 
     // Test: malformed CSI followed by SGR (color)

@@ -65,4 +65,9 @@ impl BaudEmulator {
     pub fn has_buffered_data(&self) -> bool {
         !self.buffer.is_empty()
     }
+
+    pub fn reset(&mut self) {
+        self.buffer.clear();
+        self.last_byte_time = Instant::now();
+    }
 }

@@ -267,6 +267,21 @@ impl ScreenMode {
                 screen.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Petscii;
+
+                // Set C64 default colors: light blue on blue (14/6)
+                screen.caret_mut().set_foreground(14);
+                screen.caret_mut().set_background(6);
+
+                // Fill screen with C64 default colors
+                let size = self.get_window_size();
+                for y in 0..size.height {
+                    for x in 0..size.width {
+                        let mut ch = crate::AttributedChar::default();
+                        ch.attribute.set_foreground(14);
+                        ch.attribute.set_background(6);
+                        screen.set_char((x, y).into(), ch);
+                    }
+                }
             }
             ScreenMode::Atascii(i) => {
                 screen.clear_font_table();

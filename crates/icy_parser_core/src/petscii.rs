@@ -8,7 +8,7 @@
 //! - C128 extended ESC sequences
 //! - Character code remapping based on shift mode
 
-use crate::{Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand};
+use crate::{Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, Wrapping};
 
 pub const C64_TERMINAL_SIZE: (i32, i32) = (40, 25);
 
@@ -491,7 +491,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x91 => {
@@ -501,7 +501,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x1D => {
@@ -511,7 +511,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x9D => {
@@ -521,7 +521,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Always));
                     start = i + 1;
                 }
 
@@ -565,7 +565,7 @@ impl CommandParser for PetsciiParser {
                         }
                     }
                     // Backspace on C64 wraps around to end of previous line
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Always));
                     sink.emit(TerminalCommand::Delete);
                     start = i + 1;
                 }

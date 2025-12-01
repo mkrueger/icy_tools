@@ -35,7 +35,6 @@ pub use terminal::*;
 
 pub mod auto_login;
 pub mod features;
-mod icons;
 pub mod mcp;
 pub mod scripting;
 pub mod ui;

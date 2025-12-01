@@ -3,7 +3,7 @@
 //! Avatar is a video control language similar to ANSI but more compact.
 //! It uses ^V (0x16) to introduce commands and ^Y (0x19) for character repetition.
 
-use crate::{AnsiParser, Color, CommandParser, CommandSink, Direction, EraseInLineMode, ParseError, SgrAttribute, TerminalCommand};
+use crate::{AnsiParser, Color, CommandParser, CommandSink, Direction, EraseInLineMode, ParseError, SgrAttribute, TerminalCommand, Wrapping};
 
 pub mod constants {
 
@@ -272,25 +272,25 @@ impl CommandParser for AvatarParser {
                         printable_start = i;
                     }
                     CARET_UP => {
-                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
+                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Never));
                         self.reset();
                         i += 1;
                         printable_start = i;
                     }
                     CARET_DOWN => {
-                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
+                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Never));
                         self.reset();
                         i += 1;
                         printable_start = i;
                     }
                     CARET_LEFT => {
-                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
+                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Never));
                         self.reset();
                         i += 1;
                         printable_start = i;
                     }
                     CARET_RIGHT => {
-                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
+                        sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1, Wrapping::Never));
                         self.reset();
                         i += 1;
                         printable_start = i;

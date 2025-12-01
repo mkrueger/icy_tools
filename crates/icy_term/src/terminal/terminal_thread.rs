@@ -1,13 +1,15 @@
 use crate::ConnectionInformation;
 use crate::TransferProtocol;
-use crate::baud_emulator::BaudEmulator;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoTransferScanner, IEmsiAutoLogin};
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
-use crate::util::sound_effects::sound_data;
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
+use icy_engine_gui::music::sound_effects::sound_data;
+use icy_engine_gui::util::BaudEmulator;
+use icy_engine_gui::util::QueuedCommand;
+use icy_engine_gui::util::QueueingSink;
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::{
@@ -20,7 +22,7 @@ use icy_net::{
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
 };
 use icy_parser_core::*;
-use icy_parser_core::{AnsiMusic, CommandParser, CommandSink, TerminalCommand as ParserCommand, TerminalRequest};
+use icy_parser_core::{AnsiMusic, CommandParser, TerminalRequest};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use log::error;
 use parking_lot::Mutex;
@@ -148,97 +150,6 @@ pub struct ConnectionConfig {
 
     /// Transfer protocols for auto-transfer detection
     pub transfer_protocols: Vec<crate::TransferProtocol>,
-}
-
-/// Queued command for processing
-#[derive(Debug, Clone)]
-enum QueuedCommand {
-    Print(Vec<u8>),
-    Command(ParserCommand),
-    Music(AnsiMusic),
-    Rip(RipCommand),
-    Skypix(SkypixCommand),
-    Igs(IgsCommand),
-    ViewData(ViewDataCommand),
-    Bell,
-    ResizeTerminal(u16, u16),
-    TerminalRequest(TerminalRequest),
-    DeviceControl(DeviceControlString),
-    OperatingSystemCommand(OperatingSystemCommand),
-    Aps(Vec<u8>),
-}
-
-/// Custom CommandSink that queues commands instead of executing them immediately
-struct QueueingSink<'a> {
-    command_queue: &'a mut VecDeque<QueuedCommand>,
-}
-
-impl<'a> QueueingSink<'a> {
-    fn new(queue: &'a mut VecDeque<QueuedCommand>) -> Self {
-        Self { command_queue: queue }
-    }
-}
-
-impl CommandSink for QueueingSink<'_> {
-    fn print(&mut self, text: &[u8]) {
-        self.command_queue.push_back(QueuedCommand::Print(text.to_vec()));
-    }
-
-    fn emit(&mut self, cmd: ParserCommand) {
-        match &cmd {
-            ParserCommand::Bell => {
-                self.command_queue.push_back(QueuedCommand::Bell);
-            }
-            ParserCommand::CsiResizeTerminal(height, width) => {
-                self.command_queue.push_back(QueuedCommand::ResizeTerminal(*width, *height));
-            }
-            _ => {
-                self.command_queue.push_back(QueuedCommand::Command(cmd));
-            }
-        }
-    }
-
-    fn play_music(&mut self, music: AnsiMusic) {
-        self.command_queue.push_back(QueuedCommand::Music(music));
-    }
-
-    fn emit_rip(&mut self, cmd: RipCommand) {
-        self.command_queue.push_back(QueuedCommand::Rip(cmd));
-    }
-
-    fn emit_skypix(&mut self, cmd: SkypixCommand) {
-        self.command_queue.push_back(QueuedCommand::Skypix(cmd));
-    }
-
-    fn emit_igs(&mut self, cmd: IgsCommand) {
-        self.command_queue.push_back(QueuedCommand::Igs(cmd));
-    }
-
-    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
-        self.command_queue.push_back(QueuedCommand::ViewData(cmd));
-        // Return false since we can't check row change here - it will be done when command is executed
-        false
-    }
-
-    fn device_control(&mut self, dcs: DeviceControlString) {
-        self.command_queue.push_back(QueuedCommand::DeviceControl(dcs));
-    }
-
-    fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
-        self.command_queue.push_back(QueuedCommand::OperatingSystemCommand(osc));
-    }
-
-    fn aps(&mut self, data: &[u8]) {
-        self.command_queue.push_back(QueuedCommand::Aps(data.to_vec()));
-    }
-
-    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
-        log::error!("Parse Error:{:?}", error);
-    }
-
-    fn request(&mut self, request: TerminalRequest) {
-        self.command_queue.push_back(QueuedCommand::TerminalRequest(request));
-    }
 }
 
 pub struct TerminalThread {
@@ -1150,71 +1061,6 @@ impl TerminalThread {
         }
     }
 
-    /// Check if command needs async processing (for peeking in inner loop)
-    fn needs_async_processing(cmd: &QueuedCommand) -> bool {
-        matches!(
-            cmd,
-            QueuedCommand::Igs(IgsCommand::Pause { .. })
-                | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
-                | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
-                | QueuedCommand::Igs(IgsCommand::StopAllSound)
-                | QueuedCommand::Igs(IgsCommand::RestoreSoundEffect { .. })
-                | QueuedCommand::Igs(IgsCommand::SetEffectLoops { .. })
-                | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
-                | QueuedCommand::Igs(IgsCommand::Noise { .. })
-                | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
-                | QueuedCommand::Igs(IgsCommand::AskIG { .. })
-                | QueuedCommand::Skypix(SkypixCommand::Delay { .. })
-                | QueuedCommand::Skypix(SkypixCommand::CrcTransfer { .. })
-                | QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })
-                | QueuedCommand::Music(_)
-                | QueuedCommand::Bell
-                | QueuedCommand::TerminalRequest(_)
-                | QueuedCommand::ResizeTerminal(_, _)
-        )
-    }
-
-    /// Process a command that requires screen access
-    /// Returns true if GrabScreen was encountered
-    fn process_screen_command(cmd: QueuedCommand, screen_sink: &mut ScreenSink<'_>) -> bool {
-        match cmd {
-            QueuedCommand::Print(text) => {
-                screen_sink.print(&text);
-            }
-            QueuedCommand::Command(parser_cmd) => {
-                screen_sink.emit(parser_cmd);
-            }
-            QueuedCommand::Rip(rip_cmd) => {
-                screen_sink.screen().mark_dirty();
-                screen_sink.emit_rip(rip_cmd);
-            }
-            QueuedCommand::Skypix(skypix_cmd) => {
-                screen_sink.screen().mark_dirty();
-                screen_sink.emit_skypix(skypix_cmd);
-            }
-            QueuedCommand::ViewData(vd_cmd) => {
-                screen_sink.emit_view_data(vd_cmd);
-            }
-            QueuedCommand::Igs(ref igs_cmd) => {
-                screen_sink.screen().mark_dirty();
-                let had_grab = matches!(igs_cmd, IgsCommand::GrabScreen { .. });
-                screen_sink.emit_igs(igs_cmd.clone());
-                return had_grab;
-            }
-            QueuedCommand::DeviceControl(dcs) => {
-                screen_sink.device_control(dcs);
-            }
-            QueuedCommand::OperatingSystemCommand(osc) => {
-                screen_sink.operating_system_command(osc);
-            }
-            QueuedCommand::Aps(data) => {
-                screen_sink.aps(&data);
-            }
-            _ => {}
-        }
-        false
-    }
-
     /// Process commands from queue with granular locking
     /// Commands are processed in batches with max 10ms lock duration
     /// Async commands (delays, sound) are processed outside of locks
@@ -1242,21 +1088,21 @@ impl TerminalThread {
                     let mut screen_sink = ScreenSink::new(editable);
 
                     // Process first command
-                    had_grab_screen |= Self::process_screen_command(cmd, &mut screen_sink);
+                    had_grab_screen |= cmd.process_screen_command(&mut screen_sink);
 
                     // Process more commands while within time budget
                     while lock_start.elapsed().as_millis() < MAX_LOCK_DURATION_MS as u128 {
                         // Check if next command needs async processing (without removing)
                         match self.command_queue.front() {
                             None => break,
-                            Some(cmd) if Self::needs_async_processing(cmd) => break,
+                            Some(cmd) if cmd.needs_async_processing() => break,
                             _ => {}
                         }
 
                         // Safe to pop - we know it exists and doesn't need async
                         let next_cmd = self.command_queue.pop_front().unwrap();
 
-                        had_grab_screen |= Self::process_screen_command(next_cmd, &mut screen_sink);
+                        had_grab_screen |= next_cmd.process_screen_command(&mut screen_sink);
 
                         // Break early on GrabScreen for double-stepping
                         if had_grab_screen && self.double_step_vsyncs.is_some() {

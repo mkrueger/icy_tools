@@ -11,6 +11,7 @@ use crate::{
     Rectangle, RenderOptions, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    limits,
     palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
 use parking_lot::Mutex;
@@ -753,6 +754,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_height(&mut self, height: i32) {
+        let height = height.min(limits::MAX_BUFFER_HEIGHT);
         if height == self.char_screen_size.height {
             return;
         }

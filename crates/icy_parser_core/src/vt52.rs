@@ -110,7 +110,8 @@
 //! - Escape (0x1B) during a multi-byte sequence starts a new escape sequence
 
 use crate::{
-    Color, CommandParser, CommandSink, DecMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, flush_input, print_char_value,
+    Color, CommandParser, CommandSink, DecMode, Direction, EraseInDisplayMode, EraseInLineMode, SgrAttribute, TerminalCommand, Wrapping, flush_input,
+    print_char_value,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,10 +144,10 @@ enum EscAction {
 // Build escape sequence lookup table at compile time
 fn build_escape_lut() -> Vec<EscAction> {
     let mut lut = vec![EscAction::None; 256];
-    lut[b'A' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Up, 1)));
-    lut[b'B' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Down, 1)));
-    lut[b'C' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Right, 1)));
-    lut[b'D' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Left, 1)));
+    lut[b'A' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Always)));
+    lut[b'B' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Always)));
+    lut[b'C' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Right, 1, Wrapping::Always)));
+    lut[b'D' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Always)));
     lut[b'E' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::All)));
     lut[b'H' as usize] = EscAction::Command(Box::new(TerminalCommand::CsiCursorPosition(1, 1)));
     lut[b'I' as usize] = EscAction::Command(Box::new(TerminalCommand::EscReverseIndex));

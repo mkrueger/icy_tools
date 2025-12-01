@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 icy_engine = { workspace = true }
+icy_parser_core = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
 rustybuzz = "0.20.1"
@@ -30,3 +31,13 @@ once_cell = { workspace = true }
 regex = { workspace = true }
 
 bytemuck = { version = "1.0", features = ["derive"] }
+
+# Sound/Music dependencies
+anyhow = { workspace = true }
+fastrand = { workspace = true }
+rodio = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time", "sync"] }
+
+# for Atari ST GIST sounds (IGS)
+ym2149 = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound", features = ["streaming"] }
+ym2149-gist-replayer = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound" }

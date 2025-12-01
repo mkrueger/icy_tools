@@ -8,6 +8,7 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 #[cfg(target_arch = "wasm32")]
@@ -21,8 +22,22 @@ use rodio::{
 use ym2149::{AudioDevice, RingBuffer, StreamConfig};
 use ym2149_gist_replayer::{GistPlayer, GistSound};
 
-use crate::DialTone;
-use crate::TerminalResult;
+pub type SoundResult<T> = anyhow::Result<T>;
+
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum DialTone {
+    /// 350 + 440 Hz dial tone
+    #[default]
+    US,
+    /// 350 + 450 Hz dial tone
+    UK,
+    /// Europe 425 Hz
+    Europe,
+    /// France 440 Hz
+    France,
+    /// Japan 400 Hz
+    Japan,
+}
 
 // DTMF frequency pairs (low freq, high freq) for each key
 static DTMF_FREQUENCIES: Lazy<HashMap<char, (f32, f32)>> = Lazy::new(|| {
@@ -108,17 +123,17 @@ impl SoundThread {
         res
     }
 
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         let _ = self.tx.send(SoundData::Clear);
     }
 
-    pub(crate) fn is_playing(&self) -> bool {
+    pub fn is_playing(&self) -> bool {
         self.is_playing
     }
 }
 
 impl SoundThread {
-    pub fn update_state(&mut self) -> TerminalResult<()> {
+    pub fn update_state(&mut self) -> SoundResult<()> {
         if self.no_thread_running() {
             return Ok(());
         }
@@ -145,33 +160,33 @@ impl SoundThread {
         }
         Ok(())
     }
-    pub(crate) fn beep(&mut self) -> TerminalResult<()> {
+    pub fn beep(&mut self) -> SoundResult<()> {
         self.send_data(SoundData::Beep)
     }
 
-    pub fn stop_line_sound(&mut self) -> TerminalResult<()> {
+    pub fn stop_line_sound(&mut self) -> SoundResult<()> {
         self.send_data(SoundData::StopPlay)
     }
 
-    pub fn start_line_sound(&mut self, tone: DialTone) -> TerminalResult<()> {
+    pub fn start_line_sound(&mut self, tone: DialTone) -> SoundResult<()> {
         self.send_data(SoundData::LineSound(tone))
     }
 
-    pub fn start_dial_sound(&mut self, tone_dial: bool, tone: DialTone, phone_number: &str) -> TerminalResult<()> {
+    pub fn start_dial_sound(&mut self, tone_dial: bool, tone: DialTone, phone_number: &str) -> SoundResult<()> {
         self.send_data(SoundData::PlayDialSound(tone_dial, tone, phone_number.to_string()))
     }
 
-    pub fn play_music(&mut self, music: AnsiMusic) -> TerminalResult<()> {
+    pub fn play_music(&mut self, music: AnsiMusic) -> SoundResult<()> {
         self.send_data(SoundData::PlayMusic(music))
     }
 
     /// Play a GIST sound effect (BellsAndWhistles)
-    pub fn play_gist(&mut self, sound_data: Vec<i16>) -> TerminalResult<()> {
+    pub fn play_gist(&mut self, sound_data: Vec<i16>) -> SoundResult<()> {
         self.send_data(SoundData::PlayGist(sound_data))
     }
 
     /// Play chip music on a specific voice
-    pub fn play_chip_music(&mut self, sound_data: Vec<i16>, voice: u8, volume: u8, pitch: u8) -> TerminalResult<()> {
+    pub fn play_chip_music(&mut self, sound_data: Vec<i16>, voice: u8, volume: u8, pitch: u8) -> SoundResult<()> {
         self.send_data(SoundData::ChipMusic {
             sound_data,
             voice,
@@ -181,26 +196,26 @@ impl SoundThread {
     }
 
     /// Fade out sound on specific voice (soft stop)
-    pub fn snd_off(&mut self, voice: u8) -> TerminalResult<()> {
+    pub fn snd_off(&mut self, voice: u8) -> SoundResult<()> {
         self.send_data(SoundData::SndOff(voice))
     }
 
     /// Immediately stop sound on specific voice (hard stop)
-    pub fn stop_snd(&mut self, voice: u8) -> TerminalResult<()> {
+    pub fn stop_snd(&mut self, voice: u8) -> SoundResult<()> {
         self.send_data(SoundData::StopSnd(voice))
     }
 
     /// Fade out all voices (soft stop)
-    pub fn snd_off_all(&mut self) -> TerminalResult<()> {
+    pub fn snd_off_all(&mut self) -> SoundResult<()> {
         self.send_data(SoundData::SndOffAll)
     }
 
     /// Immediately stop all voices (hard stop)
-    pub fn stop_snd_all(&mut self) -> TerminalResult<()> {
+    pub fn stop_snd_all(&mut self) -> SoundResult<()> {
         self.send_data(SoundData::StopSndAll)
     }
 
-    fn send_data(&mut self, data: SoundData) -> TerminalResult<()> {
+    fn send_data(&mut self, data: SoundData) -> SoundResult<()> {
         if self.no_thread_running() {
             // prevent error spew.
             return Ok(());
@@ -462,6 +477,10 @@ impl SoundBackgroundThreadData {
                         self.music.clear();
                         self.line_sound_playing = false;
                         self.reset_audio_stream();
+                        // Also stop all IGS/GIST sounds
+                        self.gist_player.stop_all();
+                        self.gist_player.reset();
+                        self.gist_playing = false;
                         result = true;
                     }
                     SoundData::SndOff(voice) => {

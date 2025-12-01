@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+use icy_engine_gui::music::music::SoundThread;
 use parking_lot::Mutex;
 
 use iced::{
@@ -13,7 +14,6 @@ use iced::{
 use crate::{
     AddressBook, McpHandler, Options, load_window_icon,
     ui::{MainWindow, MainWindowMode, Message},
-    util::SoundThread,
 };
 
 pub struct WindowManager {

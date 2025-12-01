@@ -10,7 +10,7 @@ use crate::{
     Rectangle, RenderOptions, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
     TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
-    igs,
+    igs, limits,
     rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
 };
 use parking_lot::Mutex;
@@ -917,6 +917,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn set_height(&mut self, height: i32) {
+        let height = height.min(limits::MAX_BUFFER_HEIGHT);
         if height == self.char_screen_size.height {
             return;
         }
@@ -1038,25 +1039,23 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     /// Override: Move left, handling autowrap and pixel coordinates
-    fn left(&mut self, num: i32, scroll: bool) {
+    fn left(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
         let font_size = self.get_font_dimensions();
 
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
-            if self.caret.x == 0 {
-                // At column 0: wrap to previous line end if above origin line
-                if self.caret.y <= 0 {
-                    // Already at origin line -> no-op
-                    return;
-                }
-
-                self.caret.y -= font_size.height;
-                self.caret.x = (self.pixel_size.width - font_size.width).max(0);
-                if scroll {
-                    self.check_scrolling_on_caret_up(false, false);
-                }
-                self.limit_caret_pos(false);
+        if auto_wrap && self.caret.x == 0 {
+            // At column 0: wrap to previous line end if above origin line
+            if self.caret.y <= 0 {
+                // Already at origin line -> no-op
                 return;
             }
+
+            self.caret.y -= font_size.height;
+            self.caret.x = (self.pixel_size.width - font_size.width).max(0);
+            if scroll {
+                self.check_scrolling_on_caret_up(false, false);
+            }
+            self.limit_caret_pos(false);
+            return;
         }
 
         // Move left by num characters (in pixels)
@@ -1076,23 +1075,21 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     /// Override: Move right, handling autowrap and pixel coordinates
-    fn right(&mut self, num: i32, scroll: bool) {
+    fn right(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
         let font_size = self.get_font_dimensions();
         let last_pixel_x = self.pixel_size.width - font_size.width;
 
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode {
-            if self.caret.x >= last_pixel_x {
-                // At end of line: move to start of next line, scrolling if needed
-                self.caret.x = 0;
-                self.caret.y += font_size.height;
-                // Use existing scrolling logic to handle terminal buffers
-                self.check_scrolling_on_caret_down(true, false);
-                if scroll {
-                    self.check_scrolling_on_caret_up(false, false);
-                }
-                self.limit_caret_pos(false);
-                return;
+        if auto_wrap && self.caret.x >= last_pixel_x {
+            // At end of line: move to start of next line, scrolling if needed
+            self.caret.x = 0;
+            self.caret.y += font_size.height;
+            // Use existing scrolling logic to handle terminal buffers
+            self.check_scrolling_on_caret_down(true, false);
+            if scroll {
+                self.check_scrolling_on_caret_up(false, false);
             }
+            self.limit_caret_pos(false);
+            return;
         }
 
         // Move right by num characters (in pixels)
@@ -1104,7 +1101,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     /// Override: Move up, handling pixel coordinates
-    fn up(&mut self, num: i32, scroll: bool) {
+    fn up(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
         let font_size = self.get_font_dimensions();
         self.caret_mut().y -= num * font_size.height;
         if scroll {
@@ -1113,7 +1110,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     /// Override: Move down, handling pixel coordinates
-    fn down(&mut self, num: i32, scroll: bool) {
+    fn down(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
         let font_size = self.get_font_dimensions();
         self.caret_mut().y += num * font_size.height;
         if scroll {

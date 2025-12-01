@@ -49,16 +49,16 @@ impl CommandSink for MappingTestSink {
             TerminalCommand::CarriageReturn => {
                 self.commands.push(MappingCommand::CarriageReturn);
             }
-            TerminalCommand::CsiMoveCursor(Direction::Up, _) => {
+            TerminalCommand::CsiMoveCursor(Direction::Up, _, _) => {
                 self.commands.push(MappingCommand::CursorUp);
             }
-            TerminalCommand::CsiMoveCursor(Direction::Down, _) => {
+            TerminalCommand::CsiMoveCursor(Direction::Down, _, _) => {
                 self.commands.push(MappingCommand::CursorDown);
             }
-            TerminalCommand::CsiMoveCursor(Direction::Left, _) => {
+            TerminalCommand::CsiMoveCursor(Direction::Left, _, _) => {
                 self.commands.push(MappingCommand::CursorLeft);
             }
-            TerminalCommand::CsiMoveCursor(Direction::Right, _) => {
+            TerminalCommand::CsiMoveCursor(Direction::Right, _, _) => {
                 self.commands.push(MappingCommand::CursorRight);
             }
             TerminalCommand::CsiCursorPosition(1, 1) => {

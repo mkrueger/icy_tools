@@ -1,6 +1,6 @@
 use crate::{
     BACKSPACE, BELL, Blink, CARRIAGE_RETURN, Color, CommandParser, CommandSink, DELETE, Direction, EraseInDisplayMode, EraseInLineMode, FORM_FEED, Intensity,
-    LINE_FEED, SgrAttribute, TAB, TerminalCommand, VERTICAL_TAB, flush_input,
+    LINE_FEED, SgrAttribute, TAB, TerminalCommand, VERTICAL_TAB, Wrapping, flush_input,
 };
 
 mod commands;
@@ -389,22 +389,22 @@ impl SkypixParser {
             b'A' => {
                 // Cursor Up
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16, Wrapping::Never));
             }
             b'B' => {
                 // Cursor Down
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16, Wrapping::Never));
             }
             b'C' => {
                 // Cursor Forward
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16, Wrapping::Never));
             }
             b'D' => {
                 // Cursor Backward
                 let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16, Wrapping::Never));
             }
             b'H' | b'f' => {
                 // Cursor Position
@@ -593,7 +593,7 @@ impl CommandParser for SkypixParser {
                         VERTICAL_TAB => {
                             // CTRL-K - Cursor Up (as per ANSI.TXT spec for SkyPix)
                             flush_input(input, sink, i, start);
-                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Never));
                             start = i + 1;
                         }
                         FORM_FEED => {

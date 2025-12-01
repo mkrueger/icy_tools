@@ -10,10 +10,10 @@ pub fn test_ansi_output() {
         let cur_entry = entry.unwrap().path();
         if cur_entry.extension().unwrap() != "ans" {
             continue;
-        }
+        } /* 
         if !cur_entry.file_name().unwrap().to_str().unwrap().starts_with("cpbug3.ans") {
-            continue;
-        }
+        continue;
+        }*/
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         let mut screen = ScreenMode::Vga(80, 25).create_screen(TerminalEmulation::Ansi, None);

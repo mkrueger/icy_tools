@@ -11,7 +11,7 @@ pub mod sgr;
 use crate::{
     AnsiMode, BACKSPACE, BELL, BaudEmulation, CARRIAGE_RETURN, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DELETE, DecMode,
     DeviceControlString, Direction, ESC, EraseInDisplayMode, EraseInLineMode, FORM_FEED, LINE_FEED, MusicState, OperatingSystemCommand, ParseError,
-    SgrAttribute, TAB, TerminalCommand, TerminalRequest,
+    SgrAttribute, TAB, TerminalCommand, TerminalRequest, Wrapping,
 };
 
 pub struct AnsiParser {
@@ -1596,20 +1596,20 @@ impl AnsiParser {
         match final_byte {
             b'A' | b'k' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16, Wrapping::Never));
             }
 
             b'B' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16, Wrapping::Never));
             }
             b'C' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16, Wrapping::Never));
             }
             b'D' | b'j' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16, Wrapping::Never));
             }
             b'E' => {
                 let n = self.params.first().copied().unwrap_or(1);

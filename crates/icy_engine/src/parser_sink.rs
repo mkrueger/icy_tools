@@ -19,7 +19,7 @@
 
 use icy_parser_core::{
     AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsCommand,
-    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand,
+    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping,
 };
 
 use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
@@ -404,13 +404,18 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
 
             // Cursor movement
-            TerminalCommand::CsiMoveCursor(direction, n) => {
+            TerminalCommand::CsiMoveCursor(direction, n, wrapping) => {
                 let n = n as i32;
+                let auto_wrap = match wrapping {
+                    Wrapping::Never => false,
+                    Wrapping::Always => true,
+                    Wrapping::Setting => true, // Use terminal's auto_wrap_mode setting
+                };
                 match direction {
-                    Direction::Up => self.screen.up(n, false),
-                    Direction::Down => self.screen.down(n, false),
-                    Direction::Left => self.screen.left(n, false),
-                    Direction::Right => self.screen.right(n, false),
+                    Direction::Up => self.screen.up(n, false, auto_wrap),
+                    Direction::Down => self.screen.down(n, false, auto_wrap),
+                    Direction::Left => self.screen.left(n, false, auto_wrap),
+                    Direction::Right => self.screen.right(n, false, auto_wrap),
                 }
             }
             TerminalCommand::CsiCursorNextLine(n) => {
@@ -419,7 +424,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 }
             }
             TerminalCommand::CsiCursorPreviousLine(n) => {
-                self.screen.up(n as i32, false);
+                self.screen.up(n as i32, false, false);
                 self.screen.cr();
             }
             TerminalCommand::CsiCursorHorizontalAbsolute(col) => {
@@ -524,10 +529,10 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.limit_caret_pos(false);
             }
             TerminalCommand::CsiLinePositionForward(n) => {
-                self.screen.down(n as i32, false);
+                self.screen.down(n as i32, false, false);
             }
             TerminalCommand::CsiCharacterPositionForward(n) => {
-                self.screen.right(n as i32, false);
+                self.screen.right(n as i32, false, false);
             }
             TerminalCommand::CsiHorizontalPositionAbsolute(col) => {
                 let upper_left = self.screen.upper_left_position();
@@ -625,7 +630,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.terminal_state_mut().set_tab_at(col);
             }
             TerminalCommand::EscReverseIndex => {
-                self.screen.up(1, true);
+                self.screen.up(1, true, false);
             }
             TerminalCommand::EscReset => {
                 self.screen.reset_terminal();

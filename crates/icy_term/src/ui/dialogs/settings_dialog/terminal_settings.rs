@@ -4,15 +4,14 @@ use iced::{
     widget::{checkbox, column, pick_list, row, text_input},
 };
 use icy_engine_gui::{
-    SECTION_PADDING, TEXT_SIZE_NORMAL, section_header,
+    SECTION_PADDING, TEXT_SIZE_NORMAL,
+    music::music::DialTone,
+    section_header,
     settings::{effect_box, left_label},
     ui::DIALOG_SPACING,
 };
 
-use crate::{
-    data::options::DialTone,
-    ui::settings_dialog::{SettingsDialogState, SettingsMsg},
-};
+use crate::ui::settings_dialog::{SettingsDialogState, SettingsMsg};
 
 // Create a wrapper type for the pick list
 #[derive(Debug, Clone, Copy, PartialEq)]

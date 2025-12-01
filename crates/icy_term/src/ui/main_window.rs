@@ -18,13 +18,12 @@ use crate::{
         export_screen_dialog,
         up_download_dialog::{self, FileTransferDialogState},
     },
-    util::SoundThread,
 };
 
 use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
-use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType};
+use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, music::music::SoundThread};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::BaudEmulation;
 use image::DynamicImage;

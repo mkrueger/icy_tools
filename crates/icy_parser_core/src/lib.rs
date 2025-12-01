@@ -230,6 +230,21 @@ pub enum Direction {
     Right,
 }
 
+/// Wrapping behavior for CSI cursor movement commands
+///
+/// Controls whether cursor movement commands (CUU/CUD/CUF/CUB) should wrap
+/// at line boundaries like printable characters, or stop at the edges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Wrapping {
+    /// CSI cursor commands never wrap at line boundaries (standard ANSI behavior)
+    #[default]
+    Never,
+    /// Always wrap like printable characters (for terminals like PETscii, VT52, Atascii)
+    Always,
+    /// Use the terminal's current wrap mode setting
+    Setting,
+}
+
 /// ANSI Mode for SM/RM commands (ESC[nh / ESC[nl)
 /// Standard ANSI modes - distinct from DEC private modes (which use ESC[?nh)
 /// Currently only IRM (Insert/Replace Mode) is used by icy_engine
@@ -567,7 +582,13 @@ pub enum TerminalCommand {
 
     // ANSI CSI (Control Sequence Introducer) sequences
     /// CUU/CUD/CUF/CUB - Cursor Movement: ESC[{n}A/B/C/D
-    CsiMoveCursor(Direction, u16),
+    ///
+    /// The Wrapping parameter controls whether cursor movement wraps at line boundaries:
+    /// - Never: Standard ANSI behavior, stops at edges
+    /// - Always: Wraps like printable characters (for PETscii, VT52, Atascii)
+    /// - Setting: Uses the terminal's current wrap mode
+    CsiMoveCursor(Direction, u16, Wrapping),
+
     /// CNL - Cursor Next Line: ESC[{n}E
     CsiCursorNextLine(u16),
     /// CPL - Cursor Previous Line: ESC[{n}F

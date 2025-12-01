@@ -5,7 +5,7 @@ use std::{
 };
 
 use directories::UserDirs;
-use icy_engine_gui::MonitorSettings;
+use icy_engine_gui::{MonitorSettings, music::music::DialTone};
 use icy_net::{modem::ModemConfiguration, serial::Serial};
 use serde::{Deserialize, Serialize};
 
@@ -61,21 +61,6 @@ impl Default for IEMSISettings {
             birth_date: String::default(),
         }
     }
-}
-
-#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum DialTone {
-    /// 350 + 440 Hz dial tone
-    #[default]
-    US,
-    /// 350 + 450 Hz dial tone
-    UK,
-    /// Europe 425 Hz
-    Europe,
-    /// France 440 Hz
-    France,
-    /// Japan 400 Hz
-    Japan,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

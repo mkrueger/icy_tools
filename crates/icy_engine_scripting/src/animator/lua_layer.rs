@@ -1110,7 +1110,7 @@ impl UserData for LuaScreen {
         methods.add_method_mut("caret_left", |_, this, n: Option<i32>| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                editable.left(n.unwrap_or(1), false);
+                editable.left(n.unwrap_or(1), false, false);
                 Ok(())
             } else {
                 Err(no_editable_error())
@@ -1120,7 +1120,7 @@ impl UserData for LuaScreen {
         methods.add_method_mut("caret_right", |_, this, n: Option<i32>| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                editable.right(n.unwrap_or(1), false);
+                editable.right(n.unwrap_or(1), false, false);
                 Ok(())
             } else {
                 Err(no_editable_error())
@@ -1130,7 +1130,7 @@ impl UserData for LuaScreen {
         methods.add_method_mut("caret_up", |_, this, n: Option<i32>| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                editable.up(n.unwrap_or(1), false);
+                editable.up(n.unwrap_or(1), false, false);
                 Ok(())
             } else {
                 Err(no_editable_error())
@@ -1140,7 +1140,7 @@ impl UserData for LuaScreen {
         methods.add_method_mut("caret_down", |_, this, n: Option<i32>| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                editable.down(n.unwrap_or(1), false);
+                editable.down(n.unwrap_or(1), false, false);
                 Ok(())
             } else {
                 Err(no_editable_error())

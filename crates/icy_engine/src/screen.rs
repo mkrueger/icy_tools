@@ -5,7 +5,7 @@ use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
     AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection,
-    Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret,
+    Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret, limits,
 };
 
 #[repr(u8)]
@@ -51,8 +51,15 @@ pub trait Screen: TextPane + Send + Sync {
         crate::GraphicsType::Text
     }
 
-    /// Gets the current resolution of the screen in pixels
+    /// Gets the current resolution of the screen in pixels (based on buffer size)
     fn get_resolution(&self) -> Size;
+
+    /// Gets the terminal resolution in pixels (based on terminal_state size)
+    /// This is the "visible" rendered area, while get_resolution is the full content size
+    fn get_terminal_resolution(&self) -> Size {
+        // Default: same as resolution (for screens without separate terminal state)
+        self.get_resolution()
+    }
 
     /// Gets the virtual size of the screen (including scrollback)
     fn virtual_size(&self) -> Size {
@@ -260,9 +267,21 @@ pub trait EditableScreen: Screen {
             self.ins();
         }
         let is_terminal = self.terminal_state().is_terminal_buffer;
-        if !is_terminal && self.caret().y + 1 > self.get_height() {
-            self.set_height(self.caret().y + 1);
+
+        // Enforce maximum buffer height to prevent memory exhaustion
+        if self.caret().y >= limits::MAX_BUFFER_HEIGHT {
+            return;
         }
+
+        if !is_terminal && self.caret().y + 1 > self.get_height() {
+            self.set_height((self.caret().y + 1).min(limits::MAX_BUFFER_HEIGHT));
+        }
+
+        // Enforce maximum buffer width
+        if self.caret().x >= limits::MAX_BUFFER_WIDTH {
+            return;
+        }
+
         let mut caret_pos = self.caret_position();
 
         self.set_char(caret_pos, ch);
@@ -465,12 +484,12 @@ pub trait EditableScreen: Screen {
         self.caret_mut().x = x;
     }
 
-    fn left(&mut self, num: i32, scroll: bool) {
+    fn left(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
-            && self.caret().x == 0
-        {
+
+        let should_wrap = auto_wrap && matches!(self.terminal_state().auto_wrap_mode, crate::AutoWrapMode::AutoWrap);
+        if should_wrap && self.caret().x == 0 {
             // At column 0: wrap to previous line end if above origin line
             let origin_line = match self.terminal_state().origin_mode {
                 crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
@@ -492,14 +511,13 @@ pub trait EditableScreen: Screen {
         self.limit_caret_pos(in_margin);
     }
 
-    fn right(&mut self, num: i32, scroll: bool) {
+    fn right(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
         let last_col = (self.get_width() - 1).max(0);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
 
-        if let crate::AutoWrapMode::AutoWrap = self.terminal_state().auto_wrap_mode
-            && self.caret().x >= last_col
-        {
+        let should_wrap = auto_wrap && matches!(self.terminal_state().auto_wrap_mode, crate::AutoWrapMode::AutoWrap);
+        if should_wrap && self.caret().x >= last_col {
             self.caret_mut().x = last_col;
             self.lf();
             return;
@@ -513,7 +531,7 @@ pub trait EditableScreen: Screen {
         self.limit_caret_pos(in_margin);
     }
 
-    fn up(&mut self, num: i32, scroll: bool) {
+    fn up(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
         let y = self.caret().y.saturating_sub(num);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -524,7 +542,7 @@ pub trait EditableScreen: Screen {
         self.limit_caret_pos(in_margin);
     }
 
-    fn down(&mut self, num: i32, scroll: bool) {
+    fn down(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
         let y = self.caret().y + num;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());

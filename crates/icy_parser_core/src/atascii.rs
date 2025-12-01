@@ -7,7 +7,7 @@
 //! - Special control codes for cursor movement, line operations, and tab management
 //! - ESC prefix for literal character printing
 
-use crate::{CommandParser, CommandSink, Direction, TerminalCommand};
+use crate::{CommandParser, CommandSink, Direction, TerminalCommand, Wrapping};
 
 /// ATASCII parser for Atari 8-bit computer systems
 pub struct AtasciiParser {
@@ -59,7 +59,7 @@ impl CommandParser for AtasciiParser {
                     if start < i {
                         sink.print(&input[start..i]);
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x1D => {
@@ -67,7 +67,7 @@ impl CommandParser for AtasciiParser {
                     if start < i {
                         sink.print(&input[start..i]);
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x1E => {
@@ -75,7 +75,7 @@ impl CommandParser for AtasciiParser {
                     if start < i {
                         sink.print(&input[start..i]);
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x1F => {
@@ -83,7 +83,7 @@ impl CommandParser for AtasciiParser {
                     if start < i {
                         sink.print(&input[start..i]);
                     }
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1, Wrapping::Always));
                     start = i + 1;
                 }
                 0x7D => {

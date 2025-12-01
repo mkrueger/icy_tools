@@ -37,7 +37,7 @@ impl CommandSink for CollectSink {
             TerminalCommand::FormFeed => OwnedCommand::FormFeed,
             TerminalCommand::Bell => OwnedCommand::Bell,
             TerminalCommand::Delete => OwnedCommand::Delete,
-            TerminalCommand::CsiMoveCursor(dir, n) => OwnedCommand::CsiMoveCursor(dir, n),
+            TerminalCommand::CsiMoveCursor(dir, n, _) => OwnedCommand::CsiMoveCursor(dir, n),
             TerminalCommand::CsiCursorPosition(r, c) => OwnedCommand::CsiCursorPosition(r, c),
             TerminalCommand::CsiEraseInLine(mode) => OwnedCommand::CsiEraseInLine(mode),
             TerminalCommand::CsiDecSetMode(mode, enabled) => OwnedCommand::CsiDecSetMode(mode, enabled),

@@ -6,7 +6,7 @@
 //! - Attributes: H (bold/high intensity), I (blink), E (high background), N (normal)
 //! - Other: J (clear down), > (clear to EOL), | (CR), A (literal ^A), Z (EOF)
 
-use crate::{CommandParser, CommandSink, Direction, TerminalCommand, ansi::AnsiParser};
+use crate::{CommandParser, CommandSink, Direction, TerminalCommand, Wrapping, ansi::AnsiParser};
 
 const CTRL_A: u8 = 0x01;
 
@@ -63,8 +63,8 @@ impl CommandParser for CtrlAParser {
                     b'\'' => sink.emit(TerminalCommand::CsiCursorPosition(1, 1)), // Home
                     b'J' => sink.emit(TerminalCommand::CsiEraseInDisplay(crate::EraseInDisplayMode::CursorToEnd)),
                     b'>' => sink.emit(TerminalCommand::CsiEraseInLine(crate::EraseInLineMode::CursorToEnd)),
-                    b'<' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1)),
-                    b']' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1)),
+                    b'<' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Never)),
+                    b']' => sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Never)),
                     b'|' => self.ansi_parser.parse(b"\r", sink),
 
                     // Literal CTRL-A
@@ -109,7 +109,7 @@ impl CommandParser for CtrlAParser {
                         } else if ch >= 128 {
                             // Cursor right (128-255 = move right by N-127)
                             let count = (ch - 127) as u16;
-                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, count));
+                            sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, count, Wrapping::Never));
                         }
                     }
 

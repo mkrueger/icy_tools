@@ -1,5 +1,5 @@
 use super::*;
-use icy_parser_core::{AnsiParser, CommandParser, Direction, TerminalCommand};
+use icy_parser_core::{AnsiParser, CommandParser, Direction, TerminalCommand, Wrapping};
 
 // Tests for cursor movement and tab operations
 
@@ -11,28 +11,28 @@ fn test_csi_cursor_basic_movement() {
     // ESC[5A - Cursor Up 5
     parser.parse(b"\x1B[5A", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Up, 5));
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Up, 5, Wrapping::Never));
 
     sink.cmds.clear();
 
     // ESC[B - Cursor Down 1 (default)
     parser.parse(b"\x1B[B", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Down, 1));
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Never));
 
     sink.cmds.clear();
 
     // ESC[3C - Cursor Right 3
     parser.parse(b"\x1B[3C", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Right, 3));
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Right, 3, Wrapping::Never));
 
     sink.cmds.clear();
 
     // ESC[7D - Cursor Left 7
     parser.parse(b"\x1B[7D", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Left, 7));
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiMoveCursor(Direction::Left, 7, Wrapping::Never));
 }
 
 #[test]
@@ -268,7 +268,7 @@ fn test_cursor_position_aliases() {
     // CSI Pn j - Character Position Backward (alias for D)
     parser.parse(b"\x1B[5j", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiMoveCursor(Direction::Left, n) = sink.cmds[0] {
+    if let TerminalCommand::CsiMoveCursor(Direction::Left, n, Wrapping::Never) = sink.cmds[0] {
         assert_eq!(n, 5);
     } else {
         panic!("Expected CsiMoveCursor(Left, 5)");
@@ -279,7 +279,7 @@ fn test_cursor_position_aliases() {
     // CSI Pn k - Line Position Backward (alias for A)
     parser.parse(b"\x1B[3k", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
-    if let TerminalCommand::CsiMoveCursor(Direction::Up, n) = sink.cmds[0] {
+    if let TerminalCommand::CsiMoveCursor(Direction::Up, n, Wrapping::Never) = sink.cmds[0] {
         assert_eq!(n, 3);
     } else {
         panic!("Expected CsiMoveCursor(Up, 3)");

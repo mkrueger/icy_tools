@@ -17,16 +17,16 @@ impl CommandSink for TestSink {
 
     fn emit(&mut self, cmd: TerminalCommand) {
         match cmd {
-            TerminalCommand::CsiMoveCursor(Direction::Up, n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Up, n, _) => {
                 self.commands.push(format!("CursorUp: {}", n));
             }
-            TerminalCommand::CsiMoveCursor(Direction::Down, n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Down, n, _) => {
                 self.commands.push(format!("CursorDown: {}", n));
             }
-            TerminalCommand::CsiMoveCursor(Direction::Left, n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Left, n, _) => {
                 self.commands.push(format!("CursorBack: {}", n));
             }
-            TerminalCommand::CsiMoveCursor(Direction::Right, n) => {
+            TerminalCommand::CsiMoveCursor(Direction::Right, n, _) => {
                 self.commands.push(format!("CursorForward: {}", n));
             }
             TerminalCommand::CsiCursorPosition(row, col) => {

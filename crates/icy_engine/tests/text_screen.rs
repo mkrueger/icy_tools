@@ -481,7 +481,7 @@ fn test_editable_left() {
     let mut screen = TextScreen::new(Size::new(80, 25));
 
     screen.set_caret_position(Position::new(10, 5));
-    screen.left(3, false);
+    screen.left(3, false, false);
 
     assert_eq!(screen.caret_position(), Position::new(7, 5));
 }
@@ -491,7 +491,7 @@ fn test_editable_right() {
     let mut screen = TextScreen::new(Size::new(80, 25));
 
     screen.set_caret_position(Position::new(10, 5));
-    screen.right(3, false);
+    screen.right(3, false, false);
 
     assert_eq!(screen.caret_position(), Position::new(13, 5));
 }
@@ -502,7 +502,7 @@ fn test_editable_up() {
     screen.terminal_state_mut().is_terminal_buffer = true;
 
     screen.set_caret_position(Position::new(10, 5));
-    screen.up(2, false);
+    screen.up(2, false, false);
 
     assert_eq!(screen.caret_position(), Position::new(10, 3));
 }
@@ -513,7 +513,7 @@ fn test_editable_down() {
     screen.terminal_state_mut().is_terminal_buffer = true;
 
     screen.set_caret_position(Position::new(10, 5));
-    screen.down(2, false);
+    screen.down(2, false, false);
 
     assert_eq!(screen.caret_position(), Position::new(10, 7));
 }

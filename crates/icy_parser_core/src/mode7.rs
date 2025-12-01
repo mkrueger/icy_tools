@@ -14,7 +14,7 @@
 //! - <https://www.bbcbasic.co.uk/bbcwin/manual/bbcwin8.html>
 //! - <https://central.kaserver5.org/Kasoft/Typeset/BBC/Ch28.html>
 
-use crate::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand};
+use crate::{Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, Wrapping};
 
 /// Mode7/Teletext parser for BBC Micro and compatible systems
 pub struct Mode7Parser {
@@ -208,15 +208,15 @@ impl CommandParser for Mode7Parser {
                 }
                 8 => {
                     // Cursor left
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, 1, Wrapping::Never));
                 }
                 9 => {
                     // Cursor right
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, 1, Wrapping::Never));
                 }
                 10 => {
                     // Cursor down (resets line state)
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, 1, Wrapping::Never));
                     self.reset_state();
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
                         self.current_fg,
@@ -227,7 +227,7 @@ impl CommandParser for Mode7Parser {
                 }
                 11 => {
                     // Cursor up (resets line state)
-                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1));
+                    sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, 1, Wrapping::Never));
                     self.reset_state();
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
                         self.current_fg,

@@ -6,7 +6,7 @@ use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
     AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
-    SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard,
+    SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard, limits,
 };
 
 #[derive(Clone)]
@@ -174,6 +174,14 @@ impl Screen for TextScreen {
         let rect = self.buffer.get_size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
+        Size::new(px_width, px_height)
+    }
+
+    fn get_terminal_resolution(&self) -> Size {
+        let font_size = self.get_font(0).unwrap().size();
+        let terminal_state = self.terminal_state();
+        let px_width = terminal_state.get_width() * font_size.width;
+        let px_height = terminal_state.get_height() * font_size.height;
         Size::new(px_width, px_height)
     }
 
@@ -531,6 +539,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn set_height(&mut self, height: i32) {
+        let height = height.min(limits::MAX_BUFFER_HEIGHT);
         self.buffer.set_height(height);
         for layer in &mut self.buffer.layers {
             layer.set_height(height);
