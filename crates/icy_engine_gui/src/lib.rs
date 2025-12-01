@@ -116,7 +116,6 @@ pub struct MonitorSettings {
 
     pub monitor_type: MonitorType,
     pub custom_monitor_color: Color,
-    pub border_color: Color,
 
     pub brightness: f32,
     pub contrast: f32,
@@ -195,7 +194,6 @@ impl MonitorSettings {
             // Display settings
             monitor_type: MonitorType::Color,
             custom_monitor_color: Color::new(0xFF, 0xFF, 0xFF),
-            border_color: Color::new(64, 69, 74),
 
             // Color adjustments - neutral values
             brightness: 100.0, // 100% = 1.0 multiplier (neutral)

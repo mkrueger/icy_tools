@@ -120,11 +120,13 @@ impl OutputFormat for IceDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
         let mut result = TextBuffer::new((80, 25));
         result.ice_mode = IceMode::Ice;
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
+        let load_data = load_data_opt.unwrap_or_default();
+        let max_height = load_data.max_height();
 
         if data.len() < HEADER_SIZE + FONT_SIZE + PALETTE_SIZE {
             return Err(LoadingError::FileTooShort.into());
@@ -154,6 +156,13 @@ impl OutputFormat for IceDraw {
         let mut pos = Position::new(x1, y1);
 
         while o + 1 < data_size {
+            // Check height limit
+            if let Some(max_h) = max_height {
+                if pos.y >= max_h {
+                    break;
+                }
+            }
+
             let mut rle_count = 1;
             let mut char_code = data[o];
             o += 1;
@@ -173,6 +182,12 @@ impl OutputFormat for IceDraw {
                 o += 1;
             }
             while rle_count > 0 {
+                // Check height limit inside RLE loop
+                if let Some(max_h) = max_height {
+                    if pos.y >= max_h {
+                        break;
+                    }
+                }
                 result.layers[0].set_height(pos.y + 1);
                 result.set_height(pos.y + 1);
                 let attribute = TextAttribute::from_u8(attr, result.ice_mode);

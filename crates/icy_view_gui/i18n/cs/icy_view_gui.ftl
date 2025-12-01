@@ -60,7 +60,7 @@ button-stop_music=Zastavit hudbu
 label-music_pause=Pauza { $duration }ms
 label-music_note=Přehrát { $note }({ $octave }) po dobu { $duration }ms
 
-label-sixteencolors_pack= { $year } ({ $packs } balíčky)
+label-sixteencolors_year= { $year } ({ $packs } balíčky)
 
 settings-heading=Nastavení
 settings-reset_button=Resetovat

@@ -2,9 +2,7 @@ use std::path::Path;
 
 use icy_parser_core::avatar_constants;
 
-use crate::{
-    BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen, load_with_parser,
-};
+use crate::{BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 
 use super::{LoadData, SaveOptions};
 
@@ -160,11 +158,11 @@ impl OutputFormat for Avatar {
         if let Some(sauce) = load_data.sauce_opt {
             result.buffer.load_sauce(sauce);
         }
-        let (text, is_unicode) = crate::convert_ansi_to_utf8(data);
+        let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        load_with_parser(&mut result, &mut icy_parser_core::AvatarParser::default(), &text, true)?;
+        crate::load_with_parser(&mut result, &mut icy_parser_core::AvatarParser::default(), file_data, true)?;
         Ok(result.buffer)
     }
 }

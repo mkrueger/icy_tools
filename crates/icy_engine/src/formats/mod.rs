@@ -4,6 +4,12 @@ use std::{error::Error, path::Path};
 
 pub use ansi::*;
 
+mod file_format;
+pub use file_format::*;
+
+mod image_format;
+pub use image_format::*;
+
 mod pcboard;
 pub use pcboard::*;
 
@@ -143,6 +149,10 @@ pub struct LoadData {
     sauce_opt: Option<icy_sauce::SauceRecord>,
     ansi_music: Option<MusicOption>,
     default_terminal_width: Option<usize>,
+    /// Optional maximum height limit for the buffer
+    /// If set, the buffer height will be clamped to this value after loading
+    max_height: Option<i32>,
+    convert_to_utf8: bool,
 }
 
 impl LoadData {
@@ -151,7 +161,29 @@ impl LoadData {
             sauce_opt,
             ansi_music,
             default_terminal_width,
+            max_height: None,
+            convert_to_utf8: false,
         }
+    }
+
+    pub fn convert_to_utf8(&self) -> bool {
+        self.convert_to_utf8
+    }
+
+    pub fn with_convert_to_utf8(mut self, convert: bool) -> Self {
+        self.convert_to_utf8 = convert;
+        self
+    }
+
+    /// Set a maximum height limit for loading
+    pub fn with_max_height(mut self, max_height: i32) -> Self {
+        self.max_height = Some(max_height);
+        self
+    }
+
+    /// Get the maximum height limit, if set
+    pub fn max_height(&self) -> Option<i32> {
+        self.max_height
     }
 }
 
@@ -202,19 +234,23 @@ lazy_static::lazy_static! {
         ];
 }
 
-/// Parse text using a CommandParser from icy_parser_core
+/// Parse data using a CommandParser from icy_parser_core
 ///
 /// # Errors
 ///
 /// Returns an error if sixel processing fails
-pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, text: &str, _skip_errors: bool) -> EngineResult<()> {
+pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8], _skip_errors: bool) -> EngineResult<()> {
     use crate::ScreenSink;
 
     // Stop at EOF marker (Ctrl-Z)
-    let text = if let Some(pos) = text.find('\x1A') { &text[..pos] } else { text };
+    let data = if let Some(pos) = data.iter().position(|&b| b == 0x1A) {
+        &data[..pos]
+    } else {
+        data
+    };
 
     let mut sink = ScreenSink::new(result);
-    interpreter.parse(text.as_bytes(), &mut sink);
+    interpreter.parse(data, &mut sink);
 
     // transform sixels to layers for non terminal buffers (makes sense in icy_draw for example)
     if !result.terminal_state().is_terminal_buffer {
@@ -347,6 +383,22 @@ impl Error for SavingError {
     }
 }
 
+/// Prepare data for parsing.
+/// Returns (data, is_unicode)
+/// - If data has UTF-8 BOM: strip BOM and return (data, true)
+/// - Otherwise: return data as-is with (data, false)
+pub fn prepare_data_for_parsing(data: &[u8]) -> (&[u8], bool) {
+    if data.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        // UTF-8 BOM detected - strip it and mark as unicode
+        (&data[3..], true)
+    } else {
+        // No BOM - treat as raw bytes (CP437)
+        (data, false)
+    }
+}
+
+/// Legacy function - converts to String for backwards compatibility
+/// Only use when you actually need a String
 pub fn convert_ansi_to_utf8(data: &[u8]) -> (String, bool) {
     if data.starts_with(&[0xEF, 0xBB, 0xBF]) {
         if let Ok(result) = String::from_utf8(data[3..].to_vec()) {
@@ -354,7 +406,9 @@ pub fn convert_ansi_to_utf8(data: &[u8]) -> (String, bool) {
         }
     }
 
-    // interpret CP437
+    // interpret as raw bytes - each byte becomes a char
+    // Note: This is only valid for bytes < 128, bytes >= 128 will become
+    // unicode codepoints that don't match CP437!
     let mut result = String::new();
     for ch in data {
         let ch = *ch as char;

@@ -35,6 +35,8 @@ pub struct CachedScreenInfo {
     pub last_buffer_version: u64,
     /// Graphics type of the screen (Text, IGS, Skypix, Rip)
     pub graphics_type: GraphicsType,
+    /// Last bounds size for detecting window resize
+    pub last_bounds_size: (f32, f32),
 }
 
 impl Default for CachedScreenInfo {
@@ -50,6 +52,7 @@ impl Default for CachedScreenInfo {
             last_selection_state: (None, None, false),
             last_buffer_version: u64::MAX,
             graphics_type: GraphicsType::Text,
+            last_bounds_size: (0.0, 0.0),
         }
     }
 }
@@ -90,6 +93,35 @@ pub struct CRTShaderState {
 }
 
 impl CRTShaderState {
+    /// Create a new CRTShaderState with blink rates based on the buffer type
+    pub fn new(buffer_type: icy_engine::BufferType) -> Self {
+        Self {
+            caret_blink: Blink::new(buffer_type.get_caret_blink_rate() as u128),
+            character_blink: Blink::new(buffer_type.get_blink_rate() as u128),
+            dragging: false,
+            drag_anchor: None,
+            last_drag_position: None,
+            shift_pressed_during_selection: false,
+            alt_pressed: false,
+            shift_pressed: false,
+            ctrl_pressed: false,
+            hovered_cell: None,
+            hovered_link: None,
+            hovered_rip_field: None,
+            cached_mouse_state: parking_lot::Mutex::new(None),
+            cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
+            instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
+            cached_rgba_blink_on: parking_lot::Mutex::new(Vec::new()),
+            cached_rgba_blink_off: parking_lot::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Create a new CRTShaderState from a Screen
+    pub fn from_screen(screen: &dyn Screen) -> Self {
+        Self::new(screen.buffer_type())
+    }
+
     pub fn reset_caret(&mut self) {
         self.caret_blink.reset();
     }
@@ -234,9 +266,11 @@ impl Drop for CRTShaderState {
 
 impl Default for CRTShaderState {
     fn default() -> Self {
+        // Default to CP437 blink rates (most common case)
+        let buffer_type = icy_engine::BufferType::CP437;
         Self {
-            caret_blink: Blink::new((1000.0 / 1.875) as u128 / 2),
-            character_blink: Blink::new((1000.0 / 1.8) as u128),
+            caret_blink: Blink::new(buffer_type.get_caret_blink_rate() as u128),
+            character_blink: Blink::new(buffer_type.get_blink_rate() as u128),
             dragging: false,
             drag_anchor: None,
             last_drag_position: None,

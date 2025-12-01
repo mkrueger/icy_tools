@@ -13,6 +13,24 @@ pub enum BufferType {
 }
 
 impl BufferType {
+    pub fn get_blink_rate(&self) -> u64 {
+        match self {
+            BufferType::CP437 => 533,
+            BufferType::Viewdata => 1000,
+            BufferType::Petscii => 500,
+            BufferType::Atascii => 333,
+            _ => 533,
+        }
+    }
+    pub fn get_caret_blink_rate(&self) -> u64 {
+        match self {
+            BufferType::CP437 => 266,
+            BufferType::Viewdata => 500,
+            BufferType::Petscii => 500,
+            BufferType::Atascii => 333,
+            _ => 266,
+        }
+    }
     pub fn from_byte(b: u8) -> Self {
         match b {
             // 0 => BufferType::Unicode,

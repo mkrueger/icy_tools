@@ -144,7 +144,10 @@ impl MainWindow {
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
             terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog::new(super::terminal_info_dialog::TerminalInfo::default()),
             find_dialog: find_dialog::DialogState::new(),
-            export_dialog: export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string()),
+            export_dialog: export_screen_dialog::ExportScreenDialogState::new(
+                default_export_path.to_string_lossy().to_string(),
+                icy_engine::BufferType::CP437, // Default, will be updated when dialog is shown
+            ),
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
             open_serial_dialog: super::open_serial_dialog::OpenSerialDialog::new(serial),
@@ -568,6 +571,14 @@ impl MainWindow {
             }
             Message::ShowExportScreenDialog => {
                 self.switch_to_terminal_screen();
+                // Get the current buffer type from the terminal screen
+                let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
+                // Re-initialize the export dialog with the current buffer type
+                let default_export_path = directories::UserDirs::new()
+                    .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
+                    .join("export.icy");
+                self.export_dialog = export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string(), buffer_type);
                 self.state.mode = MainWindowMode::ShowExportDialog;
                 Task::none()
             }

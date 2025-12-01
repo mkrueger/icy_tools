@@ -12,13 +12,13 @@ pub fn render_scrollback_region(screen: &dyn Screen, height: i32) -> (Size, Vec<
     screen.render_region_to_rgba(region, &opt)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ScrollbackChunk {
     pub rgba_data: Vec<u8>,
     pub size: Size,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ScrollbackBuffer {
     buffer_size: usize,
 

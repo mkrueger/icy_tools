@@ -2,8 +2,9 @@ use icy_parser_core::BaudEmulation;
 
 use crate::{Position, Size};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum TerminalScrolling {
+    #[default]
     Smooth,
     Fast,
     Disabled,
@@ -23,8 +24,9 @@ pub enum AutoWrapMode {
     NoWrap,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontSelectionState {
+    #[default]
     NoRequest,
     Success,
     Failure,
@@ -45,7 +47,7 @@ impl MouseState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TerminalState {
     size: Size,
     pub is_terminal_buffer: bool,

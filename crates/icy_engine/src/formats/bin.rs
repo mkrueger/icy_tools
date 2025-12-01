@@ -40,12 +40,21 @@ impl OutputFormat for Bin {
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
+        let max_height = load_data.max_height();
         if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
         let mut o = 0;
         let mut pos = Position::default();
         loop {
+            // Check height limit before processing a new row
+            if let Some(max_h) = max_height {
+                if pos.y >= max_h {
+                    result.set_height(pos.y);
+                    return Ok(result);
+                }
+            }
+
             for _ in 0..result.get_width() {
                 if o >= data.len() {
                     result.set_height(result.layers[0].get_height());

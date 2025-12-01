@@ -358,6 +358,11 @@ impl<'a> CommandSink for ScreenSink<'a> {
 
                 // Now output the collected characters
                 for ch in chars {
+                    if self.screen.get_height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.get_width() >= crate::limits::MAX_BUFFER_WIDTH as i32
+                    {
+                        // Prevent excessive buffer growth
+                        break;
+                    }
                     let attr_char = AttributedChar::new(ch, self.get_display_attribute());
                     self.screen.print_char(attr_char);
                 }
@@ -365,6 +370,11 @@ impl<'a> CommandSink for ScreenSink<'a> {
             _ => {
                 // Legacy mode: treat each byte as a character (CP437, Petscii, Atascii, Viewdata)
                 for &byte in text {
+                    if self.screen.get_height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.get_width() >= crate::limits::MAX_BUFFER_WIDTH as i32
+                    {
+                        // Prevent excessive buffer growth
+                        break;
+                    }
                     let ch = AttributedChar::new(byte as char, self.get_display_attribute());
                     self.screen.print_char(ch);
                 }

@@ -53,6 +53,7 @@ toast-auto-scroll-off=Auto scroll off
 toast-scroll-slow=Scroll speed: slow
 toast-scroll-medium=Scroll speed: medium
 toast-scroll-fast=Scroll speed: fast
+toast-command-not-configured={ $key } command not configured
 
 button-play_music=Play Music
 button-stop_music=Stop Music
@@ -60,8 +61,21 @@ button-stop_music=Stop Music
 label-music_pause=Pause { $duration }ms
 label-music_note=Play { $note }({ $octave }) for { $duration }ms
 
-label-sixteencolors_pack= { $year } ({ $packs } packs)
+label-sixteencolors_year= { $year } ({ $packs } packs)
 
 settings-heading=Settings
 settings-reset_button=Reset
 settings-monitor-category=Monitor
+settings-paths-category=Paths
+settings-restore-defaults-button=Restore Defaults
+
+settings-paths-header=Application Paths
+settings-paths-config-dir=Config directory:
+settings-paths-config-file=Config file:
+settings-paths-log-file=Log file:
+settings-paths-open=Open
+
+settings-commands-category = Commands
+settings-commands-section = External Programs
+settings-commands-placeholder = Command (e.g. icy_draw %F)
+settings-commands-description = Use %F for file name

@@ -5,54 +5,45 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/mkrueger/icy_tools"
-description = "An file viewer for ANSI & ASCII art and other text-based art forms."
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A file viewer for ANSI & ASCII art and other text-based art forms."
 
 [dependencies]
-eframe = { workspace = true }
-egui_extras = { workspace = true }
-egui_glow = { workspace = true }
-glow = { workspace = true }
-memmap = "0.7.0"
+icy_engine = { workspace = true }
+icy_engine_gui = { workspace = true }
+icy_view_gui = { path = "../icy_view_gui" }
+
+iced = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
+image = { workspace = true }
 clap = { workspace = true }
-zip = { workspace = true }
 directories = { workspace = true }
 log = { workspace = true }
-env_logger = "0.11"
+flexi_logger = { workspace = true }
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 once_cell = { workspace = true }
 rust-embed = { workspace = true }
-egui-modal = { workspace = true }
-egui-notify = { workspace = true }
 lazy_static = { workspace = true }
-
-image = { version = "0.25.1", features = ["jpeg", "png", "gif", "bmp"] }
-
-icy_sauce = { workspace = true }
-icy_engine = { workspace = true }
-icy_engine_gui = { workspace = true }
-icy_view_gui = { workspace = true }
-
-github_release_check = "0.2.1"
+parking_lot = { workspace = true }
 semver = { workspace = true }
-rodio = { workspace = true }
+github_release_check = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
 
 [build-dependencies]
+chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 winres = "0.1"
 
 [package.metadata.bundle]
 name = "Icy View"
 identifier = "com.github.icy_view"
-icon = [ "build/mac/128x128@2x.png" ]
+icon = ["build/mac/128x128@2x.png"]
 resources = []
 copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
 
 [package.metadata.deb]
-section="utils"
+section = "utils"
 copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
-revision=""
+revision = ""
 depends = "libasound2"
 assets = [
     ["target/release/icy_view", "/usr/bin/", "755"],
@@ -60,3 +51,6 @@ assets = [
     ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_view.png", "644"],
     ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_view.png", "644"],
 ]
+
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"

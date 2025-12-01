@@ -3,7 +3,10 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
-use icy_engine::{SaveOptions, Screen};
+use icy_engine::{
+    BufferType, SaveOptions, Screen,
+    formats::{FileFormat, ImageFormat},
+};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::*;
 use parking_lot::Mutex;
@@ -12,44 +15,12 @@ use std::sync::Arc;
 
 use crate::ui::MainWindowMode;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExportFormat {
-    IcyDraw,
-    Ansi,
-    Ascii,
-    Png,
-}
-
-impl ExportFormat {
-    const ALL: [ExportFormat; 4] = [ExportFormat::IcyDraw, ExportFormat::Ansi, ExportFormat::Ascii, ExportFormat::Png];
-
-    fn extension(&self) -> &str {
-        match self {
-            ExportFormat::IcyDraw => "icy",
-            ExportFormat::Ansi => "ans",
-            ExportFormat::Ascii => "asc",
-            ExportFormat::Png => "png",
-        }
-    }
-}
-
-impl std::fmt::Display for ExportFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExportFormat::IcyDraw => write!(f, ".icy (IcyDraw)"),
-            ExportFormat::Ansi => write!(f, ".ans (ANSI)"),
-            ExportFormat::Ascii => write!(f, ".asc (ASCII)"),
-            ExportFormat::Png => write!(f, ".png (Image)"),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum ExportScreenMsg {
     Export,
     ChangeDirectory(String),
     ChangeFileName(String),
-    ChangeFormat(ExportFormat),
+    ChangeFormat(FileFormat),
     ToggleUtf8Output(bool),
     BrowseDirectory,
     RestoreDefaults,
@@ -59,32 +30,38 @@ pub enum ExportScreenMsg {
 pub struct ExportScreenDialogState {
     pub export_directory: String,
     pub export_filename: String,
-    pub export_format: ExportFormat,
+    pub export_format: FileFormat,
     pub utf8_output: bool,
     temp_directory: String,
     temp_filename: String,
-    temp_format: ExportFormat,
+    temp_format: FileFormat,
     temp_utf8_output: bool,
+    /// The buffer type determines which export formats are available
+    #[allow(dead_code)]
+    buffer_type: BufferType,
+    /// Cached list of available formats for this buffer type
+    available_formats: Vec<FileFormat>,
 }
 
 impl ExportScreenDialogState {
-    pub fn new(initial_path: String) -> Self {
+    pub fn new(initial_path: String, buffer_type: BufferType) -> Self {
         let path: &Path = Path::new(&initial_path);
 
-        // Determine format from extension if present
+        // Get available formats for this buffer type (including image formats)
+        let available_formats = FileFormat::save_formats_with_images_for_buffer_type(buffer_type);
+
+        // Determine format from extension if present, or use first available
         let format = path
             .extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| match ext.to_lowercase().as_str() {
-                "icy" => ExportFormat::IcyDraw,
-                "ans" => ExportFormat::Ansi,
-                "asc" => ExportFormat::Ascii,
-                "png" => ExportFormat::Png,
-                _ => ExportFormat::Ansi,
+            .and_then(|ext| FileFormat::from_extension(&ext.to_lowercase()))
+            .and_then(|fmt| {
+                // Only use the detected format if it's compatible with the buffer type
+                if available_formats.contains(&fmt) { Some(fmt) } else { None }
             })
-            .unwrap_or(ExportFormat::Ansi);
+            .unwrap_or_else(|| available_formats.first().copied().unwrap_or(FileFormat::Image(ImageFormat::Png)));
 
-        let (dir, mut file) = if path.is_absolute() {
+        let (dir, file) = if path.is_absolute() {
             (
                 path.parent().and_then(|p| p.to_str()).unwrap_or("").to_string(),
                 path.file_stem().and_then(|f| f.to_str()).unwrap_or("export").to_string(),
@@ -99,11 +76,6 @@ impl ExportScreenDialogState {
             )
         };
 
-        // Remove extension from filename if it's there
-        if file.ends_with(".icy") || file.ends_with(".ans") || file.ends_with(".asc") || file.ends_with(".png") {
-            file = file.rsplit_once('.').map(|(name, _)| name.to_string()).unwrap_or(file);
-        }
-
         Self {
             export_directory: dir.clone(),
             export_filename: file.clone(),
@@ -113,16 +85,18 @@ impl ExportScreenDialogState {
             temp_filename: file,
             temp_format: format,
             temp_utf8_output: false,
+            buffer_type,
+            available_formats,
         }
     }
 
     pub fn get_full_path(&self) -> PathBuf {
-        let filename_with_ext = format!("{}.{}", self.export_filename, self.export_format.extension());
+        let filename_with_ext = format!("{}.{}", self.export_filename, self.export_format.primary_extension());
         Path::new(&self.export_directory).join(filename_with_ext)
     }
 
     pub fn get_temp_full_path(&self) -> PathBuf {
-        let filename_with_ext = format!("{}.{}", self.temp_filename, self.temp_format.extension());
+        let filename_with_ext = format!("{}.{}", self.temp_filename, self.temp_format.primary_extension());
         Path::new(&self.temp_directory).join(filename_with_ext)
     }
 
@@ -137,32 +111,16 @@ impl ExportScreenDialogState {
         // Get the buffer from edit state
         let mut screen = edit_screen.lock();
 
-        // Handle PNG export separately (render to image)
-        if self.export_format == ExportFormat::Png {
-            use icy_engine::{RenderOptions, Selection};
-
-            let buffer_size = screen.get_size();
-            let rect = icy_engine::Rectangle::from(0, 0, buffer_size.width, buffer_size.height);
-
-            let (size, data) = screen.render_to_rgba(&RenderOptions {
-                rect: Selection::from(rect),
-                blink_on: true,
-                selection: None,
-                selection_fg: None,
-                selection_bg: None,
-                override_scan_lines: None,
-            });
-
-            let img = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(size.width as u32, size.height as u32, data)
-                .ok_or_else(|| "Failed to create image buffer".to_string())?;
-
-            img.save(&full_path).map_err(|e| format!("Failed to save PNG: {}", e))?;
-
+        // Handle image export using ImageFormat from icy_engine
+        if let FileFormat::Image(img_format) = self.export_format {
+            img_format
+                .save_screen(screen.as_ref(), &full_path)
+                .map_err(|e| format!("Failed to save image: {}", e))?;
             return Ok(());
         }
 
         // Get the file extension for format
-        let ext = self.export_format.extension();
+        let ext = self.export_format.primary_extension();
 
         // Create save options with UTF-8 setting
         let mut options = SaveOptions::new();
@@ -210,8 +168,8 @@ impl ExportScreenDialogState {
             }
             ExportScreenMsg::ChangeFormat(format) => {
                 self.temp_format = format;
-                // Disable UTF-8 output for IcyDraw and PNG formats (binary/image formats don't use it)
-                if format == ExportFormat::IcyDraw || format == ExportFormat::Png {
+                // Disable UTF-8 output for binary/image formats
+                if self.is_binary_format(format) {
                     self.temp_utf8_output = false;
                 }
                 None
@@ -250,6 +208,20 @@ impl ExportScreenDialogState {
         }
     }
 
+    /// Check if the format is a binary format (no UTF-8 option available)
+    fn is_binary_format(&self, format: FileFormat) -> bool {
+        matches!(
+            format,
+            FileFormat::Image(_)
+                | FileFormat::IcyDraw
+                | FileFormat::XBin
+                | FileFormat::Bin
+                | FileFormat::IceDraw
+                | FileFormat::TundraDraw
+                | FileFormat::Artworx
+        )
+    }
+
     pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
         let overlay = self.create_modal_content();
         crate::ui::modal(terminal_content, overlay, crate::ui::Message::ExportDialog(ExportScreenMsg::Cancel))
@@ -285,17 +257,17 @@ impl ExportScreenDialogState {
             .spacing(DIALOG_SPACING)
             .align_y(Alignment::Center);
 
-        // Filename input with format picker
+        // Filename input with format picker (uses dynamically filtered formats)
         let file_input = text_input("", &self.temp_filename)
             .on_input(|s| crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeFileName(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
-        let format_picker = pick_list(&ExportFormat::ALL[..], Some(self.temp_format), |format| {
+        let format_picker = pick_list(self.available_formats.clone(), Some(self.temp_format), |format| {
             crate::ui::Message::ExportDialog(ExportScreenMsg::ChangeFormat(format))
         })
         .padding(6)
-        .width(Length::Fixed(120.0));
+        .width(Length::Fixed(160.0));
 
         let file_row = row![
             left_label_small(fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-file")),
@@ -328,8 +300,9 @@ impl ExportScreenDialogState {
 
         let preview_row = row![Space::new().width(LABEL_SMALL_WIDTH + DIALOG_SPACING), warning_content];
 
-        // UTF-8 output checkbox (disabled for IcyDraw and PNG formats)
-        let utf8_checkbox_enabled = self.temp_format != ExportFormat::IcyDraw && self.temp_format != ExportFormat::Png;
+        // UTF-8 output checkbox (disabled for binary/image formats)
+        let is_binary = self.is_binary_format(self.temp_format);
+        let utf8_checkbox_enabled = !is_binary;
         let utf8_checkbox = checkbox(self.temp_utf8_output)
             .on_toggle_maybe(if utf8_checkbox_enabled {
                 Some(|checked| crate::ui::Message::ExportDialog(ExportScreenMsg::ToggleUtf8Output(checked)))

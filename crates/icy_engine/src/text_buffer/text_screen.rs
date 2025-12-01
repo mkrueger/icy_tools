@@ -9,7 +9,7 @@ use crate::{
     SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard, limits,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TextScreen {
     pub caret: Caret,
     pub buffer: TextBuffer,
@@ -171,17 +171,17 @@ impl Screen for TextScreen {
 
     fn get_resolution(&self) -> Size {
         let font_size = self.get_font(0).unwrap().size();
-        let rect = self.buffer.get_size();
+        let rect = self.terminal_state().get_size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
         Size::new(px_width, px_height)
     }
 
-    fn get_terminal_resolution(&self) -> Size {
+    fn virtual_size(&self) -> Size {
         let font_size = self.get_font(0).unwrap().size();
-        let terminal_state = self.terminal_state();
-        let px_width = terminal_state.get_width() * font_size.width;
-        let px_height = terminal_state.get_height() * font_size.height;
+        let rect = self.buffer.get_size();
+        let px_width = rect.width * font_size.width;
+        let px_height = rect.height * font_size.height;
         Size::new(px_width, px_height)
     }
 
@@ -536,6 +536,14 @@ impl EditableScreen for TextScreen {
 
     fn insert_line(&mut self, line: usize, new_line: crate::Line) {
         self.buffer.layers[self.current_layer].lines.insert(line as usize, new_line);
+    }
+
+    fn set_width(&mut self, width: i32) {
+        let height = width.min(limits::MAX_BUFFER_WIDTH);
+        self.buffer.set_width(height);
+        for layer in &mut self.buffer.layers {
+            layer.set_width(height);
+        }
     }
 
     fn set_height(&mut self, height: i32) {

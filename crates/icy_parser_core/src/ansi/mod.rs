@@ -699,7 +699,7 @@ impl CommandParser for AnsiParser {
                         let ps1 = self.params.first().copied().unwrap_or(0);
                         let ps2 = self.params.get(1).copied().unwrap_or(0);
                         let comm_line = CommunicationLine::from_u16(ps1 as u16);
-                        let baud_option = *BaudEmulation::OPTIONS.get(ps2 as usize).unwrap_or(&BaudEmulation::Off);
+                        let baud_option = *ANSI_BAUD_OPTIONS.get(ps2 as usize).unwrap_or(&BaudEmulation::Off);
 
                         sink.emit(TerminalCommand::CsiSelectCommunicationSpeed(comm_line, baud_option));
                         self.reset();
@@ -2071,3 +2071,18 @@ impl AnsiParser {
         }
     }
 }
+
+const ANSI_BAUD_OPTIONS: [BaudEmulation; 12] = [
+    BaudEmulation::Off,
+    BaudEmulation::Rate(300),
+    BaudEmulation::Rate(600),
+    BaudEmulation::Rate(1200),
+    BaudEmulation::Rate(2400),
+    BaudEmulation::Rate(4800),
+    BaudEmulation::Rate(9600),
+    BaudEmulation::Rate(19200),
+    BaudEmulation::Rate(38400),
+    BaudEmulation::Rate(57600),
+    BaudEmulation::Rate(76800),
+    BaudEmulation::Rate(115_200),
+];

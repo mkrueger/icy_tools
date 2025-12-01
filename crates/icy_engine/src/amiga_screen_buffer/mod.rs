@@ -916,15 +916,23 @@ impl EditableScreen for AmigaScreenBuffer {
         self.mark_dirty();
     }
 
+    fn set_width(&mut self, width: i32) {
+        let width = width.min(limits::MAX_BUFFER_WIDTH);
+        if width == self.char_screen_size.width {
+            return;
+        }
+        let width = width.max(1);
+
+        // Update screen size
+        self.char_screen_size.width = width;
+    }
+
     fn set_height(&mut self, height: i32) {
         let height = height.min(limits::MAX_BUFFER_HEIGHT);
         if height == self.char_screen_size.height {
             return;
         }
-        log::error!("error: setting height to {:?}", height);
-
         let height = height.max(1);
-
         // Update screen size
         self.char_screen_size.height = height;
     }

@@ -51,15 +51,8 @@ pub trait Screen: TextPane + Send + Sync {
         crate::GraphicsType::Text
     }
 
-    /// Gets the current resolution of the screen in pixels (based on buffer size)
+    /// Gets the current resolution of the screen in pixels (based on terminal size)
     fn get_resolution(&self) -> Size;
-
-    /// Gets the terminal resolution in pixels (based on terminal_state size)
-    /// This is the "visible" rendered area, while get_resolution is the full content size
-    fn get_terminal_resolution(&self) -> Size {
-        // Default: same as resolution (for screens without separate terminal state)
-        self.get_resolution()
-    }
 
     /// Gets the virtual size of the screen (including scrollback)
     fn virtual_size(&self) -> Size {
@@ -223,6 +216,7 @@ pub trait EditableScreen: Screen {
 
     // Size management
     fn set_size(&mut self, size: Size);
+    fn set_width(&mut self, width: i32);
     fn set_height(&mut self, height: i32);
 
     // Change tracking

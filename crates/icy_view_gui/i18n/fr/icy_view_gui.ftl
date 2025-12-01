@@ -60,7 +60,7 @@ button-stop_music=Arrêter la musique
 label-music_pause=Pause de { $duration }ms
 label-music_note=Jouer { $note }({ $octave }) pendant { $duration }ms
 
-label-sixteencolors_pack= { $year } ({ $packs } paquets)
+label-sixteencolors_year= { $year } ({ $packs } paquets)
 
 settings-heading=Paramètres
 settings-reset_button=Réinitialiser

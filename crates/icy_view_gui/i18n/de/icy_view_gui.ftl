@@ -60,8 +60,16 @@ button-stop_music=Musik anhalten
 label-music_pause=Pause { $duration }ms
 label-music_note=Spiele { $note }({ $octave }) für { $duration }ms
 
-label-sixteencolors_pack= { $year } ({ $packs } Pakete)
+label-sixteencolors_year= { $year } ({ $packs } Pakete)
 
 settings-heading=Einstellungen
 settings-reset_button=Reset
 settings-monitor-category=Monitor
+settings-paths-category=Pfade
+settings-restore-defaults-button=Standardwerte wiederherstellen
+
+settings-paths-header=Anwendungspfade
+settings-paths-config-dir=Konfigurationsverzeichnis:
+settings-paths-config-file=Konfigurationsdatei:
+settings-paths-log-file=Log-Datei:
+settings-paths-open=Öffnen

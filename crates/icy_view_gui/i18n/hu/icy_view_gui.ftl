@@ -60,7 +60,7 @@ button-stop_music=Zene leállítása
 label-music_pause=Szünet { $duration }ms
 label-music_note=Lejátszás { $note }({ $octave }) { $duration }ms-ig
 
-label-sixteencolors_pack= { $year } ({ $packs } csomagok)
+label-sixteencolors_year= { $year } ({ $packs } csomagok)
 
 settings-heading=Beállítások
 settings-reset_button=Visszaállítás

@@ -1,44 +1,47 @@
 [package]
 name = "icy_view_gui"
-version = "0.8.2"
+version = "0.9.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-eframe = { workspace = true }
-egui_extras = { workspace = true }
-egui_glow = { workspace = true }
-glow = { workspace = true }
-memmap = "0.7.0"
-zip = { workspace = true }
+icy_engine = { workspace = true }
+icy_engine_gui = { workspace = true }
+icy_sauce = { workspace = true }
+icy_parser_core = { workspace = true }
+icy_net = { workspace = true }
+unarc-rs = { workspace = true }
+
+iced = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
+image = { workspace = true }
 directories = { workspace = true }
 lazy_static = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "fs"] }
+tokio-util = "0.7"
+async-trait = "0.1"
+bytemuck = { version = "1.0", features = ["derive"] }
+retrofont = { workspace = true }
+
+# SVG and font rendering for shader-based list
+resvg = { workspace = true }
+ab_glyph = { workspace = true }
 
 log = { workspace = true }
-env_logger = "0.11"
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 once_cell = { workspace = true }
 rust-embed = { workspace = true }
-egui-modal = { workspace = true }
-egui-notify = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 semver = { workspace = true }
+open = { workspace = true }
 
-image = { version = "0.25.1", features = ["jpeg", "png", "gif", "bmp"] }
+reqwest = { version = "0.12.12", features = ["json"] }
+serde_json = { workspace = true }
 
-icy_sauce = { workspace = true }
-icy_engine = { workspace = true }
-icy_engine_gui = { workspace = true }
-rodio = { workspace = true }
-getrandom =  { version = "0.2.15", features = ["js"] }
-web-time = "1.1.0"
-reqwest = { version= "0.12.12", features = ["json", "blocking"] }
-serde_json = "1.0"
-wildcard = "0.3.0"
+[patch.crates-io]
+iced.git = "https://github.com/iced-rs/iced.git"

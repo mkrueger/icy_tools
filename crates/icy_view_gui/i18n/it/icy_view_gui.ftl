@@ -60,7 +60,7 @@ button-stop_music=Ferma musica
 label-music_pause=Pausa { $duration }ms
 label-music_note=Riproduci { $note }({ $octave }) per { $duration }ms
 
-label-sixteencolors_pack= { $year } ({ $packs } pacchetti)
+label-sixteencolors_year= { $year } ({ $packs } pacchetti)
 
 settings-heading=Impostazioni 
 settings-reset_button=Reimposta

@@ -158,6 +158,7 @@ impl OutputFormat for XBin {
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
+        let max_height = load_data.max_height();
         if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
@@ -179,7 +180,11 @@ impl OutputFormat for XBin {
         }
         result.set_width(width);
         o += 2;
-        let height = data[o] as i32 + ((data[o + 1] as i32) << 8);
+        let mut height = data[o] as i32 + ((data[o + 1] as i32) << 8);
+        // Apply height limit if specified
+        if let Some(max_h) = max_height {
+            height = height.min(max_h);
+        }
         result.set_height(height);
         result.layers[0].set_size((width, height));
         o += 2;
@@ -236,6 +241,10 @@ fn advance_pos(result: &TextBuffer, pos: &mut Position) -> bool {
     if pos.x >= result.get_width() {
         pos.x = 0;
         pos.y += 1;
+        // Stop if we've reached the height limit
+        if pos.y >= result.get_height() {
+            return false;
+        }
     }
     true
 }
@@ -264,7 +273,8 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<b
                     result.layers[0].set_char(pos, attributed_char);
 
                     if !advance_pos(result, &mut pos) {
-                        return Err(LoadingError::OutOfBounds.into());
+                        // Height limit reached - stop reading (not an error)
+                        return Ok(true);
                     }
                 }
             }
@@ -281,7 +291,8 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<b
                     result.layers[0].set_char(pos, attributed_char);
                     o += 1;
                     if !advance_pos(result, &mut pos) {
-                        return Err(LoadingError::OutOfBounds.into());
+                        // Height limit reached - stop reading (not an error)
+                        return Ok(true);
                     }
                 }
             }
@@ -297,7 +308,8 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<b
                     result.layers[0].set_char(pos, attributed_char);
                     o += 1;
                     if !advance_pos(result, &mut pos) {
-                        return Err(LoadingError::OutOfBounds.into());
+                        // Height limit reached - stop reading (not an error)
+                        return Ok(true);
                     }
                 }
             }
@@ -315,7 +327,8 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<b
                 for _ in 0..repeat_counter {
                     result.layers[0].set_char(pos, rep_ch);
                     if !advance_pos(result, &mut pos) {
-                        return Err(LoadingError::OutOfBounds.into());
+                        // Height limit reached - stop reading (not an error)
+                        return Ok(true);
                     }
                 }
             }
@@ -356,7 +369,8 @@ fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult
         result.layers[0].set_char(pos, attributed_char);
         o += 2;
         if !advance_pos(result, &mut pos) {
-            return Err(LoadingError::OutOfBounds.into());
+            // Height limit reached - stop reading (not an error)
+            return Ok(true);
         }
     }
 

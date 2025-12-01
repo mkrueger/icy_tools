@@ -4,6 +4,9 @@ use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, now_ms, set_scale_factor
 use iced::Rectangle;
 use iced::widget::shader;
 
+/// Maximum texture dimension supported by most GPUs
+const MAX_TEXTURE_DIMENSION: u32 = 8192;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct CRTUniforms {
@@ -251,6 +254,9 @@ impl shader::Primitive for TerminalShader {
 
         let id = self.instance_id;
         let (w, h) = self.terminal_size;
+        // Clamp dimensions to GPU texture limits
+        let w = w.min(MAX_TEXTURE_DIMENSION);
+        let h = h.min(MAX_TEXTURE_DIMENSION);
 
         // Get or create per-instance resources
         let resources = pipeline.instances.entry(id).or_insert_with(|| {
@@ -369,6 +375,20 @@ impl shader::Primitive for TerminalShader {
 
         // Upload texture data for this instance
         if !self.terminal_rgba.is_empty() {
+            // Get original dimensions
+            let (orig_w, orig_h) = self.terminal_size;
+            // Calculate bytes per row for original data
+            let orig_bytes_per_row = 4 * orig_w;
+
+            // If dimensions were clamped, we need to use only the portion that fits
+            let data_to_upload: &[u8] = if orig_w > MAX_TEXTURE_DIMENSION || orig_h > MAX_TEXTURE_DIMENSION {
+                // Calculate how many bytes we can upload
+                let max_bytes = (orig_bytes_per_row * h.min(orig_h)) as usize;
+                &self.terminal_rgba[..max_bytes.min(self.terminal_rgba.len())]
+            } else {
+                &self.terminal_rgba
+            };
+
             queue.write_texture(
                 iced::wgpu::TexelCopyTextureInfo {
                     texture: &resources.texture,
@@ -376,10 +396,10 @@ impl shader::Primitive for TerminalShader {
                     origin: iced::wgpu::Origin3d::ZERO,
                     aspect: iced::wgpu::TextureAspect::All,
                 },
-                &self.terminal_rgba,
+                data_to_upload,
                 iced::wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(4 * w),
+                    bytes_per_row: Some(4 * orig_w.min(MAX_TEXTURE_DIMENSION)),
                     rows_per_image: Some(h),
                 },
                 iced::wgpu::Extent3d {
@@ -390,9 +410,9 @@ impl shader::Primitive for TerminalShader {
             );
         }
 
-        // Aspect ratio fit
-        let term_w = self.terminal_size.0.max(1) as f32;
-        let term_h = self.terminal_size.1.max(1) as f32;
+        // Aspect ratio fit - use clamped dimensions for display
+        let term_w = w.max(1) as f32;
+        let term_h = h.max(1) as f32;
         let avail_w = bounds.width.max(1.0);
         let avail_h = bounds.height.max(1.0);
         let uniform_scale = (avail_w / term_w).min(avail_h / term_h);
@@ -499,8 +519,9 @@ impl shader::Primitive for TerminalShader {
             return;
         };
 
-        let term_w = self.terminal_size.0.max(1) as f32;
-        let term_h = self.terminal_size.1.max(1) as f32;
+        // Use clamped dimensions for rendering
+        let term_w = self.terminal_size.0.min(MAX_TEXTURE_DIMENSION).max(1) as f32;
+        let term_h = self.terminal_size.1.min(MAX_TEXTURE_DIMENSION).max(1) as f32;
         let avail_w = clip_bounds.width.max(1) as f32;
         let avail_h = clip_bounds.height.max(1) as f32;
 

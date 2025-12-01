@@ -1,6 +1,6 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use iced::{Color, widget};
 use icy_engine::Screen;
@@ -13,6 +13,9 @@ pub struct Terminal {
     pub viewport: Viewport,
     pub scrollbar: ScrollbarState,
     pub scrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for scrollbar
+    /// Computed visible height from shader (in content units, e.g., lines)
+    /// Updated by the shader based on available widget bounds
+    pub computed_visible_height: Arc<AtomicU32>,
     pub font_size: f32,
     pub char_width: f32,
     pub char_height: f32,
@@ -36,6 +39,7 @@ impl Terminal {
             viewport,
             scrollbar: ScrollbarState::new(),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
+            computed_visible_height: Arc::new(AtomicU32::new(0)),
             font_size: 16.0,
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,
@@ -59,15 +63,68 @@ impl Terminal {
         self.sync_scrollbar_with_viewport();
     }
 
+    /// Update viewport visible size based on available widget dimensions
+    /// Call this when the widget size changes to properly calculate scrollbar
+    pub fn set_viewport_visible_size(&mut self, width: f32, height: f32) {
+        self.viewport.set_visible_size(width, height);
+        self.sync_scrollbar_with_viewport();
+    }
+
     /// Sync scrollbar state with viewport scroll position
+    /// Uses computed_visible_height if available for accurate scrollbar positioning
     pub fn sync_scrollbar_with_viewport(&mut self) {
-        let max_scroll = self.viewport.max_scroll_y();
+        // Use computed visible height from shader if available, otherwise use viewport's visible_height
+        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        let visible_height = if computed > 0.0 { computed } else { self.viewport.visible_height };
+
+        // Clamp scroll values with the correct visible height
+        self.viewport.clamp_scroll_with_size(self.viewport.visible_width, visible_height);
+
+        // Calculate max scroll based on the actual visible height
+        let max_scroll = (self.viewport.content_height * self.viewport.zoom - visible_height).max(0.0);
+
         if max_scroll > 0.0 {
             let scroll_ratio = self.viewport.scroll_y / max_scroll;
-            self.scrollbar.set_scroll_position(scroll_ratio);
+            self.scrollbar.set_scroll_position(scroll_ratio.clamp(0.0, 1.0));
         } else {
             self.scrollbar.set_scroll_position(0.0);
         }
+    }
+
+    /// Get the effective visible height (uses computed value from shader if available)
+    fn get_effective_visible_height(&self) -> f32 {
+        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        if computed > 0.0 { computed } else { self.viewport.visible_height }
+    }
+
+    /// Get maximum scroll Y value using the correct visible height
+    pub fn max_scroll_y(&self) -> f32 {
+        let visible_height = self.get_effective_visible_height();
+        (self.viewport.content_height * self.viewport.zoom - visible_height).max(0.0)
+    }
+
+    /// Scroll by delta with proper clamping
+    pub fn scroll_by(&mut self, dx: f32, dy: f32) {
+        self.viewport.scroll_by(dx, dy);
+        // Re-clamp with the correct visible height
+        let visible_height = self.get_effective_visible_height();
+        self.viewport.clamp_scroll_with_size(self.viewport.visible_width, visible_height);
+    }
+
+    /// Scroll to position with proper clamping
+    pub fn scroll_to(&mut self, x: f32, y: f32) {
+        self.viewport.scroll_to(x, y);
+        // Re-clamp with the correct visible height
+        let visible_height = self.get_effective_visible_height();
+        self.viewport.clamp_scroll_with_size(self.viewport.visible_width, visible_height);
+    }
+
+    /// Scroll to position immediately with proper clamping
+    pub fn scroll_to_immediate(&mut self, x: f32, y: f32) {
+        self.viewport.scroll_to_immediate(x, y);
+        // Re-clamp with the correct visible height
+        let visible_height = self.get_effective_visible_height();
+        self.viewport.clamp_scroll_with_size(self.viewport.visible_width, visible_height);
     }
 
     /// Update animations for both viewport and scrollbar

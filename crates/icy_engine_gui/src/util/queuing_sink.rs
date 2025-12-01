@@ -25,11 +25,12 @@ pub enum QueuedCommand {
 }
 
 impl QueuedCommand {
-    /// Check if command needs async processing (for peeking in inner loop)
-    pub fn needs_async_processing(&self) -> bool {
+    /// Check if this command produces sound (music, bells, sound effects)
+    pub fn is_sound(&self) -> bool {
         matches!(
             self,
-            QueuedCommand::Igs(IgsCommand::Pause { .. })
+            QueuedCommand::Music(_)
+                | QueuedCommand::Bell
                 | QueuedCommand::Igs(IgsCommand::BellsAndWhistles { .. })
                 | QueuedCommand::Igs(IgsCommand::AlterSoundEffect { .. })
                 | QueuedCommand::Igs(IgsCommand::StopAllSound)
@@ -38,15 +39,29 @@ impl QueuedCommand {
                 | QueuedCommand::Igs(IgsCommand::ChipMusic { .. })
                 | QueuedCommand::Igs(IgsCommand::Noise { .. })
                 | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. })
-                | QueuedCommand::Igs(IgsCommand::AskIG { .. })
-                | QueuedCommand::Skypix(SkypixCommand::Delay { .. })
-                | QueuedCommand::Skypix(SkypixCommand::CrcTransfer { .. })
-                | QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })
-                | QueuedCommand::Music(_)
-                | QueuedCommand::Bell
-                | QueuedCommand::TerminalRequest(_)
-                | QueuedCommand::ResizeTerminal(_, _)
         )
+    }
+
+    /// Check if this command introduces a delay/pause
+    pub fn is_delay(&self) -> bool {
+        matches!(
+            self,
+            QueuedCommand::Igs(IgsCommand::Pause { .. }) | QueuedCommand::Skypix(SkypixCommand::Delay { .. })
+        )
+    }
+
+    /// Check if command needs async processing (for peeking in inner loop)
+    pub fn needs_async_processing(&self) -> bool {
+        self.is_sound()
+            || self.is_delay()
+            || matches!(
+                self,
+                QueuedCommand::Igs(IgsCommand::AskIG { .. })
+                    | QueuedCommand::Skypix(SkypixCommand::CrcTransfer { .. })
+                    | QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })
+                    | QueuedCommand::TerminalRequest(_)
+                    | QueuedCommand::ResizeTerminal(_, _)
+            )
     }
 
     /// Process a command that requires screen access

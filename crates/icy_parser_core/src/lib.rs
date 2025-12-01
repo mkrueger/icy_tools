@@ -1163,7 +1163,7 @@ impl Display for BaudEmulation {
 }
 
 impl BaudEmulation {
-    pub const OPTIONS: [BaudEmulation; 12] = [
+    pub const OPTIONS: [BaudEmulation; 13] = [
         BaudEmulation::Off,
         BaudEmulation::Rate(300),
         BaudEmulation::Rate(600),
@@ -1171,10 +1171,11 @@ impl BaudEmulation {
         BaudEmulation::Rate(2400),
         BaudEmulation::Rate(4800),
         BaudEmulation::Rate(9600),
+        BaudEmulation::Rate(14400),
         BaudEmulation::Rate(19200),
+        BaudEmulation::Rate(28800),
         BaudEmulation::Rate(38400),
         BaudEmulation::Rate(57600),
-        BaudEmulation::Rate(76800),
         BaudEmulation::Rate(115_200),
     ];
 

@@ -180,16 +180,6 @@ impl BitFont {
             })
             .cloned();
 
-        if result.is_none() {
-            eprintln!("  NO MATCH FOUND!");
-            // Debug: print first few glyphs to see structure
-            for (i, g) in self.yaff_font.glyphs.iter().take(3).enumerate() {
-                eprintln!("  Glyph {}: labels={:?}", i, g.labels);
-            }
-        } else {
-            eprintln!("  Match found!");
-        }
-
         result
     }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{LANGUAGE_LOADER, SECTION_PADDING, SECTION_SPACING, SLIDER_SPACING, TEXT_SIZE_SMALL, section_header};
+use crate::{LANGUAGE_LOADER, SECTION_PADDING, SECTION_SPACING, SLIDER_SPACING, section_header};
 use crate::{MonitorSettings, MonitorType};
 use i18n_embed_fl::fl;
 use iced::widget::{Space, checkbox, column, container, pick_list, row, text};
@@ -102,22 +102,6 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
             .align_y(Alignment::Center),
         );
     }
-
-    // Border color
-    let bc = icy_to_iced_color(s.border_color.clone());
-    appearance_content = appearance_content.push(
-        row![
-            left_label(fl!(LANGUAGE_LOADER, "settings-background_color-label")),
-            color_button(bc, MonitorSettingsMessage::BorderColorChanged(bc)),
-            text(format!("RGB({}, {}, {})", (bc.r * 255.0) as u8, (bc.g * 255.0) as u8, (bc.b * 255.0) as u8))
-                .size(TEXT_SIZE_SMALL)
-                .style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.strong.text)
-                }),
-        ]
-        .spacing(ROW_SPACING)
-        .align_y(Alignment::Center),
-    );
 
     // Add appearance content in a box
     content = content.push(effect_box(appearance_content.into()));

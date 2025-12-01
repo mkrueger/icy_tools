@@ -53,8 +53,17 @@ pub fn render_unicode_to_rgba(buf: &dyn Screen, opts: &RenderUnicodeOptions) -> 
             let ch = ch_attr.ch;
 
             let mut fg_idx = ch_attr.attribute.get_foreground();
-            let bg_idx = ch_attr.attribute.get_background();
+            let mut bg_idx = ch_attr.attribute.get_background();
             let is_bold = ch_attr.attribute.is_bold();
+
+            // Clamp indices to valid palette range
+            let palette_len = buf.palette().len().min(256) as u32;
+            if fg_idx >= palette_len {
+                fg_idx = 7; // Default to white
+            }
+            if bg_idx >= palette_len {
+                bg_idx = 0; // Default to black
+            }
 
             if ch_attr.attribute.is_blinking() && !opts.blink_on {
                 fg_idx = bg_idx;

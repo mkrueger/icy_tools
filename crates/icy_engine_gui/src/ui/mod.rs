@@ -7,6 +7,9 @@ pub use icons::*;
 mod confirmation_dialog;
 pub use confirmation_dialog::*;
 
+mod toast;
+pub use toast::*;
+
 // Button styling
 pub const BUTTON_FONT_SIZE: f32 = 14.0;
 pub const BUTTON_BORDER_WIDTH: f32 = 1.0;
@@ -109,14 +112,14 @@ pub fn modal_container<'a, T: 'a>(content: Element<'a, T>, width: f32) -> contai
 
 pub fn modal_overlay<'a, Message: 'a + Clone>(background: Element<'a, Message>, modal: Element<'a, Message>) -> Element<'a, Message> {
     // Overlay that blocks clicks to the background
-    let overlay = container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| container::Style {
+    let overlay = iced::widget::opaque(container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| container::Style {
         background: Some(Color::from_rgba8(0, 0, 0, 0.55).into()),
         ..Default::default()
-    });
+    }));
 
     container(iced::widget::stack![
         background,
-        iced::widget::mouse_area(overlay).interaction(iced::mouse::Interaction::Idle),
+        overlay,
         container(modal)
             .width(Length::Fill)
             .height(Length::Fill)

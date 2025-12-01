@@ -38,6 +38,10 @@ impl<'a> CRTShaderProgram<'a> {
             }
         }
 
+        if !cursor.is_over(bounds) {
+            return None;
+        }
+
         // Handle mouse events
         if let iced::Event::Mouse(mouse_event) = event {
             // Use cached mouse state from last draw (avoids extra lock)
@@ -364,7 +368,7 @@ impl<'a> CRTShaderProgram<'a> {
         None
     }
 
-    fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, _bounds: Rectangle) -> TerminalShader {
+    fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
         // Fast path: reuse cached buffer if content not dirty; only reapply caret/blink overlays.
         let mut rgba_data: Vec<u8>;
         let size: (u32, u32);
@@ -409,6 +413,13 @@ impl<'a> CRTShaderProgram<'a> {
                     needs_full_render = true;
                     info.last_selection_state = (sel_anchor, sel_lead, sel_locked);
                 }
+
+                // Check if bounds size changed (window resize) - need to re-render with new visible height
+                let current_bounds = (bounds.width, bounds.height);
+                if (info.last_bounds_size.0 - current_bounds.0).abs() > 0.5 || (info.last_bounds_size.1 - current_bounds.1).abs() > 0.5 {
+                    needs_full_render = true;
+                    info.last_bounds_size = current_bounds;
+                }
             }
 
             if needs_full_render {
@@ -445,15 +456,37 @@ impl<'a> CRTShaderProgram<'a> {
                     // Get the actual content resolution
                     let resolution = screen.get_resolution();
 
-                    // Calculate visible region using scroll offsets
-                    // Note: We use resolution as the visible size since the viewport's visible_size
-                    // might not be updated yet (immutable access in shader)
-                    let viewport_region = self.term.viewport.visible_region_with_size(resolution.width as f32, resolution.height as f32);
+                    // Calculate visible height based on available widget bounds
+                    // This allows showing more lines when the window is taller
+                    let scale_factor = crate::get_scale_factor();
+                    let scaled_bounds_height = bounds.height * scale_factor;
+
+                    // Calculate how many lines can fit in the available height
+                    // Use the same scaling logic as map_mouse_to_cell
+                    let term_px_w = resolution.width as f32;
+                    let term_px_h = resolution.height as f32;
+                    let uniform_scale = (bounds.width * scale_factor / term_px_w).min(scaled_bounds_height / term_px_h);
+                    let display_scale = if self.monitor_settings.use_pixel_perfect_scaling {
+                        uniform_scale.floor().max(1.0)
+                    } else {
+                        uniform_scale
+                    };
+
+                    // Calculate how many content pixels can be shown in the available height
+                    let visible_content_height = (scaled_bounds_height / display_scale).min(self.term.viewport.content_height);
+
+                    // Store computed visible height for scrollbar calculations
+                    self.term
+                        .computed_visible_height
+                        .store(visible_content_height as u32, std::sync::atomic::Ordering::Relaxed);
+
+                    // Use the calculated visible height for the viewport region
+                    let viewport_region = self.term.viewport.visible_region_with_size(resolution.width as f32, visible_content_height);
 
                     let base_options = icy_engine::RenderOptions {
                         rect: icy_engine::Rectangle {
                             start: icy_engine::Position::new(0, 0),
-                            size: resolution,
+                            size: icy_engine::Size::new(resolution.width, visible_content_height as i32),
                         }
                         .into(),
                         blink_on: true,
@@ -468,7 +501,7 @@ impl<'a> CRTShaderProgram<'a> {
                     let base_options_off = icy_engine::RenderOptions {
                         rect: icy_engine::Rectangle {
                             start: icy_engine::Position::new(0, 0),
-                            size: resolution,
+                            size: icy_engine::Size::new(resolution.width, visible_content_height as i32),
                         }
                         .into(),
                         blink_on: false,

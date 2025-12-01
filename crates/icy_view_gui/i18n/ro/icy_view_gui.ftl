@@ -60,7 +60,7 @@ button-stop_music=Oprește muzica
 label-music_pause=Pauză { $duration }ms
 label-music_note=Redă { $note }({ $octave }) pentru { $duration }ms
 
-label-sixteencolors_pack= { $year } ({ $packs } pachete)
+label-sixteencolors_year= { $year } ({ $packs } pachete)
 
 settings-heading=Setări
 settings-reset_button=Resetați

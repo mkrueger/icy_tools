@@ -33,9 +33,16 @@ icy_sixel = { workspace = true }
 icy_parser_core = { workspace = true }
 bitflags = { workspace = true }
 utf8parse = "0.2"
+unarc-rs = { workspace = true }
 
 zip = { workspace = true }
 libyaff = { workspace = true }
+
+# Image export support
+image = { workspace = true }
+gifski = "1.32.0"
+imgref = "1.11.0"
+rgb = "0.8.50"
 
 [dev-dependencies]
 walkdir = { workspace = true }

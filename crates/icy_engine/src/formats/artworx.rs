@@ -86,6 +86,7 @@ impl OutputFormat for Artworx {
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
+        let max_height = load_data.max_height();
         if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
@@ -120,6 +121,13 @@ impl OutputFormat for Artworx {
         o += font_size;
 
         loop {
+            // Check height limit before processing a new row
+            if let Some(max_h) = max_height {
+                if pos.y >= max_h {
+                    return Ok(result);
+                }
+            }
+
             for _ in 0..result.get_width() {
                 if o + 2 > file_size {
                     return Ok(result);

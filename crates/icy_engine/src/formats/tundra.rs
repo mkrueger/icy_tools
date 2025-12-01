@@ -154,6 +154,7 @@ impl OutputFormat for TundraDraw {
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
+        let max_height = load_data.max_height();
         if let Some(sauce) = load_data.sauce_opt {
             result.load_sauce(sauce);
         }
@@ -179,10 +180,23 @@ impl OutputFormat for TundraDraw {
         let mut attr = TextAttribute::default();
 
         while o < data.len() {
+            // Check height limit
+            if let Some(max_h) = max_height {
+                if pos.y >= max_h {
+                    break;
+                }
+            }
+
             let mut cmd = data[o];
             o += 1;
             if cmd == TUNDRA_POSITION {
                 pos.y = to_u32(&data[o..]);
+                // Check if jump position exceeds height limit
+                if let Some(max_h) = max_height {
+                    if pos.y >= max_h {
+                        break;
+                    }
+                }
                 if pos.y >= (u16::MAX) as i32 {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,

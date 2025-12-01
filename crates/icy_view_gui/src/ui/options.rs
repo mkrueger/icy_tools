@@ -1,9 +1,29 @@
+use icy_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{fs, path::PathBuf};
 
 const SCROLL_SPEED: [f32; 3] = [80.0, 160.0, 320.0];
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
+pub enum ViewMode {
+    /// List view with file browser on left, preview on right
+    #[default]
+    List,
+    /// Tile/grid view showing thumbnails
+    Tiles,
+}
+
+impl ViewMode {
+    /// Toggle between list and tile view
+    pub fn toggle(&self) -> ViewMode {
+        match self {
+            ViewMode::List => ViewMode::Tiles,
+            ViewMode::Tiles => ViewMode::List,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum ScrollSpeed {
     Slow,
     Medium,
@@ -28,11 +48,59 @@ impl ScrollSpeed {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/// Number of external command slots (F5-F8)
+pub const EXTERNAL_COMMAND_COUNT: usize = 4;
+
+/// An external command that can be executed on a file
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct ExternalCommand {
+    /// Command to execute. Use %F as placeholder for the file path
+    pub command: String,
+}
+
+impl ExternalCommand {
+    pub fn is_configured(&self) -> bool {
+        !self.command.is_empty()
+    }
+
+    pub fn build_command(&self, file_path: &std::path::Path) -> Option<(String, Vec<String>)> {
+        if self.command.is_empty() {
+            return None;
+        }
+        let file_str = file_path.to_string_lossy();
+
+        // Replace %F placeholder in the entire command first
+        let expanded_command = self.command.replace("%F", &file_str);
+
+        let parts: Vec<&str> = expanded_command.split_whitespace().collect();
+        if parts.is_empty() {
+            return None;
+        }
+        let program = parts[0].to_string();
+        let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+
+        // If no %F placeholder was in original command, append file as last argument
+        if !self.command.contains("%F") {
+            let mut args = args;
+            args.push(file_str.to_string());
+            return Some((program, args));
+        }
+        Some((program, args))
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Options {
     pub auto_scroll_enabled: bool,
     pub scroll_speed: ScrollSpeed,
     pub show_settings: bool,
+    #[serde(default)]
+    pub view_mode: ViewMode,
+    #[serde(default)]
+    pub monitor_settings: MonitorSettings,
+
+    #[serde(default)]
+    pub external_commands: [ExternalCommand; EXTERNAL_COMMAND_COUNT],
 }
 
 impl Default for Options {
@@ -41,6 +109,9 @@ impl Default for Options {
             show_settings: true,
             auto_scroll_enabled: true,
             scroll_speed: ScrollSpeed::Medium,
+            view_mode: ViewMode::List,
+            monitor_settings: MonitorSettings::default(),
+            external_commands: Default::default(),
         }
     }
 }
@@ -78,6 +149,69 @@ impl Options {
                 }
                 Err(err) => log::error!("Error writing options file: {}", err),
             }
+        }
+    }
+
+    /// Returns the configuration directory path
+    pub fn get_config_dir() -> Option<PathBuf> {
+        directories::ProjectDirs::from("com", "GitHub", "icy_view").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
+    }
+
+    /// Returns the log directory path
+    pub fn get_log_dir() -> Option<PathBuf> {
+        directories::ProjectDirs::from("com", "GitHub", "icy_view").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
+    }
+
+    /// Returns the path to the current log file.
+    pub fn get_log_file() -> Option<PathBuf> {
+        Self::get_log_dir().map(|log_dir| {
+            if cfg!(windows) {
+                log_dir.join("icy_view_rCURRENT.log")
+            } else {
+                log_dir.join("icy_view.log")
+            }
+        })
+    }
+
+    /// Reset monitor settings to defaults
+    pub fn reset_monitor_settings(&mut self) {
+        self.monitor_settings = MonitorSettings::default();
+    }
+
+    /// Prepare a file for external command execution.
+    /// For local files, returns the path directly.
+    /// For virtual files (archives, web), copies to temp directory and returns temp path.
+    pub fn prepare_file_for_external(item: &dyn crate::Item) -> Option<PathBuf> {
+        // Check if it's a local file with a real path
+        if let Some(full_path) = item.get_full_path() {
+            if full_path.exists() {
+                return Some(full_path);
+            }
+        }
+
+        // Virtual file - need to copy to temp directory
+        // For virtual files we need to clone the item to read data
+        let item_clone = item.clone_box();
+        let data = item_clone.read_data_blocking()?;
+        let file_name = item.get_file_path().file_name()?.to_string_lossy().to_string();
+
+        // Create session-specific temp directory
+        let temp_dir = std::env::temp_dir().join(format!("icy_view_{}", std::process::id()));
+        if !temp_dir.exists() {
+            std::fs::create_dir_all(&temp_dir).ok()?;
+        }
+
+        let temp_path = temp_dir.join(&file_name);
+        std::fs::write(&temp_path, &data).ok()?;
+
+        Some(temp_path)
+    }
+
+    /// Clean up session temp directory on exit
+    pub fn cleanup_session_temp() {
+        let temp_dir = std::env::temp_dir().join(format!("icy_view_{}", std::process::id()));
+        if temp_dir.exists() {
+            let _ = std::fs::remove_dir_all(&temp_dir);
         }
     }
 }
