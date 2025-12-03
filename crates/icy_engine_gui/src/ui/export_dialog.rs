@@ -17,12 +17,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::{
-    browse_button, button_row_with_left, dialog_area, dialog_title, error_tooltip,
-    left_label_small, modal_container, primary_button, secondary_button, separator,
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+    DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row_with_left, dialog_area, dialog_title,
+    error_tooltip, left_label_small, modal_container, primary_button, secondary_button, separator,
 };
-use crate::settings::effect_box;
 use crate::LANGUAGE_LOADER;
+use crate::settings::effect_box;
 
 /// Messages for the export dialog
 #[derive(Debug, Clone)]
@@ -278,10 +277,7 @@ impl ExportDialogState {
     }
 
     /// Create the modal content for the dialog
-    pub fn view<'a, Message: Clone + 'static>(
-        &'a self,
-        on_message: impl Fn(ExportDialogMessage) -> Message + 'a + Clone,
-    ) -> Element<'a, Message> {
+    pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(ExportDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
         let title = dialog_title(fl!(LANGUAGE_LOADER, "export-dialog-title"));
 
         // Check directory validity
@@ -404,10 +400,7 @@ impl ExportDialogState {
             },
         );
 
-        let cancel_btn = secondary_button(
-            fl!(LANGUAGE_LOADER, "dialog-cancel-button"),
-            Some(on_message(ExportDialogMessage::Cancel)),
-        );
+        let cancel_btn = secondary_button(fl!(LANGUAGE_LOADER, "dialog-cancel-button"), Some(on_message(ExportDialogMessage::Cancel)));
 
         let buttons_left = vec![restore_btn.into()];
         let buttons_right = vec![cancel_btn.into(), export_btn.into()];

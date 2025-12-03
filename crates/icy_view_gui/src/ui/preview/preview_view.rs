@@ -2,12 +2,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length, Task,
     widget::{container, image as iced_image, stack},
 };
 use icy_engine::{Screen, Size, TextScreen};
-use icy_engine_gui::{MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
+use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
 use icy_parser_core::BaudEmulation;
 use icy_sauce::SauceRecord;
 use parking_lot::Mutex;
@@ -57,6 +58,8 @@ pub enum PreviewMessage {
     ScrollViewportToImmediate(f32, f32),
     /// Scrollbar hover state changed
     ScrollbarHovered(bool),
+    /// Horizontal scrollbar hover state changed
+    HScrollbarHovered(bool),
     /// Set baud emulation
     SetBaudEmulation(BaudEmulation),
     /// Terminal view message
@@ -477,6 +480,11 @@ impl PreviewView {
                 self.terminal.scrollbar.set_hovered(is_hovered);
                 Task::none()
             }
+            PreviewMessage::HScrollbarHovered(is_hovered) => {
+                // Horizontal scrollbar uses the same hover state for animation
+                self.terminal.scrollbar.set_hovered(is_hovered);
+                Task::none()
+            }
             PreviewMessage::SetBaudEmulation(baud) => {
                 self.set_baud_emulation(baud);
                 Task::none()
@@ -513,7 +521,7 @@ impl PreviewView {
         let monitor_settings = settings.cloned().unwrap_or_else(|| self.monitor_settings.clone());
 
         match &self.preview_mode {
-            PreviewMode::None => container(iced::widget::text("No file selected"))
+            PreviewMode::None => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-no-file-selected")))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -523,7 +531,7 @@ impl PreviewView {
                     ..Default::default()
                 })
                 .into(),
-            PreviewMode::Loading => container(iced::widget::text("Loading..."))
+            PreviewMode::Loading => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-loading")))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -533,7 +541,7 @@ impl PreviewView {
                     ..Default::default()
                 })
                 .into(),
-            PreviewMode::Error(msg) => container(iced::widget::text(format!("Error: {}", msg)))
+            PreviewMode::Error(msg) => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-error", message = msg.clone())))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -568,33 +576,63 @@ impl PreviewView {
                     self.terminal.viewport.visible_height
                 };
 
-                // Calculate if we need scrollbar (content larger than visible area)
+                // Calculate if we need vertical scrollbar (content taller than visible area)
                 let scrollbar_height_ratio = visible_height / self.terminal.viewport.content_height.max(1.0);
-                let needs_scrollbar = scrollbar_height_ratio < 1.0;
+                let needs_vscrollbar = scrollbar_height_ratio < 1.0;
 
-                if needs_scrollbar {
+                // Calculate if we need horizontal scrollbar (content wider than visible area)
+                let visible_width = self.terminal.viewport.visible_width;
+                let scrollbar_width_ratio = visible_width / self.terminal.viewport.content_width.max(1.0);
+                let needs_hscrollbar = scrollbar_width_ratio < 1.0;
+
+                if needs_vscrollbar || needs_hscrollbar {
                     let scrollbar_visibility = self.terminal.scrollbar.visibility;
-                    let scrollbar_position = self.terminal.scrollbar.scroll_position;
-                    // Calculate max scroll based on computed visible height
-                    let max_scroll_y = (self.terminal.viewport.content_height - visible_height).max(0.0);
 
-                    let scrollbar_view = ScrollbarOverlay::new(
-                        scrollbar_visibility,
-                        scrollbar_position,
-                        scrollbar_height_ratio,
-                        max_scroll_y,
-                        self.terminal.scrollbar_hover_state.clone(),
-                        |x, y| PreviewMessage::ScrollViewportToImmediate(x, y),
-                        |is_hovered| PreviewMessage::ScrollbarHovered(is_hovered),
-                    )
-                    .view();
+                    let mut layers: Vec<Element<'_, PreviewMessage>> = vec![terminal_view];
 
-                    // Use stack to overlay scrollbar on top of terminal
-                    // Scrollbar is aligned to the right edge
-                    let scrollbar_container: container::Container<'_, PreviewMessage> =
-                        container(scrollbar_view).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
+                    // Add vertical scrollbar if needed
+                    if needs_vscrollbar {
+                        let scrollbar_position = self.terminal.scrollbar.scroll_position;
+                        let max_scroll_y = (self.terminal.viewport.content_height - visible_height).max(0.0);
 
-                    container(stack![terminal_view, scrollbar_container])
+                        let vscrollbar_view = ScrollbarOverlay::new(
+                            scrollbar_visibility,
+                            scrollbar_position,
+                            scrollbar_height_ratio,
+                            max_scroll_y,
+                            self.terminal.scrollbar_hover_state.clone(),
+                            |x, y| PreviewMessage::ScrollViewportToImmediate(x, y),
+                            |is_hovered| PreviewMessage::ScrollbarHovered(is_hovered),
+                        )
+                        .view();
+
+                        let vscrollbar_container: container::Container<'_, PreviewMessage> =
+                            container(vscrollbar_view).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
+                        layers.push(vscrollbar_container.into());
+                    }
+
+                    // Add horizontal scrollbar if needed
+                    if needs_hscrollbar {
+                        let scrollbar_position_x = self.terminal.scrollbar.scroll_position_x;
+                        let max_scroll_x = (self.terminal.viewport.content_width - visible_width).max(0.0);
+
+                        let hscrollbar_view = HorizontalScrollbarOverlay::new(
+                            scrollbar_visibility,
+                            scrollbar_position_x,
+                            scrollbar_width_ratio,
+                            max_scroll_x,
+                            self.terminal.scrollbar_hover_state.clone(),
+                            |x, _y| PreviewMessage::ScrollViewportToImmediate(x, self.terminal.viewport.scroll_y),
+                            |is_hovered| PreviewMessage::HScrollbarHovered(is_hovered),
+                        )
+                        .view();
+
+                        let hscrollbar_container: container::Container<'_, PreviewMessage> =
+                            container(hscrollbar_view).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
+                        layers.push(hscrollbar_container.into());
+                    }
+
+                    container(stack(layers))
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .style(|theme: &iced::Theme| container::Style {

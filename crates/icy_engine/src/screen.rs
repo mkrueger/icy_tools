@@ -226,10 +226,10 @@ pub trait EditableScreen: Screen {
     /// Apply SAUCE record settings to the screen.
     /// This extracts and applies character capabilities from the SAUCE record,
     /// including buffer size, font, and ice colors.
-    /// 
+    ///
     /// This is a default implementation that works for TextScreen.
     /// Graphics screens can override this to ignore SAUCE data.
-    /// 
+    ///
     /// Note: aspect_ratio and letter_spacing are buffer-specific settings
     /// and are handled by TextBuffer in its own load_sauce method.
     fn apply_sauce(&mut self, sauce: &SauceRecord) {
@@ -255,7 +255,7 @@ pub trait EditableScreen: Screen {
                     self.set_width(width);
                     self.terminal_state_mut().set_width(width);
                 }
-                
+
                 if lines > 0 {
                     let height = (lines as i32).min(limits::MAX_BUFFER_HEIGHT);
                     self.set_height(height);

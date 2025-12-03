@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, advanced::graphics::core::keyboard, keyboard::key::Named, time, widget::space, window};
+use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, advanced::graphics::core::keyboard, keyboard::key::Named, widget::space, window};
 
 use icy_view_gui::{MainWindow, Message, Options};
 
@@ -45,7 +45,7 @@ impl std::fmt::Debug for WindowManagerMessage {
     }
 }
 
-const DEFAULT_SIZE: Size = Size::new(1284.0, 839.0);
+const DEFAULT_SIZE: Size = Size::new(1337.0, 839.0);
 
 impl WindowManager {
     pub fn new(auto_scroll: bool, bps: Option<u32>) -> (Self, Task<WindowManagerMessage>) {

@@ -80,14 +80,22 @@ impl Terminal {
         // Clamp scroll values with the correct visible height
         self.viewport.clamp_scroll_with_size(self.viewport.visible_width, visible_height);
 
-        // Calculate max scroll based on the actual visible height
-        let max_scroll = (self.viewport.content_height * self.viewport.zoom - visible_height).max(0.0);
-
-        if max_scroll > 0.0 {
-            let scroll_ratio = self.viewport.scroll_y / max_scroll;
+        // Vertical scrollbar
+        let max_scroll_y = (self.viewport.content_height * self.viewport.zoom - visible_height).max(0.0);
+        if max_scroll_y > 0.0 {
+            let scroll_ratio = self.viewport.scroll_y / max_scroll_y;
             self.scrollbar.set_scroll_position(scroll_ratio.clamp(0.0, 1.0));
         } else {
             self.scrollbar.set_scroll_position(0.0);
+        }
+
+        // Horizontal scrollbar
+        let max_scroll_x = (self.viewport.content_width * self.viewport.zoom - self.viewport.visible_width).max(0.0);
+        if max_scroll_x > 0.0 {
+            let scroll_ratio_x = self.viewport.scroll_x / max_scroll_x;
+            self.scrollbar.set_scroll_position_x(scroll_ratio_x.clamp(0.0, 1.0));
+        } else {
+            self.scrollbar.set_scroll_position_x(0.0);
         }
     }
 

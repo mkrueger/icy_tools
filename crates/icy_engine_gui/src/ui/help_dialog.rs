@@ -168,14 +168,11 @@ fn category_header<Message: 'static>(icon: &str, name: &str) -> container::Conta
 }
 
 /// Create the help dialog content
-/// 
+///
 /// # Arguments
 /// * `config` - The help dialog configuration
 /// * `close_message` - Message to send when closing the dialog
-pub fn help_dialog_content<Message: Clone + 'static>(
-    config: &HelpDialogConfig,
-    close_message: Message,
-) -> Element<'static, Message> {
+pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, close_message: Message) -> Element<'static, Message> {
     // Title block
     let title = container(
         row![
@@ -186,12 +183,10 @@ pub fn help_dialog_content<Message: Clone + 'static>(
                     color: Some(theme.palette().text),
                     ..Default::default()
                 }),
-                text(config.subtitle.clone())
-                    .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
-                        ..Default::default()
-                    }),
+                text(config.subtitle.clone()).size(TEXT_SIZE_SMALL).style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                    ..Default::default()
+                }),
             ]
             .spacing(2)
         ]
@@ -216,7 +211,7 @@ pub fn help_dialog_content<Message: Clone + 'static>(
             let keys = sc.keys.clone();
             let action = sc.action.clone();
             let desc = sc.description.clone();
-            
+
             let shortcut_row = container(
                 row![
                     container(key_group::<Message>(&keys)).width(Length::Fixed(200.0)),
@@ -257,8 +252,7 @@ pub fn help_dialog_content<Message: Clone + 'static>(
     let footer = container(
         row![
             Space::new().width(Length::Fill),
-            primary_button(format!("{}", ButtonType::Close), Some(close_message))
-                .padding(Padding::from([5, 20])),
+            primary_button(format!("{}", ButtonType::Close), Some(close_message)).padding(Padding::from([5, 20])),
         ]
         .align_y(Alignment::Center),
     )
@@ -306,7 +300,7 @@ pub fn help_dialog_content<Message: Clone + 'static>(
 }
 
 /// Create a full help dialog with modal overlay
-/// 
+///
 /// # Arguments
 /// * `background` - The background content
 /// * `config` - The help dialog configuration  

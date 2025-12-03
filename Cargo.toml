@@ -86,6 +86,7 @@ iced = "0.14.0-dev"
 versions = "7.0.0"
 github_release_check = "0.2.1"
 parking_lot = "0.12.5"
+clap-i18n-richformatter = { git = "https://github.com/eatradish/clap-i18n-richformatter" }
 
 [profile.release]
 opt-level = 'z'     # Optimize for size

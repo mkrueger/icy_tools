@@ -1,12 +1,18 @@
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
+use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
 use i18n_embed_fl::fl;
 use iced::{
     Element, Event, Length, Rectangle, Task, Theme,
     keyboard::{Key, key::Named},
     widget::{column, container, row, text},
 };
-use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager, ui::{ExportDialogMessage, ExportDialogState}};
+use icy_engine::{RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine_gui::{
+    ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager,
+    ui::{ExportDialogMessage, ExportDialogState},
+};
+use image::DynamicImage;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -74,6 +80,8 @@ pub enum Message {
     ShowExportDialog,
     /// Export dialog messages
     ExportDialog(ExportDialogMessage),
+    /// Copy selection to clipboard
+    Copy,
 }
 
 /// Main window for icy_view_gui
@@ -708,6 +716,10 @@ impl MainWindow {
                 // Close dialogs in priority order
                 if self.error_dialog.is_some() {
                     self.error_dialog = None;
+                } else if self.export_dialog.is_some() {
+                    self.export_dialog = None;
+                } else if self.settings_dialog.is_some() {
+                    self.settings_dialog = None;
                 } else if self.sauce_dialog.is_some() {
                     self.sauce_dialog = None;
                 } else if self.fullscreen {
@@ -1120,8 +1132,13 @@ impl MainWindow {
                                             format!("{} {}", program, args.join(" "))
                                         };
                                         return Task::done(Message::ShowErrorDialog {
-                                            title: format!("Failed to execute external command"),
-                                            message: format!("Command: {}\n\nError: {}", cmd_display, error_msg),
+                                            title: fl!(crate::LANGUAGE_LOADER, "error-external-command-title"),
+                                            message: fl!(
+                                                crate::LANGUAGE_LOADER,
+                                                "error-external-command-message",
+                                                command = cmd_display,
+                                                error = error_msg.clone()
+                                            ),
                                         });
                                     }
                                 }
@@ -1155,26 +1172,22 @@ impl MainWindow {
                 if let Some(ref path) = self.current_file {
                     // Get buffer type from preview if available
                     let buffer_type = self.preview.get_buffer_type().unwrap_or(icy_engine::BufferType::CP437);
-                    
+
                     // Get the configured export path (or default to documents)
                     let export_dir = self.options.lock().export_path();
-                    
+
                     // Get just the filename from the current file (without extension)
-                    let file_name = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("export")
-                        .to_string();
-                    
+                    let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("export").to_string();
+
                     // Combine export directory with filename
                     let export_path = export_dir.join(&file_name);
-                    
+
                     // Clone options for the closure
                     let options = self.options.clone();
-                    
+
                     self.export_dialog = Some(
                         ExportDialogState::new(export_path.to_string_lossy().to_string(), buffer_type)
-                            .with_default_directory_fn(move || options.lock().export_path())
+                            .with_default_directory_fn(move || options.lock().export_path()),
                     );
                 } else {
                     // Show toast that no file is being previewed
@@ -1186,7 +1199,7 @@ impl MainWindow {
                 if let Some(ref mut dialog) = self.export_dialog {
                     // Get the screen from preview for export
                     let screen = self.preview.get_screen();
-                    
+
                     let result = dialog.update(msg, |state| {
                         if let Some(screen) = screen.as_ref() {
                             state.export_buffer(screen.clone())
@@ -1194,12 +1207,13 @@ impl MainWindow {
                             Err("No screen available for export".to_string())
                         }
                     });
-                    
+
                     match result {
                         Some(true) => {
                             // Export successful
                             let path = dialog.get_full_path();
-                            self.toasts.push(Toast::success(fl!(crate::LANGUAGE_LOADER, "export-success", path = path.display().to_string())));
+                            self.toasts
+                                .push(Toast::success(fl!(crate::LANGUAGE_LOADER, "export-success", path = path.display().to_string())));
                             self.export_dialog = None;
                         }
                         Some(false) => {
@@ -1210,6 +1224,51 @@ impl MainWindow {
                             // Dialog stays open (error or just updating)
                         }
                     }
+                }
+                Task::none()
+            }
+            Message::Copy => {
+                // Get screen for copy operation
+                if let Some(screen_arc) = self.preview.get_screen() {
+                    let mut screen = screen_arc.lock();
+
+                    let text = match screen.get_copy_text() {
+                        Some(t) => t,
+                        None => return Task::none(),
+                    };
+                    let mut contents = Vec::with_capacity(4);
+
+                    // On windows the ordering is important - text must be last to be recognized properly
+                    if let Some(data) = screen.get_clipboard_data() {
+                        contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+                    }
+
+                    if let Some(selection) = screen.get_selection() {
+                        let (size, data) = screen.render_to_rgba(&RenderOptions {
+                            rect: selection,
+                            blink_on: true,
+                            selection: None,
+                            selection_fg: None,
+                            selection_bg: None,
+                            override_scan_lines: None,
+                        });
+                        let dynamic_image =
+                            DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("rgba create"));
+                        let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
+                        contents.push(ClipboardContent::Image(img));
+                    }
+
+                    if let Some(rich_text) = screen.get_copy_rich_text() {
+                        contents.push(ClipboardContent::Rtf(rich_text));
+                    }
+
+                    contents.push(ClipboardContent::Text(text));
+
+                    if let Err(err) = crate::CLIPBOARD_CONTEXT.set(contents) {
+                        log::error!("Failed to set clipboard: {err}");
+                    }
+
+                    let _ = screen.clear_selection();
                 }
                 Task::none()
             }
@@ -1596,6 +1655,22 @@ impl MainWindow {
                     }
                 }
 
+                // Handle Enter key for dialogs
+                if let Key::Named(Named::Enter) = key {
+                    // Settings dialog: Enter = Save (apply and close)
+                    if self.settings_dialog.is_some() {
+                        return Some(Message::SettingsDialog(SettingsMessage::Save));
+                    }
+                    // Sauce dialog: Enter = Close
+                    if self.sauce_dialog.is_some() {
+                        return Some(Message::SauceDialog(SauceDialogMessage::Close));
+                    }
+                    // Error dialog: Enter = Close
+                    if self.error_dialog.is_some() {
+                        return Some(Message::CloseErrorDialog);
+                    }
+                }
+
                 // Common keys (not view-mode dependent)
                 match key {
                     Key::Named(Named::Escape) => return Some(Message::Escape),
@@ -1632,11 +1707,24 @@ impl MainWindow {
                     _ => {}
                 }
 
-                // Ctrl+I: Show export dialog
+                // Ctrl+I: Show export dialog, Ctrl+C: Copy
                 if modifiers.control() {
                     if let Key::Character(c) = key {
                         if c.as_str().eq_ignore_ascii_case("i") {
                             return Some(Message::ShowExportDialog);
+                        }
+                        if c.as_str().eq_ignore_ascii_case("c") {
+                            return Some(Message::Copy);
+                        }
+                    }
+                }
+
+                // macOS: Cmd+C for copy
+                #[cfg(target_os = "macos")]
+                if modifiers.logo() {
+                    if let Key::Character(c) = key {
+                        if c.as_str().eq_ignore_ascii_case("c") {
+                            return Some(Message::Copy);
                         }
                     }
                 }

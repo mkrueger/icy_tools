@@ -4,12 +4,14 @@
 //! icon and text textures for maximum performance.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use ab_glyph::Font;
 use iced::Rectangle;
 use iced::mouse;
 use iced::widget::shader;
+use icy_engine::FileFormat;
 use icy_engine_gui::ui::FileIcon;
 use once_cell::sync::Lazy;
 
@@ -60,7 +62,8 @@ fn get_render_scale() -> f32 {
 // ============================================================================
 
 /// Render a FileIcon SVG to RGBA pixels at high resolution
-pub fn render_icon_to_rgba(icon: FileIcon, base_size: u32) -> Option<Vec<u8>> {
+/// If `tint_color` is provided, the icon will be rendered with that color (monochrome tinting)
+pub fn render_icon_to_rgba(icon: FileIcon, base_size: u32, tint_color: Option<[u8; 4]>) -> Option<Vec<u8>> {
     use resvg::tiny_skia::{Pixmap, Transform};
     use resvg::usvg::{Options, Tree};
 
@@ -79,7 +82,22 @@ pub fn render_icon_to_rgba(icon: FileIcon, base_size: u32) -> Option<Vec<u8>> {
     let transform = Transform::from_scale(icon_scale, icon_scale).post_translate(offset_x, offset_y);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-    Some(pixmap.take())
+    let mut data = pixmap.take();
+
+    // Apply tint color if specified - replace RGB while preserving alpha
+    if let Some(color) = tint_color {
+        for pixel in data.chunks_exact_mut(4) {
+            if pixel[3] > 0 {
+                // Preserve alpha, replace RGB with tint color
+                pixel[0] = color[0];
+                pixel[1] = color[1];
+                pixel[2] = color[2];
+                // Keep original alpha: pixel[3] unchanged
+            }
+        }
+    }
+
+    Some(data)
 }
 
 /// Get SVG data for a FileIcon
@@ -300,10 +318,24 @@ pub fn render_list_item(icon: FileIcon, label: &str, is_folder: bool, width: u32
     let mut rgba = vec![0u8; (scaled_width * scaled_height * 4) as usize];
 
     // Text color based on folder status, from theme
-    let text_color: [u8; 4] = if is_folder { theme_colors.folder_color } else { theme_colors.text_color };
+    let text_color: [u8; 4] = if is_folder {
+        theme_colors.folder_color
+    } else {
+        if let Some(format) = FileFormat::from_path(&PathBuf::from(&label)) {
+            if format.is_image() {
+                theme_colors.image_color
+            } else if format.is_supported() {
+                theme_colors.supported_color
+            } else {
+                theme_colors.text_color
+            }
+        } else {
+            theme_colors.text_color
+        }
+    };
 
-    // Render icon at scaled size (render_icon_to_rgba already handles scale internally)
-    if let Some(icon_rgba) = render_icon_to_rgba(icon, ICON_SIZE) {
+    // Render icon at scaled size with theme color tinting
+    if let Some(icon_rgba) = render_icon_to_rgba(icon, ICON_SIZE, Some(theme_colors.icon_color)) {
         let icon_x = scaled_icon_padding;
         let icon_y = (scaled_height.saturating_sub(scaled_icon_size)) / 2;
 
@@ -383,6 +415,7 @@ struct ListItemUniforms {
     bg_color: [f32; 4],
     bg_selected: [f32; 4],
     bg_hovered: [f32; 4],
+    fg_selected: [f32; 4],
 }
 
 /// Theme colors for the file list shader
@@ -391,9 +424,13 @@ pub struct FileListThemeColors {
     pub bg_color: [f32; 4],
     pub bg_selected: [f32; 4],
     pub bg_hovered: [f32; 4],
+    pub fg_selected: [f32; 4],
     pub text_color: [u8; 4],
+    pub image_color: [u8; 4],
+    pub supported_color: [u8; 4],
     pub folder_color: [u8; 4],
     pub highlight_color: [u8; 4],
+    pub icon_color: [u8; 4],
 }
 
 impl Default for FileListThemeColors {
@@ -403,9 +440,13 @@ impl Default for FileListThemeColors {
             bg_color: [0.12, 0.12, 0.12, 1.0],
             bg_selected: [0.2, 0.4, 0.6, 1.0],
             bg_hovered: [0.16, 0.18, 0.22, 1.0],
+            fg_selected: [1.0, 1.0, 1.0, 1.0], // White text on selection
             text_color: [230, 230, 230, 255],
-            folder_color: [0x55, 0x55, 255, 255],//[153, 204, 255, 255],
-            highlight_color: [255, 220, 100, 255], // Yellow highlight
+            image_color: [0xFF, 0x55, 0xFF, 255],     // Light green
+            supported_color: [0x55, 0xFF, 0x55, 255], // Light blue
+            folder_color: [0x55, 0x55, 255, 255],     // Light blue (DOS-like)
+            highlight_color: [255, 220, 100, 255],    // Yellow highlight
+            icon_color: [230, 230, 230, 255],         // Same as text for dark theme
         }
     }
 }
@@ -416,23 +457,38 @@ impl FileListThemeColors {
         let palette = theme.extended_palette();
         let is_dark = palette.is_dark;
 
+        // Get base text color from theme
+        let base_color = palette.background.base.text;
+        let icon_color = [(base_color.r * 255.0) as u8, (base_color.g * 255.0) as u8, (base_color.b * 255.0) as u8, 255];
+
+        // Get selection foreground color (text color on primary/selection background)
+        let fg_selected = color_to_array(palette.primary.base.text);
+
         if is_dark {
             Self {
                 bg_color: color_to_array(palette.background.base.color),
                 bg_selected: color_to_array(palette.primary.base.color),
                 bg_hovered: color_to_array(palette.background.strong.color),
+                fg_selected,
                 text_color: [230, 230, 230, 255],
-                folder_color: [153, 204, 255, 255],
-                highlight_color: [255, 220, 100, 255], // Yellow highlight
+                image_color: [0xFF, 0x55, 0xFF, 255],     // Light Magenta
+                supported_color: [0x55, 0xFF, 0x55, 255], // Light Green
+                folder_color: [0x55, 0x55, 255, 255],     // Light blue (DOS-like)
+                highlight_color: [255, 220, 100, 255],    // Yellow highlight
+                icon_color,
             }
         } else {
             Self {
                 bg_color: color_to_array(palette.background.base.color),
                 bg_selected: color_to_array(palette.primary.base.color),
                 bg_hovered: color_to_array(palette.background.strong.color),
+                fg_selected,
                 text_color: [40, 40, 40, 255],
-                folder_color: [0, 80, 160, 255],
-                highlight_color: [200, 150, 0, 255], // Darker yellow for light theme
+                image_color: [0xAA, 0x00, 0xAA, 255],     // Magenta
+                supported_color: [0x00, 0xAA, 0x00, 255], // Green
+                folder_color: [0x55, 0x55, 255, 255],     // Light blue (DOS-like)
+                highlight_color: [200, 150, 0, 255],      // Darker yellow for light theme
+                icon_color,
             }
         }
     }
@@ -725,6 +781,7 @@ impl shader::Primitive for FileListShaderPrimitive {
                     bg_color: self.theme_colors.bg_color,
                     bg_selected: self.theme_colors.bg_selected,
                     bg_hovered: self.theme_colors.bg_hovered,
+                    fg_selected: self.theme_colors.fg_selected,
                 };
 
                 queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

@@ -19,6 +19,7 @@ struct Uniforms {
     bg_color: vec4<f32>,
     bg_selected: vec4<f32>,
     bg_hovered: vec4<f32>,
+    fg_selected: vec4<f32>,
 };
 
 @group(0) @binding(0) var t_content: texture_2d<f32>;
@@ -74,6 +75,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Sample the pre-rendered content texture (icon + text already composited)
     let content = textureSample(t_content, s_sampler, input.uv);
     
+    // For selected items, replace the content color with the selection foreground color
+    // while preserving the alpha channel (which defines the shape of icons/text)
+    var final_content: vec4<f32>;
+    if (uniforms.is_selected > 0.5) {
+        // Use selection foreground color but keep original alpha
+        final_content = vec4<f32>(uniforms.fg_selected.rgb, content.a);
+    } else {
+        final_content = content;
+    }
+    
     // Blend content over background using alpha
-    return mix(bg, vec4<f32>(content.rgb, 1.0), content.a);
+    return mix(bg, vec4<f32>(final_content.rgb, 1.0), final_content.a);
 }

@@ -143,7 +143,7 @@ where
     Message: Clone + 'a,
 {
     use iced::widget::{center, mouse_area, opaque, stack};
-    
+
     stack![
         base.into(),
         opaque(

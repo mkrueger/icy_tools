@@ -41,6 +41,54 @@ sauce-dialog-date-label=Date:
 sauce-dialog-flags-label=Drapeaux:
 sauce-dialog-font-name=Police:
 
+sauce-unknown=Inconnu
+sauce-btn-formatted=Formaté
+sauce-btn-raw=Brut
+
+sauce-section-info=Informations SAUCE
+sauce-section-capabilities=Capacités
+sauce-section-comments=Commentaires
+sauce-section-raw-header=En-tête SAUCE Brut
+sauce-section-technical=Informations Techniques
+sauce-section-comment-lines=Lignes de Commentaire
+
+sauce-field-title=Titre
+sauce-field-author=Auteur
+sauce-field-group=Groupe
+sauce-field-date=Date
+sauce-field-type=Type
+sauce-field-file-size=Taille du Fichier
+sauce-field-format=Format
+sauce-field-columns=Colonnes
+sauce-field-lines=Lignes
+sauce-field-ice-colors=Couleurs iCE
+sauce-field-letter-spacing=Espacement des Lettres
+sauce-field-aspect-ratio=Rapport d'Aspect
+sauce-field-font=Police
+sauce-field-width=Largeur
+sauce-field-height=Hauteur
+sauce-field-pixel-depth=Profondeur de Pixels
+sauce-field-sample-rate=Fréquence d'Échantillonnage
+sauce-field-data-type=DataType
+sauce-field-file-type=FileType
+sauce-field-tinfo1=TInfo1
+sauce-field-tinfo2=TInfo2
+sauce-field-tinfo3=TInfo3
+sauce-field-tinfo4=TInfo4
+sauce-field-tflags=TFlags
+sauce-field-tinfos=TInfoS
+
+sauce-value-yes=Oui
+sauce-value-9px=9px
+sauce-value-legacy=Héritage
+sauce-value-none=Aucun
+sauce-value-executable=Exécutable
+sauce-value-bytes={ $count } octets
+sauce-value-lines={ $count } lignes
+sauce-value-pixels={ $count }px
+sauce-value-bpp={ $count }bpp
+sauce-value-hz={ $count } Hz
+
 help-dialog-title=Aide
 help-dialog-text=
     F1 - Aide 
@@ -65,3 +113,12 @@ label-sixteencolors_year= { $year } ({ $packs } paquets)
 settings-heading=Paramètres
 settings-reset_button=Réinitialiser
 settings-monitor-category=Moniteur
+
+preview-no-file-selected = Aucun fichier sélectionné
+preview-loading = Chargement...
+preview-error = Erreur: { $message }
+
+error-external-command-title = Échec de l'exécution de la commande externe
+error-external-command-message = Commande: { $command }
+
+    Erreur: { $error }

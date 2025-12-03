@@ -1,8 +1,6 @@
 use i18n_embed_fl::fl;
 use iced::Element;
-use icy_engine_gui::ui::{
-    HelpCategory, HelpDialogConfig, HelpShortcut, help_dialog_content, is_macos, modal, platform_mod_symbol,
-};
+use icy_engine_gui::ui::{HelpCategory, HelpDialogConfig, HelpShortcut, help_dialog_content, is_macos, modal, platform_mod_symbol};
 
 pub struct HelpDialog;
 
@@ -191,10 +189,6 @@ impl HelpDialog {
             ),
         ];
 
-        HelpDialogConfig::new(
-            fl!(crate::LANGUAGE_LOADER, "help-title"),
-            fl!(crate::LANGUAGE_LOADER, "help-subtitle"),
-        )
-        .with_categories(categories)
+        HelpDialogConfig::new(fl!(crate::LANGUAGE_LOADER, "help-title"), fl!(crate::LANGUAGE_LOADER, "help-subtitle")).with_categories(categories)
     }
 }

@@ -41,8 +41,8 @@ struct TileShaderProgramWrapper {
     tiles: Vec<TileTexture>,
     scroll_y: f32,
     content_height: f32,
-    viewport_height: f32,
-    selected_tile_id: Option<u64>,
+    _viewport_height: f32,
+    _selected_tile_id: Option<u64>,
     /// Shared hover state - updated by shader, read by click handler
     shared_hovered_tile: Arc<Mutex<Option<u64>>>,
     /// Background color from theme (shared)
@@ -290,12 +290,6 @@ impl TileGridView {
         self.viewport.max_scroll_y()
     }
 
-    /// Update content height and viewport
-    fn update_content_height(&mut self, height: f32) {
-        *self.content_height.borrow_mut() = height;
-        self.viewport.set_content_size(self.viewport.visible_width, height);
-    }
-
     /// Scroll by a delta amount (with smooth animation)
     pub fn scroll_by(&mut self, delta: f32) {
         // User is scrolling manually, stop auto-scroll
@@ -412,16 +406,6 @@ impl TileGridView {
     /// Get the number of visible (filtered) items
     pub fn visible_count(&self) -> usize {
         self.visible_indices.len()
-    }
-
-    /// Convert a visible index to the actual thumbnail index
-    fn visible_to_actual(&self, visible_index: usize) -> Option<usize> {
-        self.visible_indices.get(visible_index).copied()
-    }
-
-    /// Convert an actual thumbnail index to visible index
-    fn actual_to_visible(&self, actual_index: usize) -> Option<usize> {
-        self.visible_indices.iter().position(|&i| i == actual_index)
     }
 
     /// Set the items to display using item info tuples (path, label, is_container)
@@ -1407,11 +1391,6 @@ impl TileGridView {
     }
 
     /// Build shader view with given dimensions
-    fn view_shader(&self, width: f32) -> Element<'_, TileGridMessage> {
-        self.view_shader_with_size(width, 600.0) // Default height
-    }
-
-    /// Build shader view with given dimensions
     fn view_shader_with_size(&self, width: f32, height: f32) -> Element<'_, TileGridMessage> {
         // Recalculate layout if width changed
         self.recalculate_layout(width);
@@ -1503,8 +1482,8 @@ impl TileGridView {
             tiles,
             scroll_y: self.viewport.scroll_y,
             content_height,
-            viewport_height: height,
-            selected_tile_id: self.selected_index.and_then(|i| self.tile_ids.get(i).copied()),
+            _viewport_height: height,
+            _selected_tile_id: self.selected_index.and_then(|i| self.tile_ids.get(i).copied()),
             shared_hovered_tile: self.shared_hovered_tile.clone(),
             background_color: self.background_color.clone(),
         };

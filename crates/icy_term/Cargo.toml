@@ -16,7 +16,7 @@ mlua = { workspace = true }
 iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 
 # iced_aw = { workspace = true, features = ["menu"]  }
-clap-i18n-richformatter = { git = "https://github.com/mkrueger/clap-i18n-richformatter", branch="help" }
+clap-i18n-richformatter = { workspace = true }
 image = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

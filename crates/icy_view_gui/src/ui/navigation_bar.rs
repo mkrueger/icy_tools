@@ -225,7 +225,7 @@ impl NavigationBar {
 
         // Path input (editable)
         let is_valid = self.is_path_valid;
-        let path_input = text_input("Enter path or URL...", &self.path_input)
+        let path_input = text_input("Enter path…", &self.path_input)
             .on_input(NavigationBarMessage::PathChanged)
             .on_submit(NavigationBarMessage::PathSubmitted)
             .padding([6, 10])
@@ -234,7 +234,7 @@ impl NavigationBar {
             .style(move |theme, status| path_input_style(theme, status, is_valid));
 
         // Filter input
-        let filter_input = text_input("🔍 Filter...", &self.filter)
+        let filter_input = text_input("🔍 Filter…", &self.filter)
             .on_input(NavigationBarMessage::FilterChanged)
             .padding([6, 10])
             .size(13)

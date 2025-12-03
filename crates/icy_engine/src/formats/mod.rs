@@ -71,7 +71,7 @@ pub struct SaveOptions {
 
     pub screen_preparation: ScreenPreperation,
     pub modern_terminal_output: bool,
-    
+
     #[serde(skip)]
     pub save_sauce: Option<SauceRecord>,
 
@@ -190,8 +190,8 @@ impl LoadData {
     }
 }
 
-use icy_sauce::prelude::*;
 use crate::{IceMode, TextBuffer, limits};
+use icy_sauce::prelude::*;
 
 /// Apply SAUCE record settings directly to a TextBuffer.
 /// This is used by formats that don't use TextScreen (like bin, xbinary, etc.)
@@ -217,7 +217,7 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
                 buf.set_width(width);
                 buf.terminal_state.set_width(width);
             }
-            
+
             if lines > 0 {
                 let height = (lines as i32).min(limits::MAX_BUFFER_HEIGHT);
                 buf.set_height(height);

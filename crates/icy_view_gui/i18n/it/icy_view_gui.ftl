@@ -41,6 +41,54 @@ sauce-dialog-date-label=Data:
 sauce-dialog-flags-label=Flag:
 sauce-dialog-font-name=Font:
 
+sauce-unknown=Sconosciuto
+sauce-btn-formatted=Formattato
+sauce-btn-raw=Grezzo
+
+sauce-section-info=Informazioni SAUCE
+sauce-section-capabilities=Capacità
+sauce-section-comments=Commenti
+sauce-section-raw-header=Intestazione SAUCE Grezza
+sauce-section-technical=Informazioni Tecniche
+sauce-section-comment-lines=Righe di Commento
+
+sauce-field-title=Titolo
+sauce-field-author=Autore
+sauce-field-group=Gruppo
+sauce-field-date=Data
+sauce-field-type=Tipo
+sauce-field-file-size=Dimensione File
+sauce-field-format=Formato
+sauce-field-columns=Colonne
+sauce-field-lines=Righe
+sauce-field-ice-colors=Colori iCE
+sauce-field-letter-spacing=Spaziatura Lettere
+sauce-field-aspect-ratio=Rapporto d'Aspetto
+sauce-field-font=Font
+sauce-field-width=Larghezza
+sauce-field-height=Altezza
+sauce-field-pixel-depth=Profondità Pixel
+sauce-field-sample-rate=Frequenza di Campionamento
+sauce-field-data-type=DataType
+sauce-field-file-type=FileType
+sauce-field-tinfo1=TInfo1
+sauce-field-tinfo2=TInfo2
+sauce-field-tinfo3=TInfo3
+sauce-field-tinfo4=TInfo4
+sauce-field-tflags=TFlags
+sauce-field-tinfos=TInfoS
+
+sauce-value-yes=Sì
+sauce-value-9px=9px
+sauce-value-legacy=Legacy
+sauce-value-none=Nessuno
+sauce-value-executable=Eseguibile
+sauce-value-bytes={ $count } byte
+sauce-value-lines={ $count } righe
+sauce-value-pixels={ $count }px
+sauce-value-bpp={ $count }bpp
+sauce-value-hz={ $count } Hz
+
 help-dialog-title=Aiuto
 help-dialog-text=
     F1 - Aiuto
@@ -65,3 +113,12 @@ label-sixteencolors_year= { $year } ({ $packs } pacchetti)
 settings-heading=Impostazioni 
 settings-reset_button=Reimposta
 settings-monitor-category=Monitor
+
+preview-no-file-selected = Nessun file selezionato
+preview-loading = Caricamento...
+preview-error = Errore: { $message }
+
+error-external-command-title = Impossibile eseguire il comando esterno
+error-external-command-message = Comando: { $command }
+
+    Errore: { $error }

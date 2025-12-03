@@ -41,6 +41,54 @@ sauce-dialog-date-label=Datum:
 sauce-dialog-flags-label=Flags:
 sauce-dialog-font-name=Font:
 
+sauce-unknown=Unbekannt
+sauce-btn-formatted=Formatiert
+sauce-btn-raw=Rohdaten
+
+sauce-section-info=SAUCE-Informationen
+sauce-section-capabilities=Fähigkeiten
+sauce-section-comments=Kommentare
+sauce-section-raw-header=Roher SAUCE-Header
+sauce-section-technical=Technische Infos
+sauce-section-comment-lines=Kommentarzeilen
+
+sauce-field-title=Titel
+sauce-field-author=Autor
+sauce-field-group=Gruppe
+sauce-field-date=Datum
+sauce-field-type=Typ
+sauce-field-file-size=Dateigröße
+sauce-field-format=Format
+sauce-field-columns=Spalten
+sauce-field-lines=Zeilen
+sauce-field-ice-colors=iCE-Farben
+sauce-field-letter-spacing=Buchstabenabstand
+sauce-field-aspect-ratio=Seitenverhältnis
+sauce-field-font=Schriftart
+sauce-field-width=Breite
+sauce-field-height=Höhe
+sauce-field-pixel-depth=Farbtiefe
+sauce-field-sample-rate=Abtastrate
+sauce-field-data-type=DataType
+sauce-field-file-type=FileType
+sauce-field-tinfo1=TInfo1
+sauce-field-tinfo2=TInfo2
+sauce-field-tinfo3=TInfo3
+sauce-field-tinfo4=TInfo4
+sauce-field-tflags=TFlags
+sauce-field-tinfos=TInfoS
+
+sauce-value-yes=Ja
+sauce-value-9px=9px
+sauce-value-legacy=Legacy
+sauce-value-none=Keine
+sauce-value-executable=Ausführbar
+sauce-value-bytes={ $count } Bytes
+sauce-value-lines={ $count } Zeilen
+sauce-value-pixels={ $count }px
+sauce-value-bpp={ $count }bpp
+sauce-value-hz={ $count } Hz
+
 help-dialog-title=Hilfe
 help-dialog-text=
     F1 - Hilfe
@@ -86,3 +134,12 @@ settings-commands-description = %F wird durch den Dateinamen ersetzt
 
 export-no-file-selected = Keine Datei zum Exportieren ausgewählt
 export-success = Exportiert nach { $path }
+
+preview-no-file-selected = Keine Datei ausgewählt
+preview-loading = Wird geladen...
+preview-error = Fehler: { $message }
+
+error-external-command-title = Externer Befehl fehlgeschlagen
+error-external-command-message = Befehl: { $command }
+
+    Fehler: { $error }

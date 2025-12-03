@@ -11,6 +11,9 @@ pub use scrollbar_state::*;
 pub mod scrollbar_overlay;
 pub use scrollbar_overlay::*;
 
+pub mod horizontal_scrollbar_overlay;
+pub use horizontal_scrollbar_overlay::*;
+
 pub mod terminal_shader;
 pub use terminal_shader::*;
 

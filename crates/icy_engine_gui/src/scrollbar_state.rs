@@ -1,6 +1,6 @@
 //! macOS-style overlay scrollbar state tracking
 //!
-//! This module provides state management for an overlay scrollbar with animation.
+//! This module provides state management for overlay scrollbars (vertical and horizontal) with animation.
 //! The actual rendering should be integrated into your custom widget implementation.
 
 use std::time::{Duration, Instant};
@@ -8,8 +8,10 @@ use std::time::{Duration, Instant};
 /// State for tracking scrollbar animation and interaction
 #[derive(Debug)]
 pub struct ScrollbarState {
-    /// Current scroll position (0.0 to 1.0)
+    /// Current vertical scroll position (0.0 to 1.0)
     pub scroll_position: f32,
+    /// Current horizontal scroll position (0.0 to 1.0)
+    pub scroll_position_x: f32,
     /// Last time the scrollbar was interacted with
     pub last_interaction: Option<Instant>,
     /// Whether the scrollbar is currently being dragged
@@ -34,6 +36,7 @@ impl Default for ScrollbarState {
     fn default() -> Self {
         Self {
             scroll_position: 0.0,
+            scroll_position_x: 0.0,
             last_interaction: None,
             is_dragging: false,
             is_hovered: false,
@@ -142,6 +145,14 @@ impl ScrollbarState {
         let new_pos = position.clamp(0.0, 1.0);
         if (self.scroll_position - new_pos).abs() > 0.001 {
             self.scroll_position = new_pos;
+        }
+    }
+
+    /// Set horizontal scroll position from external source (e.g., viewport)
+    pub fn set_scroll_position_x(&mut self, position: f32) {
+        let new_pos = position.clamp(0.0, 1.0);
+        if (self.scroll_position_x - new_pos).abs() > 0.001 {
+            self.scroll_position_x = new_pos;
         }
     }
 

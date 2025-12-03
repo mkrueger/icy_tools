@@ -1,3 +1,4 @@
+use i18n_embed_fl::fl;
 use iced::{
     Alignment, Color, Element, Length, Theme,
     widget::{Space, column, container, row, scrollable, text, text_input},
@@ -145,7 +146,7 @@ impl SauceDialog {
         if date_str.len() == 8 && date_str != "00000000" {
             format!("{}-{}-{}", &date_str[0..4], &date_str[4..6], &date_str[6..8])
         } else if date_str.is_empty() || date_str == "00000000" {
-            "Unknown".to_string()
+            fl!(crate::LANGUAGE_LOADER, "sauce-unknown")
         } else {
             date_str.to_string()
         }
@@ -159,9 +160,16 @@ impl SauceDialog {
         };
 
         // Buttons
-        let raw_btn = secondary_button(if self.show_raw { "Formatted" } else { "Raw" }, Some(on_message(SauceDialogMessage::ToggleRaw)));
+        let raw_btn = secondary_button(
+            if self.show_raw {
+                fl!(crate::LANGUAGE_LOADER, "sauce-btn-formatted")
+            } else {
+                fl!(crate::LANGUAGE_LOADER, "sauce-btn-raw")
+            },
+            Some(on_message(SauceDialogMessage::ToggleRaw)),
+        );
 
-        let ok_btn = primary_button("OK", Some(on_message(SauceDialogMessage::Close)));
+        let ok_btn = primary_button(fl!(crate::LANGUAGE_LOADER, "button-ok"), Some(on_message(SauceDialogMessage::Close)));
 
         let buttons = button_row_with_left(vec![raw_btn.into()], vec![ok_btn.into()]);
 
@@ -183,13 +191,9 @@ impl SauceDialog {
 
     fn create_comments_box<'a, Message: Clone + 'static>(comments_text: &str) -> Element<'a, Message> {
         container(
-            scrollable(
-                container(text(comments_text.to_string()).size(TEXT_SIZE_NORMAL))
-                    .width(Length::Fill)
-                    .padding(6),
-            )
-            .height(Length::Fixed(80.0))
-            .width(Length::Fill),
+            scrollable(container(text(comments_text.to_string()).size(TEXT_SIZE_NORMAL)).width(Length::Fill).padding(6))
+                .height(Length::Fixed(80.0))
+                .width(Length::Fill),
         )
         .style(|theme: &Theme| {
             let palette = theme.extended_palette();
@@ -215,30 +219,48 @@ impl SauceDialog {
         let title = self.sauce.title().to_string();
         let title = title.trim();
         if !title.is_empty() {
-            basic_fields.push(Self::create_field_with_style("Title", title, SauceFieldColor::Title));
+            basic_fields.push(Self::create_field_with_style(
+                &fl!(crate::LANGUAGE_LOADER, "sauce-field-title"),
+                title,
+                SauceFieldColor::Title,
+            ));
         }
 
         let author = self.sauce.author().to_string();
         let author = author.trim();
         if !author.is_empty() {
-            basic_fields.push(Self::create_field_with_style("Author", author, SauceFieldColor::Author));
+            basic_fields.push(Self::create_field_with_style(
+                &fl!(crate::LANGUAGE_LOADER, "sauce-field-author"),
+                author,
+                SauceFieldColor::Author,
+            ));
         }
 
         let group = self.sauce.group().to_string();
         let group = group.trim();
         if !group.is_empty() {
-            basic_fields.push(Self::create_field_with_style("Group", group, SauceFieldColor::Group));
+            basic_fields.push(Self::create_field_with_style(
+                &fl!(crate::LANGUAGE_LOADER, "sauce-field-group"),
+                group,
+                SauceFieldColor::Group,
+            ));
         }
 
-        basic_fields.push(Self::create_field("Date", &self.format_date()));
+        basic_fields.push(Self::create_field(&fl!(crate::LANGUAGE_LOADER, "sauce-field-date"), &self.format_date()));
 
         let data_type = self.sauce.data_type();
-        basic_fields.push(Self::create_field("Type", &format!("{:?}", data_type)));
+        basic_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-type"),
+            &format!("{:?}", data_type),
+        ));
 
-        basic_fields.push(Self::create_field("File Size", &format!("{} bytes", self.sauce.file_size())));
+        basic_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-file-size"),
+            &fl!(crate::LANGUAGE_LOADER, "sauce-value-bytes", count = self.sauce.file_size()),
+        ));
 
         if !basic_fields.is_empty() {
-            sections.push(section_header("SAUCE Information".to_string()));
+            sections.push(section_header(fl!(crate::LANGUAGE_LOADER, "sauce-section-info")));
             let mut basic_content = column![].spacing(FIELD_SPACING);
             for field in basic_fields {
                 basic_content = basic_content.push(field);
@@ -251,7 +273,7 @@ impl SauceDialog {
             let caps_content = self.format_capabilities(&caps);
             if !caps_content.is_empty() {
                 sections.push(Space::new().height(DIALOG_SPACING).into());
-                sections.push(section_header("Capabilities".to_string()));
+                sections.push(section_header(fl!(crate::LANGUAGE_LOADER, "sauce-section-capabilities")));
                 let mut caps_column = column![].spacing(FIELD_SPACING);
                 for field in caps_content {
                     caps_column = caps_column.push(field);
@@ -274,7 +296,7 @@ impl SauceDialog {
             let comments_text = comments_text.trim();
             if !comments_text.is_empty() {
                 sections.push(Space::new().height(DIALOG_SPACING).into());
-                sections.push(section_header("Comments".to_string()));
+                sections.push(section_header(fl!(crate::LANGUAGE_LOADER, "sauce-section-comments")));
                 sections.push(Self::create_comments_box(comments_text));
             }
         }
@@ -287,91 +309,156 @@ impl SauceDialog {
 
         match caps {
             Capabilities::Character(char_caps) => {
-                fields.push(Self::create_field("Format", &format!("{:?}", char_caps.format)));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-format"),
+                    &format!("{:?}", char_caps.format),
+                ));
 
                 if char_caps.columns > 0 {
-                    fields.push(Self::create_field("Columns", &char_caps.columns.to_string()));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-columns"),
+                        &char_caps.columns.to_string(),
+                    ));
                 }
                 if char_caps.lines > 0 {
-                    fields.push(Self::create_field("Lines", &char_caps.lines.to_string()));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-lines"),
+                        &char_caps.lines.to_string(),
+                    ));
                 }
 
                 if char_caps.ice_colors {
-                    fields.push(Self::create_field_with_style("iCE Colors", "Yes", SauceFieldColor::IceColors));
+                    fields.push(Self::create_field_with_style(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-ice-colors"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-yes"),
+                        SauceFieldColor::IceColors,
+                    ));
                 }
 
                 if char_caps.letter_spacing.use_letter_spacing() {
-                    fields.push(Self::create_field("Letter Spacing", "9px"));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-letter-spacing"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-9px"),
+                    ));
                 }
 
                 if char_caps.aspect_ratio.use_aspect_ratio() {
-                    fields.push(Self::create_field("Aspect Ratio", "Legacy"));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-aspect-ratio"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-legacy"),
+                    ));
                 }
 
                 if let Some(font) = char_caps.font() {
                     let font_str = font.to_string();
                     let font_str = font_str.trim();
                     if !font_str.is_empty() {
-                        fields.push(Self::create_field("Font", font_str));
+                        fields.push(Self::create_field(&fl!(crate::LANGUAGE_LOADER, "sauce-field-font"), font_str));
                     }
                 }
             }
             Capabilities::Binary(bin_caps) => {
-                fields.push(Self::create_field("Format", &format!("{:?}", bin_caps.format)));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-format"),
+                    &format!("{:?}", bin_caps.format),
+                ));
 
                 if bin_caps.columns > 0 {
-                    fields.push(Self::create_field("Columns", &bin_caps.columns.to_string()));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-columns"),
+                        &bin_caps.columns.to_string(),
+                    ));
                 }
                 if bin_caps.lines > 0 {
-                    fields.push(Self::create_field("Lines", &bin_caps.lines.to_string()));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-lines"),
+                        &bin_caps.lines.to_string(),
+                    ));
                 }
 
                 if bin_caps.ice_colors {
-                    fields.push(Self::create_field_with_style("iCE Colors", "Yes", SauceFieldColor::IceColors));
+                    fields.push(Self::create_field_with_style(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-ice-colors"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-yes"),
+                        SauceFieldColor::IceColors,
+                    ));
                 }
 
                 if bin_caps.letter_spacing.use_letter_spacing() {
-                    fields.push(Self::create_field("Letter Spacing", "9px"));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-letter-spacing"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-9px"),
+                    ));
                 }
 
                 if bin_caps.aspect_ratio.use_aspect_ratio() {
-                    fields.push(Self::create_field("Aspect Ratio", "Legacy"));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-aspect-ratio"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-legacy"),
+                    ));
                 }
 
                 if let Some(font) = bin_caps.font() {
                     let font_str = font.to_string();
                     let font_str = font_str.trim();
                     if !font_str.is_empty() {
-                        fields.push(Self::create_field("Font", font_str));
+                        fields.push(Self::create_field(&fl!(crate::LANGUAGE_LOADER, "sauce-field-font"), font_str));
                     }
                 }
             }
             Capabilities::Vector(vec_caps) => {
-                fields.push(Self::create_field("Format", &format!("{:?}", vec_caps.format)));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-format"),
+                    &format!("{:?}", vec_caps.format),
+                ));
             }
             Capabilities::Bitmap(bmp_caps) => {
-                fields.push(Self::create_field("Format", &format!("{:?}", bmp_caps.format)));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-format"),
+                    &format!("{:?}", bmp_caps.format),
+                ));
                 if bmp_caps.width > 0 {
-                    fields.push(Self::create_field("Width", &format!("{}px", bmp_caps.width)));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-width"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-pixels", count = bmp_caps.width),
+                    ));
                 }
                 if bmp_caps.height > 0 {
-                    fields.push(Self::create_field("Height", &format!("{}px", bmp_caps.height)));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-height"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-pixels", count = bmp_caps.height),
+                    ));
                 }
                 if bmp_caps.pixel_depth > 0 {
-                    fields.push(Self::create_field("Pixel Depth", &format!("{}bpp", bmp_caps.pixel_depth)));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-pixel-depth"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-bpp", count = bmp_caps.pixel_depth),
+                    ));
                 }
             }
             Capabilities::Audio(audio_caps) => {
-                fields.push(Self::create_field("Format", &format!("{:?}", audio_caps.format)));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-format"),
+                    &format!("{:?}", audio_caps.format),
+                ));
                 if audio_caps.sample_rate > 0 {
-                    fields.push(Self::create_field("Sample Rate", &format!("{} Hz", audio_caps.sample_rate)));
+                    fields.push(Self::create_field(
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-field-sample-rate"),
+                        &fl!(crate::LANGUAGE_LOADER, "sauce-value-hz", count = audio_caps.sample_rate),
+                    ));
                 }
             }
             Capabilities::Archive(arch_caps) => {
-                fields.push(Self::create_field("Format", &format!("{:?}", arch_caps.format)));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-format"),
+                    &format!("{:?}", arch_caps.format),
+                ));
             }
             Capabilities::Executable(_) => {
-                fields.push(Self::create_field("Type", "Executable"));
+                fields.push(Self::create_field(
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-field-type"),
+                    &fl!(crate::LANGUAGE_LOADER, "sauce-value-executable"),
+                ));
             }
         }
 
@@ -381,14 +468,26 @@ impl SauceDialog {
     fn create_raw_content<'a, Message: Clone + 'static>(&self) -> Element<'a, Message> {
         let mut sections: Vec<Element<'a, Message>> = Vec::new();
 
-        sections.push(section_header("Raw SAUCE Header".to_string()));
+        sections.push(section_header(fl!(crate::LANGUAGE_LOADER, "sauce-section-raw-header")));
 
         // Display raw header fields
         let mut header_fields: Vec<Element<'a, Message>> = Vec::new();
-        header_fields.push(Self::create_field("Title", self.sauce.title().to_string().trim()));
-        header_fields.push(Self::create_field("Author", self.sauce.author().to_string().trim()));
-        header_fields.push(Self::create_field("Group", self.sauce.group().to_string().trim()));
-        header_fields.push(Self::create_field("Date", &self.sauce.date().to_string()));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-title"),
+            self.sauce.title().to_string().trim(),
+        ));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-author"),
+            self.sauce.author().to_string().trim(),
+        ));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-group"),
+            self.sauce.group().to_string().trim(),
+        ));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-date"),
+            &self.sauce.date().to_string(),
+        ));
 
         // Get raw header for numeric fields
         let header = self.sauce.header();
@@ -396,13 +495,22 @@ impl SauceDialog {
 
         // DataType as number with description
         let data_type_num: u8 = header.data_type.into();
-        header_fields.push(Self::create_field("DataType", &format!("{} ({:?})", data_type_num, data_type)));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-data-type"),
+            &format!("{} ({:?})", data_type_num, data_type),
+        ));
 
         // FileType as number with description
         let file_type_desc = self.get_file_type_description(data_type, header.file_type);
-        header_fields.push(Self::create_field("FileType", &format!("{} ({})", header.file_type, file_type_desc)));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-file-type"),
+            &format!("{} ({})", header.file_type, file_type_desc),
+        ));
 
-        header_fields.push(Self::create_field("FileSize", &self.sauce.file_size().to_string()));
+        header_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-file-size"),
+            &self.sauce.file_size().to_string(),
+        ));
 
         let mut header_column = column![].spacing(FIELD_SPACING);
         for field in header_fields {
@@ -411,26 +519,49 @@ impl SauceDialog {
         sections.push(header_column.into());
 
         sections.push(Space::new().height(DIALOG_SPACING).into());
-        sections.push(section_header("Technical Info".to_string()));
+        sections.push(section_header(fl!(crate::LANGUAGE_LOADER, "sauce-section-technical")));
 
         // Raw TInfo fields as numbers
         let mut tech_fields: Vec<Element<'a, Message>> = Vec::new();
-        tech_fields.push(Self::create_field("TInfo1", &header.t_info1.to_string()));
-        tech_fields.push(Self::create_field("TInfo2", &header.t_info2.to_string()));
-        tech_fields.push(Self::create_field("TInfo3", &header.t_info3.to_string()));
-        tech_fields.push(Self::create_field("TInfo4", &header.t_info4.to_string()));
+        tech_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-tinfo1"),
+            &header.t_info1.to_string(),
+        ));
+        tech_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-tinfo2"),
+            &header.t_info2.to_string(),
+        ));
+        tech_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-tinfo3"),
+            &header.t_info3.to_string(),
+        ));
+        tech_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-tinfo4"),
+            &header.t_info4.to_string(),
+        ));
 
         // TFlags as binary bit field
-        tech_fields.push(Self::create_field("TFlags", &format!("0x{:02X} (0b{:08b})", header.t_flags, header.t_flags)));
+        tech_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-field-tflags"),
+            &format!("0x{:02X} (0b{:08b})", header.t_flags, header.t_flags),
+        ));
 
         // TInfoS - show the string or "None"
         let tinfos = header.t_info_s.to_string();
         let tinfos = tinfos.trim();
-        tech_fields.push(Self::create_field("TInfoS", if tinfos.is_empty() { "None" } else { tinfos }));
+        let tinfos_display = if tinfos.is_empty() {
+            fl!(crate::LANGUAGE_LOADER, "sauce-value-none")
+        } else {
+            tinfos.to_string()
+        };
+        tech_fields.push(Self::create_field(&fl!(crate::LANGUAGE_LOADER, "sauce-field-tinfos"), &tinfos_display));
 
         // Comments count
         let comment_count = self.sauce.comments().len();
-        tech_fields.push(Self::create_field("Comments", &format!("{} lines", comment_count)));
+        tech_fields.push(Self::create_field(
+            &fl!(crate::LANGUAGE_LOADER, "sauce-section-comments"),
+            &fl!(crate::LANGUAGE_LOADER, "sauce-value-lines", count = comment_count),
+        ));
 
         let mut tech_column = column![].spacing(FIELD_SPACING);
         for field in tech_fields {
@@ -450,7 +581,7 @@ impl SauceDialog {
             let comments_text = comments_text.trim_end();
             if !comments_text.is_empty() {
                 sections.push(Space::new().height(DIALOG_SPACING).into());
-                sections.push(section_header("Comment Lines".to_string()));
+                sections.push(section_header(fl!(crate::LANGUAGE_LOADER, "sauce-section-comment-lines")));
                 sections.push(Self::create_comments_box(comments_text));
             }
         }

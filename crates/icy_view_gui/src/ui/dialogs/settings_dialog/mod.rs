@@ -128,10 +128,7 @@ impl SettingsDialogState {
             }
             SettingsMessage::BrowseExportPath => {
                 let mut opt = self.temp_options.lock();
-                if let Some(folder) = rfd::FileDialog::new()
-                    .set_directory(opt.export_path())
-                    .pick_folder()
-                {
+                if let Some(folder) = rfd::FileDialog::new().set_directory(opt.export_path()).pick_folder() {
                     opt.export_path = folder.to_string_lossy().to_string();
                 }
                 None

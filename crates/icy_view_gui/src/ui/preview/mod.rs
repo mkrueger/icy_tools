@@ -8,10 +8,4 @@ mod preview_view;
 mod view_thread;
 
 pub use preview_view::{PreviewMessage, PreviewMode, PreviewView};
-pub use view_thread::{
-    ScrollMode,
-    ViewCommand,
-    ViewEvent,
-    create_view_thread,
-    prepare_parser_data,
-};
+pub use view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread, prepare_parser_data};

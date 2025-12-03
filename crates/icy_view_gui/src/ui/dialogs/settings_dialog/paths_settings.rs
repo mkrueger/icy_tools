@@ -78,7 +78,6 @@ pub fn paths_settings_content(export_path: String) -> Element<'static, crate::ui
             .spacing(DIALOG_SPACING)
             .into()
         ),
-
     ]
     .spacing(0);
 

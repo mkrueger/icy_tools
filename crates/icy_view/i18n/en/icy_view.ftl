@@ -1,14 +1,8 @@
 # IcyView main application translations
 
-app-title = IcyView
+app-about = A viewer for ANSI art, ASCII art and other text-based artwork
 
-menu-file = File
-menu-file-open = Open
-menu-file-close = Close Window
-menu-file-quit = Quit
-
-menu-view = View
-menu-view-fullscreen = Fullscreen
-
-menu-help = Help
-menu-help-about = About IcyView
+# Command line arguments
+arg-path-help = Path to file or directory to open
+arg-auto-help = Enable auto-scrolling animation
+arg-bps-help = Baud rate emulation (e.g., 9600, 19200, 38400)

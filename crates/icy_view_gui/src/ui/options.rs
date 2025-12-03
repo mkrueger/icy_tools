@@ -39,7 +39,7 @@ impl ScrollSpeed {
         }
     }
 
-    pub(crate) fn next(&self) -> ScrollSpeed {
+    pub(crate) fn _next(&self) -> ScrollSpeed {
         match self {
             ScrollSpeed::Slow => ScrollSpeed::Medium,
             ScrollSpeed::Medium => ScrollSpeed::Fast,

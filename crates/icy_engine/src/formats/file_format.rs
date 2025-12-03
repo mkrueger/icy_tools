@@ -781,6 +781,32 @@ impl FileFormat {
             anyhow::bail!("Format '{}' does not support saving", self.name())
         }
     }
+
+    /// Check if this format is supported for viewing/loading.
+    ///
+    /// A format is considered supported if it either:
+    /// - Uses a streaming parser (can be played back with baud emulation)
+    /// - Has a loader via `output_format()` (can be loaded directly)
+    ///
+    /// # Returns
+    /// `true` if the format can be loaded/viewed, `false` otherwise.
+    ///
+    /// # Example
+    /// ```
+    /// use icy_engine::formats::FileFormat;
+    ///
+    /// // ANSI files are supported (parser-based)
+    /// assert!(FileFormat::Ansi.is_supported());
+    ///
+    /// // XBin files are supported (direct load)
+    /// assert!(FileFormat::XBin.is_supported());
+    ///
+    /// // Archives are not directly viewable
+    /// assert!(!FileFormat::Archive(unarc_rs::unified::ArchiveFormat::Zip).is_supported());
+    /// ```
+    pub fn is_supported(&self) -> bool {
+        self.uses_parser() || self.output_format().is_some()
+    }
 }
 
 impl std::fmt::Display for FileFormat {

@@ -210,7 +210,6 @@ fn repair_sauce_data(sauce: &SauceRecord) -> SauceRecord {
     sauce.clone()
 }
 
-
 /// Cancellable sleep - returns true if cancelled, false if completed normally
 async fn cancellable_sleep(duration: tokio::time::Duration, cancel_token: &CancellationToken) -> bool {
     tokio::select! {
@@ -496,7 +495,7 @@ impl ViewThread {
 
                 // Initialize screen for this mode - replaces the entire screen
                 let parser = self.init_screen_for_mode(mode, emulation);
-                
+
                 // Apply SAUCE width if available (using repaired sauce data)
                 // This must be done after init_screen_for_mode but before parsing
                 if let Some(sauce) = &repaired_sauce_opt {
@@ -505,7 +504,7 @@ impl ViewThread {
                         editable.apply_sauce(sauce);
                     }
                 }
-                
+
                 // Prepare data: strip BOM and crop at EOF marker
                 let (file_data, is_unicode) = prepare_parser_data(stripped_data, &ext);
 
@@ -587,8 +586,8 @@ impl ViewThread {
                 editable.apply_sauce(sauce);
             }
         }
-        
-         if let Some(sauce) = &repaired_sauce_opt {
+
+        if let Some(sauce) = &repaired_sauce_opt {
             let mut screen = self.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 editable.apply_sauce(sauce);

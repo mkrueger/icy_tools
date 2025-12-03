@@ -13,6 +13,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use clap_i18n_richformatter::clap_i18n;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use iced::Settings;
 use lazy_static::lazy_static;
@@ -53,17 +54,19 @@ static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::n
 });
 
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-pub struct Cli {
+#[command(version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "app-about"), long_about = None)]
+#[clap_i18n]
+pub struct Args {
     /// Path to file or directory to open
+    #[arg(value_name = "PATH", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-path-help"))]
     path: Option<PathBuf>,
 
     /// Enable auto-scrolling
-    #[clap(long, default_value_t = false)]
+    #[clap(long, default_value_t = false, help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-auto-help"))]
     auto: bool,
 
     /// Baud rate emulation (e.g., 9600, 19200, 38400)
-    #[clap(long)]
+    #[clap(long, value_name = "RATE", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-bps-help"))]
     bps: Option<u32>,
 }
 
@@ -79,7 +82,7 @@ fn get_log_dir() -> Option<PathBuf> {
 }
 
 fn main() {
-    let args = Cli::parse();
+    let args = Args::parse_i18n_or_exit();
 
     if let Some(log_dir) = get_log_dir() {
         let _logger = Logger::try_with_env_or_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error")
