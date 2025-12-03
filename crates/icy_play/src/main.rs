@@ -195,7 +195,7 @@ fn show_buffer(
     opt.lossles_output = true;
     opt.skip_lines = Some(skip_lines);
     opt.alt_rgb = cli.utf8;
-    opt.save_sauce = false;
+    opt.save_sauce = None;
     opt.always_use_rgb = cli.utf8;
 
     if matches!(terminal, Terminal::IcyTerm) {

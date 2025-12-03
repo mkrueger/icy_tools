@@ -114,8 +114,8 @@ impl OutputFormat for IceDraw {
 
         // palette
         result.extend(buf.palette.as_vec_63());
-        if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::BinaryText, icy_sauce::CharacterFormat::Unknown(0), &mut result)?;
+        if let Some(sauce) = &options.save_sauce {
+            sauce.write(&mut result)?;
         }
         Ok(result)
     }
@@ -209,10 +209,6 @@ impl OutputFormat for IceDraw {
 pub fn get_save_sauce_default_idf(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
-    }
-
-    if buf.has_sauce() {
-        return (true, String::new());
     }
 
     (false, String::new())

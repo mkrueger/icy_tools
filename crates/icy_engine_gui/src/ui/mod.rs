@@ -10,6 +10,12 @@ pub use confirmation_dialog::*;
 mod toast;
 pub use toast::*;
 
+mod export_dialog;
+pub use export_dialog::*;
+
+mod help_dialog;
+pub use help_dialog::*;
+
 // Button styling
 pub const BUTTON_FONT_SIZE: f32 = 14.0;
 pub const BUTTON_BORDER_WIDTH: f32 = 1.0;
@@ -128,6 +134,28 @@ pub fn modal_overlay<'a, Message: 'a + Clone>(background: Element<'a, Message>, 
     ])
     .width(Length::Fill)
     .height(Length::Fill)
+    .into()
+}
+
+/// Create a modal dialog overlay with a semi-transparent background that closes on click outside
+pub fn modal<'a, Message>(base: impl Into<Element<'a, Message>>, content: impl Into<Element<'a, Message>>, on_blur: Message) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    use iced::widget::{center, mouse_area, opaque, stack};
+    
+    stack![
+        base.into(),
+        opaque(
+            mouse_area(center(opaque(content)).style(|_theme| {
+                container::Style {
+                    background: Some(Color { a: 0.8, ..Color::BLACK }.into()),
+                    ..container::Style::default()
+                }
+            }))
+            .on_press(on_blur)
+        )
+    ]
     .into()
 }
 

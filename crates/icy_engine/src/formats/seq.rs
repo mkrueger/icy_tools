@@ -51,7 +51,7 @@ impl OutputFormat for Seq {
         result.buffer.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         if let Some(sauce) = load_data.sauce_opt {
-            result.buffer.load_sauce(sauce);
+            result.apply_sauce(&sauce);
         }
 
         result.caret.set_foreground(14);

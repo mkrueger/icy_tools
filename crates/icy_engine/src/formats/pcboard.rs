@@ -115,8 +115,8 @@ impl OutputFormat for PCBoard {
             result.extend_from_slice(b"\x1b[u");
         }
 
-        if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::CharacterFormat::PCBoard, &mut result)?;
+        if let Some(sauce) = &options.save_sauce {
+            sauce.write(&mut result)?;
         }
         Ok(result)
     }
@@ -128,8 +128,8 @@ impl OutputFormat for PCBoard {
 
         result.terminal_state_mut().is_terminal_buffer = false;
         result.buffer.file_name = Some(file_name.into());
-        if let Some(sauce) = load_data.sauce_opt {
-            result.buffer.load_sauce(sauce);
+        if let Some(sauce) = &load_data.sauce_opt {
+            result.apply_sauce(sauce);
         }
 
         /*
@@ -153,10 +153,6 @@ impl OutputFormat for PCBoard {
 pub fn get_save_sauce_default_pcb(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
-    }
-
-    if buf.has_sauce() {
-        return (true, String::new());
     }
 
     (false, String::new())

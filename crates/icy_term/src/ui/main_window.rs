@@ -15,7 +15,7 @@ use crate::{
     ui::{
         Message,
         dialogs::{find_dialog, terminal_info_dialog},
-        export_screen_dialog,
+        export_screen_dialog::{self, ExportDialogExt, ExportDialogState},
         up_download_dialog::{self, FileTransferDialogState},
     },
 };
@@ -65,7 +65,7 @@ pub struct MainWindow {
     pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
     pub terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog,
     pub find_dialog: find_dialog::DialogState,
-    pub export_dialog: export_screen_dialog::ExportScreenDialogState,
+    pub export_dialog: ExportDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
     pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
     pub open_serial_dialog: super::open_serial_dialog::OpenSerialDialog,
@@ -144,7 +144,7 @@ impl MainWindow {
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
             terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog::new(super::terminal_info_dialog::TerminalInfo::default()),
             find_dialog: find_dialog::DialogState::new(),
-            export_dialog: export_screen_dialog::ExportScreenDialogState::new(
+            export_dialog: export_screen_dialog::new_export_dialog(
                 default_export_path.to_string_lossy().to_string(),
                 icy_engine::BufferType::CP437, // Default, will be updated when dialog is shown
             ),
@@ -578,12 +578,12 @@ impl MainWindow {
                     .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
                     .join("export.icy");
-                self.export_dialog = export_screen_dialog::ExportScreenDialogState::new(default_export_path.to_string_lossy().to_string(), buffer_type);
+                self.export_dialog = export_screen_dialog::new_export_dialog(default_export_path.to_string_lossy().to_string(), buffer_type);
                 self.state.mode = MainWindowMode::ShowExportDialog;
                 Task::none()
             }
             Message::ExportDialog(msg) => {
-                if let Some(response) = self.export_dialog.update(msg, self.terminal_window.terminal.screen.clone()) {
+                if let Some(response) = self.export_dialog.update_icy_term(msg, self.terminal_window.terminal.screen.clone()) {
                     match response {
                         Message::CloseDialog(mode) => {
                             self.state.mode = *mode;
@@ -1397,7 +1397,7 @@ impl MainWindow {
             }
             MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, terminal_view),
             MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(terminal_view),
-            MainWindowMode::ShowExportDialog => self.export_dialog.view(terminal_view),
+            MainWindowMode::ShowExportDialog => self.export_dialog.view_icy_term(terminal_view),
             MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(terminal_view),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
             MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
@@ -1701,7 +1701,7 @@ impl MainWindow {
             },
             MainWindowMode::ShowExportDialog => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(export_screen_dialog::ExportScreenMsg::Cancel)),
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(icy_engine_gui::ui::ExportDialogMessage::Cancel)),
                     _ => self.dialing_directory.handle_event(event),
                 },
                 _ => None,

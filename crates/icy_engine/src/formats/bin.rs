@@ -29,8 +29,8 @@ impl OutputFormat for Bin {
                 result.push(ch.attribute.as_u8(buf.ice_mode));
             }
         }
-        if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::BinaryText, icy_sauce::CharacterFormat::Unknown(0), &mut result)?;
+        if let Some(sauce) = &options.save_sauce {
+            sauce.write(&mut result)?;
         }
         Ok(result)
     }
@@ -41,8 +41,8 @@ impl OutputFormat for Bin {
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         let max_height = load_data.max_height();
-        if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+        if let Some(sauce) = &load_data.sauce_opt {
+            super::apply_sauce_to_buffer(&mut result, sauce);
         }
         let mut o = 0;
         let mut pos = Position::default();
@@ -89,10 +89,6 @@ impl OutputFormat for Bin {
 pub fn get_save_sauce_default_binary(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 160 {
         return (true, "width != 160".to_string());
-    }
-
-    if buf.has_sauce() {
-        return (true, String::new());
     }
 
     (false, String::new())

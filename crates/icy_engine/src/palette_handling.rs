@@ -728,203 +728,47 @@ impl Palette {
     }
 }
 
+#[rustfmt::skip]
 pub const DOS_DEFAULT_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    }, // black
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xAA,
-    }, // blue
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0x00,
-    }, // green
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0xAA,
-    }, // cyan
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0x00,
-    }, // red
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0xAA,
-    }, // magenta
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0x00,
-    }, // brown
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0xAA,
-    }, // lightgray
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0x55,
-    }, // darkgray
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0xFF,
-    }, // lightblue
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0x55,
-    }, // lightgreen
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0xFF,
-    }, // lightcyan
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0x55,
-    }, // lightred
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0xFF,
-    }, // lightmagenta
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x55,
-    }, // yellow
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    }, // white
+    //                                       R       G       B
+    Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  0: Black
+    Color { name: None, r: 0x00, g: 0x00, b: 0xAA }, //  1: Blue
+    Color { name: None, r: 0x00, g: 0xAA, b: 0x00 }, //  2: Green
+    Color { name: None, r: 0x00, g: 0xAA, b: 0xAA }, //  3: Cyan
+    Color { name: None, r: 0xAA, g: 0x00, b: 0x00 }, //  4: Red
+    Color { name: None, r: 0xAA, g: 0x00, b: 0xAA }, //  5: Magenta
+    Color { name: None, r: 0xAA, g: 0x55, b: 0x00 }, //  6: Brown
+    Color { name: None, r: 0xAA, g: 0xAA, b: 0xAA }, //  7: Light Gray
+    Color { name: None, r: 0x55, g: 0x55, b: 0x55 }, //  8: Dark Gray
+    Color { name: None, r: 0x55, g: 0x55, b: 0xFF }, //  9: Light Blue
+    Color { name: None, r: 0x55, g: 0xFF, b: 0x55 }, // 10: Light Green
+    Color { name: None, r: 0x55, g: 0xFF, b: 0xFF }, // 11: Light Cyan
+    Color { name: None, r: 0xFF, g: 0x55, b: 0x55 }, // 12: Light Red
+    Color { name: None, r: 0xFF, g: 0x55, b: 0xFF }, // 13: Light Magenta
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x55 }, // 14: Yellow
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, // 15: White
 ];
 
 //  New palette from Petmate 9
+#[rustfmt::skip]
 pub const C64_DEFAULT_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    }, // black
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    }, // white
-    Color {
-        name: None,
-        r: 0x92,
-        g: 0x4a,
-        b: 0x40,
-    }, // red
-    Color {
-        name: None,
-        r: 0x84,
-        g: 0xc5,
-        b: 0xCC,
-    }, // cyan
-    Color {
-        name: None,
-        r: 0x93,
-        g: 0x51,
-        b: 0xb6,
-    }, // violett
-    Color {
-        name: None,
-        r: 0x72,
-        g: 0xB1,
-        b: 0x4b,
-    }, // green
-    Color {
-        name: None,
-        r: 0x48,
-        g: 0x3A,
-        b: 0xA4,
-    }, // blue
-    Color {
-        name: None,
-        r: 0xD5,
-        g: 0xDF,
-        b: 0x7C,
-    }, // yellow
-    Color {
-        name: None,
-        r: 0x99,
-        g: 0x69,
-        b: 0x2D,
-    }, // orange
-    Color {
-        name: None,
-        r: 0x67,
-        g: 0x52,
-        b: 0x01,
-    }, // brown
-    Color {
-        name: None,
-        r: 0xC0,
-        g: 0x81,
-        b: 0x78,
-    }, // lightred
-    Color {
-        name: None,
-        r: 0x60,
-        g: 0x60,
-        b: 0x60,
-    }, // gray1
-    Color {
-        name: None,
-        r: 0x8A,
-        g: 0x8A,
-        b: 0x8A,
-    }, // gray2
-    Color {
-        name: None,
-        r: 0xB2,
-        g: 0xEC,
-        b: 0x91,
-    }, // lightgreen
-    Color {
-        name: None,
-        r: 0x86,
-        g: 0x7A,
-        b: 0xDE,
-    }, // lightblue
-    Color {
-        name: None,
-        r: 0xAE,
-        g: 0xAE,
-        b: 0xAE,
-    }, // gray3
+    //                                       R       G       B
+    Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  0: Black
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, //  1: White
+    Color { name: None, r: 0x92, g: 0x4a, b: 0x40 }, //  2: Red
+    Color { name: None, r: 0x84, g: 0xc5, b: 0xCC }, //  3: Cyan
+    Color { name: None, r: 0x93, g: 0x51, b: 0xb6 }, //  4: Violet
+    Color { name: None, r: 0x72, g: 0xB1, b: 0x4b }, //  5: Green
+    Color { name: None, r: 0x48, g: 0x3A, b: 0xA4 }, //  6: Blue
+    Color { name: None, r: 0xD5, g: 0xDF, b: 0x7C }, //  7: Yellow
+    Color { name: None, r: 0x99, g: 0x69, b: 0x2D }, //  8: Orange
+    Color { name: None, r: 0x67, g: 0x52, b: 0x01 }, //  9: Brown
+    Color { name: None, r: 0xC0, g: 0x81, b: 0x78 }, // 10: Light Red
+    Color { name: None, r: 0x60, g: 0x60, b: 0x60 }, // 11: Gray 1
+    Color { name: None, r: 0x8A, g: 0x8A, b: 0x8A }, // 12: Gray 2
+    Color { name: None, r: 0xB2, g: 0xEC, b: 0x91 }, // 13: Light Green
+    Color { name: None, r: 0x86, g: 0x7A, b: 0xDE }, // 14: Light Blue
+    Color { name: None, r: 0xAE, g: 0xAE, b: 0xAE }, // 15: Gray 3
 ];
 /*
 // colors taken from "C64 Community Colors V1.2a" palette, see
@@ -1028,589 +872,115 @@ pub const C64_DEFAULT_PALETTE: [Color; 16] = [
     }, // gray3
 ];*/
 
+#[rustfmt::skip]
 pub const ATARI_DEFAULT_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0x09,
-        g: 0x51,
-        b: 0x83,
-    }, // background
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xAA,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0x00,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0xAA,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0x00,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0xAA,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0x00,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x65,
-        g: 0xB7,
-        b: 0xE9,
-    }, // foreground
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0xFF,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0xFF,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0xFF,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    }, // unused
+    //                                       R       G       B
+    Color { name: None, r: 0x09, g: 0x51, b: 0x83 }, //  0: Background
+    Color { name: None, r: 0x00, g: 0x00, b: 0xAA }, //  1: Unused
+    Color { name: None, r: 0x00, g: 0xAA, b: 0x00 }, //  2: Unused
+    Color { name: None, r: 0x00, g: 0xAA, b: 0xAA }, //  3: Unused
+    Color { name: None, r: 0xAA, g: 0x00, b: 0x00 }, //  4: Unused
+    Color { name: None, r: 0xAA, g: 0x00, b: 0xAA }, //  5: Unused
+    Color { name: None, r: 0xAA, g: 0x55, b: 0x00 }, //  6: Unused
+    Color { name: None, r: 0x65, g: 0xB7, b: 0xE9 }, //  7: Foreground
+    Color { name: None, r: 0x55, g: 0x55, b: 0x55 }, //  8: Unused
+    Color { name: None, r: 0x55, g: 0x55, b: 0xFF }, //  9: Unused
+    Color { name: None, r: 0x55, g: 0xFF, b: 0x55 }, // 10: Unused
+    Color { name: None, r: 0x55, g: 0xFF, b: 0xFF }, // 11: Unused
+    Color { name: None, r: 0xFF, g: 0x55, b: 0x55 }, // 12: Unused
+    Color { name: None, r: 0xFF, g: 0x55, b: 0xFF }, // 13: Unused
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x55 }, // 14: Unused
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, // 15: Unused
 ];
 
+#[rustfmt::skip]
 pub const ATARI_XEP80_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    }, // background
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xAA,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0x00,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0xAA,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0x00,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0xAA,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0x00,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFB,
-        g: 0xF0,
-        b: 0xF6,
-    }, // foreground
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0xFF,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0xFF,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0xFF,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x55,
-    }, // unused
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    }, // unused
+    //                                       R       G       B
+    Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  0: Background
+    Color { name: None, r: 0x00, g: 0x00, b: 0xAA }, //  1: Unused
+    Color { name: None, r: 0x00, g: 0xAA, b: 0x00 }, //  2: Unused
+    Color { name: None, r: 0x00, g: 0xAA, b: 0xAA }, //  3: Unused
+    Color { name: None, r: 0xAA, g: 0x00, b: 0x00 }, //  4: Unused
+    Color { name: None, r: 0xAA, g: 0x00, b: 0xAA }, //  5: Unused
+    Color { name: None, r: 0xAA, g: 0x55, b: 0x00 }, //  6: Unused
+    Color { name: None, r: 0xFB, g: 0xF0, b: 0xF6 }, //  7: Foreground
+    Color { name: None, r: 0x55, g: 0x55, b: 0x55 }, //  8: Unused
+    Color { name: None, r: 0x55, g: 0x55, b: 0xFF }, //  9: Unused
+    Color { name: None, r: 0x55, g: 0xFF, b: 0x55 }, // 10: Unused
+    Color { name: None, r: 0x55, g: 0xFF, b: 0xFF }, // 11: Unused
+    Color { name: None, r: 0xFF, g: 0x55, b: 0x55 }, // 12: Unused
+    Color { name: None, r: 0xFF, g: 0x55, b: 0xFF }, // 13: Unused
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x55 }, // 14: Unused
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, // 15: Unused
 ];
 
+#[rustfmt::skip]
 pub const EGA_PALETTE: [Color; 64] = [
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xAA,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x00,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xAA,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x55,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x55,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xFF,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xFF,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x55,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x55,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0x55,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xFF,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xAA,
-        g: 0xFF,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x00,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xAA,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xAA,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xAA,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xAA,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x00,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x00,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xAA,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xAA,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xAA,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xAA,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x00,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xAA,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0x55,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0x55,
-        g: 0xFF,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x55,
-        b: 0xFF,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x55,
-    },
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    },
+    //                                       R       G       B
+    Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  0
+    Color { name: None, r: 0x00, g: 0x00, b: 0xAA }, //  1
+    Color { name: None, r: 0x00, g: 0xAA, b: 0x00 }, //  2
+    Color { name: None, r: 0x00, g: 0xAA, b: 0xAA }, //  3
+    Color { name: None, r: 0xAA, g: 0x00, b: 0x00 }, //  4
+    Color { name: None, r: 0xAA, g: 0x00, b: 0xAA }, //  5
+    Color { name: None, r: 0xAA, g: 0xAA, b: 0x00 }, //  6
+    Color { name: None, r: 0xAA, g: 0xAA, b: 0xAA }, //  7
+    Color { name: None, r: 0x00, g: 0x00, b: 0x55 }, //  8
+    Color { name: None, r: 0x00, g: 0x00, b: 0xFF }, //  9
+    Color { name: None, r: 0x00, g: 0xAA, b: 0x55 }, // 10
+    Color { name: None, r: 0x00, g: 0xAA, b: 0xFF }, // 11
+    Color { name: None, r: 0xAA, g: 0x00, b: 0x55 }, // 12
+    Color { name: None, r: 0xAA, g: 0x00, b: 0xFF }, // 13
+    Color { name: None, r: 0xAA, g: 0xAA, b: 0x55 }, // 14
+    Color { name: None, r: 0xAA, g: 0xAA, b: 0xFF }, // 15
+    Color { name: None, r: 0x00, g: 0x55, b: 0x00 }, // 16
+    Color { name: None, r: 0x00, g: 0x55, b: 0xAA }, // 17
+    Color { name: None, r: 0x00, g: 0xFF, b: 0x00 }, // 18
+    Color { name: None, r: 0x00, g: 0xFF, b: 0xAA }, // 19
+    Color { name: None, r: 0xAA, g: 0x55, b: 0x00 }, // 20
+    Color { name: None, r: 0xAA, g: 0x55, b: 0xAA }, // 21
+    Color { name: None, r: 0xAA, g: 0xFF, b: 0x00 }, // 22
+    Color { name: None, r: 0xAA, g: 0xFF, b: 0xAA }, // 23
+    Color { name: None, r: 0x00, g: 0x55, b: 0x55 }, // 24
+    Color { name: None, r: 0x00, g: 0x55, b: 0xFF }, // 25
+    Color { name: None, r: 0x00, g: 0xFF, b: 0x55 }, // 26
+    Color { name: None, r: 0x00, g: 0xFF, b: 0xFF }, // 27
+    Color { name: None, r: 0xAA, g: 0x55, b: 0x55 }, // 28
+    Color { name: None, r: 0xAA, g: 0x55, b: 0xFF }, // 29
+    Color { name: None, r: 0xAA, g: 0xFF, b: 0x55 }, // 30
+    Color { name: None, r: 0xAA, g: 0xFF, b: 0xFF }, // 31
+    Color { name: None, r: 0x55, g: 0x00, b: 0x00 }, // 32
+    Color { name: None, r: 0x55, g: 0x00, b: 0xAA }, // 33
+    Color { name: None, r: 0x55, g: 0xAA, b: 0x00 }, // 34
+    Color { name: None, r: 0x55, g: 0xAA, b: 0xAA }, // 35
+    Color { name: None, r: 0xFF, g: 0x00, b: 0x00 }, // 36
+    Color { name: None, r: 0xFF, g: 0x00, b: 0xAA }, // 37
+    Color { name: None, r: 0xFF, g: 0xAA, b: 0x00 }, // 38
+    Color { name: None, r: 0xFF, g: 0xAA, b: 0xAA }, // 39
+    Color { name: None, r: 0x55, g: 0x00, b: 0x55 }, // 40
+    Color { name: None, r: 0x55, g: 0x00, b: 0xFF }, // 41
+    Color { name: None, r: 0x55, g: 0xAA, b: 0x55 }, // 42
+    Color { name: None, r: 0x55, g: 0xAA, b: 0xFF }, // 43
+    Color { name: None, r: 0xFF, g: 0x00, b: 0x55 }, // 44
+    Color { name: None, r: 0xFF, g: 0x00, b: 0xFF }, // 45
+    Color { name: None, r: 0xFF, g: 0xAA, b: 0x55 }, // 46
+    Color { name: None, r: 0xFF, g: 0xAA, b: 0xFF }, // 47
+    Color { name: None, r: 0x55, g: 0x55, b: 0x00 }, // 48
+    Color { name: None, r: 0x55, g: 0x55, b: 0xAA }, // 49
+    Color { name: None, r: 0x55, g: 0xFF, b: 0x00 }, // 50
+    Color { name: None, r: 0x55, g: 0xFF, b: 0xAA }, // 51
+    Color { name: None, r: 0xFF, g: 0x55, b: 0x00 }, // 52
+    Color { name: None, r: 0xFF, g: 0x55, b: 0xAA }, // 53
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x00 }, // 54
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xAA }, // 55
+    Color { name: None, r: 0x55, g: 0x55, b: 0x55 }, // 56
+    Color { name: None, r: 0x55, g: 0x55, b: 0xFF }, // 57
+    Color { name: None, r: 0x55, g: 0xFF, b: 0x55 }, // 58
+    Color { name: None, r: 0x55, g: 0xFF, b: 0xFF }, // 59
+    Color { name: None, r: 0xFF, g: 0x55, b: 0x55 }, // 60
+    Color { name: None, r: 0xFF, g: 0x55, b: 0xFF }, // 61
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x55 }, // 62
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, // 63
 ];
 
 pub const XTERM_256_PALETTE: [(&str, Color); 256] = [
@@ -3920,110 +3290,32 @@ pub const XTERM_256_PALETTE: [(&str, Color); 256] = [
     ),
 ];
 
+#[rustfmt::skip]
 pub const VIEWDATA_PALETTE: [Color; 16] = [
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    }, // black
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0x00,
-    }, // red
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0x00,
-    }, // green
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x00,
-    }, // yellow
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xFF,
-    }, // blue
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0xFF,
-    }, // magenta
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0xFF,
-    }, // cyan
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    }, // white
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-    }, // black
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0x00,
-    }, // red
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0x00,
-    }, // green
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0x00,
-    }, // yellow
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0x00,
-        b: 0xFF,
-    }, // blue
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0x00,
-        b: 0xFF,
-    }, // magenta
-    Color {
-        name: None,
-        r: 0x00,
-        g: 0xFF,
-        b: 0xFF,
-    }, // cyan
-    Color {
-        name: None,
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-    }, // white
+    //                                       R       G       B
+    Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  0: Black
+    Color { name: None, r: 0xFF, g: 0x00, b: 0x00 }, //  1: Red
+    Color { name: None, r: 0x00, g: 0xFF, b: 0x00 }, //  2: Green
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x00 }, //  3: Yellow
+    Color { name: None, r: 0x00, g: 0x00, b: 0xFF }, //  4: Blue
+    Color { name: None, r: 0xFF, g: 0x00, b: 0xFF }, //  5: Magenta
+    Color { name: None, r: 0x00, g: 0xFF, b: 0xFF }, //  6: Cyan
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, //  7: White
+    Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  8: Black
+    Color { name: None, r: 0xFF, g: 0x00, b: 0x00 }, //  9: Red
+    Color { name: None, r: 0x00, g: 0xFF, b: 0x00 }, // 10: Green
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0x00 }, // 11: Yellow
+    Color { name: None, r: 0x00, g: 0x00, b: 0xFF }, // 12: Blue
+    Color { name: None, r: 0xFF, g: 0x00, b: 0xFF }, // 13: Magenta
+    Color { name: None, r: 0x00, g: 0xFF, b: 0xFF }, // 14: Cyan
+    Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, // 15: White
 ];
 
 lazy_static::lazy_static! {
 
     #[rustfmt::skip]
     pub static ref IGS_DESKTOP_PALETTE: Palette = Palette::from_slice(&[
-        //                 Name                                 R        G        B          RGB Values
+        //                 Name                                 R       G        B        RGB Values
         Color { name: Some("White".to_string()),         r: 0xEE, g: 0xEE, b: 0xEE }, //  0: White         (7,7,7)
         Color { name: Some("Red".to_string()),           r: 0xEE, g: 0x00, b: 0x00 }, //  1: Red           (7,0,0)
         Color { name: Some("Green".to_string()),         r: 0x00, g: 0xEE, b: 0x00 }, //  2: Green         (0,7,0)

@@ -38,6 +38,9 @@ fastrand = { workspace = true }
 rodio = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time", "sync"] }
 
+# File dialog
+rfd = { workspace = true }
+
 # for Atari ST GIST sounds (IGS)
 ym2149 = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound", features = ["streaming"] }
 ym2149-gist-replayer = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound" }

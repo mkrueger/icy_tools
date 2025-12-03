@@ -147,8 +147,8 @@ impl OutputFormat for XBin {
             }
         }
 
-        if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::XBin, icy_sauce::CharacterFormat::Unknown(0), &mut result)?;
+        if let Some(sauce) = &options.save_sauce {
+            sauce.write(&mut result)?;
         }
         Ok(result)
     }
@@ -159,8 +159,8 @@ impl OutputFormat for XBin {
         result.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
         let max_height = load_data.max_height();
-        if let Some(sauce) = load_data.sauce_opt {
-            result.load_sauce(sauce);
+        if let Some(sauce) = &load_data.sauce_opt {
+            super::apply_sauce_to_buffer(&mut result, sauce);
         }
 
         if data.len() < XBIN_HEADER_SIZE {
@@ -595,6 +595,6 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[us
     Ok(())
 }
 
-pub fn get_save_sauce_default_xb(buf: &TextBuffer) -> (bool, String) {
-    (buf.has_sauce(), String::new())
+pub fn get_save_sauce_default_xb(_buf: &TextBuffer) -> (bool, String) {
+    (false, String::new())
 }

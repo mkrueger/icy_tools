@@ -101,6 +101,10 @@ pub struct Options {
 
     #[serde(default)]
     pub external_commands: [ExternalCommand; EXTERNAL_COMMAND_COUNT],
+
+    /// Default path for file export
+    #[serde(default)]
+    pub export_path: String,
 }
 
 impl Default for Options {
@@ -112,6 +116,7 @@ impl Default for Options {
             view_mode: ViewMode::List,
             monitor_settings: MonitorSettings::default(),
             external_commands: Default::default(),
+            export_path: String::new(),
         }
     }
 }
@@ -176,6 +181,25 @@ impl Options {
     /// Reset monitor settings to defaults
     pub fn reset_monitor_settings(&mut self) {
         self.monitor_settings = MonitorSettings::default();
+    }
+
+    /// Returns the export path, falling back to default if not set
+    pub fn export_path(&self) -> PathBuf {
+        if self.export_path.is_empty() {
+            Self::default_export_directory()
+        } else {
+            PathBuf::from(&self.export_path)
+        }
+    }
+
+    /// Returns the default export directory (user's documents folder)
+    pub fn default_export_directory() -> PathBuf {
+        if let Some(user_dirs) = directories::UserDirs::new() {
+            if let Some(doc_dir) = user_dirs.document_dir() {
+                return doc_dir.to_path_buf();
+            }
+        }
+        PathBuf::from(".")
     }
 
     /// Prepare a file for external command execution.

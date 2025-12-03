@@ -13,7 +13,5 @@ pub use view_thread::{
     ViewCommand,
     ViewEvent,
     create_view_thread,
-    // Utility functions used by thumbnail_loader
-    get_sauce_width,
     prepare_parser_data,
 };

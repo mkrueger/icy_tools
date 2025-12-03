@@ -43,6 +43,8 @@ pub enum SettingsMessage {
     SwitchCategory(SettingsCategory),
     MonitorSettings(MonitorSettingsMessage),
     ExternalCommandChanged(usize, String),
+    UpdateExportPath(String),
+    BrowseExportPath,
     OpenSettingsFolder,
     OpenLogFile,
     Save,
@@ -120,6 +122,20 @@ impl SettingsDialogState {
                 self.temp_options.lock().external_commands[idx].command = cmd;
                 None
             }
+            SettingsMessage::UpdateExportPath(path) => {
+                self.temp_options.lock().export_path = path;
+                None
+            }
+            SettingsMessage::BrowseExportPath => {
+                let mut opt = self.temp_options.lock();
+                if let Some(folder) = rfd::FileDialog::new()
+                    .set_directory(opt.export_path())
+                    .pick_folder()
+                {
+                    opt.export_path = folder.to_string_lossy().to_string();
+                }
+                None
+            }
         }
     }
 
@@ -190,7 +206,10 @@ impl SettingsDialogState {
                 let commands = self.temp_options.lock().external_commands.clone();
                 command_settings::commands_settings_content(commands)
             }
-            SettingsCategory::Paths => paths_settings::paths_settings_content(),
+            SettingsCategory::Paths => {
+                let export_path = self.temp_options.lock().export_path.clone();
+                paths_settings::paths_settings_content(export_path)
+            }
         };
 
         // Buttons

@@ -206,6 +206,24 @@ impl PreviewView {
         self.sauce_info.as_ref()
     }
 
+    /// Get the screen for export (only available in terminal preview mode)
+    pub fn get_screen(&self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
+        if matches!(self.preview_mode, PreviewMode::Terminal) {
+            Some(self.terminal.screen.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Get the buffer type from the current screen
+    pub fn get_buffer_type(&self) -> Option<icy_engine::BufferType> {
+        if matches!(self.preview_mode, PreviewMode::Terminal) {
+            Some(self.terminal.screen.lock().buffer_type())
+        } else {
+            None
+        }
+    }
+
     /// Set monitor settings for CRT effects
     pub fn set_monitor_settings(&mut self, settings: MonitorSettings) {
         self.monitor_settings = settings;

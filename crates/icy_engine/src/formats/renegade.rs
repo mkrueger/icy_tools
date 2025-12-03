@@ -81,7 +81,7 @@ impl OutputFormat for Renegade {
         result.terminal_state_mut().is_terminal_buffer = false;
         result.buffer.file_name = Some(file_name.into());
         if let Some(sauce) = load_data.sauce_opt {
-            result.buffer.load_sauce(sauce);
+            result.apply_sauce(&sauce);
         }
 
         let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);

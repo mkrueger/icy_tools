@@ -1,3 +1,4 @@
+use icy_sauce::{BinaryCapabilities, Capabilities, CharacterCapabilities, SauceRecord};
 use parking_lot::Mutex;
 use std::{cmp::max, sync::Arc};
 
@@ -221,6 +222,63 @@ pub trait EditableScreen: Screen {
 
     // Change tracking
     fn mark_dirty(&self);
+
+    /// Apply SAUCE record settings to the screen.
+    /// This extracts and applies character capabilities from the SAUCE record,
+    /// including buffer size, font, and ice colors.
+    /// 
+    /// This is a default implementation that works for TextScreen.
+    /// Graphics screens can override this to ignore SAUCE data.
+    /// 
+    /// Note: aspect_ratio and letter_spacing are buffer-specific settings
+    /// and are handled by TextBuffer in its own load_sauce method.
+    fn apply_sauce(&mut self, sauce: &SauceRecord) {
+        match sauce.capabilities() {
+            Some(Capabilities::Character(CharacterCapabilities {
+                columns,
+                lines,
+                font_opt,
+                ice_colors,
+                ..
+            }))
+            | Some(Capabilities::Binary(BinaryCapabilities {
+                columns,
+                lines,
+                font_opt,
+                ice_colors,
+                ..
+            })) => {
+                // Apply buffer size (clamped to reasonable limits)
+                // Some files have wrong sauce data, even if 0 is specified
+                if columns > 0 {
+                    let width = (columns as i32).min(limits::MAX_BUFFER_WIDTH);
+                    self.set_width(width);
+                    self.terminal_state_mut().set_width(width);
+                }
+                
+                if lines > 0 {
+                    let height = (lines as i32).min(limits::MAX_BUFFER_HEIGHT);
+                    self.set_height(height);
+                }
+
+                // Apply font if specified
+                if let Some(font_name) = &font_opt {
+                    if let Ok(font) = BitFont::from_sauce_name(&font_name.to_string()) {
+                        self.set_font(0, font);
+                    }
+                }
+                println!("Applied ice_colors from SAUCE: {:?}", ice_colors);
+                // Apply ice colors
+                if ice_colors {
+                    *self.ice_mode_mut() = IceMode::Ice;
+                }
+                self.terminal_state_mut().ice_colors = ice_colors;
+            }
+            _ => {
+                // No character/binary capabilities - nothing to apply
+            }
+        }
+    }
 
     // Layer management
     /// Returns the number of layers

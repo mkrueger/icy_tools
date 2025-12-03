@@ -7,8 +7,8 @@ pub use main_window_state::*;
 pub mod dialogs;
 pub use dialogs::*;
 
-pub mod modal;
-pub use modal::*;
+// Re-export modal from icy_engine_gui
+pub use icy_engine_gui::ui::modal;
 
 pub mod terminal_window;
 pub use terminal_window::*;

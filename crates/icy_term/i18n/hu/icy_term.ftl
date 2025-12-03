@@ -198,12 +198,6 @@ capture-dialog-dir-not-exist = A könyvtár nem létezik
 capture-dialog-not-directory = Az útvonal nem könyvtár
 capture-dialog-file-exists = A fájl létezik és felülírva lesz
 
-export-dialog-title = Puffer exportálása fájlba
-export-dialog-export-button = Exportálás
-export-dialog-dir-not-exist = A könyvtár nem létezik
-export-dialog-not-directory = Az elérési út nem könyvtár
-export-dialog-utf8-output = UTF-8 kimenet
-
 show-iemsi-dialog-heading=IEMSI szerver információk
 show-iemsi-dialog-name=Név
 show-iemsi-dialog-location=Helyszín

@@ -50,3 +50,12 @@ dialog-no-button = No
 dialog-close-button = Close
 dialog-delete-button = Delete
 dialog-overwrite-button = Overwrite
+
+# Export dialog
+export-dialog-title = Export Buffer
+export-dialog-export-button = Export
+export-dialog-folder = Folder:
+export-dialog-file = File:
+export-dialog-utf8-output = UTF-8 output
+export-dialog-dir-not-exist = Directory does not exist!
+export-dialog-not-directory = Path is not a directory!

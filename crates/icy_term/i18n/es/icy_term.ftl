@@ -198,12 +198,6 @@ capture-dialog-dir-not-exist = El directorio no existe
 capture-dialog-not-directory = La ruta no es un directorio
 capture-dialog-file-exists = El archivo existe y se sobrescribirá
 
-export-dialog-title = Exportar búfer a archivo
-export-dialog-export-button = Exportar
-export-dialog-dir-not-exist = El directorio no existe
-export-dialog-not-directory = La ruta no es un directorio
-export-dialog-utf8-output = Salida UTF-8
-
 show-iemsi-dialog-heading=Información del servidor IEMSI
 show-iemsi-dialog-name=Nombre
 show-iemsi-dialog-location=Ubicación

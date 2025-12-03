@@ -404,7 +404,7 @@ impl Default for FileListThemeColors {
             bg_selected: [0.2, 0.4, 0.6, 1.0],
             bg_hovered: [0.16, 0.18, 0.22, 1.0],
             text_color: [230, 230, 230, 255],
-            folder_color: [153, 204, 255, 255],
+            folder_color: [0x55, 0x55, 255, 255],//[153, 204, 255, 255],
             highlight_color: [255, 220, 100, 255], // Yellow highlight
         }
     }

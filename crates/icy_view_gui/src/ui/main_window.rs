@@ -6,7 +6,7 @@ use iced::{
     keyboard::{Key, key::Named},
     widget::{column, container, row, text},
 };
-use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager};
+use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager, ui::{ExportDialogMessage, ExportDialogState}};
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -70,6 +70,10 @@ pub enum Message {
     ShowToast(Toast),
     /// Close a toast notification
     CloseToast(usize),
+    /// Show export dialog
+    ShowExportDialog,
+    /// Export dialog messages
+    ExportDialog(ExportDialogMessage),
 }
 
 /// Main window for icy_view_gui
@@ -108,6 +112,8 @@ pub struct MainWindow {
     settings_dialog: Option<SettingsDialogState>,
     /// Error dialog (shown as modal when Some)
     error_dialog: Option<ConfirmationDialog>,
+    /// Export dialog (shown as modal when Some)
+    export_dialog: Option<ExportDialogState>,
     /// Toast notifications
     toasts: Vec<Toast>,
 }
@@ -196,6 +202,7 @@ impl MainWindow {
                 sauce_dialog: None,
                 settings_dialog: None,
                 error_dialog: None,
+                export_dialog: None,
                 toasts: Vec::new(),
             },
             initial_message,
@@ -690,7 +697,12 @@ impl MainWindow {
             }
             Message::ToggleFullscreen => {
                 self.fullscreen = !self.fullscreen;
-                Task::none()
+                let mode = if self.fullscreen {
+                    iced::window::Mode::Fullscreen
+                } else {
+                    iced::window::Mode::Windowed
+                };
+                iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
             }
             Message::Escape => {
                 // Close dialogs in priority order
@@ -728,7 +740,13 @@ impl MainWindow {
                         let next_idx = (current_idx + 1) % icy_parser_core::BaudEmulation::OPTIONS.len();
                         let next_baud = icy_parser_core::BaudEmulation::OPTIONS[next_idx];
                         self.preview.set_baud_emulation(next_baud);
-                        return Task::none();
+
+                        let toast_msg = match next_baud {
+                            icy_parser_core::BaudEmulation::Off => fl!(crate::LANGUAGE_LOADER, "toast-baud-rate-off"),
+                            icy_parser_core::BaudEmulation::Rate(rate) => fl!(crate::LANGUAGE_LOADER, "toast-baud-rate", rate = rate),
+                        };
+                        let toast = Toast::info(toast_msg);
+                        return Task::done(Message::ShowToast(toast));
                     }
                     StatusBarMessage::CycleBaudRateBackward => {
                         // Find current index and cycle to previous
@@ -741,7 +759,13 @@ impl MainWindow {
                         };
                         let prev_baud = icy_parser_core::BaudEmulation::OPTIONS[prev_idx];
                         self.preview.set_baud_emulation(prev_baud);
-                        return Task::none();
+
+                        let toast_msg = match prev_baud {
+                            icy_parser_core::BaudEmulation::Off => fl!(crate::LANGUAGE_LOADER, "toast-baud-rate-off"),
+                            icy_parser_core::BaudEmulation::Rate(rate) => fl!(crate::LANGUAGE_LOADER, "toast-baud-rate", rate = rate),
+                        };
+                        let toast = Toast::info(toast_msg);
+                        return Task::done(Message::ShowToast(toast));
                     }
                     StatusBarMessage::SetBaudRateOff => {
                         // Set baud rate to Off (max speed, index 0)
@@ -1125,6 +1149,70 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::ShowExportDialog => {
+                // Export the file that is currently being previewed (shown in status bar)
+                // This is the same file whose SAUCE info is displayed
+                if let Some(ref path) = self.current_file {
+                    // Get buffer type from preview if available
+                    let buffer_type = self.preview.get_buffer_type().unwrap_or(icy_engine::BufferType::CP437);
+                    
+                    // Get the configured export path (or default to documents)
+                    let export_dir = self.options.lock().export_path();
+                    
+                    // Get just the filename from the current file (without extension)
+                    let file_name = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("export")
+                        .to_string();
+                    
+                    // Combine export directory with filename
+                    let export_path = export_dir.join(&file_name);
+                    
+                    // Clone options for the closure
+                    let options = self.options.clone();
+                    
+                    self.export_dialog = Some(
+                        ExportDialogState::new(export_path.to_string_lossy().to_string(), buffer_type)
+                            .with_default_directory_fn(move || options.lock().export_path())
+                    );
+                } else {
+                    // Show toast that no file is being previewed
+                    self.toasts.push(Toast::warning(fl!(crate::LANGUAGE_LOADER, "export-no-file-selected")));
+                }
+                Task::none()
+            }
+            Message::ExportDialog(msg) => {
+                if let Some(ref mut dialog) = self.export_dialog {
+                    // Get the screen from preview for export
+                    let screen = self.preview.get_screen();
+                    
+                    let result = dialog.update(msg, |state| {
+                        if let Some(screen) = screen.as_ref() {
+                            state.export_buffer(screen.clone())
+                        } else {
+                            Err("No screen available for export".to_string())
+                        }
+                    });
+                    
+                    match result {
+                        Some(true) => {
+                            // Export successful
+                            let path = dialog.get_full_path();
+                            self.toasts.push(Toast::success(fl!(crate::LANGUAGE_LOADER, "export-success", path = path.display().to_string())));
+                            self.export_dialog = None;
+                        }
+                        Some(false) => {
+                            // Cancelled
+                            self.export_dialog = None;
+                        }
+                        None => {
+                            // Dialog stays open (error or just updating)
+                        }
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1272,6 +1360,12 @@ impl MainWindow {
         // Wrap with Settings dialog if active (takes priority)
         if let Some(ref dialog) = self.settings_dialog {
             return dialog.view(base_view);
+        }
+
+        // Wrap with Export dialog if active
+        if let Some(ref dialog) = self.export_dialog {
+            let dialog_view = dialog.view(|msg| Message::ExportDialog(msg));
+            return icy_engine_gui::ui::modal(base_view, dialog_view, Message::ExportDialog(ExportDialogMessage::Cancel));
         }
 
         // Wrap with SAUCE dialog if active
@@ -1534,7 +1628,17 @@ impl MainWindow {
                     Key::Named(Named::F6) => return Some(Message::ExecuteExternalCommand(1)),
                     Key::Named(Named::F7) => return Some(Message::ExecuteExternalCommand(2)),
                     Key::Named(Named::F8) => return Some(Message::ExecuteExternalCommand(3)),
+                    Key::Named(Named::F11) => return Some(Message::ToggleFullscreen),
                     _ => {}
+                }
+
+                // Ctrl+I: Show export dialog
+                if modifiers.control() {
+                    if let Key::Character(c) = key {
+                        if c.as_str().eq_ignore_ascii_case("i") {
+                            return Some(Message::ShowExportDialog);
+                        }
+                    }
                 }
 
                 // View-mode dependent navigation keys

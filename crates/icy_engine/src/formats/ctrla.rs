@@ -193,8 +193,8 @@ impl OutputFormat for CtrlA {
         result.terminal_state_mut().is_terminal_buffer = false;
         result.buffer.file_name = Some(file_name.into());
         let load_data = load_data_opt.unwrap_or_default();
-        if let Some(sauce) = load_data.sauce_opt {
-            result.buffer.load_sauce(sauce);
+        if let Some(sauce) = &load_data.sauce_opt {
+            result.apply_sauce(sauce);
         }
 
         let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);

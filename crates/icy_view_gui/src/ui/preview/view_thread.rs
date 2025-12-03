@@ -210,21 +210,6 @@ fn repair_sauce_data(sauce: &SauceRecord) -> SauceRecord {
     sauce.clone()
 }
 
-/// Extract width from SAUCE capabilities
-/// Returns None if no valid width is found
-pub fn get_sauce_width(sauce: &SauceRecord) -> Option<i32> {
-    if let Some(Capabilities::Character(char_caps)) = sauce.capabilities() {
-        if char_caps.columns > 0 {
-            return Some(char_caps.columns as i32);
-        }
-    }
-    if let Some(Capabilities::Binary(bin_caps)) = sauce.capabilities() {
-        if bin_caps.columns > 0 {
-            return Some(bin_caps.columns as i32);
-        }
-    }
-    None
-}
 
 /// Cancellable sleep - returns true if cancelled, false if completed normally
 async fn cancellable_sleep(duration: tokio::time::Duration, cancel_token: &CancellationToken) -> bool {
@@ -511,20 +496,16 @@ impl ViewThread {
 
                 // Initialize screen for this mode - replaces the entire screen
                 let parser = self.init_screen_for_mode(mode, emulation);
-
+                
                 // Apply SAUCE width if available (using repaired sauce data)
                 // This must be done after init_screen_for_mode but before parsing
-                if let Some(ref sauce) = repaired_sauce_opt {
-                    if let Some(sauce_width) = get_sauce_width(sauce) {
-                        let width = sauce_width.min(limits::MAX_BUFFER_WIDTH);
-                        let mut screen = self.screen.lock();
-                        if let Some(editable) = screen.as_editable() {
-                            editable.set_width(width);
-                            editable.terminal_state_mut().set_width(width);
-                        }
+                if let Some(sauce) = &repaired_sauce_opt {
+                    let mut screen = self.screen.lock();
+                    if let Some(editable) = screen.as_editable() {
+                        editable.apply_sauce(sauce);
                     }
                 }
-
+                
                 // Prepare data: strip BOM and crop at EOF marker
                 let (file_data, is_unicode) = prepare_parser_data(stripped_data, &ext);
 
@@ -600,15 +581,17 @@ impl ViewThread {
         let parser = self.init_screen_for_mode(mode, emulation);
 
         // Apply SAUCE width if available (using repaired sauce data)
-        if let Some(ref sauce) = repaired_sauce_opt {
-            if let Some(sauce_width) = get_sauce_width(sauce) {
-                let width = sauce_width.min(limits::MAX_BUFFER_WIDTH);
-                let mut screen = self.screen.lock();
-                if let Some(editable) = screen.as_editable() {
-                    let height = editable.get_height();
-                    editable.set_size(Size::new(width, height));
-                    editable.terminal_state_mut().set_width(width);
-                }
+        if let Some(sauce) = &repaired_sauce_opt {
+            let mut screen = self.screen.lock();
+            if let Some(editable) = screen.as_editable() {
+                editable.apply_sauce(sauce);
+            }
+        }
+        
+         if let Some(sauce) = &repaired_sauce_opt {
+            let mut screen = self.screen.lock();
+            if let Some(editable) = screen.as_editable() {
+                editable.apply_sauce(sauce);
             }
         }
 

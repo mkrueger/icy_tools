@@ -8,6 +8,7 @@ mod file_format;
 pub use file_format::*;
 
 mod image_format;
+use icy_sauce::SauceRecord;
 pub use image_format::*;
 
 mod pcboard;
@@ -64,13 +65,15 @@ pub enum ControlCharHandling {
     FilterOut,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SaveOptions {
     pub format_type: i32,
 
     pub screen_preparation: ScreenPreperation,
     pub modern_terminal_output: bool,
-    pub save_sauce: bool,
+    
+    #[serde(skip)]
+    pub save_sauce: Option<SauceRecord>,
 
     /// When set the output will be compressed.
     pub compress: bool,
@@ -121,7 +124,7 @@ impl SaveOptions {
             longer_terminal_output: false,
             screen_preparation: ScreenPreperation::None,
             modern_terminal_output: false,
-            save_sauce: false,
+            save_sauce: None,
             compress: true,
             output_line_length: None,
             control_char_handling: ControlCharHandling::Ignore,
@@ -184,6 +187,64 @@ impl LoadData {
     /// Get the maximum height limit, if set
     pub fn max_height(&self) -> Option<i32> {
         self.max_height
+    }
+}
+
+use icy_sauce::prelude::*;
+use crate::{IceMode, TextBuffer, limits};
+
+/// Apply SAUCE record settings directly to a TextBuffer.
+/// This is used by formats that don't use TextScreen (like bin, xbinary, etc.)
+pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
+    match sauce.capabilities() {
+        Some(Capabilities::Character(CharacterCapabilities {
+            columns,
+            lines,
+            font_opt,
+            ice_colors,
+            ..
+        }))
+        | Some(Capabilities::Binary(BinaryCapabilities {
+            columns,
+            lines,
+            font_opt,
+            ice_colors,
+            ..
+        })) => {
+            // Apply buffer size (clamped to reasonable limits)
+            if columns > 0 {
+                let width = (columns as i32).min(limits::MAX_BUFFER_WIDTH);
+                buf.set_width(width);
+                buf.terminal_state.set_width(width);
+            }
+            
+            if lines > 0 {
+                let height = (lines as i32).min(limits::MAX_BUFFER_HEIGHT);
+                buf.set_height(height);
+            }
+
+            // Resize first layer if needed
+            if !buf.layers.is_empty() {
+                let size = buf.get_size();
+                buf.layers[0].set_size(size);
+            }
+
+            // Apply font if specified
+            if let Some(font_name) = &font_opt {
+                if let Ok(font) = BitFont::from_sauce_name(&font_name.to_string()) {
+                    buf.set_font(0, font);
+                }
+            }
+
+            // Apply ice colors
+            if ice_colors {
+                buf.ice_mode = IceMode::Ice;
+            }
+            buf.terminal_state.ice_colors = ice_colors;
+        }
+        _ => {
+            // No character/binary capabilities - nothing to apply
+        }
     }
 }
 

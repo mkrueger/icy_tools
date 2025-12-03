@@ -204,8 +204,6 @@ pub struct TextBuffer {
     pub palette_mode: PaletteMode,
     pub font_mode: FontMode,
 
-    sauce_data: icy_sauce::MetaData,
-
     pub palette: Palette,
 
     /// the layer the overlay is displayed upon (there could be layers above the overlay layer)
@@ -274,7 +272,6 @@ impl Clone for TextBuffer {
             ice_mode: self.ice_mode,
             palette_mode: self.palette_mode,
             font_mode: self.font_mode,
-            sauce_data: self.sauce_data.clone(),
             palette: self.palette.clone(),
             overlay_index: self.overlay_index,
             overlay_layer: self.overlay_layer.clone(),
@@ -327,61 +324,6 @@ impl TextBuffer {
         result
     }
 
-    pub fn get_sauce_meta(&self) -> &icy_sauce::MetaData {
-        &self.sauce_data
-    }
-    pub fn set_sauce_meta(&mut self, sauce: icy_sauce::MetaData) {
-        self.sauce_data = sauce;
-    }
-
-    pub(crate) fn load_sauce(&mut self, sauce: icy_sauce::SauceRecord) {
-        match sauce.capabilities() {
-            Some(Capabilities::Character(CharacterCapabilities {
-                columns,
-                lines,
-                font_opt,
-                ice_colors,
-                aspect_ratio,
-                letter_spacing,
-                ..
-            }))
-            | Some(Capabilities::Binary(BinaryCapabilities {
-                columns,
-                lines,
-                font_opt,
-                ice_colors,
-                aspect_ratio,
-                letter_spacing,
-                ..
-            })) => {
-                // check limits, some files have wrong sauce data, even if 0 is specified
-                // some files specify the pixel size there and don't have line breaks in the file
-                let size: Size = Size::new(columns.clamp(1, 1000) as i32, lines as i32);
-                self.set_size(size);
-                self.terminal_state.set_size(size);
-
-                if !self.layers.is_empty() {
-                    self.layers[0].set_size(size);
-                }
-
-                if let Some(font) = &font_opt {
-                    if let Ok(font) = BitFont::from_sauce_name(&font.to_string()) {
-                        self.set_font(0, font);
-                    }
-                }
-                if ice_colors {
-                    self.ice_mode = IceMode::Ice;
-                }
-                self.use_aspect_ratio = aspect_ratio == AspectRatio::LegacyDevice;
-                self.use_letter_spacing = letter_spacing == LetterSpacing::NinePixel;
-            }
-            _ => {}
-        }
-
-        self.is_font_table_dirty = true;
-        self.sauce_data = sauce.metadata();
-    }
-
     /// Clones the buffer (without sixel threads)
     pub fn flat_clone(&self, deep_layers: bool) -> TextBuffer {
         let mut frame = TextBuffer::new(self.get_size());
@@ -394,7 +336,6 @@ impl TextBuffer {
         frame.terminal_state.is_terminal_buffer = self.terminal_state.is_terminal_buffer;
         frame.terminal_state = self.terminal_state.clone();
         frame.palette = self.palette.clone();
-        frame.sauce_data = self.sauce_data.clone();
 
         if deep_layers {
             frame.layers = Vec::new();
@@ -417,51 +358,6 @@ impl TextBuffer {
         frame.tags = self.tags.clone();
         frame.show_tags = self.show_tags;
         frame
-    }
-
-    pub(crate) fn write_sauce_info(&self, data_type: SauceDataType, content_type: CharacterFormat, result: &mut Vec<u8>) -> anyhow::Result<()> {
-        let mut builder = self.get_sauce_meta().to_builder()?.file_size(result.len() as u32).data_type(data_type);
-
-        match data_type {
-            SauceDataType::Character => {
-                let mut caps = CharacterCapabilities::new(content_type);
-                caps.columns = self.get_width() as u16;
-                caps.lines = self.get_height() as u16;
-                caps.ice_colors = self.ice_mode == IceMode::Ice;
-                caps.letter_spacing = if self.use_letter_spacing {
-                    LetterSpacing::NinePixel
-                } else {
-                    LetterSpacing::Legacy
-                };
-                caps.aspect_ratio = if self.use_aspect_ratio {
-                    AspectRatio::LegacyDevice
-                } else {
-                    AspectRatio::Legacy
-                };
-                builder = builder.capabilities(Capabilities::Character(caps))?;
-            }
-            SauceDataType::BinaryText => {
-                builder = builder
-                    .capabilities(Capabilities::Binary(BinaryCapabilities::binary_text(self.get_width() as u16).unwrap()))
-                    .unwrap();
-            }
-            SauceDataType::XBin => {
-                builder = builder
-                    .capabilities(Capabilities::Binary(
-                        BinaryCapabilities::xbin(self.get_width() as u16, self.get_height() as u16).unwrap(),
-                    ))
-                    .unwrap();
-            }
-            _ => {}
-        }
-
-        builder.build().write(result)?;
-
-        Ok(())
-    }
-
-    pub(crate) fn has_sauce(&self) -> bool {
-        !self.get_sauce_meta().is_empty()
     }
 
     fn merge_layer_char(&self, found_char: &mut AttributedChar, cur_layer: &Layer, pos: Position) {
@@ -572,7 +468,6 @@ impl TextBuffer {
             original_size: size,
             size,
             terminal_state: TerminalState::from(size),
-            sauce_data: icy_sauce::MetaData::default(),
 
             buffer_type: BufferType::CP437,
             ice_mode: IceMode::Unlimited,

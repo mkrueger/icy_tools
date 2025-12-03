@@ -53,6 +53,9 @@ toast-auto-scroll-off=Automatisches Scrollen aus
 toast-scroll-slow=Scrollgeschwindigkeit: langsam
 toast-scroll-medium=Scrollgeschwindigkeit: mittel
 toast-scroll-fast=Scrollgeschwindigkeit: schnell
+toast-baud-rate-off=Baud-Emulation: aus
+toast-baud-rate=Baudrate: { $rate }
+toast-command-not-configured={ $key } Befehl nicht konfiguriert
 
 button-play_music=Musik spielen
 button-stop_music=Musik anhalten
@@ -69,7 +72,17 @@ settings-paths-category=Pfade
 settings-restore-defaults-button=Standardwerte wiederherstellen
 
 settings-paths-header=Anwendungspfade
+settings-paths-user-header=Benutzerpfade
+settings-paths-export-path=Exportpfad:
 settings-paths-config-dir=Konfigurationsverzeichnis:
 settings-paths-config-file=Konfigurationsdatei:
 settings-paths-log-file=Log-Datei:
 settings-paths-open=Öffnen
+
+settings-commands-category = Befehle
+settings-commands-section = Externe Programme
+settings-commands-placeholder = Befehl (z.B. icy_draw %F)
+settings-commands-description = %F wird durch den Dateinamen ersetzt
+
+export-no-file-selected = Keine Datei zum Exportieren ausgewählt
+export-success = Exportiert nach { $path }

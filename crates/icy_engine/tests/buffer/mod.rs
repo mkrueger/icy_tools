@@ -35,7 +35,7 @@ fn test_respect_sauce_width() {
     }
 
     let mut opt = SaveOptions::new();
-    opt.save_sauce = true;
+    opt.save_sauce = None;
     let ansi_bytes = buf.to_bytes("ans", &opt).unwrap();
 
     let loaded_buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None, None).unwrap();

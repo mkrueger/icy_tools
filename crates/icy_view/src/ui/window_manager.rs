@@ -255,9 +255,12 @@ impl WindowManager {
                     }
                     Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Touch(_) => None,
+
                     _ => None,
                 }
             }),
+            // important for updating slow blinking
+            iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::AnimationTick),
         ];
 
         // Add animation tick subscription when any window needs animation

@@ -58,7 +58,7 @@ fn test_roundtrip() {
             let mut opt = SaveOptions::default();
             opt.control_char_handling = ControlCharHandling::IcyTerm;
             opt.compress = true;
-            opt.save_sauce = true; // buf.has_sauce() is private
+            opt.save_sauce = None; // No sauce needed for test
             let mut draw = StringGenerator::new(opt);
             draw.screen_prep(&buf);
             draw.generate(&buf, &buf);

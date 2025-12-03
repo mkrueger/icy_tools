@@ -54,8 +54,8 @@ impl OutputFormat for Ascii {
             pos.y += 1;
         }
 
-        if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::CharacterFormat::Ascii, &mut result)?;
+        if let Some(sauce) = &options.save_sauce {
+            sauce.write(&mut result)?;
         }
         Ok(result)
     }
@@ -67,8 +67,8 @@ impl OutputFormat for Ascii {
         result.terminal_state_mut().is_terminal_buffer = false;
 
         result.buffer.file_name = Some(file_name.into());
-        if let Some(sauce) = load_data.sauce_opt {
-            result.buffer.load_sauce(sauce);
+        if let Some(sauce) = &load_data.sauce_opt {
+            result.apply_sauce(sauce);
         }
         let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
         if is_unicode {
@@ -82,10 +82,6 @@ impl OutputFormat for Ascii {
 pub fn get_save_sauce_default_asc(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
-    }
-
-    if buf.has_sauce() {
-        return (true, String::new());
     }
 
     (false, String::new())

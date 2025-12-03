@@ -1,0 +1,332 @@
+use iced::{
+    Alignment, Border, Color, Element, Length, Padding, Theme,
+    widget::{Space, column, container, row, scrollable, text},
+};
+
+use super::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button};
+use crate::ButtonType;
+
+/// A keyboard shortcut entry
+#[derive(Clone)]
+pub struct HelpShortcut {
+    /// Key combination (e.g., "Alt D", "Ctrl+Shift+N")
+    pub keys: String,
+    /// Short action name
+    pub action: String,
+    /// Longer description
+    pub description: String,
+}
+
+impl HelpShortcut {
+    pub fn new(keys: impl Into<String>, action: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            keys: keys.into(),
+            action: action.into(),
+            description: description.into(),
+        }
+    }
+}
+
+/// A category of shortcuts
+#[derive(Clone)]
+pub struct HelpCategory {
+    /// Emoji or icon for the category
+    pub icon: String,
+    /// Category name
+    pub name: String,
+    /// Shortcuts in this category
+    pub shortcuts: Vec<HelpShortcut>,
+}
+
+impl HelpCategory {
+    pub fn new(icon: impl Into<String>, name: impl Into<String>, shortcuts: Vec<HelpShortcut>) -> Self {
+        Self {
+            icon: icon.into(),
+            name: name.into(),
+            shortcuts,
+        }
+    }
+}
+
+/// Configuration for the help dialog
+pub struct HelpDialogConfig {
+    /// Title of the help dialog
+    pub title: String,
+    /// Subtitle/description
+    pub subtitle: String,
+    /// Icon for the title (emoji)
+    pub title_icon: String,
+    /// Categories with shortcuts
+    pub categories: Vec<HelpCategory>,
+}
+
+impl HelpDialogConfig {
+    pub fn new(title: impl Into<String>, subtitle: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            subtitle: subtitle.into(),
+            title_icon: "⌨".to_string(),
+            categories: Vec::new(),
+        }
+    }
+
+    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
+        self.title_icon = icon.into();
+        self
+    }
+
+    pub fn with_categories(mut self, categories: Vec<HelpCategory>) -> Self {
+        self.categories = categories;
+        self
+    }
+}
+
+/// Create a keyboard shortcut pill
+fn pill<Message: 'static>(content: &str) -> Element<'static, Message> {
+    container(
+        text(content.to_owned())
+            .size(TEXT_SIZE_NORMAL)
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::default()
+            })
+            .style(|theme: &Theme| text::Style {
+                color: Some(theme.palette().text),
+                ..Default::default()
+            }),
+    )
+    .padding(Padding::from([5, 12]))
+    .style(|theme: &Theme| container::Style {
+        background: Some(theme.palette().primary.into()),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 10.0.into(),
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
+/// Create a key group from a key string like "Ctrl+Shift+N" or "Alt D"
+fn key_group<Message: 'static + Clone>(keys: &str) -> Element<'static, Message> {
+    let parts = keys
+        .split(' ')
+        .flat_map(|chunk| {
+            if chunk.contains('+') {
+                chunk.split('+').collect::<Vec<_>>()
+            } else {
+                vec![chunk]
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut r = row![].spacing(DIALOG_SPACING).align_y(Alignment::Center);
+    for (i, p) in parts.iter().enumerate() {
+        r = r.push(pill::<Message>(p));
+        if i + 1 < parts.len() {
+            r = r.push(text("+").size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().background.base.text),
+                ..Default::default()
+            }));
+        }
+    }
+    r.into()
+}
+
+/// Create a category header
+fn category_header<Message: 'static>(icon: &str, name: &str) -> container::Container<'static, Message> {
+    container(
+        row![
+            text(icon.to_owned()).size(16),
+            Space::new().width(8),
+            text(name.to_owned()).size(16).style(|theme: &Theme| text::Style {
+                color: Some(theme.palette().text),
+                ..Default::default()
+            }),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding(Padding::from([10, 24]))
+    .style(|t: &Theme| container::Style {
+        background: Some(
+            Color::from_rgba(
+                t.extended_palette().background.weak.color.r,
+                t.extended_palette().background.weak.color.g,
+                t.extended_palette().background.weak.color.b,
+                0.3,
+            )
+            .into(),
+        ),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..Default::default()
+    })
+}
+
+/// Create the help dialog content
+/// 
+/// # Arguments
+/// * `config` - The help dialog configuration
+/// * `close_message` - Message to send when closing the dialog
+pub fn help_dialog_content<Message: Clone + 'static>(
+    config: &HelpDialogConfig,
+    close_message: Message,
+) -> Element<'static, Message> {
+    // Title block
+    let title = container(
+        row![
+            text(config.title_icon.clone()).size(24),
+            Space::new().width(10),
+            column![
+                text(config.title.clone()).size(22).style(|theme: &Theme| text::Style {
+                    color: Some(theme.palette().text),
+                    ..Default::default()
+                }),
+                text(config.subtitle.clone())
+                    .size(TEXT_SIZE_SMALL)
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().secondary.base.color),
+                        ..Default::default()
+                    }),
+            ]
+            .spacing(2)
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding(Padding {
+        top: 16.0,
+        right: 30.0,
+        bottom: 8.0,
+        left: 30.0,
+    });
+
+    // Build scrollable content
+    let mut content = column![].spacing(0);
+
+    for (cat_index, cat) in config.categories.iter().enumerate() {
+        let header = category_header::<Message>(&cat.icon, &cat.name);
+        content = content.push(header.width(Length::Fill));
+
+        for (row_index, sc) in cat.shortcuts.iter().enumerate() {
+            let shaded = (cat_index + row_index) % 2 == 0;
+            let keys = sc.keys.clone();
+            let action = sc.action.clone();
+            let desc = sc.description.clone();
+            
+            let shortcut_row = container(
+                row![
+                    container(key_group::<Message>(&keys)).width(Length::Fixed(200.0)),
+                    Space::new().width(16),
+                    container(text(action).size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
+                        color: Some(theme.palette().text),
+                        ..Default::default()
+                    }))
+                    .width(Length::Fixed(140.0)),
+                    Space::new().width(12),
+                    text(desc)
+                        .size(TEXT_SIZE_NORMAL)
+                        .style(|theme: &Theme| text::Style {
+                            color: Some(theme.palette().text),
+                            ..Default::default()
+                        })
+                        .width(Length::Fill),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .padding(Padding::from([7, 30]))
+            .width(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: if shaded { Some(Color::from_rgba(0.0, 0.0, 0.0, 0.015).into()) } else { None },
+                ..Default::default()
+            });
+
+            content = content.push(shortcut_row);
+        }
+
+        content = content.push(container(Space::new().height(4)).width(Length::Fill).style(|_theme: &Theme| container::Style {
+            background: None,
+            ..Default::default()
+        }));
+    }
+
+    // Footer
+    let footer = container(
+        row![
+            Space::new().width(Length::Fill),
+            primary_button(format!("{}", ButtonType::Close), Some(close_message))
+                .padding(Padding::from([5, 20])),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding(Padding::from([12, 30]))
+    .width(Length::Fill);
+
+    // Main dialog container
+    let dialog = container(
+        column![
+            title,
+            container(scrollable(container(content).padding(Padding::from([0, 0])).width(Length::Fill)).height(Length::Fill))
+                .height(Length::FillPortion(1))
+                .padding(Padding::from([0, 0])),
+            container(Space::new().height(1)).width(Length::Fill).style(|theme: &Theme| container::Style {
+                background: Some(theme.extended_palette().background.weak.color.into()),
+                ..Default::default()
+            }),
+            footer,
+        ]
+        .spacing(0),
+    )
+    .width(Length::Fixed(700.0))
+    .height(Length::Fixed(500.0))
+    .style(|theme: &Theme| container::Style {
+        background: Some(iced::Background::Color(theme.extended_palette().background.base.color)),
+        border: Border {
+            color: theme.extended_palette().background.strong.color,
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
+            offset: iced::Vector::new(0.0, 6.0),
+            blur_radius: 20.0,
+        },
+        ..Default::default()
+    });
+
+    container(dialog)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into()
+}
+
+/// Create a full help dialog with modal overlay
+/// 
+/// # Arguments
+/// * `background` - The background content
+/// * `config` - The help dialog configuration  
+/// * `close_message` - Message to send when closing the dialog
+pub fn help_dialog<'a, Message: Clone + 'static>(
+    background: Element<'a, Message>,
+    config: &'a HelpDialogConfig,
+    close_message: Message,
+) -> Element<'a, Message> {
+    let content = help_dialog_content(config, close_message.clone());
+    super::modal(background, content, close_message)
+}
+
+/// Returns the modifier symbol for the current platform
+/// Returns "⌘" on macOS, "Alt" on other platforms
+pub fn platform_mod_symbol() -> &'static str {
+    if cfg!(target_os = "macos") { "⌘" } else { "Alt" }
+}
+
+/// Returns true if running on macOS
+pub fn is_macos() -> bool {
+    cfg!(target_os = "macos")
+}

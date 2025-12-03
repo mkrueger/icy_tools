@@ -60,8 +60,8 @@ impl OutputFormat for Ansi {
         str_gen.add_sixels(buf);
         result.extend(str_gen.get_data());
 
-        if options.save_sauce {
-            buf.write_sauce_info(icy_sauce::SauceDataType::Character, icy_sauce::CharacterFormat::Ansi, &mut result)?;
+        if let Some(sauce) = &options.save_sauce {
+            sauce.write(&mut result)?;
         }
         Ok(result)
     }
@@ -73,8 +73,8 @@ impl OutputFormat for Ansi {
         result.terminal_state_mut().is_terminal_buffer = false;
 
         result.buffer.file_name = Some(file_name.into());
-        if let Some(sauce) = load_data.sauce_opt {
-            result.buffer.load_sauce(sauce);
+        if let Some(sauce) = &load_data.sauce_opt {
+            result.apply_sauce(sauce);
         }
 
         let mut parser = icy_parser_core::AnsiParser::new();
@@ -769,10 +769,6 @@ impl StringGenerator {
 pub fn get_save_sauce_default_ans(buf: &TextBuffer) -> (bool, String) {
     if buf.get_width() != 80 {
         return (true, "width != 80".to_string());
-    }
-
-    if buf.has_sauce() {
-        return (true, String::new());
     }
 
     (false, String::new())

@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::Item;
-use crate::ui::preview::{get_sauce_width, prepare_parser_data};
+use crate::ui::preview::{ prepare_parser_data};
 
 use super::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH, ThumbnailResult, ThumbnailState, get_width_multiplier};
 
@@ -397,12 +397,9 @@ fn render_with_parser(
     }
 
     // Apply SAUCE width if available
-    if let Some(ref sauce_record) = sauce {
-        if let Some(width) = get_sauce_width(sauce_record) {
-            if let Some(editable) = screen.as_editable() {
-                let width = width.min(icy_engine::limits::MAX_BUFFER_WIDTH);
-                editable.terminal_state_mut().set_width(width);
-            }
+    if let Some(sauce) = &sauce {
+        if let Some(editable) = screen.as_editable() {
+            editable.apply_sauce(sauce);
         }
     }
 

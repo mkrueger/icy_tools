@@ -2,13 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use icy_engine::{MouseEvent, Position, Selection};
+use icy_engine_gui::ui::ExportDialogMessage;
 use icy_net::protocol::TransferState;
 use icy_parser_core::BaudEmulation;
 
 use crate::{
     Address, TransferProtocol,
     terminal_thread::TerminalEvent,
-    ui::{MainWindowMode, export_screen_dialog, find_dialog, open_serial_dialog, select_bps_dialog, terminal_info_dialog, up_download_dialog},
+    ui::{MainWindowMode, find_dialog, open_serial_dialog, select_bps_dialog, terminal_info_dialog, up_download_dialog},
 };
 
 #[derive(Debug, Clone)]
@@ -18,7 +19,7 @@ pub enum Message {
     CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
     ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
     FindDialog(find_dialog::FindDialogMsg),
-    ExportDialog(export_screen_dialog::ExportScreenMsg),
+    ExportDialog(ExportDialogMessage),
     TransferDialog(up_download_dialog::TransferMsg),
     SelectBpsMsg(select_bps_dialog::SelectBpsMsg),
     OpenSerialMsg(open_serial_dialog::OpenSerialMsg),
