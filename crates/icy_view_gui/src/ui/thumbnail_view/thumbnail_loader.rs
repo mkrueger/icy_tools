@@ -271,16 +271,52 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
 
             let (orig_width, orig_height) = (img.width(), img.height());
 
-            // Scale down if needed
-            let scale = (THUMBNAIL_RENDER_WIDTH as f32 / orig_width as f32)
-                .min(THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32)
-                .min(1.0);
+            // Calculate width multiplier from pixel width
+            // Standard 80-col = 640px, 160-col = 1280px, 240-col = 1920px
+            let width_multiplier = if orig_width < 640 {
+                1
+            } else if orig_width < 960 {
+                2
+            } else {
+                3
+            };
 
-            let new_width = ((orig_width as f32 * scale) as u32).max(1);
-            let new_height = ((orig_height as f32 * scale) as u32).max(1);
+            // Target width based on multiplier
+            let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
+            let min_width = target_width / 2;
 
-            let resized = if scale < 1.0 {
-                img.resize(new_width, new_height, ::image::imageops::FilterType::Triangle)
+            // Scale strategy same as ANSI thumbnails
+            let scale_for_width = target_width as f32 / orig_width as f32;
+            let scaled_height = orig_height as f32 * scale_for_width;
+            let (new_width, new_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT as f32 {
+                // First try: scale to fit max height
+                let scale_for_height = THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32;
+                let new_w = (orig_width as f32 * scale_for_height) as u32;
+
+                if new_w >= min_width {
+                    // Width is acceptable
+                    (new_w, THUMBNAIL_MAX_HEIGHT)
+                } else {
+                    // Enforce min_width, will crop in height
+                    (min_width, THUMBNAIL_MAX_HEIGHT)
+                }
+            } else {
+                (target_width, (scaled_height as u32).max(1))
+            };
+
+            println!("[render_image_thumbnail] path={:?} orig={}x{} multiplier={} target_width={} new={}x{}",
+                path.file_name().unwrap_or_default(),
+                orig_width, orig_height, width_multiplier, target_width, new_width, new_height);
+
+            let resized = if new_width != orig_width || new_height != orig_height {
+                // Need to crop first if image is too tall for the scale
+                let crop_height = ((new_height as f32 / scale_for_width.min(THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32)) as u32).min(orig_height);
+                let cropped = if crop_height < orig_height {
+                    img.crop_imm(0, 0, orig_width, crop_height)
+                } else {
+                    img
+                };
+                cropped.resize_exact(new_width, new_height, ::image::imageops::FilterType::Triangle)
             } else {
                 img
             };
@@ -292,17 +328,14 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
             let rgba: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> = resized.to_rgba8();
             let rgba_data = RgbaData::new(rgba.into_raw(), new_width, new_height);
 
-            // Generate label tag as separate texture (1x width for images)
-            let label_tag = render_label_tag(label, 1);
-
-            // Check for animated GIF
-            // TODO: Handle animated GIFs with multiple frames
+            // Generate label tag with correct width multiplier
+            let label_tag = render_label_tag(label, width_multiplier);
 
             Some(ThumbnailResult {
                 path: path.clone(),
                 state: ThumbnailState::Ready { rgba: rgba_data },
                 sauce_info: None,
-                width_multiplier: 1,
+                width_multiplier,
                 label_tag,
             })
         }
@@ -635,24 +668,73 @@ fn render_screen_to_thumbnail(
     // Calculate target width based on multiplier
     // Each multiplier step is THUMBNAIL_RENDER_WIDTH (640px for 80 columns)
     let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
+    
+    // Minimum width to keep thumbnails readable (half of target = 320px for 80-col)
+    let min_width = target_width / 2;
 
-    // Scale to fit target width, respecting max height
-    // Note: We always scale to target_width (allow upscaling) for consistent layout
+    // Scale strategy: 
+    // 1. Try to fit to target_width
+    // 2. If that exceeds max height, scale down further to fit in max height
+    // 3. But enforce minimum width - crop height if necessary
     let scale_for_width = target_width as f32 / orig_width as f32;
-    let scale_for_height = THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32;
-    let scale = scale_for_width.min(scale_for_height);
+    let scaled_height = orig_height as f32 * scale_for_width;
+    
+    // Check if we need to scale down more to fit max height
+    let (new_width, new_height, crop_source_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT as f32 {
+        // First try: scale to fit max height
+        let scale_for_height = THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32;
+        let new_w = (orig_width as f32 * scale_for_height) as u32;
+        
+        if new_w >= min_width {
+            // Width is acceptable, use height-based scaling
+            (new_w, THUMBNAIL_MAX_HEIGHT, None)
+        } else {
+            // Width would be too narrow - enforce min_width and crop height instead
+            let scale_for_min_width = min_width as f32 / orig_width as f32;
+            let cropped_height_needed = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_min_width) as u32;
+            (min_width, THUMBNAIL_MAX_HEIGHT, Some(cropped_height_needed.min(orig_height)))
+        }
+    } else {
+        (target_width, (scaled_height as u32).max(1), None)
+    };
 
-    let new_width = ((orig_width as f32 * scale) as u32).max(1);
-    let new_height = ((orig_height as f32 * scale) as u32).max(1);
+    println!("[render_screen_to_thumbnail] path={:?} orig={}x{} target_width={} new={}x{} crop={:?}", 
+        path.file_name().unwrap_or_default(),
+        orig_width, orig_height, target_width, new_width, new_height, crop_source_height);
 
-    let rgba_on = scale_rgba_data(&rgba_on, orig_width, orig_height, new_width, new_height);
+    // Crop source if needed (for very tall images where min_width constraint kicks in)
+    let (rgba_on_data, source_height) = if let Some(crop_h) = crop_source_height {
+        let bytes_per_row = (orig_width * 4) as usize;
+        let cropped: Vec<u8> = rgba_on.iter()
+            .take(bytes_per_row * crop_h as usize)
+            .cloned()
+            .collect();
+        (cropped, crop_h)
+    } else {
+        (rgba_on.clone(), orig_height)
+    };
+
+    let rgba_on = scale_rgba_data(&rgba_on_data, orig_width, source_height, new_width, new_height);
 
     // Generate label tag as separate texture
     // Tag width is based on width_multiplier (1x, 2x, or 3x tile width)
     let label_tag = render_label_tag(label, width_multiplier);
 
     if has_blinking && !rgba_off.is_empty() {
-        let rgba_off = scale_rgba_data(&rgba_off, size_off.width as u32, size_off.height as u32, new_width, new_height);
+        // Apply same cropping/scaling to blink-off frame
+        let off_height = size_off.height as u32;
+        let (rgba_off_data, off_source_height) = if let Some(crop_h) = crop_source_height {
+            let crop_h = crop_h.min(off_height);
+            let bytes_per_row = (size_off.width * 4) as usize;
+            let cropped: Vec<u8> = rgba_off.iter()
+                .take(bytes_per_row * crop_h as usize)
+                .cloned()
+                .collect();
+            (cropped, crop_h)
+        } else {
+            (rgba_off.clone(), off_height)
+        };
+        let rgba_off = scale_rgba_data(&rgba_off_data, size_off.width as u32, off_source_height, new_width, new_height);
 
         Some(ThumbnailResult {
             path: path.clone(),

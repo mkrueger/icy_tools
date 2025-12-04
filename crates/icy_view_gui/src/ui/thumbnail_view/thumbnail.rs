@@ -17,8 +17,9 @@ use super::tile_shader::TILE_IMAGE_WIDTH;
 /// This is the render width (640px renders to 320px display)
 pub const THUMBNAIL_RENDER_WIDTH: u32 = 640;
 
-/// Maximum thumbnail height (to prevent memory issues with very tall images)
-pub const THUMBNAIL_MAX_HEIGHT: u32 = 2000;
+/// Maximum thumbnail height - limited by GPU texture size
+/// GPU max is 8192, we use 8000 to have some margin
+pub const THUMBNAIL_MAX_HEIGHT: u32 = 8000;
 
 /// Scale factor from render size to display size
 /// TILE_IMAGE_WIDTH (320) / THUMBNAIL_RENDER_WIDTH (640) = 0.5

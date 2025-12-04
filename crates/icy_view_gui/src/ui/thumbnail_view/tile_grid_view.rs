@@ -849,6 +849,13 @@ impl TileGridView {
 
         let mut messages = Vec::new();
         while let Ok(result) = self.result_rx.try_recv() {
+            // DEBUG: Log received thumbnail dimensions
+            if let ThumbnailState::Ready { rgba } = &result.state {
+                println!("[ThumbnailResult] path={:?} rgba_size={}x{} data_len={}", 
+                    result.path.file_name().unwrap_or_default(),
+                    rgba.width, rgba.height, rgba.data.len());
+            }
+            
             // Find the thumbnail by path - try exact match first, then filename match
             let found = self.thumbnails.iter_mut().enumerate().find(|(_, t)| t.path == result.path);
 

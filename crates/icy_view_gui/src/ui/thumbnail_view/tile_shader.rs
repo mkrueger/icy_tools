@@ -103,12 +103,21 @@ pub struct TileGridShader {
     pub hover_color: [f32; 4],
 }
 
-/// Uniforms for the tile shader
+/// Uniforms for the tile shader (v2 - pre-computed rectangles)
+/// All rectangles are in pixel coordinates with 0,0 = top-left
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct TileUniforms {
-    /// Tile display size (width, height) in pixels
+    /// Total tile size including shadow area (width, height)
     tile_size: [f32; 2],
+    /// Padding for alignment
+    _pad0: [f32; 2],
+    /// Content rectangle (tile without shadow): x, y, width, height
+    content_rect: [f32; 4],
+    /// Image rectangle: x, y, width, height
+    image_rect: [f32; 4],
+    /// Label rectangle: x, y, width, height
+    label_rect: [f32; 4],
     /// Is selected (0.0 or 1.0)
     is_selected: f32,
     /// Is hovered (0.0 or 1.0)
@@ -117,22 +126,80 @@ struct TileUniforms {
     border_radius: f32,
     /// Border width
     border_width: f32,
-    /// Inner padding
-    inner_padding: f32,
-    /// Shadow offset X
-    shadow_offset_x: f32,
-    /// Shadow offset Y
-    shadow_offset_y: f32,
     /// Shadow blur
     shadow_blur: f32,
     /// Shadow opacity
     shadow_opacity: f32,
-    /// Image height (excluding label area)
-    image_height: f32,
-    ///  Height of the filename tag area
-    tag_height: f32,
-    /// Padding (to align to 16 bytes - total: 11 floats, need 1 more for 12 = 3 vec4)
-    _padding: f32,
+    /// Padding for alignment (total: 26 floats, need 2 more for 28 = 7 vec4)
+    _padding: [f32; 2],
+}
+
+impl TileUniforms {
+    /// Create uniforms for a tile with pre-computed rectangles
+    fn new(tile: &TileTexture, tag_height: f32) -> Self {
+        let shadow_extra_x = SHADOW_OFFSET_X + SHADOW_BLUR_RADIUS;
+        let shadow_extra_y = SHADOW_OFFSET_Y + SHADOW_BLUR_RADIUS;
+        
+        // Total size including shadow
+        let total_width = tile.display_size.0 + shadow_extra_x;
+        let total_height = tile.display_size.1 + shadow_extra_y;
+        
+        // Content rect (tile without shadow) - positioned at top-left
+        let content_x = 0.0;
+        let content_y = 0.0;
+        let content_w = tile.display_size.0;
+        let content_h = tile.display_size.1;
+        
+        // Image rect - inside content with padding
+        let padding = TILE_BORDER_WIDTH + TILE_INNER_PADDING;
+        let image_x = padding;
+        let image_y = padding;
+        let image_w = content_w - padding * 2.0;
+        let image_h = tile.image_height;
+        
+        // Label rect - below image with inner padding
+        let label_x = padding;
+        let label_y = image_y + image_h + TILE_INNER_PADDING;
+        let label_w = image_w;
+        let label_h = if tag_height > 0.0 { 
+            tag_height + TILE_INNER_PADDING 
+        } else { 
+            0.0 
+        };
+        
+        Self {
+            tile_size: [total_width, total_height],
+            _pad0: [0.0, 0.0],
+            content_rect: [content_x, content_y, content_w, content_h],
+            image_rect: [image_x, image_y, image_w, image_h],
+            label_rect: [label_x, label_y, label_w, label_h],
+            is_selected: if tile.is_selected { 1.0 } else { 0.0 },
+            is_hovered: if tile.is_hovered { 1.0 } else { 0.0 },
+            border_radius: TILE_CORNER_RADIUS,
+            border_width: TILE_BORDER_WIDTH,
+            shadow_blur: SHADOW_BLUR_RADIUS,
+            shadow_opacity: SHADOW_OPACITY,
+            _padding: [0.0, 0.0],
+        }
+    }
+    
+    /// Create uniforms for a tag texture (simple, no effects)
+    fn new_for_tag(width: f32, height: f32) -> Self {
+        Self {
+            tile_size: [width, height],
+            _pad0: [0.0, 0.0],
+            content_rect: [0.0, 0.0, width, height],
+            image_rect: [0.0, 0.0, width, height],
+            label_rect: [0.0, 0.0, 0.0, 0.0],
+            is_selected: 0.0,
+            is_hovered: 0.0,
+            border_radius: 0.0,
+            border_width: 0.0,
+            shadow_blur: 0.0,
+            shadow_opacity: 0.0,
+            _padding: [0.0, 0.0],
+        }
+    }
 }
 
 /// Shared texture resources (can be reused across multiple tiles with same image data)
@@ -529,49 +596,35 @@ impl shader::Primitive for TileGridShader {
 
             // Update uniforms for this tile (always, as hover/selection state may change)
             if let Some(resources) = pipeline.tiles.get(&tile.id) {
-                // Calculate total tile size including shadow area
-                let shadow_extra_x = SHADOW_OFFSET_X + SHADOW_BLUR_RADIUS;
-                let shadow_extra_y = SHADOW_OFFSET_Y + SHADOW_BLUR_RADIUS;
-                let total_width = tile.display_size.0 + shadow_extra_x;
-                let total_height = tile.display_size.1 + shadow_extra_y;
-
-                let uniforms = TileUniforms {
-                    tile_size: [total_width, total_height],
-                    is_selected: if tile.is_selected { 1.0 } else { 0.0 },
-                    is_hovered: if tile.is_hovered { 1.0 } else { 0.0 },
-                    border_radius: TILE_CORNER_RADIUS,
-                    border_width: TILE_BORDER_WIDTH,
-                    inner_padding: TILE_INNER_PADDING,
-                    shadow_offset_x: SHADOW_OFFSET_X,
-                    shadow_offset_y: SHADOW_OFFSET_Y,
-                    shadow_blur: SHADOW_BLUR_RADIUS,
-                    shadow_opacity: SHADOW_OPACITY,
-                    image_height: tile.image_height,
-                    tag_height: tag_size.map(|s| s.1 as f32).unwrap_or(0.0),
-                    _padding: 0.0,
-                };
-
+                let tag_height = tag_size.map(|s| s.1 as f32).unwrap_or(0.0);
+                let uniforms = TileUniforms::new(tile, tag_height);
+                
+                // DEBUG: Print texture sizes when selected
+                if tile.is_selected {
+                    if let Some(shared_tex) = pipeline.shared_textures.get(&resources.texture_key) {
+                        println!("=== SELECTED TILE DEBUG ===");
+                        println!("Tile ID: {}", tile.id);
+                        println!("Texture size (GPU): {:?}", shared_tex.texture_size);
+                        println!("Display size: {:?}", tile.display_size);
+                        println!("Image height: {}", tile.image_height);
+                        println!("Tag height: {}", tag_height);
+                        println!("Uniforms:");
+                        println!("  tile_size: {:?}", uniforms.tile_size);
+                        println!("  content_rect: {:?}", uniforms.content_rect);
+                        println!("  image_rect: {:?}", uniforms.image_rect);
+                        println!("  label_rect: {:?}", uniforms.label_rect);
+                        if let Some((tag_w, tag_h)) = resources.tag_size {
+                            println!("Tag texture size: {}x{}", tag_w, tag_h);
+                        }
+                        println!("===========================");
+                    }
+                }
+                
                 queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
                 // Write tag uniforms if present
                 if let (Some(tag_uniform_buffer), Some((tag_w, tag_h))) = (&resources.tag_uniform_buffer, resources.tag_size) {
-                    // For tags, set image_height = tag_h so the texture fills the entire area
-                    // No borders, shadows, or padding - just render the texture directly
-                    let tag_uniforms = TileUniforms {
-                        tile_size: [tag_w as f32, tag_h as f32],
-                        is_selected: 0.0,
-                        is_hovered: 0.0,
-                        border_radius: 0.0,
-                        border_width: 0.0,
-                        inner_padding: 0.0,
-                        shadow_offset_x: 0.0,
-                        shadow_offset_y: 0.0,
-                        shadow_blur: 0.0,
-                        shadow_opacity: 0.0,
-                        image_height: tag_h as f32, // Fill entire area with the texture
-                        tag_height: 0.0,
-                        _padding: 0.0,
-                    };
+                    let tag_uniforms = TileUniforms::new_for_tag(tag_w as f32, tag_h as f32);
                     queue.write_buffer(tag_uniform_buffer, 0, bytemuck::bytes_of(&tag_uniforms));
                 }
             }

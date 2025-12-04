@@ -273,7 +273,6 @@ impl ShuffleMode {
         if scroll_complete {
             // Normal case: scroll finished, check post-scroll delay
             if let Some(finished_at) = self.scroll_finished_at {
-                println!("should advance: {}", finished_at.elapsed().as_secs_f32() >= POST_SCROLL_DELAY_SECS);
                 return finished_at.elapsed().as_secs_f32() >= POST_SCROLL_DELAY_SECS;
             }
         } else {
