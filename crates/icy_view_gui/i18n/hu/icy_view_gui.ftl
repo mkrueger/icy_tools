@@ -125,7 +125,6 @@ settings-heading=Beállítások
 settings-reset_button=Visszaállítás
 settings-monitor-category=Monitor
 settings-paths-category=Útvonalak
-settings-restore-defaults-button=Alapértékek visszaállítása
 
 settings-paths-header=Alkalmazás útvonalak
 settings-paths-user-header=Felhasználói útvonalak

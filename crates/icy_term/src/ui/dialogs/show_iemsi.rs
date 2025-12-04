@@ -38,16 +38,6 @@ impl ShowIemsiDialog {
         crate::ui::modal(terminal_content, overlay, crate::ui::Message::ShowIemsi(IemsiMsg::Close))
     }
 
-    fn section_header(title: String) -> Element<'static, crate::ui::Message> {
-        text(title)
-            .size(HEADER_TEXT_SIZE)
-            .font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..iced::Font::default()
-            })
-            .into()
-    }
-
     fn create_field(label: String, value: &str) -> Element<'_, crate::ui::Message> {
         row![
             text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),

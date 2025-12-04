@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use super::{
     DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row_with_left, dialog_area, dialog_title,
-    error_tooltip, left_label_small, modal_container, primary_button, secondary_button, separator,
+    error_tooltip, left_label_small, modal_container, primary_button, restore_defaults_button, secondary_button, separator,
 };
 use crate::LANGUAGE_LOADER;
 use crate::settings::effect_box;
@@ -379,14 +379,7 @@ impl ExportDialogState {
             true
         };
 
-        let restore_btn = secondary_button(
-            fl!(LANGUAGE_LOADER, "settings-restore-defaults-button"),
-            if !is_at_defaults {
-                Some(on_message.clone()(ExportDialogMessage::RestoreDefaults))
-            } else {
-                None
-            },
-        );
+        let restore_btn = restore_defaults_button(!is_at_defaults, on_message.clone()(ExportDialogMessage::RestoreDefaults));
 
         // Action buttons
         let export_enabled = !self.temp_directory.is_empty() && !self.temp_filename.is_empty() && dir_valid;

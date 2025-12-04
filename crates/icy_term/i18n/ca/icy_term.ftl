@@ -4,7 +4,6 @@ settings-heading = Configuració
 settings-enabled-checkbox = Habilitat
 settings-scaling = Escalat
 settings-monitor-type = Monitor
-settings-restore-defaults-button = Restaurar valors predeterminats
 settings-monitor-category = Monitor
 settings-monitor-use-crt-filter-checkbox = Utilitza filtre CRT
 settings-monitor-brightness = Brillantor

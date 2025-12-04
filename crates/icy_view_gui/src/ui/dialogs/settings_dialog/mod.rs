@@ -42,6 +42,7 @@ impl SettingsCategory {
 pub enum SettingsMessage {
     SwitchCategory(SettingsCategory),
     MonitorSettings(MonitorSettingsMessage),
+    ResetMonitorSettings,
     ExternalCommandChanged(usize, String),
     UpdateExportPath(String),
     BrowseExportPath,
@@ -116,6 +117,10 @@ impl SettingsDialogState {
             }
             SettingsMessage::MonitorSettings(settings) => {
                 update_monitor_settings(&mut self.temp_options.lock().monitor_settings, settings);
+                None
+            }
+            SettingsMessage::ResetMonitorSettings => {
+                self.temp_options.lock().monitor_settings = icy_engine_gui::MonitorSettings::default();
                 None
             }
             SettingsMessage::ExternalCommandChanged(idx, cmd) => {
@@ -220,9 +225,28 @@ impl SettingsDialogState {
             Some(crate::ui::Message::SettingsDialog(SettingsMessage::Cancel)),
         );
 
+        // Reset button for Monitor category
+        let reset_button = match self.current_category {
+            SettingsCategory::Monitor => {
+                let current_settings = self.temp_options.lock().monitor_settings.clone();
+                let default_settings = icy_engine_gui::MonitorSettings::default();
+                let is_default = current_settings == default_settings;
+                Some(icy_engine_gui::ui::restore_defaults_button(
+                    !is_default,
+                    crate::ui::Message::SettingsDialog(SettingsMessage::ResetMonitorSettings),
+                ))
+            }
+            _ => None,
+        };
+
+        let mut buttons_left = vec![];
+        if let Some(reset_btn) = reset_button {
+            buttons_left.push(reset_btn.into());
+        }
+
         let buttons_right = vec![cancel_button.into(), ok_button.into()];
 
-        let button_area_row = button_row(buttons_right);
+        let button_area_row = icy_engine_gui::ui::button_row_with_left(buttons_left, buttons_right);
 
         let content_container = container(scrollable(settings_content).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
             .height(Length::Fixed(SETTINGS_CONTENT_HEIGHT))

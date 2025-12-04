@@ -142,7 +142,6 @@ settings-heading=Einstellungen
 settings-reset_button=Reset
 settings-monitor-category=Monitor
 settings-paths-category=Pfade
-settings-restore-defaults-button=Standardwerte wiederherstellen
 
 settings-paths-header=Anwendungspfade
 settings-paths-user-header=Benutzerpfade

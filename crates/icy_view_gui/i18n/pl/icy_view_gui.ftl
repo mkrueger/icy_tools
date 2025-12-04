@@ -125,7 +125,6 @@ settings-heading=Ustawienia
 settings-reset_button=Resetuj
 settings-monitor-category=Monitor
 settings-paths-category=Ścieżki
-settings-restore-defaults-button=Przywróć Domyślne
 
 settings-paths-header=Ścieżki aplikacji
 settings-paths-user-header=Ścieżki użytkownika

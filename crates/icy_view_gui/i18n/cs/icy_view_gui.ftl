@@ -125,7 +125,6 @@ settings-heading=Nastavení
 settings-reset_button=Resetovat
 settings-monitor-category=Monitor
 settings-paths-category=Cesty
-settings-restore-defaults-button=Obnovit Výchozí
 
 settings-paths-header=Cesty aplikace
 settings-paths-user-header=Uživatelské cesty

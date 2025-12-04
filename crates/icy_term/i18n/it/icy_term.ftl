@@ -4,7 +4,6 @@ settings-heading = Impostazioni
 settings-enabled-checkbox = Abilitato
 settings-scaling = Scala
 settings-monitor-type = Monitor
-settings-restore-defaults-button = Ripristina predefinite
 settings-monitor-category = Monitor
 settings-monitor-use-crt-filter-checkbox = Usa filtro CRT
 settings-monitor-brightness = Luminosità

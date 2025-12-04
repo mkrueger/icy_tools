@@ -4,7 +4,6 @@ settings-heading = Nastavení
 settings-enabled-checkbox = Povoleno
 settings-scaling = Měřítko
 settings-monitor-type = Monitor
-settings-restore-defaults-button = Obnovit výchozí
 settings-monitor-category = Monitor
 settings-monitor-use-crt-filter-checkbox = Použít CRT filtr
 settings-monitor-brightness = Jas

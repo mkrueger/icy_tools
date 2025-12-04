@@ -125,7 +125,6 @@ settings-heading=Ajustes
 settings-reset_button=Restablecer
 settings-monitor-category=Monitor
 settings-paths-category=Rutas
-settings-restore-defaults-button=Restaurar Valores Predeterminados
 
 settings-paths-header=Rutas de la Aplicación
 settings-paths-user-header=Rutas del Usuario

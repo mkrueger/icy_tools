@@ -125,7 +125,6 @@ settings-heading=Impostazioni
 settings-reset_button=Reimposta
 settings-monitor-category=Monitor
 settings-paths-category=Percorsi
-settings-restore-defaults-button=Ripristina Predefiniti
 
 settings-paths-header=Percorsi dell'applicazione
 settings-paths-user-header=Percorsi utente

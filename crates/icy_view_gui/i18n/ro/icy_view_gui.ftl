@@ -125,7 +125,6 @@ settings-heading=Setări
 settings-reset_button=Resetați
 settings-monitor-category=Monitor
 settings-paths-category=Căi
-settings-restore-defaults-button=Restabilire Setări Implicite
 
 settings-paths-header=Căi aplicație
 settings-paths-user-header=Căi utilizator

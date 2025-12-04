@@ -443,12 +443,10 @@ impl SettingsDialogState {
                 let current_settings = self.temp_options.lock().monitor_settings.clone();
                 let default_settings = icy_engine_gui::MonitorSettings::default();
                 let is_default = current_settings == default_settings;
-                let msg = if !is_default {
-                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
-                } else {
-                    None
-                };
-                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))
+                Some(icy_engine_gui::ui::restore_defaults_button(
+                    !is_default,
+                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
+                ))
             }
             SettingsCategory::Terminal => {
                 let options = self.temp_options.lock();
@@ -460,7 +458,7 @@ impl SettingsDialogState {
                 } else {
                     None
                 };
-                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))*/
+                Some(icy_engine_gui::ui::restore_defaults_button(!is_default, msg))*/
                 None
             }
             SettingsCategory::IEMSI => {
@@ -475,26 +473,24 @@ impl SettingsDialogState {
                 } else {
                     None
                 };
-                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))*/
+                Some(icy_engine_gui::ui::restore_defaults_button(!is_default, msg))*/
                 None
             }
             SettingsCategory::Keybinds => {
                 // TODO: Add default keybindings check when implemented
-                Some(secondary_button(
-                    fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"),
-                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone()))),
+                Some(icy_engine_gui::ui::restore_defaults_button(
+                    true,
+                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
                 ))
             }
             SettingsCategory::Paths => {
                 let options = self.temp_options.lock();
                 let is_default = options.download_path.is_empty() && options.capture_path.is_empty();
                 drop(options);
-                let msg = if !is_default {
-                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
-                } else {
-                    None
-                };
-                Some(secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"), msg))
+                Some(icy_engine_gui::ui::restore_defaults_button(
+                    !is_default,
+                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
+                ))
             }
             _ => None,
         };

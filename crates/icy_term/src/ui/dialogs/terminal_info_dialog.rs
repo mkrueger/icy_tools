@@ -356,16 +356,6 @@ impl TerminalInfoDialog {
         .into()
     }
 
-    fn section_header(title: String) -> Element<'static, crate::ui::Message> {
-        text(title)
-            .size(HEADER_TEXT_SIZE)
-            .font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..iced::Font::default()
-            })
-            .into()
-    }
-
     fn vertical_separator<'a>() -> Element<'a, crate::ui::Message> {
         container(Space::new())
             .width(1.0)

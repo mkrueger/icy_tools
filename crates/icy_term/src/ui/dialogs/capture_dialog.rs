@@ -285,13 +285,9 @@ impl CaptureDialogState {
         let is_at_defaults = default_dir.to_str().map(|s| s == self.temp_directory).unwrap_or(true);
 
         let restore_btn = if !self.capture_session {
-            Some(secondary_button(
-                fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button"),
-                if !is_at_defaults {
-                    Some(crate::ui::Message::CaptureDialog(CaptureMsg::RestoreDefaults))
-                } else {
-                    None
-                },
+            Some(icy_engine_gui::ui::restore_defaults_button(
+                !is_at_defaults,
+                crate::ui::Message::CaptureDialog(CaptureMsg::RestoreDefaults),
             ))
         } else {
             None

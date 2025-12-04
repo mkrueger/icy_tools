@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length, Theme,
-    widget::{Space, column, container, row, text},
+    widget::{Space, button, column, container, row, text},
 };
 use std::fmt;
 
@@ -78,6 +78,11 @@ impl ButtonType {
             Self::Delete => DialogResult::Delete,
             Self::Overwrite => DialogResult::Overwrite,
         }
+    }
+
+    pub fn primary<'a, Message: Clone + 'a>(&self, is_sensitive: bool, on_press: Message) -> button::Button<'a, Message> {
+        let label = format!("{}", self);
+        primary_button(label, is_sensitive.then_some(on_press))
     }
 }
 

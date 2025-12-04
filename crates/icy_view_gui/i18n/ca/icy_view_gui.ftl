@@ -125,7 +125,6 @@ settings-heading=Configuració
 settings-reset_button=Restablir
 settings-monitor-category=Monitor
 settings-paths-category=Rutes
-settings-restore-defaults-button=Restaurar Valors per Defecte
 
 settings-paths-header=Rutes de l'aplicació
 settings-paths-user-header=Rutes d'usuari

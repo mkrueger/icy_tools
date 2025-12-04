@@ -1,3 +1,4 @@
+use i18n_embed_fl::fl;
 use iced::widget::{Space, button, column, container, row, space, text, tooltip};
 use iced::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
@@ -449,6 +450,18 @@ pub fn secondary_button<'a, Message: Clone + 'a>(label: impl Into<String>, on_pr
 
     if let Some(msg) = on_press {
         btn = btn.on_press(msg);
+    }
+    btn
+}
+
+pub fn restore_defaults_button<'a, Message: Clone + 'a>(is_sensitive: bool, on_press: Message) -> button::Button<'a, Message> {
+    let label = fl!(crate::LANGUAGE_LOADER, "settings-restore-defaults-button");
+    let mut btn = button(text(label).size(BUTTON_FONT_SIZE).wrapping(text::Wrapping::None))
+        .padding(BUTTON_PADDING_NORMAL)
+        .style(secondary_button_style);
+
+    if is_sensitive {
+        btn = btn.on_press(on_press);
     }
     btn
 }
