@@ -17,6 +17,17 @@ menu-upgrade_version=Mettre à jour vers { $version }
 
 tooltip-refresh=Actualiser
 tooltip-reset-filter-button=Réinitialiser le filtre
+tooltip-back=Retour
+tooltip-forward=Avancer
+tooltip-up=Aller au répertoire parent
+tooltip-filter=Filtrer (Ctrl+F)
+tooltip-view-mode-list=Passer à la vue liste
+tooltip-view-mode-tiles=Passer à la vue mosaïque
+tooltip-browse-16colors=Parcourir 16colors.rs
+tooltip-settings=Paramètres
+
+statusbar-items={ $count } éléments
+statusbar-ready=Prêt
 
 filter-entries-hint-text=Filtrer les entrées
 label-terminal_width=Largeur du terminal:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } paquets)
 settings-heading=Paramètres
 settings-reset_button=Réinitialiser
 settings-monitor-category=Moniteur
+settings-paths-category=Chemins
+settings-restore-defaults-button=Restaurer les valeurs par défaut
+
+settings-paths-header=Chemins de l'application
+settings-paths-user-header=Chemins utilisateur
+settings-paths-export-path=Chemin d'exportation:
+settings-paths-config-dir=Répertoire de configuration:
+settings-paths-config-file=Fichier de configuration:
+settings-paths-log-file=Fichier journal:
+settings-paths-open=Ouvrir
+
+settings-commands-category=Commandes
+settings-commands-section=Programmes Externes
+settings-commands-placeholder=Commande (ex. icy_draw %F)
+settings-commands-description=Utilisez %F pour le nom du fichier
+
+export-no-file-selected=Aucun fichier sélectionné pour l'exportation
+export-success=Exporté vers { $path }
+
+toast-baud-rate-off=Émulation baud: désactivée
+toast-baud-rate=Débit en bauds: { $rate }
+toast-command-not-configured=Commande { $key } non configurée
 
 preview-no-file-selected = Aucun fichier sélectionné
 preview-loading = Chargement...
@@ -122,3 +155,6 @@ error-external-command-title = Échec de l'exécution de la commande externe
 error-external-command-message = Commande: { $command }
 
     Erreur: { $error }
+
+welcome-select-file = 📂 Sélectionnez un fichier à prévisualiser
+welcome-tip = Astuce: Appuyez sur Ctrl+F pour filtrer, ou cliquez sur 🌐 pour parcourir 16colors.rs

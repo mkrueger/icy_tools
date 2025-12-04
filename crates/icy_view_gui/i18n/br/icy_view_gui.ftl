@@ -16,7 +16,18 @@ menu-item-settings = Configurações
 menu-upgrade_version=Atualizar para { $version }
 
 tooltip-refresh=Atualizar
-tooltip-reset-filter-button=Redefinir filtro
+tooltip-reset-filter-button=Limpar filtro
+tooltip-back=Voltar
+tooltip-forward=Avançar
+tooltip-up=Ir para diretório pai
+tooltip-filter=Filtrar (Ctrl+F)
+tooltip-view-mode-list=Mudar para visualização em lista
+tooltip-view-mode-tiles=Mudar para visualização em blocos
+tooltip-browse-16colors=Navegar 16colors.rs
+tooltip-settings=Configurações
+
+statusbar-items={ $count } itens
+statusbar-ready=Pronto
 
 filter-entries-hint-text=Filtrar entradas
 label-terminal_width=Largura do terminal:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } pacotes)
 settings-heading=Configurações
 settings-reset_button=Redefinir
 settings-monitor-category=Monitor
+settings-paths-category=Caminhos
+settings-restore-defaults-button=Restaurar Padrões
+
+settings-paths-header=Caminhos do Aplicativo
+settings-paths-user-header=Caminhos do Usuário
+settings-paths-export-path=Caminho de exportação:
+settings-paths-config-dir=Diretório de configuração:
+settings-paths-config-file=Arquivo de configuração:
+settings-paths-log-file=Arquivo de log:
+settings-paths-open=Abrir
+
+settings-commands-category=Comandos
+settings-commands-section=Programas Externos
+settings-commands-placeholder=Comando (ex. icy_draw %F)
+settings-commands-description=Use %F para o nome do arquivo
+
+export-no-file-selected=Nenhum arquivo selecionado para exportar
+export-success=Exportado para { $path }
+
+toast-baud-rate-off=Emulação de baud: desligada
+toast-baud-rate=Taxa de baud: { $rate }
+toast-command-not-configured=Comando { $key } não configurado
 
 preview-no-file-selected = Nenhum arquivo selecionado
 preview-loading = Carregando...
@@ -122,3 +155,6 @@ error-external-command-title = Falha ao executar comando externo
 error-external-command-message = Comando: { $command }
 
     Erro: { $error }
+
+welcome-select-file = 📂 Selecione um arquivo para visualizar
+welcome-tip = Dica: Pressione Ctrl+F para filtrar, ou clique 🌐 para navegar em 16colors.rs

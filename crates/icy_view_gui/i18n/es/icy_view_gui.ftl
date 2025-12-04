@@ -17,6 +17,17 @@ menu-upgrade_version=Actualizar a { $version }
 
 tooltip-refresh=Actualizar
 tooltip-reset-filter-button=Reiniciar filtro
+tooltip-back=Atrás
+tooltip-forward=Adelante
+tooltip-up=Ir al directorio padre
+tooltip-filter=Filtrar (Ctrl+F)
+tooltip-view-mode-list=Cambiar a vista de lista
+tooltip-view-mode-tiles=Cambiar a vista de mosaicos
+tooltip-browse-16colors=Explorar 16colors.rs
+tooltip-settings=Configuración
+
+statusbar-items={ $count } elementos
+statusbar-ready=Listo
 
 filter-entries-hint-text=Filtrar entradas
 label-terminal_width=Ancho de terminal:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } paquetes)
 settings-heading=Ajustes
 settings-reset_button=Restablecer
 settings-monitor-category=Monitor
+settings-paths-category=Rutas
+settings-restore-defaults-button=Restaurar Valores Predeterminados
+
+settings-paths-header=Rutas de la Aplicación
+settings-paths-user-header=Rutas del Usuario
+settings-paths-export-path=Ruta de exportación:
+settings-paths-config-dir=Directorio de configuración:
+settings-paths-config-file=Archivo de configuración:
+settings-paths-log-file=Archivo de registro:
+settings-paths-open=Abrir
+
+settings-commands-category=Comandos
+settings-commands-section=Programas Externos
+settings-commands-placeholder=Comando (ej. icy_draw %F)
+settings-commands-description=Use %F para el nombre del archivo
+
+export-no-file-selected=Ningún archivo seleccionado para exportar
+export-success=Exportado a { $path }
+
+toast-baud-rate-off=Emulación de baudios: desactivada
+toast-baud-rate=Tasa de baudios: { $rate }
+toast-command-not-configured=Comando { $key } no configurado
 
 preview-no-file-selected = Ningún archivo seleccionado
 preview-loading = Cargando...
@@ -122,3 +155,6 @@ error-external-command-title = Error al ejecutar comando externo
 error-external-command-message = Comando: { $command }
 
     Error: { $error }
+
+welcome-select-file = 📂 Seleccione un archivo para previsualizar
+welcome-tip = Consejo: Presione Ctrl+F para filtrar, o haga clic en 🌐 para navegar 16colors.rs

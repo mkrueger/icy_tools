@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use icy_sauce::SauceRecord;
+
 mod archive;
 mod files;
 mod provider;
@@ -140,6 +142,18 @@ pub trait Item: Send + Sync {
         false
     }
 
+    /// Get the file size in bytes (for sorting)
+    /// Returns None for items that don't have a size (e.g., folders)
+    fn get_size(&self) -> Option<u64> {
+        None
+    }
+
+    /// Get the modification time (for sorting)
+    /// Returns None for items that don't have a modification time
+    fn get_modified_time(&self) -> Option<std::time::SystemTime> {
+        None
+    }
+
     /// Get a synchronous thumbnail for this item (no async loading needed)
     /// Returns Some(RgbaData) if the item can provide a thumbnail immediately without I/O
     /// This is used for folders that just show a static folder icon
@@ -166,6 +180,16 @@ pub trait Item: Send + Sync {
 
     /// Read the item's data (async for network/file I/O)
     async fn read_data(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Get SAUCE info for this item (async for file I/O)
+    /// Returns the SAUCE record if the file has one
+    async fn get_sauce_info(&self, _cancel_token: &CancellationToken) -> Option<SauceRecord> {
+        // Default implementation reads data and extracts SAUCE
+        if let Some(data) = self.read_data().await {
+            return SauceRecord::from_bytes(&data).ok().flatten();
+        }
         None
     }
 
@@ -260,6 +284,51 @@ impl dyn Item {
 
 pub fn sort_folder(directories: &mut Vec<Box<dyn Item>>) {
     directories.sort_by(|a, b| a.get_label().to_lowercase().cmp(&b.get_label().to_lowercase()));
+}
+
+use crate::SortOrder;
+
+/// Sort items according to the specified sort order
+/// Folders are always listed first, then files are sorted within their group
+pub fn sort_items(items: &mut Vec<Box<dyn Item>>, order: SortOrder) {
+    items.sort_by(|a, b| {
+        // Folders always come first
+        let a_is_folder = a.is_container() || a.is_parent();
+        let b_is_folder = b.is_container() || b.is_parent();
+
+        if a_is_folder && !b_is_folder {
+            return std::cmp::Ordering::Less;
+        }
+        if !a_is_folder && b_is_folder {
+            return std::cmp::Ordering::Greater;
+        }
+
+        // Both are same type, apply sort order
+        match order {
+            SortOrder::NameAsc => a.get_label().to_lowercase().cmp(&b.get_label().to_lowercase()),
+            SortOrder::NameDesc => b.get_label().to_lowercase().cmp(&a.get_label().to_lowercase()),
+            SortOrder::SizeAsc => {
+                let a_size = a.get_size().unwrap_or(0);
+                let b_size = b.get_size().unwrap_or(0);
+                a_size.cmp(&b_size)
+            }
+            SortOrder::SizeDesc => {
+                let a_size = a.get_size().unwrap_or(0);
+                let b_size = b.get_size().unwrap_or(0);
+                b_size.cmp(&a_size)
+            }
+            SortOrder::DateAsc => {
+                let a_date = a.get_modified_time();
+                let b_date = b.get_modified_time();
+                a_date.cmp(&b_date)
+            }
+            SortOrder::DateDesc => {
+                let a_date = a.get_modified_time();
+                let b_date = b.get_modified_time();
+                b_date.cmp(&a_date)
+            }
+        }
+    });
 }
 
 /// Create a thumbnail preview from a TextBuffer (80x25 screen)

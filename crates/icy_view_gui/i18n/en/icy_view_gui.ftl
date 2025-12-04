@@ -17,6 +17,31 @@ menu-upgrade_version=Upgrade to { $version }
 
 tooltip-refresh=Refresh
 tooltip-reset-filter-button=Reset filter
+tooltip-back=Go back
+tooltip-forward=Go forward
+tooltip-up=Go to parent directory
+tooltip-filter=Filter (Ctrl+F)
+tooltip-view-mode-list=Switch to list view
+tooltip-view-mode-tiles=Switch to tiles view
+tooltip-browse-16colors=Browse 16colors.rs
+tooltip-settings=Settings
+tooltip-sort-name-asc=Sort by name (A-Z)
+tooltip-sort-name-desc=Sort by name (Z-A)
+tooltip-sort-size-asc=Sort by size (smallest first)
+tooltip-sort-size-desc=Sort by size (largest first)
+tooltip-sort-date-asc=Sort by date (oldest first)
+tooltip-sort-date-desc=Sort by date (newest first)
+tooltip-sauce-mode-on=Show SAUCE information
+tooltip-sauce-mode-off=Hide SAUCE information
+tooltip-shuffle-mode=Shuffle mode (slideshow)
+
+header-name=Name
+header-title=Title
+header-author=Author
+header-group=Group
+
+statusbar-items={ $count } items
+statusbar-ready=Ready
 
 filter-entries-hint-text=Filter entries
 label-terminal_width=Terminal width:
@@ -143,3 +168,6 @@ error-external-command-title = Failed to execute external command
 error-external-command-message = Command: { $command }
 
     Error: { $error }
+
+welcome-select-file = 📂 Select a file to preview
+welcome-tip = Tip: Press Ctrl+F to filter, or click 🌐 to browse 16colors.rs

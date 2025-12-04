@@ -98,6 +98,8 @@ fn main() {
 
     log::info!("Starting iCY VIEW {}", *VERSION);
 
+    icy_engine_gui::set_default_auto_scaling_xy(false);
+
     iced::daemon(
         move || {
             if let Some(ref path) = args.path {

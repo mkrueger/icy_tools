@@ -300,10 +300,10 @@ impl PreviewView {
     /// Returns max scroll in CONTENT coordinates (consistent with scroll_y)
     fn get_max_scroll_y(&self) -> f32 {
         let vp = self.terminal.viewport.read();
-        // visible_content = visible_pixels / zoom (in content units)
-        let computed_height = self.terminal.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_content_height = if computed_height > 0.0 {
-            computed_height / vp.zoom
+        // Use bounds from widget if available
+        let bounds_height = self.terminal.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        let visible_content_height = if bounds_height > 0.0 {
+            bounds_height / vp.zoom
         } else {
             vp.visible_height / vp.zoom
         };
@@ -373,6 +373,40 @@ impl PreviewView {
     /// Get current scroll speed
     pub fn get_scroll_speed(&self) -> ScrollSpeed {
         self.scroll_speed
+    }
+
+    /// Enable auto-scroll mode (for shuffle mode)
+    pub fn enable_auto_scroll(&mut self) {
+        self.auto_scroll_enabled = true;
+        self.scroll_mode = ScrollMode::AutoScroll;
+        // Reset scroll position to top
+        self.terminal.scroll_y_to_immediate(0.0);
+        self.terminal.sync_scrollbar_with_viewport();
+    }
+
+    /// Check if scroll has completed (reached bottom)
+    pub fn is_scroll_complete(&self) -> bool {
+        if self.is_loading {
+            return false;
+        }
+
+        // Check if we're at the bottom
+        let max_scroll_y = self.get_max_scroll_y();
+        let current_y = self.terminal.viewport.read().scroll_y;
+
+        // Consider scroll complete if we're at or very close to bottom
+        // or if there's no scrollable content
+        max_scroll_y <= 0.0 || current_y >= max_scroll_y - 1.0
+    }
+
+    /// Get visible height in pixels (for shuffle mode overlay positioning)
+    pub fn get_visible_height(&self) -> f32 {
+        let bounds_height = self.terminal.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        if bounds_height > 0.0 {
+            bounds_height
+        } else {
+            self.terminal.viewport.read().visible_height
+        }
     }
 
     /// Poll for events from view thread
@@ -781,11 +815,6 @@ impl PreviewView {
                 }
             }
         }
-    }
-
-    /// Create the view using internal monitor settings
-    pub fn view(&self) -> Element<'_, PreviewMessage> {
-        self.view_with_settings(None)
     }
 }
 

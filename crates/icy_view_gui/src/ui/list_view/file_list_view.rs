@@ -11,14 +11,17 @@ use std::time::Instant;
 
 use iced::{
     Element, Length, mouse,
-    widget::{container, shader, stack},
+    widget::{column, container, row, shader, stack, text},
 };
 use icy_engine_gui::{ScrollbarOverlay, ScrollbarState, Viewport, ui::FileIcon};
 use parking_lot::Mutex;
 
 use crate::Item;
 
-use super::file_list_shader::{FileListShaderPrimitive, FileListThemeColors, ListItemRenderData, invalidate_gpu_cache, render_list_item};
+use super::file_list_shader::{
+    FileListShaderPrimitive, FileListThemeColors, ListItemRenderData, invalidate_gpu_cache, render_list_item, render_list_item_with_sauce,
+};
+use super::sauce_loader::{SauceInfo, SharedSauceCache};
 
 /// Height of each item row in pixels
 pub const ITEM_HEIGHT: f32 = 24.0;
@@ -86,6 +89,8 @@ pub struct FileListView {
     item_cache: RefCell<HashMap<u64, CachedItem>>,
     /// Current viewport width for rendering
     current_width: RefCell<f32>,
+    /// Whether SAUCE mode is enabled (show SAUCE columns)
+    sauce_mode: bool,
 }
 
 impl Default for FileListView {
@@ -112,6 +117,7 @@ impl FileListView {
             shared_hovered_index: Arc::new(Mutex::new(None)),
             item_cache: RefCell::new(HashMap::new()),
             current_width: RefCell::new(300.0),
+            sauce_mode: false,
         }
     }
 
@@ -120,6 +126,14 @@ impl FileListView {
         let content_height = count as f32 * ITEM_HEIGHT;
         self.viewport.set_content_size(300.0, content_height);
         self.invalidate();
+    }
+
+    /// Set SAUCE mode (show/hide SAUCE columns)
+    pub fn set_sauce_mode(&mut self, sauce_mode: bool) {
+        if self.sauce_mode != sauce_mode {
+            self.sauce_mode = sauce_mode;
+            self.invalidate();
+        }
     }
 
     /// Invalidate the render cache - clears both CPU and GPU caches
@@ -344,6 +358,34 @@ impl FileListView {
         hasher.finish()
     }
 
+    /// Generate a cache key for a SAUCE mode item (includes SAUCE fields)
+    fn cache_key_with_sauce(
+        label: &str,
+        icon: FileIcon,
+        is_folder: bool,
+        width: u32,
+        theme_colors: &FileListThemeColors,
+        filter: &str,
+        sauce_info: Option<&SauceInfo>,
+    ) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        label.hash(&mut hasher);
+        (icon as u8).hash(&mut hasher);
+        is_folder.hash(&mut hasher);
+        width.hash(&mut hasher);
+        theme_colors.text_color.hash(&mut hasher);
+        theme_colors.folder_color.hash(&mut hasher);
+        filter.to_lowercase().hash(&mut hasher);
+        // Include SAUCE fields
+        if let Some(info) = sauce_info {
+            info.title.hash(&mut hasher);
+            info.author.hash(&mut hasher);
+            info.group.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
     /// Get or create a cached rendered item
     fn get_or_render_item(
         &self,
@@ -376,6 +418,49 @@ impl FileListView {
         (rgba_arc, w, h)
     }
 
+    /// Get or create a cached rendered item with SAUCE info
+    fn get_or_render_item_with_sauce(
+        &self,
+        label: &str,
+        icon: FileIcon,
+        is_folder: bool,
+        width: u32,
+        theme_colors: &FileListThemeColors,
+        filter: &str,
+        sauce_info: Option<&SauceInfo>,
+    ) -> (Arc<Vec<u8>>, u32, u32) {
+        let key = Self::cache_key_with_sauce(label, icon, is_folder, width, theme_colors, filter, sauce_info);
+
+        if let Some(cached) = self.item_cache.borrow().get(&key) {
+            return (cached.rgba_data.clone(), cached.width, cached.height);
+        }
+
+        // Render new item with theme colors, filter highlighting and SAUCE info
+        let (rgba, w, h) = render_list_item_with_sauce(
+            icon,
+            label,
+            is_folder,
+            width,
+            theme_colors,
+            filter,
+            sauce_info.map(|s| s.title.as_str()),
+            sauce_info.map(|s| s.author.as_str()),
+            sauce_info.map(|s| s.group.as_str()),
+        );
+        let rgba_arc = Arc::new(rgba);
+
+        self.item_cache.borrow_mut().insert(
+            key,
+            CachedItem {
+                rgba_data: rgba_arc.clone(),
+                width: w,
+                height: h,
+            },
+        );
+
+        (rgba_arc, w, h)
+    }
+
     /// Create the view with overlay scrollbar
     pub fn view<'a, Message: Clone + 'static>(
         &'a self,
@@ -383,6 +468,7 @@ impl FileListView {
         visible_indices: &'a [usize],
         filter: &'a str,
         theme_colors: FileListThemeColors,
+        sauce_cache: Option<&SharedSauceCache>,
         on_message: impl Fn(FileListViewMessage) -> Message + 'static,
     ) -> Element<'a, Message> {
         let on_message = Arc::new(on_message);
@@ -403,6 +489,9 @@ impl FileListView {
         // Build list items for visible range only
         let mut items: Vec<ListItemRenderData> = Vec::with_capacity(visible_count);
 
+        // Lock sauce cache once if in sauce mode (use read lock for shared access)
+        let sauce_cache_guard = if self.sauce_mode { sauce_cache.map(|c| c.read()) } else { None };
+
         for visible_index in first_visible..last_visible {
             if let Some(&file_index) = visible_indices.get(visible_index) {
                 if let Some(item) = files.get(file_index) {
@@ -419,7 +508,20 @@ impl FileListView {
                     };
 
                     let label = item.get_label();
-                    let (rgba_data, w, h) = self.get_or_render_item(&label, file_icon, is_folder, width, &theme_colors, filter);
+
+                    // Choose render method based on sauce mode
+                    let (rgba_data, w, h) = if self.sauce_mode {
+                        // Get SAUCE info from cache if available
+                        // SauceCache.get() returns Option<&Option<SauceInfo>>
+                        // Use get_full_path() or fall back to get_file_path() (same as SauceLoader)
+                        let item_path = item.get_full_path().unwrap_or_else(|| item.get_file_path());
+                        let sauce_info = sauce_cache_guard
+                            .as_ref()
+                            .and_then(|cache| cache.get(&item_path).and_then(|opt| opt.as_ref().cloned()));
+                        self.get_or_render_item_with_sauce(&label, file_icon, is_folder, width, &theme_colors, filter, sauce_info.as_ref())
+                    } else {
+                        self.get_or_render_item(&label, file_icon, is_folder, width, &theme_colors, filter)
+                    };
 
                     items.push(ListItemRenderData {
                         id: visible_index as u64,
@@ -469,7 +571,7 @@ impl FileListView {
             .view();
 
             // Stack shader with scrollbar overlay
-            container(stack![
+            let list_content = container(stack![
                 container(shader_widget).width(Length::Fill).height(Length::Fill),
                 container(scrollbar_view)
                     .width(Length::Fill)
@@ -490,26 +592,79 @@ impl FileListView {
                     },
                     ..Default::default()
                 }
-            })
-            .into()
+            });
+
+            // Add header row if in SAUCE mode
+            if self.sauce_mode {
+                column![self.render_header_row(), list_content].into()
+            } else {
+                list_content.into()
+            }
         } else {
-            container(shader_widget)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|theme: &iced::Theme| {
-                    let palette = theme.extended_palette();
-                    container::Style {
-                        background: Some(iced::Background::Color(palette.background.base.color)),
-                        border: iced::Border {
-                            color: palette.background.strong.color,
-                            width: 1.0,
-                            radius: 0.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .into()
+            let list_content = container(shader_widget).width(Length::Fill).height(Length::Fill).style(|theme: &iced::Theme| {
+                let palette = theme.extended_palette();
+                container::Style {
+                    background: Some(iced::Background::Color(palette.background.base.color)),
+                    border: iced::Border {
+                        color: palette.background.strong.color,
+                        width: 1.0,
+                        radius: 0.0.into(),
+                    },
+                    ..Default::default()
+                }
+            });
+
+            // Add header row if in SAUCE mode
+            if self.sauce_mode {
+                column![self.render_header_row(), list_content].into()
+            } else {
+                list_content.into()
+            }
         }
+    }
+
+    /// Render header row for SAUCE mode
+    fn render_header_row<Message: 'static>(&self) -> Element<'_, Message> {
+        use i18n_embed_fl::fl;
+
+        let header_style = |theme: &iced::Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background.weak.color)),
+                border: iced::Border {
+                    color: palette.background.strong.color,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            }
+        };
+
+        let header_text_style = |theme: &iced::Theme| text::Style {
+            color: Some(theme.extended_palette().background.base.text.scale_alpha(0.7)),
+        };
+
+        // Column widths for SAUCE mode - matching constants in file_list_shader.rs
+        // Name: 200px, Title: 280px (35 chars), Author: 160px (20 chars), Group: 160px (20 chars)
+        use super::file_list_shader::{SAUCE_AUTHOR_WIDTH, SAUCE_GROUP_WIDTH, SAUCE_NAME_WIDTH, SAUCE_TITLE_WIDTH};
+
+        let name_header = container(text(fl!(crate::LANGUAGE_LOADER, "header-name")).size(11).style(header_text_style))
+            .width(Length::Fixed(SAUCE_NAME_WIDTH as f32))
+            .padding([2, 4]);
+        let title_header = container(text(fl!(crate::LANGUAGE_LOADER, "header-title")).size(11).style(header_text_style))
+            .width(Length::Fixed(SAUCE_TITLE_WIDTH as f32))
+            .padding([2, 4]);
+        let author_header = container(text(fl!(crate::LANGUAGE_LOADER, "header-author")).size(11).style(header_text_style))
+            .width(Length::Fixed(SAUCE_AUTHOR_WIDTH as f32))
+            .padding([2, 4]);
+        let group_header = container(text(fl!(crate::LANGUAGE_LOADER, "header-group")).size(11).style(header_text_style))
+            .width(Length::Fixed(SAUCE_GROUP_WIDTH as f32))
+            .padding([2, 4]);
+
+        container(row![name_header, title_header, author_header, group_header].spacing(0))
+            .width(Length::Fill)
+            .style(header_style)
+            .into()
     }
 }
 

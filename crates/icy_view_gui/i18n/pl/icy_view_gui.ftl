@@ -17,6 +17,17 @@ menu-upgrade_version=Uaktualnij do { $version }
 
 tooltip-refresh=Odśwież
 tooltip-reset-filter-button=Resetuj filtr
+tooltip-back=Wstecz
+tooltip-forward=Dalej
+tooltip-up=Przejdź do katalogu nadrzędnego
+tooltip-filter=Filtruj (Ctrl+F)
+tooltip-view-mode-list=Przełącz na widok listy
+tooltip-view-mode-tiles=Przełącz na widok kafelków
+tooltip-browse-16colors=Przeglądaj 16colors.rs
+tooltip-settings=Ustawienia
+
+statusbar-items={ $count } elementów
+statusbar-ready=Gotowy
 
 filter-entries-hint-text=Filtruj wpisy
 label-terminal_width=Szerokość terminala:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } paczki)
 settings-heading=Ustawienia
 settings-reset_button=Resetuj
 settings-monitor-category=Monitor
+settings-paths-category=Ścieżki
+settings-restore-defaults-button=Przywróć Domyślne
+
+settings-paths-header=Ścieżki aplikacji
+settings-paths-user-header=Ścieżki użytkownika
+settings-paths-export-path=Ścieżka eksportu:
+settings-paths-config-dir=Katalog konfiguracji:
+settings-paths-config-file=Plik konfiguracji:
+settings-paths-log-file=Plik dziennika:
+settings-paths-open=Otwórz
+
+settings-commands-category=Polecenia
+settings-commands-section=Programy Zewnętrzne
+settings-commands-placeholder=Polecenie (np. icy_draw %F)
+settings-commands-description=Użyj %F dla nazwy pliku
+
+export-no-file-selected=Nie wybrano pliku do eksportu
+export-success=Wyeksportowano do { $path }
+
+toast-baud-rate-off=Emulacja baud: wyłączona
+toast-baud-rate=Szybkość transmisji: { $rate }
+toast-command-not-configured=Polecenie { $key } nie skonfigurowane
 
 preview-no-file-selected = Nie wybrano pliku
 preview-loading = Ładowanie...
@@ -122,3 +155,6 @@ error-external-command-title = Nie udało się wykonać polecenia zewnętrznego
 error-external-command-message = Polecenie: { $command }
 
     Błąd: { $error }
+
+welcome-select-file = 📂 Wybierz plik do podglądu
+welcome-tip = Wskazówka: Naciśnij Ctrl+F aby filtrować, lub kliknij 🌐 aby przeglądać 16colors.rs

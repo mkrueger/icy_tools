@@ -17,6 +17,17 @@ menu-upgrade_version=Aktualizovat na { $version }
 
 tooltip-refresh=Obnovit
 tooltip-reset-filter-button=Resetovat filtr
+tooltip-back=Zpět
+tooltip-forward=Vpřed
+tooltip-up=Přejít do nadřazeného adresáře
+tooltip-filter=Filtrovat (Ctrl+F)
+tooltip-view-mode-list=Přepnout na zobrazení seznamu
+tooltip-view-mode-tiles=Přepnout na zobrazení dlaždic
+tooltip-browse-16colors=Procházet 16colors.rs
+tooltip-settings=Nastavení
+
+statusbar-items={ $count } položek
+statusbar-ready=Připraveno
 
 filter-entries-hint-text=Filtrovat položky
 label-terminal_width=Šířka terminálu:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } balíčky)
 settings-heading=Nastavení
 settings-reset_button=Resetovat
 settings-monitor-category=Monitor
+settings-paths-category=Cesty
+settings-restore-defaults-button=Obnovit Výchozí
+
+settings-paths-header=Cesty aplikace
+settings-paths-user-header=Uživatelské cesty
+settings-paths-export-path=Cesta exportu:
+settings-paths-config-dir=Konfigurační adresář:
+settings-paths-config-file=Konfigurační soubor:
+settings-paths-log-file=Soubor protokolu:
+settings-paths-open=Otevřít
+
+settings-commands-category=Příkazy
+settings-commands-section=Externí Programy
+settings-commands-placeholder=Příkaz (např. icy_draw %F)
+settings-commands-description=Použijte %F pro název souboru
+
+export-no-file-selected=Žádný soubor nevybrán pro export
+export-success=Exportováno do { $path }
+
+toast-baud-rate-off=Emulace baud: vypnuta
+toast-baud-rate=Přenosová rychlost: { $rate }
+toast-command-not-configured=Příkaz { $key } není nakonfigurován
 
 preview-no-file-selected = Žádný soubor nevybrán
 preview-loading = Načítání...
@@ -122,3 +155,6 @@ error-external-command-title = Nepodařilo se spustit externí příkaz
 error-external-command-message = Příkaz: { $command }
 
     Chyba: { $error }
+
+welcome-select-file = 📂 Vyberte soubor k náhledu
+welcome-tip = Tip: Stiskněte Ctrl+F pro filtrování, nebo klikněte na 🌐 pro procházení 16colors.rs

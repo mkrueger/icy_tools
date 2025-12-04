@@ -131,6 +131,7 @@ fn get_icon_svg_data(icon: FileIcon) -> Option<&'static [u8]> {
 static FONT_DATA: &[u8] = include_bytes!("../../../../icy_engine_gui/fonts/1985-ibm-pc-vga/PxPlus_IBM_VGA8.ttf");
 
 /// Render text to RGBA using the embedded VGA font at high resolution
+/// If text exceeds max_width, it will be truncated with an ellipsis
 pub fn render_text_to_rgba(text: &str, color: [u8; 4], base_max_width: u32) -> (Vec<u8>, u32, u32) {
     use ab_glyph::{FontRef, PxScale, ScaleFont};
 
@@ -148,9 +149,48 @@ pub fn render_text_to_rgba(text: &str, color: [u8; 4], base_max_width: u32) -> (
     let scale = PxScale::from(font_size);
     let scaled_font = font.as_scaled(scale);
 
-    // Calculate text width
-    let mut text_width: f32 = 0.0;
+    // Calculate ellipsis width
+    let ellipsis = '…';
+    let ellipsis_width = scaled_font.h_advance(scaled_font.glyph_id(ellipsis));
+
+    // Calculate total text width and determine if truncation is needed
+    let mut total_width: f32 = 0.0;
+    let mut char_widths: Vec<f32> = Vec::new();
     for c in text.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        let w = scaled_font.h_advance(glyph_id);
+        char_widths.push(w);
+        total_width += w;
+    }
+
+    let needs_ellipsis = total_width > max_width as f32;
+    let effective_max_width = if needs_ellipsis {
+        max_width as f32 - ellipsis_width
+    } else {
+        max_width as f32
+    };
+
+    // Determine how many characters to render
+    let mut rendered_width: f32 = 0.0;
+    let mut chars_to_render = 0;
+    for w in &char_widths {
+        if rendered_width + w > effective_max_width {
+            break;
+        }
+        rendered_width += w;
+        chars_to_render += 1;
+    }
+
+    // Build the text to render
+    let text_to_render: String = if needs_ellipsis {
+        format!("{}…", text.chars().take(chars_to_render).collect::<String>())
+    } else {
+        text.to_string()
+    };
+
+    // Recalculate width for rendered text
+    let mut text_width: f32 = 0.0;
+    for c in text_to_render.chars() {
         let glyph_id = scaled_font.glyph_id(c);
         text_width += scaled_font.h_advance(glyph_id);
     }
@@ -172,7 +212,7 @@ pub fn render_text_to_rgba(text: &str, color: [u8; 4], base_max_width: u32) -> (
 
     let mut x_offset = 0.0f32;
 
-    for c in text.chars() {
+    for c in text_to_render.chars() {
         if x_offset >= max_width as f32 {
             break;
         }
@@ -207,6 +247,7 @@ pub fn render_text_to_rgba(text: &str, color: [u8; 4], base_max_width: u32) -> (
 }
 
 /// Render text with a highlighted substring (for filter matching)
+/// If text exceeds max_width, it will be truncated with an ellipsis
 /// Returns (rgba_data, width, height)
 pub fn render_text_with_highlight_to_rgba(text: &str, base_color: [u8; 4], highlight_color: [u8; 4], filter: &str, base_max_width: u32) -> (Vec<u8>, u32, u32) {
     use ab_glyph::{FontRef, PxScale, ScaleFont};
@@ -225,14 +266,54 @@ pub fn render_text_with_highlight_to_rgba(text: &str, base_color: [u8; 4], highl
     let scale = PxScale::from(font_size);
     let scaled_font = font.as_scaled(scale);
 
-    // Find match position (case-insensitive)
+    // Calculate ellipsis width
+    let ellipsis = '…';
+    let ellipsis_width = scaled_font.h_advance(scaled_font.glyph_id(ellipsis));
+
+    // Calculate total text width and determine if truncation is needed
+    let mut total_width: f32 = 0.0;
+    let mut char_widths: Vec<f32> = Vec::new();
+    for c in text.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        let w = scaled_font.h_advance(glyph_id);
+        char_widths.push(w);
+        total_width += w;
+    }
+
+    let needs_ellipsis = total_width > max_width as f32;
+    let effective_max_width = if needs_ellipsis {
+        max_width as f32 - ellipsis_width
+    } else {
+        max_width as f32
+    };
+
+    // Determine how many characters to render
+    let mut rendered_width: f32 = 0.0;
+    let mut chars_to_render = 0;
+    for w in &char_widths {
+        if rendered_width + w > effective_max_width {
+            break;
+        }
+        rendered_width += w;
+        chars_to_render += 1;
+    }
+
+    // Build the text to render
+    let text_to_render: String = if needs_ellipsis {
+        format!("{}…", text.chars().take(chars_to_render).collect::<String>())
+    } else {
+        text.to_string()
+    };
+
+    // Find match position (case-insensitive) - use original text for matching
     let text_lower = text.to_lowercase();
     let filter_lower = filter.to_lowercase();
     let match_start = text_lower.find(&filter_lower);
+    let filter_char_count = filter.chars().count();
 
-    // Calculate text width
+    // Recalculate width for rendered text
     let mut text_width: f32 = 0.0;
-    for c in text.chars() {
+    for c in text_to_render.chars() {
         let glyph_id = scaled_font.glyph_id(c);
         text_width += scaled_font.h_advance(glyph_id);
     }
@@ -255,15 +336,20 @@ pub fn render_text_with_highlight_to_rgba(text: &str, base_color: [u8; 4], highl
     let mut x_offset = 0.0f32;
     let mut char_index = 0usize;
 
-    for c in text.chars() {
+    for c in text_to_render.chars() {
         if x_offset >= max_width as f32 {
             break;
         }
 
         // Determine if this character is within the highlighted range
-        let is_highlighted = match match_start {
-            Some(start) => char_index >= start && char_index < start + filter.chars().count(),
-            None => false,
+        // (ellipsis character is never highlighted)
+        let is_highlighted = if c == '…' {
+            false
+        } else {
+            match match_start {
+                Some(start) => char_index >= start && char_index < start + filter_char_count,
+                None => false,
+            }
         };
 
         let color = if is_highlighted { highlight_color } else { base_color };
@@ -292,7 +378,10 @@ pub fn render_text_with_highlight_to_rgba(text: &str, base_color: [u8; 4], highl
         }
 
         x_offset += scaled_font.h_advance(glyph_id);
-        char_index += 1;
+        // Don't increment char_index for ellipsis
+        if c != '…' {
+            char_index += 1;
+        }
     }
 
     (rgba, text_width, height)
@@ -360,14 +449,14 @@ pub fn render_list_item(icon: FileIcon, label: &str, is_folder: bool, width: u32
         }
     }
 
-    // Render text - use highlight version if filter is active
+    // Render text with fade-out effect - use highlight version if filter is active
     let text_x = scaled_text_start_x;
     let text_max_width = width.saturating_sub(TEXT_START_X as u32 + 8);
 
     let (text_rgba, text_width, text_height) = if filter.is_empty() {
-        render_text_to_rgba(label, text_color, text_max_width)
+        render_text_with_fade(label, text_color, text_max_width)
     } else {
-        render_text_with_highlight_to_rgba(label, text_color, theme_colors.highlight_color, filter, text_max_width)
+        render_text_with_fade_and_highlight(label, text_color, theme_colors.highlight_color, filter, text_max_width)
     };
 
     if text_width > 0 && !text_rgba.is_empty() {
@@ -393,6 +482,464 @@ pub fn render_list_item(icon: FileIcon, label: &str, is_folder: bool, width: u32
                     }
                 }
             }
+        }
+    }
+
+    // Return scaled dimensions
+    (rgba, scaled_width, scaled_height)
+}
+
+/// Column widths for SAUCE mode (matching header row in file_list_view.rs)
+/// SAUCE fields: Title=35 chars, Author=20 chars, Group=20 chars
+/// Using 8px per char for monospace font at smaller size
+/// Name width matches normal list width (286px)
+pub const SAUCE_NAME_WIDTH: u32 = 286;
+pub const SAUCE_TITLE_WIDTH: u32 = 280; // 35 chars * 8px
+pub const SAUCE_AUTHOR_WIDTH: u32 = 160; // 20 chars * 8px
+pub const SAUCE_GROUP_WIDTH: u32 = 160; // 20 chars * 8px
+
+/// Font size for SAUCE columns (smaller than icon size)
+const SAUCE_FONT_SIZE: f32 = 14.0;
+
+/// Render text without ellipsis at a specific font size
+fn render_text_at_size(text: &str, color: [u8; 4], font_size: f32) -> (Vec<u8>, u32, u32) {
+    use ab_glyph::{FontRef, PxScale, ScaleFont};
+
+    let font = match FontRef::try_from_slice(FONT_DATA) {
+        Ok(f) => f,
+        Err(_) => return (Vec::new(), 0, 0),
+    };
+
+    let scale_factor = get_render_scale();
+    let scaled_font_size = font_size * scale_factor;
+    let scale = PxScale::from(scaled_font_size);
+    let scaled_font = font.as_scaled(scale);
+
+    // Calculate total text width
+    let mut text_width: f32 = 0.0;
+    for c in text.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        text_width += scaled_font.h_advance(glyph_id);
+    }
+
+    let text_width = text_width.ceil() as u32;
+    if text_width == 0 {
+        return (Vec::new(), 0, 0);
+    }
+
+    let height = scaled_font_size.ceil() as u32;
+    let mut rgba = vec![0u8; (text_width * height * 4) as usize];
+
+    // Baseline for vertical centering
+    let ascent = scaled_font.ascent();
+    let descent = scaled_font.descent();
+    let line_height = ascent - descent;
+    let baseline = (height as f32 - line_height) / 2.0 + ascent;
+
+    let mut x_offset = 0.0f32;
+
+    for c in text.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        let glyph = glyph_id.with_scale_and_position(scale, ab_glyph::point(x_offset, baseline));
+
+        if let Some(outlined) = scaled_font.outline_glyph(glyph) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|px, py, coverage| {
+                let x = (bounds.min.x as i32 + px as i32) as u32;
+                let y = (bounds.min.y as i32 + py as i32) as u32;
+
+                if x < text_width && y < height {
+                    let idx = ((y * text_width + x) * 4) as usize;
+                    let alpha = (coverage * 255.0) as u8;
+
+                    if alpha > rgba[idx + 3] {
+                        rgba[idx] = color[0];
+                        rgba[idx + 1] = color[1];
+                        rgba[idx + 2] = color[2];
+                        rgba[idx + 3] = alpha;
+                    }
+                }
+            });
+        }
+
+        x_offset += scaled_font.h_advance(glyph_id);
+    }
+
+    (rgba, text_width, height)
+}
+
+/// Render text with fade-out effect when truncated
+/// The last few characters fade to transparent if text exceeds max_width
+fn render_text_with_fade(text: &str, color: [u8; 4], base_max_width: u32) -> (Vec<u8>, u32, u32) {
+    use ab_glyph::{FontRef, PxScale, ScaleFont};
+
+    let font = match FontRef::try_from_slice(FONT_DATA) {
+        Ok(f) => f,
+        Err(_) => return (Vec::new(), 0, 0),
+    };
+
+    let scale_factor = get_render_scale();
+    let scaled_icon_size = ((ICON_SIZE as f32) * scale_factor).ceil();
+    let max_width = ((base_max_width as f32) * scale_factor).ceil() as u32;
+
+    // Font size to match icon height
+    let font_size = scaled_icon_size;
+    let scale = PxScale::from(font_size);
+    let scaled_font = font.as_scaled(scale);
+
+    // Calculate total text width
+    let mut total_width: f32 = 0.0;
+    let mut char_widths: Vec<f32> = Vec::new();
+    for c in text.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        let w = scaled_font.h_advance(glyph_id);
+        char_widths.push(w);
+        total_width += w;
+    }
+
+    let needs_fade = total_width > max_width as f32;
+    let fade_width = if needs_fade { 30.0 * scale_factor } else { 0.0 }; // 30px fade zone
+
+    // Determine how many characters fit
+    let mut rendered_width: f32 = 0.0;
+    let mut chars_to_render = 0;
+    for w in &char_widths {
+        if rendered_width + w > max_width as f32 {
+            break;
+        }
+        rendered_width += w;
+        chars_to_render += 1;
+    }
+
+    let text_to_render: String = text.chars().take(chars_to_render).collect();
+    let actual_width = rendered_width.ceil() as u32;
+
+    if actual_width == 0 {
+        return (Vec::new(), 0, 0);
+    }
+
+    let height = scaled_icon_size.ceil() as u32;
+    let mut rgba = vec![0u8; (actual_width * height * 4) as usize];
+
+    // Baseline for vertical centering
+    let ascent = scaled_font.ascent();
+    let descent = scaled_font.descent();
+    let line_height = ascent - descent;
+    let baseline = (height as f32 - line_height) / 2.0 + ascent;
+
+    let mut x_offset = 0.0f32;
+
+    for c in text_to_render.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        let glyph = glyph_id.with_scale_and_position(scale, ab_glyph::point(x_offset, baseline));
+
+        if let Some(outlined) = scaled_font.outline_glyph(glyph) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|px, py, coverage| {
+                let x = (bounds.min.x as i32 + px as i32) as u32;
+                let y = (bounds.min.y as i32 + py as i32) as u32;
+
+                if x < actual_width && y < height {
+                    let idx = ((y * actual_width + x) * 4) as usize;
+                    let mut alpha = (coverage * 255.0) as u8;
+
+                    // Apply fade effect near the end if needed
+                    if needs_fade && x as f32 > (actual_width as f32 - fade_width) {
+                        let fade_start = actual_width as f32 - fade_width;
+                        let fade_progress = (x as f32 - fade_start) / fade_width;
+                        let fade_factor = 1.0 - fade_progress.clamp(0.0, 1.0);
+                        alpha = (alpha as f32 * fade_factor) as u8;
+                    }
+
+                    if alpha > rgba[idx + 3] {
+                        rgba[idx] = color[0];
+                        rgba[idx + 1] = color[1];
+                        rgba[idx + 2] = color[2];
+                        rgba[idx + 3] = alpha;
+                    }
+                }
+            });
+        }
+
+        x_offset += scaled_font.h_advance(glyph_id);
+    }
+
+    (rgba, actual_width, height)
+}
+
+/// Render text with fade-out and highlight for filter matching
+fn render_text_with_fade_and_highlight(text: &str, base_color: [u8; 4], highlight_color: [u8; 4], filter: &str, base_max_width: u32) -> (Vec<u8>, u32, u32) {
+    use ab_glyph::{FontRef, PxScale, ScaleFont};
+
+    let font = match FontRef::try_from_slice(FONT_DATA) {
+        Ok(f) => f,
+        Err(_) => return (Vec::new(), 0, 0),
+    };
+
+    let scale_factor = get_render_scale();
+    let scaled_icon_size = ((ICON_SIZE as f32) * scale_factor).ceil();
+    let max_width = ((base_max_width as f32) * scale_factor).ceil() as u32;
+
+    let font_size = scaled_icon_size;
+    let scale = PxScale::from(font_size);
+    let scaled_font = font.as_scaled(scale);
+
+    // Calculate total text width
+    let mut total_width: f32 = 0.0;
+    let mut char_widths: Vec<f32> = Vec::new();
+    for c in text.chars() {
+        let glyph_id = scaled_font.glyph_id(c);
+        let w = scaled_font.h_advance(glyph_id);
+        char_widths.push(w);
+        total_width += w;
+    }
+
+    let needs_fade = total_width > max_width as f32;
+    let fade_width = if needs_fade { 30.0 * scale_factor } else { 0.0 };
+
+    // Find match position
+    let text_lower = text.to_lowercase();
+    let filter_lower = filter.to_lowercase();
+    let match_start = text_lower.find(&filter_lower);
+    let filter_char_count = filter.chars().count();
+
+    // Determine how many characters fit
+    let mut rendered_width: f32 = 0.0;
+    let mut chars_to_render = 0;
+    for w in &char_widths {
+        if rendered_width + w > max_width as f32 {
+            break;
+        }
+        rendered_width += w;
+        chars_to_render += 1;
+    }
+
+    let text_to_render: String = text.chars().take(chars_to_render).collect();
+    let actual_width = rendered_width.ceil() as u32;
+
+    if actual_width == 0 {
+        return (Vec::new(), 0, 0);
+    }
+
+    let height = scaled_icon_size.ceil() as u32;
+    let mut rgba = vec![0u8; (actual_width * height * 4) as usize];
+
+    let ascent = scaled_font.ascent();
+    let descent = scaled_font.descent();
+    let line_height = ascent - descent;
+    let baseline = (height as f32 - line_height) / 2.0 + ascent;
+
+    let mut x_offset = 0.0f32;
+    let mut char_index = 0usize;
+
+    for c in text_to_render.chars() {
+        let is_highlighted = match match_start {
+            Some(start) => char_index >= start && char_index < start + filter_char_count,
+            None => false,
+        };
+
+        let color = if is_highlighted { highlight_color } else { base_color };
+
+        let glyph_id = scaled_font.glyph_id(c);
+        let glyph = glyph_id.with_scale_and_position(scale, ab_glyph::point(x_offset, baseline));
+
+        if let Some(outlined) = scaled_font.outline_glyph(glyph) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|px, py, coverage| {
+                let x = (bounds.min.x as i32 + px as i32) as u32;
+                let y = (bounds.min.y as i32 + py as i32) as u32;
+
+                if x < actual_width && y < height {
+                    let idx = ((y * actual_width + x) * 4) as usize;
+                    let mut alpha = (coverage * 255.0) as u8;
+
+                    // Apply fade effect near the end if needed
+                    if needs_fade && x as f32 > (actual_width as f32 - fade_width) {
+                        let fade_start = actual_width as f32 - fade_width;
+                        let fade_progress = (x as f32 - fade_start) / fade_width;
+                        let fade_factor = 1.0 - fade_progress.clamp(0.0, 1.0);
+                        alpha = (alpha as f32 * fade_factor) as u8;
+                    }
+
+                    if alpha > rgba[idx + 3] {
+                        rgba[idx] = color[0];
+                        rgba[idx + 1] = color[1];
+                        rgba[idx + 2] = color[2];
+                        rgba[idx + 3] = alpha;
+                    }
+                }
+            });
+        }
+
+        x_offset += scaled_font.h_advance(glyph_id);
+        char_index += 1;
+    }
+
+    (rgba, actual_width, height)
+}
+
+/// Render a complete list item with SAUCE info (icon + name + title + author + group) to RGBA at scaled resolution
+/// If filter is non-empty, the matching portion of the label will be highlighted
+pub fn render_list_item_with_sauce(
+    icon: FileIcon,
+    label: &str,
+    is_folder: bool,
+    width: u32,
+    theme_colors: &FileListThemeColors,
+    filter: &str,
+    sauce_title: Option<&str>,
+    sauce_author: Option<&str>,
+    sauce_group: Option<&str>,
+) -> (Vec<u8>, u32, u32) {
+    let scale_factor = get_render_scale();
+    let height = super::ITEM_HEIGHT as u32;
+
+    // Scaled dimensions for high-DPI rendering
+    let scaled_width = ((width as f32) * scale_factor).ceil() as u32;
+    let scaled_height = ((height as f32) * scale_factor).ceil() as u32;
+    let scaled_icon_size = ((ICON_SIZE as f32) * scale_factor).ceil() as u32;
+    let scaled_icon_padding = ((ICON_PADDING) * scale_factor).ceil() as u32;
+    let scaled_text_start_x = ((TEXT_START_X) * scale_factor).ceil() as u32;
+
+    let mut rgba = vec![0u8; (scaled_width * scaled_height * 4) as usize];
+
+    // Text color based on folder status, from theme
+    let text_color: [u8; 4] = if is_folder {
+        theme_colors.folder_color
+    } else {
+        if let Some(format) = FileFormat::from_path(&PathBuf::from(&label)) {
+            if format.is_image() {
+                theme_colors.image_color
+            } else if format.is_supported() {
+                theme_colors.supported_color
+            } else {
+                theme_colors.text_color
+            }
+        } else {
+            theme_colors.text_color
+        }
+    };
+
+    // Render icon at scaled size with theme color tinting
+    if let Some(icon_rgba) = render_icon_to_rgba(icon, ICON_SIZE, Some(theme_colors.icon_color)) {
+        let icon_x = scaled_icon_padding;
+        let icon_y = (scaled_height.saturating_sub(scaled_icon_size)) / 2;
+
+        for y in 0..scaled_icon_size {
+            for x in 0..scaled_icon_size {
+                let src_idx = ((y * scaled_icon_size + x) * 4) as usize;
+                let dst_x = icon_x + x;
+                let dst_y = icon_y + y;
+
+                if dst_x < scaled_width && src_idx + 3 < icon_rgba.len() {
+                    let dst_idx = ((dst_y * scaled_width + dst_x) * 4) as usize;
+                    if dst_idx + 3 < rgba.len() {
+                        // Alpha blend
+                        let alpha = icon_rgba[src_idx + 3] as f32 / 255.0;
+                        rgba[dst_idx] = (icon_rgba[src_idx] as f32 * alpha) as u8;
+                        rgba[dst_idx + 1] = (icon_rgba[src_idx + 1] as f32 * alpha) as u8;
+                        rgba[dst_idx + 2] = (icon_rgba[src_idx + 2] as f32 * alpha) as u8;
+                        rgba[dst_idx + 3] = icon_rgba[src_idx + 3];
+                    }
+                }
+            }
+        }
+    }
+
+    // Column layout:
+    // | Icon + Name (SAUCE_NAME_WIDTH) | Title (SAUCE_TITLE_WIDTH) | Author (SAUCE_AUTHOR_WIDTH) | Group (SAUCE_GROUP_WIDTH) |
+
+    // Helper to render SAUCE text at a specific column (smaller font, no ellipsis)
+    let render_sauce_column = |rgba: &mut Vec<u8>, text: &str, x_start: u32, color: [u8; 4]| {
+        let scaled_x_start = ((x_start as f32) * scale_factor).ceil() as u32;
+
+        // Use smaller font for SAUCE columns, no truncation
+        let (text_rgba, text_width, text_height) = render_text_at_size(text, color, SAUCE_FONT_SIZE);
+
+        if text_width > 0 && !text_rgba.is_empty() {
+            let text_y = (scaled_height.saturating_sub(text_height)) / 2;
+
+            for y in 0..text_height {
+                for x in 0..text_width {
+                    let src_idx = ((y * text_width + x) * 4) as usize;
+                    let dst_x = scaled_x_start + x;
+                    let dst_y = text_y + y;
+
+                    if dst_x < scaled_width && src_idx + 3 < text_rgba.len() {
+                        let dst_idx = ((dst_y * scaled_width + dst_x) * 4) as usize;
+                        if dst_idx + 3 < rgba.len() {
+                            let alpha = text_rgba[src_idx + 3];
+                            if alpha > rgba[dst_idx + 3] {
+                                rgba[dst_idx] = text_rgba[src_idx];
+                                rgba[dst_idx + 1] = text_rgba[src_idx + 1];
+                                rgba[dst_idx + 2] = text_rgba[src_idx + 2];
+                                rgba[dst_idx + 3] = alpha;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    // Render name column with fade-out effect (with icon offset already accounted for)
+    let name_max_width = SAUCE_NAME_WIDTH.saturating_sub(TEXT_START_X as u32 + 4);
+    {
+        // Render name with filter highlight and fade-out
+        let (text_rgba, text_width, text_height) = if filter.is_empty() {
+            render_text_with_fade(label, text_color, name_max_width)
+        } else {
+            render_text_with_fade_and_highlight(label, text_color, theme_colors.highlight_color, filter, name_max_width)
+        };
+
+        if text_width > 0 && !text_rgba.is_empty() {
+            let text_x = scaled_text_start_x;
+            let text_y = (scaled_height.saturating_sub(text_height)) / 2;
+
+            for y in 0..text_height {
+                for x in 0..text_width {
+                    let src_idx = ((y * text_width + x) * 4) as usize;
+                    let dst_x = text_x + x;
+                    let dst_y = text_y + y;
+
+                    if dst_x < scaled_width && src_idx + 3 < text_rgba.len() {
+                        let dst_idx = ((dst_y * scaled_width + dst_x) * 4) as usize;
+                        if dst_idx + 3 < rgba.len() {
+                            let alpha = text_rgba[src_idx + 3];
+                            if alpha > rgba[dst_idx + 3] {
+                                rgba[dst_idx] = text_rgba[src_idx];
+                                rgba[dst_idx + 1] = text_rgba[src_idx + 1];
+                                rgba[dst_idx + 2] = text_rgba[src_idx + 2];
+                                rgba[dst_idx + 3] = alpha;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Render SAUCE columns (Title, Author, Group) - no ellipsis, smaller font, colored like status bar
+    if let Some(title) = sauce_title {
+        if !title.is_empty() {
+            render_sauce_column(&mut rgba, title, SAUCE_NAME_WIDTH, theme_colors.sauce_title_color);
+        }
+    }
+
+    if let Some(author) = sauce_author {
+        if !author.is_empty() {
+            render_sauce_column(&mut rgba, author, SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH, theme_colors.sauce_author_color);
+        }
+    }
+
+    if let Some(group) = sauce_group {
+        if !group.is_empty() {
+            render_sauce_column(
+                &mut rgba,
+                group,
+                SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH + SAUCE_AUTHOR_WIDTH,
+                theme_colors.sauce_group_color,
+            );
         }
     }
 
@@ -431,6 +978,10 @@ pub struct FileListThemeColors {
     pub folder_color: [u8; 4],
     pub highlight_color: [u8; 4],
     pub icon_color: [u8; 4],
+    // SAUCE field colors (matching status bar)
+    pub sauce_title_color: [u8; 4],
+    pub sauce_author_color: [u8; 4],
+    pub sauce_group_color: [u8; 4],
 }
 
 impl Default for FileListThemeColors {
@@ -447,6 +998,10 @@ impl Default for FileListThemeColors {
             folder_color: [0x55, 0x55, 255, 255],     // Light blue (DOS-like)
             highlight_color: [255, 220, 100, 255],    // Yellow highlight
             icon_color: [230, 230, 230, 255],         // Same as text for dark theme
+            // SAUCE colors (dark theme - matching status bar)
+            sauce_title_color: [230, 230, 153, 255],  // Yellow (0.9, 0.9, 0.6)
+            sauce_author_color: [153, 230, 153, 255], // Green (0.6, 0.9, 0.6)
+            sauce_group_color: [153, 204, 230, 255],  // Blue (0.6, 0.8, 0.9)
         }
     }
 }
@@ -476,6 +1031,10 @@ impl FileListThemeColors {
                 folder_color: [0x55, 0x55, 255, 255],     // Light blue (DOS-like)
                 highlight_color: [255, 220, 100, 255],    // Yellow highlight
                 icon_color,
+                // SAUCE colors (matching status bar)
+                sauce_title_color: [230, 230, 153, 255],  // Yellow (0.9, 0.9, 0.6)
+                sauce_author_color: [153, 230, 153, 255], // Green (0.6, 0.9, 0.6)
+                sauce_group_color: [153, 204, 230, 255],  // Blue (0.6, 0.8, 0.9)
             }
         } else {
             Self {
@@ -489,6 +1048,10 @@ impl FileListThemeColors {
                 folder_color: [0x55, 0x55, 255, 255],     // Light blue (DOS-like)
                 highlight_color: [200, 150, 0, 255],      // Darker yellow for light theme
                 icon_color,
+                // SAUCE colors (matching status bar)
+                sauce_title_color: [153, 128, 0, 255], // Dark yellow (0.6, 0.5, 0.0)
+                sauce_author_color: [0, 128, 0, 255],  // Dark green (0.0, 0.5, 0.0)
+                sauce_group_color: [0, 102, 153, 255], // Dark blue (0.0, 0.4, 0.6)
             }
         }
     }

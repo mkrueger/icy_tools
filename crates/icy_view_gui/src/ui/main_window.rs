@@ -4,7 +4,7 @@ use i18n_embed_fl::fl;
 use iced::{
     Element, Event, Length, Rectangle, Task, Theme,
     keyboard::{Key, key::Named},
-    widget::{Space, column, container, row, text},
+    widget::{Space, column, container, mouse_area, row, text},
 };
 use icy_engine_gui::{
     ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager,
@@ -20,10 +20,12 @@ use crate::{
 use icy_engine::formats::FileFormat;
 
 use super::{
-    FileBrowser, FileBrowserMessage, FileListViewMessage, HistoryPoint, NavigationBar, NavigationBarMessage, NavigationHistory, Options, PreviewMessage,
-    PreviewView, StatusBar, StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
+    FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup, FilterPopupMessage, HistoryPoint,
+    NavigationBar, NavigationBarMessage, NavigationHistory, Options, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar,
+    StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
     dialogs::sauce_dialog::{SauceDialog, SauceDialogMessage},
     dialogs::settings_dialog::{SettingsDialogState, SettingsMessage},
+    file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
     focus::{focus, list_focus_style},
     options::ViewMode,
 };
@@ -43,6 +45,12 @@ pub enum Message {
     TileGrid(TileGridMessage),
     /// Folder preview tile grid messages (for list mode folder preview)
     FolderPreview(TileGridMessage),
+    /// File list toolbar messages
+    FileListToolbar(FileListToolbarMessage),
+    /// Filter popup messages
+    FilterPopup(FilterPopupMessage),
+    /// Toggle filter popup visibility
+    ToggleFilterPopup,
     /// Toggle fullscreen mode
     ToggleFullscreen,
     /// Escape key pressed
@@ -87,6 +95,10 @@ pub enum Message {
     ZoomReset,
     /// Auto-fit zoom
     ZoomAutoFit,
+    /// SAUCE info loaded for a file
+    SauceLoaded(SauceResult),
+    /// Skip to next file in shuffle mode
+    ShuffleNext,
 }
 
 /// Main window for icy_view_gui
@@ -101,6 +113,10 @@ pub struct MainWindow {
     pub navigation_bar: NavigationBar,
     /// Navigation history
     pub history: NavigationHistory,
+    /// File list toolbar
+    pub file_list_toolbar: FileListToolbar,
+    /// Filter popup
+    pub filter_popup: FilterPopup,
     /// Options
     pub options: Arc<Mutex<Options>>,
     /// Fullscreen mode
@@ -129,8 +145,13 @@ pub struct MainWindow {
     export_dialog: Option<ExportDialogState>,
     /// Toast notifications
     toasts: Vec<Toast>,
+    /// SAUCE loader for async loading of SAUCE info
+    sauce_loader: Option<SauceLoader>,
+    /// Receiver for SAUCE load results
+    sauce_rx: Option<tokio::sync::mpsc::UnboundedReceiver<SauceResult>>,
+    /// Shuffle mode state
+    shuffle_mode: super::ShuffleMode,
 }
-
 impl MainWindow {
     /// Creates a new MainWindow.
     /// Returns (Self, Option<Message>) where the second value is an initial message to process
@@ -138,18 +159,23 @@ impl MainWindow {
     pub fn new(id: usize, initial_path: Option<PathBuf>, options: Arc<Mutex<Options>>, auto_scroll: bool, bps: Option<u32>) -> (Self, Option<Message>) {
         let mut opts = Options::default();
         let view_mode;
+        let sort_order;
         {
             let locked = options.lock();
             opts.auto_scroll_enabled = locked.auto_scroll_enabled;
             opts.scroll_speed = locked.scroll_speed.clone();
             opts.show_settings = locked.show_settings;
             view_mode = locked.view_mode;
+            sort_order = locked.sort_order;
         }
         if auto_scroll {
             opts.auto_scroll_enabled = true;
         }
 
-        let (file_browser, file_to_preview) = FileBrowser::new(initial_path.clone());
+        let (mut file_browser, file_to_preview) = FileBrowser::new(initial_path.clone());
+        // Apply saved sort order
+        file_browser.set_sort_order(sort_order);
+
         let mut history = NavigationHistory::new();
         // Initialize history with current state
         let initial_point = HistoryPoint::new(
@@ -176,6 +202,17 @@ impl MainWindow {
             navigation_bar.set_path_input(path.to_string_lossy().to_string());
         }
 
+        let mut file_list_toolbar = FileListToolbar::new();
+        file_list_toolbar.set_view_mode(view_mode);
+        file_list_toolbar.set_sort_order(sort_order);
+        file_list_toolbar.set_sauce_mode(opts.sauce_mode);
+        // Check if we can go up (not at filesystem root)
+        if let Some(path) = file_browser.current_path() {
+            file_list_toolbar.set_can_go_up(path.parent().is_some());
+        }
+        // Apply initial sauce_mode to file browser
+        file_browser.set_sauce_mode(opts.sauce_mode);
+
         let mut tile_grid = TileGridView::new();
         // If starting in tile mode, populate the tiles immediately
         if view_mode == ViewMode::Tiles {
@@ -196,6 +233,12 @@ impl MainWindow {
             (None, DEFAULT_TITLE.clone(), None)
         };
 
+        // Create SAUCE loader
+        let (sauce_loader, sauce_rx, sauce_cache) = SauceLoader::spawn();
+
+        // Share the sauce cache with file browser
+        file_browser.set_sauce_cache(sauce_cache.clone());
+
         (
             Self {
                 id,
@@ -203,6 +246,8 @@ impl MainWindow {
                 file_browser,
                 navigation_bar,
                 history,
+                file_list_toolbar,
+                filter_popup: FilterPopup::new(),
                 options,
                 fullscreen: false,
                 current_file,
@@ -217,6 +262,9 @@ impl MainWindow {
                 error_dialog: None,
                 export_dialog: None,
                 toasts: Vec::new(),
+                sauce_loader: Some(sauce_loader),
+                sauce_rx: Some(sauce_rx),
+                shuffle_mode: super::ShuffleMode::new(),
             },
             initial_message,
         )
@@ -362,43 +410,14 @@ impl MainWindow {
                             self.tile_grid.set_items_from_items(items);
                         }
                     }
-                    NavigationBarMessage::FilterChanged(filter) => {
-                        self.navigation_bar.set_filter(filter.clone());
-                        self.file_browser.update(FileBrowserMessage::FilterChanged(filter.clone()));
-                        // Also apply filter to tile grid
-                        self.tile_grid.apply_filter(&filter);
-                        self.folder_preview.apply_filter(&filter);
-                    }
-                    NavigationBarMessage::ClearFilter => {
-                        self.navigation_bar.set_filter(String::new());
-                        self.file_browser.update(FileBrowserMessage::ClearFilter);
-                        // Also clear filter on tile grid
-                        self.tile_grid.clear_filter();
-                        self.folder_preview.clear_filter();
-                    }
-                    NavigationBarMessage::ToggleViewMode => {
-                        // Cancel any ongoing loading operation when switching modes
-                        self.preview.cancel_loading();
-                        self.current_file = None;
-                        self.folder_preview_path = None;
-
-                        self.navigation_bar.toggle_view_mode();
-                        self.view_mode = self.navigation_bar.view_mode;
-                        // Save the preference
-                        {
-                            let mut locked = self.options.lock();
-                            locked.view_mode = self.view_mode;
-                        }
-                        // When switching to tile mode, populate the tile grid with current items
-                        // and apply the current filter
-                        if self.view_mode == ViewMode::Tiles {
-                            let items = self.file_browser.get_items();
-                            self.tile_grid.set_items_from_items(items);
-                            // Apply current filter to tile grid
-                            let filter = self.navigation_bar.filter.clone();
-                            if !filter.is_empty() {
-                                self.tile_grid.apply_filter(&filter);
-                            }
+                    NavigationBarMessage::OpenFilter => {
+                        // Toggle filter popup
+                        if self.filter_popup.is_visible() {
+                            self.filter_popup.hide();
+                            return Task::none();
+                        } else {
+                            self.filter_popup.show();
+                            return self.filter_popup.focus_input();
                         }
                     }
                     NavigationBarMessage::Toggle16Colors => {
@@ -718,6 +737,11 @@ impl MainWindow {
                 iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
             }
             Message::Escape => {
+                // First check if shuffle mode is active - exit it
+                if self.shuffle_mode.is_active {
+                    self.shuffle_mode.stop();
+                    return Task::none();
+                }
                 // Close dialogs in priority order
                 if self.error_dialog.is_some() {
                     self.error_dialog = None;
@@ -727,6 +751,8 @@ impl MainWindow {
                     self.settings_dialog = None;
                 } else if self.sauce_dialog.is_some() {
                     self.sauce_dialog = None;
+                } else if self.filter_popup.is_visible() {
+                    self.filter_popup.hide();
                 } else if self.fullscreen {
                     self.fullscreen = false;
                 }
@@ -737,6 +763,20 @@ impl MainWindow {
             Message::DataLoaded(path, data) => {
                 // Reset timer when loading new file to prevent animation jumps
                 self.last_tick = Instant::now();
+
+                // If in shuffle mode, extract SAUCE info for overlay
+                if self.shuffle_mode.is_active {
+                    if let Some(sauce) = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten() {
+                        let comments: Vec<String> = sauce.comments().iter().map(|s| s.to_string()).collect();
+                        self.shuffle_mode.set_sauce_info(
+                            Some(sauce.title().to_string()),
+                            Some(sauce.author().to_string()),
+                            Some(sauce.group().to_string()),
+                            comments,
+                        );
+                    }
+                }
+
                 // Load data in preview
                 self.preview.load_data(path, data).map(Message::Preview)
             }
@@ -1089,6 +1129,150 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::FileListToolbar(msg) => {
+                match msg {
+                    FileListToolbarMessage::Up => {
+                        // Cancel any ongoing loading operation
+                        self.preview.cancel_loading();
+                        self.current_file = None;
+                        self.folder_preview_path = None;
+
+                        // Save current state before navigating
+                        let current_point = self.current_history_point();
+                        self.history.navigate_to(current_point);
+
+                        self.file_browser.update(FileBrowserMessage::ParentFolder);
+                        // Update path input with the new display path
+                        let display_path = self.file_browser.get_display_path();
+                        self.navigation_bar.set_path_input(display_path);
+                        // Update can_go_up state
+                        if let Some(path) = self.file_browser.current_path() {
+                            self.file_list_toolbar.set_can_go_up(path.parent().is_some());
+                        }
+                        if self.view_mode == ViewMode::Tiles {
+                            let items = self.file_browser.get_items();
+                            self.tile_grid.set_items_from_items(items);
+                        }
+                    }
+                    FileListToolbarMessage::ToggleViewMode => {
+                        // Cancel any ongoing loading operation when switching modes
+                        self.preview.cancel_loading();
+                        self.current_file = None;
+                        self.folder_preview_path = None;
+
+                        self.navigation_bar.toggle_view_mode();
+                        self.file_list_toolbar.set_view_mode(self.navigation_bar.view_mode);
+                        self.view_mode = self.navigation_bar.view_mode;
+                        // Save the preference
+                        {
+                            let mut locked = self.options.lock();
+                            locked.view_mode = self.view_mode;
+                        }
+                        // When switching to tile mode, populate the tile grid with current items
+                        if self.view_mode == ViewMode::Tiles {
+                            let items = self.file_browser.get_items();
+                            self.tile_grid.set_items_from_items(items);
+                            // Apply current filter to tile grid
+                            let filter = self.filter_popup.get_filter().to_string();
+                            if !filter.is_empty() {
+                                self.tile_grid.apply_filter(&filter);
+                            }
+                            // Reset toolbar for slide-in behavior
+                            self.file_list_toolbar.reset_for_tiles_mode();
+                        }
+                    }
+                    FileListToolbarMessage::CycleSortOrder => {
+                        let new_order = self.file_list_toolbar.sort_order.next();
+                        self.file_list_toolbar.set_sort_order(new_order);
+                        // Save the preference
+                        {
+                            let mut locked = self.options.lock();
+                            locked.sort_order = new_order;
+                        }
+                        // Refresh the file browser to apply new sort order
+                        self.file_browser.set_sort_order(new_order);
+                        // If in tile mode, refresh tile grid
+                        if self.view_mode == ViewMode::Tiles {
+                            let items = self.file_browser.get_items();
+                            self.tile_grid.set_items_from_items(items);
+                            let filter = self.filter_popup.get_filter().to_string();
+                            if !filter.is_empty() {
+                                self.tile_grid.apply_filter(&filter);
+                            }
+                        }
+                    }
+                    FileListToolbarMessage::ToggleSauceMode => {
+                        let new_mode = !self.file_list_toolbar.sauce_mode;
+                        self.file_list_toolbar.set_sauce_mode(new_mode);
+                        self.file_browser.set_sauce_mode(new_mode);
+                        // Save the preference
+                        {
+                            let mut locked = self.options.lock();
+                            locked.sauce_mode = new_mode;
+                        }
+
+                        if new_mode {
+                            // SAUCE mode enabled - start loading SAUCE info for visible items
+                            self.start_sauce_loading();
+                        } else {
+                            // SAUCE mode disabled - cancel pending loads
+                            if let Some(ref loader) = self.sauce_loader {
+                                loader.cancel_all();
+                            }
+                            // Reset the loader for next time
+                            if let Some(ref mut loader) = self.sauce_loader {
+                                loader.reset();
+                            }
+                        }
+                    }
+                    FileListToolbarMessage::MouseEntered => {
+                        self.file_list_toolbar.on_mouse_enter();
+                    }
+                    FileListToolbarMessage::MouseLeft => {
+                        self.file_list_toolbar.on_mouse_leave();
+                    }
+                    FileListToolbarMessage::HideTick => {
+                        // Check if toolbar should auto-hide
+                        self.file_list_toolbar.check_auto_hide();
+                    }
+                    FileListToolbarMessage::StartShuffleMode => {
+                        // Collect indices of all displayable files from current container
+                        let indices = self.collect_shuffle_indices();
+                        if !indices.is_empty() {
+                            self.shuffle_mode.start(indices);
+                            // Enable fullscreen for better experience
+                            if !self.fullscreen {
+                                self.fullscreen = true;
+                            }
+                            // Enable auto-scroll for shuffle mode
+                            self.preview.enable_auto_scroll();
+                            // Load the first item
+                            if let Some(index) = self.shuffle_mode.current_item_index() {
+                                return self.load_shuffle_item(index);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::FilterPopup(msg) => {
+                if let Some(filter) = self.filter_popup.update(msg) {
+                    // Apply filter to file browser and tile grids
+                    self.file_browser.update(FileBrowserMessage::FilterChanged(filter.clone()));
+                    self.tile_grid.apply_filter(&filter);
+                    self.folder_preview.apply_filter(&filter);
+                }
+                Task::none()
+            }
+            Message::ToggleFilterPopup => {
+                if self.filter_popup.is_visible() {
+                    self.filter_popup.hide();
+                    Task::none()
+                } else {
+                    self.filter_popup.show();
+                    self.filter_popup.focus_input()
+                }
+            }
             Message::SettingsDialog(msg) => {
                 if let Some(ref mut dialog) = self.settings_dialog {
                     if let Some(result_msg) = dialog.update(msg) {
@@ -1114,12 +1298,38 @@ impl MainWindow {
                 self.last_tick = now;
                 let delta_seconds = delta.as_secs_f32();
 
+                // Shuffle mode handling
+                if self.shuffle_mode.is_active {
+                    // Update screen height for proper comment positioning
+                    let screen_height = self.preview.get_visible_height();
+                    self.shuffle_mode.set_screen_height(screen_height);
+
+                    // Update shuffle mode animations (comments)
+                    self.shuffle_mode.tick(delta_seconds);
+
+                    // Check if scroll is complete (preview reached bottom)
+                    if self.preview.is_scroll_complete() {
+                        self.shuffle_mode.notify_scroll_complete();
+                    }
+
+                    // Check if we should advance to next item
+                    if self.shuffle_mode.should_advance() {
+                        if let Some(index) = self.shuffle_mode.next_item() {
+                            // Reset preview for new file and enable auto-scroll
+                            self.preview.enable_auto_scroll();
+                            return self.load_shuffle_item(index);
+                        }
+                    }
+                }
+
                 // Forward tick to file browser's list view
                 self.file_browser.update(FileBrowserMessage::ListView(FileListViewMessage::Tick));
                 // Poll tile grid results if in tiles mode
                 if self.view_mode == ViewMode::Tiles {
                     let _ = self.tile_grid.poll_results();
                     self.tile_grid.tick(delta_seconds);
+                    // Check toolbar auto-hide
+                    self.file_list_toolbar.check_auto_hide();
                 }
 
                 // Poll folder preview results if showing folder preview in list mode
@@ -1128,7 +1338,16 @@ impl MainWindow {
                     self.folder_preview.tick(delta_seconds);
                 }
 
-                // println!("Animation tick: delta_seconds={}", delta_seconds);
+                // Poll SAUCE loader results if in SAUCE mode
+                if self.file_list_toolbar.sauce_mode {
+                    if let Some(ref mut rx) = self.sauce_rx {
+                        while let Ok(result) = rx.try_recv() {
+                            // SAUCE result received - invalidate the list view to show new data
+                            log::debug!("SAUCE loaded for {:?}: {:?}", result.path, result.sauce);
+                            self.file_browser.list_view.invalidate();
+                        }
+                    }
+                }
 
                 // Forward tick to preview with delta time
                 self.preview.update(PreviewMessage::AnimationTick(delta_seconds)).map(Message::Preview)
@@ -1312,10 +1531,104 @@ impl MainWindow {
                 self.preview.terminal.set_zoom(1.0);
                 Task::none()
             }
+            Message::SauceLoaded(_result) => {
+                // SAUCE result received - invalidate the list view to show new data
+                self.file_browser.list_view.invalidate();
+                Task::none()
+            }
+            Message::ShuffleNext => {
+                // Skip to next item in shuffle mode
+                if self.shuffle_mode.is_active {
+                    if let Some(index) = self.shuffle_mode.next_item() {
+                        self.preview.enable_auto_scroll();
+                        return self.load_shuffle_item(index);
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
+    /// Start loading SAUCE info for all visible files
+    fn start_sauce_loading(&self) {
+        if let Some(ref loader) = self.sauce_loader {
+            // Queue all files for SAUCE loading
+            for item in &self.file_browser.files {
+                if !item.is_container() && !item.is_parent() {
+                    loader.load(SauceRequest {
+                        item: Arc::from(item.clone_box()),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Collect all displayable files from current container for shuffle mode
+    /// Collect indices of all displayable items for shuffle mode
+    fn collect_shuffle_indices(&self) -> Vec<usize> {
+        let mut indices = Vec::new();
+        for (i, item) in self.file_browser.files.iter().enumerate() {
+            if !item.is_container() && !item.is_parent() {
+                // Check if it's a supported file format
+                if let Some(format) = FileFormat::from_path(&item.get_file_path()) {
+                    if format.is_supported() || format.is_image() {
+                        indices.push(i);
+                    }
+                }
+            }
+        }
+        indices
+    }
+
+    /// Load an item for shuffle mode display (by index into file_browser.files)
+    fn load_shuffle_item(&mut self, index: usize) -> Task<Message> {
+        if index >= self.file_browser.files.len() {
+            log::error!("Shuffle item index {} out of range", index);
+            return Task::none();
+        }
+
+        // Get the item
+        let item = &self.file_browser.files[index];
+        let path = if let Some(current) = self.file_browser.current_path() {
+            current.join(item.get_file_path())
+        } else {
+            item.get_file_path()
+        };
+
+        self.current_file = Some(path.clone());
+
+        // Use the data model's read_data_blocking - works for both local and virtual files
+        // We need to get mutable access, so we'll index again
+        if let Some(data) = self.file_browser.files[index].read_data_blocking() {
+            // Extract SAUCE info for overlay
+            if let Some(sauce) = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten() {
+                let comments: Vec<String> = sauce.comments().iter().map(|s| s.to_string()).collect();
+                self.shuffle_mode.set_sauce_info(
+                    Some(sauce.title().to_string()),
+                    Some(sauce.author().to_string()),
+                    Some(sauce.group().to_string()),
+                    comments,
+                );
+            }
+
+            return Task::done(Message::DataLoaded(path, data));
+        } else {
+            log::error!("Failed to load shuffle item {:?}", path);
+            // Try next item
+            if let Some(next_index) = self.shuffle_mode.next_item() {
+                return self.load_shuffle_item(next_index);
+            }
+        }
+
+        Task::none()
+    }
+
     pub fn view(&self) -> Element<'_, Message> {
+        // Shuffle mode - show only preview with overlay, hide everything else
+        if self.shuffle_mode.is_active {
+            return self.view_shuffle_mode();
+        }
+
         // Get current theme for passing to components
         let theme = self.theme();
 
@@ -1335,8 +1648,16 @@ impl MainWindow {
         // Main content depends on view mode
         let content_area: Element<'_, Message> = match self.view_mode {
             ViewMode::List => {
+                // Toolbar for file list
+                let toolbar = self.file_list_toolbar.view_for_list().map(Message::FileListToolbar);
+
                 // File browser on left
                 let file_browser = self.file_browser.view(&theme).map(Message::FileBrowser);
+
+                // Combine toolbar and file browser in a column with fixed width
+                // Width is larger in SAUCE mode to show additional columns (286+280+160+160=886)
+                let list_width = if self.file_list_toolbar.sauce_mode { 886.0 } else { 286.0 };
+                let file_list_column = column![toolbar, file_browser].width(Length::Fixed(list_width));
 
                 // Preview area on right - show folder preview if folder selected, file preview if file selected
                 let preview_area: Element<'_, Message> = if self.folder_preview_path.is_some() {
@@ -1386,14 +1707,16 @@ impl MainWindow {
                         .style(list_focus_style)
                         .into()
                 } else {
-                    // Show placeholder text
-                    let preview_content = text(
-                        "Select a file to preview\n\n• Single click to select\n• Double click to open folders/files\n• Use ↑/↓ keys to navigate\n• Press Enter to open",
-                    )
-                    .size(14)
-                    .style(|theme: &Theme| text::Style {
+                    // Show placeholder text with welcome message
+                    let welcome_title = text(fl!(crate::LANGUAGE_LOADER, "welcome-select-file"))
+                        .size(18)
+                        .style(|theme: &Theme| text::Style {
+                            color: Some(theme.palette().text.scale_alpha(0.7)),
+                        });
+                    let welcome_tip = text(fl!(crate::LANGUAGE_LOADER, "welcome-tip")).size(13).style(|theme: &Theme| text::Style {
                         color: Some(theme.palette().text.scale_alpha(0.5)),
                     });
+                    let preview_content = column![welcome_title, welcome_tip].spacing(12).align_x(iced::Alignment::Center);
 
                     container(preview_content)
                         .width(Length::Fill)
@@ -1410,14 +1733,14 @@ impl MainWindow {
                         .into()
                 };
 
-                // Main content area (file browser + preview)
-                row![file_browser, preview_area].into()
+                // Main content area (toolbar + file browser + preview)
+                row![file_list_column, preview_area].into()
             }
             ViewMode::Tiles => {
                 // Full-width tile grid view wrapped in focusable container for keyboard handling
                 let tile_grid = self.tile_grid.view().map(Message::TileGrid);
 
-                focus(tile_grid)
+                let tile_content: Element<'_, Message> = focus(tile_grid)
                     .on_event(|event, _id| {
                         // Handle keyboard events when focused
                         if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
@@ -1438,7 +1761,42 @@ impl MainWindow {
                         }
                     })
                     .style(list_focus_style)
-                    .into()
+                    .into();
+
+                // Build toolbar with mouse detection for auto-hide
+                let is_toolbar_visible = self.file_list_toolbar.is_visible;
+
+                // Create hover zone that's always at the left edge
+                let hover_zone_width = TOOLBAR_HOVER_ZONE_WIDTH;
+
+                // Create the content to show in the overlay
+                let toolbar_overlay: Element<'_, Message> = if is_toolbar_visible {
+                    // Toolbar visible: show toolbar with mouse area
+                    let toolbar = self.file_list_toolbar.view().map(Message::FileListToolbar);
+                    let toolbar_with_hover = mouse_area(container(toolbar).style(|_| container::Style::default()))
+                        .on_enter(Message::FileListToolbar(FileListToolbarMessage::MouseEntered))
+                        .on_exit(Message::FileListToolbar(FileListToolbarMessage::MouseLeft));
+
+                    container(toolbar_with_hover)
+                        .align_x(iced::alignment::Horizontal::Left)
+                        .align_y(iced::alignment::Vertical::Top)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                } else {
+                    // Toolbar hidden: show invisible hover zone to trigger showing
+                    let hover_zone = mouse_area(container(Space::new()).width(Length::Fixed(hover_zone_width)).height(Length::Fixed(40.0)))
+                        .on_enter(Message::FileListToolbar(FileListToolbarMessage::MouseEntered));
+
+                    container(hover_zone)
+                        .align_x(iced::alignment::Horizontal::Left)
+                        .align_y(iced::alignment::Vertical::Top)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                };
+
+                iced::widget::stack![tile_content, toolbar_overlay].into()
             }
         };
 
@@ -1451,27 +1809,30 @@ impl MainWindow {
 
         let base_view: Element<'_, Message> = container(main_layout).width(Length::Fill).height(Length::Fill).into();
 
+        // Wrap with filter popup if visible
+        let view_with_filter = super::filter_popup_overlay(&self.filter_popup, base_view, Message::FilterPopup);
+
         // Wrap with error dialog if active (highest priority)
         if let Some(ref dialog) = self.error_dialog {
-            return dialog.clone().view(base_view, |_result| Message::CloseErrorDialog);
+            return dialog.clone().view(view_with_filter, |_result| Message::CloseErrorDialog);
         }
 
         // Wrap with Settings dialog if active (takes priority)
         if let Some(ref dialog) = self.settings_dialog {
-            return dialog.view(base_view);
+            return dialog.view(view_with_filter);
         }
 
         // Wrap with Export dialog if active
         if let Some(ref dialog) = self.export_dialog {
             let dialog_view = dialog.view(|msg| Message::ExportDialog(msg));
-            return icy_engine_gui::ui::modal(base_view, dialog_view, Message::ExportDialog(ExportDialogMessage::Cancel));
+            return icy_engine_gui::ui::modal(view_with_filter, dialog_view, Message::ExportDialog(ExportDialogMessage::Cancel));
         }
 
         // Wrap with SAUCE dialog if active
         let view_with_sauce = if let Some(ref dialog) = self.sauce_dialog {
-            dialog.view(base_view, Message::SauceDialog)
+            dialog.view(view_with_filter, Message::SauceDialog)
         } else {
-            base_view
+            view_with_filter
         };
 
         // Wrap with toast notifications
@@ -1599,6 +1960,7 @@ impl MainWindow {
             || self.preview.needs_animation()
             || (self.view_mode == ViewMode::Tiles && self.tile_grid.needs_animation())
             || (self.view_mode == ViewMode::List && self.folder_preview_path.is_some() && self.folder_preview.needs_animation())
+            || self.shuffle_mode.needs_animation()
     }
 
     pub fn handle_event(&mut self, event: &Event) -> Option<Message> {
@@ -1702,8 +2064,19 @@ impl MainWindow {
                     }
                 }
 
+                if let Key::Named(Named::Space) = key {
+                    if self.shuffle_mode.is_active {
+                        return Some(Message::ShuffleNext);
+                    }
+                }
+
                 // Handle Enter key for dialogs
                 if let Key::Named(Named::Enter) = key {
+                    // First check if shuffle mode is active - exit it
+                    if self.shuffle_mode.is_active {
+                        return Some(Message::ShuffleNext);
+                    }
+
                     // Settings dialog: Enter = Save (apply and close)
                     if self.settings_dialog.is_some() {
                         return Some(Message::SettingsDialog(SettingsMessage::Save));
@@ -1754,13 +2127,16 @@ impl MainWindow {
                     _ => {}
                 }
 
-                // Ctrl+I: Show export dialog, Ctrl+C: Copy, Ctrl+=/+: Zoom in, Ctrl+-: Zoom out, Ctrl+Backspace/0: Reset zoom
+                // Ctrl+I: Show export dialog, Ctrl+C: Copy, Ctrl+F: Filter, Ctrl+=/+: Zoom in, Ctrl+-: Zoom out, Ctrl+Backspace/0: Reset zoom
                 if modifiers.control() {
                     // Ctrl+Backspace for zoom reset
                     if let Key::Named(Named::Backspace) = key {
                         return Some(Message::Preview(PreviewMessage::ZoomReset));
                     }
                     if let Key::Character(c) = key {
+                        if c.as_str().eq_ignore_ascii_case("f") {
+                            return Some(Message::ToggleFilterPopup);
+                        }
                         if c.as_str().eq_ignore_ascii_case("i") {
                             return Some(Message::ShowExportDialog);
                         }
@@ -1884,5 +2260,56 @@ impl MainWindow {
                 self.file_browser.select_by_label(item_name);
             }
         }
+    }
+
+    /// View for shuffle mode - fullscreen preview with SAUCE info overlay
+    fn view_shuffle_mode(&self) -> Element<'_, Message> {
+        use iced::Event;
+        use iced::keyboard::{Key, key::Named};
+        use iced::widget::stack;
+
+        // Preview takes full screen - use monitor settings for proper display
+        let monitor_settings = self.get_current_monitor_settings();
+        let preview = self.preview.view_with_settings(Some(&monitor_settings)).map(Message::Preview);
+
+        // Create mouse area to catch clicks for exiting shuffle mode
+        let clickable_preview = mouse_area(preview).on_press(Message::Escape);
+
+        // Get actual screen height from preview for comment scrolling
+        let screen_height = self.preview.get_visible_height();
+
+        // Build shuffle mode overlay (title/author/group at top, comments at bottom)
+        let shuffle_overlay = self.shuffle_mode.overlay_view(screen_height).map(|msg| {
+            match msg {
+                super::ShuffleModeMessage::Exit => Message::Escape,
+                super::ShuffleModeMessage::NextFile => Message::AnimationTick, // Trigger advance check
+                super::ShuffleModeMessage::Tick(_) => Message::AnimationTick,
+            }
+        });
+
+        // Stack preview with overlay
+        let content = stack![clickable_preview, shuffle_overlay];
+
+        // Wrap in focus to handle keyboard events (Space/Enter for next, Escape to exit)
+        let focusable_content = focus(content).on_event(|event, _id| {
+            if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                match key {
+                    Key::Named(Named::Space) | Key::Named(Named::Enter) => Some(Message::ShuffleNext),
+                    Key::Named(Named::Escape) => Some(Message::Escape),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        });
+
+        container(focusable_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_theme| container::Style {
+                background: Some(iced::Background::Color(iced::Color::BLACK)),
+                ..Default::default()
+            })
+            .into()
     }
 }

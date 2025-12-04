@@ -17,6 +17,17 @@ menu-upgrade_version=Actualitzar a { $version }
 
 tooltip-refresh=Actualitzar
 tooltip-reset-filter-button=Restablir filtre
+tooltip-back=Enrere
+tooltip-forward=Endavant
+tooltip-up=Anar al directori pare
+tooltip-filter=Filtrar (Ctrl+F)
+tooltip-view-mode-list=Canviar a vista de llista
+tooltip-view-mode-tiles=Canviar a vista de rajoles
+tooltip-browse-16colors=Navegar 16colors.rs
+tooltip-settings=Configuració
+
+statusbar-items={ $count } elements
+statusbar-ready=Preparat
 
 filter-entries-hint-text=Filtrar entrades
 label-terminal_width=Amplada del terminal:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } paquets)
 settings-heading=Configuració
 settings-reset_button=Restablir
 settings-monitor-category=Monitor
+settings-paths-category=Rutes
+settings-restore-defaults-button=Restaurar Valors per Defecte
+
+settings-paths-header=Rutes de l'aplicació
+settings-paths-user-header=Rutes d'usuari
+settings-paths-export-path=Ruta d'exportació:
+settings-paths-config-dir=Directori de configuració:
+settings-paths-config-file=Fitxer de configuració:
+settings-paths-log-file=Fitxer de registre:
+settings-paths-open=Obrir
+
+settings-commands-category=Comandes
+settings-commands-section=Programes Externs
+settings-commands-placeholder=Comanda (ex. icy_draw %F)
+settings-commands-description=Utilitza %F per al nom del fitxer
+
+export-no-file-selected=Cap fitxer seleccionat per exportar
+export-success=Exportat a { $path }
+
+toast-baud-rate-off=Emulació baud: desactivada
+toast-baud-rate=Taxa de bauds: { $rate }
+toast-command-not-configured=Comanda { $key } no configurada
 
 preview-no-file-selected = Cap fitxer seleccionat
 preview-loading = Carregant...
@@ -122,3 +155,6 @@ error-external-command-title = No s'ha pogut executar la comanda externa
 error-external-command-message = Comanda: { $command }
 
     Error: { $error }
+
+welcome-select-file = 📂 Seleccioneu un fitxer per previsualitzar
+welcome-tip = Consell: Premeu Ctrl+F per filtrar, o feu clic a 🌐 per navegar per 16colors.rs

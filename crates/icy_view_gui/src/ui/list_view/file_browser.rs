@@ -9,9 +9,11 @@ use iced::{
 use icy_engine::formats::FileFormat;
 
 use super::file_list_view::{FileListView, FileListViewMessage};
+use super::sauce_loader::SharedSauceCache;
 use crate::Item;
-use crate::items::{NavPoint, ParentItem, ProviderType, SixteenColorsProvider, get_items_at_path, is_directory, path_exists};
+use crate::items::{NavPoint, ProviderType, SixteenColorsProvider, get_items_at_path, is_directory, path_exists, sort_items};
 use crate::ui::focus::{focus, list_focus_style};
+use crate::ui::options::SortOrder;
 
 /// Messages for the file browser
 #[derive(Debug, Clone)]
@@ -40,6 +42,10 @@ pub struct FileBrowser {
     pub filter: String,
     /// The file list view with smooth scrolling
     pub list_view: FileListView,
+    /// Current sort order
+    sort_order: SortOrder,
+    /// Shared SAUCE cache for displaying SAUCE info
+    sauce_cache: Option<SharedSauceCache>,
 }
 
 impl FileBrowser {
@@ -89,11 +95,8 @@ impl FileBrowser {
 
         let nav_point = NavPoint::file(path.to_string_lossy().to_string());
 
-        // Build file list with parent item if not at root
+        // Build file list (no parent item - use toolbar for navigation)
         let mut files: Vec<Box<dyn Item>> = Vec::new();
-        if nav_point.can_navigate_up() {
-            files.push(Box::new(ParentItem));
-        }
         if let Some(mut items) = get_items_at_path(&nav_point.path) {
             files.append(&mut items);
         }
@@ -109,6 +112,8 @@ impl FileBrowser {
             visible_indices,
             filter: String::new(),
             list_view,
+            sort_order: SortOrder::default(),
+            sauce_cache: None,
         };
 
         // If we have a file to select, find and select it
@@ -176,15 +181,10 @@ impl FileBrowser {
             return false;
         }
 
-        let is_parent = self.files[file_index].is_parent();
         let is_container = self.files[file_index].is_container();
         let file_path = self.files[file_index].get_file_path();
 
-        if is_parent {
-            // Navigate to parent directory
-            self.navigate_parent();
-            false
-        } else if is_container {
+        if is_container {
             // Navigate into folder (works for both regular folders and ZIPs)
             let file_path_str = file_path.to_string_lossy();
             let new_path = if self.nav_point.path.is_empty() {
@@ -207,12 +207,7 @@ impl FileBrowser {
         self.files.clear();
         self.filter.clear();
 
-        // Add parent item ".." if we can navigate up
-        if self.nav_point.can_navigate_up() {
-            self.files.push(Box::new(ParentItem));
-        }
-
-        // Get items based on provider type
+        // Get items based on provider type (no parent item - use toolbar for navigation)
         let items = match self.nav_point.provider_type {
             ProviderType::File => get_items_at_path(&self.nav_point.path),
             ProviderType::Web => {
@@ -272,9 +267,14 @@ impl FileBrowser {
         // Use the custom file list view with files and visible indices
         use super::file_list_shader::FileListThemeColors;
         let theme_colors = FileListThemeColors::from_theme(theme);
-        let list_view = self
-            .list_view
-            .view(&self.files, &self.visible_indices, &self.filter, theme_colors, FileBrowserMessage::ListView);
+        let list_view = self.list_view.view(
+            &self.files,
+            &self.visible_indices,
+            &self.filter,
+            theme_colors,
+            self.sauce_cache.as_ref(),
+            FileBrowserMessage::ListView,
+        );
 
         // Wrap in focusable container to handle keyboard events
         let focusable_list = focus(list_view)
@@ -297,8 +297,8 @@ impl FileBrowser {
             })
             .style(list_focus_style);
 
-        // Main container
-        container(focusable_list).width(Length::Fixed(300.0)).height(Length::Fill).into()
+        // Main container (width is set by parent)
+        container(focusable_list).width(Length::Fill).height(Length::Fill).into()
     }
 
     /// Notify list view of current viewport size
@@ -408,5 +408,28 @@ impl FileBrowser {
     /// Check if we're in web mode
     pub fn is_web_mode(&self) -> bool {
         self.nav_point.is_web()
+    }
+
+    /// Set the sort order and re-sort the file list
+    pub fn set_sort_order(&mut self, order: SortOrder) {
+        self.sort_order = order;
+        self.resort_files();
+    }
+
+    /// Set the SAUCE mode (show/hide SAUCE columns)
+    pub fn set_sauce_mode(&mut self, sauce_mode: bool) {
+        self.list_view.set_sauce_mode(sauce_mode);
+    }
+
+    /// Set the shared SAUCE cache
+    pub fn set_sauce_cache(&mut self, cache: SharedSauceCache) {
+        self.sauce_cache = Some(cache);
+    }
+
+    /// Re-sort the files according to the current sort order
+    fn resort_files(&mut self) {
+        sort_items(&mut self.files, self.sort_order);
+        self.update_visible_indices();
+        self.list_view.invalidate();
     }
 }

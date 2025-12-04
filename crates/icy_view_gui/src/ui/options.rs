@@ -4,6 +4,62 @@ use std::{fs, path::PathBuf};
 
 const SCROLL_SPEED: [f32; 3] = [80.0, 160.0, 320.0];
 
+/// Sort order for file listing
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
+pub enum SortOrder {
+    /// Sort by name (A-Z)
+    #[default]
+    NameAsc,
+    /// Sort by name (Z-A)
+    NameDesc,
+    /// Sort by size (smallest first)
+    SizeAsc,
+    /// Sort by size (largest first)
+    SizeDesc,
+    /// Sort by date (oldest first)
+    DateAsc,
+    /// Sort by date (newest first)
+    DateDesc,
+}
+
+impl SortOrder {
+    /// Cycle to the next sort order
+    pub fn next(&self) -> SortOrder {
+        match self {
+            SortOrder::NameAsc => SortOrder::NameDesc,
+            SortOrder::NameDesc => SortOrder::SizeAsc,
+            SortOrder::SizeAsc => SortOrder::SizeDesc,
+            SortOrder::SizeDesc => SortOrder::DateAsc,
+            SortOrder::DateAsc => SortOrder::DateDesc,
+            SortOrder::DateDesc => SortOrder::NameAsc,
+        }
+    }
+
+    /// Get the icon for this sort order
+    pub fn icon(&self) -> &'static str {
+        match self {
+            SortOrder::NameAsc => "A↓",
+            SortOrder::NameDesc => "A↑",
+            SortOrder::SizeAsc => "S↓",
+            SortOrder::SizeDesc => "S↑",
+            SortOrder::DateAsc => "D↓",
+            SortOrder::DateDesc => "D↑",
+        }
+    }
+
+    /// Get the tooltip for this sort order
+    pub fn tooltip_key(&self) -> &'static str {
+        match self {
+            SortOrder::NameAsc => "tooltip-sort-name-asc",
+            SortOrder::NameDesc => "tooltip-sort-name-desc",
+            SortOrder::SizeAsc => "tooltip-sort-size-asc",
+            SortOrder::SizeDesc => "tooltip-sort-size-desc",
+            SortOrder::DateAsc => "tooltip-sort-date-asc",
+            SortOrder::DateDesc => "tooltip-sort-date-desc",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
 pub enum ViewMode {
     /// List view with file browser on left, preview on right
@@ -97,6 +153,10 @@ pub struct Options {
     #[serde(default)]
     pub view_mode: ViewMode,
     #[serde(default)]
+    pub sort_order: SortOrder,
+    #[serde(default)]
+    pub sauce_mode: bool,
+    #[serde(default)]
     pub monitor_settings: MonitorSettings,
 
     #[serde(default)]
@@ -114,6 +174,8 @@ impl Default for Options {
             auto_scroll_enabled: true,
             scroll_speed: ScrollSpeed::Medium,
             view_mode: ViewMode::List,
+            sort_order: SortOrder::default(),
+            sauce_mode: false,
             monitor_settings: MonitorSettings::default(),
             external_commands: Default::default(),
             export_path: String::new(),

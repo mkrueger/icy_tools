@@ -14,12 +14,12 @@ pub struct Terminal {
     pub scrollbar: ScrollbarState,
     pub scrollbar_hover_state: Arc<AtomicBool>,  // Shared atomic hover state for vertical scrollbar
     pub hscrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for horizontal scrollbar
-    /// Computed visible height from shader (in content units, e.g., lines)
+    /// Widget bounds height in pixels
     /// Updated by the shader based on available widget bounds
-    pub computed_visible_height: Arc<AtomicU32>,
-    /// Computed visible width from shader (in content units)
+    pub bounds_height: Arc<AtomicU32>,
+    /// Widget bounds width in pixels
     /// Updated by the shader based on available widget bounds
-    pub computed_visible_width: Arc<AtomicU32>,
+    pub bounds_width: Arc<AtomicU32>,
     /// Shared render information for mouse mapping
     /// Updated by the shader, read by mouse event handlers
     pub render_info: Arc<RwLock<RenderInfo>>,
@@ -47,8 +47,8 @@ impl Terminal {
             scrollbar: ScrollbarState::new(),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
-            computed_visible_height: Arc::new(AtomicU32::new(0)),
-            computed_visible_width: Arc::new(AtomicU32::new(0)),
+            bounds_height: Arc::new(AtomicU32::new(0)),
+            bounds_width: Arc::new(AtomicU32::new(0)),
             render_info: RenderInfo::new_shared(),
             font_size: 16.0,
             char_width: 9.6, // Approximate for monospace
@@ -86,14 +86,14 @@ impl Terminal {
     pub fn sync_scrollbar_with_viewport(&mut self) {
         let mut vp = self.viewport.write();
 
-        // Use computed visible dimensions from shader if available (they're more accurate)
-        // These are already in content coordinates (bounds / zoom)
-        let computed_h = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let computed_w = self.computed_visible_width.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        // Use bounds dimensions from shader if available (they're more accurate)
+        // These are widget bounds in pixels
+        let bounds_h = self.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        let bounds_w = self.bounds_width.load(std::sync::atomic::Ordering::Relaxed) as f32;
 
         // Max scroll in content coordinates: content_size - visible_content_size
-        let visible_content_width = if computed_w > 0.0 { computed_w } else { vp.visible_width / vp.zoom };
-        let visible_content_height = if computed_h > 0.0 { computed_h } else { vp.visible_height / vp.zoom };
+        let visible_content_width = if bounds_w > 0.0 { bounds_w / vp.zoom } else { vp.visible_width / vp.zoom };
+        let visible_content_height = if bounds_h > 0.0 { bounds_h / vp.zoom } else { vp.visible_height / vp.zoom };
         let max_scroll_x = (vp.content_width - visible_content_width).max(0.0);
         let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
 

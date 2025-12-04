@@ -34,7 +34,8 @@ impl Item for SixteenColorsFile {
     }
 
     fn get_file_path(&self) -> PathBuf {
-        self.filename.clone().into()
+        // Use location + filename to make path unique across packs
+        PathBuf::from(&self.location).join(&self.filename)
     }
 
     fn is_virtual_file(&self) -> bool {

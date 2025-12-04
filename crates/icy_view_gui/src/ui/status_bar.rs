@@ -1,11 +1,14 @@
 use std::path::PathBuf;
 
+use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Length, Theme,
     widget::{Space, button, container, row, text},
 };
 use icy_parser_core::BaudEmulation;
 use icy_sauce::{Capabilities, SauceRecord};
+
+use crate::LANGUAGE_LOADER;
 
 /// SAUCE field colors - different for light and dark themes
 struct SauceColors {
@@ -295,7 +298,7 @@ impl StatusBar {
                     let size_str = info.file_size.map(|s| format!(" — {}", format_size(s))).unwrap_or_default();
                     text(format!("{}{}", name, size_str)).size(12).color(colors.date).into()
                 } else {
-                    text("Ready").size(12).color(colors.separator).into()
+                    text(fl!(LANGUAGE_LOADER, "statusbar-ready")).size(12).color(colors.separator).into()
                 }
             } else {
                 // Wrap SAUCE info in a clickable button
@@ -351,7 +354,7 @@ impl StatusBar {
             let buffer_str = info.buffer_size.map(|(w, h)| format!(" • {}×{}", w, h)).unwrap_or_default();
             text(format!("{}{}{}", name, size_str, buffer_str)).size(12).color(colors.date).into()
         } else {
-            text("Ready").size(12).color(colors.separator).into()
+            text(fl!(LANGUAGE_LOADER, "statusbar-ready")).size(12).color(colors.separator).into()
         };
 
         // Baud emulation button
@@ -466,7 +469,7 @@ impl StatusBar {
 
         // Right side: item count
         let right_content: Element<'static, StatusBarMessage> = if info.item_count > 0 {
-            let count_text = format!("{} items", info.item_count);
+            let count_text = fl!(LANGUAGE_LOADER, "statusbar-items", count = info.item_count);
             text(count_text)
                 .size(12)
                 .style(|theme: &iced::Theme| text::Style {

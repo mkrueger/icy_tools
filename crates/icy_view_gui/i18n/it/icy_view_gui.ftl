@@ -17,6 +17,17 @@ menu-upgrade_version=Aggiorna a { $version }
 
 tooltip-refresh=Aggiorna
 tooltip-reset-filter-button=Reimposta filtro
+tooltip-back=Indietro
+tooltip-forward=Avanti
+tooltip-up=Vai alla directory superiore
+tooltip-filter=Filtra (Ctrl+F)
+tooltip-view-mode-list=Passa alla vista elenco
+tooltip-view-mode-tiles=Passa alla vista griglia
+tooltip-browse-16colors=Sfoglia 16colors.rs
+tooltip-settings=Impostazioni
+
+statusbar-items={ $count } elementi
+statusbar-ready=Pronto
 
 filter-entries-hint-text=Filtra voci
 label-terminal_width=Larghezza terminale:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } pacchetti)
 settings-heading=Impostazioni 
 settings-reset_button=Reimposta
 settings-monitor-category=Monitor
+settings-paths-category=Percorsi
+settings-restore-defaults-button=Ripristina Predefiniti
+
+settings-paths-header=Percorsi dell'applicazione
+settings-paths-user-header=Percorsi utente
+settings-paths-export-path=Percorso di esportazione:
+settings-paths-config-dir=Directory di configurazione:
+settings-paths-config-file=File di configurazione:
+settings-paths-log-file=File di log:
+settings-paths-open=Apri
+
+settings-commands-category=Comandi
+settings-commands-section=Programmi Esterni
+settings-commands-placeholder=Comando (es. icy_draw %F)
+settings-commands-description=Usa %F per il nome del file
+
+export-no-file-selected=Nessun file selezionato per l'esportazione
+export-success=Esportato in { $path }
+
+toast-baud-rate-off=Emulazione baud: disattivata
+toast-baud-rate=Velocità baud: { $rate }
+toast-command-not-configured=Comando { $key } non configurato
 
 preview-no-file-selected = Nessun file selezionato
 preview-loading = Caricamento...
@@ -122,3 +155,6 @@ error-external-command-title = Impossibile eseguire il comando esterno
 error-external-command-message = Comando: { $command }
 
     Errore: { $error }
+
+welcome-select-file = 📂 Seleziona un file da visualizzare
+welcome-tip = Suggerimento: Premi Ctrl+F per filtrare, o clicca 🌐 per sfogliare 16colors.rs

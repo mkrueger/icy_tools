@@ -501,12 +501,8 @@ impl<'a> CRTShaderProgram<'a> {
                     let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
 
                     // Store computed visible dimensions for scrollbar calculations
-                    self.term
-                        .computed_visible_height
-                        .store(visible_content_height as u32, std::sync::atomic::Ordering::Relaxed);
-                    self.term
-                        .computed_visible_width
-                        .store(visible_content_width as u32, std::sync::atomic::Ordering::Relaxed);
+                    self.term.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
+                    self.term.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
 
                     // Create viewport region - scroll_x/y are already in content coordinates
                     let viewport_region = icy_engine::Rectangle::from(

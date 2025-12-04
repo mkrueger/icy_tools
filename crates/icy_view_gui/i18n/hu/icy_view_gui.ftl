@@ -17,6 +17,17 @@ menu-upgrade_version=Frissítés erre: { $version }
 
 tooltip-refresh=Frissítés
 tooltip-reset-filter-button=Szűrő visszaállítása
+tooltip-back=Vissza
+tooltip-forward=Előre
+tooltip-up=Szülő könyvtárba lépés
+tooltip-filter=Szűrés (Ctrl+F)
+tooltip-view-mode-list=Váltás listanézetre
+tooltip-view-mode-tiles=Váltás csempézett nézetre
+tooltip-browse-16colors=16colors.rs böngészése
+tooltip-settings=Beállítások
+
+statusbar-items={ $count } elem
+statusbar-ready=Kész
 
 filter-entries-hint-text=Bejegyzések szűrése
 label-terminal_width=Terminál szélessége:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } csomagok)
 settings-heading=Beállítások
 settings-reset_button=Visszaállítás
 settings-monitor-category=Monitor
+settings-paths-category=Útvonalak
+settings-restore-defaults-button=Alapértékek visszaállítása
+
+settings-paths-header=Alkalmazás útvonalak
+settings-paths-user-header=Felhasználói útvonalak
+settings-paths-export-path=Exportálási útvonal:
+settings-paths-config-dir=Konfigurációs könyvtár:
+settings-paths-config-file=Konfigurációs fájl:
+settings-paths-log-file=Naplófájl:
+settings-paths-open=Megnyitás
+
+settings-commands-category=Parancsok
+settings-commands-section=Külső Programok
+settings-commands-placeholder=Parancs (pl. icy_draw %F)
+settings-commands-description=Használja a %F-et a fájlnévhez
+
+export-no-file-selected=Nincs fájl kiválasztva exportáláshoz
+export-success=Exportálva ide: { $path }
+
+toast-baud-rate-off=Baud emuláció: kikapcsolva
+toast-baud-rate=Baud sebesség: { $rate }
+toast-command-not-configured=A(z) { $key } parancs nincs konfigurálva
 
 preview-no-file-selected = Nincs fájl kiválasztva
 preview-loading = Betöltés...
@@ -122,3 +155,6 @@ error-external-command-title = Külső parancs végrehajtása sikertelen
 error-external-command-message = Parancs: { $command }
 
     Hiba: { $error }
+
+welcome-select-file = 📂 Válassz fájlt az előnézethez
+welcome-tip = Tipp: Nyomj Ctrl+F-et a szűréshez, vagy kattints a 🌐 gombra a 16colors.rs böngészéséhez

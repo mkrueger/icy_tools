@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
+use i18n_embed_fl::fl;
 use iced::{
     Element, Length,
-    widget::{Space, button, container, row, text, text_input},
+    widget::{Space, button, container, row, text, text_input, tooltip},
 };
 
 use super::options::ViewMode;
+use crate::LANGUAGE_LOADER;
 use crate::items::ProviderType;
 
 /// A point in navigation history
@@ -43,14 +45,10 @@ pub enum NavigationBarMessage {
     Up,
     /// Toggle 16colors.rs browsing mode
     Toggle16Colors,
-    /// Filter text changed
-    FilterChanged(String),
-    /// Clear the filter
-    ClearFilter,
+    /// Open filter popup
+    OpenFilter,
     /// Refresh current directory
     Refresh,
-    /// Toggle between list and tile view
-    ToggleViewMode,
     /// Path input changed
     PathChanged(String),
     /// Path input submitted (Enter pressed)
@@ -149,7 +147,6 @@ impl Default for NavigationHistory {
 
 /// Navigation bar widget
 pub struct NavigationBar {
-    pub filter: String,
     pub view_mode: ViewMode,
     /// Whether we're currently browsing 16colors.rs
     pub is_16colors_mode: bool,
@@ -162,16 +159,11 @@ pub struct NavigationBar {
 impl NavigationBar {
     pub fn new() -> Self {
         Self {
-            filter: String::new(),
             view_mode: ViewMode::default(),
             is_16colors_mode: false,
             path_input: String::new(),
             is_path_valid: true,
         }
-    }
-
-    pub fn set_filter(&mut self, filter: String) {
-        self.filter = filter;
     }
 
     pub fn set_view_mode(&mut self, mode: ViewMode) {
@@ -208,6 +200,11 @@ impl NavigationBar {
         } else {
             back_btn
         };
+        let back_btn = tooltip(
+            back_btn,
+            container(text(fl!(LANGUAGE_LOADER, "tooltip-back")).size(12)).style(container::rounded_box),
+            tooltip::Position::Bottom,
+        );
 
         // Forward button
         let forward_btn = button(text("▶").size(14)).padding([4, 8]).style(nav_button_style);
@@ -216,12 +213,22 @@ impl NavigationBar {
         } else {
             forward_btn
         };
+        let forward_btn = tooltip(
+            forward_btn,
+            container(text(fl!(LANGUAGE_LOADER, "tooltip-forward")).size(12)).style(container::rounded_box),
+            tooltip::Position::Bottom,
+        );
 
         // Refresh button
         let refresh_btn = button(text("⟲").size(14))
             .padding([4, 8])
             .style(nav_button_style)
             .on_press(NavigationBarMessage::Refresh);
+        let refresh_btn = tooltip(
+            refresh_btn,
+            container(text(fl!(LANGUAGE_LOADER, "tooltip-refresh")).size(12)).style(container::rounded_box),
+            tooltip::Position::Bottom,
+        );
 
         // Path input (editable)
         let is_valid = self.is_path_valid;
@@ -233,44 +240,38 @@ impl NavigationBar {
             .width(Length::Fill)
             .style(move |theme, status| path_input_style(theme, status, is_valid));
 
-        // Filter input
-        let filter_input = text_input("🔍 Filter…", &self.filter)
-            .on_input(NavigationBarMessage::FilterChanged)
-            .padding([6, 10])
-            .size(13)
-            .width(Length::Fixed(150.0));
-
-        // Clear filter button (only show if filter is not empty)
-        let clear_btn = if !self.filter.is_empty() {
-            button(text("✕").size(12))
-                .padding([4, 6])
-                .style(nav_button_style)
-                .on_press(NavigationBarMessage::ClearFilter)
-        } else {
-            button(text("✕").size(12)).padding([4, 6]).style(nav_button_style)
-        };
-
-        // View mode toggle button (list/tiles)
-        let view_icon = match self.view_mode {
-            ViewMode::List => "☷",  // List icon
-            ViewMode::Tiles => "⊞", // Grid icon
-        };
-        let view_btn = button(text(view_icon).size(14))
+        // Filter button (opens filter popup)
+        let filter_btn = button(text("🔍").size(14))
             .padding([4, 8])
             .style(nav_button_style)
-            .on_press(NavigationBarMessage::ToggleViewMode);
+            .on_press(NavigationBarMessage::OpenFilter);
+        let filter_btn = tooltip(
+            filter_btn,
+            container(text(fl!(LANGUAGE_LOADER, "tooltip-filter")).size(12)).style(container::rounded_box),
+            tooltip::Position::Bottom,
+        );
 
         // 16colors.rs toggle button - use different style when active
         let web_btn = button(text("🌐").size(14))
             .padding([4, 8])
             .style(if self.is_16colors_mode { nav_button_active_style } else { nav_button_style })
             .on_press(NavigationBarMessage::Toggle16Colors);
+        let web_btn = tooltip(
+            web_btn,
+            container(text(fl!(LANGUAGE_LOADER, "tooltip-browse-16colors")).size(12)).style(container::rounded_box),
+            tooltip::Position::Bottom,
+        );
 
         // Settings button
         let settings_btn = button(text("⚙").size(14))
             .padding([4, 8])
             .style(nav_button_style)
             .on_press(NavigationBarMessage::OpenSettings);
+        let settings_btn = tooltip(
+            settings_btn,
+            container(text(fl!(LANGUAGE_LOADER, "tooltip-settings")).size(12)).style(container::rounded_box),
+            tooltip::Position::Bottom,
+        );
 
         let content = row![
             back_btn,
@@ -280,11 +281,7 @@ impl NavigationBar {
             Space::new().width(8),
             path_input,
             Space::new().width(8),
-            view_btn,
-            Space::new().width(8),
-            filter_input,
-            clear_btn,
-            Space::new().width(8),
+            filter_btn,
             settings_btn,
         ]
         .spacing(2)
@@ -318,17 +315,17 @@ impl Default for NavigationBar {
 fn nav_button_style(theme: &iced::Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
     let (bg, text_color) = match status {
-        button::Status::Active => (palette.background.strong.color, palette.background.strong.text),
+        button::Status::Active => (iced::Color::TRANSPARENT, palette.background.strong.text),
         button::Status::Hovered => (palette.primary.weak.color, palette.primary.weak.text),
         button::Status::Pressed => (palette.primary.base.color, palette.primary.base.text),
-        button::Status::Disabled => (palette.background.weak.color, palette.background.weak.text.scale_alpha(0.5)),
+        button::Status::Disabled => (iced::Color::TRANSPARENT, palette.background.weak.text.scale_alpha(0.3)),
     };
     button::Style {
         background: Some(iced::Background::Color(bg)),
         text_color,
         border: iced::Border {
-            color: palette.background.strong.color,
-            width: 1.0,
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
             radius: 4.0.into(),
         },
         ..Default::default()

@@ -17,6 +17,17 @@ menu-upgrade_version=Actualizează la { $version }
 
 tooltip-refresh=Reîmprospătează
 tooltip-reset-filter-button=Resetează filtrul
+tooltip-back=Înapoi
+tooltip-forward=Înainte
+tooltip-up=Mergi la directorul părinte
+tooltip-filter=Filtrare (Ctrl+F)
+tooltip-view-mode-list=Comută la vizualizare listă
+tooltip-view-mode-tiles=Comută la vizualizare grilă
+tooltip-browse-16colors=Navighează 16colors.rs
+tooltip-settings=Setări
+
+statusbar-items={ $count } elemente
+statusbar-ready=Pregătit
 
 filter-entries-hint-text=Filtrează intrările
 label-terminal_width=Lățimea terminalului:
@@ -113,6 +124,28 @@ label-sixteencolors_year= { $year } ({ $packs } pachete)
 settings-heading=Setări
 settings-reset_button=Resetați
 settings-monitor-category=Monitor
+settings-paths-category=Căi
+settings-restore-defaults-button=Restabilire Setări Implicite
+
+settings-paths-header=Căi aplicație
+settings-paths-user-header=Căi utilizator
+settings-paths-export-path=Cale de export:
+settings-paths-config-dir=Director configurație:
+settings-paths-config-file=Fișier configurație:
+settings-paths-log-file=Fișier jurnal:
+settings-paths-open=Deschide
+
+settings-commands-category=Comenzi
+settings-commands-section=Programe Externe
+settings-commands-placeholder=Comandă (ex. icy_draw %F)
+settings-commands-description=Folosiți %F pentru numele fișierului
+
+export-no-file-selected=Niciun fișier selectat pentru export
+export-success=Exportat în { $path }
+
+toast-baud-rate-off=Emulare baud: dezactivată
+toast-baud-rate=Rată baud: { $rate }
+toast-command-not-configured=Comanda { $key } nu este configurată
 
 preview-no-file-selected = Niciun fișier selectat
 preview-loading = Se încarcă...
@@ -122,3 +155,6 @@ error-external-command-title = Nu s-a putut executa comanda externă
 error-external-command-message = Comandă: { $command }
 
     Eroare: { $error }
+
+welcome-select-file = 📂 Selectați un fișier pentru previzualizare
+welcome-tip = Sfat: Apăsați Ctrl+F pentru filtrare, sau faceți clic pe 🌐 pentru a naviga 16colors.rs

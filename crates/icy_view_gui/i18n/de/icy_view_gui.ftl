@@ -17,6 +17,31 @@ menu-upgrade_version=Neue Version { $version }
 
 tooltip-refresh=Neu laden
 tooltip-reset-filter-button=Filter zurücksetzen
+tooltip-back=Zurück
+tooltip-forward=Vorwärts
+tooltip-up=Zum übergeordneten Verzeichnis
+tooltip-filter=Filtern (Strg+F)
+tooltip-view-mode-list=Zur Listenansicht wechseln
+tooltip-view-mode-tiles=Zur Kachelansicht wechseln
+tooltip-browse-16colors=16colors.rs durchsuchen
+tooltip-settings=Einstellungen
+tooltip-sort-name-asc=Nach Name sortieren (A-Z)
+tooltip-sort-name-desc=Nach Name sortieren (Z-A)
+tooltip-sort-size-asc=Nach Größe sortieren (kleinste zuerst)
+tooltip-sort-size-desc=Nach Größe sortieren (größte zuerst)
+tooltip-sort-date-asc=Nach Datum sortieren (älteste zuerst)
+tooltip-sort-date-desc=Nach Datum sortieren (neueste zuerst)
+tooltip-sauce-mode-on=SAUCE-Informationen anzeigen
+tooltip-sauce-mode-off=SAUCE-Informationen ausblenden
+tooltip-shuffle-mode=Shuffle-Modus (Diashow)
+
+header-name=Name
+header-title=Titel
+header-author=Autor
+header-group=Gruppe
+
+statusbar-items={ $count } Einträge
+statusbar-ready=Bereit
 
 filter-entries-hint-text=Einträge filtern
 label-terminal_width=Terminal Breite:
@@ -143,3 +168,6 @@ error-external-command-title = Externer Befehl fehlgeschlagen
 error-external-command-message = Befehl: { $command }
 
     Fehler: { $error }
+
+welcome-select-file = 📂 Datei zum Anzeigen auswählen
+welcome-tip = Tipp: Ctrl+F zum Filtern, oder 🌐 klicken um 16colors.rs zu durchsuchen

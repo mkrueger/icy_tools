@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use super::get_file_name;
 use crate::items::Item;
@@ -7,12 +8,17 @@ use crate::items::Item;
 pub struct ItemFile {
     path: PathBuf,
     label: String,
+    size: Option<u64>,
+    modified: Option<SystemTime>,
 }
 
 impl ItemFile {
     pub fn new(path: PathBuf) -> Self {
         let label = get_file_name(&path).to_string();
-        Self { path, label }
+        let metadata = std::fs::metadata(&path).ok();
+        let size = metadata.as_ref().and_then(|m| Some(m.len()));
+        let modified = metadata.as_ref().and_then(|m| m.modified().ok());
+        Self { path, label, size, modified }
     }
 }
 
@@ -31,6 +37,14 @@ impl Item for ItemFile {
         Some(self.path.clone())
     }
 
+    fn get_size(&self) -> Option<u64> {
+        self.size
+    }
+
+    fn get_modified_time(&self) -> Option<SystemTime> {
+        self.modified
+    }
+
     async fn read_data(&self) -> Option<Vec<u8>> {
         let path = self.path.clone();
         tokio::fs::read(&path).await.ok()
@@ -40,6 +54,8 @@ impl Item for ItemFile {
         Box::new(ItemFile {
             path: self.path.clone(),
             label: self.label.clone(),
+            size: self.size,
+            modified: self.modified,
         })
     }
 }

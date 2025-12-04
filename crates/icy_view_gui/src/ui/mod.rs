@@ -1,19 +1,25 @@
+mod file_list_toolbar;
+mod filter_popup;
 pub mod focus;
 pub mod list_view;
 mod main_window;
 mod navigation_bar;
 mod options;
 pub mod preview;
+mod shuffle_mode;
 mod status_bar;
 pub mod theme;
 pub mod thumbnail_view;
 
+pub use file_list_toolbar::*;
+pub use filter_popup::*;
 pub use focus::{Focus, focus};
 pub use list_view::*;
 pub use main_window::*;
 pub use navigation_bar::*;
 pub use options::*;
 pub use preview::*;
+pub use shuffle_mode::*;
 pub use status_bar::{StatusBar, StatusBarMessage, StatusInfo};
 pub use thumbnail_view::*;
 pub mod dialogs;

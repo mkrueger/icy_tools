@@ -41,12 +41,16 @@ impl ScrollbarInfo {
         let content_height = vp.content_height;
         let content_width = vp.content_width;
 
-        // Use computed visible dimensions from shader if available
-        // These already account for zoom (at 200% zoom, we see half as much content)
-        let computed_height = terminal.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let computed_width = terminal.computed_visible_width.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed_height > 0.0 { computed_height } else { vp.visible_height / zoom };
-        let visible_width = if computed_width > 0.0 { computed_width } else { vp.visible_width / zoom };
+        // Use bounds dimensions from widget if available
+        // These are in pixels, need to divide by zoom to get content units
+        let bounds_height = terminal.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        let bounds_width = terminal.bounds_width.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        let visible_height = if bounds_height > 0.0 {
+            bounds_height / zoom
+        } else {
+            vp.visible_height / zoom
+        };
+        let visible_width = if bounds_width > 0.0 { bounds_width / zoom } else { vp.visible_width / zoom };
 
         drop(vp);
 
