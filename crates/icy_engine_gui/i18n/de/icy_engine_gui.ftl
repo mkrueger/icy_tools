@@ -24,6 +24,7 @@ settings-monitor-custom = Benutzerdefiniert
 
 settings-enabled-checkbox = Aktiviert
 settings-appearance-section = Erscheinungsbild
+settings-scaling-mode-label = Auto-Skalierung
 settings-integer-scaling-label = Ganzzahlige Skalierung
 settings-bilinear-filtering-label = Bilinear-Filterung
 settings-color-tone-section = Farbe & Ton

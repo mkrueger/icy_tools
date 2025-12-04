@@ -5,17 +5,24 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use iced::{Color, widget};
 use icy_engine::Screen;
 
-use crate::{ScrollbarState, Viewport};
+use crate::{RenderInfo, ScrollbarState, Viewport};
 
 pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub original_screen: Option<Arc<Mutex<Box<dyn Screen>>>>,
     pub viewport: Arc<RwLock<Viewport>>,
     pub scrollbar: ScrollbarState,
-    pub scrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for scrollbar
+    pub scrollbar_hover_state: Arc<AtomicBool>,  // Shared atomic hover state for vertical scrollbar
+    pub hscrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for horizontal scrollbar
     /// Computed visible height from shader (in content units, e.g., lines)
     /// Updated by the shader based on available widget bounds
     pub computed_visible_height: Arc<AtomicU32>,
+    /// Computed visible width from shader (in content units)
+    /// Updated by the shader based on available widget bounds
+    pub computed_visible_width: Arc<AtomicU32>,
+    /// Shared render information for mouse mapping
+    /// Updated by the shader, read by mouse event handlers
+    pub render_info: Arc<RwLock<RenderInfo>>,
     pub font_size: f32,
     pub char_width: f32,
     pub char_height: f32,
@@ -39,7 +46,10 @@ impl Terminal {
             viewport,
             scrollbar: ScrollbarState::new(),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
+            hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             computed_visible_height: Arc::new(AtomicU32::new(0)),
+            computed_visible_width: Arc::new(AtomicU32::new(0)),
+            render_info: RenderInfo::new_shared(),
             font_size: 16.0,
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,
@@ -52,14 +62,12 @@ impl Terminal {
     pub fn update_viewport_size(&mut self) {
         let scr = self.screen.lock();
         let virtual_size = scr.virtual_size();
-        let resolution = scr.get_resolution();
         drop(scr);
 
         {
             let mut vp = self.viewport.write();
             // Only update content size, not visible size (which is the widget size, not screen size)
             vp.set_content_size(virtual_size.width as f32, virtual_size.height as f32);
-            vp.set_visible_size(resolution.width as f32, resolution.height as f32);
         }
         // Sync scrollbar position with viewport (after the lock is dropped)
         self.sync_scrollbar_with_viewport();
@@ -73,19 +81,28 @@ impl Terminal {
     }
 
     /// Sync scrollbar state with viewport scroll position
-    /// Uses computed_visible_height if available for accurate scrollbar positioning
+    /// scroll_x/y are now in CONTENT coordinates
+    /// max_scroll = content_size - visible_content_size (in content pixels)
     pub fn sync_scrollbar_with_viewport(&mut self) {
         let mut vp = self.viewport.write();
-        // Use computed visible height from shader if available, otherwise use viewport's visible_height
-        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed > 0.0 { computed } else { vp.visible_height };
-        let visible_width = vp.visible_width;
 
-        // Clamp scroll values with the correct visible height
-        vp.clamp_scroll_with_size(visible_width, visible_height);
+        // Use computed visible dimensions from shader if available (they're more accurate)
+        // These are already in content coordinates (bounds / zoom)
+        let computed_h = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
+        let computed_w = self.computed_visible_width.load(std::sync::atomic::Ordering::Relaxed) as f32;
+
+        // Max scroll in content coordinates: content_size - visible_content_size
+        let visible_content_width = if computed_w > 0.0 { computed_w } else { vp.visible_width / vp.zoom };
+        let visible_content_height = if computed_h > 0.0 { computed_h } else { vp.visible_height / vp.zoom };
+        let max_scroll_x = (vp.content_width - visible_content_width).max(0.0);
+        let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
+
+        vp.scroll_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+        vp.scroll_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+        vp.target_scroll_x = vp.target_scroll_x.clamp(0.0, max_scroll_x);
+        vp.target_scroll_y = vp.target_scroll_y.clamp(0.0, max_scroll_y);
 
         // Vertical scrollbar
-        let max_scroll_y = (vp.content_height * vp.zoom - visible_height).max(0.0);
         if max_scroll_y > 0.0 {
             let scroll_ratio = vp.scroll_y / max_scroll_y;
             self.scrollbar.set_scroll_position(scroll_ratio.clamp(0.0, 1.0));
@@ -94,7 +111,6 @@ impl Terminal {
         }
 
         // Horizontal scrollbar
-        let max_scroll_x = (vp.content_width * vp.zoom - visible_width).max(0.0);
         if max_scroll_x > 0.0 {
             let scroll_ratio_x = vp.scroll_x / max_scroll_x;
             self.scrollbar.set_scroll_position_x(scroll_ratio_x.clamp(0.0, 1.0));
@@ -103,50 +119,47 @@ impl Terminal {
         }
     }
 
-    /// Get the effective visible height (uses computed value from shader if available)
-    fn get_effective_visible_height(&self) -> f32 {
-        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        if computed > 0.0 { computed } else { self.viewport.read().visible_height }
-    }
-
-    /// Get maximum scroll Y value using the correct visible height
+    /// Get maximum scroll Y value in content coordinates
     pub fn max_scroll_y(&self) -> f32 {
         let vp = self.viewport.read();
-        let visible_height = self.get_effective_visible_height();
-        (vp.content_height * vp.zoom - visible_height).max(0.0)
+        let visible_content_height = vp.visible_height / vp.zoom;
+        (vp.content_height - visible_content_height).max(0.0)
     }
 
-    /// Scroll by delta with proper clamping
-    pub fn scroll_by(&mut self, dx: f32, dy: f32) {
+    /// Scroll X by delta with proper clamping (delta in content coordinates)
+    pub fn scroll_x_by(&mut self, dx: f32) {
         let mut vp = self.viewport.write();
-        vp.scroll_by(dx, dy);
-        // Re-clamp with the correct visible height
-        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed > 0.0 { computed } else { vp.visible_height };
-        let visible_width = vp.visible_width;
-        vp.clamp_scroll_with_size(visible_width, visible_height);
+        vp.scroll_x_by(dx);
     }
 
-    /// Scroll to position with proper clamping
-    pub fn scroll_to(&mut self, x: f32, y: f32) {
+    /// Scroll Y by delta with proper clamping (delta in content coordinates)
+    pub fn scroll_y_by(&mut self, dy: f32) {
         let mut vp = self.viewport.write();
-        vp.scroll_to(x, y);
-        // Re-clamp with the correct visible height
-        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed > 0.0 { computed } else { vp.visible_height };
-        let visible_width = vp.visible_width;
-        vp.clamp_scroll_with_size(visible_width, visible_height);
+        vp.scroll_y_by(dy);
     }
 
-    /// Scroll to position immediately with proper clamping
-    pub fn scroll_to_immediate(&mut self, x: f32, y: f32) {
+    /// Scroll X to position with proper clamping (position in content coordinates)
+    pub fn scroll_x_to(&mut self, x: f32) {
         let mut vp = self.viewport.write();
-        vp.scroll_to_immediate(x, y);
-        // Re-clamp with the correct visible height
-        let computed = self.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed > 0.0 { computed } else { vp.visible_height };
-        let visible_width = vp.visible_width;
-        vp.clamp_scroll_with_size(visible_width, visible_height);
+        vp.scroll_x_to(x);
+    }
+
+    /// Scroll Y to position with proper clamping (position in content coordinates)
+    pub fn scroll_y_to(&mut self, y: f32) {
+        let mut vp = self.viewport.write();
+        vp.scroll_y_to(y);
+    }
+
+    /// Scroll X to position immediately with proper clamping (position in content coordinates)
+    pub fn scroll_x_to_immediate(&mut self, x: f32) {
+        let mut vp = self.viewport.write();
+        vp.scroll_x_to_immediate(x);
+    }
+
+    /// Scroll Y to position immediately with proper clamping (position in content coordinates)
+    pub fn scroll_y_to_immediate(&mut self, y: f32) {
+        let mut vp = self.viewport.write();
+        vp.scroll_y_to_immediate(y);
     }
 
     /// Update animations for both viewport and scrollbar
@@ -158,7 +171,7 @@ impl Terminal {
         // Sync scrollbar position after viewport animation
         self.sync_scrollbar_with_viewport();
 
-        // Update scrollbar fade animation (uses same delta_time logic as viewport)
+        // Update scrollbar fade animation (updates both vertical and horizontal)
         self.scrollbar.update_animation();
     }
 
@@ -188,8 +201,11 @@ impl Terminal {
             {
                 let mut vp = self.viewport.write();
                 // Use resolution as visible size and scroll to bottom immediately (no animation)
-                let max_scroll_y = (vp.content_height * vp.zoom - resolution.height as f32).max(0.0);
-                vp.scroll_to_immediate(0.0, max_scroll_y);
+                // max_scroll is now in content coordinates
+                let visible_content_height = resolution.height as f32 / vp.zoom;
+                let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
+                vp.scroll_x_to_immediate(0.0);
+                vp.scroll_y_to_immediate(max_scroll_y);
                 // Clamp with the correct visible size
                 vp.clamp_scroll_with_size(resolution.width as f32, resolution.height as f32);
             }
@@ -207,6 +223,80 @@ impl Terminal {
             // Sync scrollbar position when exiting scrollback
             self.sync_scrollbar_with_viewport();
         }
+    }
+
+    /// Minimum zoom level (50%)
+    pub const MIN_ZOOM: f32 = 0.5;
+    /// Maximum zoom level (400%)
+    pub const MAX_ZOOM: f32 = 4.0;
+    /// Zoom step for each zoom in/out action (25%)
+    pub const ZOOM_STEP: f32 = 0.25;
+    /// Zoom step for integer scaling
+    pub const ZOOM_STEP_INT: f32 = 1.0;
+
+    /// Get current zoom level
+    pub fn get_zoom(&self) -> f32 {
+        self.viewport.read().zoom
+    }
+
+    /// Set zoom level with clamping
+    pub fn set_zoom(&mut self, zoom: f32) {
+        let clamped_zoom = zoom.clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+        let mut vp = self.viewport.write();
+
+        // Keep the center of the view stable when zooming
+        let center_x = vp.visible_width / 2.0;
+        let center_y = vp.visible_height / 2.0;
+        vp.set_zoom(clamped_zoom, center_x, center_y);
+        vp.changed.store(true, std::sync::atomic::Ordering::Relaxed);
+        drop(vp);
+
+        self.sync_scrollbar_with_viewport();
+    }
+
+    /// Zoom in by one step (respects integer scaling setting)
+    pub fn zoom_in(&mut self) {
+        let current = self.get_zoom();
+        self.set_zoom(current + Self::ZOOM_STEP);
+    }
+
+    /// Zoom in by integer step (for integer scaling mode)
+    pub fn zoom_in_int(&mut self) {
+        let current = self.get_zoom();
+        self.set_zoom((current + Self::ZOOM_STEP_INT).floor());
+    }
+
+    /// Zoom out by one step
+    pub fn zoom_out(&mut self) {
+        let current = self.get_zoom();
+        self.set_zoom(current - Self::ZOOM_STEP);
+    }
+
+    /// Zoom out by integer step (for integer scaling mode)
+    pub fn zoom_out_int(&mut self) {
+        let current = self.get_zoom();
+        self.set_zoom((current - Self::ZOOM_STEP_INT).ceil().max(1.0));
+    }
+
+    /// Reset zoom to 100% (1:1 pixel mapping)
+    pub fn zoom_reset(&mut self) {
+        self.set_zoom(1.0);
+    }
+
+    /// Calculate and set auto-fit zoom based on content and viewport size
+    /// Returns the calculated zoom factor
+    pub fn zoom_auto_fit(&mut self, use_integer_scaling: bool) -> f32 {
+        let vp: parking_lot::lock_api::RwLockReadGuard<'_, parking_lot::RawRwLock, Viewport> = self.viewport.read();
+        let content_width = vp.content_width;
+        let content_height = vp.content_height;
+        let visible_width = vp.visible_width;
+        let visible_height = vp.visible_height;
+        drop(vp);
+
+        let zoom = crate::ScalingMode::Auto.compute_zoom(content_width, content_height, visible_width, visible_height, use_integer_scaling);
+
+        self.set_zoom(zoom);
+        zoom
     }
 
     pub fn reset_caret_blink(&mut self) {}

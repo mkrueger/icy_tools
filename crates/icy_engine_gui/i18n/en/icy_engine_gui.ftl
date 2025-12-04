@@ -24,6 +24,7 @@ settings-monitor-custom = Custom
 
 settings-enabled-checkbox = Enabled
 settings-appearance-section = Appearance
+settings-scaling-mode-label = Auto scaling
 settings-integer-scaling-label = Use integer scaling
 settings-bilinear-filtering-label = Bilinear Filtering
 settings-color-tone-section = Color & Tone

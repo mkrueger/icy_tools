@@ -2,6 +2,9 @@ pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
 
+pub mod render_info;
+pub use render_info::*;
+
 pub mod clipboard;
 pub use clipboard::*;
 
@@ -16,6 +19,9 @@ pub use scrollbar_overlay::*;
 
 pub mod horizontal_scrollbar_overlay;
 pub use horizontal_scrollbar_overlay::*;
+
+pub mod scrollbar_info;
+pub use scrollbar_info::*;
 
 pub mod terminal_shader;
 pub use terminal_shader::*;
@@ -57,6 +63,19 @@ pub mod music;
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// ============================================================================
+// Default auto-scaling behavior - set once at application startup
+// ============================================================================
+// 0 = Auto (fit both dimensions) - good for terminals with various screen modes
+// 1 = AutoScaleX (fit width only) - good for viewers with long scrollable content
+static DEFAULT_AUTO_SCALE_XY: AtomicBool = AtomicBool::new(false);
+
+/// Set the default auto-scaling mode for this application.
+pub fn set_default_auto_scaling_xy(scale_xy: bool) {
+    DEFAULT_AUTO_SCALE_XY.store(scale_xy, Ordering::Relaxed);
+}
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -116,6 +135,108 @@ impl From<i32> for MonitorType {
     }
 }
 
+/// Scaling mode for terminal/viewer content
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum ScalingMode {
+    /// Automatically scale to fit the available space
+    /// With integer_scaling: uses largest integer factor that fits
+    /// Without integer_scaling: uses exact fit factor
+    #[default]
+    Auto,
+
+    /// Manual zoom level (1.0 = 100%, 2.0 = 200%, etc.)
+    /// With integer_scaling: rounds to nearest integer
+    Manual(f32),
+}
+
+impl ScalingMode {
+    /// Minimum zoom level (50%)
+    pub const MIN_ZOOM: f32 = 0.5;
+    /// Maximum zoom level (400%)
+    pub const MAX_ZOOM: f32 = 4.0;
+    /// Zoom step for each zoom in/out action (25%)
+    pub const ZOOM_STEP: f32 = 0.25;
+    /// Zoom step for integer scaling
+    pub const ZOOM_STEP_INT: f32 = 1.0;
+
+    /// Clamp a zoom value to valid range
+    pub fn clamp_zoom(zoom: f32) -> f32 {
+        zoom.clamp(Self::MIN_ZOOM, Self::MAX_ZOOM)
+    }
+
+    /// Calculate the next zoom level when zooming in
+    pub fn zoom_in(current: f32, use_integer: bool) -> f32 {
+        let step = if use_integer { Self::ZOOM_STEP_INT } else { Self::ZOOM_STEP };
+        let new_zoom = if use_integer { (current + step).floor() } else { current + step };
+        Self::clamp_zoom(new_zoom)
+    }
+
+    /// Calculate the next zoom level when zooming out
+    pub fn zoom_out(current: f32, use_integer: bool) -> f32 {
+        let step = if use_integer { Self::ZOOM_STEP_INT } else { Self::ZOOM_STEP };
+        let new_zoom = if use_integer { (current - step).ceil().max(1.0) } else { current - step };
+        Self::clamp_zoom(new_zoom)
+    }
+
+    /// Get the effective zoom factor for given content and viewport sizes
+    /// Returns the zoom factor to use for rendering
+    pub fn compute_zoom(&self, content_width: f32, content_height: f32, viewport_width: f32, viewport_height: f32, use_integer_scaling: bool) -> f32 {
+        match self {
+            ScalingMode::Auto => {
+                // Calculate the scale that fits content in viewport
+                let scale_x = viewport_width / content_width;
+
+                let scale_y = viewport_height / content_height;
+                let fit_scale = if DEFAULT_AUTO_SCALE_XY.load(Ordering::Relaxed) {
+                    scale_x.min(scale_y).max(0.1) // Use smaller to fit both dimensions
+                } else {
+                    scale_x
+                };
+
+                if use_integer_scaling {
+                    // Use largest integer that still fits
+                    fit_scale.floor().max(1.0)
+                } else {
+                    fit_scale
+                }
+            }
+
+            ScalingMode::Manual(zoom) => {
+                if use_integer_scaling {
+                    zoom.round().max(1.0)
+                } else {
+                    *zoom
+                }
+            }
+        }
+    }
+
+    /// Check if in auto mode
+    pub fn is_auto(&self) -> bool {
+        matches!(self, ScalingMode::Auto)
+    }
+
+    /// Get manual zoom value, or 1.0 if auto
+    pub fn get_manual_zoom(&self) -> f32 {
+        match self {
+            ScalingMode::Auto => 1.0,
+            ScalingMode::Manual(z) => *z,
+        }
+    }
+
+    /// Format zoom info for display in window title
+    /// Returns "[AUTO]" for auto mode or "[N%]" for manual mode with clamped value
+    pub fn format_zoom_string(&self) -> String {
+        match self {
+            ScalingMode::Auto => "[AUTO]".to_string(),
+            ScalingMode::Manual(zoom) => {
+                let clamped = Self::clamp_zoom(*zoom);
+                format!("[{:.0}%]", clamped * 100.0)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitorSettings {
     pub theme: String,
@@ -130,9 +251,15 @@ pub struct MonitorSettings {
 
     pub background_effect: BackgroundEffect,
 
-    pub use_pixel_perfect_scaling: bool,
+    /// Use integer scaling (1x, 2x, 3x) for sharp bitmap fonts
+    #[serde(alias = "use_pixel_perfect_scaling")]
+    pub use_integer_scaling: bool,
 
     pub use_bilinear_filtering: bool,
+
+    /// Scaling mode: Auto (fit-to-window) or Manual (user-defined zoom)
+    #[serde(default)]
+    pub scaling_mode: ScalingMode,
 
     pub use_bloom: bool,
     pub bloom_threshold: f32,
@@ -210,9 +337,10 @@ impl MonitorSettings {
             // Effects
             background_effect: BackgroundEffect::None,
 
-            // Scaling
-            use_pixel_perfect_scaling: false,
+            // Scaling - auto-fit with integer scaling for sharp fonts
+            use_integer_scaling: true,
             use_bilinear_filtering: false,
+            scaling_mode: ScalingMode::Auto,
 
             // CRT effects - all disabled for neutral
             use_bloom: false,

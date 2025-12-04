@@ -24,7 +24,8 @@ settings-monitor-custom = Personnalisé
 
 settings-enabled-checkbox = Activé
 settings-appearance-section = Apparence
-settings-integer-scaling-label = Utiliser l’échelle entière
+settings-scaling-mode-label = Mise à l'échelle automatique
+settings-integer-scaling-label = Utiliser l'échelle entière
 settings-bilinear-filtering-label = Filtrage bilinéaire
 settings-color-tone-section = Couleur et tonalité
 settings-bloom-glow-section = Bloom et lueur

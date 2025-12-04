@@ -171,11 +171,13 @@ fn main() {
     let script_for_closure = args.run;
     let mcp_rx = Arc::new(mcp_rx);
 
+    icy_engine_gui::set_default_auto_scaling_xy(true);
+
     iced::daemon(
         move || {
             let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() { mutex.lock().take() } else { None };
             if let Some(ref url) = url_for_closure {
-                let mut manager = WindowManager::with_url(mcp_receiver, url.clone());
+                let mut manager: (WindowManager, iced::Task<ui::WindowManagerMessage>) = WindowManager::with_url(mcp_receiver, url.clone());
                 if let Some(ref script) = script_for_closure {
                     manager.0.script_to_run = Some(script.clone());
                 }

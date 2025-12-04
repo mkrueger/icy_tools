@@ -1,11 +1,9 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache, Viewport};
 use iced::Element;
-use iced::Rectangle;
 use iced::widget::shader;
 use icy_engine::GraphicsType;
 use icy_engine::MouseField;
@@ -16,6 +14,33 @@ use icy_engine::Size;
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+// Global modifier state - survives widget state resets
+static GLOBAL_CTRL_PRESSED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_ALT_PRESSED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_SHIFT_PRESSED: AtomicBool = AtomicBool::new(false);
+
+/// Set global modifier state (called from keyboard events)
+pub fn set_global_modifiers(ctrl: bool, alt: bool, shift: bool) {
+    GLOBAL_CTRL_PRESSED.store(ctrl, Ordering::Relaxed);
+    GLOBAL_ALT_PRESSED.store(alt, Ordering::Relaxed);
+    GLOBAL_SHIFT_PRESSED.store(shift, Ordering::Relaxed);
+}
+
+/// Get global Ctrl state
+pub fn is_ctrl_pressed() -> bool {
+    GLOBAL_CTRL_PRESSED.load(Ordering::Relaxed)
+}
+
+/// Get global Alt state
+pub fn is_alt_pressed() -> bool {
+    GLOBAL_ALT_PRESSED.load(Ordering::Relaxed)
+}
+
+/// Get global Shift state
+pub fn is_shift_pressed() -> bool {
+    GLOBAL_SHIFT_PRESSED.load(Ordering::Relaxed)
+}
 
 /// Cached screen info for mouse mapping calculations and cache invalidation
 /// Updated during internal_draw to avoid extra locks in internal_update
@@ -95,6 +120,7 @@ pub struct CRTShaderState {
 impl CRTShaderState {
     /// Create a new CRTShaderState with blink rates based on the buffer type
     pub fn new(buffer_type: icy_engine::BufferType) -> Self {
+        println!("Creating CRTShaderState with buffer type: {:?}", buffer_type);
         Self {
             caret_blink: Blink::new(buffer_type.get_caret_blink_rate() as u128),
             character_blink: Blink::new(buffer_type.get_blink_rate() as u128),
@@ -141,132 +167,55 @@ impl CRTShaderState {
         info.graphics_type = screen.graphics_type();
     }
 
-    /// Map mouse coordinates to cell position using cached screen info
-    /// If viewport is provided, returns absolute document coordinates (with scroll offset)
-    /// Otherwise returns visible cell coordinates
-    pub fn map_mouse_to_cell(&self, monitor: &MonitorSettings, bounds: Rectangle, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
-        let info = self.cached_screen_info.lock();
-
+    /// Map mouse coordinates to cell position using shared RenderInfo from shader.
+    /// Returns absolute document coordinates (with scroll offset applied).
+    pub fn map_mouse_to_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
         let scale_factor = crate::get_scale_factor();
 
-        // Scale mouse coordinates and bounds
-        let scaled_bounds = bounds * scale_factor;
+        // Scale mouse coordinates
+        let scaled_mx = mx * scale_factor;
+        let scaled_my = my * scale_factor;
 
-        // Convert mouse to widget-local coordinates (relative to top-left of bounds)
-        let local_mx = mx * scale_factor - scaled_bounds.x;
-        let local_my = my * scale_factor - scaled_bounds.y;
-
-        if info.font_w <= 0.0 || info.font_h <= 0.0 {
+        // Use RenderInfo from shader (exact same values used for rendering)
+        if render_info.font_width <= 0.0 || render_info.font_height <= 0.0 {
             return None;
         }
 
-        // Use cached render_size if available (this is what the shader actually rendered)
-        let (term_px_w, term_px_h) = if info.render_size.0 > 0 && info.render_size.1 > 0 {
-            (info.render_size.0 as f32, info.render_size.1 as f32)
+        // Convert screen coords to terminal pixel coords using RenderInfo
+        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels(scaled_mx, scaled_my)?;
+
+        // Handle scanlines (doubled vertical resolution in render)
+        let effective_font_height = if render_info.scan_lines {
+            term_y /= 2.0;
+            render_info.font_height
         } else {
-            // Fallback: calculate from screen dimensions
-            let px_w = info.screen_width as f32 * info.font_w;
-            let mut px_h = info.screen_height as f32 * info.font_h;
-            if info.scan_lines {
-                px_h *= 2.0;
-            }
-            (px_w, px_h)
+            render_info.font_height
         };
 
-        // scroll_y is in pixels - convert to lines
-        let scroll_offset_lines = (viewport.scroll_y / viewport.zoom / info.font_h).floor() as i32;
+        let cx = (term_x / render_info.font_width).floor() as i32;
+        let visible_cy = (term_y / effective_font_height).floor() as i32;
 
-        if term_px_w <= 0.0 || term_px_h <= 0.0 {
-            return None;
-        }
+        // scroll_y is in content coordinates - convert to lines
+        let scroll_offset_lines = (viewport.scroll_y / render_info.font_height).floor() as i32;
 
-        let avail_w = scaled_bounds.width.max(1.0);
-        let avail_h = scaled_bounds.height.max(1.0);
-        let uniform_scale = (avail_w / term_px_w).min(avail_h / term_px_h);
-
-        let use_pp = monitor.use_pixel_perfect_scaling;
-        let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
-
-        let scaled_w = term_px_w * display_scale;
-        let scaled_h = term_px_h * display_scale;
-
-        // Calculate viewport offset within widget (centered)
-        let vp_offset_x = (avail_w - scaled_w) / 2.0;
-        let vp_offset_y = (avail_h - scaled_h) / 2.0;
-
-        let (vp_x, vp_y) = if use_pp {
-            (vp_offset_x.round(), vp_offset_y.round())
-        } else {
-            (vp_offset_x, vp_offset_y)
-        };
-
-        // Convert widget-local mouse coords to terminal-local coords
-        let term_px_x = (local_mx - vp_x) / display_scale;
-        let mut term_px_y = (local_my - vp_y) / display_scale;
-
-        let actual_font_h = if info.scan_lines {
-            term_px_y /= 2.0;
-            info.font_h
-        } else {
-            info.font_h
-        };
-
-        let cx = (term_px_x / info.font_w).floor() as i32;
-        let visible_cy = (term_px_y / actual_font_h).floor() as i32;
-
-        // Add scroll offset (in lines) to get absolute document row
+        // Add scroll offset to get absolute document row
         let cy = visible_cy + scroll_offset_lines;
 
         Some(Position::new(cx, cy))
     }
 
-    /// Map mouse coordinates to pixel position using cached screen info
-    pub fn map_mouse_to_xy(&self, monitor: &MonitorSettings, bounds: Rectangle, mx: f32, my: f32) -> Option<Position> {
-        let info = self.cached_screen_info.lock();
-
+    /// Map mouse coordinates to pixel position using shared RenderInfo from shader.
+    pub fn map_mouse_to_xy(&self, render_info: &crate::RenderInfo, mx: f32, my: f32) -> Option<Position> {
         let scale_factor = crate::get_scale_factor();
-        let bounds = bounds * scale_factor;
-        let mx = mx * scale_factor;
-        let my = my * scale_factor;
 
-        if info.font_w <= 0.0 || info.font_h <= 0.0 {
-            return None;
-        }
+        // Scale mouse coordinates
+        let scaled_mx = mx * scale_factor;
+        let scaled_my = my * scale_factor;
 
-        let resolution_x = info.resolution.width as f32;
-        let mut resolution_y = info.resolution.height as f32;
+        // Convert screen coords to terminal pixel coords using RenderInfo
+        let (term_x, term_y) = render_info.screen_to_terminal_pixels(scaled_mx, scaled_my)?;
 
-        if info.scan_lines {
-            resolution_y *= 2.0;
-        }
-
-        let avail_w = bounds.width.max(1.0);
-        let avail_h = bounds.height.max(1.0);
-        let uniform_scale = (avail_w / resolution_x).min(avail_h / resolution_y);
-
-        let use_pp = monitor.use_pixel_perfect_scaling;
-        let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
-
-        let scaled_w = resolution_x * display_scale;
-        let scaled_h = resolution_y * display_scale;
-
-        let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
-        let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
-
-        let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
-            (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
-        } else {
-            (offset_x, offset_y, scaled_w, scaled_h)
-        };
-
-        if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
-            return None;
-        }
-
-        let local_px_x = (mx - vp_x) / display_scale;
-        let local_px_y = (my - vp_y) / display_scale;
-
-        Some(Position::new(local_px_x as i32, local_px_y as i32))
+        Some(Position::new(term_x as i32, term_y as i32))
     }
 }
 

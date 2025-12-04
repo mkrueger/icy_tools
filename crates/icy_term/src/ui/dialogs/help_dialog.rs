@@ -187,6 +187,32 @@ impl HelpDialog {
                     ),
                 ],
             ),
+            HelpCategory::new(
+                "🔍",
+                fl!(crate::LANGUAGE_LOADER, "help-category-zoom"),
+                vec![
+                    HelpShortcut::new(
+                        if is_macos() { "⌘ ++".to_string() } else { "Ctrl+ ++".to_string() },
+                        fl!(crate::LANGUAGE_LOADER, "help-action-zoom-in"),
+                        fl!(crate::LANGUAGE_LOADER, "help-desc-zoom-in"),
+                    ),
+                    HelpShortcut::new(
+                        if is_macos() { "⌘ -".to_string() } else { "Ctrl+-".to_string() },
+                        fl!(crate::LANGUAGE_LOADER, "help-action-zoom-out"),
+                        fl!(crate::LANGUAGE_LOADER, "help-desc-zoom-out"),
+                    ),
+                    HelpShortcut::new(
+                        if is_macos() { "⌘ 0".to_string() } else { "Ctrl+0".to_string() },
+                        fl!(crate::LANGUAGE_LOADER, "help-action-zoom-reset"),
+                        fl!(crate::LANGUAGE_LOADER, "help-desc-zoom-reset"),
+                    ),
+                    HelpShortcut::new(
+                        if is_macos() { "⌘ ⌫".to_string() } else { "Ctrl+⌫".to_string() },
+                        fl!(crate::LANGUAGE_LOADER, "help-action-zoom-auto"),
+                        fl!(crate::LANGUAGE_LOADER, "help-desc-zoom-auto"),
+                    ),
+                ],
+            ),
         ];
 
         HelpDialogConfig::new(fl!(crate::LANGUAGE_LOADER, "help-title"), fl!(crate::LANGUAGE_LOADER, "help-subtitle")).with_categories(categories)

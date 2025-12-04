@@ -24,6 +24,7 @@ settings-monitor-custom = Niestandardowy
 
 settings-enabled-checkbox = Włączone
 settings-appearance-section = Wygląd
+settings-scaling-mode-label = Automatyczne skalowanie
 settings-integer-scaling-label = Użyj skalowania całkowitego
 settings-bilinear-filtering-label = Bilineáris szűrés
 settings-color-tone-section = Kolor i ton

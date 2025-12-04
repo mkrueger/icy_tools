@@ -26,13 +26,19 @@ impl<'a> CRTShaderProgram<'a> {
         state.caret_blink.update(now);
         state.character_blink.update(now);
 
-        // Track modifier keys
+        // Track modifier keys - store both locally and globally
+        // Global storage survives widget state resets
         if let iced::Event::Keyboard(kbd_event) = event {
             match kbd_event {
                 iced::keyboard::Event::ModifiersChanged(mods) => {
-                    state.alt_pressed = mods.alt();
-                    state.ctrl_pressed = mods.command();
-                    state.shift_pressed = mods.shift();
+                    let ctrl = mods.control();
+                    let alt = mods.alt();
+                    let shift = mods.shift();
+                    state.alt_pressed = alt;
+                    state.ctrl_pressed = ctrl;
+                    state.shift_pressed = shift;
+                    // Also store globally for cross-widget access
+                    crate::set_global_modifiers(ctrl, alt, shift);
                 }
                 _ => {}
             }
@@ -48,15 +54,16 @@ impl<'a> CRTShaderProgram<'a> {
             let mouse_state = state.cached_mouse_state.lock().clone();
             let mouse_tracking_enabled = mouse_state.as_ref().map(|ms| ms.tracking_enabled()).unwrap_or(false);
 
-            // Read viewport once for all mouse coordinate calculations
+            // Read viewport and render_info for mouse coordinate calculations
             let viewport = self.term.viewport.read();
+            let render_info = self.term.render_info.read();
 
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = cursor.position() {
-                        // Calculate cell and xy positions using cached screen info (no screen lock needed)
-                        let cell_pos = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport);
-                        let xy_pos = state.map_mouse_to_xy(&self.monitor_settings, bounds, position.x, position.y);
+                        // Calculate cell and xy positions using shared RenderInfo from shader
+                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        let xy_pos = state.map_mouse_to_xy(&render_info, position.x, position.y);
 
                         // Only update if position actually changed
                         if state.hovered_cell != cell_pos {
@@ -169,7 +176,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                 mouse::Event::ButtonPressed(button) => {
                     if let Some(position) = cursor.position() {
-                        if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport) {
+                        if let Some(cell) = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport) {
                             // Convert iced mouse button to our MouseButton type
                             let mouse_button = match button {
                                 mouse::Button::Left => MouseButton::Left,
@@ -274,7 +281,7 @@ impl<'a> CRTShaderProgram<'a> {
                     if let Some(ref ms) = mouse_state {
                         if mouse_tracking_enabled {
                             if let Some(position) = cursor.position() {
-                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport) {
+                                if let Some(cell) = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport) {
                                     let modifiers = KeyModifiers {
                                         shift: state.shift_pressed,
                                         ctrl: state.ctrl_pressed,
@@ -314,11 +321,21 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::WheelScrolled { delta } => {
-                    if mouse_tracking_enabled {
+                    // Check if Ctrl is held for zooming - use global state as it survives widget resets
+                    let ctrl_pressed = crate::is_ctrl_pressed();
+                    if ctrl_pressed {
+                        let zoom_delta = match delta {
+                            mouse::ScrollDelta::Lines { y, .. } => *y,
+                            mouse::ScrollDelta::Pixels { y, .. } => *y / 100.0,
+                        };
+                        if zoom_delta != 0.0 {
+                            return Some(iced::widget::Action::publish(Message::ZoomWheel(zoom_delta)));
+                        }
+                    } else if mouse_tracking_enabled {
                         // Send wheel events as button press events
                         if let Some(ref ms) = mouse_state {
                             if let Some(position) = cursor.position() {
-                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport) {
+                                if let Some(cell) = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport) {
                                     let lines = match delta {
                                         mouse::ScrollDelta::Lines { y, .. } => *y,
                                         mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0,
@@ -460,34 +477,44 @@ impl<'a> CRTShaderProgram<'a> {
                     // Get the actual content resolution
                     let resolution = screen.get_resolution();
 
-                    // Calculate visible height based on available widget bounds
-                    // This allows showing more lines when the window is taller
-                    let scale_factor = crate::get_scale_factor();
-                    let scaled_bounds_height = bounds.height * scale_factor;
-
-                    // Calculate how many lines can fit in the available height
-                    // Use the same scaling logic as map_mouse_to_cell
-                    let term_px_w = resolution.width as f32;
-                    let term_px_h = resolution.height as f32;
-                    let uniform_scale = (bounds.width * scale_factor / term_px_w).min(scaled_bounds_height / term_px_h);
-                    let display_scale = if self.monitor_settings.use_pixel_perfect_scaling {
-                        uniform_scale.floor().max(1.0)
-                    } else {
-                        uniform_scale
-                    };
-
                     let vp = self.term.viewport.read();
 
-                    // Calculate how many content pixels can be shown in the available height
-                    let visible_content_height = (scaled_bounds_height / display_scale).min(vp.content_height);
+                    // bounds are in logical pixels, but we need physical pixels for the texture
+                    // The shader's clip_bounds will be in physical pixels (bounds * scale_factor)
+                    let scale_factor = crate::get_scale_factor();
+                    let physical_bounds_height = bounds.height * scale_factor;
+                    let physical_bounds_width = bounds.width * scale_factor;
 
-                    // Store computed visible height for scrollbar calculations
+                    // Calculate effective zoom: for Auto mode, compute from bounds; for Manual, use viewport zoom
+                    let effective_zoom = self.monitor_settings.scaling_mode.compute_zoom(
+                        vp.content_width,
+                        vp.content_height,
+                        physical_bounds_width,
+                        physical_bounds_height,
+                        self.monitor_settings.use_integer_scaling,
+                    );
+
+                    // Calculate how many content pixels can be shown in the available screen space
+                    // At zoom=1: visible_content = physical_bounds (in content pixels)
+                    // At zoom=2: visible_content = physical_bounds/2 (we see half as much content)
+                    let visible_content_height = (physical_bounds_height / effective_zoom).min(vp.content_height);
+                    let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
+
+                    // Store computed visible dimensions for scrollbar calculations
                     self.term
                         .computed_visible_height
                         .store(visible_content_height as u32, std::sync::atomic::Ordering::Relaxed);
+                    self.term
+                        .computed_visible_width
+                        .store(visible_content_width as u32, std::sync::atomic::Ordering::Relaxed);
 
-                    // Use the calculated visible height for the viewport region
-                    let viewport_region = vp.visible_region_with_size(resolution.width as f32, visible_content_height);
+                    // Create viewport region - scroll_x/y are already in content coordinates
+                    let viewport_region = icy_engine::Rectangle::from(
+                        vp.scroll_x as i32,
+                        vp.scroll_y as i32,
+                        visible_content_width as i32,
+                        visible_content_height as i32,
+                    );
 
                     let base_options = icy_engine::RenderOptions {
                         rect: icy_engine::Rectangle {
@@ -556,7 +583,11 @@ impl<'a> CRTShaderProgram<'a> {
             // Always overlay the caret if visible and blinking is on
             // Caret is just an inversion overlay, no need to track changes
             if state.caret_blink.is_on() {
-                self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h, scan_lines);
+                let vp = self.term.viewport.read();
+                let scroll_x = vp.scroll_x as i32;
+                let scroll_y = vp.scroll_y as i32;
+                drop(vp);
+                self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h, scan_lines, scroll_x, scroll_y);
             }
         }
 
@@ -568,49 +599,68 @@ impl<'a> CRTShaderProgram<'a> {
             );
         }
 
+        // Get zoom level from viewport
+        let zoom = self.term.viewport.read().zoom;
+
         TerminalShader {
             terminal_rgba: rgba_data,
             terminal_size: size,
             monitor_settings: self.monitor_settings.clone(),
             instance_id: state.instance_id,
+            zoom,
+            render_info: self.term.render_info.clone(),
+            font_width: font_w as f32,
+            font_height: font_h as f32,
+            scan_lines,
         }
     }
 
-    pub fn draw_caret(&self, caret: &Caret, state: &CRTShaderState, rgba_data: &mut Vec<u8>, size: (u32, u32), font_w: usize, font_h: usize, scan_lines: bool) {
+    pub fn draw_caret(
+        &self,
+        caret: &Caret,
+        state: &CRTShaderState,
+        rgba_data: &mut Vec<u8>,
+        size: (u32, u32),
+        font_w: usize,
+        font_h: usize,
+        scan_lines: bool,
+        scroll_x: i32,
+        scroll_y: i32,
+    ) {
         // Check both the caret's is_blinking property and the blink timer state
         let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
+        let font_w = font_w as i32;
+        let font_h = font_h as i32;
 
         if should_draw && self.term.has_focus {
             let caret_pos = caret.position();
             if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
-                let line_bytes = (size.0 as usize) * 4;
+                let line_bytes = (size.0 as i32) * 4;
+                // Adjust caret position by scroll offset
                 let cell_x = caret_pos.x;
                 let cell_y = caret_pos.y;
 
                 if cell_x >= 0 && cell_y >= 0 {
                     let (px_x, px_y) = if caret.use_pixel_positioning {
-                        (caret_pos.x as usize, caret_pos.y as usize * if scan_lines { 2 } else { 1 })
+                        (caret_pos.x - scroll_x, caret_pos.y * if scan_lines { 2 } else { 1 } - scroll_y)
                     } else {
                         (
-                            (cell_x as usize) * font_w,
+                            cell_x * font_w - scroll_x,
                             // In scanline mode, y-position and height are doubled
-                            if scan_lines {
-                                (cell_y as usize) * font_h * 2
-                            } else {
-                                (cell_y as usize) * font_h
-                            },
+                            if scan_lines { cell_y * font_h * 2 } else { cell_y * font_h } - scroll_y,
                         )
                     };
                     let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
-                    if px_x + font_w <= size.0 as usize && px_y + actual_font_h <= size.1 as usize {
+                    // Check bounds: px_x/px_y can be negative due to scrolling
+                    if px_x >= 0 && px_y >= 0 && px_x + font_w <= size.0 as i32 && px_y + actual_font_h <= size.1 as i32 {
                         match caret.shape {
                             CaretShape::Bar => {
                                 // Draw a vertical bar on the left edge of the character cell
                                 let bar_width = if caret.insert_mode { font_w / 2 } else { 2.min(font_w) };
 
                                 for row in 0..actual_font_h {
-                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                    let slice = &mut rgba_data[row_offset..row_offset + bar_width * 4];
+                                    let row_offset = ((px_y + row) * line_bytes + px_x * 4) as usize;
+                                    let slice = &mut rgba_data[row_offset..row_offset + bar_width as usize * 4];
                                     for p in slice.chunks_exact_mut(4) {
                                         p[0] = 255 - p[0];
                                         p[1] = 255 - p[1];
@@ -621,8 +671,8 @@ impl<'a> CRTShaderProgram<'a> {
                             CaretShape::Block => {
                                 let start = if caret.insert_mode { actual_font_h / 2 } else { 0 };
                                 for row in start..actual_font_h {
-                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+                                    let row_offset = ((px_y + row) * line_bytes + px_x * 4) as usize;
+                                    let slice = &mut rgba_data[row_offset..row_offset + font_w as usize * 4];
                                     for p in slice.chunks_exact_mut(4) {
                                         p[0] = 255 - p[0];
                                         p[1] = 255 - p[1];
@@ -637,8 +687,8 @@ impl<'a> CRTShaderProgram<'a> {
                                     actual_font_h.saturating_sub(2)
                                 };
                                 for row in start_row..actual_font_h {
-                                    let row_offset = (px_y + row) * line_bytes + px_x * 4;
-                                    let slice = &mut rgba_data[row_offset..row_offset + font_w * 4];
+                                    let row_offset = ((px_y + row) * line_bytes + px_x * 4) as usize;
+                                    let slice = &mut rgba_data[row_offset..row_offset + font_w as usize * 4];
                                     for p in slice.chunks_exact_mut(4) {
                                         p[0] = 255 - p[0];
                                         p[1] = 255 - p[1];

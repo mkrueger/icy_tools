@@ -113,17 +113,23 @@ impl WindowManager {
     }
 
     pub fn title(&self, window: window::Id) -> String {
+        let zoom_info = self.windows.get(&window).map(|w| w.get_zoom_info_string()).unwrap_or_default();
+
         if self.windows.iter().count() == 1 {
-            return self.windows.get(&window).map(|window| window.title.clone()).unwrap_or_default();
+            return self
+                .windows
+                .get(&window)
+                .map(|window| format!("{} {}", window.title, zoom_info))
+                .unwrap_or_default();
         }
 
         self.windows
             .get(&window)
             .map(|window| {
                 if window.id < 10 {
-                    format!("{} - ⌘{}", window.title, window.id)
+                    format!("{} {} - ⌘{}", window.title, zoom_info, window.id)
                 } else {
-                    window.title.clone()
+                    format!("{} {}", window.title, zoom_info)
                 }
             })
             .unwrap_or_default()
@@ -334,8 +340,15 @@ impl WindowManager {
                                         }
                                     }
                                     "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
+                                    // Zoom shortcuts: Ctrl+Plus/Minus/0/Backspace
+                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomIn)),
+                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomOut)),
+                                    "0" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomReset)),
                                     _ => {}
                                 },
+                                keyboard::Key::Named(Named::Backspace) => {
+                                    return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomAutoFit));
+                                }
                                 _ => {}
                             }
                         }

@@ -159,10 +159,10 @@ impl FileListView {
 
         if item_top < visible_top {
             // Scroll up to show item (immediate, no animation)
-            self.viewport.scroll_to_immediate(0.0, item_top);
+            self.viewport.scroll_y_to_immediate(item_top);
         } else if item_bottom > visible_bottom {
             // Scroll down to show item (immediate, no animation)
-            self.viewport.scroll_to_immediate(0.0, item_bottom - self.viewport.visible_height);
+            self.viewport.scroll_y_to_immediate(item_bottom - self.viewport.visible_height);
         }
     }
 
@@ -179,7 +179,7 @@ impl FileListView {
             FileListViewMessage::Scroll(_, delta_y) => {
                 // delta_y is already in pixels (Lines are converted to pixels in canvas)
                 // Negative delta = scroll up (content moves down), positive = scroll down
-                self.viewport.scroll_by(0.0, -delta_y);
+                self.viewport.scroll_y_by(-delta_y);
                 self.update_scrollbar_position();
                 self.invalidate_visual();
                 false
@@ -213,7 +213,7 @@ impl FileListView {
                 false
             }
             FileListViewMessage::ScrollTo(_, y) => {
-                self.viewport.scroll_to_immediate(0.0, y);
+                self.viewport.scroll_y_to_immediate(y);
                 self.update_scrollbar_position();
                 self.invalidate_visual();
                 false
@@ -266,7 +266,7 @@ impl FileListView {
                         self.ensure_visible(idx);
                     }
                     // Also scroll viewport
-                    self.viewport.scroll_by(0.0, -(self.viewport.visible_height - ITEM_HEIGHT));
+                    self.viewport.scroll_y_by(-(self.viewport.visible_height - ITEM_HEIGHT));
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }
@@ -283,7 +283,7 @@ impl FileListView {
                         self.ensure_visible(idx);
                     }
                     // Also scroll viewport
-                    self.viewport.scroll_by(0.0, self.viewport.visible_height - ITEM_HEIGHT);
+                    self.viewport.scroll_y_by(self.viewport.visible_height - ITEM_HEIGHT);
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }
@@ -292,7 +292,7 @@ impl FileListView {
             FileListViewMessage::Home => {
                 if item_count > 0 {
                     self.selected_index = Some(0);
-                    self.viewport.scroll_to(0.0, 0.0);
+                    self.viewport.scroll_y_to(0.0);
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }
@@ -302,7 +302,7 @@ impl FileListView {
                 if item_count > 0 {
                     self.selected_index = Some(item_count - 1);
                     let max_scroll = self.viewport.max_scroll_y();
-                    self.viewport.scroll_to(0.0, max_scroll);
+                    self.viewport.scroll_y_to(max_scroll);
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }

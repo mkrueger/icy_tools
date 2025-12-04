@@ -78,13 +78,21 @@ impl WindowManager {
     }
 
     pub fn title(&self, window: window::Id) -> String {
+        let zoom_info = self.windows.get(&window).map(|w| w.get_zoom_info_string()).unwrap_or_default();
+
         if self.windows.iter().count() == 1 {
-            return self.windows.get(&window).map(|w| w.title.clone()).unwrap_or_default();
+            return self.windows.get(&window).map(|w| format!("{} {}", w.title, zoom_info)).unwrap_or_default();
         }
 
         self.windows
             .get(&window)
-            .map(|w| if w.id < 10 { format!("{} - ⌘{}", w.title, w.id) } else { w.title.clone() })
+            .map(|w| {
+                if w.id < 10 {
+                    format!("{} {} - ⌘{}", w.title, zoom_info, w.id)
+                } else {
+                    format!("{} {}", w.title, zoom_info)
+                }
+            })
             .unwrap_or_default()
     }
 
@@ -226,7 +234,7 @@ impl WindowManager {
                             }
                         }
 
-                        // Cmd+N for new window, Cmd+W to close
+                        // Cmd+N for new window, Cmd+W to close, Ctrl+Plus/Minus for zoom
                         if modifiers.command() {
                             if let keyboard::Key::Character(s) = &key {
                                 match s.to_lowercase().as_str() {
@@ -239,8 +247,15 @@ impl WindowManager {
                                         }
                                     }
                                     "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
+                                    // Zoom shortcuts: Ctrl+Plus/Minus/0/Backspace
+                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomIn)),
+                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomOut)),
+                                    "0" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomReset)),
                                     _ => {}
                                 }
+                            }
+                            if let keyboard::Key::Named(Named::Backspace) = &key {
+                                return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomAutoFit));
                             }
                         }
 

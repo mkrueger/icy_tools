@@ -14,6 +14,9 @@ pub enum Message {
     SendMouseEvent(MouseEvent),
     ScrollViewport(f32, f32), // dx, dy in pixels
 
+    /// Zoom in/out via mouse wheel (delta: positive = zoom in, negative = zoom out)
+    ZoomWheel(f32),
+
     // Selection messages
     StartSelection(Selection),
     UpdateSelection(Position),

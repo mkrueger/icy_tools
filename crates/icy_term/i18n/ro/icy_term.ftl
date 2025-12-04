@@ -336,6 +336,17 @@ help-desc-run-script = Execută un script Lua
 help-action-open-serial = Port Serial
 help-desc-open-serial = Deschide conexiune port serial
 
+# Zoom
+help-category-zoom = Zoom
+help-action-zoom-in = Mărește
+help-action-zoom-out = Micșorează
+help-action-zoom-reset = Resetează zoom
+help-action-zoom-auto = Potrivire automată
+help-desc-zoom-in = Crește nivelul de zoom
+help-desc-zoom-out = Scade nivelul de zoom
+help-desc-zoom-reset = Resetează la 100%
+help-desc-zoom-auto = Potrivește conținutul în fereastră
+
 # Open Serial Dialog
 open-serial-dialog-title = Deschide Port Serial
 open-serial-dialog-device = Dispozitiv
@@ -376,3 +387,4 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Urmărire completă - toate e
 terminal-info-dialog-shape-tooltip-block = Cursor bloc plin
 terminal-info-dialog-shape-tooltip-underline = Linie subțire în jos
 terminal-info-dialog-shape-tooltip-bar = Bară verticală între caractere
+terminal-info-dialog-apply-button = Aplică

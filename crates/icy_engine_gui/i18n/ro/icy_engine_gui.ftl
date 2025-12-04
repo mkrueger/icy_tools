@@ -24,6 +24,7 @@ settings-monitor-custom = Personalizat
 
 settings-enabled-checkbox = Activat
 settings-appearance-section = Aspect
+settings-scaling-mode-label = Scalare automată
 settings-integer-scaling-label = Utilizează scalare întreagă
 settings-bilinear-filtering-label = Filtrare biliniară
 settings-color-tone-section = Culoare și ton

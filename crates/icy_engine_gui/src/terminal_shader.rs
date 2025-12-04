@@ -1,6 +1,8 @@
+use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, now_ms, set_scale_factor};
+use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, RenderInfo, now_ms, set_scale_factor};
 use iced::Rectangle;
 use iced::widget::shader;
 
@@ -46,6 +48,14 @@ pub struct TerminalShader {
     // Store the monitor settings for CRT effects
     pub monitor_settings: MonitorSettings,
     pub instance_id: u64,
+    // Zoom level (1.0 = 100%)
+    pub zoom: f32,
+    // Shared render info for mouse mapping
+    pub render_info: Arc<RwLock<RenderInfo>>,
+    // Font dimensions for mouse mapping
+    pub font_width: f32,
+    pub font_height: f32,
+    pub scan_lines: bool,
 }
 
 // Add per-instance resources struct
@@ -189,7 +199,7 @@ impl shader::Primitive for TerminalShader {
         pipeline: &mut Self::Pipeline,
         device: &iced::wgpu::Device,
         queue: &iced::wgpu::Queue,
-        bounds: &iced::Rectangle,
+        _bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
         set_scale_factor(_viewport.scale_factor() as f32);
@@ -410,19 +420,19 @@ impl shader::Primitive for TerminalShader {
             );
         }
 
-        // Aspect ratio fit - use clamped dimensions for display
+        // Display the texture at the given zoom level
+        // The texture contains the visible content, and we display it at exactly zoom * texture_size
         let term_w = w.max(1) as f32;
         let term_h = h.max(1) as f32;
-        let avail_w = bounds.width.max(1.0);
-        let avail_h = bounds.height.max(1.0);
-        let uniform_scale = (avail_w / term_w).min(avail_h / term_h);
 
-        let use_pp = self.monitor_settings.use_pixel_perfect_scaling;
-        let int_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
-        let display_scale = if use_pp { int_scale } else { uniform_scale };
+        // Calculate the zoom/scale factor using centralized compute_zoom
+        let use_int = self.monitor_settings.use_integer_scaling;
+        let avail_w = _bounds.width.max(1.0);
+        let avail_h = _bounds.height.max(1.0);
+        let final_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
 
-        let scaled_w = term_w * display_scale;
-        let scaled_h = term_h * display_scale;
+        let scaled_w = term_w * final_scale;
+        let scaled_h = term_h * final_scale;
 
         // ...rest of uniform data setup unchanged...
         let monitor_color = match self.monitor_settings.monitor_type {
@@ -522,24 +532,50 @@ impl shader::Primitive for TerminalShader {
         // Use clamped dimensions for rendering
         let term_w = self.terminal_size.0.min(MAX_TEXTURE_DIMENSION).max(1) as f32;
         let term_h = self.terminal_size.1.min(MAX_TEXTURE_DIMENSION).max(1) as f32;
+
+        // Center the texture within the available clip bounds
         let avail_w = clip_bounds.width.max(1) as f32;
         let avail_h = clip_bounds.height.max(1) as f32;
 
-        let uniform_scale = (avail_w / term_w).min(avail_h / term_h);
-        let use_pp = self.monitor_settings.use_pixel_perfect_scaling;
-        let display_scale = if use_pp { uniform_scale.floor().max(1.0) } else { uniform_scale };
+        // Calculate the zoom/scale factor using centralized compute_zoom
+        let use_int = self.monitor_settings.use_integer_scaling;
+        let display_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
 
         let scaled_w = term_w * display_scale;
         let scaled_h = term_h * display_scale;
 
-        let offset_x = clip_bounds.x as f32 + (avail_w - scaled_w) / 2.0;
-        let offset_y = clip_bounds.y as f32 + (avail_h - scaled_h) / 2.0;
+        let offset_x = (avail_w - scaled_w) / 2.0;
+        let offset_y = (avail_h - scaled_h) / 2.0;
 
-        let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
-            (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
+        let (vp_x, vp_y, vp_w, vp_h) = if use_int {
+            (
+                clip_bounds.x as f32 + offset_x.round(),
+                clip_bounds.y as f32 + offset_y.round(),
+                scaled_w.round(),
+                scaled_h.round(),
+            )
         } else {
-            (offset_x, offset_y, scaled_w, scaled_h)
+            (clip_bounds.x as f32 + offset_x, clip_bounds.y as f32 + offset_y, scaled_w, scaled_h)
         };
+
+        // Update shared render info for mouse mapping
+        {
+            let mut info = self.render_info.write();
+            info.display_scale = display_scale;
+            info.viewport_x = if use_int { offset_x.round() } else { offset_x };
+            info.viewport_y = if use_int { offset_y.round() } else { offset_y };
+            info.viewport_width = vp_w;
+            info.viewport_height = vp_h;
+            info.terminal_width = term_w;
+            info.terminal_height = term_h;
+            info.font_width = self.font_width;
+            info.font_height = self.font_height;
+            info.scan_lines = self.scan_lines;
+            info.bounds_x = clip_bounds.x as f32;
+            info.bounds_y = clip_bounds.y as f32;
+            info.bounds_width = avail_w;
+            info.bounds_height = avail_h;
+        }
 
         let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
             label: Some("Terminal Shader Render Pass"),
@@ -557,15 +593,11 @@ impl shader::Primitive for TerminalShader {
             occlusion_query_set: None,
         });
 
-        let sc_x = vp_x.max(0.0).floor() as u32;
-        let sc_y = vp_y.max(0.0).floor() as u32;
-        let sc_w = vp_w.max(1.0).floor() as u32;
-        let sc_h = vp_h.max(1.0).floor() as u32;
-
-        let scissor_x = sc_x.min(clip_bounds.x + clip_bounds.width);
-        let scissor_y = sc_y.min(clip_bounds.y + clip_bounds.height);
-        let scissor_width = sc_w.min((clip_bounds.x + clip_bounds.width).saturating_sub(scissor_x));
-        let scissor_height = sc_h.min((clip_bounds.y + clip_bounds.height).saturating_sub(scissor_y));
+        // Always use the original clip_bounds as scissor rect to ensure proper clipping
+        let scissor_x = clip_bounds.x;
+        let scissor_y = clip_bounds.y;
+        let scissor_width = clip_bounds.width;
+        let scissor_height = clip_bounds.height;
 
         if scissor_width > 0 && scissor_height > 0 && vp_w > 0.0 && vp_h > 0.0 {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);

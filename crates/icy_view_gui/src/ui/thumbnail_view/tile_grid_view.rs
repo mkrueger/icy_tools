@@ -294,7 +294,7 @@ impl TileGridView {
     pub fn scroll_by(&mut self, delta: f32) {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
-        self.viewport.scroll_by(0.0, -delta);
+        self.viewport.scroll_y_by(-delta);
     }
 
     /// Scroll by a delta amount immediately (no animation)
@@ -302,21 +302,21 @@ impl TileGridView {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
         let new_y = self.viewport.scroll_y - delta;
-        self.viewport.scroll_to_immediate(0.0, new_y);
+        self.viewport.scroll_y_to_immediate(new_y);
     }
 
     /// Scroll to position with smooth animation
     pub fn scroll_to(&mut self, y: f32) {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
-        self.viewport.scroll_to(0.0, y);
+        self.viewport.scroll_y_to(y);
     }
 
     /// Scroll to position immediately
     pub fn scroll_to_immediate(&mut self, y: f32) {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
-        self.viewport.scroll_to_immediate(0.0, y);
+        self.viewport.scroll_y_to_immediate(y);
     }
 
     /// Get current scroll position
@@ -372,7 +372,8 @@ impl TileGridView {
 
         // Force layout recalculation
         *self.available_width.borrow_mut() = 0.0;
-        self.viewport.scroll_to_immediate(0.0, 0.0);
+        self.viewport.scroll_x_to_immediate(0.0);
+        self.viewport.scroll_y_to_immediate(0.0);
         self.cache.clear();
     }
 
@@ -425,7 +426,8 @@ impl TileGridView {
         self.loaded_lru.clear();
         self.last_viewport_top = 0.0;
         // Reset scroll position to prevent invalid viewport coordinates
-        self.viewport.scroll_to_immediate(0.0, 0.0);
+        self.viewport.scroll_x_to_immediate(0.0);
+        self.viewport.scroll_y_to_immediate(0.0);
         // Reset available_width to force recalculation on first view()
         *self.available_width.borrow_mut() = 0.0;
 
@@ -473,7 +475,8 @@ impl TileGridView {
         self.loaded_lru.clear();
         self.last_viewport_top = 0.0;
         // Reset scroll position to prevent invalid viewport coordinates
-        self.viewport.scroll_to_immediate(0.0, 0.0);
+        self.viewport.scroll_x_to_immediate(0.0);
+        self.viewport.scroll_y_to_immediate(0.0);
         // Reset available_width to force recalculation on first view()
         *self.available_width.borrow_mut() = 0.0;
 
@@ -527,7 +530,8 @@ impl TileGridView {
         self.filter.clear();
         self.loaded_lru.clear();
         self.last_viewport_top = 0.0;
-        self.viewport.scroll_to_immediate(0.0, 0.0);
+        self.viewport.scroll_x_to_immediate(0.0);
+        self.viewport.scroll_y_to_immediate(0.0);
         *self.available_width.borrow_mut() = 0.0;
         self.cache.clear();
 
@@ -907,7 +911,7 @@ impl TileGridView {
             let max_scroll_y = self.viewport.max_scroll_y();
             let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-            self.viewport.scroll_to_immediate(0.0, new_y);
+            self.viewport.scroll_y_to_immediate(new_y);
 
             // Stop auto-scroll when we reach the bottom
             if new_y >= max_scroll_y {

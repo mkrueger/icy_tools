@@ -334,6 +334,17 @@ help-desc-run-script = Uruchom skrypt Lua
 help-action-open-serial = Port Szeregowy
 help-desc-open-serial = Otwórz połączenie portu szeregowego
 
+# Zoom
+help-category-zoom = Powiększenie
+help-action-zoom-in = Powiększ
+help-action-zoom-out = Pomniejsz
+help-action-zoom-reset = Resetuj powiększenie
+help-action-zoom-auto = Dopasuj do okna
+help-desc-zoom-in = Zwiększ poziom powiększenia
+help-desc-zoom-out = Zmniejsz poziom powiększenia
+help-desc-zoom-reset = Resetuj do 100%
+help-desc-zoom-auto = Dopasuj zawartość do okna
+
 # Open Serial Dialog
 open-serial-dialog-title = Otwórz Port Szeregowy
 open-serial-dialog-device = Urządzenie
@@ -374,3 +385,4 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Pełne śledzenie - wszystkie
 terminal-info-dialog-shape-tooltip-block = Pełny kursor blokowy
 terminal-info-dialog-shape-tooltip-underline = Cienka linia na dole
 terminal-info-dialog-shape-tooltip-bar = Pionowa kreska między znakami
+terminal-info-dialog-apply-button = Zastosuj

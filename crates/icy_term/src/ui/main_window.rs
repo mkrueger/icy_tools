@@ -506,6 +506,19 @@ impl MainWindow {
                 let _ = self.terminal_tx.send(TerminalCommand::StopScript);
                 Task::none()
             }
+            Message::ApplyTerminalSettings {
+                terminal_type,
+                screen_mode,
+                ansi_music,
+            } => {
+                let _ = self.terminal_tx.send(TerminalCommand::SetTerminalSettings {
+                    terminal_type,
+                    screen_mode,
+                    ansi_music,
+                });
+                self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
             Message::ShowFindDialog => {
                 self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowFindDialog;
@@ -599,8 +612,8 @@ impl MainWindow {
             }
 
             Message::TerminalInfo(msg) => {
-                if let Some(_close_msg) = self.terminal_info_dialog.update(msg) {
-                    self.state.mode = MainWindowMode::ShowTerminal;
+                if let Some(action_msg) = self.terminal_info_dialog.update(msg) {
+                    return self.update(action_msg);
                 }
                 Task::none()
             }
@@ -610,6 +623,11 @@ impl MainWindow {
                 let screen = self.terminal_window.terminal.screen.lock();
                 let caret = screen.caret();
                 let terminal_state = screen.terminal_state();
+
+                // Get current terminal settings - use actual current state
+                let terminal_type = self.terminal_window.terminal_emulation;
+                let screen_mode = self.terminal_window.screen_mode;
+                let ansi_music = self.terminal_window.ansi_music;
 
                 let info = terminal_info_dialog::TerminalInfo {
                     buffer_size: terminal_state.get_size(),
@@ -628,6 +646,9 @@ impl MainWindow {
                     inverse_mode: terminal_state.inverse_video,
                     ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
                     baud_emulation: self.terminal_window.baud_emulation,
+                    terminal_type,
+                    screen_mode,
+                    ansi_music,
                 };
                 drop(screen);
 
@@ -769,19 +790,37 @@ impl MainWindow {
             }
 
             Message::ScrollViewport(dx, dy) => {
-                self.terminal_window.terminal.viewport.write().scroll_by(dx, dy);
+                let mut vp = self.terminal_window.terminal.viewport.write();
+                vp.scroll_x_by(dx);
+                vp.scroll_y_by(dy);
                 Task::none()
             }
 
             Message::ScrollViewportTo(smooth, x, y) => {
-                // Immediate scroll for scrollbar interaction (no smooth animation)
+                // Scroll both axes
                 let mut vp = self.terminal_window.terminal.viewport.write();
                 if smooth {
-                    vp.scroll_to(x, y);
+                    vp.scroll_x_to(x);
+                    vp.scroll_y_to(y);
                 } else {
-                    vp.scroll_to_immediate(x, y);
+                    vp.scroll_x_to_immediate(x);
+                    vp.scroll_y_to_immediate(y);
                 }
                 drop(vp);
+                self.terminal_window.terminal.sync_scrollbar_with_viewport();
+                Task::none()
+            }
+
+            Message::ScrollViewportYToImmediate(y) => {
+                // Vertical scrollbar: only change Y, keep X unchanged
+                self.terminal_window.terminal.scroll_y_to_immediate(y);
+                self.terminal_window.terminal.sync_scrollbar_with_viewport();
+                Task::none()
+            }
+
+            Message::ScrollViewportXToImmediate(x) => {
+                // Horizontal scrollbar: only change X, keep Y unchanged
+                self.terminal_window.terminal.scroll_x_to_immediate(x);
                 self.terminal_window.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
@@ -793,18 +832,29 @@ impl MainWindow {
             }
 
             Message::ScrollbarHovered(is_hovered) => {
-                // Update scrollbar hover state for animation
+                // Update vertical scrollbar hover state for animation
                 self.terminal_window.terminal.scrollbar.set_hovered(is_hovered);
                 Task::none()
             }
 
+            Message::HScrollbarHovered(is_hovered) => {
+                // Update horizontal scrollbar hover state for animation
+                self.terminal_window.terminal.scrollbar.set_hovered_x(is_hovered);
+                Task::none()
+            }
+
             Message::CursorLeftWindow => {
-                // Fade out scrollbar when cursor leaves window
+                // Fade out scrollbars when cursor leaves window
                 self.terminal_window.terminal.scrollbar.set_hovered(false);
+                self.terminal_window.terminal.scrollbar.set_hovered_x(false);
                 // Reset hover tracking state so next cursor move triggers hover update
                 self.terminal_window
                     .terminal
                     .scrollbar_hover_state
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                self.terminal_window
+                    .terminal
+                    .hscrollbar_hover_state
                     .store(false, std::sync::atomic::Ordering::Relaxed);
                 Task::none()
             }
@@ -1013,6 +1063,38 @@ impl MainWindow {
                     let mut screen = self.terminal_window.terminal.screen.lock();
                     let _ = screen.clear_selection();
                 }
+                Task::none()
+            }
+
+            // Zoom controls
+            Message::ZoomIn => {
+                let mut opts = self.settings_dialog.original_options.lock();
+                let use_integer = opts.monitor_settings.use_integer_scaling;
+                let current_zoom = self.terminal_window.terminal.get_zoom();
+                let new_zoom = icy_engine_gui::ScalingMode::zoom_in(current_zoom, use_integer);
+                self.terminal_window.terminal.set_zoom(new_zoom);
+                opts.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
+                Task::none()
+            }
+
+            Message::ZoomOut => {
+                let mut opts = self.settings_dialog.original_options.lock();
+                let use_integer = opts.monitor_settings.use_integer_scaling;
+                let current_zoom = self.terminal_window.terminal.get_zoom();
+                let new_zoom = icy_engine_gui::ScalingMode::zoom_out(current_zoom, use_integer);
+                self.terminal_window.terminal.set_zoom(new_zoom);
+                opts.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
+                Task::none()
+            }
+
+            Message::ZoomReset => {
+                self.terminal_window.terminal.zoom_reset();
+                self.settings_dialog.original_options.lock().monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(1.0);
+                Task::none()
+            }
+
+            Message::ZoomAutoFit => {
+                self.settings_dialog.original_options.lock().monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Auto;
                 Task::none()
             }
         }
@@ -1307,6 +1389,17 @@ impl MainWindow {
                 self.state.mode = MainWindowMode::ShowOpenSerialDialog(true);
                 Task::none()
             }
+            TerminalEvent::TerminalSettingsChanged {
+                terminal_type,
+                screen_mode,
+                ansi_music,
+            } => {
+                // Update the terminal window's settings
+                self.terminal_window.terminal_emulation = terminal_type;
+                self.terminal_window.screen_mode = screen_mode;
+                self.terminal_window.ansi_music = ansi_music;
+                Task::none()
+            }
         }
     }
 
@@ -1336,6 +1429,12 @@ impl MainWindow {
         } else {
             self.settings_dialog.original_options.lock().monitor_settings.get_theme()
         }
+    }
+
+    /// Get a string representing the current zoom level for display in title bar
+    pub fn get_zoom_info_string(&self) -> String {
+        let opts = self.settings_dialog.original_options.lock();
+        opts.monitor_settings.scaling_mode.format_zoom_string()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -1503,9 +1602,8 @@ impl MainWindow {
             },
             MainWindowMode::ShowTerminalInfo => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) | keyboard::Key::Named(keyboard::key::Named::Enter) => {
-                        Some(Message::TerminalInfo(terminal_info_dialog::TerminalInfoMsg::Close))
-                    }
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::TerminalInfo(terminal_info_dialog::TerminalInfoMsg::Close)),
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::TerminalInfo(terminal_info_dialog::TerminalInfoMsg::Apply)),
                     _ => None,
                 },
                 _ => None,

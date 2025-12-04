@@ -79,6 +79,14 @@ pub enum Message {
     ExportDialog(ExportDialogMessage),
     /// Copy selection to clipboard
     Copy,
+    /// Zoom in
+    ZoomIn,
+    /// Zoom out
+    ZoomOut,
+    /// Reset zoom to 1:1
+    ZoomReset,
+    /// Auto-fit zoom
+    ZoomAutoFit,
 }
 
 /// Main window for icy_view_gui
@@ -738,7 +746,14 @@ impl MainWindow {
                     self.last_tick = Instant::now();
                     return Task::none();
                 }
-                self.preview.update(msg).map(Message::Preview)
+                // Check if this is a terminal message that might change zoom
+                let is_zoom_change = matches!(&msg, PreviewMessage::TerminalMessage(icy_engine_gui::Message::ZoomWheel(_)));
+                let result = self.preview.update(msg).map(Message::Preview);
+                // Sync scaling_mode from preview to options after zoom changes
+                if is_zoom_change {
+                    self.options.lock().monitor_settings.scaling_mode = self.preview.monitor_settings.scaling_mode.clone();
+                }
+                result
             }
             Message::StatusBar(msg) => {
                 match msg {
@@ -1259,6 +1274,44 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::ZoomIn => {
+                let opts = self.options.lock();
+                let use_integer = opts.monitor_settings.use_integer_scaling;
+                let current_zoom = self.preview.terminal.get_zoom();
+                let new_zoom = icy_engine_gui::ScalingMode::zoom_in(current_zoom, use_integer);
+                drop(opts);
+                self.preview.terminal.set_zoom(new_zoom);
+                let scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
+                self.preview.monitor_settings.scaling_mode = scaling_mode;
+                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
+                Task::none()
+            }
+            Message::ZoomOut => {
+                let opts = self.options.lock();
+                let use_integer = opts.monitor_settings.use_integer_scaling;
+                let current_zoom = self.preview.terminal.get_zoom();
+                let new_zoom = icy_engine_gui::ScalingMode::zoom_out(current_zoom, use_integer);
+                drop(opts);
+                self.preview.terminal.set_zoom(new_zoom);
+                let scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
+                self.preview.monitor_settings.scaling_mode = scaling_mode;
+                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
+                Task::none()
+            }
+            Message::ZoomReset => {
+                self.preview.terminal.zoom_reset();
+                let scaling_mode = icy_engine_gui::ScalingMode::Manual(1.0);
+                self.preview.monitor_settings.scaling_mode = scaling_mode;
+                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
+                Task::none()
+            }
+            Message::ZoomAutoFit => {
+                let scaling_mode = icy_engine_gui::ScalingMode::Auto;
+                self.preview.monitor_settings.scaling_mode = scaling_mode;
+                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
+                self.preview.terminal.set_zoom(1.0);
+                Task::none()
+            }
         }
     }
 
@@ -1441,7 +1494,8 @@ impl MainWindow {
             .with_viewing_file(self.current_file.is_some())
             .with_buffer_size(self.preview.get_buffer_size())
             .with_content_size(self.preview.get_content_size())
-            .with_auto_scroll_enabled(self.preview.is_auto_scroll_enabled());
+            .with_auto_scroll_enabled(self.preview.is_auto_scroll_enabled())
+            .with_zoom_level(Some(self.preview.terminal.get_zoom()));
 
         // Get selected/hovered item info - from tile grid in tiles mode, from folder preview or file browser otherwise
         if view_mode == ViewMode::Tiles {
@@ -1520,6 +1574,12 @@ impl MainWindow {
         } else {
             self.options.lock().monitor_settings.get_theme()
         }
+    }
+
+    /// Get a string representing the current zoom level for display in title bar
+    pub fn get_zoom_info_string(&self) -> String {
+        let opts = self.options.lock();
+        opts.monitor_settings.scaling_mode.format_zoom_string()
     }
 
     /// Get the current monitor settings
@@ -1694,8 +1754,12 @@ impl MainWindow {
                     _ => {}
                 }
 
-                // Ctrl+I: Show export dialog, Ctrl+C: Copy
+                // Ctrl+I: Show export dialog, Ctrl+C: Copy, Ctrl+=/+: Zoom in, Ctrl+-: Zoom out, Ctrl+Backspace/0: Reset zoom
                 if modifiers.control() {
+                    // Ctrl+Backspace for zoom reset
+                    if let Key::Named(Named::Backspace) = key {
+                        return Some(Message::Preview(PreviewMessage::ZoomReset));
+                    }
                     if let Key::Character(c) = key {
                         if c.as_str().eq_ignore_ascii_case("i") {
                             return Some(Message::ShowExportDialog);
@@ -1703,15 +1767,40 @@ impl MainWindow {
                         if c.as_str().eq_ignore_ascii_case("c") {
                             return Some(Message::Copy);
                         }
+                        // Ctrl+= or Ctrl++ for zoom in
+                        if c.as_str() == "=" || c.as_str() == "+" {
+                            return Some(Message::Preview(PreviewMessage::ZoomIn));
+                        }
+                        // Ctrl+- for zoom out
+                        if c.as_str() == "-" {
+                            return Some(Message::Preview(PreviewMessage::ZoomOut));
+                        }
+                        // Ctrl+0 for zoom reset
+                        if c.as_str() == "0" {
+                            return Some(Message::Preview(PreviewMessage::ZoomReset));
+                        }
                     }
                 }
 
-                // macOS: Cmd+C for copy
+                // macOS: Cmd+C for copy, Cmd+=/+/-/0/Backspace: Zoom
                 #[cfg(target_os = "macos")]
                 if modifiers.logo() {
+                    // Cmd+Backspace for zoom reset
+                    if let Key::Named(Named::Backspace) = key {
+                        return Some(Message::Preview(PreviewMessage::ZoomReset));
+                    }
                     if let Key::Character(c) = key {
                         if c.as_str().eq_ignore_ascii_case("c") {
                             return Some(Message::Copy);
+                        }
+                        if c.as_str() == "=" || c.as_str() == "+" {
+                            return Some(Message::Preview(PreviewMessage::ZoomIn));
+                        }
+                        if c.as_str() == "-" {
+                            return Some(Message::Preview(PreviewMessage::ZoomOut));
+                        }
+                        if c.as_str() == "0" {
+                            return Some(Message::Preview(PreviewMessage::ZoomReset));
                         }
                     }
                 }

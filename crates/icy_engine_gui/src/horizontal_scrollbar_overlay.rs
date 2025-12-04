@@ -24,9 +24,15 @@ pub struct HorizontalScrollbarOverlay<Message> {
 }
 
 const MIN_HEIGHT: f32 = 3.0;
-const MAX_HEIGHT: f32 = 10.0;
+const MAX_HEIGHT: f32 = 9.0;
 const MIN_ALPHA: f32 = 0.42;
 const MAX_ALPHA: f32 = 0.87;
+// Offset from bottom edge when fully expanded
+const BOTTOM_OFFSET: f32 = 0.0;
+// Left/right padding
+const LEFT_PADDING: f32 = 0.0;
+// Right padding to leave room for vertical scrollbar
+const RIGHT_PADDING: f32 = 0.0;
 
 impl<Message> HorizontalScrollbarOverlay<Message>
 where
@@ -53,10 +59,7 @@ where
     }
 
     pub fn view(self) -> Element<'static, Message> {
-        Canvas::new(self)
-            .width(Length::Fill)
-            .height(Length::Fixed(12.0)) // Match scrollbar height
-            .into()
+        Canvas::new(self).width(Length::Fill).height(Length::Fixed(12.0)).into()
     }
 
     fn draw_scrollbar(&self, frame: &mut Frame, size: Size, animated_visibility: f32) {
@@ -68,10 +71,10 @@ where
             let line_y = size.height - MIN_HEIGHT; // Bottom edge of canvas
 
             // Calculate thumb position
-            let available_width = size.width - 8.0;
+            let available_width = size.width - LEFT_PADDING - RIGHT_PADDING;
             let thumb_width = (available_width * self.width_ratio).max(40.0);
             let max_thumb_offset = available_width - thumb_width;
-            let thumb_x = 4.0 + (max_thumb_offset * self.scroll_position);
+            let thumb_x = LEFT_PADDING + (max_thumb_offset * self.scroll_position);
 
             // Draw thin thumb indicator - bright white with alpha
             let thin_thumb = Path::rounded_rectangle(Point::new(thumb_x, line_y), Size::new(thumb_width, MIN_HEIGHT), 1.5.into());
@@ -79,24 +82,24 @@ where
         } else {
             // Full scrollbar mode with smooth transition
             let scrollbar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * self.visibility;
-            let scrollbar_y = 0.0;
+            // Position scrollbar at bottom edge with offset
+            let scrollbar_y = size.height - scrollbar_height - BOTTOM_OFFSET;
 
             // Draw background track - subtle dark background
-            let track_path = Path::rectangle(Point::new(4.0, scrollbar_y), Size::new(size.width - 8.0, scrollbar_height));
+            let track_path = Path::rectangle(
+                Point::new(LEFT_PADDING, scrollbar_y),
+                Size::new(size.width - LEFT_PADDING - RIGHT_PADDING, scrollbar_height),
+            );
             frame.fill(&track_path, Color::from_rgba(0.0, 0.0, 0.0, 0.2 * animated_visibility));
 
             // Calculate thumb position and size
-            let available_width = size.width - 8.0;
+            let available_width = size.width - LEFT_PADDING - RIGHT_PADDING;
             let thumb_width = (available_width * self.width_ratio).max(30.0);
             let max_thumb_offset = available_width - thumb_width;
-            let thumb_x = 4.0 + (max_thumb_offset * self.scroll_position);
+            let thumb_x = LEFT_PADDING + (max_thumb_offset * self.scroll_position);
 
             // Draw thumb - bright white
-            let thumb_path = Path::rounded_rectangle(
-                Point::new(thumb_x, scrollbar_y + MAX_HEIGHT - scrollbar_height),
-                Size::new(thumb_width, scrollbar_height),
-                4.0.into(),
-            );
+            let thumb_path = Path::rounded_rectangle(Point::new(thumb_x, scrollbar_y), Size::new(thumb_width, scrollbar_height), 4.0.into());
             frame.fill(
                 &thumb_path,
                 Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * animated_visibility),
@@ -115,11 +118,11 @@ where
     // Calculate scroll ratio (0.0-1.0) from mouse X position
     fn calculate_scroll_from_position(&self, mouse_x: f32, width: f32) -> f32 {
         // Account for padding
-        let available_width = width - 8.0;
+        let available_width = width - LEFT_PADDING - RIGHT_PADDING;
         let thumb_width = (available_width * self.width_ratio).max(30.0);
 
         // Position the center of the thumb at the mouse position
-        let click_offset = mouse_x - 4.0 - (thumb_width / 2.0);
+        let click_offset = mouse_x - LEFT_PADDING - (thumb_width / 2.0);
 
         // Calculate position accounting for thumb size
         let max_thumb_offset = available_width - thumb_width;
@@ -151,6 +154,7 @@ where
     }
 
     fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::canvas::Action<Message>> {
+        // Canvas is fixed height (12px), so just check if mouse is over bounds
         let is_hovered = cursor.is_over(bounds);
 
         match event {
@@ -162,7 +166,7 @@ where
                             let scroll_ratio = self.calculate_scroll_from_position(pos.x, bounds.width);
                             let absolute_x = scroll_ratio * self.max_scroll_x;
                             let msg = (self.on_scroll)(absolute_x, 0.0);
-                            return Some(iced::widget::canvas::Action::publish(msg));
+                            return Some(iced::widget::canvas::Action::publish(msg).and_capture());
                         }
                     }
                 }
@@ -180,7 +184,7 @@ where
                             let scroll_ratio = self.calculate_scroll_from_position(relative_x, bounds.width);
                             let absolute_x = scroll_ratio * self.max_scroll_x;
                             let msg = (self.on_scroll)(absolute_x, 0.0);
-                            return Some(iced::widget::canvas::Action::publish(msg));
+                            return Some(iced::widget::canvas::Action::publish(msg).and_capture());
                         }
                     } else {
                         let last_hover = self.last_hover_state.swap(is_hovered, Ordering::Relaxed);

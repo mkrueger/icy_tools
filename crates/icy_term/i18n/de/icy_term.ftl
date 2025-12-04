@@ -309,6 +309,17 @@ help-desc-run-script = Ein Lua-Skript ausführen
 help-action-open-serial = Serielle Verbindung
 help-desc-open-serial = Serielle Verbindung öffnen
 
+# Zoom
+help-category-zoom = Zoom
+help-action-zoom-in = Vergrößern
+help-action-zoom-out = Verkleinern
+help-action-zoom-reset = Zoom zurücksetzen
+help-action-zoom-auto = Automatisch anpassen
+help-desc-zoom-in = Zoom-Stufe erhöhen
+help-desc-zoom-out = Zoom-Stufe verringern
+help-desc-zoom-reset = Auf 100% Zoom zurücksetzen
+help-desc-zoom-auto = Inhalt an Fenster anpassen
+
 # Serieller Port Dialog
 open-serial-dialog-title = Seriellen Port öffnen
 open-serial-dialog-device = Gerät
@@ -349,6 +360,7 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Alle Events - alle Mausereign
 terminal-info-dialog-shape-tooltip-block = Voller Zeichenzellen-Cursor
 terminal-info-dialog-shape-tooltip-underline = Dünne Linie am unteren Rand
 terminal-info-dialog-shape-tooltip-bar = Vertikaler Balken zwischen Zeichen
+terminal-info-dialog-apply-button = Übernehmen
 
 help-action-switch-window = Fenster wechseln
 help-action-smart-paste = Smart-Einfügen

@@ -335,6 +335,17 @@ help-desc-run-script = Spustit Lua skript
 help-action-open-serial = Sériový port
 help-desc-open-serial = Otevřít připojení sériového portu
 
+# Zoom
+help-category-zoom = Přiblížení
+help-action-zoom-in = Přiblížit
+help-action-zoom-out = Oddálit
+help-action-zoom-reset = Obnovit přiblížení
+help-action-zoom-auto = Přizpůsobit oknu
+help-desc-zoom-in = Zvýšit úroveň přiblížení
+help-desc-zoom-out = Snížit úroveň přiblížení
+help-desc-zoom-reset = Obnovit na 100%
+help-desc-zoom-auto = Přizpůsobit obsah oknu
+
 # Open Serial Dialog
 open-serial-dialog-title = Otevřít Sériový Port
 open-serial-dialog-device = Zařízení
@@ -375,3 +386,4 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Úplné sledování - všechn
 terminal-info-dialog-shape-tooltip-block = Blokový kurzor
 terminal-info-dialog-shape-tooltip-underline = Tenká čára na spodku
 terminal-info-dialog-shape-tooltip-bar = Svislá čára mezi znaky
+terminal-info-dialog-apply-button = Použít

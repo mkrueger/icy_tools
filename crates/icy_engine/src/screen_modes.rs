@@ -356,6 +356,12 @@ impl ScreenMode {
         };
 
         self.apply_to_edit_screen(screen.as_mut());
+
+        // Override buffer_type for UTF8Ansi emulation - needs Unicode rendering
+        if emulation == TerminalEmulation::Utf8Ansi {
+            *screen.buffer_type_mut() = BufferType::Unicode;
+        }
+
         let music_option = option.as_ref().map(|o: &CreationOptions| o.ansi_music);
         let parser = get_parser(&emulation, music_option, self);
         (screen, parser)

@@ -90,6 +90,8 @@ pub struct StatusInfo {
     pub auto_scroll_enabled: bool,
     /// Archive info: (archive type name, file size in bytes)
     pub archive_info: Option<(String, u64)>,
+    /// Current zoom level (1.0 = 100%)
+    pub zoom_level: Option<f32>,
 }
 
 impl StatusInfo {
@@ -149,6 +151,11 @@ impl StatusInfo {
 
     pub fn with_archive_info(mut self, archive_info: Option<(String, u64)>) -> Self {
         self.archive_info = archive_info;
+        self
+    }
+
+    pub fn with_zoom_level(mut self, zoom: Option<f32>) -> Self {
+        self.zoom_level = zoom;
         self
     }
 }

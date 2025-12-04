@@ -236,7 +236,8 @@ impl FileBrowser {
 
         self.update_visible_indices();
         self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
-        self.list_view.viewport.scroll_to_immediate(0.0, 0.0);
+        self.list_view.viewport.scroll_x_to_immediate(0.0);
+        self.list_view.viewport.scroll_y_to_immediate(0.0);
         // Always invalidate after refresh to ensure cache is cleared
         self.list_view.invalidate();
     }
@@ -337,7 +338,8 @@ impl FileBrowser {
         self.files = items;
         self.update_visible_indices();
         self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
-        self.list_view.viewport.scroll_to_immediate(0.0, 0.0);
+        self.list_view.viewport.scroll_x_to_immediate(0.0);
+        self.list_view.viewport.scroll_y_to_immediate(0.0);
         self.list_view.invalidate();
     }
 

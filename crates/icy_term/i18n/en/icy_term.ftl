@@ -345,6 +345,17 @@ help-desc-run-script = Execute a Lua script
 help-action-open-serial = Open Serial
 help-desc-open-serial = Open serial port connection
 
+# Zoom
+help-category-zoom = Zoom
+help-action-zoom-in = Zoom In
+help-action-zoom-out = Zoom Out
+help-action-zoom-reset = Reset Zoom
+help-action-zoom-auto = Auto Fit
+help-desc-zoom-in = Increase zoom level
+help-desc-zoom-out = Decrease zoom level
+help-desc-zoom-reset = Reset to 100% zoom
+help-desc-zoom-auto = Fit content to window
+
 # Open Serial Dialog
 open-serial-dialog-title = Open Serial Port
 open-serial-dialog-device = Device
@@ -385,3 +396,4 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Any event tracking - all mous
 terminal-info-dialog-shape-tooltip-block = Full character cell cursor
 terminal-info-dialog-shape-tooltip-underline = Thin line at bottom of cell
 terminal-info-dialog-shape-tooltip-bar = Vertical bar between characters
+terminal-info-dialog-apply-button = Apply

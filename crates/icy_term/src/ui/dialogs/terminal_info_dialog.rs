@@ -4,14 +4,18 @@ use iced::{
     Alignment, Background, Element, Length, Theme,
     widget::{Space, column, container, row, text, tooltip},
 };
-use icy_engine::{Position, Size, TerminalScrolling};
+use icy_engine::{Position, ScreenMode, Size, TerminalScrolling};
+use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, HEADER_TEXT_SIZE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row_with_left, dialog_area, modal_container,
-    secondary_button, separator,
+    DIALOG_SPACING, DIALOG_WIDTH_LARGE, HEADER_TEXT_SIZE, SECTION_SPACING, SPACE_4, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row_with_left, dialog_area,
+    modal_container, primary_button, secondary_button, separator,
 };
-use icy_parser_core::{BaudEmulation, CaretShape};
+use icy_net::telnet::TerminalEmulation;
+use icy_parser_core::{BaudEmulation, CaretShape, MusicOption};
 
+use super::terminal_settings_ui::{self, TerminalSettings, TerminalSettingsChange};
 use crate::ui::MainWindowMode;
+
 const LABEL_WIDTH: f32 = 130.0;
 const VALUE_WIDTH: f32 = 120.0;
 
@@ -19,6 +23,8 @@ const VALUE_WIDTH: f32 = 120.0;
 pub enum TerminalInfoMsg {
     Close,
     CopyToClipboard,
+    SettingsChanged(TerminalSettingsChange),
+    Apply,
 }
 
 /// Information about the current terminal state
@@ -40,6 +46,10 @@ pub struct TerminalInfo {
     pub inverse_mode: bool,
     pub ice_colors: bool,
     pub baud_emulation: BaudEmulation,
+    // Terminal settings
+    pub terminal_type: TerminalEmulation,
+    pub screen_mode: ScreenMode,
+    pub ansi_music: MusicOption,
 }
 
 impl Default for TerminalInfo {
@@ -61,17 +71,29 @@ impl Default for TerminalInfo {
             inverse_mode: false,
             ice_colors: false,
             baud_emulation: BaudEmulation::Off,
+            terminal_type: TerminalEmulation::Ansi,
+            screen_mode: ScreenMode::default(),
+            ansi_music: MusicOption::Off,
         }
     }
 }
 
 pub struct TerminalInfoDialog {
     pub info: TerminalInfo,
+    // Editable settings
+    pub selected_terminal_type: TerminalEmulation,
+    pub selected_screen_mode: ScreenMode,
+    pub selected_ansi_music: MusicOption,
 }
 
 impl TerminalInfoDialog {
     pub fn new(info: TerminalInfo) -> Self {
-        Self { info }
+        Self {
+            selected_terminal_type: info.terminal_type,
+            selected_screen_mode: info.screen_mode,
+            selected_ansi_music: info.ansi_music,
+            info,
+        }
     }
 
     pub fn update(&mut self, message: TerminalInfoMsg) -> Option<crate::ui::Message> {
@@ -84,7 +106,37 @@ impl TerminalInfoDialog {
                 }
                 None
             }
+            TerminalInfoMsg::SettingsChanged(change) => {
+                match change {
+                    TerminalSettingsChange::TerminalType(t) => {
+                        self.selected_terminal_type = t;
+                        // Always reset screen mode when terminal type changes
+                        self.selected_screen_mode = terminal_settings_ui::get_default_screen_mode(self.selected_terminal_type);
+                    }
+                    TerminalSettingsChange::ScreenMode(mode) => {
+                        self.selected_screen_mode = mode;
+                    }
+                    TerminalSettingsChange::AnsiMusic(music) => {
+                        self.selected_ansi_music = music;
+                    }
+                }
+                None
+            }
+            TerminalInfoMsg::Apply => {
+                // Return message to apply settings
+                Some(crate::ui::Message::ApplyTerminalSettings {
+                    terminal_type: self.selected_terminal_type,
+                    screen_mode: self.selected_screen_mode,
+                    ansi_music: self.selected_ansi_music,
+                })
+            }
         }
+    }
+
+    pub fn has_changes(&self) -> bool {
+        self.selected_terminal_type != self.info.terminal_type
+            || self.selected_screen_mode != self.info.screen_mode
+            || self.selected_ansi_music != self.info.ansi_music
     }
 
     fn format_info_text(&self) -> String {
@@ -329,6 +381,7 @@ impl TerminalInfoDialog {
         // Get translations
         let terminal_title = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-terminal-section");
         let caret_title = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-caret-section");
+        let settings_title = fl!(crate::LANGUAGE_LOADER, "settings-heading");
         let resolution_label = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-resolution");
         let font_size_label = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-font-size");
         let caret_shape_label = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-caret-shape");
@@ -346,6 +399,7 @@ impl TerminalInfoDialog {
         let no_str = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-no");
         let not_set_str = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-not-set");
         let copy_button_label = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-copy-button");
+        let apply_button_label = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-apply-button");
 
         // Mouse mode tooltip descriptions
         let mouse_mode_descriptions: [(String, String); 6] = [
@@ -395,7 +449,7 @@ impl TerminalInfoDialog {
 
         let left_col = column![
             Self::section_header(terminal_title),
-            Space::new().height(DIALOG_SPACING),
+            Space::new().height(SPACE_4),
             Self::create_size_row(
                 resolution_label,
                 self.info.buffer_size.width,
@@ -416,12 +470,12 @@ impl TerminalInfoDialog {
             Self::create_row(inverse_colors_label, if self.info.inverse_mode { yes_str.clone() } else { no_str.clone() }),
             Self::create_row(ice_colors_label, if self.info.ice_colors { yes_str.clone() } else { no_str.clone() }),
         ]
-        .spacing(4.0);
+        .spacing(SPACE_4);
 
         // Right column - Caret state with visual shape display
         let right_col = column![
             Self::section_header(caret_title),
-            Space::new().height(DIALOG_SPACING),
+            Space::new().height(SPACE_4),
             Self::create_row(
                 caret_position_label,
                 format!("X: {}, Y: {}", self.info.caret_position.x, self.info.caret_position.y)
@@ -438,10 +492,10 @@ impl TerminalInfoDialog {
                 }
             ),
         ]
-        .spacing(4.0);
+        .spacing(SPACE_4);
 
         // Two columns layout with vertical separator
-        let content = row![
+        let info_content = row![
             left_col,
             Space::new().width(DIALOG_SPACING),
             Self::vertical_separator(),
@@ -450,15 +504,42 @@ impl TerminalInfoDialog {
         ]
         .align_y(Alignment::Start);
 
+        // Settings section using shared helper wrapped in effect_box
+        // Fixed height to prevent dialog jumping (3 rows * row_height + spacing)
+        let settings = TerminalSettings {
+            terminal_type: self.selected_terminal_type,
+            screen_mode: self.selected_screen_mode,
+            ansi_music: self.selected_ansi_music,
+        };
+        let settings_ui =
+            terminal_settings_ui::build_terminal_settings_ui(&settings, |change| crate::ui::Message::TerminalInfo(TerminalInfoMsg::SettingsChanged(change)));
+        let settings_box_content = container(settings_ui).height(Length::Fixed(90.0));
+        let settings_content = column![
+            Self::section_header(settings_title),
+            Space::new().height(SPACE_4),
+            effect_box(settings_box_content.into()),
+        ]
+        .spacing(SPACE_4);
+
+        // Main content with info and settings sections
+        let content = column![info_content, Space::new().height(SECTION_SPACING), settings_content,];
+
         // Footer with buttons
         let copy_btn = secondary_button(copy_button_label, Some(crate::ui::Message::TerminalInfo(TerminalInfoMsg::CopyToClipboard)));
+
+        // Apply button is only enabled if there are changes
+        let apply_btn = if self.has_changes() {
+            primary_button(apply_button_label, Some(crate::ui::Message::TerminalInfo(TerminalInfoMsg::Apply)))
+        } else {
+            secondary_button(apply_button_label, None)
+        };
 
         let close_btn = secondary_button(
             format!("{}", icy_engine_gui::ButtonType::Close),
             Some(crate::ui::Message::TerminalInfo(TerminalInfoMsg::Close)),
         );
 
-        let buttons = button_row_with_left(vec![copy_btn.into()], vec![close_btn.into()]);
+        let buttons = button_row_with_left(vec![copy_btn.into()], vec![apply_btn.into(), close_btn.into()]);
 
         let dialog_content = dialog_area(content.into());
         let button_area = dialog_area(buttons.into());

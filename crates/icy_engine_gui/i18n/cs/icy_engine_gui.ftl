@@ -24,6 +24,7 @@ settings-monitor-custom=Vlastní
 
 settings-enabled-checkbox = Povolit
 settings-appearance-section = Vzhled
+settings-scaling-mode-label = Automatické škálování
 settings-integer-scaling-label = Použít celočíselné škálování
 settings-bilinear-filtering-label = Bilineární filtrování
 settings-color-tone-section = Barva a tón

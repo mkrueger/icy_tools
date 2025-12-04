@@ -337,6 +337,17 @@ help-desc-run-script = Executar un script Lua
 help-action-open-serial = Port Sèrie
 help-desc-open-serial = Obrir connexió de port sèrie
 
+# Zoom
+help-category-zoom = Zoom
+help-action-zoom-in = Ampliar
+help-action-zoom-out = Reduir
+help-action-zoom-reset = Restablir zoom
+help-action-zoom-auto = Ajustar a la finestra
+help-desc-zoom-in = Augmentar nivell de zoom
+help-desc-zoom-out = Disminuir nivell de zoom
+help-desc-zoom-reset = Restablir a 100%
+help-desc-zoom-auto = Ajustar contingut a la finestra
+
 # Open Serial Dialog
 open-serial-dialog-title = Obrir Port Sèrie
 open-serial-dialog-device = Dispositiu
@@ -377,3 +388,4 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Seguiment complet - tots els 
 terminal-info-dialog-shape-tooltip-block = Cursor de bloc ple
 terminal-info-dialog-shape-tooltip-underline = Línia fina a la base
 terminal-info-dialog-shape-tooltip-bar = Barra vertical entre caràcters
+terminal-info-dialog-apply-button = Aplicar

@@ -4,7 +4,7 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use icy_engine::Screen;
-use icy_engine_gui::{ScrollbarOverlay, Terminal, terminal_view::TerminalView};
+use icy_engine_gui::{HorizontalScrollbarOverlay, ScrollbarOverlay, Terminal, terminal_view::TerminalView};
 use icy_engine_gui::{
     music::music::SoundThread,
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
@@ -32,6 +32,8 @@ pub struct TerminalWindow {
     pub current_address: Option<Address>,
     pub serial_connected: Option<Serial>,
     pub terminal_emulation: TerminalEmulation,
+    pub screen_mode: icy_engine::ScreenMode,
+    pub ansi_music: icy_parser_core::MusicOption,
     pub baud_emulation: BaudEmulation,
     pub sound_thread: Arc<Mutex<SoundThread>>,
     pub iemsi_info: Option<icy_net::iemsi::EmsiISI>,
@@ -48,6 +50,8 @@ impl TerminalWindow {
             current_address: None,
             serial_connected: None,
             terminal_emulation: TerminalEmulation::Ansi,
+            screen_mode: icy_engine::ScreenMode::default(),
+            ansi_music: icy_parser_core::MusicOption::Off,
             baud_emulation: BaudEmulation::Off,
             sound_thread,
             iemsi_info: None,
@@ -66,6 +70,13 @@ impl TerminalWindow {
             icy_engine_gui::Message::RipCommand(clear_screen, cmd) => Message::RipCommand(clear_screen, cmd),
             icy_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
             icy_engine_gui::Message::ScrollViewport(dx, dy) => Message::ScrollViewport(dx, dy),
+            icy_engine_gui::Message::ZoomWheel(delta) => {
+                if delta > 0.0 {
+                    Message::ZoomIn
+                } else {
+                    Message::ZoomOut
+                }
+            }
             icy_engine_gui::Message::StartSelection(sel) => Message::StartSelection(sel),
             icy_engine_gui::Message::UpdateSelection(pos) => Message::UpdateSelection(pos),
             icy_engine_gui::Message::EndSelection => Message::EndSelection,
@@ -89,74 +100,105 @@ impl TerminalWindow {
             0
         };
         // Create terminal area with optional scrollbar
-        let terminal_area = {
-            // Create overlay scrollbar - actually drawn using canvas
-            let vp = self.terminal.viewport.read();
-            let scrollbar_visibility = self.terminal.scrollbar.visibility;
-            let scrollbar_height_ratio = vp.visible_height / vp.content_height.max(1.0);
-            let scrollbar_position = self.terminal.scrollbar.scroll_position;
-            let max_scroll_y = vp.max_scroll_y();
-            drop(vp);
+        let terminal_area =
+            {
+                // Get scrollbar info from terminal (uses shared logic from icy_engine_gui)
+                let scrollbar_info = self.terminal.scrollbar_info();
 
-            if self.terminal.is_in_scrollback_mode() {
-                let scrollbar_view = ScrollbarOverlay::new(
-                    scrollbar_visibility,
-                    scrollbar_position,
-                    scrollbar_height_ratio,
-                    max_scroll_y,
-                    self.terminal.scrollbar_hover_state.clone(),
-                    |x, y| Message::ScrollViewportTo(false, x, y),
-                    |is_hovered| Message::ScrollbarHovered(is_hovered),
-                )
-                .view();
+                // Show scrollbar in:
+                // - Scrollback mode (always)
+                // - Manual scaling mode when zoomed in (content may exceed viewport)
+                let is_manual_mode = !options.monitor_settings.scaling_mode.is_auto();
+                let show_vscrollbar = self.terminal.is_in_scrollback_mode() || (is_manual_mode && scrollbar_info.needs_vscrollbar);
+                let show_hscrollbar = is_manual_mode && scrollbar_info.needs_hscrollbar;
 
-                // Add scroll position indicator if not at bottom
-                let scroll_indicator =
-                    container(
-                        text(format!("↑ {:04}", scrollback_lines))
-                            .size(TEXT_SIZE_SMALL)
-                            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                if show_vscrollbar || show_hscrollbar {
+                    let mut layers: Vec<Element<'_, Message>> = vec![container(terminal_view).width(Length::Fill).height(Length::Fill).into()];
+
+                    // Add scroll position indicator if in scrollback mode
+                    if self.terminal.is_in_scrollback_mode() {
+                        let scroll_indicator = container(text(format!("↑ {:04}", scrollback_lines)).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| {
+                            iced::widget::text::Style {
                                 color: Some(theme.extended_palette().primary.weak.color),
                                 ..Default::default()
-                            }),
-                    )
-                    .padding([2, 8])
-                    .style(|theme: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
-                        border: Border {
-                            color: theme.extended_palette().background.strong.color,
-                            width: 1.0,
-                            radius: 4.0.into(),
-                        },
-                        ..Default::default()
-                    });
+                            }
+                        }))
+                        .padding([2, 8])
+                        .style(|theme: &iced::Theme| container::Style {
+                            background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                            border: Border {
+                                color: theme.extended_palette().background.strong.color,
+                                width: 1.0,
+                                radius: 4.0.into(),
+                            },
+                            ..Default::default()
+                        });
 
-                // Overlay both indicator and scrollbar on top of terminal
-                container(iced::widget::stack![
-                    container(terminal_view).width(Length::Fill).height(Length::Fill),
-                    container(scroll_indicator)
+                        layers.push(
+                            container(scroll_indicator)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(iced::alignment::Horizontal::Right)
+                                .align_y(iced::alignment::Vertical::Top)
+                                .padding([8, 16])
+                                .into(),
+                        );
+                    }
+
+                    // Add vertical scrollbar if needed
+                    if show_vscrollbar {
+                        let vscrollbar_view = ScrollbarOverlay::new(
+                            scrollbar_info.visibility_v,
+                            scrollbar_info.scroll_position_v,
+                            scrollbar_info.height_ratio,
+                            scrollbar_info.max_scroll_y,
+                            self.terminal.scrollbar_hover_state.clone(),
+                            |_x, y| Message::ScrollViewportYToImmediate(y),
+                            |is_hovered| Message::ScrollbarHovered(is_hovered),
+                        )
+                        .view();
+
+                        layers.push(
+                            container(vscrollbar_view)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(iced::alignment::Horizontal::Right)
+                                .align_y(iced::alignment::Vertical::Center)
+                                .into(),
+                        );
+                    }
+
+                    // Add horizontal scrollbar if needed
+                    if show_hscrollbar {
+                        let hscrollbar_view = HorizontalScrollbarOverlay::new(
+                            scrollbar_info.visibility_h,
+                            scrollbar_info.scroll_position_h,
+                            scrollbar_info.width_ratio,
+                            scrollbar_info.max_scroll_x,
+                            self.terminal.hscrollbar_hover_state.clone(),
+                            |x, _y| Message::ScrollViewportXToImmediate(x),
+                            |is_hovered| Message::HScrollbarHovered(is_hovered),
+                        )
+                        .view();
+
+                        layers.push(
+                            container(hscrollbar_view)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_y(iced::alignment::Vertical::Bottom)
+                                .into(),
+                        );
+                    }
+
+                    container(iced::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
+                } else {
+                    container(terminal_view)
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Right)
-                        .align_y(iced::alignment::Vertical::Top)
-                        .padding([8, 16]),
-                    container(scrollbar_view)
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Right)
-                        .align_y(iced::alignment::Vertical::Center)
-                        .padding(iced::Padding::from([0.0, 0.0]))
-                ])
-                .width(Length::Fill)
-                .height(Length::Fill)
-            } else {
-                container(terminal_view)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-            }
-        };
+                }
+            };
 
         // Status bar at the bottom - add scrollback info
         let status_bar = self.create_status_bar(options, pause_message);
@@ -703,12 +745,18 @@ impl TerminalWindow {
     // Helper methods for terminal operations
     pub fn connect(&mut self, address: Option<Address>) {
         self.current_address = address;
-        self.terminal_emulation = match &self.current_address {
+        match &self.current_address {
             Some(addr) => {
                 self.baud_emulation = addr.baud_emulation;
-                addr.terminal_type.clone()
+                self.terminal_emulation = addr.terminal_type.clone();
+                self.screen_mode = addr.screen_mode;
+                self.ansi_music = addr.ansi_music;
             }
-            None => TerminalEmulation::Ansi,
+            None => {
+                self.terminal_emulation = TerminalEmulation::Ansi;
+                self.screen_mode = icy_engine::ScreenMode::default();
+                self.ansi_music = icy_parser_core::MusicOption::Off;
+            }
         };
     }
 

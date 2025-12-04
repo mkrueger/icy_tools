@@ -77,7 +77,7 @@ impl AboutDialog {
 
     pub fn view(&self) -> Element<'_, Message> {
         let mut settings = MonitorSettings::neutral();
-        settings.use_pixel_perfect_scaling = false;
+        settings.use_integer_scaling = false;
 
         let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(|terminal_msg| match terminal_msg {
             icy_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),

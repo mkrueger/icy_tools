@@ -1,11 +1,12 @@
+use crate::ui::dialogs::terminal_settings_ui;
 use crate::ui::{MainWindowMode, Message};
 use crate::{Address, AddressBook};
 use i18n_embed_fl::fl;
+use iced::keyboard;
 use iced::{
-    Alignment, Element, Length, Task,
+    Alignment, Element, Event, Length, Task,
     widget::{Space, button, column, container, row, svg, text},
 };
-use iced::{Event, keyboard};
 use icy_engine::ScreenMode;
 use icy_engine_gui::ui::*;
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
@@ -239,18 +240,7 @@ impl DialingDirectoryState {
                     AddressFieldChange::Terminal(terminal) => {
                         addr.terminal_type = terminal;
                         // Reset screen mode when terminal changes
-                        addr.screen_mode = match terminal {
-                            TerminalEmulation::Ansi
-                            | TerminalEmulation::Ascii
-                            | TerminalEmulation::Avatar
-                            | TerminalEmulation::Rip
-                            | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
-                            TerminalEmulation::AtariST => ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false),
-                            TerminalEmulation::PETscii => ScreenMode::Vic,
-                            TerminalEmulation::ATAscii => ScreenMode::Atascii(40),
-                            TerminalEmulation::ViewData | TerminalEmulation::Mode7 => ScreenMode::Videotex,
-                            TerminalEmulation::Skypix => ScreenMode::SkyPix,
-                        };
+                        addr.screen_mode = terminal_settings_ui::get_default_screen_mode(terminal);
                     }
                     AddressFieldChange::ScreenMode(mode) => {
                         addr.screen_mode = mode;

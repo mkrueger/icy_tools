@@ -56,6 +56,8 @@ pub enum PreviewMessage {
     ScrollViewportTo(f32, f32),
     /// Scroll viewport to absolute position immediately (no animation)
     ScrollViewportToImmediate(f32, f32),
+    /// Scroll vertical only to absolute Y position immediately
+    ScrollViewportYToImmediate(f32),
     /// Scroll horizontal only to absolute X position immediately
     ScrollViewportXToImmediate(f32),
     /// Scrollbar hover state changed
@@ -76,6 +78,12 @@ pub enum PreviewMessage {
     EndSelection,
     /// Clear selection
     ClearSelection,
+    /// Zoom in (increase zoom level)
+    ZoomIn,
+    /// Zoom out (decrease zoom level)
+    ZoomOut,
+    /// Reset zoom to 100%
+    ZoomReset,
 }
 
 /// Preview view for displaying ANSI files and images
@@ -91,7 +99,7 @@ pub struct PreviewView {
     /// Whether file is currently loading
     is_loading: bool,
     /// Monitor settings for CRT effects
-    monitor_settings: MonitorSettings,
+    pub monitor_settings: MonitorSettings,
     /// Current baud emulation setting
     baud_emulation: BaudEmulation,
     /// Current preview mode
@@ -156,7 +164,8 @@ impl PreviewView {
         self.is_loading = true;
 
         // Reset scroll position to top when loading new file
-        self.terminal.scroll_to_immediate(0.0, 0.0);
+        self.terminal.scroll_x_to_immediate(0.0);
+        self.terminal.scroll_y_to_immediate(0.0);
         self.terminal.sync_scrollbar_with_viewport();
 
         // Reset scroll mode (background thread will set it)
@@ -242,6 +251,36 @@ impl PreviewView {
         self.monitor_settings = settings;
     }
 
+    /// Zoom in by one step
+    pub fn zoom_in(&mut self) {
+        self.terminal.zoom_in();
+    }
+
+    /// Zoom in by integer step (for integer scaling mode)
+    pub fn zoom_in_int(&mut self) {
+        self.terminal.zoom_in_int();
+    }
+
+    /// Zoom out by one step
+    pub fn zoom_out(&mut self) {
+        self.terminal.zoom_out();
+    }
+
+    /// Zoom out by integer step (for integer scaling mode)
+    pub fn zoom_out_int(&mut self) {
+        self.terminal.zoom_out_int();
+    }
+
+    /// Reset zoom to 100% (1:1 pixel mapping)
+    pub fn zoom_reset(&mut self) {
+        self.terminal.zoom_reset();
+    }
+
+    /// Calculate and set auto-fit zoom
+    pub fn zoom_auto_fit(&mut self, use_integer_scaling: bool) -> f32 {
+        self.terminal.zoom_auto_fit(use_integer_scaling)
+    }
+
     /// Get the current buffer size (width x height) from the terminal screen
     pub fn get_buffer_size(&self) -> Option<(i32, i32)> {
         if matches!(self.preview_mode, PreviewMode::Terminal) {
@@ -258,11 +297,18 @@ impl PreviewView {
 
     /// Get maximum scroll Y using computed visible height for accuracy
     /// This accounts for the actual rendered height rather than just viewport settings
+    /// Returns max scroll in CONTENT coordinates (consistent with scroll_y)
     fn get_max_scroll_y(&self) -> f32 {
         let vp = self.terminal.viewport.read();
+        // visible_content = visible_pixels / zoom (in content units)
         let computed_height = self.terminal.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed_height > 0.0 { computed_height } else { vp.visible_height };
-        (vp.content_height * vp.zoom - visible_height).max(0.0)
+        let visible_content_height = if computed_height > 0.0 {
+            computed_height / vp.zoom
+        } else {
+            vp.visible_height / vp.zoom
+        };
+        // max_scroll in content coordinates
+        (vp.content_height - visible_content_height).max(0.0)
     }
 
     /// Cancel any ongoing loading operation
@@ -434,7 +480,7 @@ impl PreviewView {
                         // Clamp to bottom during baud emulation loading
                         // Use computed visible height for accurate max scroll calculation
                         let max_scroll_y = self.get_max_scroll_y();
-                        self.terminal.scroll_to_immediate(0.0, max_scroll_y);
+                        self.terminal.scroll_y_to_immediate(max_scroll_y);
                         self.terminal.sync_scrollbar_with_viewport();
                     }
                     ScrollMode::AutoScroll => {
@@ -446,7 +492,7 @@ impl PreviewView {
                         let max_scroll_y = self.get_max_scroll_y();
                         let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-                        self.terminal.scroll_to_immediate(0.0, new_y);
+                        self.terminal.scroll_y_to_immediate(new_y);
                         self.terminal.sync_scrollbar_with_viewport();
 
                         // Stop auto-scroll when we reach the bottom
@@ -465,29 +511,38 @@ impl PreviewView {
             PreviewMessage::ScrollViewport(dx, dy) => {
                 // User is scrolling manually, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_by(dx, dy);
+                self.terminal.scroll_x_by(dx);
+                self.terminal.scroll_y_by(dy);
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
             PreviewMessage::ScrollViewportTo(x, y) => {
                 // User is scrolling manually, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_to(x, y);
+                self.terminal.scroll_x_to(x);
+                self.terminal.scroll_y_to(y);
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
             PreviewMessage::ScrollViewportToImmediate(x, y) => {
                 // User is scrolling via scrollbar, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_to_immediate(x, y);
+                self.terminal.scroll_x_to_immediate(x);
+                self.terminal.scroll_y_to_immediate(y);
+                self.terminal.sync_scrollbar_with_viewport();
+                Task::none()
+            }
+            PreviewMessage::ScrollViewportYToImmediate(y) => {
+                // User is scrolling vertically via scrollbar
+                self.scroll_mode = ScrollMode::Off;
+                self.terminal.scroll_y_to_immediate(y);
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
             PreviewMessage::ScrollViewportXToImmediate(x) => {
                 // User is scrolling horizontally via scrollbar
                 self.scroll_mode = ScrollMode::Off;
-                let current_y = self.terminal.viewport.read().scroll_y;
-                self.terminal.scroll_to_immediate(x, current_y);
+                self.terminal.scroll_x_to_immediate(x);
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
@@ -496,8 +551,8 @@ impl PreviewView {
                 Task::none()
             }
             PreviewMessage::HScrollbarHovered(is_hovered) => {
-                // Horizontal scrollbar uses the same hover state for animation
-                self.terminal.scrollbar.set_hovered(is_hovered);
+                // Horizontal scrollbar uses separate hover state for animation
+                self.terminal.scrollbar.set_hovered_x(is_hovered);
                 Task::none()
             }
             PreviewMessage::SetBaudEmulation(baud) => {
@@ -509,8 +564,21 @@ impl PreviewView {
                     icy_engine_gui::Message::ScrollViewport(dx, dy) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
-                        self.terminal.scroll_by(dx, dy);
+                        self.terminal.scroll_x_by(dx);
+                        self.terminal.scroll_y_by(dy);
                         self.terminal.sync_scrollbar_with_viewport();
+                    }
+                    icy_engine_gui::Message::ZoomWheel(delta) => {
+                        // Handle Ctrl+wheel zoom
+                        let use_integer = self.monitor_settings.use_integer_scaling;
+                        let current_zoom = self.terminal.get_zoom();
+                        let new_zoom = if delta > 0.0 {
+                            icy_engine_gui::ScalingMode::zoom_in(current_zoom, use_integer)
+                        } else {
+                            icy_engine_gui::ScalingMode::zoom_out(current_zoom, use_integer)
+                        };
+                        self.terminal.set_zoom(new_zoom);
+                        self.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
                     }
                     icy_engine_gui::Message::StartSelection(sel) => {
                         // Selection coordinates already include scroll offset from map_mouse_to_cell
@@ -570,6 +638,18 @@ impl PreviewView {
             PreviewMessage::ClearSelection => {
                 let mut screen = self.terminal.screen.lock();
                 let _ = screen.clear_selection();
+                Task::none()
+            }
+            PreviewMessage::ZoomIn => {
+                self.terminal.zoom_in();
+                Task::none()
+            }
+            PreviewMessage::ZoomOut => {
+                self.terminal.zoom_out();
+                Task::none()
+            }
+            PreviewMessage::ZoomReset => {
+                self.terminal.zoom_reset();
                 Task::none()
             }
             PreviewMessage::SauceInfoReceived(sauce_opt, content_size) => {
@@ -639,42 +719,21 @@ impl PreviewView {
             PreviewMode::Terminal => {
                 let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(PreviewMessage::TerminalMessage);
 
-                let vp = self.terminal.viewport.read();
+                // Get scrollbar info using shared logic from icy_engine_gui
+                let scrollbar_info = self.terminal.scrollbar_info();
 
-                // Use computed visible height from shader if available, otherwise fall back to viewport
-                let computed_height = self.terminal.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-                let visible_height = if computed_height > 0.0 { computed_height } else { vp.visible_height };
-
-                // Calculate if we need vertical scrollbar (content taller than visible area)
-                let scrollbar_height_ratio = visible_height / vp.content_height.max(1.0);
-                let needs_vscrollbar = scrollbar_height_ratio < 1.0;
-
-                // Calculate if we need horizontal scrollbar (content wider than visible area)
-                let visible_width = vp.visible_width;
-                let scrollbar_width_ratio = visible_width / vp.content_width.max(1.0);
-                let needs_hscrollbar = scrollbar_width_ratio < 1.0;
-
-                let content_height = vp.content_height;
-                let content_width = vp.content_width;
-                drop(vp);
-
-                if needs_vscrollbar || needs_hscrollbar {
-                    let scrollbar_visibility = self.terminal.scrollbar.visibility;
-
+                if scrollbar_info.needs_any_scrollbar() {
                     let mut layers: Vec<Element<'_, PreviewMessage>> = vec![terminal_view];
 
                     // Add vertical scrollbar if needed
-                    if needs_vscrollbar {
-                        let scrollbar_position = self.terminal.scrollbar.scroll_position;
-                        let max_scroll_y = (content_height - visible_height).max(0.0);
-
+                    if scrollbar_info.needs_vscrollbar {
                         let vscrollbar_view = ScrollbarOverlay::new(
-                            scrollbar_visibility,
-                            scrollbar_position,
-                            scrollbar_height_ratio,
-                            max_scroll_y,
+                            scrollbar_info.visibility_v,
+                            scrollbar_info.scroll_position_v,
+                            scrollbar_info.height_ratio,
+                            scrollbar_info.max_scroll_y,
                             self.terminal.scrollbar_hover_state.clone(),
-                            |x, y| PreviewMessage::ScrollViewportToImmediate(x, y),
+                            |_x, y| PreviewMessage::ScrollViewportYToImmediate(y),
                             |is_hovered| PreviewMessage::ScrollbarHovered(is_hovered),
                         )
                         .view();
@@ -685,16 +744,13 @@ impl PreviewView {
                     }
 
                     // Add horizontal scrollbar if needed
-                    if needs_hscrollbar {
-                        let scrollbar_position_x = self.terminal.scrollbar.scroll_position_x;
-                        let max_scroll_x = (content_width - visible_width).max(0.0);
-
+                    if scrollbar_info.needs_hscrollbar {
                         let hscrollbar_view = HorizontalScrollbarOverlay::new(
-                            scrollbar_visibility,
-                            scrollbar_position_x,
-                            scrollbar_width_ratio,
-                            max_scroll_x,
-                            self.terminal.scrollbar_hover_state.clone(),
+                            scrollbar_info.visibility_h,
+                            scrollbar_info.scroll_position_h,
+                            scrollbar_info.width_ratio,
+                            scrollbar_info.max_scroll_x,
+                            self.terminal.hscrollbar_hover_state.clone(),
                             |x, _y| PreviewMessage::ScrollViewportXToImmediate(x),
                             |is_hovered| PreviewMessage::HScrollbarHovered(is_hovered),
                         )

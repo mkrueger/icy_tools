@@ -65,9 +65,24 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
         .spacing(ROW_SPACING)
         .align_y(Alignment::Center),
         row![
+            left_label(fl!(LANGUAGE_LOADER, "settings-scaling-mode-label")),
+            checkbox(s.scaling_mode.is_auto())
+                .on_toggle(|is_auto| {
+                    if is_auto {
+                        MonitorSettingsMessage::ScalingModeChanged(crate::ScalingMode::Auto)
+                    } else {
+                        MonitorSettingsMessage::ScalingModeChanged(crate::ScalingMode::Manual(1.0))
+                    }
+                })
+                .size(CHECKBOX_SIZE)
+                .text_size(TEXT_SIZE_NORMAL)
+        ]
+        .spacing(ROW_SPACING)
+        .align_y(Alignment::Center),
+        row![
             left_label(fl!(LANGUAGE_LOADER, "settings-integer-scaling-label")),
-            checkbox(s.use_pixel_perfect_scaling)
-                .on_toggle(MonitorSettingsMessage::PixelPerfectScalingChanged)
+            checkbox(s.use_integer_scaling)
+                .on_toggle(MonitorSettingsMessage::IntegerScalingChanged)
                 .size(CHECKBOX_SIZE)
                 .text_size(TEXT_SIZE_NORMAL)
         ]

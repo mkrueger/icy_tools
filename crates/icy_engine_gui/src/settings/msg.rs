@@ -1,4 +1,4 @@
-use crate::{MonitorSettings, MonitorType, settings::iced_to_icy_color};
+use crate::{MonitorSettings, MonitorType, ScalingMode, settings::iced_to_icy_color};
 use iced::{Color, Theme};
 
 #[derive(Debug, Clone)]
@@ -7,8 +7,9 @@ pub enum MonitorSettingsMessage {
     ThemeChanged(Theme),
     MonitorTypeChanged(MonitorType),
     CustomColorChanged(Color),
-    PixelPerfectScalingChanged(bool),
+    IntegerScalingChanged(bool),
     BilinearFilteringChanged(bool),
+    ScalingModeChanged(ScalingMode),
 
     // Tone (always applied now)
     BrightnessChanged(f32),
@@ -49,8 +50,9 @@ pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorS
         MonitorSettingsMessage::ThemeChanged(t) => settings.set_theme(t),
         MonitorSettingsMessage::MonitorTypeChanged(m) => settings.monitor_type = m,
         MonitorSettingsMessage::CustomColorChanged(c) => settings.custom_monitor_color = iced_to_icy_color(c),
-        MonitorSettingsMessage::PixelPerfectScalingChanged(v) => settings.use_pixel_perfect_scaling = v,
+        MonitorSettingsMessage::IntegerScalingChanged(v) => settings.use_integer_scaling = v,
         MonitorSettingsMessage::BilinearFilteringChanged(v) => settings.use_bilinear_filtering = v,
+        MonitorSettingsMessage::ScalingModeChanged(mode) => settings.scaling_mode = mode,
 
         MonitorSettingsMessage::BrightnessChanged(v) => settings.brightness = v,
         MonitorSettingsMessage::ContrastChanged(v) => settings.contrast = v,

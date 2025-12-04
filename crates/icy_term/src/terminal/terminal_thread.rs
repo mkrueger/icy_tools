@@ -58,6 +58,12 @@ pub enum TerminalCommand {
     RunScriptCode(String),
     /// Stop the currently running script
     StopScript,
+    /// Change terminal settings (terminal type, screen mode, ansi music) during session
+    SetTerminalSettings {
+        terminal_type: TerminalEmulation,
+        screen_mode: ScreenMode,
+        ansi_music: MusicOption,
+    },
 }
 
 /// Messages sent from the terminal thread to the UI
@@ -107,6 +113,13 @@ pub enum TerminalEvent {
     SndOffAll,
     /// Immediately stop all voices
     StopSndAll,
+
+    /// Terminal settings have been changed
+    TerminalSettingsChanged {
+        terminal_type: TerminalEmulation,
+        screen_mode: ScreenMode,
+        ansi_music: MusicOption,
+    },
 
     /// Script execution started
     ScriptStarted(PathBuf),
@@ -471,6 +484,13 @@ impl TerminalThread {
             }
             TerminalCommand::StopScript => {
                 self.stop_script();
+            }
+            TerminalCommand::SetTerminalSettings {
+                terminal_type,
+                screen_mode,
+                ansi_music,
+            } => {
+                self.set_terminal_settings(terminal_type, screen_mode, ansi_music).await;
             }
         }
     }
@@ -1768,5 +1788,35 @@ impl TerminalThread {
                 self.script_runner = None;
             }
         }
+    }
+
+    /// Set terminal settings (terminal type, screen mode, ansi music) during session
+    /// This reinitializes the screen and parser similar to connect()
+    async fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption) {
+        self.use_utf8 = terminal_type == TerminalEmulation::Utf8Ansi;
+
+        // Create new screen and parser for the new terminal type
+        let (mut new_screen, parser) = screen_mode.create_screen(terminal_type, Some(CreationOptions { ansi_music }));
+
+        // Use a default scrollback buffer size
+        new_screen.set_scrollback_buffer_size(10000);
+        new_screen.mark_dirty();
+
+        // Replace screen and parser
+        {
+            let mut screen = self.edit_screen.lock();
+            *screen = new_screen;
+        }
+        self.parser = parser;
+
+        // Update terminal emulation for scripting
+        *self.terminal_emulation.lock() = terminal_type;
+
+        // Notify UI of the change
+        self.send_event(TerminalEvent::TerminalSettingsChanged {
+            terminal_type,
+            screen_mode,
+            ansi_music,
+        });
     }
 }

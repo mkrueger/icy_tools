@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use icy_engine::{MouseEvent, Position, Selection};
+use icy_engine::{MouseEvent, Position, ScreenMode, Selection};
 use icy_engine_gui::ui::ExportDialogMessage;
 use icy_net::protocol::TransferState;
-use icy_parser_core::BaudEmulation;
+use icy_net::telnet::TerminalEmulation;
+use icy_parser_core::{BaudEmulation, MusicOption};
 
 use crate::{
     Address, TransferProtocol,
@@ -46,7 +47,10 @@ pub enum Message {
     Upload,
     Download,
     SendLoginAndPassword(bool, bool),
-    InitiateFileTransfer { protocol: TransferProtocol, is_download: bool },
+    InitiateFileTransfer {
+        protocol: TransferProtocol,
+        is_download: bool,
+    },
     OpenReleaseLink,
     StartCapture(String),
     StopCapture,
@@ -71,11 +75,14 @@ pub enum Message {
     SendMouseEvent(MouseEvent),
     ScrollViewport(f32, f32),         // dx, dy in pixels
     ScrollViewportTo(bool, f32, f32), // smooth, x, y absolute position in pixels
+    ScrollViewportXToImmediate(f32),  // x absolute position (horizontal scrollbar)
+    ScrollViewportYToImmediate(f32),  // y absolute position (vertical scrollbar)
     ViewportTick,                     // Update viewport animation
     SetScrollbackBufferSize(usize),   // Set scrollback buffer size
     McpCommand(Arc<crate::mcp::McpCommand>),
-    ScrollbarHovered(bool), // Scrollbar hover state changed
-    CursorLeftWindow,       // Cursor left the window
+    ScrollbarHovered(bool),  // Vertical scrollbar hover state changed
+    HScrollbarHovered(bool), // Horizontal scrollbar hover state changed
+    CursorLeftWindow,        // Cursor left the window
 
     // Selection messages
     StartSelection(Selection),
@@ -91,4 +98,17 @@ pub enum Message {
     ShowRunScriptDialog,
     RunScript(PathBuf),
     StopScript,
+
+    // Terminal settings
+    ApplyTerminalSettings {
+        terminal_type: TerminalEmulation,
+        screen_mode: ScreenMode,
+        ansi_music: MusicOption,
+    },
+
+    // Zoom
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    ZoomAutoFit,
 }

@@ -24,6 +24,7 @@ settings-monitor-custom=Personalitzat
 
 settings-enabled-checkbox = Habilitat
 settings-appearance-section = Aspecte
+settings-scaling-mode-label = Escalat automàtic
 settings-integer-scaling-label = Utilitzar escalat enter
 settings-bilinear-filtering-label = Filtrat bilineal
 settings-color-tone-section = Color i to

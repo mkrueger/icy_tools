@@ -336,6 +336,17 @@ help-desc-run-script = Lua szkript futtatása
 help-action-open-serial = Soros port
 help-desc-open-serial = Soros port kapcsolat megnyitása
 
+# Zoom
+help-category-zoom = Nagyítás
+help-action-zoom-in = Nagyítás
+help-action-zoom-out = Kicsinyítés
+help-action-zoom-reset = Nagyítás visszaállítása
+help-action-zoom-auto = Ablakhoz igazítás
+help-desc-zoom-in = Nagyítási szint növelése
+help-desc-zoom-out = Nagyítási szint csökkentése
+help-desc-zoom-reset = Visszaállítás 100%-ra
+help-desc-zoom-auto = Tartalom igazítása az ablakhoz
+
 # Open Serial Dialog
 open-serial-dialog-title = Soros Port Megnyitása
 open-serial-dialog-device = Eszköz
@@ -376,3 +387,4 @@ terminal-info-dialog-mouse-mode-tooltip-anyevent = Teljes követés - minden ese
 terminal-info-dialog-shape-tooltip-block = Teljes blokk kurzor
 terminal-info-dialog-shape-tooltip-underline = Vékony vonal alul
 terminal-info-dialog-shape-tooltip-bar = Függőleges vonal karakterek között
+terminal-info-dialog-apply-button = Alkalmaz

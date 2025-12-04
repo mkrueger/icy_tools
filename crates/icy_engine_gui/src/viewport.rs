@@ -3,24 +3,27 @@ use std::{sync::atomic::AtomicBool, time::Instant};
 
 /// Viewport for managing screen view transformations
 /// Handles scrolling, zooming, and coordinate transformations
+///
+/// All scroll values are in CONTENT coordinates (not screen pixels).
+/// This makes the math simpler: scroll_x is the content pixel offset.
 #[derive(Debug)]
 pub struct Viewport {
-    /// Scroll offset in pixels from top-left
+    /// Scroll offset in CONTENT pixels from top-left
     pub scroll_x: f32,
     pub scroll_y: f32,
 
     /// Zoom level (1.0 = 100%, 2.0 = 200%, etc.)
     pub zoom: f32,
 
-    /// Size of the visible viewport in pixels (widget size)
+    /// Size of the visible viewport in screen pixels (widget size)
     pub visible_width: f32,
     pub visible_height: f32,
 
-    /// Size of the content being viewed in pixels (at zoom 1.0)
+    /// Size of the content being viewed in content pixels (at zoom 1.0)
     pub content_width: f32,
     pub content_height: f32,
 
-    /// Smooth scrolling animation state
+    /// Smooth scrolling animation state (in content pixels)
     pub target_scroll_x: f32,
     pub target_scroll_y: f32,
     pub scroll_animation_speed: f32,
@@ -63,18 +66,20 @@ impl Viewport {
 
     /// Get the visible region in content coordinates
     pub fn visible_region(&self) -> Rectangle {
-        let x = (self.scroll_x / self.zoom) as i32;
-        let y = (self.scroll_y / self.zoom) as i32;
-        let width = (self.visible_width / self.zoom).ceil() as i32;
-        let height = (self.visible_height / self.zoom).ceil() as i32;
+        // scroll_x/y are already in content coordinates
+        let x = self.scroll_x as i32;
+        let y = self.scroll_y as i32;
+        let width = self.visible_content_width().ceil() as i32;
+        let height = self.visible_content_height().ceil() as i32;
 
         Rectangle::from(x, y, width, height)
     }
 
-    /// Get the visible region with explicit visible size (useful when viewport size isn't updated yet)
+    /// Get the visible region with explicit visible size (screen pixels)
     pub fn visible_region_with_size(&self, visible_width: f32, visible_height: f32) -> Rectangle {
-        let x = (self.scroll_x / self.zoom) as i32;
-        let y = (self.scroll_y / self.zoom) as i32;
+        // scroll_x/y are already in content coordinates
+        let x = self.scroll_x as i32;
+        let y = self.scroll_y as i32;
         let width = (visible_width / self.zoom).ceil() as i32;
         let height = (visible_height / self.zoom).ceil() as i32;
 
@@ -83,24 +88,35 @@ impl Viewport {
 
     /// Convert screen coordinates to content coordinates
     pub fn screen_to_content(&self, screen_x: f32, screen_y: f32) -> Position {
-        Position::new(((screen_x + self.scroll_x) / self.zoom) as i32, ((screen_y + self.scroll_y) / self.zoom) as i32)
+        // screen position / zoom + scroll offset (in content coords)
+        Position::new((screen_x / self.zoom + self.scroll_x) as i32, (screen_y / self.zoom + self.scroll_y) as i32)
     }
 
     /// Convert content coordinates to screen coordinates
     pub fn content_to_screen(&self, content_pos: Position) -> (f32, f32) {
+        // (content position - scroll offset) * zoom
         (
-            content_pos.x as f32 * self.zoom - self.scroll_x,
-            content_pos.y as f32 * self.zoom - self.scroll_y,
+            (content_pos.x as f32 - self.scroll_x) * self.zoom,
+            (content_pos.y as f32 - self.scroll_y) * self.zoom,
         )
     }
 
-    /// Get maximum scroll values
+    /// How many content pixels are visible at current zoom
+    pub fn visible_content_width(&self) -> f32 {
+        self.visible_width / self.zoom
+    }
+
+    pub fn visible_content_height(&self) -> f32 {
+        self.visible_height / self.zoom
+    }
+
+    /// Get maximum scroll values (in content pixels)
     pub fn max_scroll_x(&self) -> f32 {
-        (self.content_width * self.zoom - self.visible_width).max(0.0)
+        (self.content_width - self.visible_content_width()).max(0.0)
     }
 
     pub fn max_scroll_y(&self) -> f32 {
-        (self.content_height * self.zoom - self.visible_height).max(0.0)
+        (self.content_height - self.visible_content_height()).max(0.0)
     }
 
     /// Clamp scroll values to valid range
@@ -111,10 +127,12 @@ impl Viewport {
         self.target_scroll_y = self.target_scroll_y.clamp(0.0, self.max_scroll_y());
     }
 
-    /// Clamp scroll values with explicit visible size
+    /// Clamp scroll values with explicit visible size (in screen pixels)
     pub fn clamp_scroll_with_size(&mut self, visible_width: f32, visible_height: f32) {
-        let max_scroll_x = (self.content_width * self.zoom - visible_width).max(0.0);
-        let max_scroll_y = (self.content_height * self.zoom - visible_height).max(0.0);
+        let visible_content_w = visible_width / self.zoom;
+        let visible_content_h = visible_height / self.zoom;
+        let max_scroll_x = (self.content_width - visible_content_w).max(0.0);
+        let max_scroll_y = (self.content_height - visible_content_h).max(0.0);
 
         self.scroll_x = self.scroll_x.clamp(0.0, max_scroll_x);
         self.scroll_y = self.scroll_y.clamp(0.0, max_scroll_y);
@@ -123,41 +141,54 @@ impl Viewport {
     }
 
     /// Set zoom level and adjust scroll to keep center point stable
-    pub fn set_zoom(&mut self, new_zoom: f32, center_x: f32, center_y: f32) {
-        let old_zoom = self.zoom;
+    pub fn set_zoom(&mut self, new_zoom: f32, _center_x: f32, _center_y: f32) {
         self.zoom = new_zoom.clamp(0.1, 10.0);
-
-        // Adjust scroll to keep the point under cursor stable
-        let zoom_ratio = self.zoom / old_zoom;
-        self.scroll_x = (self.scroll_x + center_x) * zoom_ratio - center_x;
-        self.scroll_y = (self.scroll_y + center_y) * zoom_ratio - center_y;
-
+        // scroll_x/y are in content coordinates, so they don't need adjustment
+        // Just clamp to new valid range
         self.clamp_scroll();
         self.target_scroll_x = self.scroll_x;
         self.target_scroll_y = self.scroll_y;
     }
 
-    /// Scroll by delta (for mouse wheel, trackpad)
-    pub fn scroll_by(&mut self, delta_x: f32, delta_y: f32) {
-        self.target_scroll_x += delta_x;
-        self.target_scroll_y += delta_y;
+    /// Scroll X by delta (for mouse wheel, trackpad) - delta is in content pixels
+    pub fn scroll_x_by(&mut self, delta: f32) {
+        self.target_scroll_x += delta;
         self.clamp_scroll();
         self.last_update = Some(Instant::now());
     }
 
-    /// Set scroll position directly
-    pub fn scroll_to(&mut self, x: f32, y: f32) {
+    /// Scroll Y by delta (for mouse wheel, trackpad) - delta is in content pixels
+    pub fn scroll_y_by(&mut self, delta: f32) {
+        self.target_scroll_y += delta;
+        self.clamp_scroll();
+        self.last_update = Some(Instant::now());
+    }
+
+    /// Set scroll X position directly
+    pub fn scroll_x_to(&mut self, x: f32) {
         self.target_scroll_x = x;
+        self.clamp_scroll();
+        self.last_update = Some(Instant::now());
+    }
+
+    /// Set scroll Y position directly
+    pub fn scroll_y_to(&mut self, y: f32) {
         self.target_scroll_y = y;
         self.clamp_scroll();
         self.last_update = Some(Instant::now());
     }
 
-    /// Set scroll position immediately without animation
-    pub fn scroll_to_immediate(&mut self, x: f32, y: f32) {
+    /// Set scroll X position immediately without animaiont
+    pub fn scroll_x_to_immediate(&mut self, x: f32) {
         self.scroll_x = x;
-        self.scroll_y = y;
         self.target_scroll_x = x;
+        self.clamp_scroll();
+        self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Set scroll Y position immediately without animation
+    pub fn scroll_y_to_immediate(&mut self, y: f32) {
+        self.scroll_y = y;
         self.target_scroll_y = y;
         self.clamp_scroll();
         self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
