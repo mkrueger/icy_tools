@@ -100,12 +100,7 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Ajutor
-help-dialog-text=
-    F1 - Ajutor 
-    F2 - Comută derularea automată
-    F3 - Comută viteza de derulare 
-    F4 - Afișează informațiile despre sos
+help-title = Ajutor
 
 toast-auto-scroll-on=Derulare automată activată
 toast-auto-scroll-off=Derulare automată dezactivată
@@ -149,6 +144,10 @@ toast-command-not-configured=Comanda { $key } nu este configurată
 preview-no-file-selected = Niciun fișier selectat
 preview-loading = Se încarcă...
 preview-error = Eroare: { $message }
+preview-error-title = Nu s-a putut încărca fișierul
+
+error-read-file-data = Nu s-a putut citi conținutul fișierului
+error-read-file = { $error }
 
 error-external-command-title = Nu s-a putut executa comanda externă
 error-external-command-message = Comandă: { $command }
@@ -157,3 +156,7 @@ error-external-command-message = Comandă: { $command }
 
 welcome-select-file = 📂 Selectați un fișier pentru previzualizare
 welcome-tip = Sfat: Apăsați Ctrl+F pentru filtrare, sau faceți clic pe 🌐 pentru a naviga 16colors.rs
+
+thumbnail-loading = Se încarcă...
+thumbnail-no-diz = fără file_id.diz
+thumbnail-unsupported = Nesuportat

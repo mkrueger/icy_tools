@@ -42,35 +42,6 @@ impl Item for SixteenColorsPack {
         FileIcon::FolderData
     }
 
-    /// Get a synchronous thumbnail for this item (no async loading needed)
-    /// Returns Some(RgbaData) if the item can provide a thumbnail immediately without I/O
-    /// This is used for folders that just show a static folder icon
-    fn get_sync_thumbnail(&self) -> Option<RgbaData> {
-        // Try both FILE_ID.DIZ.png and FILE_ID.ANS.png
-        let urls = [
-            format!("https://16colo.rs/pack/{}/tn/FILE_ID.DIZ.png", self.name),
-            format!("https://16colo.rs/pack/{}/tn/FILE_ID.ANS.png", self.name),
-        ];
-
-        let cache = get_cache();
-
-        // Check cache first for any of the URLs
-        {
-            let cache_read = cache.read();
-            for url in &urls {
-                if let Some(rgba) = cache_read.get_thumbnail(url) {
-                    return Some(rgba.clone());
-                }
-            }
-            // If all URLs have failed before, return "no file_id.diz" placeholder
-            if urls.iter().all(|url| cache_read.has_failed(url)) {
-                return Some(DIZ_NOT_FOUND_PLACEHOLDER.clone());
-            }
-        }
-
-        None
-    }
-
     async fn get_thumbnail_preview(&self, _cancel_token: &CancellationToken) -> Option<RgbaData> {
         // Try both FILE_ID.DIZ.png and FILE_ID.ANS.png
         let urls = [

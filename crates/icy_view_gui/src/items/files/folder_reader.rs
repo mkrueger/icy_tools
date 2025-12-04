@@ -25,9 +25,17 @@ pub fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
         let mut files: Vec<Box<dyn Item>> = Vec::new();
         for entry in entries.filter_map(|result| result.ok()) {
             let path = entry.path();
-            if path.is_dir() {
+
+            // Get file type - skip sockets, pipes, devices etc.
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue, // Skip if we can't determine type
+            };
+
+            if file_type.is_dir() {
                 directories.push(Box::new(ItemFolder::new(path)));
-            } else {
+            } else if file_type.is_file() {
+                // Only handle regular files (not sockets, devices, pipes, etc.)
                 // Use from_path which extracts the extension properly
                 if let Some(FileFormat::Archive(format)) = FileFormat::from_path(&path) {
                     files.push(Box::new(ArchiveContainer::new(Box::new(ItemFile::new(path)), format)));
@@ -35,6 +43,7 @@ pub fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
                     files.push(Box::new(ItemFile::new(path)));
                 }
             }
+            // Skip symlinks, sockets, pipes, devices, etc.
         }
         sort_folder(&mut directories);
         sort_folder(&mut files);

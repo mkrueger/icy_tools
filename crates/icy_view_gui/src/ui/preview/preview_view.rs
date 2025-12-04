@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{container, image as iced_image, stack},
+    widget::{Space, column, container, image as iced_image, stack, text},
 };
 use icy_engine::{Position, Screen, Selection, Size, TextScreen};
 use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
@@ -249,6 +249,13 @@ impl PreviewView {
     /// Set monitor settings for CRT effects
     pub fn set_monitor_settings(&mut self, settings: MonitorSettings) {
         self.monitor_settings = settings;
+    }
+
+    /// Set the preview to error state
+    pub fn set_error(&mut self, path: PathBuf, message: String) {
+        self.current_file = Some(path);
+        self.is_loading = false;
+        self.preview_mode = PreviewMode::Error(message);
     }
 
     /// Zoom in by one step
@@ -726,16 +733,46 @@ impl PreviewView {
                     ..Default::default()
                 })
                 .into(),
-            PreviewMode::Error(msg) => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-error", message = msg.clone())))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme::main_area_background(theme))),
-                    ..Default::default()
-                })
-                .into(),
+            PreviewMode::Error(msg) => {
+                // Create a nice error display with icon and styled text
+                let error_icon = text("⚠").size(48).color(iced::Color::from_rgb(0.9, 0.3, 0.3));
+
+                let error_title = text(fl!(crate::LANGUAGE_LOADER, "preview-error-title"))
+                    .size(20)
+                    .color(iced::Color::from_rgb(0.9, 0.3, 0.3));
+
+                let error_message = text(msg.clone()).size(14).color(iced::Color::from_rgb(0.7, 0.7, 0.7));
+
+                let file_hint = if let Some(ref path) = self.current_file {
+                    let filename = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    text(filename).size(12).color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+                } else {
+                    text("").size(12)
+                };
+
+                let error_content = column![
+                    error_icon,
+                    Space::new().height(16),
+                    error_title,
+                    Space::new().height(8),
+                    error_message,
+                    Space::new().height(4),
+                    file_hint,
+                ]
+                .align_x(Alignment::Center)
+                .width(Length::Shrink);
+
+                container(error_content)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill)
+                    .style(|theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                        ..Default::default()
+                    })
+                    .into()
+            }
             PreviewMode::Image(handle) => {
                 let img = iced_image::Image::new(handle.clone()).content_fit(iced::ContentFit::Contain);
 

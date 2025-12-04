@@ -1,39 +1,70 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use i18n_embed_fl::fl;
 use icy_sauce::SauceRecord;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
-use crate::create_text_preview;
-
-use super::tile_shader::TILE_IMAGE_WIDTH;
+use super::thumbnail_loader::create_labeled_placeholder;
+use crate::{LANGUAGE_LOADER, create_text_preview};
 
 // ============================================================================
 // Thumbnail Rendering Constants
 // ============================================================================
 
-/// Thumbnails are rendered at 2x display size for quality, then scaled down
-/// This is the render width (640px renders to 320px display)
-pub const THUMBNAIL_RENDER_WIDTH: u32 = 640;
+/// Thumbnails are rendered directly at display size (no scaling needed)
+/// This matches TILE_IMAGE_WIDTH (320px)
+pub const THUMBNAIL_RENDER_WIDTH: u32 = 320;
 
 /// Maximum thumbnail height - limited by GPU texture size
 /// GPU max is 8192, we use 8000 to have some margin
 pub const THUMBNAIL_MAX_HEIGHT: u32 = 8000;
 
 /// Scale factor from render size to display size
-/// TILE_IMAGE_WIDTH (320) / THUMBNAIL_RENDER_WIDTH (640) = 0.5
-pub const THUMBNAIL_SCALE: f32 = TILE_IMAGE_WIDTH / THUMBNAIL_RENDER_WIDTH as f32;
+/// Now 1.0 since we render at final size
+pub const THUMBNAIL_SCALE: f32 = 1.0;
+
+/// Scale a small placeholder image to THUMBNAIL_RENDER_WIDTH, maintaining aspect ratio
+fn scale_placeholder(rgba: RgbaData) -> RgbaData {
+    if rgba.width == 0 || rgba.height == 0 {
+        return rgba;
+    }
+
+    let target_width = THUMBNAIL_RENDER_WIDTH;
+    let scale = target_width as f32 / rgba.width as f32;
+    let target_height = ((rgba.height as f32 * scale) as u32).max(1);
+
+    if target_width == rgba.width && target_height == rgba.height {
+        return rgba;
+    }
+
+    // Use image crate to scale
+    let img = image::RgbaImage::from_raw(rgba.width, rgba.height, rgba.data.to_vec()).unwrap_or_else(|| image::RgbaImage::new(1, 1));
+    let scaled = image::imageops::resize(&img, target_width, target_height, image::imageops::FilterType::Triangle);
+
+    RgbaData::new(scaled.into_raw(), target_width, target_height)
+}
 
 // ============================================================================
 // Static Placeholder Images (shared across all tiles)
+// All placeholders are pre-scaled to THUMBNAIL_RENDER_WIDTH (320px)
 // ============================================================================
 
-/// Static placeholder for loading tiles - shows a loading spinner symbol
-pub static LOADING_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| create_text_preview("Loading..."));
+/// Static placeholder for loading tiles - shows translated "Loading..."
+pub static LOADING_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
+    let text = fl!(LANGUAGE_LOADER, "thumbnail-loading");
+    let base = create_text_preview(&text);
+    scale_placeholder(base)
+});
 
-/// Static placeholder for error tiles (128x96 with X symbol)
+/// Static placeholder for error tiles (scaled to 320px, with X symbol)
 pub static ERROR_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
+    let base = create_error_placeholder_base();
+    scale_placeholder(base)
+});
+
+fn create_error_placeholder_base() -> RgbaData {
     let w = 128u32;
     let h = 96u32;
     let mut data = vec![0u8; (w * h * 4) as usize];
@@ -74,10 +105,15 @@ pub static ERROR_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
     }
 
     RgbaData::new(data, w, h)
+}
+
+/// Static placeholder for folder tiles (scaled to 320px, with folder icon)
+pub static FOLDER_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
+    let base = create_folder_placeholder_base();
+    scale_placeholder(base)
 });
 
-/// Static placeholder for folder tiles (128x96 with folder icon)
-pub static FOLDER_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
+fn create_folder_placeholder_base() -> RgbaData {
     let width = 128u32;
     let height = 96u32;
     let mut data = vec![0u8; (width * height * 4) as usize];
@@ -119,10 +155,23 @@ pub static FOLDER_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
     }
 
     RgbaData::new(data, width, height)
+}
+
+/// Static placeholder for FILE_ID.DIZ not found - pre-scaled to 320px
+/// Note: Label is added later by the thumbnail loader using the actual item name
+pub static DIZ_NOT_FOUND_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
+    let text = fl!(LANGUAGE_LOADER, "thumbnail-no-diz");
+    let base = create_text_preview(&text);
+    scale_placeholder(base)
 });
 
-/// Static placeholder for FILE_ID.DIZ not found (128x96 with ? symbol)
-pub static DIZ_NOT_FOUND_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| create_text_preview("no file_id.diz"));
+/// Static placeholder for unsupported file formats - pre-scaled to 320px
+/// Note: Label is added later by the thumbnail loader using the actual item name
+pub static UNSUPPORTED_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
+    let text = fl!(LANGUAGE_LOADER, "thumbnail-unsupported");
+    let base = create_text_preview(&text);
+    scale_placeholder(base)
+});
 
 /// Calculate the width multiplier based on character columns
 /// 0-159 chars = 1x, 160-239 chars = 2x, 240+ chars = 3x
@@ -198,12 +247,23 @@ impl std::hash::Hash for RgbaData {
 /// State of a thumbnail
 #[derive(Debug, Clone)]
 pub enum ThumbnailState {
-    /// Not yet loaded
-    Pending,
-    /// Currently being loaded
-    Loading,
-    /// Failed to load
-    Error(String),
+    /// Not yet loaded - shows loading placeholder with label
+    Pending {
+        /// Cached placeholder with label (created on first access)
+        placeholder: Option<RgbaData>,
+    },
+    /// Currently being loaded - shows loading placeholder with label
+    Loading {
+        /// Cached placeholder with label
+        placeholder: Option<RgbaData>,
+    },
+    /// Failed to load - shows error placeholder with label
+    Error {
+        /// Error message
+        message: String,
+        /// Cached placeholder with label
+        placeholder: Option<RgbaData>,
+    },
     /// Successfully loaded - static image
     Ready {
         /// The thumbnail image data
@@ -224,7 +284,9 @@ impl ThumbnailState {
         match self {
             ThumbnailState::Ready { rgba } => Some(rgba),
             ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame),
-            _ => None,
+            ThumbnailState::Pending { placeholder } => placeholder.as_ref(),
+            ThumbnailState::Loading { placeholder } => placeholder.as_ref(),
+            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref(),
         }
     }
 
@@ -233,7 +295,8 @@ impl ThumbnailState {
         match self {
             ThumbnailState::Ready { rgba } => Some((rgba.width, rgba.height)),
             ThumbnailState::Animated { frames, .. } => frames.first().map(|f| (f.width, f.height)),
-            _ => None,
+            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => placeholder.as_ref().map(|p| (p.width, p.height)),
+            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().map(|p| (p.width, p.height)),
         }
     }
 
@@ -255,6 +318,16 @@ impl ThumbnailState {
     pub fn is_ready(&self) -> bool {
         matches!(self, ThumbnailState::Ready { .. } | ThumbnailState::Animated { .. })
     }
+
+    /// Get the placeholder if available
+    pub fn placeholder(&self) -> Option<&RgbaData> {
+        match self {
+            ThumbnailState::Pending { placeholder } => placeholder.as_ref(),
+            ThumbnailState::Loading { placeholder } => placeholder.as_ref(),
+            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref(),
+            _ => None,
+        }
+    }
 }
 
 /// A thumbnail entry in the cache
@@ -270,20 +343,21 @@ pub struct Thumbnail {
     pub sauce_info: Option<SauceRecord>,
     /// Width multiplier (1, 2, or 3 based on character columns)
     pub width_multiplier: u32,
-    /// Rendered label tag (DOS-style with IBM font)
-    pub label_tag: Option<RgbaData>,
 }
 
 impl Thumbnail {
-    /// Create a new pending thumbnail
+    /// Create a new pending thumbnail with pre-rendered placeholder including label
     pub fn new(path: PathBuf, label: String) -> Self {
+        // Create placeholder with label for immediate display
+        let placeholder = create_labeled_placeholder(&LOADING_PLACEHOLDER, &label);
         Self {
             path,
             label,
-            state: ThumbnailState::Pending,
+            state: ThumbnailState::Pending {
+                placeholder: Some(placeholder),
+            },
             sauce_info: None,
             width_multiplier: 1,
-            label_tag: None,
         }
     }
 
@@ -292,17 +366,38 @@ impl Thumbnail {
         self.width_multiplier.max(1).min(3)
     }
 
+    /// Set state to Loading, keeping or creating the placeholder with label
+    pub fn set_loading(&mut self) {
+        let placeholder = match &self.state {
+            ThumbnailState::Pending { placeholder } => placeholder.clone(),
+            _ => Some(create_labeled_placeholder(&LOADING_PLACEHOLDER, &self.label)),
+        };
+        self.state = ThumbnailState::Loading { placeholder };
+    }
+
+    /// Set state to Error with message and placeholder
+    pub fn set_error(&mut self, message: String) {
+        let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &self.label);
+        self.state = ThumbnailState::Error {
+            message,
+            placeholder: Some(placeholder),
+        };
+    }
+
     /// Get the display height for layout purposes
-    /// The thumbnail is rendered at THUMBNAIL_RENDER_WIDTH * width_multiplier pixels
-    /// and scaled down by THUMBNAIL_SCALE for display
-    pub fn display_height(&self, display_width: f32) -> f32 {
+    /// content_width is the width available for the image (tile width minus padding)
+    /// Returns the height the image would have when displayed at content_width
+    ///
+    /// The texture is rendered at final size, so no scaling is needed.
+    pub fn display_height(&self, content_width: f32) -> f32 {
         match self.state.dimensions() {
-            Some((w, h)) => {
-                if w == 0 {
+            Some((tex_w, tex_h)) => {
+                if tex_w == 0 {
                     return 100.0; // Fallback for invalid dimensions
                 }
-                // Scale height proportionally: display_width / render_width * render_height
-                (display_width / w as f32) * h as f32
+                // Texture is at final display size, scale to fit content_width
+                let scale = content_width / tex_w as f32;
+                tex_h as f32 * scale
             }
             None => 100.0, // Default height for pending/loading
         }
@@ -324,8 +419,6 @@ pub struct ThumbnailResult {
     pub sauce_info: Option<SauceRecord>,
     /// Width multiplier (1, 2, or 3 based on character columns)
     pub width_multiplier: u32,
-    /// Rendered label tag (DOS-style with IBM font)
-    pub label_tag: Option<RgbaData>,
 }
 
 /// Shared thumbnail cache

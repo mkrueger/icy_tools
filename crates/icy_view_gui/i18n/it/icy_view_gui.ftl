@@ -100,12 +100,7 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Aiuto
-help-dialog-text=
-    F1 - Aiuto
-    F2 - Attiva/disattiva scorrimento automatico
-    F3 - Cambia velocità di scorrimento
-    F4 - Mostra info SAUCE
+help-title = Aiuto
 
 toast-auto-scroll-on=Scorrimento automatico attivato
 toast-auto-scroll-off=Scorrimento automatico disattivato
@@ -149,6 +144,10 @@ toast-command-not-configured=Comando { $key } non configurato
 preview-no-file-selected = Nessun file selezionato
 preview-loading = Caricamento...
 preview-error = Errore: { $message }
+preview-error-title = Impossibile caricare il file
+
+error-read-file-data = Impossibile leggere il contenuto del file
+error-read-file = { $error }
 
 error-external-command-title = Impossibile eseguire il comando esterno
 error-external-command-message = Comando: { $command }
@@ -157,3 +156,7 @@ error-external-command-message = Comando: { $command }
 
 welcome-select-file = 📂 Seleziona un file da visualizzare
 welcome-tip = Suggerimento: Premi Ctrl+F per filtrare, o clicca 🌐 per sfogliare 16colors.rs
+
+thumbnail-loading = Caricamento...
+thumbnail-no-diz = nessun file_id.diz
+thumbnail-unsupported = Non supportato

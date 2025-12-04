@@ -40,6 +40,11 @@ impl ArchiveContainer {
                 let name = entry.name();
                 // Check if it's FILE_ID.DIZ at root level
                 let file_name = name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(name);
+                if file_name.eq_ignore_ascii_case("file_id.ans") {
+                    if let Ok(data) = archive.read(&entry) {
+                        return render_diz_to_thumbnail(&data);
+                    }
+                }
                 if file_name.eq_ignore_ascii_case("file_id.diz") {
                     if let Ok(data) = archive.read(&entry) {
                         return render_diz_to_thumbnail(&data);

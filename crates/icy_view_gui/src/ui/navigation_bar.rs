@@ -6,6 +6,7 @@ use iced::{
     widget::{Space, button, container, row, text, text_input, tooltip},
 };
 
+use super::icons::{arrow_back_icon, arrow_forward_icon, language_icon, refresh_icon, search_icon, settings_icon};
 use super::options::ViewMode;
 use crate::LANGUAGE_LOADER;
 use crate::items::ProviderType;
@@ -193,8 +194,10 @@ impl NavigationBar {
     }
 
     pub fn view<'a>(&'a self, _current_path: Option<&PathBuf>, can_go_back: bool, can_go_forward: bool) -> Element<'a, NavigationBarMessage> {
+        let icon_size = 16.0;
+
         // Back button
-        let back_btn = button(text("◀").size(14)).padding([4, 8]).style(nav_button_style);
+        let back_btn = button(arrow_back_icon(icon_size)).padding([4, 6]).style(nav_button_style);
         let back_btn = if can_go_back {
             back_btn.on_press(NavigationBarMessage::Back)
         } else {
@@ -207,7 +210,7 @@ impl NavigationBar {
         );
 
         // Forward button
-        let forward_btn = button(text("▶").size(14)).padding([4, 8]).style(nav_button_style);
+        let forward_btn = button(arrow_forward_icon(icon_size)).padding([4, 6]).style(nav_button_style);
         let forward_btn = if can_go_forward {
             forward_btn.on_press(NavigationBarMessage::Forward)
         } else {
@@ -220,8 +223,8 @@ impl NavigationBar {
         );
 
         // Refresh button
-        let refresh_btn = button(text("⟲").size(14))
-            .padding([4, 8])
+        let refresh_btn = button(refresh_icon(icon_size))
+            .padding([4, 6])
             .style(nav_button_style)
             .on_press(NavigationBarMessage::Refresh);
         let refresh_btn = tooltip(
@@ -241,8 +244,8 @@ impl NavigationBar {
             .style(move |theme, status| path_input_style(theme, status, is_valid));
 
         // Filter button (opens filter popup)
-        let filter_btn = button(text("🔍").size(14))
-            .padding([4, 8])
+        let filter_btn = button(search_icon(icon_size))
+            .padding([4, 6])
             .style(nav_button_style)
             .on_press(NavigationBarMessage::OpenFilter);
         let filter_btn = tooltip(
@@ -252,8 +255,8 @@ impl NavigationBar {
         );
 
         // 16colors.rs toggle button - use different style when active
-        let web_btn = button(text("🌐").size(14))
-            .padding([4, 8])
+        let web_btn = button(language_icon(icon_size))
+            .padding([4, 6])
             .style(if self.is_16colors_mode { nav_button_active_style } else { nav_button_style })
             .on_press(NavigationBarMessage::Toggle16Colors);
         let web_btn = tooltip(
@@ -263,8 +266,8 @@ impl NavigationBar {
         );
 
         // Settings button
-        let settings_btn = button(text("⚙").size(14))
-            .padding([4, 8])
+        let settings_btn = button(settings_icon(icon_size))
+            .padding([4, 6])
             .style(nav_button_style)
             .on_press(NavigationBarMessage::OpenSettings);
         let settings_btn = tooltip(

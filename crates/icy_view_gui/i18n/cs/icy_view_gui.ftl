@@ -100,12 +100,7 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Nápověda
-help-dialog-text=
-    F1 - Nápověda 
-    F2 - Přepnout automatické posouvání
-    F3 - Přepnout rychlost posouvání 
-    F4 - Zobrazit informace o omáčce
+help-title = Nápověda
 
 toast-auto-scroll-on=Automatické posouvání zapnuto
 toast-auto-scroll-off=Automatické posouvání vypnuto
@@ -149,6 +144,10 @@ toast-command-not-configured=Příkaz { $key } není nakonfigurován
 preview-no-file-selected = Žádný soubor nevybrán
 preview-loading = Načítání...
 preview-error = Chyba: { $message }
+preview-error-title = Nepodařilo se načíst soubor
+
+error-read-file-data = Nelze přečíst obsah souboru
+error-read-file = { $error }
 
 error-external-command-title = Nepodařilo se spustit externí příkaz
 error-external-command-message = Příkaz: { $command }
@@ -157,3 +156,7 @@ error-external-command-message = Příkaz: { $command }
 
 welcome-select-file = 📂 Vyberte soubor k náhledu
 welcome-tip = Tip: Stiskněte Ctrl+F pro filtrování, nebo klikněte na 🌐 pro procházení 16colors.rs
+
+thumbnail-loading = Načítání...
+thumbnail-no-diz = bez file_id.diz
+thumbnail-unsupported = Nepodporováno

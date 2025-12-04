@@ -114,12 +114,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Help
-help-dialog-text=
-    F1 - Help 
-    F2 - Toggle auto scrolling
-    F3 - Toggle scroll speed 
-    F4 - Show sauce info
+# Help dialog
+help-title = Keyboard Shortcuts
+help-subtitle = Quick reference for iCY VIEW
+
+# Categories
+help-category-navigation = Navigation
+help-category-display = Display
+help-category-zoom = Zoom
+help-category-tools = Tools
+
+# Actions
+help-action-navigate = Navigate
+help-action-open = Open/Enter
+help-action-parent = Parent Directory
+help-action-back = Go Back
+help-action-forward = Go Forward
+help-action-filter = Filter
+help-action-auto-scroll = Auto Scroll
+help-action-scroll-speed = Scroll Speed
+help-action-baud-rate = Baud Rate
+help-action-baud-off = Baud Off
+help-action-sauce = SAUCE Info
+help-action-zoom-in = Zoom In
+help-action-zoom-out = Zoom Out
+help-action-zoom-reset = Reset Zoom
+help-action-zoom-fit = Fit to Window
+help-action-export = Export
+help-action-copy = Copy
+help-action-external = External Commands
+help-action-fullscreen = Fullscreen
+help-action-help = Help
+
+# Descriptions
+help-desc-navigate = Move selection in file list
+help-desc-open = Open file or enter directory
+help-desc-parent = Go up one directory level
+help-desc-back = Navigate to previous location
+help-desc-forward = Navigate to next location
+help-desc-filter = Toggle filter input
+help-desc-auto-scroll = Toggle automatic scrolling
+help-desc-scroll-speed = Cycle scroll speed (slow/medium/fast)
+help-desc-baud-rate = Cycle baud emulation rate
+help-desc-baud-off = Disable baud emulation
+help-desc-sauce = Show SAUCE metadata dialog
+help-desc-zoom-in = Increase zoom level
+help-desc-zoom-out = Decrease zoom level
+help-desc-zoom-reset = Reset to 100% zoom
+help-desc-zoom-fit = Auto-fit content to window
+help-desc-export = Export file to image
+help-desc-copy = Copy selection to clipboard
+help-desc-external = Run external commands (F5-F8)
+help-desc-fullscreen = Toggle fullscreen mode
+help-desc-help = Show this help dialog
+help-action-about = About
+help-desc-about = Show about dialog
 
 toast-auto-scroll-on=Auto scroll on
 toast-auto-scroll-off=Auto scroll off
@@ -162,6 +211,10 @@ export-success = Exported to { $path }
 preview-no-file-selected = No file selected
 preview-loading = Loading...
 preview-error = Error: { $message }
+preview-error-title = Failed to load file
+
+error-read-file-data = Unable to read file content
+error-read-file = { $error }
 
 error-external-command-title = Failed to execute external command
 error-external-command-message = Command: { $command }
@@ -170,3 +223,7 @@ error-external-command-message = Command: { $command }
 
 welcome-select-file = 📂 Select a file to preview
 welcome-tip = Tip: Press Ctrl+F to filter, or click 🌐 to browse 16colors.rs
+
+thumbnail-loading = Loading...
+thumbnail-no-diz = no file_id.diz
+thumbnail-unsupported = Unsupported

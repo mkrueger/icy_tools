@@ -6,7 +6,9 @@
 //! - Displays title/author/group info overlay
 //! - Auto-advances after scroll completes
 //! - Exits on Escape/Enter/Mouse click
+//! - Preloads next item in background for smooth transitions
 
+use std::path::PathBuf;
 use std::time::Instant;
 
 use iced::{
@@ -14,6 +16,8 @@ use iced::{
     widget::{Space, column, container, row, stack, text},
 };
 use rand::seq::SliceRandom;
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 // ============================================================================
 // TIMING CONSTANTS - Adjust these to change shuffle mode behavior
@@ -96,6 +100,16 @@ struct CommentLineState {
     text: String,
 }
 
+/// Preloaded data for the next shuffle item
+pub struct PreloadedItem {
+    /// Index of the preloaded item
+    pub index: usize,
+    /// File path
+    pub path: PathBuf,
+    /// Loaded data bytes
+    pub data: Vec<u8>,
+}
+
 /// Shuffle mode state
 pub struct ShuffleMode {
     /// List of item indices to shuffle through (indices into file_browser.files)
@@ -130,6 +144,12 @@ pub struct ShuffleMode {
     comments_finished: bool,
     /// Last known screen height (for calculating when comments are done)
     last_screen_height: f32,
+    /// Receiver for preloaded next item (background loading)
+    preload_rx: Option<oneshot::Receiver<Option<PreloadedItem>>>,
+    /// Cancellation token for preload task
+    preload_cancel: Option<CancellationToken>,
+    /// Cached preloaded item (ready to use)
+    preloaded_item: Option<PreloadedItem>,
 }
 
 impl ShuffleMode {
@@ -152,6 +172,9 @@ impl ShuffleMode {
             comment_block_opacity: 0.0,
             comments_finished: false,
             last_screen_height: 800.0,
+            preload_rx: None,
+            preload_cancel: None,
+            preloaded_item: None,
         }
     }
 
@@ -160,6 +183,9 @@ impl ShuffleMode {
         if indices.is_empty() {
             return;
         }
+
+        // Cancel any existing preload
+        self.cancel_preload();
 
         let mut shuffled = indices;
         let mut rng = rand::rng();
@@ -176,10 +202,22 @@ impl ShuffleMode {
 
     /// Stop shuffle mode
     pub fn stop(&mut self) {
+        // Cancel any pending preload task
+        self.cancel_preload();
+
         self.is_active = false;
         self.item_indices.clear();
         self.current_position = 0;
         self.clear_sauce_info();
+    }
+
+    /// Cancel any pending preload task
+    fn cancel_preload(&mut self) {
+        if let Some(cancel) = self.preload_cancel.take() {
+            cancel.cancel();
+        }
+        self.preload_rx = None;
+        self.preloaded_item = None;
     }
 
     /// Get the current item index to display
@@ -197,6 +235,9 @@ impl ShuffleMode {
             return None;
         }
 
+        // Cancel current preload since we're moving on
+        self.cancel_preload();
+
         self.current_position += 1;
         if self.current_position >= self.item_indices.len() {
             // Reshuffle and start over
@@ -211,6 +252,84 @@ impl ShuffleMode {
         self.clear_sauce_info();
 
         self.current_item_index()
+    }
+
+    /// Get the index of the next item to preload (without advancing)
+    pub fn peek_next_index(&self) -> Option<usize> {
+        if !self.is_active || self.item_indices.is_empty() {
+            return None;
+        }
+
+        let next_pos = (self.current_position + 1) % self.item_indices.len();
+        Some(self.item_indices[next_pos])
+    }
+
+    /// Start preloading the next item in background
+    /// The caller provides the item and handles spawning the async task
+    pub fn start_preload(&mut self, rx: oneshot::Receiver<Option<PreloadedItem>>, cancel_token: CancellationToken) {
+        // Cancel any existing preload first
+        self.cancel_preload();
+
+        self.preload_rx = Some(rx);
+        self.preload_cancel = Some(cancel_token);
+    }
+
+    /// Check if preloaded data is ready, returns it if so
+    pub fn poll_preload(&mut self) -> Option<PreloadedItem> {
+        // First check if we already have a cached preloaded item
+        if self.preloaded_item.is_some() {
+            return self.preloaded_item.take();
+        }
+
+        // Check if receiver has data
+        if let Some(mut rx) = self.preload_rx.take() {
+            match rx.try_recv() {
+                Ok(Some(item)) => {
+                    self.preload_cancel = None;
+                    return Some(item);
+                }
+                Ok(None) => {
+                    // Preload failed or was cancelled
+                    self.preload_cancel = None;
+                    return None;
+                }
+                Err(oneshot::error::TryRecvError::Empty) => {
+                    // Still loading, put receiver back
+                    self.preload_rx = Some(rx);
+                }
+                Err(oneshot::error::TryRecvError::Closed) => {
+                    // Channel closed (cancelled)
+                    self.preload_cancel = None;
+                    return None;
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if a preload is currently in progress
+    pub fn is_preloading(&self) -> bool {
+        self.preload_rx.is_some()
+    }
+
+    /// Take the preloaded item if it matches the expected index
+    pub fn take_preloaded_if_matches(&mut self, index: usize) -> Option<PreloadedItem> {
+        // First poll to get any completed preload
+        if let Some(item) = self.poll_preload() {
+            if item.index == index {
+                return Some(item);
+            }
+            // Cache it if it doesn't match (shouldn't happen normally)
+            self.preloaded_item = Some(item);
+        }
+
+        // Check cached item
+        if let Some(ref item) = self.preloaded_item {
+            if item.index == index {
+                return self.preloaded_item.take();
+            }
+        }
+        None
     }
 
     /// Set SAUCE info for current file

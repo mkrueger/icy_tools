@@ -4,8 +4,7 @@ use iced::{
     widget::{Space, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, HEADER_TEXT_SIZE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, modal_container, primary_button,
-    separator,
+    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, modal_container, primary_button, section_header, separator,
 };
 use icy_net::iemsi::EmsiISI;
 
@@ -51,7 +50,7 @@ impl ShowIemsiDialog {
     fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
         // System info section
         let system_section = column![
-            Self::section_header(fl!(crate::LANGUAGE_LOADER, "show-iemsi-dialog-heading")),
+            section_header(fl!(crate::LANGUAGE_LOADER, "show-iemsi-dialog-heading")),
             Space::new().height(DIALOG_SPACING),
             Self::create_field(fl!(crate::LANGUAGE_LOADER, "show-iemsi-dialog-name"), &self.iemsi_info.name),
             Self::create_field(fl!(crate::LANGUAGE_LOADER, "show-iemsi-dialog-location"), &self.iemsi_info.location),

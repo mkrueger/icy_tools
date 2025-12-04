@@ -7,8 +7,8 @@ use iced::{
 use icy_engine::{Position, ScreenMode, Size, TerminalScrolling};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, HEADER_TEXT_SIZE, SECTION_SPACING, SPACE_4, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row_with_left, dialog_area,
-    modal_container, primary_button, secondary_button, separator,
+    DIALOG_SPACING, DIALOG_WIDTH_LARGE, SECTION_SPACING, SPACE_4, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row_with_left, dialog_area, modal_container,
+    primary_button, secondary_button, section_header, separator,
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{BaudEmulation, CaretShape, MusicOption};
@@ -438,7 +438,7 @@ impl TerminalInfoDialog {
         };
 
         let left_col = column![
-            Self::section_header(terminal_title),
+            section_header(terminal_title),
             Space::new().height(SPACE_4),
             Self::create_size_row(
                 resolution_label,
@@ -464,7 +464,7 @@ impl TerminalInfoDialog {
 
         // Right column - Caret state with visual shape display
         let right_col = column![
-            Self::section_header(caret_title),
+            section_header(caret_title),
             Space::new().height(SPACE_4),
             Self::create_row(
                 caret_position_label,
@@ -505,7 +505,7 @@ impl TerminalInfoDialog {
             terminal_settings_ui::build_terminal_settings_ui(&settings, |change| crate::ui::Message::TerminalInfo(TerminalInfoMsg::SettingsChanged(change)));
         let settings_box_content = container(settings_ui).height(Length::Fixed(90.0));
         let settings_content = column![
-            Self::section_header(settings_title),
+            section_header(settings_title),
             Space::new().height(SPACE_4),
             effect_box(settings_box_content.into()),
         ]

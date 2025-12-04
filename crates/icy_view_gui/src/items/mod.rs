@@ -400,6 +400,7 @@ pub fn create_text_preview(message: &str) -> RgbaData {
     for (i, ch) in message.chars().enumerate() {
         let x = start_x + i as i32;
         if x < 20 {
+            let ch = icy_engine::BufferType::CP437.try_convert_from_unicode(ch).unwrap_or('?');
             buffer.layers[0].set_char(Position::new(x, y), AttributedChar::new(ch, attr));
         }
     }

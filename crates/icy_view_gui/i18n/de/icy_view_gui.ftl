@@ -114,12 +114,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Hilfe
-help-dialog-text=
-    F1 - Hilfe
-    F2 - Automatisches Scrollen an/aus
-    F3 - Geschwindigeit umstellen
-    F4 - Sauce-Informationen anzeigen
+# Hilfe-Dialog
+help-title = Tastaturkürzel
+help-subtitle = Schnellreferenz für iCY VIEW
+
+# Kategorien
+help-category-navigation = Navigation
+help-category-display = Anzeige
+help-category-zoom = Zoom
+help-category-tools = Werkzeuge
+
+# Aktionen
+help-action-navigate = Navigieren
+help-action-open = Öffnen/Enter
+help-action-parent = Übergeordnetes Verz.
+help-action-back = Zurück
+help-action-forward = Vorwärts
+help-action-filter = Filter
+help-action-auto-scroll = Auto-Scroll
+help-action-scroll-speed = Scroll-Geschw.
+help-action-baud-rate = Baudrate
+help-action-baud-off = Baud aus
+help-action-sauce = SAUCE-Info
+help-action-zoom-in = Vergrößern
+help-action-zoom-out = Verkleinern
+help-action-zoom-reset = Zoom zurücksetzen
+help-action-zoom-fit = Einpassen
+help-action-export = Exportieren
+help-action-copy = Kopieren
+help-action-external = Externe Befehle
+help-action-fullscreen = Vollbild
+help-action-help = Hilfe
+
+# Beschreibungen
+help-desc-navigate = Auswahl in Dateiliste bewegen
+help-desc-open = Datei öffnen oder Verzeichnis betreten
+help-desc-parent = Eine Ebene nach oben
+help-desc-back = Zum vorherigen Ort navigieren
+help-desc-forward = Zum nächsten Ort navigieren
+help-desc-filter = Filtereingabe umschalten
+help-desc-auto-scroll = Automatisches Scrollen an/aus
+help-desc-scroll-speed = Scrollgeschwindigkeit wechseln
+help-desc-baud-rate = Baud-Emulationsrate wechseln
+help-desc-baud-off = Baud-Emulation deaktivieren
+help-desc-sauce = SAUCE-Metadaten-Dialog anzeigen
+help-desc-zoom-in = Zoomstufe erhöhen
+help-desc-zoom-out = Zoomstufe verringern
+help-desc-zoom-reset = Auf 100% Zoom zurücksetzen
+help-desc-zoom-fit = Inhalt an Fenster anpassen
+help-desc-export = Datei als Bild exportieren
+help-desc-copy = Auswahl in Zwischenablage kopieren
+help-desc-external = Externe Befehle ausführen (F5-F8)
+help-desc-fullscreen = Vollbildmodus umschalten
+help-desc-help = Diesen Hilfe-Dialog anzeigen
+help-action-about = Über
+help-desc-about = Über-Dialog anzeigen
 
 toast-auto-scroll-on=Automatisches Scrollen an
 toast-auto-scroll-off=Automatisches Scrollen aus
@@ -162,6 +211,10 @@ export-success = Exportiert nach { $path }
 preview-no-file-selected = Keine Datei ausgewählt
 preview-loading = Wird geladen...
 preview-error = Fehler: { $message }
+preview-error-title = Datei konnte nicht geladen werden
+
+error-read-file-data = Dateiinhalt konnte nicht gelesen werden
+error-read-file = { $error }
 
 error-external-command-title = Externer Befehl fehlgeschlagen
 error-external-command-message = Befehl: { $command }
@@ -170,3 +223,7 @@ error-external-command-message = Befehl: { $command }
 
 welcome-select-file = 📂 Datei zum Anzeigen auswählen
 welcome-tip = Tipp: Ctrl+F zum Filtern, oder 🌐 klicken um 16colors.rs zu durchsuchen
+
+thumbnail-loading = Lade...
+thumbnail-no-diz = Keine file_id.diz
+thumbnail-unsupported = Nicht unterstützt

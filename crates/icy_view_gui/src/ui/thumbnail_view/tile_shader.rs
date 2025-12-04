@@ -80,8 +80,6 @@ pub struct TileTexture {
     pub is_selected: bool,
     /// Is this tile hovered?
     pub is_hovered: bool,
-    /// Label tag RGBA data (optional, rendered below the image)
-    pub label_tag: Option<(Arc<Vec<u8>>, u32, u32)>, // (data, width, height)
 }
 
 /// Shader primitive for rendering a tile grid
@@ -139,34 +137,30 @@ impl TileUniforms {
     fn new(tile: &TileTexture, tag_height: f32) -> Self {
         let shadow_extra_x = SHADOW_OFFSET_X + SHADOW_BLUR_RADIUS;
         let shadow_extra_y = SHADOW_OFFSET_Y + SHADOW_BLUR_RADIUS;
-        
+
         // Total size including shadow
         let total_width = tile.display_size.0 + shadow_extra_x;
         let total_height = tile.display_size.1 + shadow_extra_y;
-        
+
         // Content rect (tile without shadow) - positioned at top-left
         let content_x = 0.0;
         let content_y = 0.0;
         let content_w = tile.display_size.0;
         let content_h = tile.display_size.1;
-        
+
         // Image rect - inside content with padding
         let padding = TILE_BORDER_WIDTH + TILE_INNER_PADDING;
         let image_x = padding;
         let image_y = padding;
         let image_w = content_w - padding * 2.0;
         let image_h = tile.image_height;
-        
+
         // Label rect - below image with inner padding
         let label_x = padding;
         let label_y = image_y + image_h + TILE_INNER_PADDING;
         let label_w = image_w;
-        let label_h = if tag_height > 0.0 { 
-            tag_height + TILE_INNER_PADDING 
-        } else { 
-            0.0 
-        };
-        
+        let label_h = if tag_height > 0.0 { tag_height + TILE_INNER_PADDING } else { 0.0 };
+
         Self {
             tile_size: [total_width, total_height],
             _pad0: [0.0, 0.0],
@@ -179,24 +173,6 @@ impl TileUniforms {
             border_width: TILE_BORDER_WIDTH,
             shadow_blur: SHADOW_BLUR_RADIUS,
             shadow_opacity: SHADOW_OPACITY,
-            _padding: [0.0, 0.0],
-        }
-    }
-    
-    /// Create uniforms for a tag texture (simple, no effects)
-    fn new_for_tag(width: f32, height: f32) -> Self {
-        Self {
-            tile_size: [width, height],
-            _pad0: [0.0, 0.0],
-            content_rect: [0.0, 0.0, width, height],
-            image_rect: [0.0, 0.0, width, height],
-            label_rect: [0.0, 0.0, 0.0, 0.0],
-            is_selected: 0.0,
-            is_hovered: 0.0,
-            border_radius: 0.0,
-            border_width: 0.0,
-            shadow_blur: 0.0,
-            shadow_opacity: 0.0,
             _padding: [0.0, 0.0],
         }
     }
@@ -217,11 +193,6 @@ struct TileResources {
     texture_key: usize,
     bind_group: iced::wgpu::BindGroup,
     uniform_buffer: iced::wgpu::Buffer,
-    // Optional filename tag resources
-    tag_texture_key: Option<usize>,
-    tag_bind_group: Option<iced::wgpu::BindGroup>,
-    tag_uniform_buffer: Option<iced::wgpu::Buffer>,
-    tag_size: Option<(u32, u32)>,
 }
 
 /// Renderer for the tile grid shader
@@ -444,9 +415,6 @@ impl shader::Primitive for TileGridShader {
                 None => true,
             };
 
-            let mut tag_size = None;
-            let mut tag_texture_key = None;
-
             if needs_recreate {
                 // Get the shared texture view
                 let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
@@ -478,155 +446,22 @@ impl shader::Primitive for TileGridShader {
                     ],
                 });
 
-                // Create tag texture if present
-                let (tag_bind_group, tag_uniform_buffer) = if let Some((tag_data, tag_width, tag_height)) = &tile.label_tag {
-                    if *tag_width > 0 && *tag_height > 0 && tag_data.len() == (4 * tag_width * tag_height) as usize {
-                        // Use Arc pointer for tag texture sharing too
-                        let tag_key = Arc::as_ptr(tag_data) as usize;
-                        used_texture_keys.insert(tag_key);
-                        tag_texture_key = Some(tag_key);
-
-                        // Create shared tag texture if it doesn't exist
-                        if !pipeline.shared_textures.contains_key(&tag_key) {
-                            let tag_tex = device.create_texture(&iced::wgpu::TextureDescriptor {
-                                label: Some(&format!("Shared Tag Texture {:x}", tag_key)),
-                                size: iced::wgpu::Extent3d {
-                                    width: *tag_width,
-                                    height: *tag_height,
-                                    depth_or_array_layers: 1,
-                                },
-                                mip_level_count: 1,
-                                sample_count: 1,
-                                dimension: iced::wgpu::TextureDimension::D2,
-                                format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                                view_formats: &[],
-                            });
-
-                            queue.write_texture(
-                                iced::wgpu::TexelCopyTextureInfo {
-                                    texture: &tag_tex,
-                                    mip_level: 0,
-                                    origin: iced::wgpu::Origin3d::ZERO,
-                                    aspect: iced::wgpu::TextureAspect::All,
-                                },
-                                tag_data,
-                                iced::wgpu::TexelCopyBufferLayout {
-                                    offset: 0,
-                                    bytes_per_row: Some(4 * tag_width),
-                                    rows_per_image: Some(*tag_height),
-                                },
-                                iced::wgpu::Extent3d {
-                                    width: *tag_width,
-                                    height: *tag_height,
-                                    depth_or_array_layers: 1,
-                                },
-                            );
-
-                            let tag_view = tag_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                            pipeline.shared_textures.insert(
-                                tag_key,
-                                SharedTextureResources {
-                                    texture: tag_tex,
-                                    texture_view: tag_view,
-                                    texture_size: (*tag_width, *tag_height),
-                                },
-                            );
-                        }
-
-                        let shared_tag_texture = pipeline.shared_textures.get(&tag_key).unwrap();
-
-                        let tag_uniforms = device.create_buffer(&iced::wgpu::BufferDescriptor {
-                            label: Some(&format!("Tile Tag Uniforms {}", tile.id)),
-                            size: std::mem::size_of::<TileUniforms>() as u64,
-                            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
-                            mapped_at_creation: false,
-                        });
-
-                        let tag_bg = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                            label: Some(&format!("Tile Tag BindGroup {}", tile.id)),
-                            layout: &pipeline.bind_group_layout,
-                            entries: &[
-                                iced::wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: iced::wgpu::BindingResource::TextureView(&shared_tag_texture.texture_view),
-                                },
-                                iced::wgpu::BindGroupEntry {
-                                    binding: 1,
-                                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                                },
-                                iced::wgpu::BindGroupEntry {
-                                    binding: 2,
-                                    resource: tag_uniforms.as_entire_binding(),
-                                },
-                            ],
-                        });
-                        tag_size = Some((*tag_width, *tag_height));
-                        (Some(tag_bg), Some(tag_uniforms))
-                    } else {
-                        (None, None)
-                    }
-                } else {
-                    (None, None)
-                };
-
                 pipeline.tiles.insert(
                     tile.id,
                     TileResources {
                         texture_key,
                         bind_group,
                         uniform_buffer,
-                        tag_texture_key,
-                        tag_bind_group,
-                        tag_uniform_buffer,
-                        tag_size,
                     },
                 );
-            } else {
-                // Get existing tag size for uniform update
-                if let Some(resources) = pipeline.tiles.get(&tile.id) {
-                    tag_size = resources.tag_size;
-                    // Track tag texture as still in use
-                    if let Some(key) = resources.tag_texture_key {
-                        used_texture_keys.insert(key);
-                    }
-                }
             }
 
             // Update uniforms for this tile (always, as hover/selection state may change)
             if let Some(resources) = pipeline.tiles.get(&tile.id) {
-                let tag_height = tag_size.map(|s| s.1 as f32).unwrap_or(0.0);
-                let uniforms = TileUniforms::new(tile, tag_height);
-                
-                // DEBUG: Print texture sizes when selected
-                if tile.is_selected {
-                    if let Some(shared_tex) = pipeline.shared_textures.get(&resources.texture_key) {
-                        println!("=== SELECTED TILE DEBUG ===");
-                        println!("Tile ID: {}", tile.id);
-                        println!("Texture size (GPU): {:?}", shared_tex.texture_size);
-                        println!("Display size: {:?}", tile.display_size);
-                        println!("Image height: {}", tile.image_height);
-                        println!("Tag height: {}", tag_height);
-                        println!("Uniforms:");
-                        println!("  tile_size: {:?}", uniforms.tile_size);
-                        println!("  content_rect: {:?}", uniforms.content_rect);
-                        println!("  image_rect: {:?}", uniforms.image_rect);
-                        println!("  label_rect: {:?}", uniforms.label_rect);
-                        if let Some((tag_w, tag_h)) = resources.tag_size {
-                            println!("Tag texture size: {}x{}", tag_w, tag_h);
-                        }
-                        println!("===========================");
-                    }
-                }
-                
-                queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                // No separate tag - label is now part of the image
+                let uniforms = TileUniforms::new(tile, 0.0);
 
-                // Write tag uniforms if present
-                if let (Some(tag_uniform_buffer), Some((tag_w, tag_h))) = (&resources.tag_uniform_buffer, resources.tag_size) {
-                    let tag_uniforms = TileUniforms::new_for_tag(tag_w as f32, tag_h as f32);
-                    queue.write_buffer(tag_uniform_buffer, 0, bytemuck::bytes_of(&tag_uniforms));
-                }
+                queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
             }
         }
 
@@ -718,79 +553,6 @@ impl shader::Primitive for TileGridShader {
                     render_pass.set_pipeline(&pipeline.pipeline);
                     render_pass.set_bind_group(0, &resources.bind_group, &[]);
                     render_pass.draw(0..6, 0..1);
-                }
-
-                // Drop render_pass before starting tag render pass
-                drop(render_pass);
-
-                // Render filename tag below the image, inside the tile's label area
-                if let (Some(tag_bind_group), Some((tag_w, tag_h))) = (&resources.tag_bind_group, resources.tag_size) {
-                    let tag_w_scaled = tag_w as f32 * scale_factor;
-                    let tag_h_scaled = tag_h as f32 * scale_factor;
-                    /*
-                    // Position tag below the image, centered horizontally
-                    // Add small padding (2px) between image and tag
-                    let tag_padding = 2.0 * scale_factor;
-                    // Position tag below the image, centered horizontally
-                    // The image sits at TILE_PADDING from the tile top
-                    // Add TILE_INNER_PADDING between image bottom and tag
-                    let image_bottom = tile_y + (TILE_PADDING + tile.image_height + TILE_INNER_PADDING) * scale_factor;
-
-                    // Center tag horizontally within the tile content area
-                    let content_width = (tile.display_size.0 - TILE_PADDING * 2.0) * scale_factor;
-                    let tag_x = tile_x + TILE_PADDING * scale_factor + (content_width - tag_w_scaled) / 2.0;
-                    let tag_y = image_bottom + tag_padding;*/
-
-                    // Position tag below the image with TILE_INNER_PADDING gap
-                    // Image top is at tile_y + TILE_PADDING
-                    // Image bottom is at tile_y + TILE_PADDING + image_height
-                    // Tag top is at image_bottom + TILE_INNER_PADDING
-                    let tag_y = tile_y + (2.0 * TILE_PADDING + tile.image_height + 2.0 * TILE_INNER_PADDING) * scale_factor;
-
-                    // Center tag horizontally within the tile content area
-                    let content_width = (tile.display_size.0 - TILE_PADDING * 2.0) * scale_factor;
-                    let tag_x = tile_x + TILE_PADDING * scale_factor + (content_width - tag_w_scaled) / 2.0;
-
-                    // Calculate clipped bounds for tag
-                    let tag_clipped_left = tag_x.max(widget_left);
-                    let tag_clipped_top = tag_y.max(widget_top);
-                    let tag_clipped_right = (tag_x + tag_w_scaled).min(widget_right);
-                    let tag_clipped_bottom = (tag_y + tag_h_scaled).min(widget_bottom);
-
-                    if tag_clipped_left < tag_clipped_right && tag_clipped_top < tag_clipped_bottom {
-                        let tag_clipped_w = tag_clipped_right - tag_clipped_left;
-                        let tag_clipped_h = tag_clipped_bottom - tag_clipped_top;
-
-                        let mut tag_render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
-                            label: Some(&format!("Tile Tag Render Pass {}", tile.id)),
-                            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
-                                view: target,
-                                resolve_target: None,
-                                ops: iced::wgpu::Operations {
-                                    load: iced::wgpu::LoadOp::Load,
-                                    store: iced::wgpu::StoreOp::Store,
-                                },
-                                depth_slice: None,
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
-
-                        tag_render_pass.set_scissor_rect(tag_clipped_left as u32, tag_clipped_top as u32, tag_clipped_w as u32, tag_clipped_h as u32);
-
-                        let safe_tag_x = tag_x.max(MIN_VIEWPORT_COORD);
-                        let safe_tag_y = tag_y.max(MIN_VIEWPORT_COORD);
-                        let safe_tag_w = tag_w_scaled.min(MAX_VIEWPORT_DIM);
-                        let safe_tag_h = tag_h_scaled.min(MAX_VIEWPORT_DIM);
-
-                        if safe_tag_w > 0.0 && safe_tag_h > 0.0 {
-                            tag_render_pass.set_viewport(safe_tag_x, safe_tag_y, safe_tag_w, safe_tag_h, 0.0, 1.0);
-                            tag_render_pass.set_pipeline(&pipeline.pipeline);
-                            tag_render_pass.set_bind_group(0, tag_bind_group, &[]);
-                            tag_render_pass.draw(0..6, 0..1);
-                        }
-                    }
                 }
             }
         }

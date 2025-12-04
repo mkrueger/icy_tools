@@ -6,6 +6,9 @@ const WARNING_SVG: &[u8] = include_bytes!("icons/warning.svg");
 const ERROR_SVG: &[u8] = include_bytes!("icons/error.svg");
 const INFO_SVG: &[u8] = include_bytes!("icons/info.svg");
 
+// UI icons
+const SETTINGS_SVG: &[u8] = include_bytes!("icons/settings.svg");
+
 // File type icons
 const FILE_TEXT_SVG: &[u8] = include_bytes!("icons/files/file_text.svg");
 const FILE_IMAGE_SVG: &[u8] = include_bytes!("icons/files/file_image.svg");
@@ -38,6 +41,12 @@ pub fn error_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
 
 pub fn info_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(INFO_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
+}
+
+pub fn settings_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(SETTINGS_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
 }
 
 // File type icons

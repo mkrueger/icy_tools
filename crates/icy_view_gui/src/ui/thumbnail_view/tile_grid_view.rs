@@ -15,8 +15,8 @@ use tokio::sync::mpsc;
 
 use icy_engine_gui::{ScrollbarOverlay, ScrollbarState, Viewport};
 
-use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, THUMBNAIL_SCALE, Thumbnail, ThumbnailResult, ThumbnailState};
-use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, render_label_tag};
+use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
+use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, append_label_to_rgba, create_labeled_placeholder};
 use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
 use crate::Item;
 use crate::items::{ItemFile, ItemFolder};
@@ -433,14 +433,22 @@ impl TileGridView {
 
         // Create thumbnails for each item - also create Item objects for unified handling
         for (path, label, container) in item_infos {
-            self.thumbnails.push(Thumbnail::new(path.clone(), label));
-            self.tile_ids.push(new_tile_id());
             // Create appropriate Item type for unified get_sync_thumbnail() handling
             let item: Arc<dyn Item> = if container {
-                Arc::new(ItemFolder::new(path))
+                Arc::new(ItemFolder::new(path.clone()))
             } else {
-                Arc::new(ItemFile::new(path))
+                Arc::new(ItemFile::new(path.clone()))
             };
+
+            // For items with sync thumbnails (folders), load immediately to ensure correct layout
+            let mut thumb = Thumbnail::new(path, label.clone());
+            if let Some(rgba) = item.get_sync_thumbnail() {
+                let rgba_with_label = append_label_to_rgba(rgba, &label);
+                thumb.state = ThumbnailState::Ready { rgba: rgba_with_label };
+            }
+
+            self.thumbnails.push(thumb);
+            self.tile_ids.push(new_tile_id());
             self.items.push(item);
             self.is_container.push(container);
         }
@@ -490,9 +498,17 @@ impl TileGridView {
             let label = item.get_label();
             let container = item.is_container();
 
-            self.thumbnails.push(Thumbnail::new(path, label));
+            // For items with sync thumbnails (folders), load immediately to ensure correct layout
+            let item_arc: Arc<dyn Item> = Arc::from(item);
+            let mut thumb = Thumbnail::new(path, label.clone());
+            if let Some(rgba) = item_arc.get_sync_thumbnail() {
+                let rgba_with_label = append_label_to_rgba(rgba, &label);
+                thumb.state = ThumbnailState::Ready { rgba: rgba_with_label };
+            }
+
+            self.thumbnails.push(thumb);
             self.tile_ids.push(new_tile_id());
-            self.items.push(Arc::from(item));
+            self.items.push(item_arc);
             self.is_container.push(container);
         }
 
@@ -588,7 +604,7 @@ impl TileGridView {
             if let Some(thumb) = self.thumbnails.get_mut(*idx) {
                 // Only evict Ready thumbnails, not Loading ones
                 if matches!(thumb.state, ThumbnailState::Ready { .. }) {
-                    thumb.state = ThumbnailState::Pending;
+                    thumb.state = ThumbnailState::Pending { placeholder: None };
                     // Remove from LRU
                     self.loaded_lru.retain(|&i| i != *idx);
                 }
@@ -633,7 +649,10 @@ impl TileGridView {
             let actual_idx = self.layout.borrow().get(layout_idx).map(|t| t.index).unwrap_or(layout_idx);
 
             // Skip if not pending
-            let is_pending = self.thumbnails.get(actual_idx).map_or(false, |t| matches!(t.state, ThumbnailState::Pending));
+            let is_pending = self
+                .thumbnails
+                .get(actual_idx)
+                .map_or(false, |t| matches!(t.state, ThumbnailState::Pending { .. }));
             if !is_pending {
                 continue;
             }
@@ -642,8 +661,9 @@ impl TileGridView {
             if let Some(item) = self.items.get(actual_idx) {
                 if let Some(rgba) = item.get_sync_thumbnail() {
                     if let Some(thumb) = self.thumbnails.get_mut(actual_idx) {
-                        thumb.state = ThumbnailState::Ready { rgba };
-                        thumb.label_tag = render_label_tag(&thumb.label, 1);
+                        // Append label to the thumbnail
+                        let rgba_with_label = append_label_to_rgba(rgba, &thumb.label);
+                        thumb.state = ThumbnailState::Ready { rgba: rgba_with_label };
                         self.mark_as_loaded(actual_idx);
                     }
                     continue;
@@ -660,7 +680,10 @@ impl TileGridView {
             let tile_y = layout.get(layout_idx).map(|t| t.y).unwrap_or(0.0);
 
             // Skip if not pending
-            let is_pending = self.thumbnails.get(actual_idx).map_or(false, |t| matches!(t.state, ThumbnailState::Pending));
+            let is_pending = self
+                .thumbnails
+                .get(actual_idx)
+                .map_or(false, |t| matches!(t.state, ThumbnailState::Pending { .. }));
             if !is_pending {
                 continue;
             }
@@ -681,7 +704,9 @@ impl TileGridView {
             if let Some(item) = self.items.get(actual_idx) {
                 self.loader.load(ThumbnailRequest { item: item.clone(), priority });
                 if let Some(thumb) = self.thumbnails.get_mut(actual_idx) {
-                    thumb.state = ThumbnailState::Loading;
+                    thumb.state = ThumbnailState::Loading {
+                        placeholder: thumb.state.placeholder().cloned(),
+                    };
                 }
             }
         }
@@ -696,7 +721,7 @@ impl TileGridView {
     /// Load thumbnail for an item at given index using a cloned item
     pub fn load_thumbnail_from_item(&mut self, index: usize, item: Arc<dyn Item>) {
         if let Some(thumb) = self.thumbnails.get(index) {
-            if matches!(thumb.state, ThumbnailState::Pending | ThumbnailState::Loading) {
+            if matches!(thumb.state, ThumbnailState::Pending { .. } | ThumbnailState::Loading { .. }) {
                 let priority = if let Some(tile) = self.layout.borrow().get(index) {
                     (tile.y - self.viewport.scroll_y).abs() as u32
                 } else {
@@ -706,7 +731,9 @@ impl TileGridView {
                 self.loader.load(ThumbnailRequest { item, priority });
 
                 if let Some(thumb) = self.thumbnails.get_mut(index) {
-                    thumb.state = ThumbnailState::Loading;
+                    thumb.state = ThumbnailState::Loading {
+                        placeholder: thumb.state.placeholder().cloned(),
+                    };
                 }
             }
         }
@@ -770,15 +797,15 @@ impl TileGridView {
             } else {
                 column_width * thumb_units as f32 + TILE_SPACING * (thumb_units - 1) as f32
             };
-            // Calculate label height from actual tag size (if present)
-            // Tag is rendered at 2x size (THUMBNAIL_RENDER_WIDTH), scale down for display
-            let label_height = thumb
-                .label_tag
-                .as_ref()
-                .map(|tag| tag.height as f32 * THUMBNAIL_SCALE) // scale tag height to tile size
-                .unwrap_or(16.0);
 
-            let thumb_height = thumb.display_height(thumb_width) + label_height;
+            // Get the image display height (aspect-ratio based)
+            // Use content width (tile width minus padding on both sides)
+            let content_width = thumb_width - (TILE_PADDING * 2.0);
+            let image_height = thumb.display_height(content_width);
+
+            // Total tile height: TILE_PADDING (top) + image_height + TILE_PADDING (bottom)
+            // Label is now part of the image, so no extra padding needed
+            let thumb_height = TILE_PADDING + image_height + TILE_PADDING;
 
             // Find the shortest column for single-width tiles
             // For multi-width tiles, place at column 0
@@ -851,11 +878,15 @@ impl TileGridView {
         while let Ok(result) = self.result_rx.try_recv() {
             // DEBUG: Log received thumbnail dimensions
             if let ThumbnailState::Ready { rgba } = &result.state {
-                println!("[ThumbnailResult] path={:?} rgba_size={}x{} data_len={}", 
+                println!(
+                    "[ThumbnailResult] path={:?} rgba_size={}x{} data_len={}",
                     result.path.file_name().unwrap_or_default(),
-                    rgba.width, rgba.height, rgba.data.len());
+                    rgba.width,
+                    rgba.height,
+                    rgba.data.len()
+                );
             }
-            
+
             // Find the thumbnail by path - try exact match first, then filename match
             let found = self.thumbnails.iter_mut().enumerate().find(|(_, t)| t.path == result.path);
 
@@ -867,17 +898,27 @@ impl TileGridView {
                 self.thumbnails
                     .iter_mut()
                     .enumerate()
-                    .find(|(_, t)| t.path.file_name() == result_filename && matches!(t.state, ThumbnailState::Loading | ThumbnailState::Pending))
+                    .find(|(_, t)| t.path.file_name() == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
             };
 
             if let Some((idx, thumb)) = thumb_opt {
-                thumb.state = result.state.clone();
+                // For Error state without placeholder, create one with the label
+                let new_state = match &result.state {
+                    ThumbnailState::Error { message, placeholder: None } => {
+                        let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &thumb.label);
+                        ThumbnailState::Error {
+                            message: message.clone(),
+                            placeholder: Some(placeholder),
+                        }
+                    }
+                    other => other.clone(),
+                };
+                thumb.state = new_state.clone();
                 thumb.sauce_info = result.sauce_info.clone();
                 thumb.width_multiplier = result.width_multiplier;
-                thumb.label_tag = result.label_tag.clone();
                 // Track this thumbnail in LRU (it's now loaded)
                 self.mark_as_loaded(idx);
-                messages.push(TileGridMessage::ThumbnailReady(result.path, result.state));
+                messages.push(TileGridMessage::ThumbnailReady(result.path, new_state));
             }
         }
 
@@ -954,7 +995,7 @@ impl TileGridView {
         let has_loading_or_missing = self.visible_indices.iter().any(|&idx| {
             self.thumbnails
                 .get(idx)
-                .map_or(true, |t| matches!(t.state, ThumbnailState::Loading | ThumbnailState::Pending))
+                .map_or(true, |t| matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
         });
 
         // Or if any thumbnails have blinking/animated content
@@ -1423,53 +1464,33 @@ impl TileGridView {
             let Some(thumb) = self.thumbnails.get(actual_index) else { continue };
             let Some(&tile_id) = self.tile_ids.get(actual_index) else { continue };
 
-            // Calculate label height based on actual tag size (if present)
-            // Tag is rendered at 2x size (THUMBNAIL_RENDER_WIDTH), scale down for display
-            let label_height = if let Some(tag) = &thumb.label_tag {
-                tag.height as f32 * THUMBNAIL_SCALE + 4.0 // scaled tag height + padding
-            } else {
-                0.0
-            };
-
-            // Get layout position
-            let (x, y, tile_width, tile_height) = (layout_tile.x, layout_tile.y, layout_tile.width, layout_tile.height - label_height);
+            // Get layout position - layout_tile.height is the TOTAL tile height including label
+            let (x, y, tile_width, total_tile_height) = (layout_tile.x, layout_tile.y, layout_tile.width, layout_tile.height);
 
             // Early visibility check - skip tiles outside viewport
             let scroll_offset = self.viewport.scroll_y;
             let tile_top = y - scroll_offset;
-            let tile_bottom = tile_top + tile_height + label_height;
+            let tile_bottom = tile_top + total_tile_height;
             if tile_bottom < 0.0 || tile_top > height {
                 continue; // Skip tiles outside viewport
             }
 
-            // Get RGBA data based on state - use static placeholders to avoid allocations
+            // Get RGBA data based on state - use pre-rendered placeholders with labels
             let rgba = match &thumb.state {
                 ThumbnailState::Ready { rgba } => rgba,
                 ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame).unwrap_or(&*LOADING_PLACEHOLDER),
-                ThumbnailState::Loading | ThumbnailState::Pending => &*LOADING_PLACEHOLDER,
-                ThumbnailState::Error(_) => &*ERROR_PLACEHOLDER,
+                ThumbnailState::Loading { placeholder } | ThumbnailState::Pending { placeholder } => placeholder.as_ref().unwrap_or(&*LOADING_PLACEHOLDER),
+                ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().unwrap_or(&*ERROR_PLACEHOLDER),
             };
 
             let is_selected = self.selected_index == Some(layout_idx);
             let is_hovered = *self.shared_hovered_tile.lock() == Some(tile_id);
 
-            // Get label tag if available
-            let label_tag = thumb.label_tag.as_ref().map(|tag| (tag.data.clone(), tag.width, tag.height));
-
-            // Calculate image height based on aspect ratio
-            /*let image_height = if rgba.width > 0 {
-                (tile_width / rgba.width as f32) * rgba.height as f32
-            } else {
-                tile_height
-            }.min(tile_height);*/
-
-            let content_width = tile_width - (TILE_PADDING * 2.0);
-            let image_height = if rgba.width > 0 {
-                (content_width / rgba.width as f32) * rgba.height as f32
-            } else {
-                tile_height
-            }
-            .min(tile_height);
+            // Calculate the image height from the total tile height
+            // total_tile_height = TILE_PADDING + image_height + TILE_PADDING
+            // Therefore: image_height = total_tile_height - 2*TILE_PADDING
+            // Label is now part of the image, so no extra padding needed
+            let image_height = total_tile_height - (TILE_PADDING * 2.0);
 
             tiles.push(TileTexture {
                 id: tile_id,
@@ -1477,11 +1498,10 @@ impl TileGridView {
                 width: rgba.width,
                 height: rgba.height,
                 position: (x, y),
-                display_size: (tile_width, tile_height + label_height), // Use actual tag height
+                display_size: (tile_width, total_tile_height),
                 image_height,
                 is_selected,
                 is_hovered,
-                label_tag,
             });
         }
         drop(layout); // Release borrow before creating program

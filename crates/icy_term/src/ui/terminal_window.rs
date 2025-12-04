@@ -4,7 +4,9 @@ use iced::{
     widget::{Space, button, column, container, row, svg, text},
 };
 use icy_engine::Screen;
-use icy_engine_gui::{HorizontalScrollbarOverlay, ScrollbarOverlay, Terminal, terminal_view::TerminalView};
+use icy_engine_gui::HorizontalScrollbarOverlay;
+use icy_engine_gui::ui::settings_icon;
+use icy_engine_gui::{ScrollbarOverlay, Terminal, terminal_view::TerminalView};
 use icy_engine_gui::{
     music::music::SoundThread,
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
@@ -23,7 +25,6 @@ const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");
 const PHONEBOOK_SVG: &[u8] = include_bytes!("../../data/icons/call.svg");
 const UPLOAD_SVG: &[u8] = include_bytes!("../../data/icons/upload.svg");
 const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
-const _SETTINGS_SVG: &[u8] = include_bytes!("../../data/icons/menu.svg");
 
 pub struct TerminalWindow {
     pub terminal: Terminal,
@@ -398,11 +399,7 @@ impl TerminalWindow {
             bar_content = bar_content.push(container(text(" | ").size(10)).padding([0, 2]));
         }
 
-        let settings_menu = button(
-            text("⚙").size(16), // Gear symbol - most common for settings
-        )
-        .on_press(Message::ShowSettings)
-        .padding([4, 6]);
+        let settings_menu = button(settings_icon(16.0)).on_press(Message::ShowSettings).padding([4, 6]);
 
         bar_content = bar_content.push(settings_menu);
 

@@ -495,17 +495,11 @@ impl FileListView {
         for visible_index in first_visible..last_visible {
             if let Some(&file_index) = visible_indices.get(visible_index) {
                 if let Some(item) = files.get(file_index) {
-                    let is_folder = item.is_container() || item.is_parent();
+                    let is_folder = item.is_container();
                     let is_selected = self.selected_index == Some(visible_index);
 
                     // Get appropriate icon based on state
-                    let file_icon = if item.is_parent() {
-                        FileIcon::FolderParent
-                    } else if is_folder && is_selected {
-                        FileIcon::FolderOpen
-                    } else {
-                        item.get_file_icon()
-                    };
+                    let file_icon = item.get_file_icon();
 
                     let label = item.get_label();
 

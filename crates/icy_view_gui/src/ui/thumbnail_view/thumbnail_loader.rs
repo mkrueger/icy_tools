@@ -101,30 +101,42 @@ impl ThumbnailLoader {
                 match render_input {
                     RenderInput::PreRendered(thumbnail_image) => {
                         // Already have thumbnail image (e.g., folder placeholder, 16colors thumbnail)
-                        let label_tag = render_label_tag(&label_clone, 1);
+                        // Scale to target width and append label
+                        let scaled = scale_rgba_to_target_width(thumbnail_image);
+                        let rgba_with_label = append_label_to_rgba(scaled, &label_clone);
                         Some(ThumbnailResult {
                             path: path_clone,
-                            state: ThumbnailState::Ready { rgba: thumbnail_image },
+                            state: ThumbnailState::Ready { rgba: rgba_with_label },
                             sauce_info: None,
                             width_multiplier: 1,
-                            label_tag,
                         })
                     }
                     RenderInput::FileData(data) => {
                         // Need to render from file data
-                        let result = render_thumbnail(&path_clone, &data, &label_clone, &cancel_clone)?;
-                        Some(result)
+                        // Returns None if format not supported - show unsupported placeholder
+                        match render_thumbnail(&path_clone, &data, &label_clone, &cancel_clone) {
+                            Some(result) => Some(result),
+                            None => {
+                                // Format not supported - show unsupported placeholder with label
+                                let unsupported_with_label = create_labeled_placeholder(&super::thumbnail::UNSUPPORTED_PLACEHOLDER, &label_clone);
+                                Some(ThumbnailResult {
+                                    path: path_clone,
+                                    state: ThumbnailState::Ready { rgba: unsupported_with_label },
+                                    sauce_info: None,
+                                    width_multiplier: 1,
+                                })
+                            }
+                        }
                     }
-                    RenderInput::Error(msg) => {
-                        let label_tag = render_label_tag(&label_clone, 1);
-                        Some(ThumbnailResult {
-                            path: path_clone,
-                            state: ThumbnailState::Error(msg),
-                            sauce_info: None,
-                            width_multiplier: 1,
-                            label_tag,
-                        })
-                    }
+                    RenderInput::Error(msg) => Some(ThumbnailResult {
+                        path: path_clone,
+                        state: ThumbnailState::Error {
+                            message: msg,
+                            placeholder: None,
+                        },
+                        sauce_info: None,
+                        width_multiplier: 1,
+                    }),
                     RenderInput::Cancelled => None,
                 }
             })
@@ -149,10 +161,12 @@ impl ThumbnailLoader {
                     error!("[ThumbnailLoader] Task panicked for {:?}: {:?}", path, e);
                     ThumbnailResult {
                         path: path.clone(),
-                        state: ThumbnailState::Error(format!("Render panic: {:?}", e)),
+                        state: ThumbnailState::Error {
+                            message: format!("Render panic: {:?}", e),
+                            placeholder: None,
+                        },
                         sauce_info: None,
                         width_multiplier: 1,
-                        label_tag: render_label_tag(&label, 1),
                     }
                 }
             };
@@ -233,27 +247,84 @@ async fn get_render_input(item: &dyn Item, cancel_token: &CancellationToken) -> 
 
     match data_result {
         Some(data) => RenderInput::FileData(data),
-        None => RenderInput::Error("Failed to read file data".to_string()),
+        None => {
+            // Log as debug since this can happen for special files that slipped through
+            log::debug!("[ThumbnailLoader] Failed to read file data for item: {}", item.get_label());
+            RenderInput::Error("Failed to read file data".to_string())
+        }
     }
 }
 
 /// Render a thumbnail for the given file
-/// Returns None if cancelled
+/// Returns None if cancelled or format not supported
 fn render_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
     let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
 
-    // Check if it's an image file
-    if is_image_file(&ext) {
-        return render_image_thumbnail(path, data, label, cancel_token);
-    }
+    // Use FileFormat to determine how to handle the file
+    let format = FileFormat::from_extension(&ext);
 
-    // Try to render as ANSI/terminal content
-    render_ansi_thumbnail(path, data, &ext, label, cancel_token)
+    match format {
+        Some(fmt) if fmt.is_image() => {
+            // Image files - render with image crate
+            render_image_thumbnail(path, data, label, cancel_token)
+        }
+        Some(fmt) if fmt.is_supported() => {
+            // Supported ANSI/terminal formats
+            render_ansi_thumbnail(path, data, &ext, label, cancel_token)
+        }
+        _ => {
+            // Unsupported format - return None (no thumbnail)
+            None
+        }
+    }
 }
 
-/// Check if the extension is a supported image format
-fn is_image_file(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "ico")
+/// Scale RGBA data to target width, maintaining aspect ratio
+/// Used for pre-rendered thumbnails (16colors, placeholders, etc.)
+fn scale_rgba_to_target_width(rgba: RgbaData) -> RgbaData {
+    if rgba.width == 0 || rgba.height == 0 {
+        return rgba;
+    }
+
+    // Calculate width multiplier from pixel width (same logic as render_image_thumbnail)
+    let width_multiplier = if rgba.width < 640 {
+        1
+    } else if rgba.width < 960 {
+        2
+    } else {
+        3
+    };
+
+    let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
+
+    // Already at target width
+    if rgba.width == target_width {
+        return rgba;
+    }
+
+    let scale = target_width as f32 / rgba.width as f32;
+    let target_height = ((rgba.height as f32 * scale) as u32).max(1);
+
+    // Crop height if too tall
+    let (final_width, final_height) = if target_height > THUMBNAIL_MAX_HEIGHT {
+        (target_width, THUMBNAIL_MAX_HEIGHT)
+    } else {
+        (target_width, target_height)
+    };
+
+    // Use image crate to scale
+    let img = image::RgbaImage::from_raw(rgba.width, rgba.height, rgba.data.to_vec()).unwrap_or_else(|| image::RgbaImage::new(1, 1));
+
+    let scaled = if target_height > THUMBNAIL_MAX_HEIGHT {
+        // Crop first, then resize
+        let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale) as u32;
+        let cropped = image::imageops::crop_imm(&img, 0, 0, rgba.width, max_source_height.min(rgba.height));
+        image::imageops::resize(&cropped.to_image(), final_width, final_height, image::imageops::FilterType::Triangle)
+    } else {
+        image::imageops::resize(&img, final_width, final_height, image::imageops::FilterType::Triangle)
+    };
+
+    RgbaData::new(scaled.into_raw(), final_width, final_height)
 }
 
 /// Render an image file as thumbnail
@@ -281,42 +352,29 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
                 3
             };
 
-            // Target width based on multiplier
+            // Target width based on multiplier (always use full width, crop if too tall)
             let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
-            let min_width = target_width / 2;
 
-            // Scale strategy same as ANSI thumbnails
+            // Scale to fit target_width, then crop if too tall for max height
             let scale_for_width = target_width as f32 / orig_width as f32;
-            let scaled_height = orig_height as f32 * scale_for_width;
-            let (new_width, new_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT as f32 {
-                // First try: scale to fit max height
-                let scale_for_height = THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32;
-                let new_w = (orig_width as f32 * scale_for_height) as u32;
+            let scaled_height = (orig_height as f32 * scale_for_width) as u32;
 
-                if new_w >= min_width {
-                    // Width is acceptable
-                    (new_w, THUMBNAIL_MAX_HEIGHT)
-                } else {
-                    // Enforce min_width, will crop in height
-                    (min_width, THUMBNAIL_MAX_HEIGHT)
-                }
+            // If scaled height exceeds max, we'll crop the source before scaling
+            let (new_width, new_height, crop_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT {
+                // Calculate how much of the source we can fit
+                let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_width) as u32;
+                (target_width, THUMBNAIL_MAX_HEIGHT, Some(max_source_height.min(orig_height)))
             } else {
-                (target_width, (scaled_height as u32).max(1))
+                (target_width, scaled_height.max(1), None)
             };
 
-            println!("[render_image_thumbnail] path={:?} orig={}x{} multiplier={} target_width={} new={}x{}",
-                path.file_name().unwrap_or_default(),
-                orig_width, orig_height, width_multiplier, target_width, new_width, new_height);
-
-            let resized = if new_width != orig_width || new_height != orig_height {
-                // Need to crop first if image is too tall for the scale
-                let crop_height = ((new_height as f32 / scale_for_width.min(THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32)) as u32).min(orig_height);
-                let cropped = if crop_height < orig_height {
-                    img.crop_imm(0, 0, orig_width, crop_height)
-                } else {
-                    img
-                };
+            // Crop and resize
+            let resized = if let Some(crop_h) = crop_height {
+                // Crop first, then resize
+                let cropped = img.crop_imm(0, 0, orig_width, crop_h);
                 cropped.resize_exact(new_width, new_height, ::image::imageops::FilterType::Triangle)
+            } else if new_width != orig_width || new_height != orig_height {
+                img.resize_exact(new_width, new_height, ::image::imageops::FilterType::Triangle)
             } else {
                 img
             };
@@ -328,24 +386,28 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
             let rgba: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> = resized.to_rgba8();
             let rgba_data = RgbaData::new(rgba.into_raw(), new_width, new_height);
 
-            // Generate label tag with correct width multiplier
-            let label_tag = render_label_tag(label, width_multiplier);
+            // Append label directly to the image (after scaling, so tag size is consistent)
+            let rgba_with_label = append_label_to_rgba(rgba_data, label);
 
             Some(ThumbnailResult {
                 path: path.clone(),
-                state: ThumbnailState::Ready { rgba: rgba_data },
+                state: ThumbnailState::Ready { rgba: rgba_with_label },
                 sauce_info: None,
                 width_multiplier,
-                label_tag,
             })
         }
-        Err(e) => Some(ThumbnailResult {
-            path: path.clone(),
-            state: ThumbnailState::Error(e.to_string()),
-            sauce_info: None,
-            width_multiplier: 1,
-            label_tag: render_label_tag(label, 1),
-        }),
+        Err(e) => {
+            log::error!("[ThumbnailLoader] Failed to load image {:?}: {}", path, e);
+            Some(ThumbnailResult {
+                path: path.clone(),
+                state: ThumbnailState::Error {
+                    message: e.to_string(),
+                    placeholder: None,
+                },
+                sauce_info: None,
+                width_multiplier: 1,
+            })
+        }
     }
 }
 
@@ -556,10 +618,12 @@ fn render_screen_to_thumbnail(
     if width == 0 || height == 0 {
         return Some(ThumbnailResult {
             path: path.clone(),
-            state: ThumbnailState::Error("Empty buffer".to_string()),
+            state: ThumbnailState::Error {
+                message: "Empty buffer".to_string(),
+                placeholder: None,
+            },
             sauce_info: sauce,
             width_multiplier: 1,
-            label_tag: render_label_tag(label, 1),
         });
     }
 
@@ -653,10 +717,12 @@ fn render_screen_to_thumbnail(
     if orig_width == 0 || orig_height == 0 {
         return Some(ThumbnailResult {
             path: path.clone(),
-            state: ThumbnailState::Error("Empty rendered buffer".to_string()),
+            state: ThumbnailState::Error {
+                message: "Empty rendered buffer".to_string(),
+                placeholder: None,
+            },
             sauce_info: sauce,
             width_multiplier: 1,
-            label_tag: render_label_tag(label, 1),
         });
     }
 
@@ -666,49 +732,26 @@ fn render_screen_to_thumbnail(
     }
 
     // Calculate target width based on multiplier
-    // Each multiplier step is THUMBNAIL_RENDER_WIDTH (640px for 80 columns)
+    // Each multiplier step is THUMBNAIL_RENDER_WIDTH (320px for 80 columns)
     let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
-    
-    // Minimum width to keep thumbnails readable (half of target = 320px for 80-col)
-    let min_width = target_width / 2;
 
-    // Scale strategy: 
-    // 1. Try to fit to target_width
-    // 2. If that exceeds max height, scale down further to fit in max height
-    // 3. But enforce minimum width - crop height if necessary
+    // Scale to fit target_width, then crop if too tall for max height
     let scale_for_width = target_width as f32 / orig_width as f32;
-    let scaled_height = orig_height as f32 * scale_for_width;
-    
-    // Check if we need to scale down more to fit max height
-    let (new_width, new_height, crop_source_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT as f32 {
-        // First try: scale to fit max height
-        let scale_for_height = THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32;
-        let new_w = (orig_width as f32 * scale_for_height) as u32;
-        
-        if new_w >= min_width {
-            // Width is acceptable, use height-based scaling
-            (new_w, THUMBNAIL_MAX_HEIGHT, None)
-        } else {
-            // Width would be too narrow - enforce min_width and crop height instead
-            let scale_for_min_width = min_width as f32 / orig_width as f32;
-            let cropped_height_needed = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_min_width) as u32;
-            (min_width, THUMBNAIL_MAX_HEIGHT, Some(cropped_height_needed.min(orig_height)))
-        }
-    } else {
-        (target_width, (scaled_height as u32).max(1), None)
-    };
+    let scaled_height = (orig_height as f32 * scale_for_width) as u32;
 
-    println!("[render_screen_to_thumbnail] path={:?} orig={}x{} target_width={} new={}x{} crop={:?}", 
-        path.file_name().unwrap_or_default(),
-        orig_width, orig_height, target_width, new_width, new_height, crop_source_height);
+    // If scaled height exceeds max, we'll crop the source before scaling
+    let (new_width, new_height, crop_source_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT {
+        // Calculate how much of the source we can fit
+        let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_width) as u32;
+        (target_width, THUMBNAIL_MAX_HEIGHT, Some(max_source_height.min(orig_height)))
+    } else {
+        (target_width, scaled_height.max(1), None)
+    };
 
     // Crop source if needed (for very tall images where min_width constraint kicks in)
     let (rgba_on_data, source_height) = if let Some(crop_h) = crop_source_height {
         let bytes_per_row = (orig_width * 4) as usize;
-        let cropped: Vec<u8> = rgba_on.iter()
-            .take(bytes_per_row * crop_h as usize)
-            .cloned()
-            .collect();
+        let cropped: Vec<u8> = rgba_on.iter().take(bytes_per_row * crop_h as usize).cloned().collect();
         (cropped, crop_h)
     } else {
         (rgba_on.clone(), orig_height)
@@ -716,43 +759,41 @@ fn render_screen_to_thumbnail(
 
     let rgba_on = scale_rgba_data(&rgba_on_data, orig_width, source_height, new_width, new_height);
 
-    // Generate label tag as separate texture
-    // Tag width is based on width_multiplier (1x, 2x, or 3x tile width)
-    let label_tag = render_label_tag(label, width_multiplier);
-
     if has_blinking && !rgba_off.is_empty() {
         // Apply same cropping/scaling to blink-off frame
         let off_height = size_off.height as u32;
         let (rgba_off_data, off_source_height) = if let Some(crop_h) = crop_source_height {
             let crop_h = crop_h.min(off_height);
             let bytes_per_row = (size_off.width * 4) as usize;
-            let cropped: Vec<u8> = rgba_off.iter()
-                .take(bytes_per_row * crop_h as usize)
-                .cloned()
-                .collect();
+            let cropped: Vec<u8> = rgba_off.iter().take(bytes_per_row * crop_h as usize).cloned().collect();
             (cropped, crop_h)
         } else {
             (rgba_off.clone(), off_height)
         };
         let rgba_off = scale_rgba_data(&rgba_off_data, size_off.width as u32, off_source_height, new_width, new_height);
 
+        // Append label to both frames (after scaling, so tag size is consistent)
+        let rgba_on_with_label = append_label_to_rgba(rgba_on, label);
+        let rgba_off_with_label = append_label_to_rgba(rgba_off, label);
+
         Some(ThumbnailResult {
             path: path.clone(),
             state: ThumbnailState::Animated {
-                frames: vec![rgba_on, rgba_off],
+                frames: vec![rgba_on_with_label, rgba_off_with_label],
                 current_frame: 0,
             },
             sauce_info: sauce,
             width_multiplier,
-            label_tag,
         })
     } else {
+        // Append label directly to the image (after scaling, so tag size is consistent)
+        let rgba_with_label = append_label_to_rgba(rgba_on, label);
+
         Some(ThumbnailResult {
             path: path.clone(),
-            state: ThumbnailState::Ready { rgba: rgba_on },
+            state: ThumbnailState::Ready { rgba: rgba_with_label },
             sauce_info: sauce,
             width_multiplier,
-            label_tag,
         })
     }
 }
@@ -783,33 +824,30 @@ fn render_placeholder_thumbnail(path: &PathBuf, sauce: Option<SauceRecord>, labe
     let orig_width = size.width as u32;
     let orig_height = size.height as u32;
 
-    let label_tag = render_label_tag(label, 1);
-
     if orig_width == 0 || orig_height == 0 {
         // Fallback to a simple gray placeholder
         let placeholder_width = 640u32; // 80 chars * 8 pixels
         let placeholder_height = 400u32; // 25 chars * 16 pixels
         let placeholder = vec![64u8; (placeholder_width * placeholder_height * 4) as usize];
+        let placeholder_rgba = RgbaData::new(placeholder, placeholder_width, placeholder_height);
+        let rgba_with_label = append_label_to_rgba(placeholder_rgba, label);
 
         return ThumbnailResult {
             path: path.clone(),
-            state: ThumbnailState::Ready {
-                rgba: RgbaData::new(placeholder, placeholder_width, placeholder_height),
-            },
+            state: ThumbnailState::Ready { rgba: rgba_with_label },
             sauce_info: sauce,
             width_multiplier: 1,
-            label_tag,
         };
     }
 
+    let rgba_data = RgbaData::new(rgba, orig_width, orig_height);
+    let rgba_with_label = append_label_to_rgba(rgba_data, label);
+
     ThumbnailResult {
         path: path.clone(),
-        state: ThumbnailState::Ready {
-            rgba: RgbaData::new(rgba, orig_width, orig_height),
-        },
+        state: ThumbnailState::Ready { rgba: rgba_with_label },
         sauce_info: sauce,
         width_multiplier: 1,
-        label_tag,
     }
 }
 
@@ -890,6 +928,7 @@ pub fn render_label_tag(label: &str, width_multiplier: u32) -> Option<RgbaData> 
         for (i, ch) in line.chars().enumerate() {
             let x = padding + i;
             if x < max_line_len as usize {
+                let ch = icy_engine::BufferType::CP437.try_convert_from_unicode(ch).unwrap_or('?');
                 buffer.layers[0].set_char((x as i32, y as i32), AttributedChar::new(ch, attr));
             }
         }
@@ -942,4 +981,87 @@ fn wrap_label(label: &str, max_chars_per_line: usize, max_lines: usize) -> Vec<S
     }
 
     lines
+}
+
+/// Number of black separator lines between image and label
+const LABEL_SEPARATOR_LINES: u32 = 4;
+
+/// Append a label tag to an existing RGBA image
+/// Adds 4 black separator lines then the centered label
+/// Returns the combined image
+pub fn append_label_to_rgba(rgba: RgbaData, label: &str) -> RgbaData {
+    // Render the label tag at base size
+    let tag = match render_label_tag(label, 1) {
+        Some(tag) => tag,
+        None => return rgba, // No label to append
+    };
+
+    let img_width = rgba.width;
+    let img_height = rgba.height;
+    let tag_width = tag.width;
+    let tag_height = tag.height;
+
+    // New combined height: image + separator + tag
+    let new_height = img_height + LABEL_SEPARATOR_LINES + tag_height;
+
+    // Combined width is the max of image and tag
+    let new_width = img_width.max(tag_width);
+
+    // DOS light gray color (palette index 7): RGB(170, 170, 170)
+    let dos_gray: [u8; 4] = [170, 170, 170, 255];
+
+    // Create new RGBA buffer initialized to DOS gray
+    let mut combined = vec![0u8; (new_width * new_height * 4) as usize];
+    for i in 0..(new_width * new_height) as usize {
+        combined[i * 4..i * 4 + 4].copy_from_slice(&dos_gray);
+    }
+
+    // Copy original image (centered if narrower than tag)
+    let img_x_offset = (new_width.saturating_sub(img_width)) / 2;
+    for y in 0..img_height {
+        let src_row_start = (y * img_width * 4) as usize;
+        let src_row_end = src_row_start + (img_width * 4) as usize;
+        let dst_row_start = (y * new_width * 4 + img_x_offset * 4) as usize;
+
+        if src_row_end <= rgba.data.len() {
+            let dst_row_end = dst_row_start + (img_width * 4) as usize;
+            if dst_row_end <= combined.len() {
+                combined[dst_row_start..dst_row_end].copy_from_slice(&rgba.data[src_row_start..src_row_end]);
+            }
+        }
+    }
+
+    // Draw black separator lines between image and tag
+    let black: [u8; 4] = [0, 0, 0, 255];
+    for y in img_height..(img_height + LABEL_SEPARATOR_LINES) {
+        for x in 0..new_width {
+            let idx = ((y * new_width + x) * 4) as usize;
+            combined[idx..idx + 4].copy_from_slice(&black);
+        }
+    }
+
+    // Copy tag (centered) - tag already has DOS gray background
+    let tag_x_offset = (new_width.saturating_sub(tag_width)) / 2;
+    let tag_y_start = img_height + LABEL_SEPARATOR_LINES;
+    for y in 0..tag_height {
+        let src_row_start = (y * tag_width * 4) as usize;
+        let src_row_end = src_row_start + (tag_width * 4) as usize;
+        let dst_y = tag_y_start + y;
+        let dst_row_start = (dst_y * new_width * 4 + tag_x_offset * 4) as usize;
+
+        if src_row_end <= tag.data.len() {
+            let dst_row_end = dst_row_start + (tag_width * 4) as usize;
+            if dst_row_end <= combined.len() {
+                combined[dst_row_start..dst_row_end].copy_from_slice(&tag.data[src_row_start..src_row_end]);
+            }
+        }
+    }
+
+    RgbaData::new(combined, new_width, new_height)
+}
+
+/// Create a labeled version of a placeholder (Loading/Error)
+/// This clones the placeholder and appends the label to it
+pub fn create_labeled_placeholder(base_placeholder: &RgbaData, label: &str) -> RgbaData {
+    append_label_to_rgba(base_placeholder.clone(), label)
 }

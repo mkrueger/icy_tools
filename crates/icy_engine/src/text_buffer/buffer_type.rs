@@ -151,4 +151,47 @@ impl BufferType {
             }
         }
     }
+
+    pub fn try_convert_from_unicode(&self, ch: char) -> Option<char> {
+        match self {
+            BufferType::Unicode => Some(ch), // Already Unicode, no conversion needed
+
+            BufferType::CP437 => {
+                if let Some(tch) = UNICODE_TO_CP437.get(&ch) {
+                    Some(*tch as char)
+                } else {
+                    None
+                }
+            }
+
+            BufferType::Petscii => {
+                if let Some(tch) = UNICODE_TO_PETSCII.get(&(ch as u8)) {
+                    Some(*tch as char)
+                } else {
+                    None
+                }
+            }
+
+            BufferType::Atascii => {
+                // Use the ATASCII converter for Atari characters
+                match UNICODE_TO_ATARI.get(&ch) {
+                    Some(out_ch) => Some(*out_ch),
+                    _ => None,
+                }
+            }
+
+            BufferType::Viewdata => {
+                if ch == ' ' {
+                    return Some(' ');
+                }
+                match UNICODE_TO_VIEWDATA.get(&ch) {
+                    Some(out_ch) => Some(*out_ch),
+                    // For Viewdata/Mode7, unknown characters should be filtered
+                    // to prevent sending invalid bytes to the BBS.
+                    // Return NUL character to indicate the character should be skipped.
+                    _ => None,
+                }
+            }
+        }
+    }
 }

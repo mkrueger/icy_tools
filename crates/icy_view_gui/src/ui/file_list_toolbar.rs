@@ -6,6 +6,7 @@ use iced::{
     widget::{button, container, row, text, tooltip},
 };
 
+use super::icons;
 use super::options::{SortOrder, ViewMode};
 use crate::LANGUAGE_LOADER;
 
@@ -152,7 +153,7 @@ impl FileListToolbar {
 
     fn view_internal(&self, is_overlay: bool) -> Element<'_, FileListToolbarMessage> {
         // Up button
-        let up_btn = button(text("↑").size(12)).padding([2, 6]).style(toolbar_button_style);
+        let up_btn = button(icons::arrow_upward_icon(14.0)).padding([2, 6]).style(toolbar_button_style);
         let up_btn = if self.can_go_up {
             up_btn.on_press(FileListToolbarMessage::Up)
         } else {
@@ -202,10 +203,10 @@ impl FileListToolbar {
 
         // View mode toggle button
         let (view_icon, view_tooltip) = match self.view_mode {
-            ViewMode::List => ("⊞", fl!(LANGUAGE_LOADER, "tooltip-view-mode-tiles")), // Currently list -> switch to tiles
-            ViewMode::Tiles => ("☷", fl!(LANGUAGE_LOADER, "tooltip-view-mode-list")), // Currently tiles -> switch to list
+            ViewMode::List => (icons::grid_view_icon(14.0), fl!(LANGUAGE_LOADER, "tooltip-view-mode-tiles")), // Currently list -> switch to tiles
+            ViewMode::Tiles => (icons::view_list_icon(14.0), fl!(LANGUAGE_LOADER, "tooltip-view-mode-list")), // Currently tiles -> switch to list
         };
-        let view_btn = button(text(view_icon).size(12))
+        let view_btn = button(view_icon)
             .padding([2, 6])
             .style(toolbar_button_style)
             .on_press(FileListToolbarMessage::ToggleViewMode);
@@ -216,7 +217,7 @@ impl FileListToolbar {
         );
 
         // Shuffle mode button
-        let shuffle_btn = button(text("🔀").size(12))
+        let shuffle_btn = button(icons::shuffle_icon(14.0))
             .padding([2, 6])
             .style(toolbar_button_style)
             .on_press(FileListToolbarMessage::StartShuffleMode);

@@ -47,7 +47,14 @@ impl Item for ItemFile {
 
     async fn read_data(&self) -> Option<Vec<u8>> {
         let path = self.path.clone();
-        tokio::fs::read(&path).await.ok()
+        match tokio::fs::read(&path).await {
+            Ok(data) => Some(data),
+            Err(e) => {
+                // Log as debug since this can happen for special files, broken symlinks, etc.
+                log::debug!("Failed to read file {:?}: {}", path, e);
+                None
+            }
+        }
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

@@ -100,12 +100,7 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Aide
-help-dialog-text=
-    F1 - Aide 
-    F2 - Basculer le défilement automatique
-    F3 - Basculer la vitesse de défilement 
-    F4 - Afficher les informations SAUCE
+help-title = Aide
 
 toast-auto-scroll-on=Défilement automatique activé
 toast-auto-scroll-off=Défilement automatique désactivé
@@ -149,6 +144,10 @@ toast-command-not-configured=Commande { $key } non configurée
 preview-no-file-selected = Aucun fichier sélectionné
 preview-loading = Chargement...
 preview-error = Erreur: { $message }
+preview-error-title = Échec du chargement du fichier
+
+error-read-file-data = Impossible de lire le contenu du fichier
+error-read-file = { $error }
 
 error-external-command-title = Échec de l'exécution de la commande externe
 error-external-command-message = Commande: { $command }
@@ -157,3 +156,7 @@ error-external-command-message = Commande: { $command }
 
 welcome-select-file = 📂 Sélectionnez un fichier à prévisualiser
 welcome-tip = Astuce: Appuyez sur Ctrl+F pour filtrer, ou cliquez sur 🌐 pour parcourir 16colors.rs
+
+thumbnail-loading = Chargement...
+thumbnail-no-diz = pas de file_id.diz
+thumbnail-unsupported = Non pris en charge

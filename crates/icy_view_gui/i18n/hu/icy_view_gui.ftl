@@ -100,12 +100,7 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Segítség
-help-dialog-text=
-    F1 - Segítség 
-    F2 - Automatikus görgetés váltása
-    F3 - Görgetési sebesség váltása 
-    F4 - Szósz információk megjelenítése
+help-title = Segítség
 
 toast-auto-scroll-on=Automatikus görgetés bekapcsolva
 toast-auto-scroll-off=Automatikus görgetés kikapcsolva
@@ -149,6 +144,10 @@ toast-command-not-configured=A(z) { $key } parancs nincs konfigurálva
 preview-no-file-selected = Nincs fájl kiválasztva
 preview-loading = Betöltés...
 preview-error = Hiba: { $message }
+preview-error-title = A fájl betöltése sikertelen
+
+error-read-file-data = Nem sikerült a fájl tartalmát olvasni
+error-read-file = { $error }
 
 error-external-command-title = Külső parancs végrehajtása sikertelen
 error-external-command-message = Parancs: { $command }
@@ -157,3 +156,7 @@ error-external-command-message = Parancs: { $command }
 
 welcome-select-file = 📂 Válassz fájlt az előnézethez
 welcome-tip = Tipp: Nyomj Ctrl+F-et a szűréshez, vagy kattints a 🌐 gombra a 16colors.rs böngészéséhez
+
+thumbnail-loading = Betöltés...
+thumbnail-no-diz = nincs file_id.diz
+thumbnail-unsupported = Nem támogatott

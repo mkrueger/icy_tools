@@ -23,6 +23,8 @@ use super::{
     FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup, FilterPopupMessage, HistoryPoint,
     NavigationBar, NavigationBarMessage, NavigationHistory, Options, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar,
     StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
+    dialogs::about_dialog::AboutDialog,
+    dialogs::help_dialog::HelpDialog,
     dialogs::sauce_dialog::{SauceDialog, SauceDialogMessage},
     dialogs::settings_dialog::{SettingsDialogState, SettingsMessage},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
@@ -61,6 +63,8 @@ pub enum Message {
     FocusPrevious,
     /// Data was loaded for preview (path for display, data for content)
     DataLoaded(PathBuf, Vec<u8>),
+    /// Data loading failed for preview
+    DataLoadError(PathBuf, String),
     /// Animation tick for smooth scrolling
     AnimationTick,
     /// SAUCE dialog messages
@@ -99,6 +103,18 @@ pub enum Message {
     SauceLoaded(SauceResult),
     /// Skip to next file in shuffle mode
     ShuffleNext,
+    /// Show help dialog
+    ShowHelp,
+    /// Close help dialog
+    CloseHelp,
+    /// Show about dialog
+    ShowAbout,
+    /// Close about dialog
+    CloseAbout,
+    /// Open a hyperlink
+    OpenLink(String),
+    /// No-op message (for ignored events)
+    None,
 }
 
 /// Main window for icy_view_gui
@@ -137,6 +153,10 @@ pub struct MainWindow {
     last_tick: Instant,
     /// SAUCE dialog (shown as modal when Some)
     sauce_dialog: Option<SauceDialog>,
+    /// Help dialog (shown as modal when Some)
+    help_dialog: Option<HelpDialog>,
+    /// About dialog (shown as modal when Some)
+    about_dialog: Option<AboutDialog>,
     /// Settings dialog (shown as modal when Some)
     settings_dialog: Option<SettingsDialogState>,
     /// Error dialog (shown as modal when Some)
@@ -258,6 +278,8 @@ impl MainWindow {
                 view_mode,
                 last_tick: Instant::now(),
                 sauce_dialog: None,
+                help_dialog: None,
+                about_dialog: None,
                 settings_dialog: None,
                 error_dialog: None,
                 export_dialog: None,
@@ -362,6 +384,8 @@ impl MainWindow {
                             if let Some(item_mut) = self.file_browser.selected_item_mut() {
                                 if let Some(data) = item_mut.read_data_blocking() {
                                     return Task::done(Message::DataLoaded(full_path, data));
+                                } else {
+                                    return Task::done(Message::DataLoadError(full_path.clone(), fl!(crate::LANGUAGE_LOADER, "error-read-file-data")));
                                 }
                             }
                         }
@@ -534,8 +558,13 @@ impl MainWindow {
                                                 .file_name()
                                                 .map(|n| n.to_string_lossy().to_string())
                                                 .unwrap_or_else(|| DEFAULT_TITLE.clone());
-                                            if let Ok(data) = std::fs::read(&path) {
-                                                return Task::done(Message::DataLoaded(path, data));
+                                            match std::fs::read(&path) {
+                                                Ok(data) => {
+                                                    return Task::done(Message::DataLoaded(path, data));
+                                                }
+                                                Err(e) => {
+                                                    log::error!("Failed to read file {:?}: {}", path, e);
+                                                }
                                             }
 
                                             let point = self.current_history_point();
@@ -593,8 +622,13 @@ impl MainWindow {
                                     .unwrap_or_else(|| DEFAULT_TITLE.clone());
 
                                 // Read data for preview from file
-                                if let Ok(data) = std::fs::read(&path) {
-                                    return Task::done(Message::DataLoaded(path, data));
+                                match std::fs::read(&path) {
+                                    Ok(data) => {
+                                        return Task::done(Message::DataLoaded(path, data));
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to read file {:?}: {}", path, e);
+                                    }
                                 }
                             }
                         }
@@ -654,8 +688,16 @@ impl MainWindow {
                                         return Task::done(Message::DataLoaded(full_path, data));
                                     }
                                 }
-                                if let Ok(data) = std::fs::read(&full_path) {
-                                    return Task::done(Message::DataLoaded(full_path, data));
+                                match std::fs::read(&full_path) {
+                                    Ok(data) => {
+                                        return Task::done(Message::DataLoaded(full_path, data));
+                                    }
+                                    Err(e) => {
+                                        return Task::done(Message::DataLoadError(
+                                            full_path,
+                                            fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -716,8 +758,16 @@ impl MainWindow {
                                             return Task::done(Message::DataLoaded(full_path, data));
                                         }
                                     }
-                                    if let Ok(data) = std::fs::read(&full_path) {
-                                        return Task::done(Message::DataLoaded(full_path, data));
+                                    match std::fs::read(&full_path) {
+                                        Ok(data) => {
+                                            return Task::done(Message::DataLoaded(full_path, data));
+                                        }
+                                        Err(e) => {
+                                            return Task::done(Message::DataLoadError(
+                                                full_path,
+                                                fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
+                                            ));
+                                        }
                                     }
                                 }
                             }
@@ -747,6 +797,10 @@ impl MainWindow {
                     self.error_dialog = None;
                 } else if self.export_dialog.is_some() {
                     self.export_dialog = None;
+                } else if self.about_dialog.is_some() {
+                    self.about_dialog = None;
+                } else if self.help_dialog.is_some() {
+                    self.help_dialog = None;
                 } else if self.settings_dialog.is_some() {
                     self.settings_dialog = None;
                 } else if self.sauce_dialog.is_some() {
@@ -779,6 +833,12 @@ impl MainWindow {
 
                 // Load data in preview
                 self.preview.load_data(path, data).map(Message::Preview)
+            }
+            Message::DataLoadError(path, message) => {
+                // Set preview to error state
+                log::error!("Failed to load file {:?}: {}", path, message);
+                self.preview.set_error(path, message);
+                Task::none()
             }
             Message::Preview(msg) => {
                 // Check for reset timer message
@@ -949,8 +1009,16 @@ impl MainWindow {
                                     }
                                 }
                                 // Fallback to filesystem read
-                                if let Ok(data) = std::fs::read(&full_path) {
-                                    return Task::done(Message::DataLoaded(full_path, data));
+                                match std::fs::read(&full_path) {
+                                    Ok(data) => {
+                                        return Task::done(Message::DataLoaded(full_path, data));
+                                    }
+                                    Err(e) => {
+                                        return Task::done(Message::DataLoadError(
+                                            full_path,
+                                            fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -1034,8 +1102,16 @@ impl MainWindow {
                                             }
                                         }
                                         // Fallback to filesystem read
-                                        if let Ok(data) = std::fs::read(&full_path) {
-                                            return Task::done(Message::DataLoaded(full_path, data));
+                                        match std::fs::read(&full_path) {
+                                            Ok(data) => {
+                                                return Task::done(Message::DataLoaded(full_path, data));
+                                            }
+                                            Err(e) => {
+                                                return Task::done(Message::DataLoadError(
+                                                    full_path,
+                                                    fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
+                                                ));
+                                            }
                                         }
                                     }
                                 }
@@ -1117,8 +1193,16 @@ impl MainWindow {
                                             }
                                         }
                                         // Fallback to filesystem read
-                                        if let Ok(data) = std::fs::read(&full_path) {
-                                            return Task::done(Message::DataLoaded(full_path, data));
+                                        match std::fs::read(&full_path) {
+                                            Ok(data) => {
+                                                return Task::done(Message::DataLoaded(full_path, data));
+                                            }
+                                            Err(e) => {
+                                                return Task::done(Message::DataLoadError(
+                                                    full_path,
+                                                    fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
+                                                ));
+                                            }
                                         }
                                     }
                                 }
@@ -1291,6 +1375,30 @@ impl MainWindow {
                 self.settings_dialog = None;
                 Task::none()
             }
+            Message::ShowHelp => {
+                self.help_dialog = Some(HelpDialog::new());
+                Task::none()
+            }
+            Message::CloseHelp => {
+                self.help_dialog = None;
+                Task::none()
+            }
+            Message::ShowAbout => {
+                use super::dialogs::about_dialog::ABOUT_ANSI;
+                self.about_dialog = Some(AboutDialog::new(ABOUT_ANSI));
+                Task::none()
+            }
+            Message::CloseAbout => {
+                self.about_dialog = None;
+                Task::none()
+            }
+            Message::OpenLink(url) => {
+                if let Err(e) = open::that(&url) {
+                    log::error!("Failed to open URL {}: {}", url, e);
+                }
+                Task::none()
+            }
+            Message::None => Task::none(),
             Message::AnimationTick => {
                 // Calculate delta time since last tick
                 let now = Instant::now();
@@ -1587,6 +1695,28 @@ impl MainWindow {
             return Task::none();
         }
 
+        // Check if we have preloaded data for this index
+        if let Some(preloaded) = self.shuffle_mode.take_preloaded_if_matches(index) {
+            log::debug!("Using preloaded data for shuffle item {}", index);
+            self.current_file = Some(preloaded.path.clone());
+
+            // Extract SAUCE info for overlay
+            if let Some(sauce) = icy_sauce::SauceRecord::from_bytes(&preloaded.data).ok().flatten() {
+                let comments: Vec<String> = sauce.comments().iter().map(|s| s.to_string()).collect();
+                self.shuffle_mode.set_sauce_info(
+                    Some(sauce.title().to_string()),
+                    Some(sauce.author().to_string()),
+                    Some(sauce.group().to_string()),
+                    comments,
+                );
+            }
+
+            // Start preloading the next item
+            self.start_shuffle_preload();
+
+            return Task::done(Message::DataLoaded(preloaded.path, preloaded.data));
+        }
+
         // Get the item
         let item = &self.file_browser.files[index];
         let path = if let Some(current) = self.file_browser.current_path() {
@@ -1611,16 +1741,84 @@ impl MainWindow {
                 );
             }
 
+            // Start preloading the next item
+            self.start_shuffle_preload();
+
             return Task::done(Message::DataLoaded(path, data));
-        } else {
-            log::error!("Failed to load shuffle item {:?}", path);
-            // Try next item
-            if let Some(next_index) = self.shuffle_mode.next_item() {
-                return self.load_shuffle_item(next_index);
-            }
+        }
+        log::debug!("read_data_blocking returned None for shuffle item {:?}, trying next", path);
+        // Try next item
+        if let Some(next_index) = self.shuffle_mode.next_item() {
+            return self.load_shuffle_item(next_index);
         }
 
         Task::none()
+    }
+
+    /// Start preloading the next shuffle item in background
+    fn start_shuffle_preload(&mut self) {
+        // Only preload if shuffle mode is active and not already preloading
+        if !self.shuffle_mode.is_active || self.shuffle_mode.is_preloading() {
+            return;
+        }
+
+        // Get the next item index
+        let Some(next_index) = self.shuffle_mode.peek_next_index() else {
+            return;
+        };
+
+        if next_index >= self.file_browser.files.len() {
+            return;
+        }
+
+        // Get item info for the background task
+        let item = self.file_browser.files[next_index].clone_box();
+        let path = if let Some(current) = self.file_browser.current_path() {
+            current.join(item.get_file_path())
+        } else {
+            item.get_file_path()
+        };
+
+        // Create channel and cancellation token
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let cancel_token = CancellationToken::new();
+        let cancel_clone = cancel_token.clone();
+
+        // Register with shuffle mode
+        self.shuffle_mode.start_preload(rx, cancel_token);
+
+        // Spawn background task
+        let preload_index = next_index;
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = cancel_clone.cancelled() => {
+                    log::debug!("Shuffle preload cancelled for index {}", preload_index);
+                    let _ = tx.send(None);
+                }
+                result = tokio::task::spawn_blocking(move || {
+                    item.read_data_blocking().map(|data| {
+                        super::PreloadedItem {
+                            index: preload_index,
+                            path,
+                            data,
+                        }
+                    })
+                }) => {
+                    match result {
+                        Ok(preloaded) => {
+                            log::debug!("Shuffle preload completed for index {}", preload_index);
+                            let _ = tx.send(preloaded);
+                        }
+                        Err(e) => {
+                            log::error!("Shuffle preload task failed: {}", e);
+                            let _ = tx.send(None);
+                        }
+                    }
+                }
+            }
+        });
+
+        log::debug!("Started preloading shuffle item index {}", next_index);
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -1835,8 +2033,22 @@ impl MainWindow {
             view_with_filter
         };
 
+        // Wrap with Help dialog if active
+        let view_with_help = if let Some(ref dialog) = self.help_dialog {
+            dialog.view(view_with_sauce, Message::CloseHelp)
+        } else {
+            view_with_sauce
+        };
+
+        // Wrap with About dialog if active
+        let view_with_about = if let Some(ref dialog) = self.about_dialog {
+            icy_engine_gui::ui::modal(view_with_help, dialog.view(), Message::CloseAbout)
+        } else {
+            view_with_help
+        };
+
         // Wrap with toast notifications
-        ToastManager::new(view_with_sauce, &self.toasts, Message::CloseToast).into()
+        ToastManager::new(view_with_about, &self.toasts, Message::CloseToast).into()
     }
 
     fn build_status_info(&self) -> StatusInfo {
@@ -2046,11 +2258,12 @@ impl MainWindow {
 
         match event {
             Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                // Alt+Left = Back, Alt+Right = Forward
+                // Alt+Left = Back, Alt+Right = Forward, Alt+A = About
                 if modifiers.alt() {
                     match key {
                         Key::Named(Named::ArrowLeft) => return Some(Message::Navigation(NavigationBarMessage::Back)),
                         Key::Named(Named::ArrowRight) => return Some(Message::Navigation(NavigationBarMessage::Forward)),
+                        Key::Character(c) if c.as_str().eq_ignore_ascii_case("a") => return Some(Message::ShowAbout),
                         _ => {}
                     }
                 }
@@ -2094,6 +2307,7 @@ impl MainWindow {
                 // Common keys (not view-mode dependent)
                 match key {
                     Key::Named(Named::Escape) => return Some(Message::Escape),
+                    Key::Named(Named::F1) => return Some(Message::ShowHelp),
                     Key::Named(Named::F2) => {
                         if modifiers.shift() {
                             // Shift+F2: Cycle scroll speed

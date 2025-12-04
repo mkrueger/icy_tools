@@ -42,24 +42,6 @@ impl Item for SixteenColorsFile {
         true
     }
 
-    /// Get a synchronous thumbnail for this item (no async loading needed)
-    /// Returns Some(RgbaData) if the item can provide a thumbnail immediately without I/O
-    /// This is used for folders that just show a static folder icon
-    fn get_sync_thumbnail(&self) -> Option<RgbaData> {
-        let url = format!("{}{}", MAIN_PATH, self.thumbnail);
-        let cache = get_cache();
-
-        // Check cache first for any of the URLs
-        {
-            let cache_read = cache.read();
-            if let Some(rgba) = cache_read.get_thumbnail(&url) {
-                return Some(rgba);
-            }
-        }
-
-        None
-    }
-
     async fn get_thumbnail_preview(&self, _cancel_token: &CancellationToken) -> Option<RgbaData> {
         if self.thumbnail.is_empty() {
             return None;

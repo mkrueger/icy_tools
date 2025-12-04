@@ -1,6 +1,7 @@
 mod file_list_toolbar;
 mod filter_popup;
 pub mod focus;
+pub mod icons;
 pub mod list_view;
 mod main_window;
 mod navigation_bar;
@@ -14,6 +15,7 @@ pub mod thumbnail_view;
 pub use file_list_toolbar::*;
 pub use filter_popup::*;
 pub use focus::{Focus, focus};
+pub use icons::*;
 pub use list_view::*;
 pub use main_window::*;
 pub use navigation_bar::*;

@@ -100,12 +100,7 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-dialog-title=Ajuda
-help-dialog-text=
-    F1 - Ajuda 
-    F2 - Alternar desplaçament automàtic
-    F3 - Alternar velocitat de desplaçament 
-    F4 - Mostrar informació de la salsa
+help-title = Ajuda
 
 toast-auto-scroll-on=Desplaçament automàtic activat
 toast-auto-scroll-off=Desplaçament automàtic desactivat
@@ -149,6 +144,10 @@ toast-command-not-configured=Comanda { $key } no configurada
 preview-no-file-selected = Cap fitxer seleccionat
 preview-loading = Carregant...
 preview-error = Error: { $message }
+preview-error-title = No s'ha pogut carregar el fitxer
+
+error-read-file-data = No s'ha pogut llegir el contingut del fitxer
+error-read-file = { $error }
 
 error-external-command-title = No s'ha pogut executar la comanda externa
 error-external-command-message = Comanda: { $command }
@@ -157,3 +156,7 @@ error-external-command-message = Comanda: { $command }
 
 welcome-select-file = 📂 Seleccioneu un fitxer per previsualitzar
 welcome-tip = Consell: Premeu Ctrl+F per filtrar, o feu clic a 🌐 per navegar per 16colors.rs
+
+thumbnail-loading = Carregant...
+thumbnail-no-diz = sense file_id.diz
+thumbnail-unsupported = No compatible
