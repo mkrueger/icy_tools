@@ -79,9 +79,11 @@ impl TerminalWindow {
             // Get font dimensions to calculate how many lines we've scrolled
             let screen = self.terminal.screen.lock();
             let font_height = screen.get_font_dimensions().height as f32;
+            drop(screen);
             // Calculate how many lines we've scrolled from the bottom
-            let max_scroll_y = (self.terminal.viewport.content_height - self.terminal.viewport.visible_height).max(0.0);
-            let scroll_from_bottom = max_scroll_y - self.terminal.viewport.scroll_y;
+            let vp = self.terminal.viewport.read();
+            let max_scroll_y = (vp.content_height - vp.visible_height).max(0.0);
+            let scroll_from_bottom = max_scroll_y - vp.scroll_y;
             (scroll_from_bottom / font_height) as i32
         } else {
             0
@@ -89,10 +91,12 @@ impl TerminalWindow {
         // Create terminal area with optional scrollbar
         let terminal_area = {
             // Create overlay scrollbar - actually drawn using canvas
+            let vp = self.terminal.viewport.read();
             let scrollbar_visibility = self.terminal.scrollbar.visibility;
-            let scrollbar_height_ratio = self.terminal.viewport.visible_height / self.terminal.viewport.content_height.max(1.0);
+            let scrollbar_height_ratio = vp.visible_height / vp.content_height.max(1.0);
             let scrollbar_position = self.terminal.scrollbar.scroll_position;
-            let max_scroll_y = self.terminal.viewport.max_scroll_y();
+            let max_scroll_y = vp.max_scroll_y();
+            drop(vp);
 
             if self.terminal.is_in_scrollback_mode() {
                 let scrollbar_view = ScrollbarOverlay::new(

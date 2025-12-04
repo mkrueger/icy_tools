@@ -7,7 +7,7 @@ use iced::{
     Alignment, Element, Length, Task,
     widget::{container, image as iced_image, stack},
 };
-use icy_engine::{Screen, Size, TextScreen};
+use icy_engine::{Position, Screen, Selection, Size, TextScreen};
 use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
 use icy_parser_core::BaudEmulation;
 use icy_sauce::SauceRecord;
@@ -56,6 +56,8 @@ pub enum PreviewMessage {
     ScrollViewportTo(f32, f32),
     /// Scroll viewport to absolute position immediately (no animation)
     ScrollViewportToImmediate(f32, f32),
+    /// Scroll horizontal only to absolute X position immediately
+    ScrollViewportXToImmediate(f32),
     /// Scrollbar hover state changed
     ScrollbarHovered(bool),
     /// Horizontal scrollbar hover state changed
@@ -66,6 +68,14 @@ pub enum PreviewMessage {
     TerminalMessage(icy_engine_gui::Message),
     /// Image loaded from background thread
     ImageLoaded(u64, Result<iced_image::Handle, String>),
+    /// Start selection
+    StartSelection(Selection),
+    /// Update selection position
+    UpdateSelection(Position),
+    /// End selection (lock it)
+    EndSelection,
+    /// Clear selection
+    ClearSelection,
 }
 
 /// Preview view for displaying ANSI files and images
@@ -249,13 +259,10 @@ impl PreviewView {
     /// Get maximum scroll Y using computed visible height for accuracy
     /// This accounts for the actual rendered height rather than just viewport settings
     fn get_max_scroll_y(&self) -> f32 {
+        let vp = self.terminal.viewport.read();
         let computed_height = self.terminal.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if computed_height > 0.0 {
-            computed_height
-        } else {
-            self.terminal.viewport.visible_height
-        };
-        (self.terminal.viewport.content_height * self.terminal.viewport.zoom - visible_height).max(0.0)
+        let visible_height = if computed_height > 0.0 { computed_height } else { vp.visible_height };
+        (vp.content_height * vp.zoom - visible_height).max(0.0)
     }
 
     /// Cancel any ongoing loading operation
@@ -434,7 +441,7 @@ impl PreviewView {
                         // Animated scrolling after loading completes
                         let scroll_speed = self.scroll_speed.get_speed();
                         let scroll_delta = scroll_speed * delta_seconds;
-                        let current_y = self.terminal.viewport.scroll_y;
+                        let current_y = self.terminal.viewport.read().scroll_y;
                         // Use computed visible height for accurate max scroll calculation
                         let max_scroll_y = self.get_max_scroll_y();
                         let new_y = (current_y + scroll_delta).min(max_scroll_y);
@@ -476,6 +483,14 @@ impl PreviewView {
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
+            PreviewMessage::ScrollViewportXToImmediate(x) => {
+                // User is scrolling horizontally via scrollbar
+                self.scroll_mode = ScrollMode::Off;
+                let current_y = self.terminal.viewport.read().scroll_y;
+                self.terminal.scroll_to_immediate(x, current_y);
+                self.terminal.sync_scrollbar_with_viewport();
+                Task::none()
+            }
             PreviewMessage::ScrollbarHovered(is_hovered) => {
                 self.terminal.scrollbar.set_hovered(is_hovered);
                 Task::none()
@@ -497,8 +512,64 @@ impl PreviewView {
                         self.terminal.scroll_by(dx, dy);
                         self.terminal.sync_scrollbar_with_viewport();
                     }
+                    icy_engine_gui::Message::StartSelection(sel) => {
+                        // Selection coordinates already include scroll offset from map_mouse_to_cell
+                        let mut screen = self.terminal.screen.lock();
+                        let _ = screen.set_selection(sel);
+                    }
+                    icy_engine_gui::Message::UpdateSelection(pos) => {
+                        // Position already includes scroll offset from map_mouse_to_cell
+                        let mut screen = self.terminal.screen.lock();
+                        if let Some(mut sel) = screen.get_selection().clone() {
+                            if !sel.locked {
+                                sel.lead = pos;
+                                let _ = screen.set_selection(sel);
+                            }
+                        }
+                    }
+                    icy_engine_gui::Message::EndSelection => {
+                        let mut screen = self.terminal.screen.lock();
+                        if let Some(mut sel) = screen.get_selection().clone() {
+                            sel.locked = true;
+                            let _ = screen.set_selection(sel);
+                        }
+                    }
+                    icy_engine_gui::Message::ClearSelection => {
+                        let mut screen = self.terminal.screen.lock();
+                        let _ = screen.clear_selection();
+                    }
                     _ => {}
                 }
+                Task::none()
+            }
+            PreviewMessage::StartSelection(sel) => {
+                // Selection coordinates already include scroll offset from map_mouse_to_cell
+                let mut screen = self.terminal.screen.lock();
+                let _ = screen.set_selection(sel);
+                Task::none()
+            }
+            PreviewMessage::UpdateSelection(pos) => {
+                // Position already includes scroll offset from map_mouse_to_cell
+                let mut screen = self.terminal.screen.lock();
+                if let Some(mut sel) = screen.get_selection().clone() {
+                    if !sel.locked {
+                        sel.lead = pos;
+                        let _ = screen.set_selection(sel);
+                    }
+                }
+                Task::none()
+            }
+            PreviewMessage::EndSelection => {
+                let mut screen = self.terminal.screen.lock();
+                if let Some(mut sel) = screen.get_selection().clone() {
+                    sel.locked = true;
+                    let _ = screen.set_selection(sel);
+                }
+                Task::none()
+            }
+            PreviewMessage::ClearSelection => {
+                let mut screen = self.terminal.screen.lock();
+                let _ = screen.clear_selection();
                 Task::none()
             }
             PreviewMessage::SauceInfoReceived(sauce_opt, content_size) => {
@@ -568,22 +639,24 @@ impl PreviewView {
             PreviewMode::Terminal => {
                 let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(PreviewMessage::TerminalMessage);
 
+                let vp = self.terminal.viewport.read();
+
                 // Use computed visible height from shader if available, otherwise fall back to viewport
                 let computed_height = self.terminal.computed_visible_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-                let visible_height = if computed_height > 0.0 {
-                    computed_height
-                } else {
-                    self.terminal.viewport.visible_height
-                };
+                let visible_height = if computed_height > 0.0 { computed_height } else { vp.visible_height };
 
                 // Calculate if we need vertical scrollbar (content taller than visible area)
-                let scrollbar_height_ratio = visible_height / self.terminal.viewport.content_height.max(1.0);
+                let scrollbar_height_ratio = visible_height / vp.content_height.max(1.0);
                 let needs_vscrollbar = scrollbar_height_ratio < 1.0;
 
                 // Calculate if we need horizontal scrollbar (content wider than visible area)
-                let visible_width = self.terminal.viewport.visible_width;
-                let scrollbar_width_ratio = visible_width / self.terminal.viewport.content_width.max(1.0);
+                let visible_width = vp.visible_width;
+                let scrollbar_width_ratio = visible_width / vp.content_width.max(1.0);
                 let needs_hscrollbar = scrollbar_width_ratio < 1.0;
+
+                let content_height = vp.content_height;
+                let content_width = vp.content_width;
+                drop(vp);
 
                 if needs_vscrollbar || needs_hscrollbar {
                     let scrollbar_visibility = self.terminal.scrollbar.visibility;
@@ -593,7 +666,7 @@ impl PreviewView {
                     // Add vertical scrollbar if needed
                     if needs_vscrollbar {
                         let scrollbar_position = self.terminal.scrollbar.scroll_position;
-                        let max_scroll_y = (self.terminal.viewport.content_height - visible_height).max(0.0);
+                        let max_scroll_y = (content_height - visible_height).max(0.0);
 
                         let vscrollbar_view = ScrollbarOverlay::new(
                             scrollbar_visibility,
@@ -614,7 +687,7 @@ impl PreviewView {
                     // Add horizontal scrollbar if needed
                     if needs_hscrollbar {
                         let scrollbar_position_x = self.terminal.scrollbar.scroll_position_x;
-                        let max_scroll_x = (self.terminal.viewport.content_width - visible_width).max(0.0);
+                        let max_scroll_x = (content_width - visible_width).max(0.0);
 
                         let hscrollbar_view = HorizontalScrollbarOverlay::new(
                             scrollbar_visibility,
@@ -622,7 +695,7 @@ impl PreviewView {
                             scrollbar_width_ratio,
                             max_scroll_x,
                             self.terminal.scrollbar_hover_state.clone(),
-                            |x, _y| PreviewMessage::ScrollViewportToImmediate(x, self.terminal.viewport.scroll_y),
+                            |x, _y| PreviewMessage::ScrollViewportXToImmediate(x),
                             |is_hovered| PreviewMessage::HScrollbarHovered(is_hovered),
                         )
                         .view();

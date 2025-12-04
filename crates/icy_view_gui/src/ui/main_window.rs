@@ -5,7 +5,7 @@ use i18n_embed_fl::fl;
 use iced::{
     Element, Event, Length, Rectangle, Task, Theme,
     keyboard::{Key, key::Named},
-    widget::{column, container, row, text},
+    widget::{Space, column, container, row, text},
 };
 use icy_engine::{RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
 use icy_engine_gui::{
@@ -880,6 +880,31 @@ impl MainWindow {
                 // Handle folder preview tile grid messages
                 let should_open = self.folder_preview.update(msg.clone());
 
+                // Handle single-click to update current_file and load preview
+                if let TileGridMessage::TileClicked(index) = &msg {
+                    if let Some((item_path, label, is_container)) = self.folder_preview.get_item_info(*index) {
+                        // Only update preview for non-container items (files)
+                        if !is_container {
+                            if let Some(ref preview_folder) = self.folder_preview_path {
+                                let full_path = preview_folder.join(&item_path);
+                                self.current_file = Some(full_path.clone());
+                                self.title = label;
+
+                                // Load preview data
+                                if let Some(item) = self.folder_preview.get_item_at(*index) {
+                                    if let Some(data) = item.read_data_blocking() {
+                                        return Task::done(Message::DataLoaded(full_path, data));
+                                    }
+                                }
+                                // Fallback to filesystem read
+                                if let Ok(data) = std::fs::read(&full_path) {
+                                    return Task::done(Message::DataLoaded(full_path, data));
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Handle double-click or Enter to navigate/open
                 match &msg {
                     TileGridMessage::TileDoubleClicked(index) if should_open => {
@@ -1407,7 +1432,7 @@ impl MainWindow {
         let status_bar = StatusBar::view(&status_info, &theme).map(Message::StatusBar);
 
         // Main layout: nav bar, content, status bar
-        let main_layout = column![nav_bar, content_area, status_bar,];
+        let main_layout = column![nav_bar, row![content_area, Space::new().width(1)], status_bar,];
 
         let base_view: Element<'_, Message> = container(main_layout).width(Length::Fill).height(Length::Fill).into();
 

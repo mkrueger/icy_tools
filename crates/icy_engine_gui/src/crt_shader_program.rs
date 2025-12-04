@@ -48,11 +48,14 @@ impl<'a> CRTShaderProgram<'a> {
             let mouse_state = state.cached_mouse_state.lock().clone();
             let mouse_tracking_enabled = mouse_state.as_ref().map(|ms| ms.tracking_enabled()).unwrap_or(false);
 
+            // Read viewport once for all mouse coordinate calculations
+            let viewport = self.term.viewport.read();
+
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = cursor.position() {
                         // Calculate cell and xy positions using cached screen info (no screen lock needed)
-                        let cell_pos = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y);
+                        let cell_pos = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport);
                         let xy_pos = state.map_mouse_to_xy(&self.monitor_settings, bounds, position.x, position.y);
 
                         // Only update if position actually changed
@@ -166,7 +169,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                 mouse::Event::ButtonPressed(button) => {
                     if let Some(position) = cursor.position() {
-                        if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y) {
+                        if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport) {
                             // Convert iced mouse button to our MouseButton type
                             let mouse_button = match button {
                                 mouse::Button::Left => MouseButton::Left,
@@ -271,7 +274,7 @@ impl<'a> CRTShaderProgram<'a> {
                     if let Some(ref ms) = mouse_state {
                         if mouse_tracking_enabled {
                             if let Some(position) = cursor.position() {
-                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y) {
+                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport) {
                                     let modifiers = KeyModifiers {
                                         shift: state.shift_pressed,
                                         ctrl: state.ctrl_pressed,
@@ -315,7 +318,7 @@ impl<'a> CRTShaderProgram<'a> {
                         // Send wheel events as button press events
                         if let Some(ref ms) = mouse_state {
                             if let Some(position) = cursor.position() {
-                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y) {
+                                if let Some(cell) = state.map_mouse_to_cell(&self.monitor_settings, bounds, position.x, position.y, &viewport) {
                                     let lines = match delta {
                                         mouse::ScrollDelta::Lines { y, .. } => *y,
                                         mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0,
@@ -400,11 +403,12 @@ impl<'a> CRTShaderProgram<'a> {
 
             {
                 let mut info = state.cached_screen_info.lock();
+                let vp = self.term.viewport.read();
 
                 // Check if buffer version changed (content modified)
-                if current_buffer_version != info.last_buffer_version || self.term.viewport.changed.load(std::sync::atomic::Ordering::Acquire) {
+                if current_buffer_version != info.last_buffer_version || vp.changed.load(std::sync::atomic::Ordering::Acquire) {
                     needs_full_render = true;
-                    self.term.viewport.changed.store(false, std::sync::atomic::Ordering::Relaxed);
+                    vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
                     info.last_buffer_version = current_buffer_version;
                 }
 
@@ -472,8 +476,10 @@ impl<'a> CRTShaderProgram<'a> {
                         uniform_scale
                     };
 
+                    let vp = self.term.viewport.read();
+
                     // Calculate how many content pixels can be shown in the available height
-                    let visible_content_height = (scaled_bounds_height / display_scale).min(self.term.viewport.content_height);
+                    let visible_content_height = (scaled_bounds_height / display_scale).min(vp.content_height);
 
                     // Store computed visible height for scrollbar calculations
                     self.term
@@ -481,7 +487,7 @@ impl<'a> CRTShaderProgram<'a> {
                         .store(visible_content_height as u32, std::sync::atomic::Ordering::Relaxed);
 
                     // Use the calculated visible height for the viewport region
-                    let viewport_region = self.term.viewport.visible_region_with_size(resolution.width as f32, visible_content_height);
+                    let viewport_region = vp.visible_region_with_size(resolution.width as f32, visible_content_height);
 
                     let base_options = icy_engine::RenderOptions {
                         rect: icy_engine::Rectangle {
@@ -671,7 +677,7 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
             mouse::Interaction::Crosshair
         } else if state.hovered_cell.is_some() {
             // Only show text cursor for text mode screens (selection not yet supported for graphics)
-            let info = state.cached_screen_info.lock();
+            let info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();
             if info.graphics_type == icy_engine::GraphicsType::Text {
                 mouse::Interaction::Text
             } else {

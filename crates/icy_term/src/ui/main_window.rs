@@ -805,24 +805,26 @@ impl MainWindow {
             }
 
             Message::ScrollViewport(dx, dy) => {
-                self.terminal_window.terminal.viewport.scroll_by(dx, dy);
+                self.terminal_window.terminal.viewport.write().scroll_by(dx, dy);
                 Task::none()
             }
 
             Message::ScrollViewportTo(smooth, x, y) => {
                 // Immediate scroll for scrollbar interaction (no smooth animation)
+                let mut vp = self.terminal_window.terminal.viewport.write();
                 if smooth {
-                    self.terminal_window.terminal.viewport.scroll_to(x, y);
+                    vp.scroll_to(x, y);
                 } else {
-                    self.terminal_window.terminal.viewport.scroll_to_immediate(x, y);
+                    vp.scroll_to_immediate(x, y);
                 }
+                drop(vp);
                 self.terminal_window.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
 
             Message::ViewportTick => {
                 // Update viewport animation
-                self.terminal_window.terminal.viewport.update_animation();
+                self.terminal_window.terminal.viewport.write().update_animation();
                 Task::none()
             }
 
@@ -1557,7 +1559,7 @@ impl MainWindow {
                         if self.terminal_window.terminal.is_in_scrollback_mode() {
                             // Get font height for line-based scrolling
                             let line_height = self.terminal_window.terminal.char_height;
-                            let page_height = self.terminal_window.terminal.viewport.visible_height;
+                            let page_height = self.terminal_window.terminal.viewport.read().visible_height;
 
                             match key {
                                 // ESC exits scrollback mode
@@ -1586,7 +1588,7 @@ impl MainWindow {
                                 }
                                 // End: scroll to bottom
                                 keyboard::Key::Named(keyboard::key::Named::End) => {
-                                    let max_y = self.terminal_window.terminal.viewport.max_scroll_y();
+                                    let max_y = self.terminal_window.terminal.viewport.read().max_scroll_y();
                                     return Some(Message::ScrollViewportTo(true, 0.0, max_y));
                                 }
                                 // Any other key exits scrollback mode

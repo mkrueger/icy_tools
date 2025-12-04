@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicU64;
 
-use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache};
+use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache, Viewport};
 use iced::Element;
 use iced::Rectangle;
 use iced::widget::shader;
@@ -142,31 +142,46 @@ impl CRTShaderState {
     }
 
     /// Map mouse coordinates to cell position using cached screen info
-    pub fn map_mouse_to_cell(&self, monitor: &MonitorSettings, bounds: Rectangle, mx: f32, my: f32) -> Option<Position> {
+    /// If viewport is provided, returns absolute document coordinates (with scroll offset)
+    /// Otherwise returns visible cell coordinates
+    pub fn map_mouse_to_cell(&self, monitor: &MonitorSettings, bounds: Rectangle, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
         let info = self.cached_screen_info.lock();
 
         let scale_factor = crate::get_scale_factor();
-        let bounds = bounds * scale_factor;
-        let mx = mx * scale_factor;
-        let my = my * scale_factor;
+
+        // Scale mouse coordinates and bounds
+        let scaled_bounds = bounds * scale_factor;
+
+        // Convert mouse to widget-local coordinates (relative to top-left of bounds)
+        let local_mx = mx * scale_factor - scaled_bounds.x;
+        let local_my = my * scale_factor - scaled_bounds.y;
 
         if info.font_w <= 0.0 || info.font_h <= 0.0 {
             return None;
         }
 
-        let term_px_w = info.screen_width as f32 * info.font_w;
-        let mut term_px_h = info.screen_height as f32 * info.font_h;
+        // Use cached render_size if available (this is what the shader actually rendered)
+        let (term_px_w, term_px_h) = if info.render_size.0 > 0 && info.render_size.1 > 0 {
+            (info.render_size.0 as f32, info.render_size.1 as f32)
+        } else {
+            // Fallback: calculate from screen dimensions
+            let px_w = info.screen_width as f32 * info.font_w;
+            let mut px_h = info.screen_height as f32 * info.font_h;
+            if info.scan_lines {
+                px_h *= 2.0;
+            }
+            (px_w, px_h)
+        };
 
-        if info.scan_lines {
-            term_px_h *= 2.0;
-        }
+        // scroll_y is in pixels - convert to lines
+        let scroll_offset_lines = (viewport.scroll_y / viewport.zoom / info.font_h).floor() as i32;
 
         if term_px_w <= 0.0 || term_px_h <= 0.0 {
             return None;
         }
 
-        let avail_w = bounds.width.max(1.0);
-        let avail_h = bounds.height.max(1.0);
+        let avail_w = scaled_bounds.width.max(1.0);
+        let avail_h = scaled_bounds.height.max(1.0);
         let uniform_scale = (avail_w / term_px_w).min(avail_h / term_px_h);
 
         let use_pp = monitor.use_pixel_perfect_scaling;
@@ -175,35 +190,32 @@ impl CRTShaderState {
         let scaled_w = term_px_w * display_scale;
         let scaled_h = term_px_h * display_scale;
 
-        let offset_x = bounds.x + (avail_w - scaled_w) / 2.0;
-        let offset_y = bounds.y + (avail_h - scaled_h) / 2.0;
+        // Calculate viewport offset within widget (centered)
+        let vp_offset_x = (avail_w - scaled_w) / 2.0;
+        let vp_offset_y = (avail_h - scaled_h) / 2.0;
 
-        let (vp_x, vp_y, vp_w, vp_h) = if use_pp {
-            (offset_x.round(), offset_y.round(), scaled_w.round(), scaled_h.round())
+        let (vp_x, vp_y) = if use_pp {
+            (vp_offset_x.round(), vp_offset_y.round())
         } else {
-            (offset_x, offset_y, scaled_w, scaled_h)
+            (vp_offset_x, vp_offset_y)
         };
 
-        if mx < vp_x || my < vp_y || mx >= vp_x + vp_w || my >= vp_y + vp_h {
-            return None;
-        }
-
-        let local_px_x = (mx - vp_x) / display_scale;
-        let mut local_px_y = (my - vp_y) / display_scale;
+        // Convert widget-local mouse coords to terminal-local coords
+        let term_px_x = (local_mx - vp_x) / display_scale;
+        let mut term_px_y = (local_my - vp_y) / display_scale;
 
         let actual_font_h = if info.scan_lines {
-            local_px_y /= 2.0;
+            term_px_y /= 2.0;
             info.font_h
         } else {
             info.font_h
         };
 
-        let cx = (local_px_x / info.font_w).floor() as i32;
-        let cy = (local_px_y / actual_font_h).floor() as i32;
+        let cx = (term_px_x / info.font_w).floor() as i32;
+        let visible_cy = (term_px_y / actual_font_h).floor() as i32;
 
-        if cx < 0 || cy < 0 || cx >= info.screen_width || cy >= info.screen_height {
-            return None;
-        }
+        // Add scroll offset (in lines) to get absolute document row
+        let cy = visible_cy + scroll_offset_lines;
 
         Some(Position::new(cx, cy))
     }
