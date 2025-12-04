@@ -20,13 +20,12 @@ use crate::{
     },
 };
 
-use clipboard_rs::{Clipboard, ClipboardContent, common::RustImage};
+use clipboard_rs::Clipboard;
 use iced::{Element, Event, Task, Theme, keyboard, window};
-use icy_engine::{Position, RenderOptions, clipboard::ICY_CLIPBOARD_TYPE};
+use icy_engine::Position;
 use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, music::music::SoundThread};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::BaudEmulation;
-use image::DynamicImage;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -660,44 +659,9 @@ impl MainWindow {
             Message::Copy => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-
-                    let text = match screen.get_copy_text() {
-                        Some(t) => t,
-                        None => return Task::none(),
-                    };
-                    let mut contents = Vec::with_capacity(4);
-
-                    // On windows the ordering is important - text must be last to be recognized properly
-                    if let Some(data) = screen.get_clipboard_data() {
-                        contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+                    if let Err(err) = icy_engine_gui::copy_selection_to_clipboard(&mut **screen, &*crate::CLIPBOARD_CONTEXT) {
+                        log::error!("Failed to copy: {err}");
                     }
-
-                    if let Some(selection) = screen.get_selection() {
-                        let (size, data) = screen.render_to_rgba(&RenderOptions {
-                            rect: selection,
-                            blink_on: true,
-                            selection: None,
-                            selection_fg: None,
-                            selection_bg: None,
-                            override_scan_lines: None,
-                        });
-                        let dynamic_image =
-                            DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data).expect("rgba create"));
-                        let img = clipboard_rs::RustImageData::from_dynamic_image(dynamic_image);
-                        contents.push(ClipboardContent::Image(img));
-                    }
-
-                    if let Some(rich_text) = screen.get_copy_rich_text() {
-                        contents.push(ClipboardContent::Rtf(rich_text));
-                    }
-
-                    contents.push(ClipboardContent::Text(text));
-
-                    if let Err(err) = crate::CLIPBOARD_CONTEXT.set(contents) {
-                        log::error!("Failed to set clipboard: {err}");
-                    }
-
-                    let _ = screen.clear_selection();
                     self.shift_pressed_during_selection = false;
                 }
                 Task::none()

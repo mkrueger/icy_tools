@@ -2,6 +2,9 @@ pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
 
+pub mod clipboard;
+pub use clipboard::*;
+
 pub mod viewport;
 pub use viewport::*;
 

@@ -24,6 +24,9 @@ lazy_static = { workspace = true }
  
 log = { workspace = true }
 
+clipboard-rs = { workspace = true }
+image = { workspace = true }
+
 i18n-embed = { workspace = true }
 i18n-embed-fl= { workspace = true }
 rust-embed = { workspace = true } 
