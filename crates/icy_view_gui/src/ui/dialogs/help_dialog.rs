@@ -55,16 +55,20 @@ impl HelpDialog {
                 fl!(LANGUAGE_LOADER, "help-category-display"),
                 vec![
                     HelpShortcut::new(
-                        "F2",
+                        "Space",
                         fl!(LANGUAGE_LOADER, "help-action-auto-scroll"),
                         fl!(LANGUAGE_LOADER, "help-desc-auto-scroll"),
                     ),
                     HelpShortcut::new(
-                        "Shift+F2",
+                        "F2 / ⇧F2",
                         fl!(LANGUAGE_LOADER, "help-action-scroll-speed"),
                         fl!(LANGUAGE_LOADER, "help-desc-scroll-speed"),
                     ),
-                    HelpShortcut::new("F3", fl!(LANGUAGE_LOADER, "help-action-baud-rate"), fl!(LANGUAGE_LOADER, "help-desc-baud-rate")),
+                    HelpShortcut::new(
+                        "F3 / ⇧F3",
+                        fl!(LANGUAGE_LOADER, "help-action-baud-rate"),
+                        fl!(LANGUAGE_LOADER, "help-desc-baud-rate"),
+                    ),
                     HelpShortcut::new(
                         format!("{mod_symbol} F3"),
                         fl!(LANGUAGE_LOADER, "help-action-baud-off"),

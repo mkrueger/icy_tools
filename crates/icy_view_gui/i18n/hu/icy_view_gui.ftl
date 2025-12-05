@@ -100,7 +100,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-title = Segítség
+# Súgó ablak
+help-title = Billentyűparancsok
+help-subtitle = Gyors referencia az iCY VIEW-hoz
+
+# Kategóriák
+help-category-navigation = Navigáció
+help-category-display = Megjelenítés
+help-category-zoom = Nagyítás
+help-category-tools = Eszközök
+
+# Műveletek
+help-action-navigate = Navigálás
+help-action-open = Megnyitás/Enter
+help-action-parent = Szülő mappa
+help-action-back = Vissza
+help-action-forward = Előre
+help-action-filter = Szűrés
+help-action-auto-scroll = Auto görgetés
+help-action-scroll-speed = Görgetés seb.
+help-action-baud-rate = Baud sebesség
+help-action-baud-off = Baud kikapcsolva
+help-action-sauce = SAUCE info
+help-action-zoom-in = Nagyítás
+help-action-zoom-out = Kicsinyítés
+help-action-zoom-reset = Nagyítás reset
+help-action-zoom-fit = Ablakhoz illeszt
+help-action-export = Exportálás
+help-action-copy = Másolás
+help-action-external = Külső parancsok
+help-action-fullscreen = Teljes képernyő
+help-action-help = Súgó
+help-action-about = Névjegy
+
+# Leírások
+help-desc-navigate = Kijelölés mozgatása a listában
+help-desc-open = Fájl megnyitása vagy mappába lépés
+help-desc-parent = Egy szinttel feljebb
+help-desc-back = Navigálás az előző helyre
+help-desc-forward = Navigálás a következő helyre
+help-desc-filter = Szűrő mező be/ki
+help-desc-auto-scroll = Auto görgetés be/ki (előnézet/csempék)
+help-desc-scroll-speed = Görgetési sebesség előre/hátra
+help-desc-baud-rate = Baud sebesség előre/hátra
+help-desc-baud-off = Baud emuláció kikapcsolása
+help-desc-sauce = SAUCE metaadatok megjelenítése
+help-desc-zoom-in = Nagyítási szint növelése
+help-desc-zoom-out = Nagyítási szint csökkentése
+help-desc-zoom-reset = Visszaállítás 100%-ra
+help-desc-zoom-fit = Tartalom ablakhoz igazítása
+help-desc-export = Fájl exportálása képként
+help-desc-copy = Kijelölés másolása
+help-desc-external = Külső parancsok futtatása (F5-F8)
+help-desc-fullscreen = Teljes képernyő be/ki
+help-desc-help = Súgó ablak megjelenítése
+help-desc-about = Névjegy ablak megjelenítése
 
 toast-auto-scroll-on=Automatikus görgetés bekapcsolva
 toast-auto-scroll-off=Automatikus görgetés kikapcsolva

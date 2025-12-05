@@ -187,14 +187,16 @@ impl Viewport {
 
     /// Scroll X by delta (for mouse wheel, trackpad) - delta is in content pixels
     pub fn scroll_x_by(&mut self, delta: f32) {
-        self.target_scroll_x += delta;
+        self.scroll_x += delta;
+        self.target_scroll_x = self.scroll_x;
         self.clamp_scroll();
         self.last_update = Some(Instant::now());
     }
 
     /// Scroll Y by delta (for mouse wheel, trackpad) - delta is in content pixels
     pub fn scroll_y_by(&mut self, delta: f32) {
-        self.target_scroll_y += delta;
+        self.scroll_y += delta;
+        self.target_scroll_y = self.scroll_y;
         self.clamp_scroll();
         self.last_update = Some(Instant::now());
     }

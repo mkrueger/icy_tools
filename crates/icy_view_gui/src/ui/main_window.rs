@@ -925,6 +925,30 @@ impl MainWindow {
                         let toast = Toast::info(toast_msg);
                         return Task::done(Message::ShowToast(toast));
                     }
+                    StatusBarMessage::CycleScrollSpeedBackward => {
+                        // Cycle scroll speed backward: Slow -> Fast -> Medium -> Slow
+                        use super::options::ScrollSpeed;
+                        let current = self.preview.get_scroll_speed();
+                        let next = match current {
+                            ScrollSpeed::Slow => ScrollSpeed::Fast,
+                            ScrollSpeed::Medium => ScrollSpeed::Slow,
+                            ScrollSpeed::Fast => ScrollSpeed::Medium,
+                        };
+                        self.preview.set_scroll_speed(next.clone());
+                        self.tile_grid.set_scroll_speed(next.clone());
+                        self.folder_preview.set_scroll_speed(next.clone());
+
+                        // Save to options
+                        self.options.lock().scroll_speed = self.preview.get_scroll_speed();
+
+                        let toast_msg = match next {
+                            ScrollSpeed::Slow => fl!(crate::LANGUAGE_LOADER, "toast-scroll-slow"),
+                            ScrollSpeed::Medium => fl!(crate::LANGUAGE_LOADER, "toast-scroll-medium"),
+                            ScrollSpeed::Fast => fl!(crate::LANGUAGE_LOADER, "toast-scroll-fast"),
+                        };
+                        let toast = Toast::info(toast_msg);
+                        return Task::done(Message::ShowToast(toast));
+                    }
                     StatusBarMessage::ToggleAutoScroll => {
                         // Toggle auto-scroll enabled setting
                         let new_enabled = !self.preview.is_auto_scroll_enabled();
@@ -2316,6 +2340,7 @@ impl MainWindow {
                     if self.shuffle_mode.is_active {
                         return Some(Message::ShuffleNext);
                     }
+                    return Some(Message::StatusBar(StatusBarMessage::ToggleAutoScroll));
                 }
 
                 // Handle Enter key for dialogs
@@ -2345,11 +2370,9 @@ impl MainWindow {
                     Key::Named(Named::F1) => return Some(Message::ShowHelp),
                     Key::Named(Named::F2) => {
                         if modifiers.shift() {
-                            // Shift+F2: Cycle scroll speed
-                            return Some(Message::StatusBar(StatusBarMessage::CycleScrollSpeed));
+                            return Some(Message::StatusBar(StatusBarMessage::CycleScrollSpeedBackward));
                         } else {
-                            // F2: Toggle auto-scroll
-                            return Some(Message::StatusBar(StatusBarMessage::ToggleAutoScroll));
+                            return Some(Message::StatusBar(StatusBarMessage::CycleScrollSpeed));
                         }
                     }
                     Key::Named(Named::F3) => {

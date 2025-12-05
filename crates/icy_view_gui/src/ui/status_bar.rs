@@ -62,6 +62,8 @@ pub enum StatusBarMessage {
     ToggleAutoScroll,
     /// Cycle scroll speed (slow/medium/fast)
     CycleScrollSpeed,
+    /// Cycle scroll speed backward (fast/medium/slow)
+    CycleScrollSpeedBackward,
     /// Show SAUCE dialog
     ShowSauceInfo,
 }

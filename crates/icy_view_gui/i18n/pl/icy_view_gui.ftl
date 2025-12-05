@@ -100,7 +100,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-title = Pomoc
+# Okno pomocy
+help-title = Skróty klawiszowe
+help-subtitle = Szybka pomoc dla iCY VIEW
+
+# Kategorie
+help-category-navigation = Nawigacja
+help-category-display = Wyświetlanie
+help-category-zoom = Powiększenie
+help-category-tools = Narzędzia
+
+# Akcje
+help-action-navigate = Nawiguj
+help-action-open = Otwórz/Enter
+help-action-parent = Katalog nadrzędny
+help-action-back = Wstecz
+help-action-forward = Dalej
+help-action-filter = Filtruj
+help-action-auto-scroll = Auto-przewijanie
+help-action-scroll-speed = Prędk. przewij.
+help-action-baud-rate = Szybkość baud
+help-action-baud-off = Baud wyłączone
+help-action-sauce = Info SAUCE
+help-action-zoom-in = Powiększ
+help-action-zoom-out = Pomniejsz
+help-action-zoom-reset = Resetuj zoom
+help-action-zoom-fit = Dopasuj do okna
+help-action-export = Eksportuj
+help-action-copy = Kopiuj
+help-action-external = Polecenia zewn.
+help-action-fullscreen = Pełny ekran
+help-action-help = Pomoc
+help-action-about = O programie
+
+# Opisy
+help-desc-navigate = Przesuń zaznaczenie na liście
+help-desc-open = Otwórz plik lub wejdź do katalogu
+help-desc-parent = Przejdź poziom wyżej
+help-desc-back = Nawiguj do poprzedniej lokalizacji
+help-desc-forward = Nawiguj do następnej lokalizacji
+help-desc-filter = Przełącz pole filtru
+help-desc-auto-scroll = Włącz/wyłącz auto-przewijanie (podgląd/kafelki)
+help-desc-scroll-speed = Prędkość przewijania w przód/w tył
+help-desc-baud-rate = Szybkość baud w przód/w tył
+help-desc-baud-off = Wyłącz emulację baud
+help-desc-sauce = Pokaż metadane SAUCE
+help-desc-zoom-in = Zwiększ poziom powiększenia
+help-desc-zoom-out = Zmniejsz poziom powiększenia
+help-desc-zoom-reset = Resetuj do 100%
+help-desc-zoom-fit = Dopasuj zawartość do okna
+help-desc-export = Eksportuj plik jako obraz
+help-desc-copy = Kopiuj zaznaczenie
+help-desc-external = Uruchom polecenia zewnętrzne (F5-F8)
+help-desc-fullscreen = Przełącz pełny ekran
+help-desc-help = Pokaż to okno pomocy
+help-desc-about = Pokaż okno O programie
 
 toast-auto-scroll-on=Automatyczne przewijanie włączone
 toast-auto-scroll-off=Automatyczne przewijanie wyłączone

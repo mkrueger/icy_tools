@@ -100,7 +100,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-title = Ayuda
+# Diálogo de ayuda
+help-title = Atajos de teclado
+help-subtitle = Referencia rápida para iCY VIEW
+
+# Categorías
+help-category-navigation = Navegación
+help-category-display = Visualización
+help-category-zoom = Zoom
+help-category-tools = Herramientas
+
+# Acciones
+help-action-navigate = Navegar
+help-action-open = Abrir/Enter
+help-action-parent = Directorio padre
+help-action-back = Atrás
+help-action-forward = Adelante
+help-action-filter = Filtrar
+help-action-auto-scroll = Desp. automático
+help-action-scroll-speed = Veloc. desplaz.
+help-action-baud-rate = Tasa de baudios
+help-action-baud-off = Baud desactivado
+help-action-sauce = Info SAUCE
+help-action-zoom-in = Acercar
+help-action-zoom-out = Alejar
+help-action-zoom-reset = Restablecer zoom
+help-action-zoom-fit = Ajustar ventana
+help-action-export = Exportar
+help-action-copy = Copiar
+help-action-external = Cmds externos
+help-action-fullscreen = Pantalla completa
+help-action-help = Ayuda
+help-action-about = Acerca de
+
+# Descripciones
+help-desc-navigate = Mover selección en la lista
+help-desc-open = Abrir archivo o entrar en directorio
+help-desc-parent = Subir un nivel
+help-desc-back = Navegar a ubicación anterior
+help-desc-forward = Navegar a ubicación siguiente
+help-desc-filter = Alternar entrada de filtro
+help-desc-auto-scroll = Activar/desactivar desplazamiento auto (vista/mosaicos)
+help-desc-scroll-speed = Velocidad de desplazamiento adelante/atrás
+help-desc-baud-rate = Tasa de baudios adelante/atrás
+help-desc-baud-off = Desactivar emulación baud
+help-desc-sauce = Mostrar metadatos SAUCE
+help-desc-zoom-in = Aumentar nivel de zoom
+help-desc-zoom-out = Disminuir nivel de zoom
+help-desc-zoom-reset = Restablecer a 100%
+help-desc-zoom-fit = Ajustar contenido a ventana
+help-desc-export = Exportar archivo como imagen
+help-desc-copy = Copiar selección
+help-desc-external = Ejecutar comandos externos (F5-F8)
+help-desc-fullscreen = Alternar pantalla completa
+help-desc-help = Mostrar este diálogo de ayuda
+help-desc-about = Mostrar diálogo Acerca de
 
 toast-auto-scroll-on=Desplazamiento automático activado
 toast-auto-scroll-off=Desplazamiento automático desactivado

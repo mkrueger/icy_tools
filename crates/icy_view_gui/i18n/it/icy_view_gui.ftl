@@ -100,7 +100,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-title = Aiuto
+# Finestra di aiuto
+help-title = Scorciatoie da tastiera
+help-subtitle = Riferimento rapido per iCY VIEW
+
+# Categorie
+help-category-navigation = Navigazione
+help-category-display = Visualizzazione
+help-category-zoom = Zoom
+help-category-tools = Strumenti
+
+# Azioni
+help-action-navigate = Naviga
+help-action-open = Apri/Invio
+help-action-parent = Cartella superiore
+help-action-back = Indietro
+help-action-forward = Avanti
+help-action-filter = Filtra
+help-action-auto-scroll = Scorr. automatico
+help-action-scroll-speed = Veloc. scorrim.
+help-action-baud-rate = Velocità baud
+help-action-baud-off = Baud disattivato
+help-action-sauce = Info SAUCE
+help-action-zoom-in = Zoom avanti
+help-action-zoom-out = Zoom indietro
+help-action-zoom-reset = Reimposta zoom
+help-action-zoom-fit = Adatta finestra
+help-action-export = Esporta
+help-action-copy = Copia
+help-action-external = Cmd esterni
+help-action-fullscreen = Schermo intero
+help-action-help = Aiuto
+help-action-about = Informazioni
+
+# Descrizioni
+help-desc-navigate = Sposta selezione nella lista
+help-desc-open = Apri file o entra nella cartella
+help-desc-parent = Vai su di un livello
+help-desc-back = Vai alla posizione precedente
+help-desc-forward = Vai alla posizione successiva
+help-desc-filter = Attiva/disattiva filtro
+help-desc-auto-scroll = Attiva/disattiva scorrimento auto (anteprima/riquadri)
+help-desc-scroll-speed = Velocità scorrimento avanti/indietro
+help-desc-baud-rate = Velocità baud avanti/indietro
+help-desc-baud-off = Disattiva emulazione baud
+help-desc-sauce = Mostra metadati SAUCE
+help-desc-zoom-in = Aumenta livello zoom
+help-desc-zoom-out = Diminuisci livello zoom
+help-desc-zoom-reset = Reimposta a 100%
+help-desc-zoom-fit = Adatta contenuto alla finestra
+help-desc-export = Esporta file come immagine
+help-desc-copy = Copia selezione
+help-desc-external = Esegui comandi esterni (F5-F8)
+help-desc-fullscreen = Attiva/disattiva schermo intero
+help-desc-help = Mostra questa finestra di aiuto
+help-desc-about = Mostra finestra Informazioni
 
 toast-auto-scroll-on=Scorrimento automatico attivato
 toast-auto-scroll-off=Scorrimento automatico disattivato

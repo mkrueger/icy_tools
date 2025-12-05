@@ -100,7 +100,61 @@ sauce-value-pixels={ $count }px
 sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
-help-title = Nápověda
+# Okno nápovědy
+help-title = Klávesové zkratky
+help-subtitle = Rychlá reference pro iCY VIEW
+
+# Kategorie
+help-category-navigation = Navigace
+help-category-display = Zobrazení
+help-category-zoom = Přiblížení
+help-category-tools = Nástroje
+
+# Akce
+help-action-navigate = Navigovat
+help-action-open = Otevřít/Enter
+help-action-parent = Nadřazená složka
+help-action-back = Zpět
+help-action-forward = Vpřed
+help-action-filter = Filtrovat
+help-action-auto-scroll = Auto posouvání
+help-action-scroll-speed = Rychl. posouv.
+help-action-baud-rate = Rychlost baud
+help-action-baud-off = Baud vypnuto
+help-action-sauce = Info SAUCE
+help-action-zoom-in = Přiblížit
+help-action-zoom-out = Oddálit
+help-action-zoom-reset = Reset přiblížení
+help-action-zoom-fit = Přizpůsobit oknu
+help-action-export = Exportovat
+help-action-copy = Kopírovat
+help-action-external = Externí příkazy
+help-action-fullscreen = Celá obrazovka
+help-action-help = Nápověda
+help-action-about = O aplikaci
+
+# Popisy
+help-desc-navigate = Přesunout výběr v seznamu
+help-desc-open = Otevřít soubor nebo vstoupit do složky
+help-desc-parent = Přejít o úroveň výš
+help-desc-back = Navigovat na předchozí umístění
+help-desc-forward = Navigovat na další umístění
+help-desc-filter = Přepnout filtr
+help-desc-auto-scroll = Zapnout/vypnout auto posouvání (náhled/dlaždice)
+help-desc-scroll-speed = Rychlost posouvání vpřed/vzad
+help-desc-baud-rate = Rychlost baud vpřed/vzad
+help-desc-baud-off = Vypnout emulaci baud
+help-desc-sauce = Zobrazit SAUCE metadata
+help-desc-zoom-in = Zvýšit úroveň přiblížení
+help-desc-zoom-out = Snížit úroveň přiblížení
+help-desc-zoom-reset = Resetovat na 100%
+help-desc-zoom-fit = Přizpůsobit obsah oknu
+help-desc-export = Exportovat soubor jako obrázek
+help-desc-copy = Kopírovat výběr
+help-desc-external = Spustit externí příkazy (F5-F8)
+help-desc-fullscreen = Přepnout celou obrazovku
+help-desc-help = Zobrazit toto okno nápovědy
+help-desc-about = Zobrazit okno O aplikaci
 
 toast-auto-scroll-on=Automatické posouvání zapnuto
 toast-auto-scroll-off=Automatické posouvání vypnuto
