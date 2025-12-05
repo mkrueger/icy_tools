@@ -732,15 +732,11 @@ impl StringGenerator {
     pub fn add_sixels(&mut self, buf: &TextBuffer) {
         for layer in &buf.layers {
             for sixel in &layer.sixels {
-                match icy_sixel::sixel_string(
+                match icy_sixel::sixel_encode(
                     &sixel.picture_data,
-                    sixel.get_width(),
-                    sixel.get_height(),
-                    icy_sixel::PixelFormat::RGBA8888,
-                    icy_sixel::DiffusionMethod::None,
-                    icy_sixel::MethodForLargest::Auto,
-                    icy_sixel::MethodForRep::Auto,
-                    icy_sixel::Quality::AUTO,
+                    sixel.get_width() as usize,
+                    sixel.get_height() as usize,
+                    &icy_sixel::EncodeOptions::default(),
                 ) {
                     Err(err) => log::error!("{err}"),
                     Ok(data) => {

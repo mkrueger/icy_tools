@@ -1,6 +1,6 @@
 use crate::{
     AttributedChar, BitFont, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
-    TextBuffer, TextPane, analyze_font_usage, guess_font_name,
+    TextBuffer, TextPane, analyze_font_usage, attribute, guess_font_name,
 };
 use std::path::Path;
 
@@ -15,6 +15,76 @@ const FLAG_COMPRESS: u8 = 0b_0000_0100;
 const FLAG_NON_BLINK_MODE: u8 = 0b_0000_1000;
 const FLAG_512CHAR_MODE: u8 = 0b_0001_0000;
 
+lazy_static::lazy_static! {
+    /// ICE mode, no extended font (single font)
+    static ref ATTR_TABLE_ICE: [TextAttribute; 256] = {
+        let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
+        for i in 0u8..=255 {
+            let bg = (i >> 4) as u32;
+            let fg = (i & 0b1111) as u32;
+            table[i as usize] = TextAttribute {
+                font_page: 0,
+                foreground_color: fg,
+                background_color: bg,
+                attr: attribute::NONE,
+            };
+        }
+        table
+    };
+
+    /// ICE mode, extended font (512 char mode)
+    static ref ATTR_TABLE_ICE_EXT: [TextAttribute; 256] = {
+        let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
+        for i in 0u8..=255 {
+            let bg = (i >> 4) as u32;
+            let fg = (i & 0b1111) as u32;
+            let (font_page, actual_fg) = if fg > 7 { (1, fg - 8) } else { (0, fg) };
+            table[i as usize] = TextAttribute {
+                font_page,
+                foreground_color: actual_fg,
+                background_color: bg,
+                attr: attribute::NONE,
+            };
+        }
+        table
+    };
+
+    /// Blink mode, no extended font (single font)
+    static ref ATTR_TABLE_BLINK: [TextAttribute; 256] = {
+        let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
+        for i in 0u8..=255 {
+            let blink = i & 0b1000_0000 != 0;
+            let bg = ((i >> 4) & 0b0111) as u32;
+            let fg = (i & 0b1111) as u32;
+            table[i as usize] = TextAttribute {
+                font_page: 0,
+                foreground_color: fg,
+                background_color: bg,
+                attr: if blink { attribute::BLINK } else { attribute::NONE },
+            };
+        }
+        table
+    };
+
+    /// Blink mode, extended font (512 char mode)
+    static ref ATTR_TABLE_BLINK_EXT: [TextAttribute; 256] = {
+        let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
+        for i in 0u8..=255 {
+            let blink = i & 0b1000_0000 != 0;
+            let bg = ((i >> 4) & 0b0111) as u32;
+            let fg = (i & 0b1111) as u32;
+            let (font_page, actual_fg) = if fg > 7 { (1, fg - 8) } else { (0, fg) };
+            table[i as usize] = TextAttribute {
+                font_page,
+                foreground_color: actual_fg,
+                background_color: bg,
+                attr: if blink { attribute::BLINK } else { attribute::NONE },
+            };
+        }
+        table
+    };
+}
+
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 enum Compression {
@@ -25,7 +95,7 @@ enum Compression {
 }
 
 #[derive(Default)]
-pub(super) struct XBin {}
+pub struct XBin {}
 
 impl OutputFormat for XBin {
     fn get_file_extension(&self) -> &str {
@@ -186,7 +256,8 @@ impl OutputFormat for XBin {
             height = height.min(max_h);
         }
         result.set_height(height);
-        result.layers[0].set_size((width, height));
+        // Pre-allocate lines for the known size - this is the key optimization
+        result.layers[0].preallocate_lines(width, height);
         o += 2;
         let mut font_size = data[o];
         if font_size == 0 {
@@ -236,24 +307,40 @@ impl OutputFormat for XBin {
     }
 }
 
-fn advance_pos(result: &TextBuffer, pos: &mut Position) -> bool {
+/// Advance position - fast version without TextBuffer reference
+#[inline(always)]
+fn advance_pos_fast(width: i32, height: i32, pos: &mut Position) -> bool {
     pos.x += 1;
-    if pos.x >= result.get_width() {
+    if pos.x >= width {
         pos.x = 0;
         pos.y += 1;
-        // Stop if we've reached the height limit
-        if pos.y >= result.get_height() {
+        if pos.y >= height {
             return false;
         }
     }
     true
 }
 
+fn select_attr_table(result: &TextBuffer) -> &'static [TextAttribute; 256] {
+    match (result.ice_mode, matches!(result.font_mode, FontMode::FixedSize)) {
+        (IceMode::Ice | IceMode::Unlimited, false) => &*ATTR_TABLE_ICE,
+        (IceMode::Ice | IceMode::Unlimited, true) => &*ATTR_TABLE_ICE_EXT,
+        (IceMode::Blink, false) => &*ATTR_TABLE_BLINK,
+        (IceMode::Blink, true) => &*ATTR_TABLE_BLINK_EXT,
+    }
+}
+
 fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<bool> {
     let mut pos = Position::default();
+    let width = result.get_width();
+    let height = result.get_height();
+    let attr_table = select_attr_table(result);
     let mut o = 0;
-    while o < bytes.len() {
-        let xbin_compression = bytes[o];
+    let len = bytes.len();
+
+    while o < len {
+        // SAFETY: o < len checked above
+        let xbin_compression = unsafe { *bytes.get_unchecked(o) };
 
         o += 1;
         let compression = unsafe { std::mem::transmute(xbin_compression & 0b_1100_0000) };
@@ -262,72 +349,80 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<b
         match compression {
             Compression::Off => {
                 for _ in 0..repeat_counter {
-                    if o + 2 > bytes.len() {
+                    if o + 2 > len {
                         log::error!("Invalid XBin. Read char block beyond EOF.");
                         break;
                     }
-                    let char_code = bytes[o];
-                    let attribute = bytes[o + 1];
+                    // SAFETY: o + 2 <= len checked above
+                    let char_code = unsafe { *bytes.get_unchecked(o) };
+                    let attribute = unsafe { *bytes.get_unchecked(o + 1) };
                     o += 2;
-                    let attributed_char = decode_char(result, char_code, attribute);
-                    result.layers[0].set_char(pos, attributed_char);
+                    let attributed_char = decode_char(attr_table, char_code, attribute);
+                    result.layers[0].set_char_unchecked(pos, attributed_char);
 
-                    if !advance_pos(result, &mut pos) {
-                        // Height limit reached - stop reading (not an error)
+                    if !advance_pos_fast(width, height, &mut pos) {
                         return Ok(true);
                     }
                 }
             }
             Compression::Char => {
-                let char_code = bytes[o];
+                if o >= len {
+                    log::error!("Invalid XBin. Read char compression block beyond EOF.");
+                    break;
+                }
+                // SAFETY: o < len checked above
+                let char_code = unsafe { *bytes.get_unchecked(o) };
                 o += 1;
                 for _ in 0..repeat_counter {
-                    if o + 1 > bytes.len() {
+                    if o >= len {
                         log::error!("Invalid XBin. Read char compression block beyond EOF.");
                         break;
                     }
-
-                    let attributed_char = decode_char(result, char_code, bytes[o]);
-                    result.layers[0].set_char(pos, attributed_char);
+                    // SAFETY: o < len checked above
+                    let attributed_char = decode_char(attr_table, char_code, unsafe { *bytes.get_unchecked(o) });
+                    result.layers[0].set_char_unchecked(pos, attributed_char);
                     o += 1;
-                    if !advance_pos(result, &mut pos) {
-                        // Height limit reached - stop reading (not an error)
+                    if !advance_pos_fast(width, height, &mut pos) {
                         return Ok(true);
                     }
                 }
             }
             Compression::Attr => {
-                let attribute = bytes[o];
+                if o >= len {
+                    log::error!("Invalid XBin. Read attribute compression block beyond EOF.");
+                    break;
+                }
+                // SAFETY: o < len checked above
+                let attribute = unsafe { *bytes.get_unchecked(o) };
                 o += 1;
                 for _ in 0..repeat_counter {
-                    if o + 1 > bytes.len() {
+                    if o >= len {
                         log::error!("Invalid XBin. Read attribute compression block beyond EOF.");
                         break;
                     }
-                    let attributed_char = decode_char(result, bytes[o], attribute);
-                    result.layers[0].set_char(pos, attributed_char);
+                    // SAFETY: o < len checked above
+                    let attributed_char = decode_char(attr_table, unsafe { *bytes.get_unchecked(o) }, attribute);
+                    result.layers[0].set_char_unchecked(pos, attributed_char);
                     o += 1;
-                    if !advance_pos(result, &mut pos) {
-                        // Height limit reached - stop reading (not an error)
+                    if !advance_pos_fast(width, height, &mut pos) {
                         return Ok(true);
                     }
                 }
             }
             Compression::Full => {
-                let char_code = bytes[o];
-                o += 1;
-                if o + 1 > bytes.len() {
-                    log::error!("Invalid XBin. nRead compression block beyond EOF.");
+                if o + 2 > len {
+                    log::error!("Invalid XBin. Read compression block beyond EOF.");
                     break;
                 }
-                let attr = bytes[o];
-                o += 1;
-                let rep_ch = decode_char(result, char_code, attr);
+                // SAFETY: o + 2 <= len checked above
+                let char_code = unsafe { *bytes.get_unchecked(o) };
+                let attr = unsafe { *bytes.get_unchecked(o + 1) };
+                o += 2;
+                let rep_ch = decode_char(attr_table, char_code, attr);
 
                 for _ in 0..repeat_counter {
-                    result.layers[0].set_char(pos, rep_ch);
-                    if !advance_pos(result, &mut pos) {
-                        // Height limit reached - stop reading (not an error)
+                    result.layers[0].set_char_unchecked(pos, rep_ch);
+                    if !advance_pos_fast(width, height, &mut pos) {
                         return Ok(true);
                     }
                 }
@@ -338,40 +433,43 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<b
     Ok(true)
 }
 
-fn decode_char(result: &TextBuffer, char_code: u8, attr: u8) -> AttributedChar {
-    let mut attribute = TextAttribute::from_u8(attr, result.ice_mode);
-    if attribute.get_foreground() > 7 && matches!(result.font_mode, FontMode::FixedSize) {
-        attribute.set_font_page(1);
-        attribute.set_foreground(attribute.foreground_color - 8);
-    }
-    AttributedChar::new(char_code as char, attribute)
+#[inline(always)]
+fn decode_char(attr_table: &[TextAttribute; 256], char_code: u8, attr: u8) -> AttributedChar {
+    AttributedChar::new(char_code as char, attr_table[attr as usize])
 }
 
 fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
     if fonts.len() == 2 {
-        (ch.attribute.as_u8(buf.ice_mode) & 0b_1111_0111) | if ch.attribute.font_page == fonts[1] { 0b1000 } else { 0 }
+        (ch.attribute.as_u8(buf.ice_mode) & 0b_1111_0111) | if ch.attribute.font_page as usize == fonts[1] { 0b1000 } else { 0 }
     } else {
         ch.attribute.as_u8(buf.ice_mode)
     }
 }
 
 fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<bool> {
+    let width = result.get_width();
+    let height = result.get_height();
+    let attr_table = select_attr_table(result);
     let mut pos = Position::default();
     let mut o = 0;
-    while o < bytes.len() {
-        if o + 1 >= bytes.len() {
-            // last byte is not important enough to throw an error
-            // there seem to be some invalid files out there.
-            log::error!("Invalid XBin. Read char block beyond EOF.");
-            return Ok(true);
-        }
-        let attributed_char = decode_char(result, bytes[o], bytes[o + 1]);
-        result.layers[0].set_char(pos, attributed_char);
+    let len = bytes.len();
+
+    while o + 1 < len {
+        // SAFETY: o + 1 < len checked above
+        let char_code = unsafe { *bytes.get_unchecked(o) };
+        let attr = unsafe { *bytes.get_unchecked(o + 1) };
+        let attributed_char = decode_char(attr_table, char_code, attr);
+        result.layers[0].set_char_unchecked(pos, attributed_char);
         o += 2;
-        if !advance_pos(result, &mut pos) {
-            // Height limit reached - stop reading (not an error)
+        if !advance_pos_fast(width, height, &mut pos) {
             return Ok(true);
         }
+    }
+
+    if o < len {
+        // last byte is not important enough to throw an error
+        // there seem to be some invalid files out there.
+        log::error!("Invalid XBin. Read char block beyond EOF.");
     }
 
     Ok(true)

@@ -196,7 +196,7 @@ pub trait EditableScreen: Screen {
     fn reset_terminal(&mut self);
 
     fn caret_default_colors(&mut self) {
-        let font_page = self.caret_mut().font_page();
+        let font_page = self.caret_mut().font_page() as u8;
         self.caret_mut().attribute = TextAttribute {
             font_page,
             foreground_color: self.default_foreground_color(),

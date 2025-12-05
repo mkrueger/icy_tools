@@ -17,9 +17,9 @@ use crate::{LANGUAGE_LOADER, create_text_preview};
 /// This matches TILE_IMAGE_WIDTH (320px)
 pub const THUMBNAIL_RENDER_WIDTH: u32 = 320;
 
-/// Maximum thumbnail height - limited by GPU texture size
-/// GPU max is 8192, we use 8000 to have some margin
-pub const THUMBNAIL_MAX_HEIGHT: u32 = 8000;
+/// Maximum thumbnail height - limited to 80000px (10 slices × 8000px per slice)
+/// Very tall images beyond this are cropped to show the top portion
+pub const THUMBNAIL_MAX_HEIGHT: u32 = 80000;
 
 /// Scale factor from render size to display size
 /// Now 1.0 since we render at final size
@@ -280,23 +280,31 @@ pub enum ThumbnailState {
 
 impl ThumbnailState {
     /// Get the current RGBA data to display
+    /// Falls back to static placeholders for pending/loading without cached placeholder
     pub fn current_rgba(&self) -> Option<&RgbaData> {
         match self {
             ThumbnailState::Ready { rgba } => Some(rgba),
             ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame),
-            ThumbnailState::Pending { placeholder } => placeholder.as_ref(),
-            ThumbnailState::Loading { placeholder } => placeholder.as_ref(),
-            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref(),
+            ThumbnailState::Pending { placeholder } => placeholder.as_ref().or(Some(&*LOADING_PLACEHOLDER)),
+            ThumbnailState::Loading { placeholder } => placeholder.as_ref().or(Some(&*LOADING_PLACEHOLDER)),
+            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().or(Some(&*ERROR_PLACEHOLDER)),
         }
     }
 
     /// Get the dimensions of the thumbnail
+    /// Falls back to LOADING_PLACEHOLDER dimensions for pending/loading without placeholder
     pub fn dimensions(&self) -> Option<(u32, u32)> {
         match self {
             ThumbnailState::Ready { rgba } => Some((rgba.width, rgba.height)),
             ThumbnailState::Animated { frames, .. } => frames.first().map(|f| (f.width, f.height)),
-            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => placeholder.as_ref().map(|p| (p.width, p.height)),
-            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().map(|p| (p.width, p.height)),
+            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => placeholder
+                .as_ref()
+                .map(|p| (p.width, p.height))
+                .or_else(|| Some((LOADING_PLACEHOLDER.width, LOADING_PLACEHOLDER.height))),
+            ThumbnailState::Error { placeholder, .. } => placeholder
+                .as_ref()
+                .map(|p| (p.width, p.height))
+                .or_else(|| Some((ERROR_PLACEHOLDER.width, ERROR_PLACEHOLDER.height))),
         }
     }
 
@@ -343,13 +351,30 @@ pub struct Thumbnail {
     pub sauce_info: Option<SauceRecord>,
     /// Width multiplier (1, 2, or 3 based on character columns)
     pub width_multiplier: u32,
+    /// Label RGBA data (rendered separately for GPU)
+    pub label_rgba: Option<RgbaData>,
 }
 
 impl Thumbnail {
-    /// Create a new pending thumbnail with pre-rendered placeholder including label
+    /// Create a new pending thumbnail
+    /// Placeholder is created lazily when the thumbnail is first displayed
+    /// This is critical for performance with 100k+ items
     pub fn new(path: PathBuf, label: String) -> Self {
-        // Create placeholder with label for immediate display
-        let placeholder = create_labeled_placeholder(&LOADING_PLACEHOLDER, &label);
+        Self {
+            path,
+            label,
+            state: ThumbnailState::Pending {
+                placeholder: None, // Lazy - created when needed
+            },
+            sauce_info: None,
+            width_multiplier: 1,
+            label_rgba: None,
+        }
+    }
+
+    /// Create a new pending thumbnail with placeholder (for visible items)
+    pub fn new_with_placeholder(path: PathBuf, label: String) -> Self {
+        let placeholder = LOADING_PLACEHOLDER.clone();
         Self {
             path,
             label,
@@ -358,6 +383,21 @@ impl Thumbnail {
             },
             sauce_info: None,
             width_multiplier: 1,
+            label_rgba: None,
+        }
+    }
+
+    /// Ensure the placeholder exists (lazy initialization)
+    /// Call this before displaying a pending/loading thumbnail
+    pub fn ensure_placeholder(&mut self) {
+        match &mut self.state {
+            ThumbnailState::Pending { placeholder } if placeholder.is_none() => {
+                *placeholder = Some(LOADING_PLACEHOLDER.clone());
+            }
+            ThumbnailState::Loading { placeholder } if placeholder.is_none() => {
+                *placeholder = Some(LOADING_PLACEHOLDER.clone());
+            }
+            _ => {}
         }
     }
 
@@ -387,20 +427,31 @@ impl Thumbnail {
     /// Get the display height for layout purposes
     /// content_width is the width available for the image (tile width minus padding)
     /// Returns the height the image would have when displayed at content_width
+    /// Now includes label height since labels are rendered separately
     ///
-    /// The texture is rendered at final size, so no scaling is needed.
+    /// The raw texture dimensions are scaled to fit content_width.
     pub fn display_height(&self, content_width: f32) -> f32 {
-        match self.state.dimensions() {
+        let image_height = match self.state.dimensions() {
             Some((tex_w, tex_h)) => {
                 if tex_w == 0 {
-                    return 100.0; // Fallback for invalid dimensions
+                    100.0 // Fallback for invalid dimensions
+                } else {
+                    // Scale raw texture to fit content_width
+                    let scale = content_width / tex_w as f32;
+                    tex_h as f32 * scale
                 }
-                // Texture is at final display size, scale to fit content_width
-                let scale = content_width / tex_w as f32;
-                tex_h as f32 * scale
             }
             None => 100.0, // Default height for pending/loading
-        }
+        };
+
+        // Label is rendered at 2x scale for readability
+        const LABEL_SCALE: f32 = 2.0;
+        let label_height = self.label_rgba.as_ref().map(|l| l.height as f32 * LABEL_SCALE).unwrap_or(0.0);
+
+        // Add separator space between image and label (matching TILE_INNER_PADDING)
+        let separator = if label_height > 0.0 { 4.0 } else { 0.0 };
+
+        image_height + separator + label_height
     }
 
     /// Get the display width for layout purposes (in units of base width)
@@ -419,6 +470,8 @@ pub struct ThumbnailResult {
     pub sauce_info: Option<SauceRecord>,
     /// Width multiplier (1, 2, or 3 based on character columns)
     pub width_multiplier: u32,
+    /// Label RGBA data (rendered separately for GPU)
+    pub label_rgba: Option<RgbaData>,
 }
 
 /// Shared thumbnail cache

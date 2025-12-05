@@ -4,17 +4,19 @@ use i18n_embed_fl::fl;
 use iced::{
     Element, Event, Length, Rectangle, Task, Theme,
     keyboard::{Key, key::Named},
-    widget::{Space, column, container, mouse_area, row, text},
+    widget::{Space, column, container, image as iced_image, mouse_area, row, text},
 };
 use icy_engine_gui::{
     ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager,
     ui::{ExportDialogMessage, ExportDialogState},
+    version_helper::replace_version_marker,
 };
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    DEFAULT_TITLE, Item,
+    DEFAULT_TITLE, Item, VERSION,
     items::{ProviderType, SixteenColorsProvider, SixteenColorsRoot},
 };
 use icy_engine::formats::FileFormat;
@@ -31,6 +33,36 @@ use super::{
     focus::{focus, list_focus_style},
     options::{SortOrder, ViewMode},
 };
+
+// Include the welcome logo at compile time
+const WELCOME_LOGO: &[u8] = include_bytes!("../../data/welcome.xb");
+
+/// Static welcome logo image handle
+static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
+    use icy_engine::{Rectangle, RenderOptions, Selection, TextBuffer, TextPane};
+    use icy_parser_core::MusicOption;
+    use std::path::Path;
+
+    // Load the XBin file
+    let mut buffer = TextBuffer::from_bytes(Path::new("welcome.xb"), true, WELCOME_LOGO, Some(MusicOption::Off), None).expect("Failed to load welcome logo");
+
+    // Replace version marker
+    replace_version_marker(&mut buffer, &VERSION, None);
+
+    // Render to RGBA
+    let rect = Selection::from(Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()));
+    let opts = RenderOptions {
+        rect,
+        blink_on: true,
+        selection: None,
+        selection_fg: None,
+        selection_bg: None,
+        override_scan_lines: Some(false),
+    };
+
+    let (size, rgba) = buffer.render_to_rgba(&opts, false);
+    iced_image::Handle::from_rgba(size.width as u32, size.height as u32, rgba)
+});
 
 /// Messages for the main window
 #[derive(Clone)]
@@ -1393,11 +1425,13 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowAbout => {
+                icy_engine_gui::set_default_auto_scaling_xy(true);
                 use super::dialogs::about_dialog::ABOUT_ANSI;
                 self.about_dialog = Some(AboutDialog::new(ABOUT_ANSI));
                 Task::none()
             }
             Message::CloseAbout => {
+                icy_engine_gui::set_default_auto_scaling_xy(false);
                 self.about_dialog = None;
                 Task::none()
             }
@@ -1873,7 +1907,8 @@ impl MainWindow {
                         .style(list_focus_style)
                         .into()
                 } else {
-                    // Show placeholder text with welcome message
+                    // Show welcome logo with message
+                    let welcome_logo = iced_image::Image::new(WELCOME_IMAGE.clone()).content_fit(iced::ContentFit::None);
                     let welcome_title = text(fl!(crate::LANGUAGE_LOADER, "welcome-select-file"))
                         .size(18)
                         .style(|theme: &Theme| text::Style {
@@ -1882,7 +1917,7 @@ impl MainWindow {
                     let welcome_tip = text(fl!(crate::LANGUAGE_LOADER, "welcome-tip")).size(13).style(|theme: &Theme| text::Style {
                         color: Some(theme.palette().text.scale_alpha(0.5)),
                     });
-                    let preview_content = column![welcome_title, welcome_tip].spacing(12).align_x(iced::Alignment::Center);
+                    let preview_content = column![welcome_logo, welcome_title, welcome_tip].spacing(12).align_x(iced::Alignment::Center);
 
                     container(preview_content)
                         .width(Length::Fill)

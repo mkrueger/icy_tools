@@ -36,11 +36,13 @@ pub enum ImageFormat {
     Jpeg,
     /// BMP image format (recognition only, no save/load yet)
     Bmp,
+    /// Sixel graphics format (.six, .sixel)
+    Sixel,
 }
 
 impl ImageFormat {
     /// All available image formats
-    pub const ALL: &'static [ImageFormat] = &[ImageFormat::Png, ImageFormat::Gif, ImageFormat::Jpeg, ImageFormat::Bmp];
+    pub const ALL: &'static [ImageFormat] = &[ImageFormat::Png, ImageFormat::Gif, ImageFormat::Jpeg, ImageFormat::Bmp, ImageFormat::Sixel];
 
     /// Get the file extension for this image format.
     pub fn extension(&self) -> &'static str {
@@ -49,6 +51,7 @@ impl ImageFormat {
             ImageFormat::Gif => "gif",
             ImageFormat::Jpeg => "jpg",
             ImageFormat::Bmp => "bmp",
+            ImageFormat::Sixel => "six",
         }
     }
 
@@ -59,6 +62,7 @@ impl ImageFormat {
             ImageFormat::Gif => "GIF Animation",
             ImageFormat::Jpeg => "JPEG Image",
             ImageFormat::Bmp => "BMP Image",
+            ImageFormat::Sixel => "Sixel Graphics",
         }
     }
 
@@ -69,6 +73,7 @@ impl ImageFormat {
             ImageFormat::Gif => "Animated GIF with blink support",
             ImageFormat::Jpeg => "JPEG image (recognition only)",
             ImageFormat::Bmp => "BMP image (recognition only)",
+            ImageFormat::Sixel => "Sixel terminal graphics",
         }
     }
 
@@ -89,6 +94,7 @@ impl ImageFormat {
             "gif" => Some(ImageFormat::Gif),
             "jpg" | "jpeg" => Some(ImageFormat::Jpeg),
             "bmp" => Some(ImageFormat::Bmp),
+            "six" | "sixel" => Some(ImageFormat::Sixel),
             _ => None,
         }
     }
@@ -116,7 +122,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, rect),
             ImageFormat::Gif => self.save_screen_gif(screen, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -127,7 +133,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, region),
             ImageFormat::Gif => self.save_screen_gif(screen, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -151,60 +157,60 @@ impl ImageFormat {
     }
 
     fn save_screen_gif(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> EngineResult<()> {
-        use gifski::{Repeat, progress::NoProgress};
+        /*     use gifski::{Repeat, progress::NoProgress};
 
-        let size = screen.get_size();
-        let dim = screen.get_font_dimensions();
-        let width = (region.get_width().min(size.width) * dim.width) as usize;
-        let height = (region.get_height().min(size.height) * dim.height) as usize;
+                let size = screen.get_size();
+                let dim = screen.get_font_dimensions();
+                let width = (region.get_width().min(size.width) * dim.width) as usize;
+                let height = (region.get_height().min(size.height) * dim.height) as usize;
 
-        // Get blink rate from the screen's buffer type (in milliseconds)
-        let blink_rate_ms = screen.buffer_type().get_blink_rate();
-        let blink_rate_secs = blink_rate_ms as f64 / 1000.0;
+                // Get blink rate from the screen's buffer type (in milliseconds)
+                let blink_rate_ms = screen.buffer_type().get_blink_rate();
+                let blink_rate_secs = blink_rate_ms as f64 / 1000.0;
 
-        let settings = gifski::Settings {
-            width: Some(width as u32),
-            height: Some(height as u32),
-            quality: 100,
-            fast: true,
-            repeat: Repeat::Infinite,
-        };
+                let settings = gifski::Settings {
+                    width: Some(width as u32),
+                    height: Some(height as u32),
+                    quality: 100,
+                    fast: true,
+                    repeat: Repeat::Infinite,
+                };
 
-        let (collector, writer) = gifski::new(settings)?;
+                let (collector, writer) = gifski::new(settings)?;
 
-        let fs = std::fs::File::create(path)?;
-        let mut pb = NoProgress {};
+                let fs = std::fs::File::create(path)?;
+                let mut pb = NoProgress {};
 
-        let path_clone = path.to_path_buf();
-        let writer_handle = std::thread::spawn(move || {
-            if let Err(e) = writer.write(fs, &mut pb) {
-                log::error!("GIF writer error for {:?}: {}", path_clone, e);
-            }
-        });
+                let path_clone = path.to_path_buf();
+                let writer_handle = std::thread::spawn(move || {
+                    if let Err(e) = writer.write(fs, &mut pb) {
+                        log::error!("GIF writer error for {:?}: {}", path_clone, e);
+                    }
+                });
 
-        // Frame 1: blink_on = true (visible)
-        let options1 = RenderOptions {
-            rect: region.into(),
-            blink_on: true,
-            ..Default::default()
-        };
-        let (frame1_size, frame1_data) = screen.render_to_rgba(&options1);
-        let img1 = Self::create_imgref(frame1_data, frame1_size);
-        collector.add_frame_rgba(0, img1, 0.0)?;
+                // Frame 1: blink_on = true (visible)
+                let options1 = RenderOptions {
+                    rect: region.into(),
+                    blink_on: true,
+                    ..Default::default()
+                };
+                let (frame1_size, frame1_data) = screen.render_to_rgba(&options1);
+                let img1 = Self::create_imgref(frame1_data, frame1_size);
+                collector.add_frame_rgba(0, img1, 0.0)?;
 
-        // Frame 2: blink_on = false (hidden) - use screen's blink rate
-        let options2 = RenderOptions {
-            rect: region.into(),
-            blink_on: false,
-            ..Default::default()
-        };
-        let (frame2_size, frame2_data) = screen.render_to_rgba(&options2);
-        let img2 = Self::create_imgref(frame2_data, frame2_size);
-        collector.add_frame_rgba(1, img2, blink_rate_secs)?;
+                // Frame 2: blink_on = false (hidden) - use screen's blink rate
+                let options2 = RenderOptions {
+                    rect: region.into(),
+                    blink_on: false,
+                    ..Default::default()
+                };
+                let (frame2_size, frame2_data) = screen.render_to_rgba(&options2);
+                let img2 = Self::create_imgref(frame2_data, frame2_size);
+                collector.add_frame_rgba(1, img2, blink_rate_secs)?;
 
-        drop(collector);
-        writer_handle.join().map_err(|_| anyhow::anyhow!("GIF writer thread panicked"))?;
-
+                drop(collector);
+                writer_handle.join().map_err(|_| anyhow::anyhow!("GIF writer thread panicked"))?;
+        */
         Ok(())
     }
 
@@ -225,7 +231,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
             ImageFormat::Gif => self.save_gif(buffer, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -241,7 +247,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, region),
             ImageFormat::Gif => self.save_gif(buffer, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -267,65 +273,65 @@ impl ImageFormat {
     }
 
     fn save_gif(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> EngineResult<()> {
-        use gifski::{Repeat, progress::NoProgress};
+        /*use gifski::{Repeat, progress::NoProgress};
 
-        let size = buffer.get_size();
-        let dim = buffer.get_font_dimensions();
-        let width = (region.get_width().min(size.width) * dim.width) as usize;
-        let height = (region.get_height().min(size.height) * dim.height) as usize;
+                let size = buffer.get_size();
+                let dim = buffer.get_font_dimensions();
+                let width = (region.get_width().min(size.width) * dim.width) as usize;
+                let height = (region.get_height().min(size.height) * dim.height) as usize;
 
-        // Get blink rate from the buffer's type (in milliseconds)
-        let blink_rate_ms = buffer.buffer_type.get_blink_rate();
-        let blink_rate_secs = blink_rate_ms as f64 / 1000.0;
+                // Get blink rate from the buffer's type (in milliseconds)
+                let blink_rate_ms = buffer.buffer_type.get_blink_rate();
+                let blink_rate_secs = blink_rate_ms as f64 / 1000.0;
 
-        let settings = gifski::Settings {
-            width: Some(width as u32),
-            height: Some(height as u32),
-            quality: 100,
-            fast: true,
-            repeat: Repeat::Infinite,
-        };
+                let settings = gifski::Settings {
+                    width: Some(width as u32),
+                    height: Some(height as u32),
+                    quality: 100,
+                    fast: true,
+                    repeat: Repeat::Infinite,
+                };
 
-        let (collector, writer) = gifski::new(settings)?;
+                let (collector, writer) = gifski::new(settings)?;
 
-        let fs = std::fs::File::create(path)?;
-        let mut pb = NoProgress {};
+                let fs = std::fs::File::create(path)?;
+                let mut pb = NoProgress {};
 
-        // Spawn writer thread
-        let path_clone = path.to_path_buf();
-        let writer_handle = std::thread::spawn(move || {
-            if let Err(e) = writer.write(fs, &mut pb) {
-                log::error!("GIF writer error for {:?}: {}", path_clone, e);
-            }
-        });
+                // Spawn writer thread
+                let path_clone = path.to_path_buf();
+                let writer_handle = std::thread::spawn(move || {
+                    if let Err(e) = writer.write(fs, &mut pb) {
+                        log::error!("GIF writer error for {:?}: {}", path_clone, e);
+                    }
+                });
 
-        // Frame 1: blink_on = true (visible)
-        let options1 = RenderOptions {
-            rect: region.into(),
-            blink_on: true,
-            ..Default::default()
-        };
-        let scan_lines = options1.override_scan_lines.unwrap_or(false);
-        let (frame1_size, frame1_data) = buffer.render_to_rgba(&options1, scan_lines);
-        let img1 = Self::create_imgref(frame1_data, frame1_size);
-        collector.add_frame_rgba(0, img1, 0.0)?;
+                // Frame 1: blink_on = true (visible)
+                let options1 = RenderOptions {
+                    rect: region.into(),
+                    blink_on: true,
+                    ..Default::default()
+                };
+                let scan_lines = options1.override_scan_lines.unwrap_or(false);
+                let (frame1_size, frame1_data) = buffer.render_to_rgba(&options1, scan_lines);
+                let img1 = Self::create_imgref(frame1_data, frame1_size);
+                collector.add_frame_rgba(0, img1, 0.0)?;
 
-        // Frame 2: blink_on = false (hidden) - use buffer's blink rate
-        let options2 = RenderOptions {
-            rect: region.into(),
-            blink_on: false,
-            ..Default::default()
-        };
-        let (frame2_size, frame2_data) = buffer.render_to_rgba(&options2, scan_lines);
-        let img2 = Self::create_imgref(frame2_data, frame2_size);
-        collector.add_frame_rgba(1, img2, blink_rate_secs)?;
+                // Frame 2: blink_on = false (hidden) - use buffer's blink rate
+                let options2 = RenderOptions {
+                    rect: region.into(),
+                    blink_on: false,
+                    ..Default::default()
+                };
+                let (frame2_size, frame2_data) = buffer.render_to_rgba(&options2, scan_lines);
+                let img2 = Self::create_imgref(frame2_data, frame2_size);
+                collector.add_frame_rgba(1, img2, blink_rate_secs)?;
 
-        // Drop collector to signal completion
-        drop(collector);
+                // Drop collector to signal completion
+                drop(collector);
 
-        // Wait for writer to finish
-        writer_handle.join().map_err(|_| anyhow::anyhow!("GIF writer thread panicked"))?;
-
+                // Wait for writer to finish
+                writer_handle.join().map_err(|_| anyhow::anyhow!("GIF writer thread panicked"))?;
+        */
         Ok(())
     }
 

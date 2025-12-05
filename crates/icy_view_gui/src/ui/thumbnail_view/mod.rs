@@ -5,8 +5,9 @@
 //! - `thumbnail_loader` - Background loading of thumbnails with worker threads
 //! - `tile_shader` - GPU shader-based tile rendering with wgpu
 //! - `tile_grid_view` - Main tile grid view component
-//! - `canvas_tile_grid` - Experimental canvas-based rendering (unused)
+//! - `masonry_layout` - Masonry layout algorithm for the grid
 
+mod masonry_layout;
 mod thumbnail;
 mod thumbnail_loader;
 mod tile_grid_view;
@@ -17,7 +18,7 @@ pub use thumbnail::{
     DIZ_NOT_FOUND_PLACEHOLDER, ERROR_PLACEHOLDER, FOLDER_PLACEHOLDER, LOADING_PLACEHOLDER, RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH,
     THUMBNAIL_SCALE, Thumbnail, ThumbnailCache, ThumbnailResult, ThumbnailState, get_width_multiplier,
 };
-pub use thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, append_label_to_rgba, create_labeled_placeholder};
+pub use thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, append_label_to_rgba, create_labeled_placeholder, render_label_tag};
 pub use tile_grid_view::{TileGridMessage, TileGridView};
 pub use tile_shader::{
     TILE_BORDER_WIDTH, TILE_CORNER_RADIUS, TILE_IMAGE_WIDTH, TILE_INNER_PADDING, TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState,

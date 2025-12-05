@@ -124,6 +124,7 @@ impl FileFormat {
         FileFormat::Image(ImageFormat::Gif),
         FileFormat::Image(ImageFormat::Jpeg),
         FileFormat::Image(ImageFormat::Bmp),
+        FileFormat::Image(ImageFormat::Sixel),
         FileFormat::Archive(ArchiveFormat::Zip),
         FileFormat::Archive(ArchiveFormat::Arc),
         FileFormat::Archive(ArchiveFormat::Arj),
@@ -132,6 +133,7 @@ impl FileFormat {
         FileFormat::Archive(ArchiveFormat::Rar),
         FileFormat::Archive(ArchiveFormat::Sqz),
         FileFormat::Archive(ArchiveFormat::Hyp),
+        FileFormat::Archive(ArchiveFormat::Uc2),
     ];
 
     /// Formats that support saving (text-based formats only, see SAVEABLE_WITH_IMAGES for full list)
@@ -260,6 +262,7 @@ impl FileFormat {
             "gif" => Some(FileFormat::Image(ImageFormat::Gif)),
             "jpg" | "jpeg" => Some(FileFormat::Image(ImageFormat::Jpeg)),
             "bmp" => Some(FileFormat::Image(ImageFormat::Bmp)),
+            "six" | "sixel" => Some(FileFormat::Image(ImageFormat::Sixel)),
 
             // Try archive formats
             _ => ArchiveFormat::from_extension(&ext_lower).map(FileFormat::Archive),
@@ -326,6 +329,8 @@ impl FileFormat {
                 ArchiveFormat::Sqz => "sqz",
                 ArchiveFormat::Z => "z",
                 ArchiveFormat::Hyp => "hyp",
+                ArchiveFormat::Uc2 => "uc2",
+                ArchiveFormat::SevenZ => "7z",
             },
         }
     }
@@ -362,6 +367,7 @@ impl FileFormat {
             FileFormat::Image(ImageFormat::Gif) => &["gif"],
             FileFormat::Image(ImageFormat::Jpeg) => &["jpg", "jpeg"],
             FileFormat::Image(ImageFormat::Bmp) => &["bmp"],
+            FileFormat::Image(ImageFormat::Sixel) => &["six", "sixel"],
             FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
             FileFormat::Archive(ArchiveFormat::Arc) => &["arc"],
             FileFormat::Archive(ArchiveFormat::Arj) => &["arj"],
@@ -372,6 +378,8 @@ impl FileFormat {
             FileFormat::Archive(ArchiveFormat::Sqz) => &["sqz"],
             FileFormat::Archive(ArchiveFormat::Z) => &["z"],
             FileFormat::Archive(ArchiveFormat::Hyp) => &["hyp"],
+            FileFormat::Archive(ArchiveFormat::Uc2) => &["uc2"],
+            FileFormat::Archive(ArchiveFormat::SevenZ) => &["7z"],
         }
     }
 
@@ -412,6 +420,8 @@ impl FileFormat {
                 ArchiveFormat::Sqz => "SQZ Archive",
                 ArchiveFormat::Z => "Unix Compress",
                 ArchiveFormat::Hyp => "Hyper Archive",
+                ArchiveFormat::Uc2 => "UC2 Archive",
+                ArchiveFormat::SevenZ => "7-Zip Archive",
             },
         }
     }

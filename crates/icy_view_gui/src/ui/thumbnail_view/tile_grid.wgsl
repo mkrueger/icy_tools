@@ -1,8 +1,15 @@
-// Tile Grid Shader v3 - Layered Architecture
+// Tile Grid Shader v4 - Multi-Texture Layered Architecture
 // Renders textured tiles with rounded borders, drop shadows, and glow effects
+// Supports up to 10 vertically stacked texture slices for very tall images (up to 80,000px)
 //
 // Coordinate system: 0,0 = top-left, Y grows downward (standard screen coords)
 // All rectangles are pre-computed in Rust and passed as uniforms
+//
+// TEXTURE SLICING:
+//   - GPU textures are limited to ~8192px height
+//   - Very tall images (e.g., 80,000px) are split into up to 10 slices
+//   - Each slice is MAX_SLICE_HEIGHT pixels (8000px)
+//   - Shader samples from the correct slice based on Y coordinate
 //
 // LAYER ORDER (back to front):
 //   0. Background (transparent)
@@ -10,9 +17,16 @@
 //   2. Glow (if selected/hovered)
 //   3. Border
 //   4. Padding (black fill between border and content)
-//   5. Image (main texture)
+//   5. Image (main texture - may span multiple slices)
 //   6. Label background (gray)
 //   7. Label text (rendered via tag texture)
+
+// ============================================================================
+// Texture Slicing Constants
+// ============================================================================
+
+const MAX_SLICE_HEIGHT: f32 = 8000.0;
+const MAX_TEXTURE_SLICES: u32 = 10u;
 
 // ============================================================================
 // Color Constants
@@ -63,12 +77,33 @@ struct Uniforms {
     border_width: f32,
     shadow_blur: f32,
     shadow_opacity: f32,
-    _padding: vec2<f32>,
+    // Texture slice info
+    num_slices: f32,              // Number of active texture slices (1-10)
+    total_image_height: f32,      // Total logical height of the image in pixels
+    // For multi-pass viewport slicing
+    viewport_y_offset: f32,       // Y offset for current viewport stripe (pixels)
+    _pad1: vec4<f32>,             // Padding (16 bytes)
+    _pad2: vec4<f32>,             // Extra padding (16 bytes for alignment)
+    // Slice heights: height of each slice in pixels (0 if unused)
+    slice_heights: array<vec4<f32>, 3>,  // 12 floats for 10 slices + 2 padding
+    // Label texture info
+    label_texture_size: vec4<f32>,  // width, height, 0, 0 (0,0 if no label)
 };
 
-@group(0) @binding(0) var t_image: texture_2d<f32>;
-@group(0) @binding(1) var s_sampler: sampler;
-@group(0) @binding(2) var<uniform> uniforms: Uniforms;
+// 10 texture slices for very tall images
+@group(0) @binding(0) var t_slice0: texture_2d<f32>;
+@group(0) @binding(1) var t_slice1: texture_2d<f32>;
+@group(0) @binding(2) var t_slice2: texture_2d<f32>;
+@group(0) @binding(3) var t_slice3: texture_2d<f32>;
+@group(0) @binding(4) var t_slice4: texture_2d<f32>;
+@group(0) @binding(5) var t_slice5: texture_2d<f32>;
+@group(0) @binding(6) var t_slice6: texture_2d<f32>;
+@group(0) @binding(7) var t_slice7: texture_2d<f32>;
+@group(0) @binding(8) var t_slice8: texture_2d<f32>;
+@group(0) @binding(9) var t_slice9: texture_2d<f32>;
+@group(0) @binding(10) var s_sampler: sampler;
+@group(0) @binding(11) var<uniform> uniforms: Uniforms;
+@group(0) @binding(12) var t_label: texture_2d<f32>;
 
 // ============================================================================
 // Helper Functions
@@ -191,14 +226,102 @@ fn layer_padding(p: vec2<f32>) -> vec4<f32> {
     return PADDING_FILL_COLOR;
 }
 
-/// Layer 5: Image (main thumbnail texture)
+/// Get slice height by index (from packed array)
+fn get_slice_height(index: u32) -> f32 {
+    let arr_idx = index / 4u;
+    let component = index % 4u;
+    if (arr_idx == 0u) {
+        if (component == 0u) { return uniforms.slice_heights[0].x; }
+        if (component == 1u) { return uniforms.slice_heights[0].y; }
+        if (component == 2u) { return uniforms.slice_heights[0].z; }
+        return uniforms.slice_heights[0].w;
+    } else if (arr_idx == 1u) {
+        if (component == 0u) { return uniforms.slice_heights[1].x; }
+        if (component == 1u) { return uniforms.slice_heights[1].y; }
+        if (component == 2u) { return uniforms.slice_heights[1].z; }
+        return uniforms.slice_heights[1].w;
+    } else {
+        if (component == 0u) { return uniforms.slice_heights[2].x; }
+        if (component == 1u) { return uniforms.slice_heights[2].y; }
+        return 0.0;  // Only 10 slices, indices 10-11 unused
+    }
+}
+
+/// Sample from the appropriate texture slice based on Y position
+fn sample_sliced_image(uv: vec2<f32>) -> vec4<f32> {
+    // Fast path for single-slice images (most common case)
+    if (uniforms.num_slices <= 1.0) {
+        return textureSample(t_slice0, s_sampler, uv);
+    }
+    
+    // Multi-slice: UV.y (0-1) maps to the full texture height
+    let pixel_y = uv.y * uniforms.total_image_height;
+    
+    // Find which slice contains this pixel
+    var accumulated_height: f32 = 0.0;
+    var slice_idx: u32 = 0u;
+    var slice_start: f32 = 0.0;
+    let num_slices = u32(uniforms.num_slices);
+    
+    for (var i: u32 = 0u; i < num_slices; i = i + 1u) {
+        let slice_height = get_slice_height(i);
+        let slice_end = accumulated_height + slice_height;
+        
+        if (pixel_y < slice_end) {
+            slice_idx = i;
+            slice_start = accumulated_height;
+            break;
+        }
+        accumulated_height = slice_end;
+        slice_idx = i;
+        slice_start = accumulated_height;
+    }
+    
+    // Calculate UV within the slice
+    let slice_height = get_slice_height(slice_idx);
+    let local_y = pixel_y - slice_start;
+    let slice_uv = vec2<f32>(uv.x, local_y / slice_height);
+    
+    // DEBUG: Color-code slices to visualize which slice is being sampled
+    // Uncomment to debug slice boundaries:
+    // let debug_colors = array<vec4<f32>, 10>(
+    //     vec4<f32>(1.0, 0.0, 0.0, 1.0),  // Red - slice 0
+    //     vec4<f32>(0.0, 1.0, 0.0, 1.0),  // Green - slice 1
+    //     vec4<f32>(0.0, 0.0, 1.0, 1.0),  // Blue - slice 2
+    //     vec4<f32>(1.0, 1.0, 0.0, 1.0),  // Yellow - slice 3
+    //     vec4<f32>(1.0, 0.0, 1.0, 1.0),  // Magenta - slice 4
+    //     vec4<f32>(0.0, 1.0, 1.0, 1.0),  // Cyan - slice 5
+    //     vec4<f32>(1.0, 0.5, 0.0, 1.0),  // Orange - slice 6
+    //     vec4<f32>(0.5, 0.0, 1.0, 1.0),  // Purple - slice 7
+    //     vec4<f32>(0.0, 0.5, 0.0, 1.0),  // Dark green - slice 8
+    //     vec4<f32>(0.5, 0.5, 0.5, 1.0)   // Gray - slice 9
+    // );
+    // return debug_colors[slice_idx % 10u];
+    
+    // Sample from the appropriate slice
+    switch(slice_idx) {
+        case 0u: { return textureSample(t_slice0, s_sampler, slice_uv); }
+        case 1u: { return textureSample(t_slice1, s_sampler, slice_uv); }
+        case 2u: { return textureSample(t_slice2, s_sampler, slice_uv); }
+        case 3u: { return textureSample(t_slice3, s_sampler, slice_uv); }
+        case 4u: { return textureSample(t_slice4, s_sampler, slice_uv); }
+        case 5u: { return textureSample(t_slice5, s_sampler, slice_uv); }
+        case 6u: { return textureSample(t_slice6, s_sampler, slice_uv); }
+        case 7u: { return textureSample(t_slice7, s_sampler, slice_uv); }
+        case 8u: { return textureSample(t_slice8, s_sampler, slice_uv); }
+        case 9u: { return textureSample(t_slice9, s_sampler, slice_uv); }
+        default: { return textureSample(t_slice0, s_sampler, slice_uv); }
+    }
+}
+
+/// Layer 5: Image (main thumbnail texture - may span multiple slices)
 fn layer_image(p: vec2<f32>) -> vec4<f32> {
     if (!point_in_rect(p, uniforms.image_rect)) {
         return vec4<f32>(0.0);
     }
     
     let uv = rect_uv(p, uniforms.image_rect);
-    var color = textureSample(t_image, s_sampler, uv);
+    var color = sample_sliced_image(uv);
     
     // Apply hover effect (brightness boost)
     if (uniforms.is_hovered > 0.5) {
@@ -217,6 +340,14 @@ fn layer_label_bg(p: vec2<f32>) -> vec4<f32> {
     if (!point_in_rect(p, uniforms.label_rect)) {
         return vec4<f32>(0.0);
     }
+    
+    // If we have a label texture, sample from it
+    if (uniforms.label_texture_size.x > 0.0 && uniforms.label_texture_size.y > 0.0) {
+        let uv = rect_uv(p, uniforms.label_rect);
+        return textureSample(t_label, s_sampler, uv);
+    }
+    
+    // Fallback to solid gray if no label texture
     return LABEL_BG_COLOR;
 }
 
@@ -266,7 +397,9 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let p = input.local_pos;
+    // Apply viewport_y_offset for multi-pass stripe rendering
+    // Each stripe renders a portion of the tile, so we need to offset the local position
+    let p = vec2<f32>(input.local_pos.x, input.local_pos.y + uniforms.viewport_y_offset);
     
     // Calculate distance once for all layers that need it
     let dist_content = sd_rounded_rect(p, uniforms.content_rect, uniforms.border_radius);
@@ -294,8 +427,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Layer 5: Image
     result = blend_over(result, layer_image(p));
     
-    // Layer 6: Label background (tag is rendered separately)
-    result = blend_over(result, layer_label_bg(p));
+    // Note: Labels are now rendered in a separate pass (tile_label.wgsl)
+    // for proper scaling and centering
     
     return result;
 }

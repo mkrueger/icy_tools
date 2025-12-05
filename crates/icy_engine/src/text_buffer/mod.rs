@@ -30,11 +30,12 @@ use crate::{
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
 
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IceMode {
-    Unlimited,
-    Blink,
-    Ice,
+    Blink = 0,
+    Ice = 1,
+    Unlimited = 2,
 }
 
 impl IceMode {

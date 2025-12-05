@@ -402,7 +402,6 @@ impl ShuffleMode {
             };
 
             if should_remove_file_start_timer {
-                println!("Removing file start timer because scrolling is done.");
                 self.file_started_at = None;
             }
         }
@@ -687,7 +686,6 @@ impl ShuffleMode {
                 return true;
             }
         }
-        println!("Shuffle mode does not need animation ticks.");
         false
     }
 }
