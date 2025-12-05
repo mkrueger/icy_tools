@@ -25,6 +25,7 @@ bytemuck = { version = "1.0", features = ["derive"] }
 retrofont = { workspace = true }
 rfd = { workspace = true }
 clipboard-rs = { workspace = true }
+string-interner = { workspace = true }
 
 # SVG and font rendering for shader-based list
 resvg = { workspace = true }
@@ -41,7 +42,7 @@ serde = { workspace = true }
 toml = { workspace = true }
 semver = { workspace = true }
 open = { workspace = true }
-rand = { workspace = true }
+fastrand = { workspace = true }
 
 reqwest = { version = "0.12.12", features = ["json"] }
 serde_json = { workspace = true }

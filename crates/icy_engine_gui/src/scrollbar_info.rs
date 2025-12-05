@@ -37,20 +37,14 @@ impl ScrollbarInfo {
     /// Compute scrollbar info from a Terminal
     pub fn from_terminal(terminal: &Terminal) -> Self {
         let vp = terminal.viewport.read();
-        let zoom = vp.zoom;
         let content_height = vp.content_height;
         let content_width = vp.content_width;
 
-        // Use bounds dimensions from widget if available
-        // These are in pixels, need to divide by zoom to get content units
-        let bounds_height = terminal.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let bounds_width = terminal.bounds_width.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_height = if bounds_height > 0.0 {
-            bounds_height / zoom
-        } else {
-            vp.visible_height / zoom
-        };
-        let visible_width = if bounds_width > 0.0 { bounds_width / zoom } else { vp.visible_width / zoom };
+        // Use viewport methods which use shader-computed values if available
+        let visible_height = vp.visible_content_height();
+        let visible_width = vp.visible_content_width();
+        let max_scroll_y = vp.max_scroll_y();
+        let max_scroll_x = vp.max_scroll_x();
 
         drop(vp);
 
@@ -60,10 +54,6 @@ impl ScrollbarInfo {
 
         let width_ratio = visible_width / content_width.max(1.0);
         let needs_hscrollbar = width_ratio < 1.0;
-
-        // Max scroll in CONTENT units (content_size - visible_content_size)
-        let max_scroll_y = (content_height - visible_height).max(0.0);
-        let max_scroll_x = (content_width - visible_width).max(0.0);
 
         Self {
             needs_vscrollbar,

@@ -7,7 +7,7 @@ use iced::{
 };
 
 use super::icons;
-use super::options::{SortOrder, ViewMode};
+use super::options::{Options, SortOrder, ViewMode};
 use crate::LANGUAGE_LOADER;
 
 /// Duration before toolbar auto-hides on first show (generous)
@@ -43,9 +43,6 @@ pub enum FileListToolbarMessage {
 /// Toolbar for the file list area
 /// Contains: Up button, View mode toggle, Sort button
 pub struct FileListToolbar {
-    pub view_mode: ViewMode,
-    pub sort_order: SortOrder,
-    pub sauce_mode: bool,
     /// Whether the up button is enabled (not at root)
     pub can_go_up: bool,
     /// Whether the toolbar is currently visible (for tiles mode slide animation)
@@ -61,27 +58,12 @@ pub struct FileListToolbar {
 impl FileListToolbar {
     pub fn new() -> Self {
         Self {
-            view_mode: ViewMode::default(),
-            sort_order: SortOrder::default(),
-            sauce_mode: false,
             can_go_up: false,
             is_visible: true,
             is_hovered: false,
             last_shown: None,
             first_show: true,
         }
-    }
-
-    pub fn set_view_mode(&mut self, mode: ViewMode) {
-        self.view_mode = mode;
-    }
-
-    pub fn set_sort_order(&mut self, order: SortOrder) {
-        self.sort_order = order;
-    }
-
-    pub fn set_sauce_mode(&mut self, sauce_mode: bool) {
-        self.sauce_mode = sauce_mode;
     }
 
     pub fn set_can_go_up(&mut self, can_go_up: bool) {
@@ -142,16 +124,19 @@ impl FileListToolbar {
     }
 
     /// View for list mode (solid background, fixed width 300px)
-    pub fn view_for_list(&self) -> Element<'_, FileListToolbarMessage> {
-        self.view_internal(false)
+    pub fn view_for_list(&self, options: &Options) -> Element<'_, FileListToolbarMessage> {
+        self.view_internal(options, false)
     }
 
     /// View for tiles mode (transparent overlay)
-    pub fn view(&self) -> Element<'_, FileListToolbarMessage> {
-        self.view_internal(true)
+    pub fn view(&self, options: &Options) -> Element<'_, FileListToolbarMessage> {
+        self.view_internal(options, true)
     }
 
-    fn view_internal(&self, is_overlay: bool) -> Element<'_, FileListToolbarMessage> {
+    fn view_internal(&self, options: &Options, is_overlay: bool) -> Element<'_, FileListToolbarMessage> {
+        let view_mode = options.view_mode;
+        let sort_order = options.sort_order;
+        let sauce_mode = options.sauce_mode;
         // Up button
         let up_btn = button(icons::arrow_upward_icon(14.0)).padding([2, 6]).style(toolbar_button_style);
         let up_btn = if self.can_go_up {
@@ -159,15 +144,15 @@ impl FileListToolbar {
         } else {
             up_btn
         };
-        let up_btn = tooltip(
+        let up_btn: tooltip::Tooltip<'_, FileListToolbarMessage> = tooltip(
             up_btn,
             container(text(fl!(LANGUAGE_LOADER, "tooltip-up")).size(12)).style(container::rounded_box),
             tooltip::Position::Bottom,
         );
 
         // Sort order button
-        let sort_icon = self.sort_order.icon();
-        let sort_tooltip = match self.sort_order {
+        let sort_icon = sort_order.icon();
+        let sort_tooltip = match sort_order {
             SortOrder::NameAsc => fl!(LANGUAGE_LOADER, "tooltip-sort-name-asc"),
             SortOrder::NameDesc => fl!(LANGUAGE_LOADER, "tooltip-sort-name-desc"),
             SortOrder::SizeAsc => fl!(LANGUAGE_LOADER, "tooltip-sort-size-asc"),
@@ -186,14 +171,14 @@ impl FileListToolbar {
         );
 
         // SAUCE mode toggle button
-        let sauce_tooltip = if self.sauce_mode {
+        let sauce_tooltip = if sauce_mode {
             fl!(LANGUAGE_LOADER, "tooltip-sauce-mode-off")
         } else {
             fl!(LANGUAGE_LOADER, "tooltip-sauce-mode-on")
         };
         let sauce_btn = button(text("S").size(12))
             .padding([2, 6])
-            .style(if self.sauce_mode { sauce_button_active_style } else { toolbar_button_style })
+            .style(if sauce_mode { sauce_button_active_style } else { toolbar_button_style })
             .on_press(FileListToolbarMessage::ToggleSauceMode);
         let sauce_btn = tooltip(
             sauce_btn,
@@ -202,7 +187,7 @@ impl FileListToolbar {
         );
 
         // View mode toggle button
-        let (view_icon, view_tooltip) = match self.view_mode {
+        let (view_icon, view_tooltip) = match view_mode {
             ViewMode::List => (icons::grid_view_icon(14.0), fl!(LANGUAGE_LOADER, "tooltip-view-mode-tiles")), // Currently list -> switch to tiles
             ViewMode::Tiles => (icons::view_list_icon(14.0), fl!(LANGUAGE_LOADER, "tooltip-view-mode-list")), // Currently tiles -> switch to list
         };

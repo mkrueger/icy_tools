@@ -148,7 +148,6 @@ impl Default for NavigationHistory {
 
 /// Navigation bar widget
 pub struct NavigationBar {
-    pub view_mode: ViewMode,
     /// Whether we're currently browsing 16colors.rs
     pub is_16colors_mode: bool,
     /// Editable path input
@@ -160,22 +159,10 @@ pub struct NavigationBar {
 impl NavigationBar {
     pub fn new() -> Self {
         Self {
-            view_mode: ViewMode::default(),
             is_16colors_mode: false,
             path_input: String::new(),
             is_path_valid: true,
         }
-    }
-
-    pub fn set_view_mode(&mut self, mode: ViewMode) {
-        self.view_mode = mode;
-    }
-
-    pub fn toggle_view_mode(&mut self) {
-        self.view_mode = match self.view_mode {
-            ViewMode::List => ViewMode::Tiles,
-            ViewMode::Tiles => ViewMode::List,
-        };
     }
 
     pub fn set_16colors_mode(&mut self, enabled: bool) {

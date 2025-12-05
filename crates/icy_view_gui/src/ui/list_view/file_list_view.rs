@@ -58,6 +58,8 @@ pub enum FileListViewMessage {
     OpenSelected,
     /// Set viewport size (from responsive layout)
     SetViewportSize(f32, f32),
+    /// Selection changed (for filter-triggered updates)
+    SelectionChanged,
 }
 
 /// Cache entry for pre-rendered list items
@@ -323,6 +325,11 @@ impl FileListView {
                 false
             }
             FileListViewMessage::OpenSelected => self.selected_index.is_some(),
+            FileListViewMessage::SelectionChanged => {
+                // Just signal that selection changed (for filter-triggered updates)
+                // The actual selection is already set, this just triggers the preview update
+                false
+            }
             FileListViewMessage::SetViewportSize(width, height) => {
                 self.viewport.set_visible_size(width, height);
                 let current = *self.current_width.borrow();
@@ -506,12 +513,10 @@ impl FileListView {
                     // Choose render method based on sauce mode
                     let (rgba_data, w, h) = if self.sauce_mode {
                         // Get SAUCE info from cache if available
-                        // SauceCache.get() returns Option<&Option<SauceInfo>>
+                        // SauceCache.get() returns Option<Option<SauceInfo>> (resolved from interned strings)
                         // Use get_full_path() or fall back to get_file_path() (same as SauceLoader)
                         let item_path = item.get_full_path().unwrap_or_else(|| item.get_file_path());
-                        let sauce_info = sauce_cache_guard
-                            .as_ref()
-                            .and_then(|cache| cache.get(&item_path).and_then(|opt| opt.as_ref().cloned()));
+                        let sauce_info = sauce_cache_guard.as_ref().and_then(|cache| cache.get(&item_path).flatten());
                         self.get_or_render_item_with_sauce(&label, file_icon, is_folder, width, &theme_colors, filter, sauce_info.as_ref())
                     } else {
                         self.get_or_render_item(&label, file_icon, is_folder, width, &theme_colors, filter)

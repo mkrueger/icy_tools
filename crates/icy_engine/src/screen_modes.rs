@@ -267,7 +267,7 @@ impl ScreenMode {
                 screen.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Petscii;
-                
+
                 seq_prepare(screen);
             }
             ScreenMode::Atascii(i) => {

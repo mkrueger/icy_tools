@@ -401,7 +401,9 @@ impl FileBrowser {
 
     /// Navigate to a web path (16colors)
     pub fn navigate_to_web_path(&mut self, path: &str) {
-        self.nav_point = NavPoint::web(path.to_string());
+        // Remove leading slash if present - internal paths don't have leading /
+        let clean_path = path.trim_start_matches('/');
+        self.nav_point = NavPoint::web(clean_path.to_string());
         self.refresh();
     }
 

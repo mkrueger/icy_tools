@@ -500,14 +500,26 @@ impl<'a> CRTShaderProgram<'a> {
                     let visible_content_height = (physical_bounds_height / effective_zoom).min(vp.content_height);
                     let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
 
-                    // Store computed visible dimensions for scrollbar calculations
-                    self.term.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
-                    self.term.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
+                    // Store computed visible dimensions in viewport for scrollbar calculations
+                    // These are stored as f32 bits in atomic fields for thread-safe access
+                    vp.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
+                    vp.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
+                    vp.computed_visible_height
+                        .store(visible_content_height.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                    vp.computed_visible_width
+                        .store(visible_content_width.to_bits(), std::sync::atomic::Ordering::Relaxed);
+
+                    // Clamp scroll to valid range based on current visible content
+                    // This prevents rendering past the content bounds
+                    let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
+                    let max_scroll_x = (vp.content_width - visible_content_width).max(0.0);
+                    let clamped_scroll_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+                    let clamped_scroll_x = vp.scroll_x.clamp(0.0, max_scroll_x);
 
                     // Create viewport region - scroll_x/y are already in content coordinates
                     let viewport_region = icy_engine::Rectangle::from(
-                        vp.scroll_x as i32,
-                        vp.scroll_y as i32,
+                        clamped_scroll_x as i32,
+                        clamped_scroll_y as i32,
                         visible_content_width as i32,
                         visible_content_height as i32,
                     );

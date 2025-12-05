@@ -2,8 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, EngineResult, OutputFormat, Palette, TextPane,
-    TextScreen,
+    AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, EngineResult, OutputFormat, Palette, TextScreen,
 };
 
 #[derive(Default)]
@@ -37,7 +36,6 @@ impl OutputFormat for Seq {
         result.buffer.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
         result.buffer.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
 
-        
         result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
         result.buffer.buffer_type = crate::BufferType::Petscii;
         result.buffer.terminal_state.is_terminal_buffer = false;

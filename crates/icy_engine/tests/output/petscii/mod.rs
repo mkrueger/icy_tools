@@ -1,4 +1,4 @@
-use icy_engine::{ScreenMode, TextBuffer, TextPane};
+use icy_engine::{ScreenMode, TextBuffer};
 use icy_net::telnet::TerminalEmulation;
 use std::fs::{self};
 
@@ -26,8 +26,7 @@ pub fn test_seq() {
             continue;
         }
         // Load SEQ file using the SEQ format loader directly
-        let buffer = TextBuffer::load_buffer(&cur_entry, true, None)
-            .unwrap_or_else(|e| panic!("Error loading SEQ file {:?}: {}", cur_entry, e));
+        let buffer = TextBuffer::load_buffer(&cur_entry, true, None).unwrap_or_else(|e| panic!("Error loading SEQ file {:?}: {}", cur_entry, e));
         crate::compare_buffer_output(&buffer, &cur_entry);
     }
 }

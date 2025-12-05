@@ -29,7 +29,7 @@ use super::{
     dialogs::settings_dialog::{SettingsDialogState, SettingsMessage},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
     focus::{focus, list_focus_style},
-    options::ViewMode,
+    options::{SortOrder, ViewMode},
 };
 
 /// Messages for the main window
@@ -91,16 +91,6 @@ pub enum Message {
     ExportDialog(ExportDialogMessage),
     /// Copy selection to clipboard
     Copy,
-    /// Zoom in
-    ZoomIn,
-    /// Zoom out
-    ZoomOut,
-    /// Reset zoom to 1:1
-    ZoomReset,
-    /// Auto-fit zoom
-    ZoomAutoFit,
-    /// SAUCE info loaded for a file
-    SauceLoaded(SauceResult),
     /// Skip to next file in shuffle mode
     ShuffleNext,
     /// Show help dialog
@@ -147,8 +137,6 @@ pub struct MainWindow {
     pub folder_preview: TileGridView,
     /// Path of the folder being previewed (None means show file preview)
     pub folder_preview_path: Option<PathBuf>,
-    /// Current view mode
-    pub view_mode: ViewMode,
     /// Last animation tick time for delta calculation
     last_tick: Instant,
     /// SAUCE dialog (shown as modal when Some)
@@ -215,17 +203,13 @@ impl MainWindow {
             preview.set_baud_emulation(icy_parser_core::BaudEmulation::Rate(rate));
         }
 
-        let mut navigation_bar = NavigationBar::new();
-        navigation_bar.set_view_mode(view_mode);
+        let mut navigation_bar: NavigationBar = NavigationBar::new();
         // Initialize path input with current path
         if let Some(path) = file_browser.current_path() {
             navigation_bar.set_path_input(path.to_string_lossy().to_string());
         }
 
         let mut file_list_toolbar = FileListToolbar::new();
-        file_list_toolbar.set_view_mode(view_mode);
-        file_list_toolbar.set_sort_order(sort_order);
-        file_list_toolbar.set_sauce_mode(opts.sauce_mode);
         // Check if we can go up (not at filesystem root)
         if let Some(path) = file_browser.current_path() {
             file_list_toolbar.set_can_go_up(path.parent().is_some());
@@ -275,7 +259,6 @@ impl MainWindow {
                 tile_grid,
                 folder_preview: TileGridView::new(),
                 folder_preview_path: None,
-                view_mode,
                 last_tick: Instant::now(),
                 sauce_dialog: None,
                 help_dialog: None,
@@ -310,7 +293,7 @@ impl MainWindow {
                     // Update path input to show current display path
                     self.navigation_bar.set_path_input(new_display_path.clone());
                     // Also update tile grid when directory changes
-                    if self.view_mode == ViewMode::Tiles {
+                    if self.view_mode() == ViewMode::Tiles {
                         let items = self.file_browser.get_items();
                         self.tile_grid.set_items_from_items(items);
                     }
@@ -419,7 +402,7 @@ impl MainWindow {
                         // Update path input with the new display path
                         let display_path = self.file_browser.get_display_path();
                         self.navigation_bar.set_path_input(display_path);
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
@@ -429,7 +412,7 @@ impl MainWindow {
                         self.preview.cancel_loading();
 
                         self.file_browser.update(FileBrowserMessage::Refresh);
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
@@ -468,7 +451,7 @@ impl MainWindow {
                             self.file_browser.navigate_to(home.clone());
                             self.navigation_bar.set_path_input(home.to_string_lossy().to_string());
                         }
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
@@ -577,7 +560,7 @@ impl MainWindow {
                                 self.navigation_bar.set_path_valid(false);
                             }
                         }
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
@@ -665,12 +648,7 @@ impl MainWindow {
                                 self.history.navigate_to(point);
                             } else {
                                 // For files, switch to list view and select the item
-                                self.view_mode = ViewMode::List;
-                                self.navigation_bar.set_view_mode(ViewMode::List);
-                                {
-                                    let mut locked = self.options.lock();
-                                    locked.view_mode = ViewMode::List;
-                                }
+                                self.set_view_mode(ViewMode::List);
                                 // Build full path for the file
                                 let current_path = self.file_browser.get_display_path();
                                 let full_path = PathBuf::from(&current_path).join(&item_path);
@@ -735,12 +713,7 @@ impl MainWindow {
                                     self.history.navigate_to(point);
                                 } else {
                                     // For files, switch to list view and select the item
-                                    self.view_mode = ViewMode::List;
-                                    self.navigation_bar.set_view_mode(ViewMode::List);
-                                    {
-                                        let mut locked = self.options.lock();
-                                        locked.view_mode = ViewMode::List;
-                                    }
+                                    self.set_view_mode(ViewMode::List);
                                     // Build full path for the file
                                     let current_path = self.file_browser.get_display_path();
                                     let full_path = PathBuf::from(&current_path).join(&item_path);
@@ -933,7 +906,7 @@ impl MainWindow {
                             let toast = Toast::info(fl!(crate::LANGUAGE_LOADER, "toast-auto-scroll-on"));
 
                             // Start auto-scroll on the appropriate view based on mode
-                            match self.view_mode {
+                            match self.view_mode() {
                                 ViewMode::Tiles => {
                                     // Sync scroll speed and start tile grid auto-scroll
                                     self.tile_grid.set_scroll_speed(self.preview.get_scroll_speed());
@@ -966,7 +939,7 @@ impl MainWindow {
                     }
                     StatusBarMessage::ShowSauceInfo => {
                         // Get SAUCE info from the appropriate source based on view mode
-                        let sauce_info = if self.view_mode == ViewMode::Tiles {
+                        let sauce_info = if self.view_mode() == ViewMode::Tiles {
                             self.tile_grid.get_status_info().and_then(|(_, _, _, sauce)| sauce)
                         } else {
                             self.preview.get_sauce_info().cloned()
@@ -1233,7 +1206,7 @@ impl MainWindow {
                         if let Some(path) = self.file_browser.current_path() {
                             self.file_list_toolbar.set_can_go_up(path.parent().is_some());
                         }
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
@@ -1244,16 +1217,9 @@ impl MainWindow {
                         self.current_file = None;
                         self.folder_preview_path = None;
 
-                        self.navigation_bar.toggle_view_mode();
-                        self.file_list_toolbar.set_view_mode(self.navigation_bar.view_mode);
-                        self.view_mode = self.navigation_bar.view_mode;
-                        // Save the preference
-                        {
-                            let mut locked = self.options.lock();
-                            locked.view_mode = self.view_mode;
-                        }
+                        self.set_view_mode(self.view_mode().toggle());
                         // When switching to tile mode, populate the tile grid with current items
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                             // Apply current filter to tile grid
@@ -1266,17 +1232,12 @@ impl MainWindow {
                         }
                     }
                     FileListToolbarMessage::CycleSortOrder => {
-                        let new_order = self.file_list_toolbar.sort_order.next();
-                        self.file_list_toolbar.set_sort_order(new_order);
-                        // Save the preference
-                        {
-                            let mut locked = self.options.lock();
-                            locked.sort_order = new_order;
-                        }
+                        let new_order = self.sort_order().next();
+                        self.set_sort_order(new_order);
                         // Refresh the file browser to apply new sort order
                         self.file_browser.set_sort_order(new_order);
                         // If in tile mode, refresh tile grid
-                        if self.view_mode == ViewMode::Tiles {
+                        if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                             let filter = self.filter_popup.get_filter().to_string();
@@ -1286,14 +1247,9 @@ impl MainWindow {
                         }
                     }
                     FileListToolbarMessage::ToggleSauceMode => {
-                        let new_mode = !self.file_list_toolbar.sauce_mode;
-                        self.file_list_toolbar.set_sauce_mode(new_mode);
+                        let new_mode = !self.sauce_mode();
+                        self.set_sauce_mode(new_mode);
                         self.file_browser.set_sauce_mode(new_mode);
-                        // Save the preference
-                        {
-                            let mut locked = self.options.lock();
-                            locked.sauce_mode = new_mode;
-                        }
 
                         if new_mode {
                             // SAUCE mode enabled - start loading SAUCE info for visible items
@@ -1341,10 +1297,63 @@ impl MainWindow {
             }
             Message::FilterPopup(msg) => {
                 if let Some(filter) = self.filter_popup.update(msg) {
+                    // Remember old selection before applying filter
+                    let old_selection = self.file_browser.selected_item().map(|i| i.get_file_path());
+
                     // Apply filter to file browser and tile grids
                     self.file_browser.update(FileBrowserMessage::FilterChanged(filter.clone()));
                     self.tile_grid.apply_filter(&filter);
                     self.folder_preview.apply_filter(&filter);
+
+                    // Check if selection changed due to filtering
+                    let new_selection = self.file_browser.selected_item().map(|i| i.get_file_path());
+                    if old_selection != new_selection {
+                        // Selection changed - update preview
+                        self.preview.cancel_loading();
+
+                        if new_selection.is_none() {
+                            self.current_file = None;
+                            self.folder_preview_path = None;
+                            self.title = DEFAULT_TITLE.clone();
+                        } else if let Some(item) = self.file_browser.selected_item() {
+                            let item_path = item.get_file_path();
+                            let is_container = item.is_container();
+
+                            if is_container {
+                                // For folders, show thumbnail preview
+                                self.current_file = None;
+                                let full_path = if let Some(current) = self.file_browser.current_path() {
+                                    current.join(&item_path)
+                                } else {
+                                    item_path.clone()
+                                };
+                                self.folder_preview_path = Some(full_path);
+                                self.folder_preview.load_subitems_async(item.clone_box());
+                            } else {
+                                // For files, show file preview
+                                self.folder_preview_path = None;
+                                let full_path = if let Some(current) = self.file_browser.current_path() {
+                                    current.join(&item_path)
+                                } else {
+                                    item_path.clone()
+                                };
+                                self.current_file = Some(full_path.clone());
+                                self.title = item_path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| DEFAULT_TITLE.clone());
+
+                                // Read and load data
+                                if let Some(item_mut) = self.file_browser.selected_item_mut() {
+                                    if let Some(data) = item_mut.read_data_blocking() {
+                                        return Task::done(Message::DataLoaded(full_path, data));
+                                    } else {
+                                        return Task::done(Message::DataLoadError(full_path.clone(), fl!(crate::LANGUAGE_LOADER, "error-read-file-data")));
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Task::none()
             }
@@ -1433,7 +1442,7 @@ impl MainWindow {
                 // Forward tick to file browser's list view
                 self.file_browser.update(FileBrowserMessage::ListView(FileListViewMessage::Tick));
                 // Poll tile grid results if in tiles mode
-                if self.view_mode == ViewMode::Tiles {
+                if self.view_mode() == ViewMode::Tiles {
                     let _ = self.tile_grid.poll_results();
                     self.tile_grid.tick(delta_seconds);
                     // Check toolbar auto-hide
@@ -1441,13 +1450,13 @@ impl MainWindow {
                 }
 
                 // Poll folder preview results if showing folder preview in list mode
-                if self.view_mode == ViewMode::List && self.folder_preview_path.is_some() {
+                if self.view_mode() == ViewMode::List && self.folder_preview_path.is_some() {
                     let _ = self.folder_preview.poll_results();
                     self.folder_preview.tick(delta_seconds);
                 }
 
                 // Poll SAUCE loader results if in SAUCE mode
-                if self.file_list_toolbar.sauce_mode {
+                if self.sauce_mode() {
                     if let Some(ref mut rx) = self.sauce_rx {
                         while let Ok(result) = rx.try_recv() {
                             // SAUCE result received - invalidate the list view to show new data
@@ -1470,7 +1479,7 @@ impl MainWindow {
                     }
 
                     // Get selected item
-                    let item: Option<Box<dyn Item>> = if self.view_mode == ViewMode::Tiles {
+                    let item: Option<Box<dyn Item>> = if self.view_mode() == ViewMode::Tiles {
                         self.tile_grid.get_selected_item().map(|i| i.clone_box())
                     } else {
                         self.file_browser.selected_item().map(|i| i.clone_box())
@@ -1599,49 +1608,6 @@ impl MainWindow {
                         log::error!("Failed to copy: {err}");
                     }
                 }
-                Task::none()
-            }
-            Message::ZoomIn => {
-                let opts = self.options.lock();
-                let use_integer = opts.monitor_settings.use_integer_scaling;
-                let current_zoom = self.preview.terminal.get_zoom();
-                let new_zoom = icy_engine_gui::ScalingMode::zoom_in(current_zoom, use_integer);
-                drop(opts);
-                self.preview.terminal.set_zoom(new_zoom);
-                let scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
-                self.preview.monitor_settings.scaling_mode = scaling_mode;
-                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
-                Task::none()
-            }
-            Message::ZoomOut => {
-                let opts = self.options.lock();
-                let use_integer = opts.monitor_settings.use_integer_scaling;
-                let current_zoom = self.preview.terminal.get_zoom();
-                let new_zoom = icy_engine_gui::ScalingMode::zoom_out(current_zoom, use_integer);
-                drop(opts);
-                self.preview.terminal.set_zoom(new_zoom);
-                let scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
-                self.preview.monitor_settings.scaling_mode = scaling_mode;
-                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
-                Task::none()
-            }
-            Message::ZoomReset => {
-                self.preview.terminal.zoom_reset();
-                let scaling_mode = icy_engine_gui::ScalingMode::Manual(1.0);
-                self.preview.monitor_settings.scaling_mode = scaling_mode;
-                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
-                Task::none()
-            }
-            Message::ZoomAutoFit => {
-                let scaling_mode = icy_engine_gui::ScalingMode::Auto;
-                self.preview.monitor_settings.scaling_mode = scaling_mode;
-                self.options.lock().monitor_settings.scaling_mode = scaling_mode;
-                self.preview.terminal.set_zoom(1.0);
-                Task::none()
-            }
-            Message::SauceLoaded(_result) => {
-                // SAUCE result received - invalidate the list view to show new data
-                self.file_browser.list_view.invalidate();
                 Task::none()
             }
             Message::ShuffleNext => {
@@ -1844,17 +1810,19 @@ impl MainWindow {
             .map(Message::Navigation);
 
         // Main content depends on view mode
-        let content_area: Element<'_, Message> = match self.view_mode {
+        let content_area: Element<'_, Message> = match self.view_mode() {
             ViewMode::List => {
                 // Toolbar for file list
-                let toolbar = self.file_list_toolbar.view_for_list().map(Message::FileListToolbar);
+                let options = self.options.lock();
+                let toolbar = self.file_list_toolbar.view_for_list(&options).map(Message::FileListToolbar);
+                drop(options);
 
                 // File browser on left
                 let file_browser = self.file_browser.view(&theme).map(Message::FileBrowser);
 
                 // Combine toolbar and file browser in a column with fixed width
                 // Width is larger in SAUCE mode to show additional columns (286+280+160+160=886)
-                let list_width = if self.file_list_toolbar.sauce_mode { 886.0 } else { 286.0 };
+                let list_width = if self.sauce_mode() { 886.0 } else { 286.0 };
                 let file_list_column = column![toolbar, file_browser].width(Length::Fixed(list_width));
 
                 // Preview area on right - show folder preview if folder selected, file preview if file selected
@@ -1970,7 +1938,9 @@ impl MainWindow {
                 // Create the content to show in the overlay
                 let toolbar_overlay: Element<'_, Message> = if is_toolbar_visible {
                     // Toolbar visible: show toolbar with mouse area
-                    let toolbar = self.file_list_toolbar.view().map(Message::FileListToolbar);
+                    let options = self.options.lock();
+                    let toolbar = self.file_list_toolbar.view(&options).map(Message::FileListToolbar);
+                    drop(options);
                     let toolbar_with_hover = mouse_area(container(toolbar).style(|_| container::Style::default()))
                         .on_enter(Message::FileListToolbar(FileListToolbarMessage::MouseEntered))
                         .on_exit(Message::FileListToolbar(FileListToolbarMessage::MouseLeft));
@@ -2166,12 +2136,42 @@ impl MainWindow {
         }
     }
 
+    /// Get the current view mode from options
+    fn view_mode(&self) -> ViewMode {
+        self.options.lock().view_mode
+    }
+
+    /// Set the view mode in options
+    fn set_view_mode(&self, mode: ViewMode) {
+        self.options.lock().view_mode = mode;
+    }
+
+    /// Get the current sort order from options
+    fn sort_order(&self) -> SortOrder {
+        self.options.lock().sort_order
+    }
+
+    /// Set the sort order in options
+    fn set_sort_order(&self, order: SortOrder) {
+        self.options.lock().sort_order = order;
+    }
+
+    /// Get the SAUCE mode from options
+    fn sauce_mode(&self) -> bool {
+        self.options.lock().sauce_mode
+    }
+
+    /// Set the SAUCE mode in options
+    fn set_sauce_mode(&self, mode: bool) {
+        self.options.lock().sauce_mode = mode;
+    }
+
     /// Check if animation is needed
     pub fn needs_animation(&self) -> bool {
         self.file_browser.needs_animation()
             || self.preview.needs_animation()
-            || (self.view_mode == ViewMode::Tiles && self.tile_grid.needs_animation())
-            || (self.view_mode == ViewMode::List && self.folder_preview_path.is_some() && self.folder_preview.needs_animation())
+            || (self.view_mode() == ViewMode::Tiles && self.tile_grid.needs_animation())
+            || (self.view_mode() == ViewMode::List && self.folder_preview_path.is_some() && self.folder_preview.needs_animation())
             || self.shuffle_mode.needs_animation()
     }
 
@@ -2186,7 +2186,7 @@ impl MainWindow {
         }
 
         // In tile mode, forward mouse events to the tile grid for scroll handling
-        if self.view_mode == ViewMode::Tiles {
+        if self.view_mode() == ViewMode::Tiles {
             // Estimate bounds: x=0, y=nav_bar_height (~40px), width from tile_grid, height from viewport
             // The tile grid takes the full width and height below the nav bar and above the status bar
             let nav_bar_height = 40.0;
@@ -2222,7 +2222,7 @@ impl MainWindow {
         }
 
         // Handle folder preview mouse events in list mode
-        if self.view_mode == ViewMode::List && self.folder_preview_path.is_some() {
+        if self.view_mode() == ViewMode::List && self.folder_preview_path.is_some() {
             // Estimate bounds: folder preview is on the right side after the file browser (300px)
             let nav_bar_height = 40.0;
             let file_browser_width = 300.0;
@@ -2414,7 +2414,7 @@ impl MainWindow {
         let path = self.file_browser.get_display_path();
 
         let selected_item = self.file_browser.selected_item().map(|item| item.get_label());
-        HistoryPoint::new(provider, self.view_mode, path, selected_item)
+        HistoryPoint::new(provider, self.view_mode(), path, selected_item)
     }
 
     /// Navigate to a history point - restores provider, path, mode, and selection
@@ -2451,24 +2451,19 @@ impl MainWindow {
         self.navigation_bar.set_path_input(self.file_browser.get_display_path());
 
         // 4. Switch view mode if needed
-        if self.view_mode != point.view_mode {
-            self.view_mode = point.view_mode;
-            self.navigation_bar.set_view_mode(point.view_mode);
-            {
-                let mut locked = self.options.lock();
-                locked.view_mode = point.view_mode;
-            }
+        if self.view_mode() != point.view_mode {
+            self.set_view_mode(point.view_mode);
         }
 
         // 5. Update tile grid if in tile mode
-        if self.view_mode == ViewMode::Tiles {
+        if self.view_mode() == ViewMode::Tiles {
             let items = self.file_browser.get_items();
             self.tile_grid.set_items_from_items(items);
         }
 
         // 6. Select the item if specified
         if let Some(ref item_name) = point.selected_item {
-            if self.view_mode == ViewMode::Tiles {
+            if self.view_mode() == ViewMode::Tiles {
                 self.tile_grid.select_by_label(item_name);
             } else {
                 self.file_browser.select_by_label(item_name);

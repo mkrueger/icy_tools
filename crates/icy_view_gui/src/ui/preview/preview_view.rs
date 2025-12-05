@@ -7,7 +7,7 @@ use iced::{
     Alignment, Element, Length, Task,
     widget::{Space, column, container, image as iced_image, stack, text},
 };
-use icy_engine::{Position, Screen, Selection, Size, TextScreen};
+use icy_engine::{Screen, Size, TextScreen};
 use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
 use icy_parser_core::BaudEmulation;
 use icy_sauce::SauceRecord;
@@ -15,9 +15,9 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
 use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
-use crate::EXT_IMAGE_LIST;
 use crate::ui::options::ScrollSpeed;
 use crate::ui::theme;
+use icy_engine::formats::FileFormat;
 
 /// Counter for image load requests to handle cancellation
 static IMAGE_LOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -40,10 +40,6 @@ pub enum PreviewMode {
 /// Messages for the preview view
 #[derive(Clone)]
 pub enum PreviewMessage {
-    /// Load data for preview (path is for display/type detection, data is the content)
-    LoadData(PathBuf, Vec<u8>),
-    /// View thread event received
-    ViewEvent(ViewEvent),
     /// Sauce information received (sauce record, content size without SAUCE)
     SauceInfoReceived(Option<SauceRecord>, usize),
     /// Animation tick for terminal rendering
@@ -54,8 +50,6 @@ pub enum PreviewMessage {
     ScrollViewport(f32, f32),
     /// Scroll viewport to absolute position
     ScrollViewportTo(f32, f32),
-    /// Scroll viewport to absolute position immediately (no animation)
-    ScrollViewportToImmediate(f32, f32),
     /// Scroll vertical only to absolute Y position immediately
     ScrollViewportYToImmediate(f32),
     /// Scroll horizontal only to absolute X position immediately
@@ -64,20 +58,10 @@ pub enum PreviewMessage {
     ScrollbarHovered(bool),
     /// Horizontal scrollbar hover state changed
     HScrollbarHovered(bool),
-    /// Set baud emulation
-    SetBaudEmulation(BaudEmulation),
     /// Terminal view message
     TerminalMessage(icy_engine_gui::Message),
     /// Image loaded from background thread
     ImageLoaded(u64, Result<iced_image::Handle, String>),
-    /// Start selection
-    StartSelection(Selection),
-    /// Update selection position
-    UpdateSelection(Position),
-    /// End selection (lock it)
-    EndSelection,
-    /// Clear selection
-    ClearSelection,
     /// Zoom in (increase zoom level)
     ZoomIn,
     /// Zoom out (decrease zoom level)
@@ -151,9 +135,10 @@ impl PreviewView {
     /// Check if a file is an image based on extension
     fn is_image_file(path: &PathBuf) -> bool {
         if let Some(ext) = path.extension() {
-            let ext_lower = ext.to_ascii_lowercase();
-            let ext_str = ext_lower.to_str().unwrap_or("");
-            return EXT_IMAGE_LIST.contains(&ext_str);
+            let ext_str = ext.to_ascii_lowercase();
+            if let Some(format) = FileFormat::from_extension(ext_str.to_str().unwrap_or("")) {
+                return format.is_image();
+            }
         }
         false
     }
@@ -182,18 +167,23 @@ impl PreviewView {
             // Spawn background task to load image from data
             Task::perform(
                 async move {
+                    log::info!("Loading image for preview: {:?}", path);
                     // Load image in blocking thread pool
-                    tokio::task::spawn_blocking(move || match image::load_from_memory(&data) {
-                        Ok(img) => {
-                            let rgba = img.to_rgba8();
-                            let (width, height) = rgba.dimensions();
-                            let handle = iced_image::Handle::from_rgba(width, height, rgba.into_raw());
-                            (load_id, Ok(handle))
+                    tokio::task::spawn_blocking(move || {
+                        let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
+                        // Use image crate for other formats
+                        match image::load_from_memory(&data) {
+                            Ok(img) => {
+                                let rgba = img.to_rgba8();
+                                let (width, height) = rgba.dimensions();
+                                let handle = iced_image::Handle::from_rgba(width, height, rgba.into_raw());
+                                (load_id, Ok(handle))
+                            }
+                            Err(e) => (load_id, Err(format!("Failed to load image: {}", e))),
                         }
-                        Err(e) => (load_id, Err(format!("Failed to load image: {}", e))),
                     })
                     .await
-                    .unwrap_or_else(|e| (load_id, Err(format!("Task error: {}", e))))
+                    .unwrap_or_else(|e: tokio::task::JoinError| (load_id, Err(format!("Task error: {}", e))))
                 },
                 |(id, result)| PreviewMessage::ImageLoaded(id, result),
             )
@@ -306,16 +296,8 @@ impl PreviewView {
     /// This accounts for the actual rendered height rather than just viewport settings
     /// Returns max scroll in CONTENT coordinates (consistent with scroll_y)
     fn get_max_scroll_y(&self) -> f32 {
-        let vp = self.terminal.viewport.read();
-        // Use bounds from widget if available
-        let bounds_height = self.terminal.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        let visible_content_height = if bounds_height > 0.0 {
-            bounds_height / vp.zoom
-        } else {
-            vp.visible_height / vp.zoom
-        };
-        // max_scroll in content coordinates
-        (vp.content_height - visible_content_height).max(0.0)
+        // Viewport.max_scroll_y() now uses shader-computed visible_content_height if available
+        self.terminal.viewport.read().max_scroll_y()
     }
 
     /// Cancel any ongoing loading operation
@@ -408,12 +390,9 @@ impl PreviewView {
 
     /// Get visible height in pixels (for shuffle mode overlay positioning)
     pub fn get_visible_height(&self) -> f32 {
-        let bounds_height = self.terminal.bounds_height.load(std::sync::atomic::Ordering::Relaxed) as f32;
-        if bounds_height > 0.0 {
-            bounds_height
-        } else {
-            self.terminal.viewport.read().visible_height
-        }
+        let vp = self.terminal.viewport.read();
+        let bounds_height = vp.bounds_height() as f32;
+        if bounds_height > 0.0 { bounds_height } else { vp.visible_height }
     }
 
     /// Poll for events from view thread
@@ -429,36 +408,6 @@ impl PreviewView {
     /// Update with a message
     pub fn update(&mut self, message: PreviewMessage) -> Task<PreviewMessage> {
         match message {
-            PreviewMessage::LoadData(path, data) => self.load_data(path, data),
-            PreviewMessage::ViewEvent(event) => {
-                match event {
-                    ViewEvent::LoadingStarted(_path) => {
-                        self.is_loading = true;
-                    }
-                    ViewEvent::LoadingCompleted => {
-                        self.is_loading = false;
-                        // Update terminal viewport after loading
-                        self.terminal.update_viewport_size();
-                    }
-                    ViewEvent::SetScrollMode(mode) => {
-                        self.scroll_mode = mode;
-                        // Reset timer when starting auto-scroll to prevent jumps
-                        if mode == ScrollMode::AutoScroll {
-                            return Task::done(PreviewMessage::ResetAnimationTimer);
-                        }
-                    }
-                    ViewEvent::SauceInfo(sauce_opt, content_size) => {
-                        // Forward sauce info as separate message for parent to handle
-                        return Task::done(PreviewMessage::SauceInfoReceived(sauce_opt, content_size));
-                    }
-                    ViewEvent::Error(msg) => {
-                        log::error!("Preview error: {}", msg);
-                        self.is_loading = false;
-                        self.preview_mode = PreviewMode::Error(msg);
-                    }
-                }
-                Task::none()
-            }
             PreviewMessage::ImageLoaded(load_id, result) => {
                 // Only accept if this is the current load request
                 if load_id == self.current_image_load_id {
@@ -565,14 +514,6 @@ impl PreviewView {
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
-            PreviewMessage::ScrollViewportToImmediate(x, y) => {
-                // User is scrolling via scrollbar, disable auto-scroll modes
-                self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_to_immediate(x);
-                self.terminal.scroll_y_to_immediate(y);
-                self.terminal.sync_scrollbar_with_viewport();
-                Task::none()
-            }
             PreviewMessage::ScrollViewportYToImmediate(y) => {
                 // User is scrolling vertically via scrollbar
                 self.scroll_mode = ScrollMode::Off;
@@ -594,10 +535,6 @@ impl PreviewView {
             PreviewMessage::HScrollbarHovered(is_hovered) => {
                 // Horizontal scrollbar uses separate hover state for animation
                 self.terminal.scrollbar.set_hovered_x(is_hovered);
-                Task::none()
-            }
-            PreviewMessage::SetBaudEmulation(baud) => {
-                self.set_baud_emulation(baud);
                 Task::none()
             }
             PreviewMessage::TerminalMessage(msg) => {
@@ -649,36 +586,6 @@ impl PreviewView {
                     }
                     _ => {}
                 }
-                Task::none()
-            }
-            PreviewMessage::StartSelection(sel) => {
-                // Selection coordinates already include scroll offset from map_mouse_to_cell
-                let mut screen = self.terminal.screen.lock();
-                let _ = screen.set_selection(sel);
-                Task::none()
-            }
-            PreviewMessage::UpdateSelection(pos) => {
-                // Position already includes scroll offset from map_mouse_to_cell
-                let mut screen = self.terminal.screen.lock();
-                if let Some(mut sel) = screen.get_selection().clone() {
-                    if !sel.locked {
-                        sel.lead = pos;
-                        let _ = screen.set_selection(sel);
-                    }
-                }
-                Task::none()
-            }
-            PreviewMessage::EndSelection => {
-                let mut screen = self.terminal.screen.lock();
-                if let Some(mut sel) = screen.get_selection().clone() {
-                    sel.locked = true;
-                    let _ = screen.set_selection(sel);
-                }
-                Task::none()
-            }
-            PreviewMessage::ClearSelection => {
-                let mut screen = self.terminal.screen.lock();
-                let _ = screen.clear_selection();
                 Task::none()
             }
             PreviewMessage::ZoomIn => {

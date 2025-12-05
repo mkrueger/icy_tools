@@ -74,7 +74,7 @@ impl PetsciiParser {
             0xA0 => return None,        // Special: inverted space, handled separately
             0xA1..=0xBF => code - 0x40,
             0xC0..=0xFE => code - 0x80,
-            0xFF => 0x5E,               // PI character
+            0xFF => 0x5E, // PI character
             _ => return None,
         };
         Some(mapped)

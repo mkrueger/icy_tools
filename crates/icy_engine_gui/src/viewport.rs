@@ -1,5 +1,7 @@
 use icy_engine::{Position, Rectangle, Size};
-use std::{sync::atomic::AtomicBool, time::Instant};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::Instant;
 
 /// Viewport for managing screen view transformations
 /// Handles scrolling, zooming, and coordinate transformations
@@ -32,6 +34,20 @@ pub struct Viewport {
     pub last_update: Option<Instant>,
 
     pub changed: AtomicBool,
+
+    /// Widget bounds height in logical pixels
+    /// Updated by the shader based on available widget bounds
+    pub bounds_height: Arc<AtomicU32>,
+    /// Widget bounds width in logical pixels
+    /// Updated by the shader based on available widget bounds
+    pub bounds_width: Arc<AtomicU32>,
+    /// Visible content height in content pixels (computed by shader)
+    /// This is how much of the content is visible at the current zoom level
+    /// Stored as f32 bits for atomic access
+    pub computed_visible_height: Arc<AtomicU32>,
+    /// Visible content width in content pixels (computed by shader)
+    /// Stored as f32 bits for atomic access
+    pub computed_visible_width: Arc<AtomicU32>,
 }
 
 impl Default for Viewport {
@@ -49,6 +65,10 @@ impl Default for Viewport {
             scroll_animation_speed: 10.0,
             last_update: None,
             changed: AtomicBool::new(false),
+            bounds_height: Arc::new(AtomicU32::new(0)),
+            bounds_width: Arc::new(AtomicU32::new(0)),
+            computed_visible_height: Arc::new(AtomicU32::new(0)),
+            computed_visible_width: Arc::new(AtomicU32::new(0)),
         }
     }
 }
@@ -102,12 +122,17 @@ impl Viewport {
     }
 
     /// How many content pixels are visible at current zoom
+    /// Uses shader-computed values if available, otherwise falls back to visible_size / zoom
     pub fn visible_content_width(&self) -> f32 {
-        self.visible_width / self.zoom
+        let computed = f32::from_bits(self.computed_visible_width.load(Ordering::Relaxed));
+        if computed > 0.0 { computed } else { self.visible_width / self.zoom }
     }
 
+    /// How many content pixels are visible at current zoom
+    /// Uses shader-computed values if available, otherwise falls back to visible_size / zoom
     pub fn visible_content_height(&self) -> f32 {
-        self.visible_height / self.zoom
+        let computed = f32::from_bits(self.computed_visible_height.load(Ordering::Relaxed));
+        if computed > 0.0 { computed } else { self.visible_height / self.zoom }
     }
 
     /// Get maximum scroll values (in content pixels)
@@ -117,6 +142,16 @@ impl Viewport {
 
     pub fn max_scroll_y(&self) -> f32 {
         (self.content_height - self.visible_content_height()).max(0.0)
+    }
+
+    /// Get bounds height in logical pixels
+    pub fn bounds_height(&self) -> u32 {
+        self.bounds_height.load(Ordering::Relaxed)
+    }
+
+    /// Get bounds width in logical pixels  
+    pub fn bounds_width(&self) -> u32 {
+        self.bounds_width.load(Ordering::Relaxed)
     }
 
     /// Clamp scroll values to valid range

@@ -35,18 +35,10 @@ pub fn create_shared_cache() -> SharedSixteenColorsCache {
     std::sync::Arc::new(parking_lot::RwLock::new(SixteenColorsCache::new()))
 }
 
-pub const EXT_MUSIC_LIST: [&str; 2] = ["ams", "mus"];
-pub const EXT_WHITE_LIST: [&str; 10] = ["seq", "diz", "nfo", "ice", "bbs", "ams", "mus", "txt", "doc", "md"];
-/// Extensions that cannot be previewed (non-displayable binary formats)
-/// Note: Archive formats are now detected via FileFormat::Archive
-pub const EXT_BLACK_LIST: [&str; 4] = ["pdf", "exe", "com", "dll"];
-pub const EXT_IMAGE_LIST: [&str; 5] = ["png", "jpg", "jpeg", "gif", "bmp"];
-
 /// Load PNG/JPEG/etc bytes and convert to RgbaData, scaling if needed
 pub fn load_image_to_rgba(data: &[u8]) -> Option<RgbaData> {
     let img = ::image::load_from_memory(data).ok()?;
     let (orig_width, orig_height) = (img.width(), img.height());
-
     // Scale down if needed
     let scale = (THUMBNAIL_RENDER_WIDTH as f32 / orig_width as f32)
         .min(THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32)
@@ -202,26 +194,9 @@ pub trait Item: Send + Sync {
 pub fn get_file_icon_for_path(path: &Path) -> FileIcon {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
 
-    // Check for music files
-    if EXT_MUSIC_LIST.contains(&ext.as_str()) {
-        return FileIcon::Music;
-    }
-
-    // Check for IcyAnimation
-    if ext == "icyanim" {
-        return FileIcon::Movie;
-    }
-
-    // Check for images
-    if EXT_IMAGE_LIST.contains(&ext.as_str()) {
-        return FileIcon::Image;
-    }
-
     // Check if FileFormat recognizes this as a supported format
     if let Some(format) = FileFormat::from_extension(&ext) {
         FileIcon::from_format(&format)
-    } else if EXT_WHITE_LIST.contains(&ext.as_str()) {
-        FileIcon::Text
     } else {
         FileIcon::Unknown
     }
@@ -231,27 +206,7 @@ pub fn get_file_icon_for_path(path: &Path) -> FileIcon {
 pub fn is_displayable_extension(ext: &str) -> bool {
     let ext = ext.to_ascii_lowercase();
 
-    // Music files are displayable
-    if EXT_MUSIC_LIST.contains(&ext.as_str()) {
-        return true;
-    }
-
-    // Whitelisted extensions
-    if EXT_WHITE_LIST.contains(&ext.as_str()) {
-        return true;
-    }
-
-    // Image files
-    if EXT_IMAGE_LIST.contains(&ext.as_str()) {
-        return true;
-    }
-
-    // Special formats
-    if ext == "icyanim" || ext == "rip" || ext == "ig" {
-        return true;
-    }
-
-    // Check FileFormat
+    // Check FileFormat - if recognized, it's displayable
     FileFormat::from_extension(&ext).is_some()
 }
 

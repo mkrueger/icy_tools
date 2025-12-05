@@ -2,6 +2,7 @@
 //!
 //! This module provides async loading of SAUCE information for files in the list view.
 //! Similar to the thumbnail loader, it uses background tasks to avoid blocking the UI.
+//! Uses string interning for memory efficiency since author/group names are often repeated.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,12 +10,28 @@ use std::sync::Arc;
 
 use log::debug;
 use parking_lot::RwLock;
+use string_interner::DefaultSymbol;
+use string_interner::backend::StringBackend;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::Item;
 
-/// Extracted SAUCE information that is Send + Sync
+/// Type alias for our string interner
+type SauceInterner = string_interner::StringInterner<StringBackend<DefaultSymbol>>;
+
+/// Interned SAUCE information - uses symbols instead of strings for memory efficiency
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InternedSauceInfo {
+    /// Title symbol (None if empty)
+    pub title: Option<DefaultSymbol>,
+    /// Author symbol (None if empty)
+    pub author: Option<DefaultSymbol>,
+    /// Group symbol (None if empty)
+    pub group: Option<DefaultSymbol>,
+}
+
+/// Extracted SAUCE information that is Send + Sync (for external use)
 #[derive(Clone, Debug, Default)]
 pub struct SauceInfo {
     /// Title from SAUCE record
@@ -47,10 +64,12 @@ pub struct SauceRequest {
     pub item: Arc<dyn Item>,
 }
 
-/// Cache for SAUCE information
+/// Cache for SAUCE information with string interning
 pub struct SauceCache {
-    /// Cached SAUCE info (path -> SauceInfo or None if no SAUCE)
-    cache: HashMap<PathBuf, Option<SauceInfo>>,
+    /// String interner for deduplicating strings
+    interner: SauceInterner,
+    /// Cached SAUCE info (path -> InternedSauceInfo or None if no SAUCE)
+    cache: HashMap<PathBuf, Option<InternedSauceInfo>>,
     /// Paths that are currently being loaded
     pending: std::collections::HashSet<PathBuf>,
 }
@@ -58,14 +77,36 @@ pub struct SauceCache {
 impl SauceCache {
     pub fn new() -> Self {
         Self {
+            interner: SauceInterner::default(),
             cache: HashMap::new(),
             pending: std::collections::HashSet::new(),
         }
     }
 
-    /// Get cached SAUCE info for a path
-    pub fn get(&self, path: &PathBuf) -> Option<&Option<SauceInfo>> {
-        self.cache.get(path)
+    /// Intern a string, returning None if the string is empty
+    fn intern_if_not_empty(&mut self, s: &str) -> Option<DefaultSymbol> {
+        if s.is_empty() { None } else { Some(self.interner.get_or_intern(s)) }
+    }
+
+    /// Resolve a symbol to a string
+    pub fn resolve(&self, symbol: DefaultSymbol) -> Option<&str> {
+        self.interner.resolve(symbol)
+    }
+
+    /// Get cached SAUCE info for a path and resolve to SauceInfo
+    pub fn get(&self, path: &PathBuf) -> Option<Option<SauceInfo>> {
+        self.cache.get(path).map(|opt| {
+            opt.map(|interned| SauceInfo {
+                title: interned.title.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
+                author: interned.author.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
+                group: interned.group.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
+            })
+        })
+    }
+
+    /// Check if a path has cached SAUCE info (without resolving)
+    pub fn contains(&self, path: &PathBuf) -> bool {
+        self.cache.contains_key(path)
     }
 
     /// Check if a path is already being loaded
@@ -81,13 +122,25 @@ impl SauceCache {
     /// Store SAUCE result and remove from pending
     pub fn store(&mut self, path: PathBuf, sauce: Option<SauceInfo>) {
         self.pending.remove(&path);
-        self.cache.insert(path, sauce);
+        let interned = sauce.map(|info| InternedSauceInfo {
+            title: self.intern_if_not_empty(&info.title),
+            author: self.intern_if_not_empty(&info.author),
+            group: self.intern_if_not_empty(&info.group),
+        });
+        self.cache.insert(path, interned);
     }
 
     /// Clear all cached data
     pub fn clear(&mut self) {
         self.cache.clear();
         self.pending.clear();
+        // Note: We don't clear the interner - symbols from previous sessions
+        // will be reused if the same strings appear again
+    }
+
+    /// Get statistics about the cache
+    pub fn stats(&self) -> (usize, usize) {
+        (self.cache.len(), self.interner.len())
     }
 }
 
@@ -151,7 +204,7 @@ impl SauceLoader {
         // Check cache first
         {
             let cache_read = cache.read();
-            if cache_read.get(&path).is_some() {
+            if cache_read.contains(&path) {
                 // Already cached
                 return;
             }

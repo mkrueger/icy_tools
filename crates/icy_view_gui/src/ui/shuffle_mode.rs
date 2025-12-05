@@ -15,7 +15,6 @@ use iced::{
     Color, Element, Length,
     widget::{Space, column, container, row, stack, text},
 };
-use rand::seq::SliceRandom;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -188,8 +187,7 @@ impl ShuffleMode {
         self.cancel_preload();
 
         let mut shuffled = indices;
-        let mut rng = rand::rng();
-        shuffled.shuffle(&mut rng);
+        fastrand::shuffle(&mut shuffled);
 
         self.item_indices = shuffled;
         self.current_position = 0;
@@ -241,8 +239,7 @@ impl ShuffleMode {
         self.current_position += 1;
         if self.current_position >= self.item_indices.len() {
             // Reshuffle and start over
-            let mut rng = rand::rng();
-            self.item_indices.shuffle(&mut rng);
+            fastrand::shuffle(&mut self.item_indices);
             self.current_position = 0;
         }
 

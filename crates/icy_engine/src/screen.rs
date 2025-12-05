@@ -231,7 +231,7 @@ pub trait EditableScreen: Screen {
     /// Graphics screens can override this to ignore SAUCE data.
     ///
     /// Returns the (columns, lines) applied from the SAUCE, or (0, 0) if none were applied.
-    /// 
+    ///
     /// Note: aspect_ratio and letter_spacing are buffer-specific settings
     /// and are handled by TextBuffer in its own load_sauce method.
     fn apply_sauce(&mut self, sauce: &SauceRecord) -> (u16, u16) {

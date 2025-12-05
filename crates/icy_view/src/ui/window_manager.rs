@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 
 use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, advanced::graphics::core::keyboard, keyboard::key::Named, widget::space, window};
 
-use icy_view_gui::{MainWindow, Message, Options};
+use icy_view_gui::{MainWindow, Message, Options, PreviewMessage};
 
 use crate::load_window_icon;
 
@@ -247,15 +247,12 @@ impl WindowManager {
                                         }
                                     }
                                     "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
-                                    // Zoom shortcuts: Ctrl+Plus/Minus/0/Backspace
-                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomIn)),
-                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomOut)),
-                                    "0" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomReset)),
+                                    // Zoom shortcuts: Ctrl+Plus/Minus/0
+                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomIn))),
+                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomOut))),
+                                    "0" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomReset))),
                                     _ => {}
                                 }
-                            }
-                            if let keyboard::Key::Named(Named::Backspace) = &key {
-                                return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomAutoFit));
                             }
                         }
 

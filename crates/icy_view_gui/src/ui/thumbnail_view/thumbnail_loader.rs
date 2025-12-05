@@ -19,7 +19,7 @@ use crate::ui::preview::prepare_parser_data;
 use super::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH, ThumbnailResult, ThumbnailState, get_width_multiplier};
 
 /// Maximum characters per line for label tag
-const TAG_MAX_CHARS_PER_LINE: usize = 20;
+const TAG_MAX_CHARS_PER_LINE: usize = 42;
 /// Maximum lines for label tag
 const TAG_MAX_LINES: usize = 3;
 
