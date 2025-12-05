@@ -29,7 +29,8 @@ icy_sauce = "0.3.4"
 icy_sixel = "0.2.0"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../icy_board/crates/icy_net" }
-unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
+unarc-rs = { path ="../unarc-rs" }
+#unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
 retrofont =  { git = "https://github.com/mkrueger/retrofont" }
 
 #icy_view_gui = { path = "crates/icy_view_gui" }
@@ -89,7 +90,6 @@ versions = "7.0.0"
 github_release_check = "0.2.1"
 parking_lot = "0.12.5"
 clap-i18n-richformatter = { git = "https://github.com/eatradish/clap-i18n-richformatter" }
-
 
 [profile.release]
 opt-level = 'z'     # Optimize for size

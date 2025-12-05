@@ -297,14 +297,14 @@ impl ThumbnailState {
         match self {
             ThumbnailState::Ready { rgba } => Some((rgba.width, rgba.height)),
             ThumbnailState::Animated { frames, .. } => frames.first().map(|f| (f.width, f.height)),
-            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => {
-                placeholder.as_ref().map(|p| (p.width, p.height))
-                    .or_else(|| Some((LOADING_PLACEHOLDER.width, LOADING_PLACEHOLDER.height)))
-            }
-            ThumbnailState::Error { placeholder, .. } => {
-                placeholder.as_ref().map(|p| (p.width, p.height))
-                    .or_else(|| Some((ERROR_PLACEHOLDER.width, ERROR_PLACEHOLDER.height)))
-            }
+            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => placeholder
+                .as_ref()
+                .map(|p| (p.width, p.height))
+                .or_else(|| Some((LOADING_PLACEHOLDER.width, LOADING_PLACEHOLDER.height))),
+            ThumbnailState::Error { placeholder, .. } => placeholder
+                .as_ref()
+                .map(|p| (p.width, p.height))
+                .or_else(|| Some((ERROR_PLACEHOLDER.width, ERROR_PLACEHOLDER.height))),
         }
     }
 

@@ -8,7 +8,8 @@ use iced::{
 };
 use icy_engine_gui::{
     ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager,
-    ui::{ExportDialogMessage, ExportDialogState}, version_helper::replace_version_marker,
+    ui::{ExportDialogMessage, ExportDialogState},
+    version_helper::replace_version_marker,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -23,7 +24,7 @@ use icy_engine::formats::FileFormat;
 use super::{
     FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup, FilterPopupMessage, HistoryPoint,
     NavigationBar, NavigationBarMessage, NavigationHistory, Options, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar,
-    StatusBarMessage, StatusInfo, TileGridMessage, TileGridView, 
+    StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
     dialogs::about_dialog::AboutDialog,
     dialogs::help_dialog::HelpDialog,
     dialogs::sauce_dialog::{SauceDialog, SauceDialogMessage},
@@ -43,8 +44,7 @@ static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
     use std::path::Path;
 
     // Load the XBin file
-    let mut buffer = TextBuffer::from_bytes(Path::new("welcome.xb"), true, WELCOME_LOGO, Some(MusicOption::Off), None)
-        .expect("Failed to load welcome logo");
+    let mut buffer = TextBuffer::from_bytes(Path::new("welcome.xb"), true, WELCOME_LOGO, Some(MusicOption::Off), None).expect("Failed to load welcome logo");
 
     // Replace version marker
     replace_version_marker(&mut buffer, &VERSION, None);
@@ -1908,8 +1908,7 @@ impl MainWindow {
                         .into()
                 } else {
                     // Show welcome logo with message
-                    let welcome_logo = iced_image::Image::new(WELCOME_IMAGE.clone())
-                        .content_fit(iced::ContentFit::None);
+                    let welcome_logo = iced_image::Image::new(WELCOME_IMAGE.clone()).content_fit(iced::ContentFit::None);
                     let welcome_title = text(fl!(crate::LANGUAGE_LOADER, "welcome-select-file"))
                         .size(18)
                         .style(|theme: &Theme| text::Style {
@@ -2048,7 +2047,6 @@ impl MainWindow {
 
         // Wrap with About dialog if active
         let view_with_about = if let Some(ref dialog) = self.about_dialog {
-        
             icy_engine_gui::ui::modal(view_with_help, dialog.view(), Message::CloseAbout)
         } else {
             view_with_help

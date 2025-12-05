@@ -784,7 +784,7 @@ impl TileGridView {
                 // Get the image display height (aspect-ratio based)
                 let content_width = item_width - (TILE_PADDING * 2.0);
                 let image_height = thumb.display_height(content_width);
-                
+
                 // Cap image height to prevent GPU viewport issues
                 let capped_height = image_height.min(MAX_TILE_IMAGE_HEIGHT);
 

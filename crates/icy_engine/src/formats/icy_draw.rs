@@ -9,7 +9,7 @@ use crate::{BitFont, Color, EngineResult, Layer, LoadingError, OutputFormat, Pal
 use super::LoadData;
 
 mod constants {
-    pub const ICD_VERSION: u16 = 0;
+    pub const ICED_VERSION: u16 = 0;
     pub const ICED_HEADER_SIZE: usize = 19;
     pub mod layer {
         pub const IS_VISIBLE: u32 = 0b0000_0001;
@@ -68,7 +68,7 @@ impl OutputFormat for IcyDraw {
         encoder.set_depth(png::BitDepth::Eight);
 
         {
-            let mut result = vec![constants::ICD_VERSION as u8, (constants::ICD_VERSION >> 8) as u8];
+            let mut result = vec![constants::ICED_VERSION as u8, (constants::ICED_VERSION >> 8) as u8];
             result.extend(u32::to_le_bytes(0)); // Type
             // Modes
             result.extend(u16::to_le_bytes(buf.buffer_type.to_byte() as u16));
@@ -212,11 +212,7 @@ impl OutputFormat for IcyDraw {
                         let ch = layer.get_char((x, y).into());
                         let mut attr = ch.attribute.attr;
 
-                        let is_short = if ch.is_visible()
-                            && ch.ch as u32 <= 255
-                            && ch.attribute.foreground_color <= 255
-                            && ch.attribute.background_color <= 255
-                            && ch.attribute.font_page <= 255
+                        let is_short = if ch.is_visible() && ch.ch as u32 <= 255 && ch.attribute.foreground_color <= 255 && ch.attribute.background_color <= 255
                         {
                             attr |= attribute::SHORT_DATA;
                             true
@@ -265,17 +261,13 @@ impl OutputFormat for IcyDraw {
                             let ch = layer.get_char((x, y).into());
                             let mut attr = ch.attribute.attr;
 
-                            let is_short = if ch.is_visible()
-                                && ch.ch as u32 <= 255
-                                && ch.attribute.foreground_color <= 255
-                                && ch.attribute.background_color <= 255
-                                && ch.attribute.font_page <= 255
-                            {
-                                attr |= attribute::SHORT_DATA;
-                                true
-                            } else {
-                                false
-                            };
+                            let is_short =
+                                if ch.is_visible() && ch.ch as u32 <= 255 && ch.attribute.foreground_color <= 255 && ch.attribute.background_color <= 255 {
+                                    attr |= attribute::SHORT_DATA;
+                                    true
+                                } else {
+                                    false
+                                };
 
                             result.extend(u16::to_le_bytes(attr));
                             if !ch.is_visible() {
@@ -336,7 +328,7 @@ impl OutputFormat for IcyDraw {
                 }
                 let mut attr = tag.attribute.attr;
 
-                let is_short = if tag.attribute.foreground_color <= 255 && tag.attribute.background_color <= 255 && tag.attribute.font_page <= 255 {
+                let is_short = if tag.attribute.foreground_color <= 255 && tag.attribute.background_color <= 255 {
                     attr |= attribute::SHORT_DATA;
                     true
                 } else {
@@ -548,7 +540,7 @@ impl OutputFormat for IcyDraw {
                                             attribute: crate::TextAttribute {
                                                 foreground_color: fg,
                                                 background_color: bg,
-                                                font_page: font_page as usize,
+                                                font_page: font_page as u8,
                                                 attr,
                                             },
                                         });
@@ -636,7 +628,7 @@ impl OutputFormat for IcyDraw {
                                                                 attribute: crate::TextAttribute {
                                                                     foreground_color: fg,
                                                                     background_color: bg,
-                                                                    font_page: font_page as usize,
+                                                                    font_page: font_page as u8,
                                                                     attr,
                                                                 },
                                                             },
@@ -802,7 +794,7 @@ impl OutputFormat for IcyDraw {
                                                         attribute: crate::TextAttribute {
                                                             foreground_color: fg,
                                                             background_color: bg,
-                                                            font_page: font_page as usize,
+                                                            font_page: font_page as u8,
                                                             attr,
                                                         },
                                                     },

@@ -111,10 +111,7 @@ pub fn calculate_masonry_layout(config: &MasonryConfig, items: &[ItemSize]) -> M
             let mut best_max_height = f32::MAX;
 
             for start in 0..=(config.num_columns - span) {
-                let max_height = column_heights[start..start + span]
-                    .iter()
-                    .cloned()
-                    .fold(0.0f32, f32::max);
+                let max_height = column_heights[start..start + span].iter().cloned().fold(0.0f32, f32::max);
                 if max_height < best_max_height {
                     best_max_height = max_height;
                     best_start = start;
@@ -129,10 +126,7 @@ pub fn calculate_masonry_layout(config: &MasonryConfig, items: &[ItemSize]) -> M
             column_heights[best_col]
         } else {
             // For multi-column, start at the max height of all spanned columns
-            column_heights[best_col..best_col + span]
-                .iter()
-                .cloned()
-                .fold(0.0f32, f32::max)
+            column_heights[best_col..best_col + span].iter().cloned().fold(0.0f32, f32::max)
         };
 
         layout_items.push(MasonryItem {
@@ -169,8 +163,16 @@ mod tests {
     fn test_single_column() {
         let config = MasonryConfig::new(100.0, 10.0, 5.0, 1);
         let items = vec![
-            ItemSize { index: 0, column_span: 1, height: 50.0 },
-            ItemSize { index: 1, column_span: 1, height: 75.0 },
+            ItemSize {
+                index: 0,
+                column_span: 1,
+                height: 50.0,
+            },
+            ItemSize {
+                index: 1,
+                column_span: 1,
+                height: 75.0,
+            },
         ];
 
         let layout = calculate_masonry_layout(&config, &items);
@@ -184,9 +186,21 @@ mod tests {
     fn test_two_columns_balanced() {
         let config = MasonryConfig::new(100.0, 10.0, 5.0, 2);
         let items = vec![
-            ItemSize { index: 0, column_span: 1, height: 100.0 },
-            ItemSize { index: 1, column_span: 1, height: 50.0 },
-            ItemSize { index: 2, column_span: 1, height: 30.0 },
+            ItemSize {
+                index: 0,
+                column_span: 1,
+                height: 100.0,
+            },
+            ItemSize {
+                index: 1,
+                column_span: 1,
+                height: 50.0,
+            },
+            ItemSize {
+                index: 2,
+                column_span: 1,
+                height: 30.0,
+            },
         ];
 
         let layout = calculate_masonry_layout(&config, &items);
@@ -203,8 +217,16 @@ mod tests {
     fn test_multi_column_span() {
         let config = MasonryConfig::new(100.0, 10.0, 5.0, 3);
         let items = vec![
-            ItemSize { index: 0, column_span: 2, height: 100.0 },
-            ItemSize { index: 1, column_span: 1, height: 50.0 },
+            ItemSize {
+                index: 0,
+                column_span: 2,
+                height: 100.0,
+            },
+            ItemSize {
+                index: 1,
+                column_span: 1,
+                height: 50.0,
+            },
         ];
 
         let layout = calculate_masonry_layout(&config, &items);

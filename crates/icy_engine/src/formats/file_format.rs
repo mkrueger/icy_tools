@@ -132,7 +132,7 @@ impl FileFormat {
         FileFormat::Archive(ArchiveFormat::Rar),
         FileFormat::Archive(ArchiveFormat::Sqz),
         FileFormat::Archive(ArchiveFormat::Hyp),
-//        FileFormat::Archive(ArchiveFormat::Uc2),
+        FileFormat::Archive(ArchiveFormat::Uc2),
     ];
 
     /// Formats that support saving (text-based formats only, see SAVEABLE_WITH_IMAGES for full list)
@@ -327,6 +327,8 @@ impl FileFormat {
                 ArchiveFormat::Sqz => "sqz",
                 ArchiveFormat::Z => "z",
                 ArchiveFormat::Hyp => "hyp",
+                ArchiveFormat::Uc2 => "uc2",
+                ArchiveFormat::SevenZ => "7z",
             },
         }
     }
@@ -373,6 +375,8 @@ impl FileFormat {
             FileFormat::Archive(ArchiveFormat::Sqz) => &["sqz"],
             FileFormat::Archive(ArchiveFormat::Z) => &["z"],
             FileFormat::Archive(ArchiveFormat::Hyp) => &["hyp"],
+            FileFormat::Archive(ArchiveFormat::Uc2) => &["uc2"],
+            FileFormat::Archive(ArchiveFormat::SevenZ) => &["7z"],
         }
     }
 
@@ -413,6 +417,8 @@ impl FileFormat {
                 ArchiveFormat::Sqz => "SQZ Archive",
                 ArchiveFormat::Z => "Unix Compress",
                 ArchiveFormat::Hyp => "Hyper Archive",
+                ArchiveFormat::Uc2 => "UC2 Archive",
+                ArchiveFormat::SevenZ => "7-Zip Archive",
             },
         }
     }

@@ -3,8 +3,11 @@ use iced::{
     widget::{column, container},
 };
 use icy_engine::{Screen, TextBuffer, TextScreen};
-use icy_engine_gui::{ui::{button_row, dialog_area, primary_button, separator}, version_helper::replace_version_marker};
 use icy_engine_gui::{MonitorSettings, Terminal, TerminalView};
+use icy_engine_gui::{
+    ui::{button_row, dialog_area, primary_button, separator},
+    version_helper::replace_version_marker,
+};
 use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -105,4 +108,3 @@ impl AboutDialog {
         content.into()
     }
 }
-

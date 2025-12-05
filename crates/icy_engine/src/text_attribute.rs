@@ -25,7 +25,7 @@ pub mod attribute {
 
 #[derive(Clone, Copy)]
 pub struct TextAttribute {
-    pub(super) font_page: usize,
+    pub(super) font_page: u8,
     pub(super) foreground_color: u32,
     pub(super) background_color: u32,
     pub attr: u16,
@@ -263,15 +263,18 @@ impl TextAttribute {
 
     #[must_use]
     pub fn get_font_page(&self) -> usize {
-        self.font_page
+        self.font_page as usize
     }
 
     pub fn set_font_page(&mut self, page: usize) {
-        self.font_page = page;
+        self.font_page = page as u8;
     }
 
     pub fn with_font_page(&self, font_page: usize) -> TextAttribute {
-        TextAttribute { font_page, ..*self }
+        TextAttribute {
+            font_page: font_page as u8,
+            ..*self
+        }
     }
 }
 

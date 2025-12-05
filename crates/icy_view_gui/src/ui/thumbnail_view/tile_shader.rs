@@ -173,7 +173,7 @@ impl TileUniforms {
         let image_x = padding;
         let image_y = padding;
         let image_w = content_w - padding * 2.0;
-        
+
         // Image height is the content area minus padding (top and bottom)
         // The texture will be stretched/scaled to fit this area
         let image_h = content_h - padding * 2.0;
@@ -267,7 +267,7 @@ impl shader::Pipeline for TileGridShaderRenderer {
 
         // Create bind group layout with 10 texture slots + sampler + uniforms
         let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
-        
+
         // Add 10 texture bindings (0-9)
         for i in 0..MAX_TEXTURE_SLICES {
             entries.push(iced::wgpu::BindGroupLayoutEntry {
@@ -281,7 +281,7 @@ impl shader::Pipeline for TileGridShaderRenderer {
                 count: None,
             });
         }
-        
+
         // Sampler at binding 10
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: MAX_TEXTURE_SLICES as u32,
@@ -289,7 +289,7 @@ impl shader::Pipeline for TileGridShaderRenderer {
             ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
             count: None,
         });
-        
+
         // Uniforms at binding 11
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 1) as u32,
@@ -431,27 +431,29 @@ impl shader::Primitive for TileGridShader {
             // Create shared texture slices if they don't exist
             if !pipeline.shared_textures.contains_key(&texture_key) {
                 let texture_start = Instant::now();
-                
+
                 // Calculate how many slices we need
                 let total_height = tile.height;
-                let num_slices = ((total_height as usize + MAX_SLICE_HEIGHT as usize - 1) / MAX_SLICE_HEIGHT as usize)
-                    .min(MAX_TEXTURE_SLICES);
-                
+                let num_slices = ((total_height as usize + MAX_SLICE_HEIGHT as usize - 1) / MAX_SLICE_HEIGHT as usize).min(MAX_TEXTURE_SLICES);
+
                 if num_slices > 1 {
                     log::info!("[TileShader] Creating {} slices for tile {}x{}", num_slices, tile.width, tile.height);
                 }
-                
+
                 let mut slices = Vec::with_capacity(num_slices);
                 let mut y_offset = 0u32;
-                    
+
                 log::debug!(
                     "[TileShader] Creating texture slices for tile {} ({}x{}) with key {:x} num: {num_slices}",
-                    tile.id, tile.width, tile.height, texture_key
+                    tile.id,
+                    tile.width,
+                    tile.height,
+                    texture_key
                 );
                 for slice_idx in 0..num_slices {
                     let remaining_height = total_height.saturating_sub(y_offset);
                     let slice_height = remaining_height.min(MAX_SLICE_HEIGHT);
-                    
+
                     if slice_height == 0 {
                         break;
                     }
@@ -508,8 +510,13 @@ impl shader::Primitive for TileGridShader {
                     y_offset += slice_height;
                 }
 
-                log::debug!("[TIMING] Texture creation for tile {} ({}x{}): {:?}", 
-                           tile.id, tile.width, tile.height, texture_start.elapsed());
+                log::debug!(
+                    "[TIMING] Texture creation for tile {} ({}x{}): {:?}",
+                    tile.id,
+                    tile.width,
+                    tile.height,
+                    texture_start.elapsed()
+                );
 
                 pipeline.shared_textures.insert(
                     texture_key,
@@ -540,7 +547,7 @@ impl shader::Primitive for TileGridShader {
 
                 // Create bind group entries for all 10 texture slots
                 let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
-                
+
                 for i in 0..MAX_TEXTURE_SLICES {
                     let texture_view = if i < shared_texture.slices.len() {
                         &shared_texture.slices[i].texture_view
@@ -552,13 +559,13 @@ impl shader::Primitive for TileGridShader {
                         resource: iced::wgpu::BindingResource::TextureView(texture_view),
                     });
                 }
-                
+
                 // Sampler at binding 10
                 entries.push(iced::wgpu::BindGroupEntry {
                     binding: MAX_TEXTURE_SLICES as u32,
                     resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
                 });
-                
+
                 // Uniforms at binding 11
                 entries.push(iced::wgpu::BindGroupEntry {
                     binding: (MAX_TEXTURE_SLICES + 1) as u32,
@@ -584,10 +591,10 @@ impl shader::Primitive for TileGridShader {
             // Update uniforms for this tile (always, as hover/selection state may change)
             if let Some(resources) = pipeline.tiles.get(&tile.id) {
                 let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
-                
+
                 // Collect slice heights
                 let slice_heights: Vec<u32> = shared_texture.slices.iter().map(|s| s.height).collect();
-                
+
                 let uniforms = TileUniforms::new(tile, 0.0, &slice_heights);
                 queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
             }
@@ -669,7 +676,7 @@ impl shader::Primitive for TileGridShader {
                 // GPU viewport limits - keep dimensions reasonable
                 const MAX_VIEWPORT_DIM: f32 = 8192.0;
                 const MIN_VIEWPORT_COORD: f32 = -16384.0;
-                
+
                 let safe_tile_x = tile_x.max(MIN_VIEWPORT_COORD);
                 let safe_tile_y = tile_y.max(MIN_VIEWPORT_COORD);
                 let safe_tile_w = tile_w.min(MAX_VIEWPORT_DIM);

@@ -40,9 +40,9 @@ libyaff = { workspace = true }
 
 # Image export support
 image = { workspace = true }
-gifski = "1.32.0"
-imgref = "1.11.0"
-rgb = "0.8.50"
+#gifski = "1.32.0"
+imgref = "1.12.0"
+rgb = "0.8.52"
 
 [dev-dependencies]
 walkdir = { workspace = true }
@@ -52,4 +52,8 @@ criterion = { version = "0.7", features = ["html_reports"] }
 
 [[bench]]
 name = "render_region"
+harness = false
+
+[[bench]]
+name = "xbin_loading"
 harness = false

@@ -6,7 +6,7 @@ use semver::Version;
 ///
 /// Version format: v{major}.{minor}.{patch}
 /// Colors: 'v' white (7), major yellow (14), dots green (10), minor light red (12), patch magenta (13)
-pub fn replace_version_marker(buffer: &mut TextBuffer, version: &Version, build: Option<String> ) -> Option<(i32, i32)> {
+pub fn replace_version_marker(buffer: &mut TextBuffer, version: &Version, build: Option<String>) -> Option<(i32, i32)> {
     let mut ready_position = None;
     let mut had_version = false;
     for y in 0..buffer.get_height() {
@@ -24,7 +24,7 @@ pub fn replace_version_marker(buffer: &mut TextBuffer, version: &Version, build:
                             }
                         }
                     }
-                } else { 
+                } else {
                     had_version = true;
                     // Build version string with colors
                     let mut version_chars: Vec<AttributedChar> = Vec::new();

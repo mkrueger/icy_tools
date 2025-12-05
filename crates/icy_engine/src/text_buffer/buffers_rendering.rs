@@ -22,9 +22,12 @@ impl TextBuffer {
 
         println!(
             "[render_to_rgba] rect={}x{} font={}x{} px={}x{}",
-            rect.get_width(), rect.get_height(),
-            font_size.width, font_size.height,
-            px_width, px_height
+            rect.get_width(),
+            rect.get_height(),
+            font_size.width,
+            font_size.height,
+            px_width,
+            px_height
         );
 
         // Check for overflow before allocation

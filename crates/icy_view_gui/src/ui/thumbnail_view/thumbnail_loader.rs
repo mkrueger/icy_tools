@@ -432,6 +432,7 @@ fn render_ansi_thumbnail(path: &PathBuf, data: &[u8], ext: &str, label: &str, ca
     }
 
     // Try format-based loading
+    let load_time = Instant::now();
     if let Some(result) = render_with_format(path, &stripped_data, ext, sauce_opt.as_ref(), label, cancel_token) {
         return Some(result);
     }
@@ -444,7 +445,8 @@ fn render_ansi_thumbnail(path: &PathBuf, data: &[u8], ext: &str, label: &str, ca
     // Try parser-based using FileFormat
     if let Some(format) = FileFormat::from_extension(ext) {
         if format.uses_parser() {
-            return render_with_parser(path, &stripped_data, ext, sauce_opt, label, cancel_token);
+            let res = render_with_parser(path, &stripped_data, ext, sauce_opt, label, cancel_token);
+            return res;
         }
     }
 
@@ -452,7 +454,8 @@ fn render_ansi_thumbnail(path: &PathBuf, data: &[u8], ext: &str, label: &str, ca
     if let Some(ref sauce) = sauce_opt {
         if let Some(icy_sauce::Capabilities::Character(_)) = sauce.capabilities() {
             // SAUCE says this is a character file - try ANSI parser
-            return render_with_parser(path, &stripped_data, "ans", sauce_opt, label, cancel_token);
+            let res = render_with_parser(path, &stripped_data, "ans", sauce_opt, label, cancel_token);
+            return res;
         }
     }
 
@@ -537,8 +540,14 @@ fn render_with_parser(
         use_unicode
     );
     let result = render_screen_to_thumbnail(path, &*screen, use_unicode, sauce, label, cancel_token);
-    
-    debug!("[TIMING] {} total parser render ({}x{}): {:?}", path.display(), width, height, total_start.elapsed());
+
+    debug!(
+        "[TIMING] {} total parser render ({}x{}): {:?}",
+        path.display(),
+        width,
+        height,
+        total_start.elapsed()
+    );
     result
 }
 
@@ -596,8 +605,14 @@ fn render_with_format(
             // Use the buffer directly as Screen - no need to
             let screen = TextScreen { buffer, ..Default::default() };
             let result = render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token);
-            
-            debug!("[TIMING] {} total format render ({}x{}): {:?}", path.display(), width, height, total_start.elapsed());
+
+            debug!(
+                "[TIMING] {} total format render ({}x{}): {:?}",
+                path.display(),
+                width,
+                height,
+                total_start.elapsed()
+            );
             result
         }
         Err(_) => None,
@@ -719,8 +734,15 @@ fn render_screen_to_thumbnail(
 
         (size_on, rgba_on, size_off, rgba_off)
     };
-    debug!("[TIMING] {} RGBA generation ({}x{} -> {}x{}): {:?}", 
-           path.display(), width, height, size_on.width, size_on.height, rgba_gen_start.elapsed());
+    debug!(
+        "[TIMING] {} RGBA generation ({}x{} -> {}x{}): {:?}",
+        path.display(),
+        width,
+        height,
+        size_on.width,
+        size_on.height,
+        rgba_gen_start.elapsed()
+    );
 
     let orig_width = size_on.width as u32;
     let orig_height = size_on.height as u32;
@@ -771,8 +793,15 @@ fn render_screen_to_thumbnail(
     };
 
     let rgba_on = scale_rgba_data(&rgba_on_data, orig_width, source_height, new_width, new_height);
-    debug!("[TIMING] {} scaling ({}x{} -> {}x{}): {:?}", 
-           path.display(), orig_width, source_height, new_width, new_height, scale_start.elapsed());
+    debug!(
+        "[TIMING] {} scaling ({}x{} -> {}x{}): {:?}",
+        path.display(),
+        orig_width,
+        source_height,
+        new_width,
+        new_height,
+        scale_start.elapsed()
+    );
 
     debug!("[TIMING] {} total screen-to-thumbnail: {:?}", path.display(), render_start.elapsed());
 

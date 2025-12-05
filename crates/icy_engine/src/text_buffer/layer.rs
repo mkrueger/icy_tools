@@ -297,6 +297,34 @@ impl Layer {
     pub fn set_size(&mut self, size: impl Into<Size>) {
         self.size = size.into();
     }
+
+    /// Pre-allocate lines for the given size with invisible chars
+    /// This is an optimization for formats like XBin where size is known upfront
+    /// Allows direct access to chars without bounds checks
+    pub fn preallocate_lines(&mut self, width: i32, height: i32) {
+        self.size = Size::new(width, height);
+        self.lines.clear();
+        self.lines.reserve_exact(height as usize);
+        for _ in 0..height {
+            self.lines.push(Line::create(width));
+        }
+    }
+
+    /// Set a char without any bounds checking - caller must ensure pos is valid
+    /// This is an optimization for bulk loading where bounds are guaranteed
+    ///
+    /// # Safety
+    /// Caller must ensure:
+    /// - pos.y < self.lines.len()
+    /// - pos.x < self.lines[pos.y].chars.len()
+    #[inline(always)]
+    pub fn set_char_unchecked(&mut self, pos: Position, attributed_char: AttributedChar) {
+        // SAFETY: Caller guarantees bounds are valid
+        unsafe {
+            let line = self.lines.get_unchecked_mut(pos.y as usize);
+            *line.chars.get_unchecked_mut(pos.x as usize) = attributed_char;
+        }
+    }
     /*
     pub(crate) fn from_layer(layer: &Layer, area: Rectangle) -> Layer {
         let mut result = Layer::new("new", area.get_size());

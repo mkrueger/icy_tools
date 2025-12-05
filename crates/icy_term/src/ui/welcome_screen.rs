@@ -23,7 +23,7 @@ pub fn create_welcome_screen() -> TextScreen {
     buffer.terminal_state.is_terminal_buffer = true;
     // Find and replace special characters
     let ready_position = replace_version_marker(&mut buffer, &VERSION, None);
-    
+
     // Write "IcyTerm ready." message at the marked position
     let mut caret_pos = Position::default();
     if let Some((x, y)) = ready_position {

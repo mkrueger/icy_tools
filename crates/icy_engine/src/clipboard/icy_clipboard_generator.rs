@@ -58,7 +58,7 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
                 ch,
                 attribute: TextAttribute {
                     attr: u16::from_le_bytes(data[4..6].try_into().unwrap()),
-                    font_page: u16::from_le_bytes(data[6..8].try_into().unwrap()) as usize,
+                    font_page: u16::from_le_bytes(data[6..8].try_into().unwrap()) as u8,
                     background_color: u32::from_le_bytes(data[8..12].try_into().unwrap()),
                     foreground_color: u32::from_le_bytes(data[12..16].try_into().unwrap()),
                 },
