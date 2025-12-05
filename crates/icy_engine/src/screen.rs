@@ -230,9 +230,11 @@ pub trait EditableScreen: Screen {
     /// This is a default implementation that works for TextScreen.
     /// Graphics screens can override this to ignore SAUCE data.
     ///
+    /// Returns the (columns, lines) applied from the SAUCE, or (0, 0) if none were applied.
+    /// 
     /// Note: aspect_ratio and letter_spacing are buffer-specific settings
     /// and are handled by TextBuffer in its own load_sauce method.
-    fn apply_sauce(&mut self, sauce: &SauceRecord) {
+    fn apply_sauce(&mut self, sauce: &SauceRecord) -> (u16, u16) {
         match sauce.capabilities() {
             Some(Capabilities::Character(CharacterCapabilities {
                 columns,
@@ -273,9 +275,11 @@ pub trait EditableScreen: Screen {
                     *self.ice_mode_mut() = IceMode::Ice;
                 }
                 self.terminal_state_mut().ice_colors = ice_colors;
+                return (columns, lines);
             }
             _ => {
                 // No character/binary capabilities - nothing to apply
+                (0, 0)
             }
         }
     }

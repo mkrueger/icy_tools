@@ -74,7 +74,7 @@ impl OutputFormat for Atascii {
             result.apply_sauce(sauce);
         }
 
-        crate::load_with_parser(&mut result, &mut icy_parser_core::AtasciiParser::default(), data, true)?;
+        crate::load_with_parser(&mut result, &mut icy_parser_core::AtasciiParser::default(), data, true, 24)?;
         Ok(result.buffer)
     }
 }

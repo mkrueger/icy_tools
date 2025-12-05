@@ -37,14 +37,7 @@ impl OutputFormat for Seq {
         result.buffer.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
         result.buffer.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
 
-        for y in 0..result.get_height() {
-            for x in 0..result.get_width() {
-                let mut ch = AttributedChar::default();
-                ch.attribute.set_foreground(14);
-                ch.attribute.set_background(6);
-                result.set_char((x, y).into(), ch);
-            }
-        }
+        
         result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
         result.buffer.buffer_type = crate::BufferType::Petscii;
         result.buffer.terminal_state.is_terminal_buffer = false;
@@ -54,9 +47,22 @@ impl OutputFormat for Seq {
             result.apply_sauce(&sauce);
         }
 
-        result.caret.set_foreground(14);
-        result.caret.set_background(6);
-        crate::load_with_parser(&mut result, &mut icy_parser_core::PetsciiParser::default(), data, true)?;
+        seq_prepare(&mut result);
+        crate::load_with_parser(&mut result, &mut icy_parser_core::PetsciiParser::default(), data, true, 25)?;
         Ok(result.buffer)
     }
+}
+
+pub fn seq_prepare(result: &mut dyn EditableScreen) {
+    for y in 0..result.get_height() {
+        for x in 0..result.get_width() {
+            let mut ch = AttributedChar::default();
+            ch.attribute.set_foreground(7);
+            ch.attribute.set_background(0);
+            result.set_char((x, y).into(), ch);
+        }
+    }
+    result.caret_mut().set_foreground(7);
+    result.caret_mut().set_background(0);
+    result.caret_mut().set_font_page(1);
 }

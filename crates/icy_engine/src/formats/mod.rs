@@ -43,6 +43,7 @@ mod ctrla;
 mod icy_draw;
 mod renegade;
 mod seq;
+pub use seq::seq_prepare;
 
 use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
 use icy_parser_core::{CommandParser, MusicOption};
@@ -300,7 +301,7 @@ lazy_static::lazy_static! {
 /// # Errors
 ///
 /// Returns an error if sixel processing fails
-pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8], _skip_errors: bool) -> EngineResult<()> {
+pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8], _skip_errors: bool, min_height: i32) -> EngineResult<()> {
     use crate::ScreenSink;
 
     // Stop at EOF marker (Ctrl-Z)
@@ -339,9 +340,11 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
     // get_line_count() returns the real height without empty lines
     // a caret move may move up, to load correctly it need to be checked.
     // The initial height of 24 lines may be too large for the real content height.
-    let real_height = result.buffer.get_line_count().max(result.caret.y + 1);
-    result.buffer.set_height(real_height);
-
+    if min_height > 0 {
+        let real_height = result.buffer.get_line_count().max(result.caret.y + 1).max(min_height);
+        result.buffer.set_height(real_height);
+    }
+    
     let height = result.get_height();
     let width = result.get_width();
     for y in 0..height {

@@ -80,15 +80,19 @@ impl OutputFormat for Renegade {
 
         result.terminal_state_mut().is_terminal_buffer = false;
         result.buffer.file_name = Some(file_name.into());
-        if let Some(sauce) = load_data.sauce_opt {
-            result.apply_sauce(&sauce);
+        let mut min_height = -1;
+        if let Some(sauce) = &load_data.sauce_opt {
+            let lines = result.apply_sauce(sauce);
+            if lines.1 > 0 {
+                min_height = lines.1 as i32;
+            }
         }
 
         let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        crate::load_with_parser(&mut result, &mut icy_parser_core::RenegadeParser::default(), file_data, true)?;
+        crate::load_with_parser(&mut result, &mut icy_parser_core::RenegadeParser::default(), file_data, true, min_height)?;
         Ok(result.buffer)
     }
 }

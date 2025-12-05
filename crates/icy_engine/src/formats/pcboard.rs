@@ -128,8 +128,12 @@ impl OutputFormat for PCBoard {
 
         result.terminal_state_mut().is_terminal_buffer = false;
         result.buffer.file_name = Some(file_name.into());
+        let mut min_height = -1;
         if let Some(sauce) = &load_data.sauce_opt {
-            result.apply_sauce(sauce);
+            let lines = result.apply_sauce(sauce);
+            if lines.1 > 0 {
+                min_height = lines.1 as i32;
+            }
         }
 
         /*
@@ -145,7 +149,7 @@ impl OutputFormat for PCBoard {
         if is_unicode {
             result.buffer.buffer_type = crate::BufferType::Unicode;
         }
-        crate::load_with_parser(&mut result, &mut icy_parser_core::PcBoardParser::default(), file_data, true)?;
+        crate::load_with_parser(&mut result, &mut icy_parser_core::PcBoardParser::default(), file_data, true, min_height)?;
         Ok(result.buffer)
     }
 }
