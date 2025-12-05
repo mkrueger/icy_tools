@@ -10,5 +10,7 @@ fn main() -> io::Result<()> {
             .set_icon("build/windows/app.ico")
             .compile()?;
     }
+    println!("cargo:rustc-env=ICY_BUILD_DATE={}", chrono::Utc::now().to_rfc3339());
+
     Ok(())
 }

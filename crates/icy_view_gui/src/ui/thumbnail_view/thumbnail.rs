@@ -351,6 +351,8 @@ pub struct Thumbnail {
     pub sauce_info: Option<SauceRecord>,
     /// Width multiplier (1, 2, or 3 based on character columns)
     pub width_multiplier: u32,
+    /// Label RGBA data (rendered separately for GPU)
+    pub label_rgba: Option<RgbaData>,
 }
 
 impl Thumbnail {
@@ -366,6 +368,7 @@ impl Thumbnail {
             },
             sauce_info: None,
             width_multiplier: 1,
+            label_rgba: None,
         }
     }
 
@@ -380,6 +383,7 @@ impl Thumbnail {
             },
             sauce_info: None,
             width_multiplier: 1,
+            label_rgba: None,
         }
     }
 
@@ -423,20 +427,30 @@ impl Thumbnail {
     /// Get the display height for layout purposes
     /// content_width is the width available for the image (tile width minus padding)
     /// Returns the height the image would have when displayed at content_width
+    /// Now includes label height since labels are rendered separately
     ///
-    /// The texture is rendered at final size, so no scaling is needed.
+    /// The raw texture dimensions are scaled to fit content_width.
     pub fn display_height(&self, content_width: f32) -> f32 {
-        match self.state.dimensions() {
+        let (image_height, scale) = match self.state.dimensions() {
             Some((tex_w, tex_h)) => {
                 if tex_w == 0 {
-                    return 100.0; // Fallback for invalid dimensions
+                    (100.0, 1.0) // Fallback for invalid dimensions
+                } else {
+                    // Scale raw texture to fit content_width
+                    let scale = content_width / tex_w as f32;
+                    (tex_h as f32 * scale, scale)
                 }
-                // Texture is at final display size, scale to fit content_width
-                let scale = content_width / tex_w as f32;
-                tex_h as f32 * scale
             }
-            None => 100.0, // Default height for pending/loading
-        }
+            None => (100.0, 1.0), // Default height for pending/loading
+        };
+        
+        // Scale label height to match the image scaling
+        let label_height = self.label_rgba.as_ref().map(|l| l.height as f32 * scale).unwrap_or(0.0);
+        
+        // Add separator space between image and label (matching TILE_INNER_PADDING)
+        let separator = if label_height > 0.0 { 4.0 } else { 0.0 };
+        
+        image_height + separator + label_height
     }
 
     /// Get the display width for layout purposes (in units of base width)
@@ -455,6 +469,8 @@ pub struct ThumbnailResult {
     pub sauce_info: Option<SauceRecord>,
     /// Width multiplier (1, 2, or 3 based on character columns)
     pub width_multiplier: u32,
+    /// Label RGBA data (rendered separately for GPU)
+    pub label_rgba: Option<RgbaData>,
 }
 
 /// Shared thumbnail cache

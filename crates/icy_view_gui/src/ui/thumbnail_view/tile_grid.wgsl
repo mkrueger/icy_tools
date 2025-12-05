@@ -82,6 +82,8 @@ struct Uniforms {
     total_image_height: f32,      // Total logical height of the image in pixels
     // Slice heights: height of each slice in pixels (0 if unused)
     slice_heights: array<vec4<f32>, 3>,  // 12 floats for 10 slices + 2 padding
+    // Label texture info
+    label_texture_size: vec4<f32>,  // width, height, 0, 0 (0,0 if no label)
 };
 
 // 10 texture slices for very tall images
@@ -97,6 +99,7 @@ struct Uniforms {
 @group(0) @binding(9) var t_slice9: texture_2d<f32>;
 @group(0) @binding(10) var s_sampler: sampler;
 @group(0) @binding(11) var<uniform> uniforms: Uniforms;
+@group(0) @binding(12) var t_label: texture_2d<f32>;
 
 // ============================================================================
 // Helper Functions
@@ -329,6 +332,14 @@ fn layer_label_bg(p: vec2<f32>) -> vec4<f32> {
     if (!point_in_rect(p, uniforms.label_rect)) {
         return vec4<f32>(0.0);
     }
+    
+    // If we have a label texture, sample from it
+    if (uniforms.label_texture_size.x > 0.0 && uniforms.label_texture_size.y > 0.0) {
+        let uv = rect_uv(p, uniforms.label_rect);
+        return textureSample(t_label, s_sampler, uv);
+    }
+    
+    // Fallback to solid gray if no label texture
     return LABEL_BG_COLOR;
 }
 

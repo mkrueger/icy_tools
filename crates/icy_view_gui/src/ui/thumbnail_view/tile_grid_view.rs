@@ -875,6 +875,7 @@ impl TileGridView {
                 thumb.state = new_state.clone();
                 thumb.sauce_info = result.sauce_info.clone();
                 thumb.width_multiplier = result.width_multiplier;
+                thumb.label_rgba = result.label_rgba.clone();
                 // Track this thumbnail in LRU (it's now loaded)
                 self.mark_as_loaded(idx);
                 messages.push(TileGridMessage::ThumbnailReady(result.path, new_state));
@@ -1445,17 +1446,40 @@ impl TileGridView {
             let is_selected = self.selected_index == Some(layout_idx);
             let is_hovered = *self.shared_hovered_tile.lock() == Some(tile_id);
 
-            // Calculate the image height from the total tile height
-            // total_tile_height = TILE_PADDING + image_height + TILE_PADDING
-            // Therefore: image_height = total_tile_height - 2*TILE_PADDING
-            // Label is now part of the image, so no extra padding needed
-            let image_height = total_tile_height - (TILE_PADDING * 2.0);
+            // Get label RGBA data for separate GPU rendering
+            // label_size stores the RAW texture dimensions for texture creation
+            // The shader will scale the texture to fit the label_rect
+            let (label_rgba, label_raw_size) = if let Some(ref label) = thumb.label_rgba {
+                (Some(label.data.clone()), (label.width, label.height))
+            } else {
+                (None, (0, 0))
+            };
+
+            // Calculate the displayed image height - raw texture scaled to fit content_width
+            // This is the height the image will be rendered at, not the raw texture height
+            let content_width = tile_width - (TILE_PADDING * 2.0);
+            let scale = if rgba.width > 0 { content_width / rgba.width as f32 } else { 1.0 };
+            let scaled_image_height = rgba.height as f32 * scale;
+            
+            // Cap to max height
+            let image_height = scaled_image_height.min(MAX_TILE_IMAGE_HEIGHT);
+            
+            // Calculate displayed label size (same scale as image)
+            let label_size = if label_raw_size.0 > 0 {
+                let label_scale = content_width / label_raw_size.0 as f32;
+                ((label_raw_size.0 as f32 * label_scale) as u32, (label_raw_size.1 as f32 * label_scale) as u32)
+            } else {
+                (0, 0)
+            };
 
             tiles.push(TileTexture {
                 id: tile_id,
                 rgba_data: rgba.data.clone(),
                 width: rgba.width,
                 height: rgba.height,
+                label_rgba,
+                label_raw_size,
+                label_size,
                 position: (x, y),
                 display_size: (tile_width, total_tile_height),
                 image_height,

@@ -20,8 +20,8 @@ use super::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH, T
 
 /// Maximum characters per line for label tag
 const TAG_MAX_CHARS_PER_LINE: usize = 42;
-/// Maximum lines for label tag
-const TAG_MAX_LINES: usize = 3;
+/// Maximum lines for label tag (increased for better file info display)
+const TAG_MAX_LINES: usize = 8;
 
 /// Request to load a thumbnail
 pub struct ThumbnailRequest {
@@ -101,14 +101,22 @@ impl ThumbnailLoader {
                 match render_input {
                     RenderInput::PreRendered(thumbnail_image) => {
                         // Already have thumbnail image (e.g., folder placeholder, 16colors thumbnail)
-                        // Scale to target width and append label
-                        let scaled = scale_rgba_to_target_width(thumbnail_image);
-                        let rgba_with_label = append_label_to_rgba(scaled, &label_clone);
+                        // GPU shader handles scaling, just pass raw data
+                        // Calculate width multiplier from pixel width
+                        let width_multiplier = if thumbnail_image.width < 640 {
+                            1
+                        } else if thumbnail_image.width < 960 {
+                            2
+                        } else {
+                            3
+                        };
+                        let label_rgba = render_label_tag(&label_clone, width_multiplier);
                         Some(ThumbnailResult {
                             path: path_clone,
-                            state: ThumbnailState::Ready { rgba: rgba_with_label },
+                            state: ThumbnailState::Ready { rgba: thumbnail_image },
                             sauce_info: None,
-                            width_multiplier: 1,
+                            width_multiplier,
+                            label_rgba,
                         })
                     }
                     RenderInput::FileData(data) => {
@@ -118,12 +126,13 @@ impl ThumbnailLoader {
                             Some(result) => Some(result),
                             None => {
                                 // Format not supported - show unsupported placeholder with label
-                                let unsupported_with_label = create_labeled_placeholder(&super::thumbnail::UNSUPPORTED_PLACEHOLDER, &label_clone);
+                                let label_rgba = render_label_tag(&label_clone, 1);
                                 Some(ThumbnailResult {
                                     path: path_clone,
-                                    state: ThumbnailState::Ready { rgba: unsupported_with_label },
+                                    state: ThumbnailState::Ready { rgba: super::thumbnail::UNSUPPORTED_PLACEHOLDER.clone() },
                                     sauce_info: None,
                                     width_multiplier: 1,
+                                    label_rgba,
                                 })
                             }
                         }
@@ -136,6 +145,7 @@ impl ThumbnailLoader {
                         },
                         sauce_info: None,
                         width_multiplier: 1,
+                        label_rgba: render_label_tag(&label_clone, 1),
                     }),
                     RenderInput::Cancelled => None,
                 }
@@ -167,6 +177,7 @@ impl ThumbnailLoader {
                         },
                         sauce_info: None,
                         width_multiplier: 1,
+                        label_rgba: None,
                     }
                 }
             };
@@ -279,54 +290,6 @@ fn render_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &Can
     }
 }
 
-/// Scale RGBA data to target width, maintaining aspect ratio
-/// Used for pre-rendered thumbnails (16colors, placeholders, etc.)
-fn scale_rgba_to_target_width(rgba: RgbaData) -> RgbaData {
-    if rgba.width == 0 || rgba.height == 0 {
-        return rgba;
-    }
-
-    // Calculate width multiplier from pixel width (same logic as render_image_thumbnail)
-    let width_multiplier = if rgba.width < 640 {
-        1
-    } else if rgba.width < 960 {
-        2
-    } else {
-        3
-    };
-
-    let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
-
-    // Already at target width
-    if rgba.width == target_width {
-        return rgba;
-    }
-
-    let scale = target_width as f32 / rgba.width as f32;
-    let target_height = ((rgba.height as f32 * scale) as u32).max(1);
-
-    // Crop height if too tall
-    let (final_width, final_height) = if target_height > THUMBNAIL_MAX_HEIGHT {
-        (target_width, THUMBNAIL_MAX_HEIGHT)
-    } else {
-        (target_width, target_height)
-    };
-
-    // Use image crate to scale
-    let img = image::RgbaImage::from_raw(rgba.width, rgba.height, rgba.data.to_vec()).unwrap_or_else(|| image::RgbaImage::new(1, 1));
-
-    let scaled = if target_height > THUMBNAIL_MAX_HEIGHT {
-        // Crop first, then resize
-        let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale) as u32;
-        let cropped = image::imageops::crop_imm(&img, 0, 0, rgba.width, max_source_height.min(rgba.height));
-        image::imageops::resize(&cropped.to_image(), final_width, final_height, image::imageops::FilterType::Triangle)
-    } else {
-        image::imageops::resize(&img, final_width, final_height, image::imageops::FilterType::Triangle)
-    };
-
-    RgbaData::new(scaled.into_raw(), final_width, final_height)
-}
-
 /// Render an image file as thumbnail
 /// Returns None if cancelled
 fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
@@ -352,48 +315,37 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
                 3
             };
 
-            // Target width based on multiplier (always use full width, crop if too tall)
-            let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
-
-            // Scale to fit target_width, then crop if too tall for max height
-            let scale_for_width = target_width as f32 / orig_width as f32;
-            let scaled_height = (orig_height as f32 * scale_for_width) as u32;
-
-            // If scaled height exceeds max, we'll crop the source before scaling
-            let (new_width, new_height, crop_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT {
-                // Calculate how much of the source we can fit
-                let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_width) as u32;
-                (target_width, THUMBNAIL_MAX_HEIGHT, Some(max_source_height.min(orig_height)))
+            // Crop height if too tall, but don't scale - GPU handles scaling
+            let (final_img, final_width, final_height) = if orig_height > THUMBNAIL_MAX_HEIGHT {
+                // Calculate how much of the source we can fit based on aspect ratio preservation
+                // When displayed, the image will be scaled to fit THUMBNAIL_RENDER_WIDTH * width_multiplier
+                // So we need to crop proportionally
+                let target_display_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
+                let scale = target_display_width as f32 / orig_width as f32;
+                let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale) as u32;
+                let crop_height = max_source_height.min(orig_height);
+                let cropped = img.crop_imm(0, 0, orig_width, crop_height);
+                (cropped, orig_width, crop_height)
             } else {
-                (target_width, scaled_height.max(1), None)
-            };
-
-            // Crop and resize
-            let resized = if let Some(crop_h) = crop_height {
-                // Crop first, then resize
-                let cropped = img.crop_imm(0, 0, orig_width, crop_h);
-                cropped.resize_exact(new_width, new_height, ::image::imageops::FilterType::Triangle)
-            } else if new_width != orig_width || new_height != orig_height {
-                img.resize_exact(new_width, new_height, ::image::imageops::FilterType::Triangle)
-            } else {
-                img
+                (img, orig_width, orig_height)
             };
 
             if cancel_token.is_cancelled() {
                 return None;
             }
 
-            let rgba: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> = resized.to_rgba8();
-            let rgba_data = RgbaData::new(rgba.into_raw(), new_width, new_height);
+            let rgba: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> = final_img.to_rgba8();
+            let rgba_data = RgbaData::new(rgba.into_raw(), final_width, final_height);
 
-            // Append label directly to the image (after scaling, so tag size is consistent)
-            let rgba_with_label = append_label_to_rgba(rgba_data, label);
+            // Render label separately for GPU
+            let label_rgba = render_label_tag(label, width_multiplier);
 
             Some(ThumbnailResult {
                 path: path.clone(),
-                state: ThumbnailState::Ready { rgba: rgba_with_label },
+                state: ThumbnailState::Ready { rgba: rgba_data },
                 sauce_info: None,
                 width_multiplier,
+                label_rgba,
             })
         }
         Err(e) => {
@@ -406,6 +358,7 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
                 },
                 sauce_info: None,
                 width_multiplier: 1,
+                label_rgba: render_label_tag(label, 1),
             })
         }
     }
@@ -432,7 +385,6 @@ fn render_ansi_thumbnail(path: &PathBuf, data: &[u8], ext: &str, label: &str, ca
     }
 
     // Try format-based loading
-    let load_time = Instant::now();
     if let Some(result) = render_with_format(path, &stripped_data, ext, sauce_opt.as_ref(), label, cancel_token) {
         return Some(result);
     }
@@ -634,7 +586,6 @@ fn render_screen_to_thumbnail(
         return None;
     }
 
-    let render_start = Instant::now();
     let width = screen.get_width();
     let height = screen.get_height();
 
@@ -647,6 +598,7 @@ fn render_screen_to_thumbnail(
             },
             sauce_info: sauce,
             width_multiplier: 1,
+            label_rgba: render_label_tag(label, 1),
         });
     }
 
@@ -662,7 +614,6 @@ fn render_screen_to_thumbnail(
     }
 
     // Render based on buffer type
-    let rgba_gen_start = Instant::now();
     let (size_on, rgba_on, size_off, rgba_off) = if is_unicode {
         // Use unicode renderer for Unicode screens
         use icy_engine_gui::{RenderUnicodeOptions, render_unicode_to_rgba};
@@ -734,15 +685,7 @@ fn render_screen_to_thumbnail(
 
         (size_on, rgba_on, size_off, rgba_off)
     };
-    debug!(
-        "[TIMING] {} RGBA generation ({}x{} -> {}x{}): {:?}",
-        path.display(),
-        width,
-        height,
-        size_on.width,
-        size_on.height,
-        rgba_gen_start.elapsed()
-    );
+    
 
     let orig_width = size_on.width as u32;
     let orig_height = size_on.height as u32;
@@ -756,90 +699,73 @@ fn render_screen_to_thumbnail(
             },
             sauce_info: sauce,
             width_multiplier: 1,
+            label_rgba: render_label_tag(label, 1),
         });
     }
 
-    // Check cancellation before scaling
+    // Check cancellation before processing
     if cancel_token.is_cancelled() {
         return None;
     }
 
-    let scale_start = Instant::now();
+    // GPU handles scaling, we just crop if too tall
+    // Calculate how much we need to crop based on display aspect ratio
+    let target_display_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
+    let scale_for_display = target_display_width as f32 / orig_width as f32;
+    let displayed_height = (orig_height as f32 * scale_for_display) as u32;
 
-    // Calculate target width based on multiplier
-    // Each multiplier step is THUMBNAIL_RENDER_WIDTH (320px for 80 columns)
-    let target_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
-
-    // Scale to fit target_width, then crop if too tall for max height
-    let scale_for_width = target_width as f32 / orig_width as f32;
-    let scaled_height = (orig_height as f32 * scale_for_width) as u32;
-
-    // If scaled height exceeds max, we'll crop the source before scaling
-    let (new_width, new_height, crop_source_height) = if scaled_height > THUMBNAIL_MAX_HEIGHT {
-        // Calculate how much of the source we can fit
-        let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_width) as u32;
-        (target_width, THUMBNAIL_MAX_HEIGHT, Some(max_source_height.min(orig_height)))
+    // Crop source if displayed height would exceed max
+    let crop_source_height = if displayed_height > THUMBNAIL_MAX_HEIGHT {
+        let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale_for_display) as u32;
+        Some(max_source_height.min(orig_height))
     } else {
-        (target_width, scaled_height.max(1), None)
+        None
     };
 
-    // Crop source if needed (for very tall images where min_width constraint kicks in)
-    let (rgba_on_data, source_height) = if let Some(crop_h) = crop_source_height {
+    // Apply cropping if needed
+    let (rgba_on_data, final_height) = if let Some(crop_h) = crop_source_height {
         let bytes_per_row = (orig_width * 4) as usize;
         let cropped: Vec<u8> = rgba_on.iter().take(bytes_per_row * crop_h as usize).cloned().collect();
         (cropped, crop_h)
     } else {
-        (rgba_on.clone(), orig_height)
+        (rgba_on, orig_height)
     };
 
-    let rgba_on = scale_rgba_data(&rgba_on_data, orig_width, source_height, new_width, new_height);
-    debug!(
-        "[TIMING] {} scaling ({}x{} -> {}x{}): {:?}",
-        path.display(),
-        orig_width,
-        source_height,
-        new_width,
-        new_height,
-        scale_start.elapsed()
-    );
-
-    debug!("[TIMING] {} total screen-to-thumbnail: {:?}", path.display(), render_start.elapsed());
-
+    let rgba_on = RgbaData::new(rgba_on_data, orig_width, final_height);
+    
+    // Render label separately for GPU
+    let label_rgba = render_label_tag(label, width_multiplier);
+    
     if has_blinking && !rgba_off.is_empty() {
-        // Apply same cropping/scaling to blink-off frame
+        // Apply same cropping to blink-off frame
         let off_height = size_off.height as u32;
-        let (rgba_off_data, off_source_height) = if let Some(crop_h) = crop_source_height {
+        let (rgba_off_data, off_final_height) = if let Some(crop_h) = crop_source_height {
             let crop_h = crop_h.min(off_height);
             let bytes_per_row = (size_off.width * 4) as usize;
             let cropped: Vec<u8> = rgba_off.iter().take(bytes_per_row * crop_h as usize).cloned().collect();
             (cropped, crop_h)
         } else {
-            (rgba_off.clone(), off_height)
+            (rgba_off, off_height)
         };
-        let rgba_off = scale_rgba_data(&rgba_off_data, size_off.width as u32, off_source_height, new_width, new_height);
-
-        // Append label to both frames (after scaling, so tag size is consistent)
-        let rgba_on_with_label = append_label_to_rgba(rgba_on, label);
-        let rgba_off_with_label = append_label_to_rgba(rgba_off, label);
+        let rgba_off = RgbaData::new(rgba_off_data, size_off.width as u32, off_final_height);
 
         Some(ThumbnailResult {
             path: path.clone(),
             state: ThumbnailState::Animated {
-                frames: vec![rgba_on_with_label, rgba_off_with_label],
+                frames: vec![rgba_on, rgba_off],
                 current_frame: 0,
             },
             sauce_info: sauce,
             width_multiplier,
+            label_rgba,
         })
     } else {
-        // Append label directly to the image (after scaling, so tag size is consistent)
-        let rgba_with_label = append_label_to_rgba(rgba_on, label);
-
         Some(ThumbnailResult {
             path: path.clone(),
-            state: ThumbnailState::Ready { rgba: rgba_with_label },
+            state: ThumbnailState::Ready { rgba: rgba_on },
             sauce_info: sauce,
             width_multiplier,
+            label_rgba,
         })
     }
 }
@@ -870,30 +796,33 @@ fn render_placeholder_thumbnail(path: &PathBuf, sauce: Option<SauceRecord>, labe
     let orig_width = size.width as u32;
     let orig_height = size.height as u32;
 
+    // Render label separately
+    let label_rgba = render_label_tag(label, 1);
+
     if orig_width == 0 || orig_height == 0 {
         // Fallback to a simple gray placeholder
         let placeholder_width = 640u32; // 80 chars * 8 pixels
         let placeholder_height = 400u32; // 25 chars * 16 pixels
         let placeholder = vec![64u8; (placeholder_width * placeholder_height * 4) as usize];
         let placeholder_rgba = RgbaData::new(placeholder, placeholder_width, placeholder_height);
-        let rgba_with_label = append_label_to_rgba(placeholder_rgba, label);
 
         return ThumbnailResult {
             path: path.clone(),
-            state: ThumbnailState::Ready { rgba: rgba_with_label },
+            state: ThumbnailState::Ready { rgba: placeholder_rgba },
             sauce_info: sauce,
             width_multiplier: 1,
+            label_rgba,
         };
     }
 
     let rgba_data = RgbaData::new(rgba, orig_width, orig_height);
-    let rgba_with_label = append_label_to_rgba(rgba_data, label);
 
     ThumbnailResult {
         path: path.clone(),
-        state: ThumbnailState::Ready { rgba: rgba_with_label },
+        state: ThumbnailState::Ready { rgba: rgba_data },
         sauce_info: sauce,
         width_multiplier: 1,
+        label_rgba,
     }
 }
 
@@ -911,28 +840,6 @@ fn screen_has_blinking(screen: &dyn Screen) -> bool {
         }
     }
     false
-}
-
-/// Scale RGBA data and return as RgbaData
-fn scale_rgba_data(rgba: &[u8], orig_width: u32, orig_height: u32, new_width: u32, new_height: u32) -> RgbaData {
-    if new_width == orig_width && new_height == orig_height {
-        // No scaling needed
-        RgbaData::new(rgba.to_vec(), orig_width, orig_height)
-    } else {
-        // Scale using image crate
-        match ::image::RgbaImage::from_raw(orig_width, orig_height, rgba.to_vec()) {
-            Some(img) => {
-                let resized = ::image::imageops::resize(&img, new_width, new_height, ::image::imageops::FilterType::Triangle);
-                RgbaData::new(resized.into_raw(), new_width, new_height)
-            }
-            None => {
-                error!("[ThumbnailLoader] Invalid RGBA data: {}x{} with {} bytes", orig_width, orig_height, rgba.len());
-                // Return a placeholder
-                let placeholder = vec![128u8; (new_width * new_height * 4) as usize];
-                RgbaData::new(placeholder, new_width, new_height)
-            }
-        }
-    }
 }
 
 /// Render a DOS-style label tag using the IBM BitFont

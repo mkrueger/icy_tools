@@ -86,6 +86,12 @@ pub struct TileTexture {
     pub width: u32,
     /// Height in pixels
     pub height: u32,
+    /// Label RGBA data (separate texture for GPU rendering)
+    pub label_rgba: Option<Arc<Vec<u8>>>,
+    /// Label raw texture dimensions (width, height) - for texture creation
+    pub label_raw_size: (u32, u32),
+    /// Label display dimensions (width, height) - scaled to fit tile
+    pub label_size: (u32, u32),
     /// Position in the grid (x, y)
     pub position: (f32, f32),
     /// Display size (width, height) - full tile including label area
@@ -150,11 +156,13 @@ struct TileUniforms {
     total_image_height: f32,
     /// Heights of each slice in pixels (packed as 3 vec4s = 12 floats for 10 slices + 2 padding)
     slice_heights: [[f32; 4]; 3],
+    /// Label texture size (width, height, 0, 0) - 0,0 if no label
+    label_texture_size: [f32; 4],
 }
 
 impl TileUniforms {
     /// Create uniforms for a tile with pre-computed rectangles and slice info
-    fn new(tile: &TileTexture, tag_height: f32, slice_heights: &[u32]) -> Self {
+    fn new(tile: &TileTexture, slice_heights: &[u32]) -> Self {
         let shadow_extra_x = SHADOW_OFFSET_X + SHADOW_BLUR_RADIUS;
         let shadow_extra_y = SHADOW_OFFSET_Y + SHADOW_BLUR_RADIUS;
 
@@ -174,15 +182,18 @@ impl TileUniforms {
         let image_y = padding;
         let image_w = content_w - padding * 2.0;
 
-        // Image height is the content area minus padding (top and bottom)
-        // The texture will be stretched/scaled to fit this area
-        let image_h = content_h - padding * 2.0;
+        // Image height from the tile (actual rendered image height, not display height)
+        let image_h = tile.image_height;
 
-        // Label rect - below image with inner padding
+        // Label rect - below image with separator
         let label_x = padding;
         let label_y = image_y + image_h + TILE_INNER_PADDING;
         let label_w = image_w;
-        let label_h = if tag_height > 0.0 { tag_height + TILE_INNER_PADDING } else { 0.0 };
+        let label_h = if tile.label_size.1 > 0 { 
+            tile.label_size.1 as f32 + TILE_INNER_PADDING 
+        } else { 
+            0.0 
+        };
 
         // Pack slice heights into 3 vec4s (12 floats for 10 slices + 2 padding)
         let mut packed_heights = [[0.0f32; 4]; 3];
@@ -205,6 +216,7 @@ impl TileUniforms {
             num_slices: slice_heights.len().min(MAX_TEXTURE_SLICES) as f32,
             total_image_height: tile.height as f32,
             slice_heights: packed_heights,
+            label_texture_size: [tile.label_size.0 as f32, tile.label_size.1 as f32, 0.0, 0.0],
         }
     }
 }
@@ -224,6 +236,12 @@ struct SharedTextureResources {
     slices: Vec<TextureSlice>,
     /// Original image dimensions
     texture_size: (u32, u32),
+    /// Label texture (optional)
+    label_texture: Option<iced::wgpu::Texture>,
+    /// Label texture view (optional)
+    label_texture_view: Option<iced::wgpu::TextureView>,
+    /// Label dimensions
+    label_size: (u32, u32),
 }
 
 /// Per-tile GPU resources (unique to each tile for position/hover/selection state)
@@ -265,8 +283,8 @@ impl shader::Pipeline for TileGridShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
-        // Create bind group layout with 10 texture slots + sampler + uniforms
-        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
+        // Create bind group layout with 10 texture slots + sampler + uniforms + label texture
+        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
 
         // Add 10 texture bindings (0-9)
         for i in 0..MAX_TEXTURE_SLICES {
@@ -298,6 +316,18 @@ impl shader::Pipeline for TileGridShaderRenderer {
                 ty: iced::wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
                 min_binding_size: None,
+            },
+            count: None,
+        });
+
+        // Label texture at binding 12
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 2) as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Texture {
+                multisampled: false,
+                view_dimension: iced::wgpu::TextureViewDimension::D2,
+                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
             },
             count: None,
         });
@@ -518,11 +548,63 @@ impl shader::Primitive for TileGridShader {
                     texture_start.elapsed()
                 );
 
+                // Create label texture if provided
+                let (label_texture, label_texture_view, label_size) = if let Some(ref label_data) = tile.label_rgba {
+                    // Use raw size for texture creation
+                    let (lw, lh) = tile.label_raw_size;
+                    if lw > 0 && lh > 0 && label_data.len() == (lw * lh * 4) as usize {
+                        let label_tex = device.create_texture(&iced::wgpu::TextureDescriptor {
+                            label: Some(&format!("Label Texture {:x}", texture_key)),
+                            size: iced::wgpu::Extent3d {
+                                width: lw,
+                                height: lh,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: iced::wgpu::TextureDimension::D2,
+                            format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                            view_formats: &[],
+                        });
+
+                        queue.write_texture(
+                            iced::wgpu::TexelCopyTextureInfo {
+                                texture: &label_tex,
+                                mip_level: 0,
+                                origin: iced::wgpu::Origin3d::ZERO,
+                                aspect: iced::wgpu::TextureAspect::All,
+                            },
+                            label_data,
+                            iced::wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(4 * lw),
+                                rows_per_image: Some(lh),
+                            },
+                            iced::wgpu::Extent3d {
+                                width: lw,
+                                height: lh,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+
+                        let label_view = label_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
+                        (Some(label_tex), Some(label_view), (lw, lh))
+                    } else {
+                        (None, None, (0, 0))
+                    }
+                } else {
+                    (None, None, (0, 0))
+                };
+
                 pipeline.shared_textures.insert(
                     texture_key,
                     SharedTextureResources {
                         slices,
                         texture_size: (tile.width, tile.height),
+                        label_texture,
+                        label_texture_view,
+                        label_size,
                     },
                 );
             }
@@ -545,8 +627,8 @@ impl shader::Primitive for TileGridShader {
                     mapped_at_creation: false,
                 });
 
-                // Create bind group entries for all 10 texture slots
-                let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
+                // Create bind group entries for all 10 texture slots + sampler + uniforms + label
+                let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
 
                 for i in 0..MAX_TEXTURE_SLICES {
                     let texture_view = if i < shared_texture.slices.len() {
@@ -572,6 +654,13 @@ impl shader::Primitive for TileGridShader {
                     resource: uniform_buffer.as_entire_binding(),
                 });
 
+                // Label texture at binding 12
+                let label_view = shared_texture.label_texture_view.as_ref().unwrap_or(&pipeline.dummy_texture_view);
+                entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                    resource: iced::wgpu::BindingResource::TextureView(label_view),
+                });
+
                 let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                     label: Some(&format!("Tile BindGroup {}", tile.id)),
                     layout: &pipeline.bind_group_layout,
@@ -595,7 +684,7 @@ impl shader::Primitive for TileGridShader {
                 // Collect slice heights
                 let slice_heights: Vec<u32> = shared_texture.slices.iter().map(|s| s.height).collect();
 
-                let uniforms = TileUniforms::new(tile, 0.0, &slice_heights);
+                let uniforms = TileUniforms::new(tile, &slice_heights);
                 queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
             }
         }
