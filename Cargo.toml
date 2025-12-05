@@ -26,7 +26,7 @@ icy_engine_scripting = { path = "crates/icy_engine_scripting"}
 #icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_sauce = "0.3.4"
 #icy_sauce = { path = "../icy_sauce" }
-icy_sixel = "0.2.0"
+icy_sixel = "0.3.0"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../icy_board/crates/icy_net" }
 unarc-rs = { path ="../unarc-rs" }

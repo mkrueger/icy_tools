@@ -80,6 +80,10 @@ struct Uniforms {
     // Texture slice info
     num_slices: f32,              // Number of active texture slices (1-10)
     total_image_height: f32,      // Total logical height of the image in pixels
+    // For multi-pass viewport slicing
+    viewport_y_offset: f32,       // Y offset for current viewport stripe (pixels)
+    _pad1: vec4<f32>,             // Padding (16 bytes)
+    _pad2: vec4<f32>,             // Extra padding (16 bytes for alignment)
     // Slice heights: height of each slice in pixels (0 if unused)
     slice_heights: array<vec4<f32>, 3>,  // 12 floats for 10 slices + 2 padding
     // Label texture info
@@ -279,16 +283,20 @@ fn sample_sliced_image(uv: vec2<f32>) -> vec4<f32> {
     let slice_uv = vec2<f32>(uv.x, local_y / slice_height);
     
     // DEBUG: Color-code slices to visualize which slice is being sampled
-    // Uncomment this to see slice boundaries
-    // let debug_colors = array<vec4<f32>, 6>(
-    //     vec4<f32>(1.0, 0.0, 0.0, 1.0),  // Red
-    //     vec4<f32>(0.0, 1.0, 0.0, 1.0),  // Green
-    //     vec4<f32>(0.0, 0.0, 1.0, 1.0),  // Blue
-    //     vec4<f32>(1.0, 1.0, 0.0, 1.0),  // Yellow
-    //     vec4<f32>(1.0, 0.0, 1.0, 1.0),  // Magenta
-    //     vec4<f32>(0.0, 1.0, 1.0, 1.0)   // Cyan
+    // Uncomment to debug slice boundaries:
+    // let debug_colors = array<vec4<f32>, 10>(
+    //     vec4<f32>(1.0, 0.0, 0.0, 1.0),  // Red - slice 0
+    //     vec4<f32>(0.0, 1.0, 0.0, 1.0),  // Green - slice 1
+    //     vec4<f32>(0.0, 0.0, 1.0, 1.0),  // Blue - slice 2
+    //     vec4<f32>(1.0, 1.0, 0.0, 1.0),  // Yellow - slice 3
+    //     vec4<f32>(1.0, 0.0, 1.0, 1.0),  // Magenta - slice 4
+    //     vec4<f32>(0.0, 1.0, 1.0, 1.0),  // Cyan - slice 5
+    //     vec4<f32>(1.0, 0.5, 0.0, 1.0),  // Orange - slice 6
+    //     vec4<f32>(0.5, 0.0, 1.0, 1.0),  // Purple - slice 7
+    //     vec4<f32>(0.0, 0.5, 0.0, 1.0),  // Dark green - slice 8
+    //     vec4<f32>(0.5, 0.5, 0.5, 1.0)   // Gray - slice 9
     // );
-    // return debug_colors[slice_idx % 6u];
+    // return debug_colors[slice_idx % 10u];
     
     // Sample from the appropriate slice
     switch(slice_idx) {
@@ -389,7 +397,9 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let p = input.local_pos;
+    // Apply viewport_y_offset for multi-pass stripe rendering
+    // Each stripe renders a portion of the tile, so we need to offset the local position
+    let p = vec2<f32>(input.local_pos.x, input.local_pos.y + uniforms.viewport_y_offset);
     
     // Calculate distance once for all layers that need it
     let dist_content = sd_rounded_rect(p, uniforms.content_rect, uniforms.border_radius);
@@ -417,8 +427,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Layer 5: Image
     result = blend_over(result, layer_image(p));
     
-    // Layer 6: Label background (tag is rendered separately)
-    result = blend_over(result, layer_label_bg(p));
+    // Note: Labels are now rendered in a separate pass (tile_label.wgsl)
+    // for proper scaling and centering
     
     return result;
 }

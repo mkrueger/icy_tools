@@ -36,11 +36,13 @@ pub enum ImageFormat {
     Jpeg,
     /// BMP image format (recognition only, no save/load yet)
     Bmp,
+    /// Sixel graphics format (.six, .sixel)
+    Sixel,
 }
 
 impl ImageFormat {
     /// All available image formats
-    pub const ALL: &'static [ImageFormat] = &[ImageFormat::Png, ImageFormat::Gif, ImageFormat::Jpeg, ImageFormat::Bmp];
+    pub const ALL: &'static [ImageFormat] = &[ImageFormat::Png, ImageFormat::Gif, ImageFormat::Jpeg, ImageFormat::Bmp, ImageFormat::Sixel];
 
     /// Get the file extension for this image format.
     pub fn extension(&self) -> &'static str {
@@ -49,6 +51,7 @@ impl ImageFormat {
             ImageFormat::Gif => "gif",
             ImageFormat::Jpeg => "jpg",
             ImageFormat::Bmp => "bmp",
+            ImageFormat::Sixel => "six",
         }
     }
 
@@ -59,6 +62,7 @@ impl ImageFormat {
             ImageFormat::Gif => "GIF Animation",
             ImageFormat::Jpeg => "JPEG Image",
             ImageFormat::Bmp => "BMP Image",
+            ImageFormat::Sixel => "Sixel Graphics",
         }
     }
 
@@ -69,6 +73,7 @@ impl ImageFormat {
             ImageFormat::Gif => "Animated GIF with blink support",
             ImageFormat::Jpeg => "JPEG image (recognition only)",
             ImageFormat::Bmp => "BMP image (recognition only)",
+            ImageFormat::Sixel => "Sixel terminal graphics",
         }
     }
 
@@ -89,6 +94,7 @@ impl ImageFormat {
             "gif" => Some(ImageFormat::Gif),
             "jpg" | "jpeg" => Some(ImageFormat::Jpeg),
             "bmp" => Some(ImageFormat::Bmp),
+            "six" | "sixel" => Some(ImageFormat::Sixel),
             _ => None,
         }
     }
@@ -116,7 +122,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, rect),
             ImageFormat::Gif => self.save_screen_gif(screen, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -127,7 +133,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, region),
             ImageFormat::Gif => self.save_screen_gif(screen, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -225,7 +231,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
             ImageFormat::Gif => self.save_gif(buffer, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }
@@ -241,7 +247,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, region),
             ImageFormat::Gif => self.save_gif(buffer, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp => {
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
                 anyhow::bail!("Saving to {} is not supported", self.name())
             }
         }

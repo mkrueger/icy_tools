@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
 use crate::ui::options::ScrollSpeed;
 use crate::ui::theme;
-use icy_engine::formats::FileFormat;
+use icy_engine::formats::{FileFormat, ImageFormat};
 
 /// Counter for image load requests to handle cancellation
 static IMAGE_LOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -143,6 +143,17 @@ impl PreviewView {
         false
     }
 
+    /// Check if a file is a Sixel image
+    fn is_sixel_file(path: &PathBuf) -> bool {
+        if let Some(ext) = path.extension() {
+            let ext_str = ext.to_ascii_lowercase();
+            if let Some(format) = FileFormat::from_extension(ext_str.to_str().unwrap_or("")) {
+                return matches!(format, FileFormat::Image(ImageFormat::Sixel));
+            }
+        }
+        false
+    }
+
     /// Load data for preview
     pub fn load_data(&mut self, path: PathBuf, data: Vec<u8>) -> Task<PreviewMessage> {
         self.current_file = Some(path.clone());
@@ -155,7 +166,6 @@ impl PreviewView {
 
         // Reset scroll mode (background thread will set it)
         self.scroll_mode = ScrollMode::Off;
-
         if Self::is_image_file(&path) {
             // Load image in background thread
             self.preview_mode = PreviewMode::Loading;
@@ -164,6 +174,9 @@ impl PreviewView {
             let load_id = IMAGE_LOAD_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
             self.current_image_load_id = load_id;
 
+            // Check if it's a Sixel file (needs special handling)
+            let is_sixel = Self::is_sixel_file(&path);
+
             // Spawn background task to load image from data
             Task::perform(
                 async move {
@@ -171,15 +184,27 @@ impl PreviewView {
                     // Load image in blocking thread pool
                     tokio::task::spawn_blocking(move || {
                         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
-                        // Use image crate for other formats
-                        match image::load_from_memory(&data) {
-                            Ok(img) => {
-                                let rgba = img.to_rgba8();
-                                let (width, height) = rgba.dimensions();
-                                let handle = iced_image::Handle::from_rgba(width, height, rgba.into_raw());
-                                (load_id, Ok(handle))
+
+                        if is_sixel {
+                            // Use icy_sixel for Sixel files
+                            match icy_sixel::sixel_decode(&data) {
+                                Ok((rgba, width, height)) => {
+                                    let handle = iced_image::Handle::from_rgba(width as u32, height as u32, rgba);
+                                    (load_id, Ok(handle))
+                                }
+                                Err(e) => (load_id, Err(format!("Failed to decode Sixel: {}", e))),
                             }
-                            Err(e) => (load_id, Err(format!("Failed to load image: {}", e))),
+                        } else {
+                            // Use image crate for other formats
+                            match image::load_from_memory(&data) {
+                                Ok(img) => {
+                                    let rgba = img.to_rgba8();
+                                    let (width, height) = rgba.dimensions();
+                                    let handle = iced_image::Handle::from_rgba(width, height, rgba.into_raw());
+                                    (load_id, Ok(handle))
+                                }
+                                Err(e) => (load_id, Err(format!("Failed to load image: {}", e))),
+                            }
                         }
                     })
                     .await

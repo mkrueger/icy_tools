@@ -17,8 +17,8 @@ use icy_engine_gui::{ScrollbarOverlay, ScrollbarState, Viewport};
 
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
-use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, append_label_to_rgba, create_labeled_placeholder};
-use super::tile_shader::{MAX_TILE_IMAGE_HEIGHT, TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
+use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, create_labeled_placeholder, render_label_tag};
+use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
 use crate::Item;
 use crate::items::{ItemFile, ItemFolder};
 use crate::ui::options::ScrollSpeed;
@@ -444,8 +444,9 @@ impl TileGridView {
             // For items with sync thumbnails (folders), load immediately to ensure correct layout
             let mut thumb = Thumbnail::new(path, label.clone());
             if let Some(rgba) = item.get_sync_thumbnail() {
-                let rgba_with_label = append_label_to_rgba(rgba, &label);
-                thumb.state = ThumbnailState::Ready { rgba: rgba_with_label };
+                // Render label separately for GPU (don't embed in image)
+                thumb.label_rgba = render_label_tag(&label, 1);
+                thumb.state = ThumbnailState::Ready { rgba };
             }
 
             self.thumbnails.push(thumb);
@@ -503,8 +504,9 @@ impl TileGridView {
             let item_arc: Arc<dyn Item> = Arc::from(item);
             let mut thumb = Thumbnail::new(path, label.clone());
             if let Some(rgba) = item_arc.get_sync_thumbnail() {
-                let rgba_with_label = append_label_to_rgba(rgba, &label);
-                thumb.state = ThumbnailState::Ready { rgba: rgba_with_label };
+                // Render label separately for GPU (don't embed in image)
+                thumb.label_rgba = render_label_tag(&label, 1);
+                thumb.state = ThumbnailState::Ready { rgba };
             }
 
             self.thumbnails.push(thumb);
@@ -662,9 +664,9 @@ impl TileGridView {
             if let Some(item) = self.items.get(actual_idx) {
                 if let Some(rgba) = item.get_sync_thumbnail() {
                     if let Some(thumb) = self.thumbnails.get_mut(actual_idx) {
-                        // Append label to the thumbnail
-                        let rgba_with_label = append_label_to_rgba(rgba, &thumb.label);
-                        thumb.state = ThumbnailState::Ready { rgba: rgba_with_label };
+                        // Render label separately for GPU (don't embed in image)
+                        thumb.label_rgba = render_label_tag(&thumb.label, 1);
+                        thumb.state = ThumbnailState::Ready { rgba };
                         self.mark_as_loaded(actual_idx);
                     }
                     continue;
@@ -785,8 +787,8 @@ impl TileGridView {
                 let content_width = item_width - (TILE_PADDING * 2.0);
                 let image_height = thumb.display_height(content_width);
 
-                // Cap image height to prevent GPU viewport issues
-                let capped_height = image_height.min(MAX_TILE_IMAGE_HEIGHT);
+                // No height capping - multi-pass rendering handles tall tiles
+                let capped_height = image_height;
 
                 // Total tile height: TILE_PADDING (top) + image_height + TILE_PADDING (bottom)
                 let total_height = TILE_PADDING + capped_height + TILE_PADDING;
@@ -1460,17 +1462,14 @@ impl TileGridView {
             let content_width = tile_width - (TILE_PADDING * 2.0);
             let scale = if rgba.width > 0 { content_width / rgba.width as f32 } else { 1.0 };
             let scaled_image_height = rgba.height as f32 * scale;
-            
-            // Cap to max height
-            let image_height = scaled_image_height.min(MAX_TILE_IMAGE_HEIGHT);
-            
-            // Calculate displayed label size (same scale as image)
-            let label_size = if label_raw_size.0 > 0 {
-                let label_scale = content_width / label_raw_size.0 as f32;
-                ((label_raw_size.0 as f32 * label_scale) as u32, (label_raw_size.1 as f32 * label_scale) as u32)
-            } else {
-                (0, 0)
-            };
+
+            // No height capping - multi-pass rendering handles tall tiles
+            let image_height = scaled_image_height;
+
+            // Label is rendered at 2x scale for readability
+            // label_size = scaled label dimensions for shader uniforms
+            const LABEL_SCALE: u32 = 2;
+            let label_size = (label_raw_size.0 * LABEL_SCALE, label_raw_size.1 * LABEL_SCALE);
 
             tiles.push(TileTexture {
                 id: tile_id,

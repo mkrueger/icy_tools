@@ -17,9 +17,9 @@ use crate::{LANGUAGE_LOADER, create_text_preview};
 /// This matches TILE_IMAGE_WIDTH (320px)
 pub const THUMBNAIL_RENDER_WIDTH: u32 = 320;
 
-/// Maximum thumbnail height - limited to prevent GPU viewport issues
-/// Very tall images are cropped to show the top portion
-pub const THUMBNAIL_MAX_HEIGHT: u32 = 4000;
+/// Maximum thumbnail height - limited to 80000px (10 slices × 8000px per slice)
+/// Very tall images beyond this are cropped to show the top portion
+pub const THUMBNAIL_MAX_HEIGHT: u32 = 80000;
 
 /// Scale factor from render size to display size
 /// Now 1.0 since we render at final size
@@ -431,25 +431,26 @@ impl Thumbnail {
     ///
     /// The raw texture dimensions are scaled to fit content_width.
     pub fn display_height(&self, content_width: f32) -> f32 {
-        let (image_height, scale) = match self.state.dimensions() {
+        let image_height = match self.state.dimensions() {
             Some((tex_w, tex_h)) => {
                 if tex_w == 0 {
-                    (100.0, 1.0) // Fallback for invalid dimensions
+                    100.0 // Fallback for invalid dimensions
                 } else {
                     // Scale raw texture to fit content_width
                     let scale = content_width / tex_w as f32;
-                    (tex_h as f32 * scale, scale)
+                    tex_h as f32 * scale
                 }
             }
-            None => (100.0, 1.0), // Default height for pending/loading
+            None => 100.0, // Default height for pending/loading
         };
-        
-        // Scale label height to match the image scaling
-        let label_height = self.label_rgba.as_ref().map(|l| l.height as f32 * scale).unwrap_or(0.0);
-        
+
+        // Label is rendered at 2x scale for readability
+        const LABEL_SCALE: f32 = 2.0;
+        let label_height = self.label_rgba.as_ref().map(|l| l.height as f32 * LABEL_SCALE).unwrap_or(0.0);
+
         // Add separator space between image and label (matching TILE_INNER_PADDING)
         let separator = if label_height > 0.0 { 4.0 } else { 0.0 };
-        
+
         image_height + separator + label_height
     }
 

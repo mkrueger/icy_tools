@@ -35,9 +35,12 @@ pub const TILE_BORDER_WIDTH: f32 = 2.0;
 /// Padding inside the tile border (between border and image)
 pub const TILE_INNER_PADDING: f32 = 4.0;
 
-/// Maximum display height for a tile image
-/// Must stay under GPU viewport limits (~8192px)
-pub const MAX_TILE_IMAGE_HEIGHT: f32 = 4000.0;
+/// Maximum viewport stripe height for multi-pass rendering (in logical pixels)
+/// Set to 4000 to ensure we stay under 8192px even at 2x DPI scaling
+pub const MAX_VIEWPORT_STRIPE_HEIGHT: f32 = 4000.0;
+
+/// Maximum display height for a tile image (removed - we now support full height via multi-pass)
+/// Kept for reference: pub const MAX_TILE_IMAGE_HEIGHT: f32 = 4000.0;
 
 // ============================================================================
 // Derived Tile Geometry (calculated from base values)
@@ -152,8 +155,17 @@ struct TileUniforms {
     shadow_opacity: f32,
     /// Number of texture slices (1-10)
     num_slices: f32,
-    /// Total image height in pixels
+    /// Total image height in pixels (source texture height)
     total_image_height: f32,
+    /// Viewport Y offset for viewport slicing (0 for first stripe, stripe_height for second, etc.)
+    /// This tells the shader which vertical portion of the tile is being rendered
+    viewport_y_offset: f32,
+    /// Implicit alignment padding (3 floats to align next vec4 to 16-byte boundary)
+    _pad_align: [f32; 3],
+    /// Padding for alignment (must be vec4 = 16 bytes to align slice_heights array in WGSL)
+    _pad1: [f32; 4],
+    /// Extra padding (vec4 = 16 bytes for WGSL alignment)
+    _pad2: [f32; 4],
     /// Heights of each slice in pixels (packed as 3 vec4s = 12 floats for 10 slices + 2 padding)
     slice_heights: [[f32; 4]; 3],
     /// Label texture size (width, height, 0, 0) - 0,0 if no label
@@ -162,13 +174,15 @@ struct TileUniforms {
 
 impl TileUniforms {
     /// Create uniforms for a tile with pre-computed rectangles and slice info
-    fn new(tile: &TileTexture, slice_heights: &[u32]) -> Self {
+    /// `viewport_y_offset` specifies which vertical portion of the tile is being rendered (in pixels)
+    /// `stripe_height` is the height of this rendering stripe (for viewport sizing)
+    fn new(tile: &TileTexture, slice_heights: &[u32], viewport_y_offset: f32, stripe_height: f32) -> Self {
         let shadow_extra_x = SHADOW_OFFSET_X + SHADOW_BLUR_RADIUS;
         let shadow_extra_y = SHADOW_OFFSET_Y + SHADOW_BLUR_RADIUS;
 
-        // Total size including shadow
+        // Total size including shadow - use stripe height for this pass
         let total_width = tile.display_size.0 + shadow_extra_x;
-        let total_height = tile.display_size.1 + shadow_extra_y;
+        let total_height = stripe_height + shadow_extra_y;
 
         // Content rect (tile without shadow) - positioned at top-left
         let content_x = 0.0;
@@ -189,11 +203,7 @@ impl TileUniforms {
         let label_x = padding;
         let label_y = image_y + image_h + TILE_INNER_PADDING;
         let label_w = image_w;
-        let label_h = if tile.label_size.1 > 0 { 
-            tile.label_size.1 as f32 + TILE_INNER_PADDING 
-        } else { 
-            0.0 
-        };
+        let label_h = tile.label_size.1 as f32;
 
         // Pack slice heights into 3 vec4s (12 floats for 10 slices + 2 padding)
         let mut packed_heights = [[0.0f32; 4]; 3];
@@ -215,6 +225,10 @@ impl TileUniforms {
             shadow_opacity: SHADOW_OPACITY,
             num_slices: slice_heights.len().min(MAX_TEXTURE_SLICES) as f32,
             total_image_height: tile.height as f32,
+            viewport_y_offset,
+            _pad_align: [0.0, 0.0, 0.0],
+            _pad1: [0.0, 0.0, 0.0, 0.0],
+            _pad2: [0.0, 0.0, 0.0, 0.0],
             slice_heights: packed_heights,
             label_texture_size: [tile.label_size.0 as f32, tile.label_size.1 as f32, 0.0, 0.0],
         }
@@ -230,18 +244,24 @@ struct TextureSlice {
 }
 
 /// Shared texture resources - now supports multiple slices for tall images
+/// NOTE: Labels are NOT stored here because multiple tiles can share the same image
+/// but have different labels (e.g., all folders use the same icon but different names)
 #[allow(dead_code)]
 struct SharedTextureResources {
     /// Texture slices (1-10 slices depending on image height)
     slices: Vec<TextureSlice>,
     /// Original image dimensions
     texture_size: (u32, u32),
-    /// Label texture (optional)
-    label_texture: Option<iced::wgpu::Texture>,
-    /// Label texture view (optional)
-    label_texture_view: Option<iced::wgpu::TextureView>,
-    /// Label dimensions
-    label_size: (u32, u32),
+}
+
+/// A single viewport stripe for multi-pass rendering of tall tiles
+struct StripeResources {
+    bind_group: iced::wgpu::BindGroup,
+    uniform_buffer: iced::wgpu::Buffer,
+    /// Y offset in display pixels for this stripe
+    y_offset: f32,
+    /// Height of this stripe in display pixels
+    height: f32,
 }
 
 /// Per-tile GPU resources (unique to each tile for position/hover/selection state)
@@ -249,12 +269,59 @@ struct SharedTextureResources {
 struct TileResources {
     /// Key to look up shared texture resources
     texture_key: usize,
+    /// Stripes for multi-pass rendering (1 for small tiles, multiple for tall tiles)
+    stripes: Vec<StripeResources>,
+}
+
+// ============================================================================
+// Label Rendering Structures
+// ============================================================================
+
+/// Uniforms for the label shader (must match tile_label.wgsl)
+/// WGSL alignment rules:
+/// - vec2<f32> has 8-byte alignment
+/// - vec4<f32> has 16-byte alignment  
+/// - Struct must be 16-byte aligned
+/// Total size: 48 bytes
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct LabelUniforms {
+    /// Viewport size (width, height in pixels)
+    viewport_size: [f32; 2],
+    /// Padding for alignment
+    _pad0: [f32; 2],
+    /// Label texture dimensions (raw texture size)
+    texture_size: [f32; 2],
+    /// Display dimensions (scaled to fit tile width)
+    display_size: [f32; 2],
+    /// Packed: is_hovered, 0, 0, 0 (using vec4 to avoid vec3 alignment issues)
+    hover_and_pad: [f32; 4],
+}
+
+/// Resources for rendering a tile's label
+/// Each tile has its own label texture (not shared) because tiles sharing
+/// the same image can have different labels (e.g., folders)
+#[allow(dead_code)]
+struct LabelResources {
+    /// Label texture (owned by this tile)
+    texture: iced::wgpu::Texture,
+    /// Label texture view
+    texture_view: iced::wgpu::TextureView,
+    /// Bind group for rendering
     bind_group: iced::wgpu::BindGroup,
+    /// Uniform buffer
     uniform_buffer: iced::wgpu::Buffer,
+    /// Display Y position (below image)
+    display_y: f32,
+    /// Display width
+    display_width: f32,
+    /// Display height
+    display_height: f32,
 }
 
 /// Renderer for the tile grid shader
 pub struct TileGridShaderRenderer {
+    // Main tile pipeline
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
@@ -264,6 +331,12 @@ pub struct TileGridShaderRenderer {
     tiles: HashMap<u64, TileResources>,
     /// Shared texture resources keyed by Arc pointer address
     shared_textures: HashMap<usize, SharedTextureResources>,
+
+    // Label rendering pipeline
+    label_pipeline: iced::wgpu::RenderPipeline,
+    label_bind_group_layout: iced::wgpu::BindGroupLayout,
+    /// Per-tile label resources
+    label_resources: HashMap<u64, LabelResources>,
 }
 
 static TILE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -405,6 +478,90 @@ impl shader::Pipeline for TileGridShaderRenderer {
         });
         let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
+        // ====================================================================
+        // Label Pipeline Setup
+        // ====================================================================
+        let label_shader_source = include_str!("tile_label.wgsl");
+        let label_shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+            label: Some("Label Shader"),
+            source: iced::wgpu::ShaderSource::Wgsl(label_shader_source.into()),
+        });
+
+        let label_bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+            label: Some("Label Bind Group Layout"),
+            entries: &[
+                // Label texture at binding 0
+                iced::wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                    ty: iced::wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: iced::wgpu::TextureViewDimension::D2,
+                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // Sampler at binding 1
+                iced::wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // Uniforms at binding 2
+                iced::wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: iced::wgpu::BindingType::Buffer {
+                        ty: iced::wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let label_pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+            label: Some("Label Pipeline Layout"),
+            bind_group_layouts: &[&label_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let label_pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+            label: Some("Label Pipeline"),
+            layout: Some(&label_pipeline_layout),
+            vertex: iced::wgpu::VertexState {
+                module: &label_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(iced::wgpu::FragmentState {
+                module: &label_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(iced::wgpu::ColorTargetState {
+                    format,
+                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: iced::wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: iced::wgpu::PrimitiveState {
+                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: iced::wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: iced::wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: iced::wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         TileGridShaderRenderer {
             pipeline,
             bind_group_layout,
@@ -412,6 +569,9 @@ impl shader::Pipeline for TileGridShaderRenderer {
             dummy_texture_view,
             tiles: HashMap::new(),
             shared_textures: HashMap::new(),
+            label_pipeline,
+            label_bind_group_layout,
+            label_resources: HashMap::new(),
         }
     }
 }
@@ -548,13 +708,138 @@ impl shader::Primitive for TileGridShader {
                     texture_start.elapsed()
                 );
 
-                // Create label texture if provided
-                let (label_texture, label_texture_view, label_size) = if let Some(ref label_data) = tile.label_rgba {
-                    // Use raw size for texture creation
-                    let (lw, lh) = tile.label_raw_size;
-                    if lw > 0 && lh > 0 && label_data.len() == (lw * lh * 4) as usize {
+                // NOTE: Labels are NOT created here in shared_textures!
+                // Each tile has its own label, even if they share the same image.
+                // Labels are created per-tile in label_resources below.
+
+                pipeline.shared_textures.insert(
+                    texture_key,
+                    SharedTextureResources {
+                        slices,
+                        texture_size: (tile.width, tile.height),
+                    },
+                );
+            }
+
+            // Check if per-tile resources need to be created or updated
+            let needs_recreate = match pipeline.tiles.get(&tile.id) {
+                Some(resources) => resources.texture_key != texture_key,
+                None => true,
+            };
+
+            // Get the shared texture
+            let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
+            let slice_heights: Vec<u32> = shared_texture.slices.iter().map(|s| s.height).collect();
+
+            // Calculate how many viewport stripes we need for this tile
+            // Use the full tile display height (not just image_height) for proper coverage
+            let full_tile_height = tile.display_size.1;
+            let num_stripes = ((full_tile_height / MAX_VIEWPORT_STRIPE_HEIGHT).ceil() as usize).max(1);
+
+            // Use integer pixel boundaries for stripes to avoid floating-point gaps
+            // Round stripe height up to ensure full coverage
+            let stripe_height_int = (full_tile_height / num_stripes as f32).ceil() as i32;
+
+            if needs_recreate || pipeline.tiles.get(&tile.id).map(|r| r.stripes.len() != num_stripes).unwrap_or(true) {
+                // Create stripes for multi-pass rendering
+                let mut stripes = Vec::with_capacity(num_stripes);
+
+                for stripe_idx in 0..num_stripes {
+                    // Use integer pixel boundaries to avoid gaps
+                    let y_offset = (stripe_idx as i32 * stripe_height_int) as f32;
+                    // Last stripe extends to exact tile height to avoid gaps
+                    let stripe_height = if stripe_idx == num_stripes - 1 {
+                        full_tile_height - y_offset
+                    } else {
+                        stripe_height_int as f32
+                    };
+
+                    // Create uniform buffer for this stripe
+                    let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                        label: Some(&format!("Tile {} Stripe {} Uniforms", tile.id, stripe_idx)),
+                        size: std::mem::size_of::<TileUniforms>() as u64,
+                        usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+
+                    // Create bind group entries for all 10 texture slots + sampler + uniforms + label
+                    let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
+
+                    for i in 0..MAX_TEXTURE_SLICES {
+                        let texture_view = if i < shared_texture.slices.len() {
+                            &shared_texture.slices[i].texture_view
+                        } else {
+                            &pipeline.dummy_texture_view
+                        };
+                        entries.push(iced::wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: iced::wgpu::BindingResource::TextureView(texture_view),
+                        });
+                    }
+
+                    // Sampler at binding 10
+                    entries.push(iced::wgpu::BindGroupEntry {
+                        binding: MAX_TEXTURE_SLICES as u32,
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                    });
+
+                    // Uniforms at binding 11
+                    entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                        resource: uniform_buffer.as_entire_binding(),
+                    });
+
+                    // Label texture at binding 12 - use dummy texture since labels are rendered separately
+                    entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(&pipeline.dummy_texture_view),
+                    });
+
+                    let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                        label: Some(&format!("Tile {} Stripe {} BindGroup", tile.id, stripe_idx)),
+                        layout: &pipeline.bind_group_layout,
+                        entries: &entries,
+                    });
+
+                    stripes.push(StripeResources {
+                        bind_group,
+                        uniform_buffer,
+                        y_offset,
+                        height: stripe_height,
+                    });
+                }
+
+                if num_stripes > 1 {
+                    log::info!(
+                        "[TileShader] Created {} stripes for tile {} (full_tile_height={})",
+                        num_stripes,
+                        tile.id,
+                        full_tile_height
+                    );
+                }
+
+                pipeline.tiles.insert(tile.id, TileResources { texture_key, stripes });
+            }
+
+            // Update uniforms for all stripes of this tile
+            if let Some(resources) = pipeline.tiles.get(&tile.id) {
+                for stripe in &resources.stripes {
+                    let uniforms = TileUniforms::new(tile, &slice_heights, stripe.y_offset, stripe.height);
+                    queue.write_buffer(&stripe.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                }
+            }
+
+            // Create or update label resources (per-tile, NOT shared!)
+            // Each tile has its own label even if they share the same image
+            if let Some(ref label_data) = tile.label_rgba {
+                let (lw, lh) = tile.label_raw_size;
+                if lw > 0 && lh > 0 && label_data.len() == (lw * lh * 4) as usize {
+                    let needs_label_recreate = !pipeline.label_resources.contains_key(&tile.id);
+
+                    if needs_label_recreate {
+                        // Create label texture for THIS tile
                         let label_tex = device.create_texture(&iced::wgpu::TextureDescriptor {
-                            label: Some(&format!("Label Texture {:x}", texture_key)),
+                            label: Some(&format!("Tile {} Label Texture", tile.id)),
                             size: iced::wgpu::Extent3d {
                                 width: lw,
                                 height: lh,
@@ -589,109 +874,89 @@ impl shader::Primitive for TileGridShader {
                         );
 
                         let label_view = label_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
-                        (Some(label_tex), Some(label_view), (lw, lh))
-                    } else {
-                        (None, None, (0, 0))
+
+                        // Create uniform buffer for label
+                        let label_uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                            label: Some(&format!("Tile {} Label Uniforms", tile.id)),
+                            size: std::mem::size_of::<LabelUniforms>() as u64,
+                            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
+
+                        let label_bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                            label: Some(&format!("Tile {} Label BindGroup", tile.id)),
+                            layout: &pipeline.label_bind_group_layout,
+                            entries: &[
+                                iced::wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: iced::wgpu::BindingResource::TextureView(&label_view),
+                                },
+                                iced::wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                                },
+                                iced::wgpu::BindGroupEntry {
+                                    binding: 2,
+                                    resource: label_uniform_buffer.as_entire_binding(),
+                                },
+                            ],
+                        });
+
+                        // Calculate label display position (in logical pixels)
+                        // These values are used in render() for viewport positioning
+                        const LABEL_SCALE: f32 = 2.0;
+                        let padding = TILE_BORDER_WIDTH;
+                        let label_y = padding + tile.image_height;
+                        let label_w = tile.display_size.0 - (TILE_BORDER_WIDTH + TILE_INNER_PADDING) * 2.0;
+                        let label_h = tile.label_raw_size.1 as f32 * LABEL_SCALE; // 2x scaled height
+
+                        pipeline.label_resources.insert(
+                            tile.id,
+                            LabelResources {
+                                texture: label_tex,
+                                texture_view: label_view,
+                                bind_group: label_bind_group,
+                                uniform_buffer: label_uniform_buffer,
+                                display_y: label_y,
+                                display_width: label_w,
+                                display_height: label_h,
+                            },
+                        );
                     }
-                } else {
-                    (None, None, (0, 0))
-                };
 
-                pipeline.shared_textures.insert(
-                    texture_key,
-                    SharedTextureResources {
-                        slices,
-                        texture_size: (tile.width, tile.height),
-                        label_texture,
-                        label_texture_view,
-                        label_size,
-                    },
-                );
-            }
+                    // Update label uniforms
+                    if let Some(label_res) = pipeline.label_resources.get(&tile.id) {
+                        // Get scale factor to convert between logical and physical pixels
+                        let scale_factor = icy_engine_gui::get_scale_factor();
 
-            // Check if per-tile resources need to be created or updated
-            let needs_recreate = match pipeline.tiles.get(&tile.id) {
-                Some(resources) => resources.texture_key != texture_key,
-                None => true,
-            };
+                        // viewport_size = the label area size in physical pixels (matches render viewport)
+                        // texture_size = raw texture dimensions
+                        // display_size = how big to render the texture in physical pixels
+                        //
+                        // Scale label 2x for better readability
+                        const LABEL_SCALE: f32 = 2.0;
+                        let content_width = tile.display_size.0 - (TILE_BORDER_WIDTH + TILE_INNER_PADDING) * 2.0;
+                        let viewport_w = content_width * scale_factor;
+                        let viewport_h = tile.label_raw_size.1 as f32 * LABEL_SCALE * scale_factor;
 
-            if needs_recreate {
-                // Get the shared texture slices
-                let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
-
-                // Create per-tile uniform buffer
-                let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-                    label: Some(&format!("Tile Uniforms {}", tile.id)),
-                    size: std::mem::size_of::<TileUniforms>() as u64,
-                    usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-
-                // Create bind group entries for all 10 texture slots + sampler + uniforms + label
-                let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
-
-                for i in 0..MAX_TEXTURE_SLICES {
-                    let texture_view = if i < shared_texture.slices.len() {
-                        &shared_texture.slices[i].texture_view
-                    } else {
-                        &pipeline.dummy_texture_view
-                    };
-                    entries.push(iced::wgpu::BindGroupEntry {
-                        binding: i as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(texture_view),
-                    });
+                        let label_uniforms = LabelUniforms {
+                            viewport_size: [viewport_w, viewport_h],
+                            _pad0: [0.0, 0.0],
+                            texture_size: [tile.label_raw_size.0 as f32, tile.label_raw_size.1 as f32],
+                            // Display at 2x scale for better readability
+                            display_size: [tile.label_raw_size.0 as f32 * LABEL_SCALE, tile.label_raw_size.1 as f32 * LABEL_SCALE],
+                            hover_and_pad: [if tile.is_hovered { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+                        };
+                        queue.write_buffer(&label_res.uniform_buffer, 0, bytemuck::bytes_of(&label_uniforms));
+                    }
                 }
-
-                // Sampler at binding 10
-                entries.push(iced::wgpu::BindGroupEntry {
-                    binding: MAX_TEXTURE_SLICES as u32,
-                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                });
-
-                // Uniforms at binding 11
-                entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                    resource: uniform_buffer.as_entire_binding(),
-                });
-
-                // Label texture at binding 12
-                let label_view = shared_texture.label_texture_view.as_ref().unwrap_or(&pipeline.dummy_texture_view);
-                entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                    resource: iced::wgpu::BindingResource::TextureView(label_view),
-                });
-
-                let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                    label: Some(&format!("Tile BindGroup {}", tile.id)),
-                    layout: &pipeline.bind_group_layout,
-                    entries: &entries,
-                });
-
-                pipeline.tiles.insert(
-                    tile.id,
-                    TileResources {
-                        texture_key,
-                        bind_group,
-                        uniform_buffer,
-                    },
-                );
-            }
-
-            // Update uniforms for this tile (always, as hover/selection state may change)
-            if let Some(resources) = pipeline.tiles.get(&tile.id) {
-                let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
-
-                // Collect slice heights
-                let slice_heights: Vec<u32> = shared_texture.slices.iter().map(|s| s.height).collect();
-
-                let uniforms = TileUniforms::new(tile, &slice_heights);
-                queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
             }
         }
 
         // Remove tiles that are no longer needed
         let active_ids: std::collections::HashSet<u64> = self.tiles.iter().map(|t| t.id).collect();
         pipeline.tiles.retain(|id, _| active_ids.contains(id));
+        pipeline.label_resources.retain(|id, _| active_ids.contains(id));
 
         // Remove shared textures that are no longer in use
         pipeline.shared_textures.retain(|key, _| used_texture_keys.contains(key));
@@ -723,19 +988,100 @@ impl shader::Primitive for TileGridShader {
 
             if let Some(resources) = pipeline.tiles.get(&tile.id) {
                 // Calculate tile position within widget bounds (physical screen coordinates)
-                // Multiply logical coordinates by scale factor to get physical pixels
-                let tile_x = widget_left + tile.position.0 * scale_factor;
-                let tile_y = widget_top + tile_top_logical * scale_factor;
-                let tile_w = (tile.display_size.0 + shadow_extra_x) * scale_factor;
-                let tile_h = (tile.display_size.1 + shadow_extra_y) * scale_factor;
+                // Round to integer pixels to avoid floating-point gaps between stripes
+                let tile_x = (widget_left + tile.position.0 * scale_factor).floor();
+                let tile_y_base = (widget_top + tile_top_logical * scale_factor).floor();
+                let tile_w = ((tile.display_size.0 + shadow_extra_x) * scale_factor).ceil();
+                let _total_tile_h = ((tile.display_size.1 + shadow_extra_y) * scale_factor).ceil();
 
-                // Calculate clipped bounds (intersection with widget bounds)
-                let clipped_left = tile_x.max(widget_left);
-                let clipped_top = tile_y.max(widget_top);
-                let clipped_right = (tile_x + tile_w).min(widget_right);
-                let clipped_bottom = (tile_y + tile_h).min(widget_bottom);
+                // Render each stripe separately
+                for stripe in &resources.stripes {
+                    // Round stripe positions to integer pixels for exact alignment
+                    let stripe_y = (tile_y_base + stripe.y_offset * scale_factor).floor();
+                    let stripe_h = (stripe.height * scale_factor).ceil();
 
-                // Skip if completely outside clip bounds
+                    // GPU viewport limit (must cap physical pixels)
+                    const MAX_VIEWPORT_DIM: f32 = 8192.0;
+                    let safe_stripe_h = stripe_h.min(MAX_VIEWPORT_DIM);
+
+                    // Calculate clipped bounds for this stripe (intersection with widget bounds)
+                    let clipped_left = tile_x.max(widget_left);
+                    let clipped_top = stripe_y.max(widget_top);
+                    let clipped_right = (tile_x + tile_w).min(widget_right);
+                    let clipped_bottom = (stripe_y + safe_stripe_h).min(widget_bottom);
+
+                    // Skip if completely outside clip bounds
+                    if clipped_left >= clipped_right || clipped_top >= clipped_bottom {
+                        continue;
+                    }
+
+                    let clipped_w = clipped_right - clipped_left;
+                    let clipped_h = clipped_bottom - clipped_top;
+
+                    let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+                        label: Some(&format!("Tile {} Stripe Render Pass", tile.id)),
+                        color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+                            view: target,
+                            resolve_target: None,
+                            ops: iced::wgpu::Operations {
+                                load: iced::wgpu::LoadOp::Load,
+                                store: iced::wgpu::StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+
+                    // Set scissor rect for clipping this stripe
+                    render_pass.set_scissor_rect(clipped_left as u32, clipped_top as u32, clipped_w as u32, clipped_h as u32);
+
+                    // Set viewport for this stripe
+                    // The viewport covers the full tile width but only this stripe's height
+                    if tile_w > 0.0 && safe_stripe_h > 0.0 {
+                        render_pass.set_viewport(tile_x, stripe_y, tile_w, safe_stripe_h, 0.0, 1.0);
+                        render_pass.set_pipeline(&pipeline.pipeline);
+                        render_pass.set_bind_group(0, &stripe.bind_group, &[]);
+                        render_pass.draw(0..6, 0..1);
+                    }
+                }
+            }
+        }
+
+        // ====================================================================
+        // Second Pass: Render Labels Separately
+        // ====================================================================
+        for tile in &self.tiles {
+            // Check if tile is visible
+            let tile_top_logical = tile.position.1 - self.scroll_y;
+            let tile_bottom_logical = tile_top_logical + tile.display_size.1;
+
+            if tile_bottom_logical < 0.0 || tile_top_logical > self.viewport_height {
+                continue;
+            }
+
+            // Only render if we have label resources and label data
+            if tile.label_raw_size.1 == 0 {
+                continue;
+            }
+
+            if let Some(label_res) = pipeline.label_resources.get(&tile.id) {
+                // Use pre-calculated values from LabelResources (set in prepare())
+                let padding = TILE_BORDER_WIDTH + TILE_INNER_PADDING;
+
+                // Convert stored logical pixel values to physical screen coordinates
+                let label_x = (widget_left + (tile.position.0 + padding) * scale_factor).floor();
+                let label_y = (widget_top + (tile_top_logical + label_res.display_y) * scale_factor).floor();
+                let label_w = (label_res.display_width * scale_factor).ceil();
+                let label_h = (label_res.display_height * scale_factor).ceil();
+
+                // Clip to widget bounds
+                let clipped_left = label_x.max(widget_left);
+                let clipped_top = label_y.max(widget_top);
+                let clipped_right = (label_x + label_w).min(widget_right);
+                let clipped_bottom = (label_y + label_h).min(widget_bottom);
+
                 if clipped_left >= clipped_right || clipped_top >= clipped_bottom {
                     continue;
                 }
@@ -744,7 +1090,7 @@ impl shader::Primitive for TileGridShader {
                 let clipped_h = clipped_bottom - clipped_top;
 
                 let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
-                    label: Some(&format!("Tile Render Pass {}", tile.id)),
+                    label: Some(&format!("Tile {} Label Render Pass", tile.id)),
                     color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
                         view: target,
                         resolve_target: None,
@@ -759,22 +1105,12 @@ impl shader::Primitive for TileGridShader {
                     occlusion_query_set: None,
                 });
 
-                // Set scissor rect for clipping
                 render_pass.set_scissor_rect(clipped_left as u32, clipped_top as u32, clipped_w as u32, clipped_h as u32);
 
-                // GPU viewport limits - keep dimensions reasonable
-                const MAX_VIEWPORT_DIM: f32 = 8192.0;
-                const MIN_VIEWPORT_COORD: f32 = -16384.0;
-
-                let safe_tile_x = tile_x.max(MIN_VIEWPORT_COORD);
-                let safe_tile_y = tile_y.max(MIN_VIEWPORT_COORD);
-                let safe_tile_w = tile_w.min(MAX_VIEWPORT_DIM);
-                let safe_tile_h = tile_h.min(MAX_VIEWPORT_DIM);
-
-                if safe_tile_w > 0.0 && safe_tile_h > 0.0 {
-                    render_pass.set_viewport(safe_tile_x, safe_tile_y, safe_tile_w, safe_tile_h, 0.0, 1.0);
-                    render_pass.set_pipeline(&pipeline.pipeline);
-                    render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                if label_w > 0.0 && label_h > 0.0 {
+                    render_pass.set_viewport(label_x, label_y, label_w, label_h, 0.0, 1.0);
+                    render_pass.set_pipeline(&pipeline.label_pipeline);
+                    render_pass.set_bind_group(0, &label_res.bind_group, &[]);
                     render_pass.draw(0..6, 0..1);
                 }
             }

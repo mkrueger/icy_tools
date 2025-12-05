@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use icy_engine::{
     AttributedChar, BufferType, FORMATS, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane, TextScreen,
-    formats::FileFormat,
+    formats::{FileFormat, ImageFormat},
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_sauce::SauceRecord;
@@ -19,7 +19,7 @@ use crate::ui::preview::prepare_parser_data;
 use super::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH, ThumbnailResult, ThumbnailState, get_width_multiplier};
 
 /// Maximum characters per line for label tag
-const TAG_MAX_CHARS_PER_LINE: usize = 42;
+const TAG_MAX_CHARS_PER_LINE: usize = 28;
 /// Maximum lines for label tag (increased for better file info display)
 const TAG_MAX_LINES: usize = 8;
 
@@ -129,7 +129,9 @@ impl ThumbnailLoader {
                                 let label_rgba = render_label_tag(&label_clone, 1);
                                 Some(ThumbnailResult {
                                     path: path_clone,
-                                    state: ThumbnailState::Ready { rgba: super::thumbnail::UNSUPPORTED_PLACEHOLDER.clone() },
+                                    state: ThumbnailState::Ready {
+                                        rgba: super::thumbnail::UNSUPPORTED_PLACEHOLDER.clone(),
+                                    },
                                     sauce_info: None,
                                     width_multiplier: 1,
                                     label_rgba,
@@ -275,8 +277,12 @@ fn render_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &Can
     let format = FileFormat::from_extension(&ext);
 
     match format {
+        Some(FileFormat::Image(ImageFormat::Sixel)) => {
+            // Sixel files need special handling with icy_sixel
+            render_sixel_thumbnail(path, data, label, cancel_token)
+        }
         Some(fmt) if fmt.is_image() => {
-            // Image files - render with image crate
+            // Other image files - render with image crate
             render_image_thumbnail(path, data, label, cancel_token)
         }
         Some(fmt) if fmt.is_supported() => {
@@ -286,6 +292,76 @@ fn render_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &Can
         _ => {
             // Unsupported format - return None (no thumbnail)
             None
+        }
+    }
+}
+
+/// Render a Sixel image file as thumbnail
+/// Uses icy_sixel for decoding
+fn render_sixel_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
+    if cancel_token.is_cancelled() {
+        return None;
+    }
+
+    match icy_sixel::sixel_decode(data) {
+        Ok((rgba, width, height)) => {
+            if cancel_token.is_cancelled() {
+                return None;
+            }
+
+            let orig_width = width as u32;
+            let orig_height = height as u32;
+
+            // Calculate width multiplier from pixel width
+            let width_multiplier = if orig_width < 640 {
+                1
+            } else if orig_width < 960 {
+                2
+            } else {
+                3
+            };
+
+            // Crop height if too tall
+            let (final_rgba, final_width, final_height) = if orig_height > THUMBNAIL_MAX_HEIGHT {
+                let target_display_width = THUMBNAIL_RENDER_WIDTH * width_multiplier;
+                let scale = target_display_width as f32 / orig_width as f32;
+                let max_source_height = (THUMBNAIL_MAX_HEIGHT as f32 / scale) as u32;
+                let crop_height = max_source_height.min(orig_height);
+
+                // Crop the RGBA data
+                let row_bytes = (orig_width * 4) as usize;
+                let cropped_size = (crop_height as usize) * row_bytes;
+                let cropped_rgba = rgba[..cropped_size].to_vec();
+
+                (cropped_rgba, orig_width, crop_height)
+            } else {
+                (rgba, orig_width, orig_height)
+            };
+
+            debug!("[ThumbnailLoader] Sixel decoded {}x{} from {:?}", final_width, final_height, path);
+
+            Some(ThumbnailResult {
+                path: path.clone(),
+                state: ThumbnailState::Ready {
+                    rgba: RgbaData::new(final_rgba, final_width, final_height),
+                },
+                sauce_info: None,
+                width_multiplier,
+                label_rgba: render_label_tag(label, width_multiplier),
+            })
+        }
+        Err(e) => {
+            warn!("[ThumbnailLoader] Sixel decode failed for {:?}: {}", path, e);
+            Some(ThumbnailResult {
+                path: path.clone(),
+                state: ThumbnailState::Error {
+                    message: format!("Sixel decode error: {}", e),
+                    placeholder: None,
+                },
+                sauce_info: None,
+                width_multiplier: 1,
+                label_rgba: render_label_tag(label, 1),
+            })
         }
     }
 }
@@ -685,7 +761,6 @@ fn render_screen_to_thumbnail(
 
         (size_on, rgba_on, size_off, rgba_off)
     };
-    
 
     let orig_width = size_on.width as u32;
     let orig_height = size_on.height as u32;
@@ -732,10 +807,10 @@ fn render_screen_to_thumbnail(
     };
 
     let rgba_on = RgbaData::new(rgba_on_data, orig_width, final_height);
-    
+
     // Render label separately for GPU
     let label_rgba = render_label_tag(label, width_multiplier);
-    
+
     if has_blinking && !rgba_off.is_empty() {
         // Apply same cropping to blink-off frame
         let off_height = size_off.height as u32;
