@@ -5,8 +5,9 @@
 //! - `thumbnail_loader` - Background loading of thumbnails with worker threads
 //! - `tile_shader` - GPU shader-based tile rendering with wgpu
 //! - `tile_grid_view` - Main tile grid view component
-//! - `canvas_tile_grid` - Experimental canvas-based rendering (unused)
+//! - `masonry_layout` - Masonry layout algorithm for the grid
 
+mod masonry_layout;
 mod thumbnail;
 mod thumbnail_loader;
 mod tile_grid_view;

@@ -474,6 +474,9 @@ fn render_with_parser(
         return None;
     }
 
+    let total_start = Instant::now();
+    let parse_start = Instant::now();
+
     // Get screen mode and emulation from FileFormat, fallback to ANSI
     let (mode, emulation) = if let Some(format) = FileFormat::from_extension(ext) {
         (format.screen_mode(), format.terminal_emulation().unwrap_or(TerminalEmulation::Ansi))
@@ -510,6 +513,9 @@ fn render_with_parser(
         parser.parse(&file_data, &mut screen_sink);
     }
 
+    let parse_elapsed = parse_start.elapsed();
+    debug!("[TIMING] {} parsing: {:?}", path.display(), parse_elapsed);
+
     // Check cancellation before rendering
     if cancel_token.is_cancelled() {
         return None;
@@ -521,14 +527,19 @@ fn render_with_parser(
     } else {
         false
     };
+    let width = screen.get_width();
+    let height = screen.get_height();
     debug!(
         "[ThumbnailLoader] {} parsed screen size: {}x{} (unicode={})",
         path.display(),
-        screen.get_width(),
-        screen.get_height(),
+        width,
+        height,
         use_unicode
     );
-    render_screen_to_thumbnail(path, &*screen, use_unicode, sauce, label, cancel_token)
+    let result = render_screen_to_thumbnail(path, &*screen, use_unicode, sauce, label, cancel_token);
+    
+    debug!("[TIMING] {} total parser render ({}x{}): {:?}", path.display(), width, height, total_start.elapsed());
+    result
 }
 
 /// Render using a format loader (for XBin, etc.)
@@ -545,6 +556,7 @@ fn render_with_format(
         return None;
     }
 
+    let total_start = Instant::now();
     let start = Instant::now();
 
     // Find matching format
@@ -568,6 +580,9 @@ fn render_with_format(
     let load_data = LoadData::new(sauce.cloned(), None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
     match FORMATS[format_idx].load_buffer(path, data, Some(load_data)) {
         Ok(buffer) => {
+            let buffer_load_elapsed = start.elapsed();
+            debug!("[TIMING] {} buffer load: {:?}", path.display(), buffer_load_elapsed);
+
             if cancel_token.is_cancelled() {
                 return None;
             }
@@ -575,23 +590,15 @@ fn render_with_format(
             // Determine if this is a unicode buffer
             let is_unicode = buffer.buffer_type == BufferType::Unicode;
 
-            let _width = buffer.get_width();
+            let width = buffer.get_width();
             let height = buffer.get_height();
-
-            // Debug output
-            let _buffer_type = if is_unicode { "Unicode" } else { "CP437" };
-            let elapsed = start.elapsed().as_millis();
-            debug!(
-                "[Thumbnail] {:?} | Format | {:?} | height={} | {}ms",
-                path.file_name().unwrap_or_default(),
-                buffer.buffer_type,
-                height,
-                elapsed
-            );
 
             // Use the buffer directly as Screen - no need to
             let screen = TextScreen { buffer, ..Default::default() };
-            render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token)
+            let result = render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token);
+            
+            debug!("[TIMING] {} total format render ({}x{}): {:?}", path.display(), width, height, total_start.elapsed());
+            result
         }
         Err(_) => None,
     }
@@ -612,6 +619,7 @@ fn render_screen_to_thumbnail(
         return None;
     }
 
+    let render_start = Instant::now();
     let width = screen.get_width();
     let height = screen.get_height();
 
@@ -639,6 +647,7 @@ fn render_screen_to_thumbnail(
     }
 
     // Render based on buffer type
+    let rgba_gen_start = Instant::now();
     let (size_on, rgba_on, size_off, rgba_off) = if is_unicode {
         // Use unicode renderer for Unicode screens
         use icy_engine_gui::{RenderUnicodeOptions, render_unicode_to_rgba};
@@ -710,6 +719,8 @@ fn render_screen_to_thumbnail(
 
         (size_on, rgba_on, size_off, rgba_off)
     };
+    debug!("[TIMING] {} RGBA generation ({}x{} -> {}x{}): {:?}", 
+           path.display(), width, height, size_on.width, size_on.height, rgba_gen_start.elapsed());
 
     let orig_width = size_on.width as u32;
     let orig_height = size_on.height as u32;
@@ -730,6 +741,8 @@ fn render_screen_to_thumbnail(
     if cancel_token.is_cancelled() {
         return None;
     }
+
+    let scale_start = Instant::now();
 
     // Calculate target width based on multiplier
     // Each multiplier step is THUMBNAIL_RENDER_WIDTH (320px for 80 columns)
@@ -758,6 +771,10 @@ fn render_screen_to_thumbnail(
     };
 
     let rgba_on = scale_rgba_data(&rgba_on_data, orig_width, source_height, new_width, new_height);
+    debug!("[TIMING] {} scaling ({}x{} -> {}x{}): {:?}", 
+           path.display(), orig_width, source_height, new_width, new_height, scale_start.elapsed());
+
+    debug!("[TIMING] {} total screen-to-thumbnail: {:?}", path.display(), render_start.elapsed());
 
     if has_blinking && !rgba_off.is_empty() {
         // Apply same cropping/scaling to blink-off frame

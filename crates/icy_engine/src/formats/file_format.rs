@@ -132,6 +132,7 @@ impl FileFormat {
         FileFormat::Archive(ArchiveFormat::Rar),
         FileFormat::Archive(ArchiveFormat::Sqz),
         FileFormat::Archive(ArchiveFormat::Hyp),
+//        FileFormat::Archive(ArchiveFormat::Uc2),
     ];
 
     /// Formats that support saving (text-based formats only, see SAVEABLE_WITH_IMAGES for full list)

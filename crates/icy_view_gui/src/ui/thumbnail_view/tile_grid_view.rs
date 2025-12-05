@@ -15,9 +15,10 @@ use tokio::sync::mpsc;
 
 use icy_engine_gui::{ScrollbarOverlay, ScrollbarState, Viewport};
 
+use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
 use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, append_label_to_rgba, create_labeled_placeholder};
-use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
+use super::tile_shader::{MAX_TILE_IMAGE_HEIGHT, TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
 use crate::Item;
 use crate::items::{ItemFile, ItemFolder};
 use crate::ui::options::ScrollSpeed;
@@ -758,93 +759,62 @@ impl TileGridView {
             return;
         }
 
-        // Use full width - overlay scrollbar renders on top of content
-        let effective_width = width;
-
-        // Fixed tile width (base unit)
+        // Calculate layout configuration
         let tile_width = TILE_BASE_WIDTH;
-
-        // Minimal outer margin (2px on each side)
         let outer_margin = 2.0;
-        let usable_width = effective_width - outer_margin * 2.0;
+        let num_columns = MasonryConfig::columns_for_width(width, tile_width, TILE_SPACING, outer_margin);
 
-        // How many columns fit? Formula: N tiles + (N-1) gaps = usable_width
-        // N * tile_width + (N-1) * TILE_SPACING <= usable_width
-        // N * (tile_width + TILE_SPACING) - TILE_SPACING <= usable_width
-        // N <= (usable_width + TILE_SPACING) / (tile_width + TILE_SPACING)
-        let num_columns = ((usable_width + TILE_SPACING) / (tile_width + TILE_SPACING)).floor().max(1.0) as usize;
+        let config = MasonryConfig::new(tile_width, TILE_SPACING, outer_margin, num_columns);
 
-        // Use fixed column width (don't scale to fill space)
-        let column_width = tile_width;
+        // Build item sizes for masonry layout
+        let item_sizes: Vec<ItemSize> = self
+            .visible_indices
+            .iter()
+            .filter_map(|&actual_index| {
+                let thumb = self.thumbnails.get(actual_index)?;
+                let column_span = thumb.get_width_multiplier() as usize;
 
-        // Fixed left margin - no centering
-        let left_margin = outer_margin;
+                // Calculate item width based on column span
+                let item_width = if column_span == 1 {
+                    tile_width
+                } else {
+                    tile_width * column_span as f32 + TILE_SPACING * (column_span - 1) as f32
+                };
 
-        // Track the bottom Y position of each column (masonry style)
-        let mut column_heights: Vec<f32> = vec![0.0; num_columns];
+                // Get the image display height (aspect-ratio based)
+                let content_width = item_width - (TILE_PADDING * 2.0);
+                let image_height = thumb.display_height(content_width);
+                
+                // Cap image height to prevent GPU viewport issues
+                let capped_height = image_height.min(MAX_TILE_IMAGE_HEIGHT);
 
-        // Only iterate over visible (filtered) items
-        for &actual_index in &self.visible_indices {
-            let Some(thumb) = self.thumbnails.get(actual_index) else { continue };
+                // Total tile height: TILE_PADDING (top) + image_height + TILE_PADDING (bottom)
+                let total_height = TILE_PADDING + capped_height + TILE_PADDING;
 
-            let thumb_units = thumb.get_width_multiplier() as usize;
-            let thumb_units = thumb_units.min(num_columns); // Can't be wider than available columns
+                Some(ItemSize {
+                    index: actual_index,
+                    column_span,
+                    height: total_height,
+                })
+            })
+            .collect();
 
-            // Width: for multi-column tiles, use full column_width (single column tiles only)
-            // Multi-column tiles will be placed in column 0 for simplicity
-            let thumb_width = if thumb_units == 1 {
-                column_width
-            } else {
-                column_width * thumb_units as f32 + TILE_SPACING * (thumb_units - 1) as f32
-            };
+        // Calculate masonry layout
+        let masonry_result = masonry_layout::calculate_masonry_layout(&config, &item_sizes);
 
-            // Get the image display height (aspect-ratio based)
-            // Use content width (tile width minus padding on both sides)
-            let content_width = thumb_width - (TILE_PADDING * 2.0);
-            let image_height = thumb.display_height(content_width);
-
-            // Total tile height: TILE_PADDING (top) + image_height + TILE_PADDING (bottom)
-            // Label is now part of the image, so no extra padding needed
-            let thumb_height = TILE_PADDING + image_height + TILE_PADDING;
-
-            // Find the shortest column for single-width tiles
-            // For multi-width tiles, place at column 0
-            let best_col = if thumb_units == 1 {
-                column_heights
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            } else {
-                0 // Multi-column tiles go to first column
-            };
-
-            let x = left_margin + best_col as f32 * (column_width + TILE_SPACING);
-            let y = column_heights[best_col];
-
-            self.layout.borrow_mut().push(LayoutTile {
-                index: actual_index, // Store actual thumbnail index
-                x,
-                y,
-                width: thumb_width,
-                height: thumb_height,
+        // Convert to LayoutTile format
+        let mut layout = self.layout.borrow_mut();
+        for item in masonry_result.items {
+            layout.push(LayoutTile {
+                index: item.index,
+                x: item.x,
+                y: item.y,
+                width: item.width,
+                height: item.height,
             });
-
-            // Update column heights
-            let new_bottom = y + thumb_height + TILE_SPACING;
-            if thumb_units == 1 {
-                column_heights[best_col] = new_bottom;
-            } else {
-                // Multi-column tiles affect multiple columns
-                for col in 0..thumb_units.min(num_columns) {
-                    column_heights[col] = new_bottom;
-                }
-            }
         }
 
-        // Content height is the maximum column height
-        *self.content_height.borrow_mut() = column_heights.iter().cloned().fold(0.0f32, f32::max);
+        *self.content_height.borrow_mut() = masonry_result.content_height;
         self.cache.clear();
     }
 
@@ -876,17 +846,6 @@ impl TileGridView {
 
         let mut messages = Vec::new();
         while let Ok(result) = self.result_rx.try_recv() {
-            // DEBUG: Log received thumbnail dimensions
-            if let ThumbnailState::Ready { rgba } = &result.state {
-                println!(
-                    "[ThumbnailResult] path={:?} rgba_size={}x{} data_len={}",
-                    result.path.file_name().unwrap_or_default(),
-                    rgba.width,
-                    rgba.height,
-                    rgba.data.len()
-                );
-            }
-
             // Find the thumbnail by path - try exact match first, then filename match
             let found = self.thumbnails.iter_mut().enumerate().find(|(_, t)| t.path == result.path);
 

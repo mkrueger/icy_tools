@@ -17,9 +17,9 @@ use crate::{LANGUAGE_LOADER, create_text_preview};
 /// This matches TILE_IMAGE_WIDTH (320px)
 pub const THUMBNAIL_RENDER_WIDTH: u32 = 320;
 
-/// Maximum thumbnail height - limited by GPU texture size
-/// GPU max is 8192, we use 8000 to have some margin
-pub const THUMBNAIL_MAX_HEIGHT: u32 = 8000;
+/// Maximum thumbnail height - limited to prevent GPU viewport issues
+/// Very tall images are cropped to show the top portion
+pub const THUMBNAIL_MAX_HEIGHT: u32 = 4000;
 
 /// Scale factor from render size to display size
 /// Now 1.0 since we render at final size
@@ -280,23 +280,31 @@ pub enum ThumbnailState {
 
 impl ThumbnailState {
     /// Get the current RGBA data to display
+    /// Falls back to static placeholders for pending/loading without cached placeholder
     pub fn current_rgba(&self) -> Option<&RgbaData> {
         match self {
             ThumbnailState::Ready { rgba } => Some(rgba),
             ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame),
-            ThumbnailState::Pending { placeholder } => placeholder.as_ref(),
-            ThumbnailState::Loading { placeholder } => placeholder.as_ref(),
-            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref(),
+            ThumbnailState::Pending { placeholder } => placeholder.as_ref().or(Some(&*LOADING_PLACEHOLDER)),
+            ThumbnailState::Loading { placeholder } => placeholder.as_ref().or(Some(&*LOADING_PLACEHOLDER)),
+            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().or(Some(&*ERROR_PLACEHOLDER)),
         }
     }
 
     /// Get the dimensions of the thumbnail
+    /// Falls back to LOADING_PLACEHOLDER dimensions for pending/loading without placeholder
     pub fn dimensions(&self) -> Option<(u32, u32)> {
         match self {
             ThumbnailState::Ready { rgba } => Some((rgba.width, rgba.height)),
             ThumbnailState::Animated { frames, .. } => frames.first().map(|f| (f.width, f.height)),
-            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => placeholder.as_ref().map(|p| (p.width, p.height)),
-            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().map(|p| (p.width, p.height)),
+            ThumbnailState::Pending { placeholder } | ThumbnailState::Loading { placeholder } => {
+                placeholder.as_ref().map(|p| (p.width, p.height))
+                    .or_else(|| Some((LOADING_PLACEHOLDER.width, LOADING_PLACEHOLDER.height)))
+            }
+            ThumbnailState::Error { placeholder, .. } => {
+                placeholder.as_ref().map(|p| (p.width, p.height))
+                    .or_else(|| Some((ERROR_PLACEHOLDER.width, ERROR_PLACEHOLDER.height)))
+            }
         }
     }
 
@@ -346,10 +354,24 @@ pub struct Thumbnail {
 }
 
 impl Thumbnail {
-    /// Create a new pending thumbnail with pre-rendered placeholder including label
+    /// Create a new pending thumbnail
+    /// Placeholder is created lazily when the thumbnail is first displayed
+    /// This is critical for performance with 100k+ items
     pub fn new(path: PathBuf, label: String) -> Self {
-        // Create placeholder with label for immediate display
-        let placeholder = create_labeled_placeholder(&LOADING_PLACEHOLDER, &label);
+        Self {
+            path,
+            label,
+            state: ThumbnailState::Pending {
+                placeholder: None, // Lazy - created when needed
+            },
+            sauce_info: None,
+            width_multiplier: 1,
+        }
+    }
+
+    /// Create a new pending thumbnail with placeholder (for visible items)
+    pub fn new_with_placeholder(path: PathBuf, label: String) -> Self {
+        let placeholder = LOADING_PLACEHOLDER.clone();
         Self {
             path,
             label,
@@ -358,6 +380,20 @@ impl Thumbnail {
             },
             sauce_info: None,
             width_multiplier: 1,
+        }
+    }
+
+    /// Ensure the placeholder exists (lazy initialization)
+    /// Call this before displaying a pending/loading thumbnail
+    pub fn ensure_placeholder(&mut self) {
+        match &mut self.state {
+            ThumbnailState::Pending { placeholder } if placeholder.is_none() => {
+                *placeholder = Some(LOADING_PLACEHOLDER.clone());
+            }
+            ThumbnailState::Loading { placeholder } if placeholder.is_none() => {
+                *placeholder = Some(LOADING_PLACEHOLDER.clone());
+            }
+            _ => {}
         }
     }
 

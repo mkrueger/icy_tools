@@ -1,14 +1,26 @@
 //! Shader-based tile grid rendering
 //!
 //! Uses wgpu textures to render thumbnails efficiently in a grid layout.
+//! Supports very tall images (up to 80,000px) by splitting into multiple texture slices.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use iced::Rectangle;
 use iced::mouse;
 use iced::widget::shader;
+
+// ============================================================================
+// Texture Slicing Constants
+// ============================================================================
+
+/// Maximum height per texture slice (GPU limit is typically 8192, we use 8000 for safety)
+pub const MAX_SLICE_HEIGHT: u32 = 8000;
+
+/// Maximum number of texture slices per tile (10 slices * 8000px = 80,000px max height)
+pub const MAX_TEXTURE_SLICES: usize = 10;
 
 // ============================================================================
 // Tile Geometry Constants (the three base values everything derives from)
@@ -22,6 +34,10 @@ pub const TILE_BORDER_WIDTH: f32 = 2.0;
 
 /// Padding inside the tile border (between border and image)
 pub const TILE_INNER_PADDING: f32 = 4.0;
+
+/// Maximum display height for a tile image
+/// Must stay under GPU viewport limits (~8192px)
+pub const MAX_TILE_IMAGE_HEIGHT: f32 = 4000.0;
 
 // ============================================================================
 // Derived Tile Geometry (calculated from base values)
@@ -101,7 +117,7 @@ pub struct TileGridShader {
     pub hover_color: [f32; 4],
 }
 
-/// Uniforms for the tile shader (v2 - pre-computed rectangles)
+/// Uniforms for the tile shader (v4 - multi-texture slicing)
 /// All rectangles are in pixel coordinates with 0,0 = top-left
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -128,13 +144,17 @@ struct TileUniforms {
     shadow_blur: f32,
     /// Shadow opacity
     shadow_opacity: f32,
-    /// Padding for alignment (total: 26 floats, need 2 more for 28 = 7 vec4)
-    _padding: [f32; 2],
+    /// Number of texture slices (1-10)
+    num_slices: f32,
+    /// Total image height in pixels
+    total_image_height: f32,
+    /// Heights of each slice in pixels (packed as 3 vec4s = 12 floats for 10 slices + 2 padding)
+    slice_heights: [[f32; 4]; 3],
 }
 
 impl TileUniforms {
-    /// Create uniforms for a tile with pre-computed rectangles
-    fn new(tile: &TileTexture, tag_height: f32) -> Self {
+    /// Create uniforms for a tile with pre-computed rectangles and slice info
+    fn new(tile: &TileTexture, tag_height: f32, slice_heights: &[u32]) -> Self {
         let shadow_extra_x = SHADOW_OFFSET_X + SHADOW_BLUR_RADIUS;
         let shadow_extra_y = SHADOW_OFFSET_Y + SHADOW_BLUR_RADIUS;
 
@@ -153,13 +173,22 @@ impl TileUniforms {
         let image_x = padding;
         let image_y = padding;
         let image_w = content_w - padding * 2.0;
-        let image_h = tile.image_height;
+        
+        // Image height is the content area minus padding (top and bottom)
+        // The texture will be stretched/scaled to fit this area
+        let image_h = content_h - padding * 2.0;
 
         // Label rect - below image with inner padding
         let label_x = padding;
         let label_y = image_y + image_h + TILE_INNER_PADDING;
         let label_w = image_w;
         let label_h = if tag_height > 0.0 { tag_height + TILE_INNER_PADDING } else { 0.0 };
+
+        // Pack slice heights into 3 vec4s (12 floats for 10 slices + 2 padding)
+        let mut packed_heights = [[0.0f32; 4]; 3];
+        for (i, &h) in slice_heights.iter().enumerate().take(MAX_TEXTURE_SLICES) {
+            packed_heights[i / 4][i % 4] = h as f32;
+        }
 
         Self {
             tile_size: [total_width, total_height],
@@ -173,16 +202,27 @@ impl TileUniforms {
             border_width: TILE_BORDER_WIDTH,
             shadow_blur: SHADOW_BLUR_RADIUS,
             shadow_opacity: SHADOW_OPACITY,
-            _padding: [0.0, 0.0],
+            num_slices: slice_heights.len().min(MAX_TEXTURE_SLICES) as f32,
+            total_image_height: tile.height as f32,
+            slice_heights: packed_heights,
         }
     }
 }
 
-/// Shared texture resources (can be reused across multiple tiles with same image data)
-#[allow(dead_code)]
-struct SharedTextureResources {
+/// Texture slice for a single portion of a tall image
+struct TextureSlice {
+    #[allow(dead_code)]
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
+    height: u32,
+}
+
+/// Shared texture resources - now supports multiple slices for tall images
+#[allow(dead_code)]
+struct SharedTextureResources {
+    /// Texture slices (1-10 slices depending on image height)
+    slices: Vec<TextureSlice>,
+    /// Original image dimensions
     texture_size: (u32, u32),
 }
 
@@ -200,6 +240,8 @@ pub struct TileGridShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
+    /// 1x1 transparent texture for unused texture slots
+    dummy_texture_view: iced::wgpu::TextureView,
     /// Per-tile resources (unique to each tile)
     tiles: HashMap<u64, TileResources>,
     /// Shared texture resources keyed by Arc pointer address
@@ -223,36 +265,46 @@ impl shader::Pipeline for TileGridShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
+        // Create bind group layout with 10 texture slots + sampler + uniforms
+        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
+        
+        // Add 10 texture bindings (0-9)
+        for i in 0..MAX_TEXTURE_SLICES {
+            entries.push(iced::wgpu::BindGroupLayoutEntry {
+                binding: i as u32,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            });
+        }
+        
+        // Sampler at binding 10
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: MAX_TEXTURE_SLICES as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+            count: None,
+        });
+        
+        // Uniforms at binding 11
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 1) as u32,
+            visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: iced::wgpu::BindingType::Buffer {
+                ty: iced::wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some("Tile Grid Bind Group Layout"),
-            entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &entries,
         });
 
         let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
@@ -306,10 +358,28 @@ impl shader::Pipeline for TileGridShaderRenderer {
             ..Default::default()
         });
 
+        // Create 1x1 transparent dummy texture for unused slots
+        let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            label: Some("Dummy Texture"),
+            size: iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: iced::wgpu::TextureDimension::D2,
+            format: iced::wgpu::TextureFormat::Rgba8Unorm,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
         TileGridShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
+            dummy_texture_view,
             tiles: HashMap::new(),
             shared_textures: HashMap::new(),
         }
@@ -328,7 +398,6 @@ impl shader::Primitive for TileGridShader {
         viewport: &iced::advanced::graphics::Viewport,
     ) {
         // Set scale factor for HiDPI/Retina displays on first prepare
-        // This ensures tile rendering uses correct scaling even before terminal shader runs
         icy_engine_gui::set_scale_factor(viewport.scale_factor() as f32);
 
         // Track which shared textures are still in use
@@ -359,51 +428,93 @@ impl shader::Primitive for TileGridShader {
             let texture_key = Arc::as_ptr(&tile.rgba_data) as usize;
             used_texture_keys.insert(texture_key);
 
-            // Create shared texture if it doesn't exist
+            // Create shared texture slices if they don't exist
             if !pipeline.shared_textures.contains_key(&texture_key) {
-                let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                    label: Some(&format!("Shared Texture {:x}", texture_key)),
-                    size: iced::wgpu::Extent3d {
-                        width: tile.width,
-                        height: tile.height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: iced::wgpu::TextureDimension::D2,
-                    format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                    usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
-
-                // Upload texture data
-                queue.write_texture(
-                    iced::wgpu::TexelCopyTextureInfo {
-                        texture: &texture,
-                        mip_level: 0,
-                        origin: iced::wgpu::Origin3d::ZERO,
-                        aspect: iced::wgpu::TextureAspect::All,
-                    },
-                    &tile.rgba_data,
-                    iced::wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * tile.width),
-                        rows_per_image: Some(tile.height),
-                    },
-                    iced::wgpu::Extent3d {
-                        width: tile.width,
-                        height: tile.height,
-                        depth_or_array_layers: 1,
-                    },
+                let texture_start = Instant::now();
+                
+                // Calculate how many slices we need
+                let total_height = tile.height;
+                let num_slices = ((total_height as usize + MAX_SLICE_HEIGHT as usize - 1) / MAX_SLICE_HEIGHT as usize)
+                    .min(MAX_TEXTURE_SLICES);
+                
+                if num_slices > 1 {
+                    log::info!("[TileShader] Creating {} slices for tile {}x{}", num_slices, tile.width, tile.height);
+                }
+                
+                let mut slices = Vec::with_capacity(num_slices);
+                let mut y_offset = 0u32;
+                    
+                log::debug!(
+                    "[TileShader] Creating texture slices for tile {} ({}x{}) with key {:x} num: {num_slices}",
+                    tile.id, tile.width, tile.height, texture_key
                 );
+                for slice_idx in 0..num_slices {
+                    let remaining_height = total_height.saturating_sub(y_offset);
+                    let slice_height = remaining_height.min(MAX_SLICE_HEIGHT);
+                    
+                    if slice_height == 0 {
+                        break;
+                    }
 
-                let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                        label: Some(&format!("Texture Slice {:x}_{}", texture_key, slice_idx)),
+                        size: iced::wgpu::Extent3d {
+                            width: tile.width,
+                            height: slice_height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: iced::wgpu::TextureDimension::D2,
+                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+
+                    // Upload slice data
+                    let bytes_per_row = 4 * tile.width;
+                    let slice_start = (y_offset * bytes_per_row) as usize;
+                    let slice_end = ((y_offset + slice_height) * bytes_per_row) as usize;
+                    let slice_data = &tile.rgba_data[slice_start..slice_end];
+
+                    queue.write_texture(
+                        iced::wgpu::TexelCopyTextureInfo {
+                            texture: &texture,
+                            mip_level: 0,
+                            origin: iced::wgpu::Origin3d::ZERO,
+                            aspect: iced::wgpu::TextureAspect::All,
+                        },
+                        slice_data,
+                        iced::wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(bytes_per_row),
+                            rows_per_image: Some(slice_height),
+                        },
+                        iced::wgpu::Extent3d {
+                            width: tile.width,
+                            height: slice_height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
+                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                    slices.push(TextureSlice {
+                        texture,
+                        texture_view,
+                        height: slice_height,
+                    });
+
+                    y_offset += slice_height;
+                }
+
+                log::debug!("[TIMING] Texture creation for tile {} ({}x{}): {:?}", 
+                           tile.id, tile.width, tile.height, texture_start.elapsed());
 
                 pipeline.shared_textures.insert(
                     texture_key,
                     SharedTextureResources {
-                        texture,
-                        texture_view,
+                        slices,
                         texture_size: (tile.width, tile.height),
                     },
                 );
@@ -416,7 +527,7 @@ impl shader::Primitive for TileGridShader {
             };
 
             if needs_recreate {
-                // Get the shared texture view
+                // Get the shared texture slices
                 let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
 
                 // Create per-tile uniform buffer
@@ -427,23 +538,37 @@ impl shader::Primitive for TileGridShader {
                     mapped_at_creation: false,
                 });
 
+                // Create bind group entries for all 10 texture slots
+                let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
+                
+                for i in 0..MAX_TEXTURE_SLICES {
+                    let texture_view = if i < shared_texture.slices.len() {
+                        &shared_texture.slices[i].texture_view
+                    } else {
+                        &pipeline.dummy_texture_view
+                    };
+                    entries.push(iced::wgpu::BindGroupEntry {
+                        binding: i as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(texture_view),
+                    });
+                }
+                
+                // Sampler at binding 10
+                entries.push(iced::wgpu::BindGroupEntry {
+                    binding: MAX_TEXTURE_SLICES as u32,
+                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                });
+                
+                // Uniforms at binding 11
+                entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                    resource: uniform_buffer.as_entire_binding(),
+                });
+
                 let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                     label: Some(&format!("Tile BindGroup {}", tile.id)),
                     layout: &pipeline.bind_group_layout,
-                    entries: &[
-                        iced::wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: iced::wgpu::BindingResource::TextureView(&shared_texture.texture_view),
-                        },
-                        iced::wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                        },
-                        iced::wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: uniform_buffer.as_entire_binding(),
-                        },
-                    ],
+                    entries: &entries,
                 });
 
                 pipeline.tiles.insert(
@@ -458,9 +583,12 @@ impl shader::Primitive for TileGridShader {
 
             // Update uniforms for this tile (always, as hover/selection state may change)
             if let Some(resources) = pipeline.tiles.get(&tile.id) {
-                // No separate tag - label is now part of the image
-                let uniforms = TileUniforms::new(tile, 0.0);
-
+                let shared_texture = pipeline.shared_textures.get(&texture_key).unwrap();
+                
+                // Collect slice heights
+                let slice_heights: Vec<u32> = shared_texture.slices.iter().map(|s| s.height).collect();
+                
+                let uniforms = TileUniforms::new(tile, 0.0, &slice_heights);
                 queue.write_buffer(&resources.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
             }
         }
@@ -538,11 +666,10 @@ impl shader::Primitive for TileGridShader {
                 // Set scissor rect for clipping
                 render_pass.set_scissor_rect(clipped_left as u32, clipped_top as u32, clipped_w as u32, clipped_h as u32);
 
-                // Set viewport to the full tile position including shadow area (scissor will clip)
-                // Clamp viewport dimensions and coordinates to GPU limits (max_texture_dimension_2d is typically 8192)
-                // The viewport y coordinate must be >= -2 * max_texture_dimension_2d
+                // GPU viewport limits - keep dimensions reasonable
                 const MAX_VIEWPORT_DIM: f32 = 8192.0;
-                const MIN_VIEWPORT_COORD: f32 = -16384.0; // -2 * 8192
+                const MIN_VIEWPORT_COORD: f32 = -16384.0;
+                
                 let safe_tile_x = tile_x.max(MIN_VIEWPORT_COORD);
                 let safe_tile_y = tile_y.max(MIN_VIEWPORT_COORD);
                 let safe_tile_w = tile_w.min(MAX_VIEWPORT_DIM);

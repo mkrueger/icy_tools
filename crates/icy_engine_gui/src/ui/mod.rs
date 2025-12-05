@@ -17,6 +17,8 @@ pub use export_dialog::*;
 mod help_dialog;
 pub use help_dialog::*;
 
+pub mod version_helper;
+
 // Button styling
 pub const BUTTON_FONT_SIZE: f32 = 14.0;
 pub const BUTTON_BORDER_WIDTH: f32 = 1.0;

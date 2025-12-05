@@ -2,8 +2,8 @@ use iced::{
     Element, Length, Task,
     widget::{column, container},
 };
-use icy_engine::{AttributedChar, Position, Screen, TextAttribute, TextBuffer, TextPane, TextScreen};
-use icy_engine_gui::ui::{button_row, dialog_area, primary_button, separator};
+use icy_engine::{Screen, TextBuffer, TextScreen};
+use icy_engine_gui::{ui::{button_row, dialog_area, primary_button, separator}, version_helper::replace_version_marker};
 use icy_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
@@ -29,29 +29,8 @@ impl AboutDialog {
         // Load the help ANSI file
         match TextBuffer::from_bytes(std::path::Path::new("a.icy"), true, ansi, Some(MusicOption::Off), None) {
             Ok(mut buffer) => {
-                highlight_version(&mut buffer);
-
-                for y in 0..buffer.get_height() {
-                    for x in 0..buffer.get_width() {
-                        let ch = buffer.get_char((x, y).into());
-
-                        if ch.ch == '@' {
-                            // Build version string with colors
-                            let build_date = option_env!("ICY_BUILD_DATE").unwrap_or("-").to_string().to_string();
-
-                            // Place the colored version at the @ position
-                            for (i, ch) in build_date.chars().enumerate() {
-                                let new_x = x + i as i32;
-                                if new_x < buffer.get_width() {
-                                    let new_ch = AttributedChar::new(ch, TextAttribute::from_u8(0x08, icy_engine::IceMode::Ice));
-                                    buffer.layers[0].set_char(Position::new(new_x, y), new_ch);
-                                }
-                            }
-                        }
-                    }
-                }
-                buffer.update_hyperlinks();
-
+                let build_date = option_env!("ICY_BUILD_DATE").unwrap_or("-").to_string().to_string();
+                replace_version_marker(&mut buffer, &VERSION, Some(build_date));
                 screen.buffer = buffer;
             }
             Err(e) => {
@@ -127,51 +106,3 @@ impl AboutDialog {
     }
 }
 
-fn highlight_version(buffer: &mut TextBuffer) {
-    for y in 0..buffer.get_height() {
-        for x in 0..buffer.get_width() {
-            let ch = buffer.get_char((x, y).into());
-
-            if ch.ch == '@' {
-                // Build version string with colors
-                let mut version_chars = Vec::new();
-
-                // 'v' in white (color 7)
-                version_chars.push(AttributedChar::new('v', TextAttribute::from_u8(0x07, icy_engine::IceMode::Ice)));
-
-                // Major version in yellow (color 14)
-                let major_str = VERSION.major.to_string();
-                for ch in major_str.chars() {
-                    version_chars.push(AttributedChar::new(ch, TextAttribute::from_u8(0x0E, icy_engine::IceMode::Ice)));
-                }
-
-                // First dot in green (color 10)
-                version_chars.push(AttributedChar::new('.', TextAttribute::from_u8(0x0A, icy_engine::IceMode::Ice)));
-
-                // Minor version in light red (color 12)
-                let minor_str = VERSION.minor.to_string();
-                for ch in minor_str.chars() {
-                    version_chars.push(AttributedChar::new(ch, TextAttribute::from_u8(0x0C, icy_engine::IceMode::Ice)));
-                }
-
-                // Second dot in green (color 10)
-                version_chars.push(AttributedChar::new('.', TextAttribute::from_u8(0x0A, icy_engine::IceMode::Ice)));
-
-                // Patch/build version in magenta (color 13)
-                let patch_str = VERSION.patch.to_string();
-                for ch in patch_str.chars() {
-                    version_chars.push(AttributedChar::new(ch, TextAttribute::from_u8(0x0D, icy_engine::IceMode::Ice)));
-                }
-
-                // Place the colored version at the @ position
-                for (i, new_ch) in version_chars.into_iter().enumerate() {
-                    let new_x = x + i as i32;
-                    if new_x < buffer.get_width() {
-                        buffer.layers[0].set_char(Position::new(new_x, y), new_ch);
-                    }
-                }
-                return;
-            }
-        }
-    }
-}
