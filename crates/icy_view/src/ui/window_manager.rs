@@ -220,6 +220,15 @@ impl WindowManager {
                     // Skip other mouse events
                     Event::Mouse(_) => None,
                     // Keyboard events
+                    Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) => {
+                        let ctrl = mods.control();
+                        let alt = mods.alt();
+                        let shift = mods.shift();
+                        // Also store globally for cross-widget access
+                        icy_engine_gui::set_global_modifiers(ctrl, alt, shift);
+                        None
+                    }
+
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Alt+Number to focus window
                         if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {

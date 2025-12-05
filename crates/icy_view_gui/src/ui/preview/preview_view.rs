@@ -14,6 +14,7 @@ use icy_sauce::SauceRecord;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
+use super::image_viewer::{ImageViewer, ImageViewerMessage};
 use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
 use crate::ui::options::ScrollSpeed;
 use crate::ui::theme;
@@ -29,8 +30,8 @@ pub enum PreviewMode {
     None,
     /// Terminal/ANSI preview
     Terminal,
-    /// Image preview with handle
-    Image(iced_image::Handle),
+    /// Image preview with dimensions (width, height)
+    Image(iced_image::Handle, u32, u32),
     /// Loading indicator
     Loading,
     /// Error message
@@ -60,14 +61,18 @@ pub enum PreviewMessage {
     HScrollbarHovered(bool),
     /// Terminal view message
     TerminalMessage(icy_engine_gui::Message),
-    /// Image loaded from background thread
-    ImageLoaded(u64, Result<iced_image::Handle, String>),
+    /// Image loaded from background thread (with dimensions)
+    ImageLoaded(u64, Result<(iced_image::Handle, u32, u32), String>),
+    /// Image viewer message
+    ImageViewerMessage(ImageViewerMessage),
     /// Zoom in (increase zoom level)
     ZoomIn,
     /// Zoom out (decrease zoom level)
     ZoomOut,
     /// Reset zoom to 100%
     ZoomReset,
+    /// Zoom to fit
+    ZoomFit,
 }
 
 /// Preview view for displaying ANSI files and images
@@ -100,6 +105,8 @@ pub struct PreviewView {
     auto_scroll_enabled: bool,
     /// Scroll speed for auto-scroll mode
     scroll_speed: ScrollSpeed,
+    /// Image viewer (created when viewing images)
+    image_viewer: Option<ImageViewer>,
 }
 
 impl PreviewView {
@@ -129,6 +136,7 @@ impl PreviewView {
             scroll_mode: ScrollMode::Off,
             auto_scroll_enabled: false,
             scroll_speed: ScrollSpeed::Medium,
+            image_viewer: None,
         }
     }
 
@@ -166,6 +174,10 @@ impl PreviewView {
 
         // Reset scroll mode (background thread will set it)
         self.scroll_mode = ScrollMode::Off;
+
+        // Clear image viewer when loading new file
+        self.image_viewer = None;
+
         if Self::is_image_file(&path) {
             // Load image in background thread
             self.preview_mode = PreviewMode::Loading;
@@ -189,8 +201,10 @@ impl PreviewView {
                             // Use icy_sixel for Sixel files
                             match icy_sixel::sixel_decode(&data) {
                                 Ok((rgba, width, height)) => {
-                                    let handle = iced_image::Handle::from_rgba(width as u32, height as u32, rgba);
-                                    (load_id, Ok(handle))
+                                    let w = width as u32;
+                                    let h = height as u32;
+                                    let handle = iced_image::Handle::from_rgba(w, h, rgba);
+                                    (load_id, Ok((handle, w, h)))
                                 }
                                 Err(e) => (load_id, Err(format!("Failed to decode Sixel: {}", e))),
                             }
@@ -201,7 +215,7 @@ impl PreviewView {
                                     let rgba = img.to_rgba8();
                                     let (width, height) = rgba.dimensions();
                                     let handle = iced_image::Handle::from_rgba(width, height, rgba.into_raw());
-                                    (load_id, Ok(handle))
+                                    (load_id, Ok((handle, width, height)))
                                 }
                                 Err(e) => (load_id, Err(format!("Failed to load image: {}", e))),
                             }
@@ -303,11 +317,33 @@ impl PreviewView {
         self.terminal.zoom_auto_fit(use_integer_scaling)
     }
 
+    /// Get current zoom level
+    pub fn get_zoom(&self) -> f32 {
+        if let Some(ref viewer) = self.image_viewer {
+            viewer.zoom()
+        } else {
+            self.terminal.get_zoom()
+        }
+    }
+
+    /// Get image dimensions if viewing an image
+    pub fn get_image_size(&self) -> Option<(u32, u32)> {
+        if let Some(ref viewer) = self.image_viewer {
+            let (w, h) = viewer.zoomed_size();
+            Some((w as u32, h as u32))
+        } else {
+            None
+        }
+    }
+
     /// Get the current buffer size (width x height) from the terminal screen
     pub fn get_buffer_size(&self) -> Option<(i32, i32)> {
         if matches!(self.preview_mode, PreviewMode::Terminal) {
             let screen = self.terminal.screen.lock();
             return Some((screen.get_width(), screen.get_height()));
+        }
+        if let PreviewMode::Image(_, w, h) = self.preview_mode {
+            return Some((w as i32, h as i32));
         }
         None
     }
@@ -336,12 +372,16 @@ impl PreviewView {
             self.is_loading = false;
             self.current_file = None;
             self.preview_mode = PreviewMode::None;
+            self.image_viewer = None;
         }
     }
 
     /// Check if animation is needed
     pub fn needs_animation(&self) -> bool {
-        self.is_loading || self.terminal.needs_animation() || self.scroll_mode != ScrollMode::Off
+        self.is_loading
+            || self.terminal.needs_animation()
+            || self.scroll_mode != ScrollMode::Off
+            || self.image_viewer.as_ref().map_or(false, |v| v.needs_animation())
     }
 
     /// Start auto-scroll mode (animated scrolling to bottom)
@@ -438,8 +478,10 @@ impl PreviewView {
                 if load_id == self.current_image_load_id {
                     self.is_loading = false;
                     match result {
-                        Ok(handle) => {
-                            self.preview_mode = PreviewMode::Image(handle);
+                        Ok((handle, width, height)) => {
+                            // Create image viewer with the loaded image
+                            self.image_viewer = Some(ImageViewer::new(handle.clone(), width, height));
+                            self.preview_mode = PreviewMode::Image(handle, width, height);
                         }
                         Err(msg) => {
                             self.preview_mode = PreviewMode::Error(msg);
@@ -447,6 +489,12 @@ impl PreviewView {
                     }
                 }
                 // Ignore outdated load results
+                Task::none()
+            }
+            PreviewMessage::ImageViewerMessage(msg) => {
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.update(msg);
+                }
                 Task::none()
             }
             PreviewMessage::AnimationTick(delta_seconds) => {
@@ -485,6 +533,11 @@ impl PreviewView {
                 // Update terminal animations
                 self.terminal.update_animations();
 
+                // Update image viewer scrollbar animations if active
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.update_scrollbars(delta_seconds);
+                }
+
                 // Update viewport size to match current buffer size
                 // This is important during baud emulation when buffer grows
                 self.terminal.update_viewport_size();
@@ -518,6 +571,11 @@ impl PreviewView {
                     ScrollMode::Off => {
                         // No automatic scrolling
                     }
+                }
+
+                // Update image viewer scrollbar animations
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.update_scrollbars(delta_seconds);
                 }
 
                 // Return any extra tasks
@@ -614,15 +672,35 @@ impl PreviewView {
                 Task::none()
             }
             PreviewMessage::ZoomIn => {
-                self.terminal.zoom_in();
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.zoom_in();
+                } else {
+                    self.terminal.zoom_in();
+                }
                 Task::none()
             }
             PreviewMessage::ZoomOut => {
-                self.terminal.zoom_out();
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.zoom_out();
+                } else {
+                    self.terminal.zoom_out();
+                }
                 Task::none()
             }
             PreviewMessage::ZoomReset => {
-                self.terminal.zoom_reset();
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.zoom_100();
+                } else {
+                    self.terminal.zoom_reset();
+                }
+                Task::none()
+            }
+            PreviewMessage::ZoomFit => {
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.zoom_fit();
+                } else {
+                    self.terminal.zoom_auto_fit(self.monitor_settings.use_integer_scaling);
+                }
                 Task::none()
             }
             PreviewMessage::SauceInfoReceived(sauce_opt, content_size) => {
@@ -705,19 +783,31 @@ impl PreviewView {
                     })
                     .into()
             }
-            PreviewMode::Image(handle) => {
-                let img = iced_image::Image::new(handle.clone()).content_fit(iced::ContentFit::Contain);
-
-                container(img)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill)
-                    .style(|theme: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(theme::main_area_background(theme))),
-                        ..Default::default()
-                    })
-                    .into()
+            PreviewMode::Image(_handle, _width, _height) => {
+                // Use the ImageViewer if available
+                if let Some(ref viewer) = self.image_viewer {
+                    container(viewer.view(PreviewMessage::ImageViewerMessage))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .style(|theme: &iced::Theme| container::Style {
+                            background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                            ..Default::default()
+                        })
+                        .into()
+                } else {
+                    // Fallback: simple centered image (shouldn't happen normally)
+                    let img = iced_image::Image::new(_handle.clone()).content_fit(iced::ContentFit::Contain);
+                    container(img)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .center_x(Length::Fill)
+                        .center_y(Length::Fill)
+                        .style(|theme: &iced::Theme| container::Style {
+                            background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                            ..Default::default()
+                        })
+                        .into()
+                }
             }
             PreviewMode::Terminal => {
                 let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(PreviewMessage::TerminalMessage);
