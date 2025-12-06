@@ -1,0 +1,139 @@
+# icy_term specific commands
+# These commands are only used by icy_term, not shared with other apps.
+#
+# Format:
+#   [[commands]]
+#   id = "unique.command.id"    # Also used as i18n translation key
+#   hotkey = ["Ctrl+C"]         # Windows/Linux shortcuts (can have multiple)
+#   hotkey_mac = ["Cmd+C"]      # macOS shortcuts (optional, falls back to hotkey)
+#   category = "terminal"       # Optional category for help dialog grouping
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Connection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "connection.dialing_directory"
+hotkey = ["Alt+D"]
+hotkey_mac = ["Cmd+D"]
+category = "connection"
+
+[[commands]]
+id = "connection.hangup"
+hotkey = ["Alt+H"]
+hotkey_mac = ["Cmd+H"]
+category = "connection"
+
+[[commands]]
+id = "connection.serial"
+hotkey = ["Alt+T"]
+hotkey_mac = ["Cmd+T"]
+category = "connection"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# File Transfer
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "transfer.upload"
+hotkey = ["Alt+PageUp"]
+hotkey_mac = ["Cmd+PageUp"]
+category = "transfer"
+
+[[commands]]
+id = "transfer.download"
+hotkey = ["Alt+PageDown"]
+hotkey_mac = ["Cmd+PageDown"]
+category = "transfer"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Login
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "login.send_all"
+hotkey = ["Alt+L"]
+hotkey_mac = ["Cmd+L"]
+category = "login"
+
+[[commands]]
+id = "login.send_user"
+hotkey = ["Alt+U"]
+hotkey_mac = ["Cmd+U"]
+category = "login"
+
+[[commands]]
+id = "login.send_password"
+hotkey = ["Alt+S"]
+hotkey_mac = ["Cmd+S"]
+category = "login"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Terminal
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "terminal.clear"
+hotkey = ["Alt+C"]
+hotkey_mac = ["Option+C"]
+category = "terminal"
+
+[[commands]]
+id = "terminal.scrollback"
+hotkey = ["Alt+B"]
+hotkey_mac = ["Cmd+B"]
+category = "terminal"
+
+[[commands]]
+id = "terminal.find"
+hotkey = ["Alt+F"]
+hotkey_mac = ["Cmd+F"]
+category = "terminal"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Capture & Export
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "capture.start"
+hotkey = ["Alt+P"]
+hotkey_mac = ["Cmd+P"]
+category = "capture"
+
+[[commands]]
+id = "capture.export"
+hotkey = ["Alt+I"]
+hotkey_mac = ["Cmd+I"]
+category = "capture"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Scripting
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "script.run"
+hotkey = ["Alt+R"]
+hotkey_mac = ["Cmd+R"]
+category = "script"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Application
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "app.settings"
+hotkey = ["Alt+O"]
+hotkey_mac = ["Cmd+,"]
+category = "app"
+
+[[commands]]
+id = "app.quit"
+hotkey = ["Alt+X"]
+hotkey_mac = ["Cmd+Q"]
+category = "app"
+
+[[commands]]
+id = "app.about"
+hotkey = ["Alt+A"]
+hotkey_mac = ["Cmd+Shift+A"]
+category = "app"

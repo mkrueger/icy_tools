@@ -208,6 +208,9 @@ pub struct Address {
     #[serde(default, skip_serializing_if = "is_default_terminal")]
     pub terminal_type: TerminalEmulation,
 
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub modem_id: String,
+
     pub address: String,
 
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -305,6 +308,7 @@ impl From<ConnectionInformation> for Address {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
+            ..Default::default()
         }
     }
 }
@@ -382,6 +386,7 @@ impl Address {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
+            ..Default::default()
         }
     }
 

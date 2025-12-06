@@ -34,6 +34,7 @@ pub mod terminal;
 pub use terminal::*;
 
 pub mod auto_login;
+pub mod commands;
 pub mod features;
 pub mod mcp;
 pub mod scripting;

@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 
 use crate::{
     McpHandler,
+    commands::{cmd, create_icy_term_commands},
     mcp::{self, McpCommand, types::ScreenCaptureFormat},
     scripting::parse_key_string,
     ui::{
@@ -23,7 +24,7 @@ use crate::{
 use clipboard_rs::Clipboard;
 use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::Position;
-use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, music::music::SoundThread};
+use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, command_handler, music::music::SoundThread};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::BaudEmulation;
 use tokio::sync::mpsc;
@@ -33,6 +34,46 @@ use crate::{
     terminal::terminal_thread::{ConnectionConfig, TerminalCommand, TerminalEvent, create_terminal_thread},
     ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, show_iemsi, terminal_window},
 };
+
+// Command handler for MainWindow keyboard shortcuts
+command_handler!(MainWindowCommands, create_icy_term_commands(), => Message {
+    // View
+    cmd::VIEW_FULLSCREEN => Message::ToggleFullscreen,
+    cmd::VIEW_ZOOM_IN => Message::Zoom(icy_engine_gui::ZoomMessage::In),
+    cmd::VIEW_ZOOM_OUT => Message::Zoom(icy_engine_gui::ZoomMessage::Out),
+    cmd::VIEW_ZOOM_RESET => Message::Zoom(icy_engine_gui::ZoomMessage::Reset),
+    cmd::VIEW_ZOOM_FIT => Message::Zoom(icy_engine_gui::ZoomMessage::AutoFit),
+    // Help
+    cmd::HELP_SHOW => Message::ShowHelpDialog,
+    cmd::HELP_ABOUT => Message::ShowAboutDialog,
+    // Edit
+    cmd::EDIT_COPY => Message::Copy,
+    cmd::EDIT_PASTE => Message::Paste,
+    // Connection
+    cmd::CONNECTION_DIALING_DIRECTORY => Message::ShowDialingDirectory,
+    cmd::CONNECTION_HANGUP => Message::Hangup,
+    cmd::CONNECTION_SERIAL => Message::ShowOpenSerialDialog,
+    // Transfer
+    cmd::TRANSFER_UPLOAD => Message::Upload,
+    cmd::TRANSFER_DOWNLOAD => Message::Download,
+    // Login
+    cmd::LOGIN_SEND_ALL => Message::SendLoginAndPassword(true, true),
+    cmd::LOGIN_SEND_USER => Message::SendLoginAndPassword(true, false),
+    cmd::LOGIN_SEND_PASSWORD => Message::SendLoginAndPassword(false, true),
+    // Terminal
+    cmd::TERMINAL_CLEAR => Message::ClearScreen,
+    cmd::TERMINAL_SCROLLBACK => Message::ShowScrollback,
+    cmd::TERMINAL_FIND => Message::ShowFindDialog,
+    // Capture & Export
+    cmd::CAPTURE_START => Message::ShowCaptureDialog,
+    cmd::CAPTURE_EXPORT => Message::ShowExportScreenDialog,
+    // Scripting
+    cmd::SCRIPT_RUN => Message::ShowRunScriptDialog,
+    // Application
+    cmd::APP_SETTINGS => Message::ShowSettings,
+    cmd::APP_QUIT => Message::QuitIcyTerm,
+    cmd::APP_ABOUT => Message::ShowAboutDialog,
+});
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
@@ -100,6 +141,7 @@ pub struct MainWindow {
     pub pending_script_response: Option<crate::mcp::SenderType<crate::mcp::ScriptResult>>,
     pub title: String,
     pub effect: i32,
+    commands: MainWindowCommands,
 }
 
 impl MainWindow {
@@ -173,6 +215,7 @@ impl MainWindow {
             mcp_rx: None,
             pending_script_response: None,
             terminal_emulation: TerminalEmulation::Ansi,
+            commands: MainWindowCommands::new(),
         }
     }
 
@@ -1598,7 +1641,7 @@ impl MainWindow {
                         physical_key,
                         ..
                     }) => {
-                        // Handle scrollback mode navigation
+                        // Handle scrollback mode navigation (context-specific, not in command handler)
                         if self.terminal_window.terminal.is_in_scrollback_mode() {
                             // Get font height for line-based scrolling
                             let line_height = self.terminal_window.terminal.char_height;
@@ -1641,79 +1684,13 @@ impl MainWindow {
                             }
                         }
 
-                        #[cfg(target_os = "macos")]
-                        let cmd_key = modifiers.command();
-                        #[cfg(not(target_os = "macos"))]
-                        let cmd_key = modifiers.alt();
-
-                        // Handle Alt+Enter for fullscreen toggle
-                        if cmd_key && matches!(key, keyboard::Key::Named(keyboard::key::Named::Enter)) {
-                            return Some(Message::ToggleFullscreen);
+                        // Try command handler for keyboard shortcuts
+                        if let Some(msg) = self.commands.handle(event) {
+                            return Some(msg);
                         }
 
-                        if cmd_key {
-                            match &key {
-                                keyboard::Key::Named(named) => match named {
-                                    keyboard::key::Named::PageUp => return Some(Message::Upload),
-                                    keyboard::key::Named::PageDown => return Some(Message::Download),
-                                    _ => {}
-                                },
-                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                    "f" => return Some(Message::ShowFindDialog),
-                                    "i" => return Some(Message::ShowExportScreenDialog),
-                                    "d" => return Some(Message::ShowDialingDirectory),
-                                    "h" => return Some(Message::Hangup),
-                                    "l" => return Some(Message::SendLoginAndPassword(true, true)),
-                                    "u" => return Some(Message::SendLoginAndPassword(true, false)),
-                                    "s" => return Some(Message::SendLoginAndPassword(false, true)),
-                                    "o" => return Some(Message::ShowSettings),
-                                    "p" => return Some(Message::ShowCaptureDialog),
-                                    "x" => return Some(Message::QuitIcyTerm),
-                                    "a" => return Some(Message::ShowAboutDialog),
-                                    #[cfg(not(target_os = "macos"))]
-                                    "c" => return Some(Message::ClearScreen),
-                                    #[cfg(target_os = "macos")]
-                                    "c" => return Some(Message::Copy),
-                                    #[cfg(target_os = "macos")]
-                                    "v" => return Some(Message::Paste),
-
-                                    "b" => return Some(Message::ShowScrollback),
-                                    "r" => return Some(Message::ShowRunScriptDialog),
-                                    "t" => return Some(Message::ShowOpenSerialDialog),
-                                    _ => {}
-                                },
-                                _ => {}
-                            }
-                        } else if modifiers.control() {
-                            #[cfg(not(target_os = "macos"))]
-                            if let keyboard::Key::Character(s) = &key {
-                                match s.to_lowercase().as_str() {
-                                    "c" => return Some(Message::Copy),
-                                    "v" => return Some(Message::Paste),
-                                    _ => {}
-                                }
-                            }
-                        } else if modifiers.alt() {
-                            // On macOS, use Option (Alt) for clear screen to avoid conflict with Cmd+C (copy)
-                            #[cfg(target_os = "macos")]
-                            if let keyboard::Key::Character(s) = &key {
-                                if s.to_lowercase() == "c" {
-                                    return Some(Message::ClearScreen);
-                                }
-                            }
-                        } else if modifiers.is_empty() {
-                            // Handle function keys without modifiers
-                            match &key {
-                                keyboard::Key::Named(named) => match named {
-                                    keyboard::key::Named::F1 => return Some(Message::ShowHelpDialog),
-                                    _ => {}
-                                },
-                                _ => {}
-                            }
-                        }
-
-                        // Try to map the key with modifiers using the key map
-                        if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, &key, &physical_key, *modifiers) {
+                        // Try to map the key with modifiers using the key map (for terminal input)
+                        if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
                             return Some(Message::SendData(bytes));
                         }
 
@@ -1722,15 +1699,7 @@ impl MainWindow {
                         } else {
                             None
                         }
-                    } /*
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(keyboard::key::Named::Shift),
-                    ..
-                    }) => Some(Message::ShiftPressed(true)),
-                    Event::Keyboard(keyboard::Event::KeyReleased {
-                    key: keyboard::Key::Named(keyboard::key::Named::Shift),
-                    ..
-                    }) => Some(Message::ShiftPressed(false)),*/
+                    }
                     _ => None,
                 }
             }
@@ -1779,22 +1748,10 @@ impl MainWindow {
             _ => {
                 // Handle global shortcuts that work in any mode
                 match event {
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        key: keyboard::Key::Named(keyboard::key::Named::Enter),
-                        modifiers,
-                        ..
-                    }) => {
-                        #[cfg(target_os = "macos")]
-                        let cmd_key = modifiers.command();
-                        #[cfg(not(target_os = "macos"))]
-                        let cmd_key = modifiers.alt();
-
-                        if cmd_key { Some(Message::ToggleFullscreen) } else { None }
+                    // Try command handler for global shortcuts
+                    Event::Keyboard(keyboard::Event::KeyPressed { .. }) => {
+                        self.commands.handle(event)
                     }
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        key: keyboard::Key::Named(keyboard::key::Named::Shift),
-                        ..
-                    }) => Some(Message::ShiftPressed(true)),
                     Event::Keyboard(keyboard::Event::KeyReleased {
                         key: keyboard::Key::Named(keyboard::key::Named::Shift),
                         ..

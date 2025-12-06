@@ -1,12 +1,13 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+use icy_engine_gui::command_handler;
+use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::music::music::SoundThread;
 use parking_lot::Mutex;
 
 use iced::{
     Element, Event, Size, Subscription, Task, Theme, Vector,
     advanced::graphics::core::keyboard,
-    keyboard::key::Named,
     widget::{operation, space},
     window,
 };
@@ -15,6 +16,16 @@ use crate::{
     AddressBook, McpHandler, Options, load_window_icon,
     ui::{MainWindow, MainWindowMode, Message},
 };
+
+// Generate the WindowCommands struct with handle() method
+// Note: Zoom/Fullscreen commands are handled at MainWindow level, not here
+command_handler!(WindowCommands, create_common_commands(), _window_id: window::Id => WindowManagerMessage {
+    cmd::WINDOW_NEW => WindowManagerMessage::OpenWindow,
+    cmd::WINDOW_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
+    cmd::FILE_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
+    cmd::FOCUS_NEXT => WindowManagerMessage::FocusNext,
+    cmd::FOCUS_PREVIOUS => WindowManagerMessage::FocusPrevious,
+});
 
 pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
@@ -29,6 +40,7 @@ pub struct WindowManager {
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
+    commands: WindowCommands,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +49,8 @@ pub enum WindowManagerMessage {
     CloseWindow(window::Id),
     WindowOpened(window::Id),
     FocusWindow(usize),
+    FocusNext,
+    FocusPrevious,
     WindowClosed(window::Id),
     WindowMessage(window::Id, Message),
     TitleChanged(window::Id, String),
@@ -95,6 +109,7 @@ impl WindowManager {
                 url: None,
                 script_to_run: None,
                 mcp_rx,
+                commands: WindowCommands::new(),
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
@@ -162,6 +177,8 @@ impl WindowManager {
                     .map(WindowManagerMessage::WindowOpened)
             }
             WindowManagerMessage::CloseWindow(id) => window::close(id),
+            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
+            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
             WindowManagerMessage::WindowOpened(id) => {
                 let mut window: MainWindow = MainWindow::new(
                     self.find_next_id(),
@@ -222,7 +239,12 @@ impl WindowManager {
             }
 
             WindowManagerMessage::Event(window_id, event) => {
-                // Handle the event for the specific window
+                // Handle keyboard commands at window manager level first
+                if let Some(msg) = self.commands.handle(&event, window_id) {
+                    return Task::done(msg);
+                }
+
+                // Pass event to window for other handling
                 if let Some(window) = self.windows.get(&window_id) {
                     if let Some(msg) = window.handle_event(&event) {
                         return Task::done(WindowManagerMessage::WindowMessage(window_id, msg));
@@ -299,91 +321,39 @@ impl WindowManager {
                 match &event {
                     // Window focus events are needed
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => {
-                        return Some(WindowManagerMessage::Event(window_id, event));
+                        Some(WindowManagerMessage::Event(window_id, event))
                     }
                     // Mouse events: only CursorLeft and WheelScrolled are needed
                     Event::Mouse(iced::mouse::Event::CursorLeft) | Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => {
-                        return Some(WindowManagerMessage::Event(window_id, event));
+                        Some(WindowManagerMessage::Event(window_id, event))
                     }
                     // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
-                    Event::Mouse(_) => {
-                        return None;
-                    }
+                    Event::Mouse(_) => None,
                     // Keyboard events need special handling
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // Alt+Number to focus window (keep this special case)
                         if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
-                            match &key {
-                                keyboard::Key::Character(s) => {
-                                    if let Some(digit) = s.chars().next() {
-                                        if digit.is_ascii_digit() {
-                                            let target_id = digit.to_digit(10).unwrap() as usize;
-                                            // Special case: Alt+0 focuses window 10
-                                            let target_id = if target_id == 0 { 10 } else { target_id };
-
-                                            return Some(WindowManagerMessage::FocusWindow(target_id));
-                                        }
+                            if let keyboard::Key::Character(s) = &key {
+                                if let Some(digit) = s.chars().next() {
+                                    if digit.is_ascii_digit() {
+                                        let target_id = digit.to_digit(10).unwrap() as usize;
+                                        // Special case: Alt+0 focuses window 10
+                                        let target_id = if target_id == 0 { 10 } else { target_id };
+                                        return Some(WindowManagerMessage::FocusWindow(target_id));
                                     }
                                 }
-                                _ => {}
                             }
                         }
 
-                        if modifiers.command() {
-                            match &key {
-                                keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                    #[cfg(target_os = "macos")]
-                                    "n" => return Some(WindowManagerMessage::OpenWindow),
-                                    #[cfg(not(target_os = "macos"))]
-                                    "n" => {
-                                        if modifiers.shift() {
-                                            return Some(WindowManagerMessage::OpenWindow);
-                                        }
-                                    }
-                                    "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
-                                    // Zoom shortcuts: Ctrl+Plus/Minus/0/Backspace
-                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Zoom(icy_engine_gui::ZoomMessage::In))),
-                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Zoom(icy_engine_gui::ZoomMessage::Out))),
-                                    "0" => {
-                                        return Some(WindowManagerMessage::WindowMessage(
-                                            window_id,
-                                            Message::Zoom(icy_engine_gui::ZoomMessage::Reset),
-                                        ));
-                                    }
-                                    _ => {}
-                                },
-                                keyboard::Key::Named(Named::Backspace) => {
-                                    return Some(WindowManagerMessage::WindowMessage(
-                                        window_id,
-                                        Message::Zoom(icy_engine_gui::ZoomMessage::AutoFit),
-                                    ));
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if !modifiers.alt() {
-                            match &key {
-                                keyboard::Key::Named(Named::F11) => {
-                                    return Some(WindowManagerMessage::WindowMessage(window_id, Message::ToggleFullscreen));
-                                }
-                                _ => {}
-                            }
-                        }
-                        // Forward keyboard events for dialog handling
-                        return Some(WindowManagerMessage::Event(window_id, event));
+                        // Forward all key events - command matching happens in update()
+                        Some(WindowManagerMessage::Event(window_id, event))
                     }
                     // Forward other keyboard events (KeyReleased, ModifiersChanged)
-                    Event::Keyboard(_) => {
-                        return Some(WindowManagerMessage::Event(window_id, event));
-                    }
+                    Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Skip touch events
-                    Event::Touch(_) => {
-                        return None;
-                    }
+                    Event::Touch(_) => None,
                     // Skip other events (InputMethod, etc.)
-                    _ => {
-                        return None;
-                    }
+                    _ => None,
                 }
             }),
             iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::UpdateBuffers),

@@ -479,6 +479,7 @@ mod tests {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
+            ..Default::default()
         };
 
         let conn_info: ConnectionInformation = ConnectionInformation::from(address);
@@ -520,6 +521,7 @@ mod tests {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
+            ..Default::default()
         };
 
         let conn_info = ConnectionInformation::from(address);
@@ -560,6 +562,7 @@ mod tests {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
+            ..Default::default()
         };
 
         let conn_info = ConnectionInformation::from(address);
