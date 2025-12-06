@@ -7,11 +7,11 @@
 //!
 //! ```no_run
 //! use icy_engine::formats::ImageFormat;
-//! use icy_engine::{Buffer, Rectangle};
+//! use icy_engine::{TextBuffer, Rectangle};
 //! use std::path::Path;
 //!
 //! // Export as PNG
-//! let buffer = Buffer::default();
+//! let buffer = TextBuffer::default();
 //! ImageFormat::Png.save_buffer(&buffer, Path::new("output.png")).unwrap();
 //!
 //! // Export as animated GIF (with blink)
@@ -360,7 +360,12 @@ mod tests {
         assert_eq!(ImageFormat::from_extension("PNG"), Some(ImageFormat::Png));
         assert_eq!(ImageFormat::from_extension("gif"), Some(ImageFormat::Gif));
         assert_eq!(ImageFormat::from_extension("GIF"), Some(ImageFormat::Gif));
-        assert_eq!(ImageFormat::from_extension("jpg"), None);
+        assert_eq!(ImageFormat::from_extension("jpg"), Some(ImageFormat::Jpeg));
+        assert_eq!(ImageFormat::from_extension("jpeg"), Some(ImageFormat::Jpeg));
+        assert_eq!(ImageFormat::from_extension("bmp"), Some(ImageFormat::Bmp));
+        assert_eq!(ImageFormat::from_extension("six"), Some(ImageFormat::Sixel));
+        assert_eq!(ImageFormat::from_extension("sixel"), Some(ImageFormat::Sixel));
+        assert_eq!(ImageFormat::from_extension("xyz"), None);
     }
 
     #[test]

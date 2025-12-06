@@ -11,8 +11,8 @@ jobs:
   build_linux:
    strategy:
      matrix:
-       app: [icy_term]
-# , icy_draw, icy_view
+       app: [icy_term, icy_view]
+# , icy_draw
    runs-on: ubuntu-latest
    steps:
    - uses: actions/checkout@v4
@@ -65,8 +65,8 @@ jobs:
   build_windows:
     strategy:
       matrix:
-        app: [icy_term]
-# , icy_draw, icy_view, icy_play        
+        app: [icy_term, icy_view, icy_play        ]
+# , icy_draw
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
@@ -93,8 +93,8 @@ jobs:
   build_mac:
     strategy:
       matrix:
-        app: [icy_term]
-# , icy_draw, icy_view        
+        app: [icy_term, icy_view ]
+# , icy_draw
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

@@ -1,4 +1,6 @@
+use bstr::BString;
 use icy_engine::{AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane};
+use icy_sauce::{AspectRatio, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecordBuilder};
 
 mod layer;
 
@@ -34,8 +36,27 @@ fn test_respect_sauce_width() {
         buf.layers[0].set_char((x, 2), AttributedChar::new('3', TextAttribute::default()));
     }
 
+    // Create a SAUCE record with the correct width
+    let char_caps = CharacterCapabilities::with_font(
+        CharacterFormat::Ansi,
+        10, // columns
+        3,  // lines
+        false,
+        LetterSpacing::EightPixel,
+        AspectRatio::Square,
+        Some(BString::from("IBM VGA")),
+    )
+    .unwrap();
+
+    let sauce = SauceRecordBuilder::default()
+        .title(BString::from("Test"))
+        .unwrap()
+        .capabilities(Capabilities::Character(char_caps))
+        .unwrap()
+        .build();
+
     let mut opt = SaveOptions::new();
-    opt.save_sauce = None;
+    opt.save_sauce = Some(sauce);
     let ansi_bytes = buf.to_bytes("ans", &opt).unwrap();
 
     let loaded_buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None, None).unwrap();

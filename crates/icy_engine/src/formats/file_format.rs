@@ -15,7 +15,7 @@
 //! assert!(format.supports_save());
 //!
 //! // Get parser for streaming formats
-//! if let Some(parser) = format.create_parser() {
+//! if let Some(parser) = format.create_parser(None) {
 //!     // Use parser for streaming playback
 //! }
 //! ```
@@ -145,6 +145,7 @@ impl FileFormat {
         FileFormat::CtrlA,
         FileFormat::Renegade,
         FileFormat::Atascii,
+        FileFormat::ViewData,
         FileFormat::IcyDraw,
         FileFormat::IceDraw,
         FileFormat::Bin,
@@ -162,6 +163,7 @@ impl FileFormat {
         FileFormat::CtrlA,
         FileFormat::Renegade,
         FileFormat::Atascii,
+        FileFormat::ViewData,
         FileFormat::IcyDraw,
         FileFormat::IceDraw,
         FileFormat::Bin,
