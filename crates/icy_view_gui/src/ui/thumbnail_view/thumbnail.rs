@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
@@ -342,7 +341,7 @@ impl ThumbnailState {
 #[derive(Clone)]
 pub struct Thumbnail {
     /// Path to the source file
-    pub path: PathBuf,
+    pub path: String,
     /// Display label (filename)
     pub label: String,
     /// Current state
@@ -359,7 +358,7 @@ impl Thumbnail {
     /// Create a new pending thumbnail
     /// Placeholder is created lazily when the thumbnail is first displayed
     /// This is critical for performance with 100k+ items
-    pub fn new(path: PathBuf, label: String) -> Self {
+    pub fn new(path: String, label: String) -> Self {
         Self {
             path,
             label,
@@ -373,7 +372,7 @@ impl Thumbnail {
     }
 
     /// Create a new pending thumbnail with placeholder (for visible items)
-    pub fn new_with_placeholder(path: PathBuf, label: String) -> Self {
+    pub fn new_with_placeholder(path: String, label: String) -> Self {
         let placeholder = LOADING_PLACEHOLDER.clone();
         Self {
             path,
@@ -463,7 +462,7 @@ impl Thumbnail {
 /// Result from the thumbnail loader thread
 pub struct ThumbnailResult {
     /// Path of the loaded file
-    pub path: PathBuf,
+    pub path: String,
     /// Loaded state
     pub state: ThumbnailState,
     /// SAUCE information (if available)

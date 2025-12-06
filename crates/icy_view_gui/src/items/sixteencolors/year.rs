@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane};
@@ -131,8 +129,8 @@ impl Item for SixteenColorsYear {
             .collect::<String>()
     }
 
-    fn get_file_path(&self) -> PathBuf {
-        self.year.to_string().into()
+    fn get_file_path(&self) -> String {
+        self.year.to_string()
     }
 
     fn is_container(&self) -> bool {

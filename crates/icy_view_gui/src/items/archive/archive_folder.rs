@@ -15,7 +15,7 @@ pub struct ArchiveFolder {
     /// Full path within the archive (e.g., "folder/subfolder")
     folder_path: String,
     /// Path to the archive file itself
-    archive_path: PathBuf,
+    archive_path: String,
     /// All files in the archive: path -> data
     all_files: HashMap<String, Vec<u8>>,
     /// All directories in the archive
@@ -23,7 +23,7 @@ pub struct ArchiveFolder {
 }
 
 impl ArchiveFolder {
-    pub fn new(folder_path: String, archive_path: PathBuf, all_files: HashMap<String, Vec<u8>>, all_directories: HashSet<String>) -> Self {
+    pub fn new(folder_path: String, archive_path: String, all_files: HashMap<String, Vec<u8>>, all_directories: HashSet<String>) -> Self {
         let name = folder_path.rsplit('/').next().unwrap_or(&folder_path).to_string();
         Self {
             name,
@@ -41,9 +41,9 @@ impl Item for ArchiveFolder {
         self.name.clone()
     }
 
-    fn get_file_path(&self) -> PathBuf {
+    fn get_file_path(&self) -> String {
         // Return just the folder name for navigation
-        PathBuf::from(&self.name)
+        self.name.clone()
     }
 
     fn is_container(&self) -> bool {

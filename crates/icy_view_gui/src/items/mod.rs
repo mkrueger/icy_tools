@@ -111,12 +111,15 @@ pub fn create_folder_placeholder() -> RgbaData {
 pub trait Item: Send + Sync {
     /// Display label (can be decorated, e.g. "2020 (32 Packs)")
     fn get_label(&self) -> String;
-    /// Navigable path segment (used for path construction)
-    fn get_file_path(&self) -> PathBuf;
 
-    /// Get the full filesystem path for this item (for thumbnail matching)
+    /// Navigable path segment (used for path construction in virtual filesystem)
+    /// Always uses forward slashes for consistency
+    fn get_file_path(&self) -> String;
+
+    /// Get the full path for this item (for thumbnail/sauce matching)
     /// Returns None for virtual items that don't have a filesystem path
-    fn get_full_path(&self) -> Option<PathBuf> {
+    /// Always uses forward slashes for consistency
+    fn get_full_path(&self) -> Option<String> {
         None
     }
 
@@ -155,7 +158,7 @@ pub trait Item: Send + Sync {
 
     /// Get the FileIcon for this item (for SVG rendering)
     fn get_file_icon(&self) -> FileIcon {
-        get_file_icon_for_path(&self.get_file_path())
+        get_file_icon_for_path(&PathBuf::from(&self.get_file_path()))
     }
 
     /// Get a thumbnail preview for this item (async)

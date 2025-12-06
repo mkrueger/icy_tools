@@ -270,8 +270,9 @@ impl Options {
     pub fn prepare_file_for_external(item: &dyn crate::Item) -> Option<PathBuf> {
         // Check if it's a local file with a real path
         if let Some(full_path) = item.get_full_path() {
-            if full_path.exists() {
-                return Some(full_path);
+            let path = PathBuf::from(full_path);
+            if path.exists() {
+                return Some(path);
             }
         }
 
@@ -279,7 +280,7 @@ impl Options {
         // For virtual files we need to clone the item to read data
         let item_clone = item.clone_box();
         let data = item_clone.read_data_blocking()?;
-        let file_name = item.get_file_path().file_name()?.to_string_lossy().to_string();
+        let file_name = PathBuf::from(&item.get_file_path()).file_name()?.to_string_lossy().to_string();
 
         // Create session-specific temp directory
         let temp_dir = std::env::temp_dir().join(format!("icy_view_{}", std::process::id()));

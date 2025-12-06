@@ -5,7 +5,6 @@
 //! Uses string interning for memory efficiency since author/group names are often repeated.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use log::debug;
@@ -53,7 +52,7 @@ impl SauceInfo {
 #[derive(Clone, Debug)]
 pub struct SauceResult {
     /// Path to identify the file
-    pub path: PathBuf,
+    pub path: String,
     /// The extracted SAUCE info (None if no SAUCE or loading failed)
     pub sauce: Option<SauceInfo>,
 }
@@ -69,9 +68,9 @@ pub struct SauceCache {
     /// String interner for deduplicating strings
     interner: SauceInterner,
     /// Cached SAUCE info (path -> InternedSauceInfo or None if no SAUCE)
-    cache: HashMap<PathBuf, Option<InternedSauceInfo>>,
+    cache: HashMap<String, Option<InternedSauceInfo>>,
     /// Paths that are currently being loaded
-    pending: std::collections::HashSet<PathBuf>,
+    pending: std::collections::HashSet<String>,
 }
 
 impl SauceCache {
@@ -94,7 +93,7 @@ impl SauceCache {
     }
 
     /// Get cached SAUCE info for a path and resolve to SauceInfo
-    pub fn get(&self, path: &PathBuf) -> Option<Option<SauceInfo>> {
+    pub fn get(&self, path: &String) -> Option<Option<SauceInfo>> {
         self.cache.get(path).map(|opt| {
             opt.map(|interned| SauceInfo {
                 title: interned.title.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
@@ -105,22 +104,22 @@ impl SauceCache {
     }
 
     /// Check if a path has cached SAUCE info (without resolving)
-    pub fn contains(&self, path: &PathBuf) -> bool {
+    pub fn contains(&self, path: &String) -> bool {
         self.cache.contains_key(path)
     }
 
     /// Check if a path is already being loaded
-    pub fn is_pending(&self, path: &PathBuf) -> bool {
+    pub fn is_pending(&self, path: &String) -> bool {
         self.pending.contains(path)
     }
 
     /// Mark a path as pending
-    pub fn mark_pending(&mut self, path: PathBuf) {
+    pub fn mark_pending(&mut self, path: String) {
         self.pending.insert(path);
     }
 
     /// Store SAUCE result and remove from pending
-    pub fn store(&mut self, path: PathBuf, sauce: Option<SauceInfo>) {
+    pub fn store(&mut self, path: String, sauce: Option<SauceInfo>) {
         self.pending.remove(&path);
         let interned = sauce.map(|info| InternedSauceInfo {
             title: self.intern_if_not_empty(&info.title),

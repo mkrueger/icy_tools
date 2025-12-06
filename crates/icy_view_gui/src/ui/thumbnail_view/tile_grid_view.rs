@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
@@ -143,7 +142,7 @@ pub enum TileGridMessage {
     /// Animation tick (for blinking)
     AnimationTick,
     /// Thumbnail loading completed
-    ThumbnailReady(PathBuf, ThumbnailState),
+    ThumbnailReady(String, ThumbnailState),
     /// Width changed (from responsive container)
     WidthChanged(f32),
     /// Scrollbar scroll event (from scrollbar overlay)
@@ -411,7 +410,7 @@ impl TileGridView {
     }
 
     /// Set the items to display using item info tuples (path, label, is_container)
-    pub fn set_items(&mut self, item_infos: Vec<(PathBuf, String, bool)>) {
+    pub fn set_items(&mut self, item_infos: Vec<(String, String, bool)>) {
         // Notify loader to cancel old tasks
         self.loader.cancel_loading();
 
@@ -442,7 +441,7 @@ impl TileGridView {
             };
 
             // For items with sync thumbnails (folders), load immediately to ensure correct layout
-            let mut thumb = Thumbnail::new(path, label.clone());
+            let mut thumb = Thumbnail::new(path.clone(), label.clone());
             if let Some(rgba) = item.get_sync_thumbnail() {
                 // Render label separately for GPU (don't embed in image)
                 thumb.label_rgba = render_label_tag(&label, 1);
@@ -855,11 +854,11 @@ impl TileGridView {
                 found
             } else {
                 // Fallback: match by filename only (in case paths differ slightly)
-                let result_filename = result.path.file_name();
+                let result_filename = &result.path;
                 self.thumbnails
                     .iter_mut()
                     .enumerate()
-                    .find(|(_, t)| t.path.file_name() == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
+                    .find(|(_, t)| &t.path == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
             };
 
             if let Some((idx, thumb)) = thumb_opt {
@@ -880,7 +879,7 @@ impl TileGridView {
                 thumb.label_rgba = result.label_rgba.clone();
                 // Track this thumbnail in LRU (it's now loaded)
                 self.mark_as_loaded(idx);
-                messages.push(TileGridMessage::ThumbnailReady(result.path, new_state));
+                messages.push(TileGridMessage::ThumbnailReady(result.path.clone(), new_state));
             }
         }
 
@@ -1280,12 +1279,12 @@ impl TileGridView {
     }
 
     /// Get selected thumbnail path
-    pub fn selected_path(&self) -> Option<&PathBuf> {
+    pub fn selected_path(&self) -> Option<&String> {
         self.selected_index.and_then(|i| self.thumbnails.get(i).map(|t| &t.path))
     }
 
     /// Get selected item's info (path, label, is_container)
-    pub fn get_selected_info(&self) -> Option<(PathBuf, String, bool)> {
+    pub fn get_selected_info(&self) -> Option<(String, String, bool)> {
         self.selected_index.and_then(|i| {
             let thumb = self.thumbnails.get(i)?;
             let is_container = *self.is_container.get(i)?;
@@ -1335,7 +1334,7 @@ impl TileGridView {
 
     /// Get status info for the hovered tile, or selected tile if nothing is hovered
     /// Returns (path, label, is_container, sauce_info)
-    pub fn get_status_info(&self) -> Option<(PathBuf, String, bool, Option<icy_sauce::SauceRecord>)> {
+    pub fn get_status_info(&self) -> Option<(String, String, bool, Option<icy_sauce::SauceRecord>)> {
         // First try hovered tile
         let index = self.get_hovered_index().or(self.selected_index)?;
 
@@ -1345,7 +1344,7 @@ impl TileGridView {
     }
 
     /// Get item info at index
-    pub fn get_item_info(&self, index: usize) -> Option<(PathBuf, String, bool)> {
+    pub fn get_item_info(&self, index: usize) -> Option<(String, String, bool)> {
         let thumb = self.thumbnails.get(index)?;
         let is_container = *self.is_container.get(index)?;
         Some((thumb.path.clone(), thumb.label.clone(), is_container))

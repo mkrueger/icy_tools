@@ -12,9 +12,10 @@ pub struct ItemFolder {
 }
 
 impl ItemFolder {
-    pub fn new(path: PathBuf) -> Self {
-        let label = get_file_name(&path).to_string();
-        Self { path, label }
+    pub fn new(path: String) -> Self {
+        let path_buf = PathBuf::from(&path);
+        let label = get_file_name(&path_buf).to_string();
+        Self { path: path_buf, label }
     }
 }
 
@@ -32,13 +33,13 @@ impl Item for ItemFolder {
         true
     }
 
-    fn get_file_path(&self) -> PathBuf {
+    fn get_file_path(&self) -> String {
         // Return just the folder name for navigation
-        PathBuf::from(&self.label)
+        self.label.clone()
     }
 
-    fn get_full_path(&self) -> Option<PathBuf> {
-        Some(self.path.clone())
+    fn get_full_path(&self) -> Option<String> {
+        Some(self.path.to_string_lossy().replace('\\', "/"))
     }
 
     fn get_sync_thumbnail(&self) -> Option<RgbaData> {

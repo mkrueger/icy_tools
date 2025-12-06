@@ -92,7 +92,11 @@ pub fn is_directory(path: &str) -> bool {
 
 /// Get the parent path
 /// Works for both filesystem paths and paths inside archives
+/// Always returns paths with forward slashes for consistency
 pub fn get_parent_path(path: &str) -> Option<String> {
     let path_buf = PathBuf::from(path);
-    path_buf.parent().map(|p| p.to_string_lossy().to_string())
+    path_buf.parent().map(|p| {
+        // Normalize to forward slashes for consistent cross-platform navigation
+        p.to_string_lossy().replace('\\', "/")
+    })
 }

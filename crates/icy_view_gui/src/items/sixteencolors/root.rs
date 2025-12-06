@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
@@ -23,8 +21,8 @@ impl Item for SixteenColorsRoot {
         "16colo.rs".to_string()
     }
 
-    fn get_file_path(&self) -> PathBuf {
-        PathBuf::new() // Empty path for root
+    fn get_file_path(&self) -> String {
+        String::new() // Empty path for root
     }
 
     fn is_container(&self) -> bool {

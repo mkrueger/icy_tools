@@ -38,8 +38,10 @@ impl ArchiveContainer {
                 }
 
                 let name = entry.name();
+                // Normalize to forward slashes
+                let name = name.replace('\\', "/");
                 // Check if it's FILE_ID.DIZ at root level
-                let file_name = name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(name);
+                let file_name = name.rsplit('/').next().unwrap_or(&name);
                 if file_name.eq_ignore_ascii_case("file_id.ans") {
                     if let Ok(data) = archive.read(&entry) {
                         return render_diz_to_thumbnail(&data);
@@ -65,7 +67,7 @@ impl Item for ArchiveContainer {
         self.item.get_label()
     }
 
-    fn get_file_path(&self) -> PathBuf {
+    fn get_file_path(&self) -> String {
         self.item.get_file_path()
     }
 

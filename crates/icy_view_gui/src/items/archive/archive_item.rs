@@ -25,9 +25,12 @@ impl Item for ArchiveItem {
             .unwrap_or_else(|| self.path.to_string_lossy().to_string())
     }
 
-    fn get_file_path(&self) -> PathBuf {
+    fn get_file_path(&self) -> String {
         // Return just the filename for navigation
-        self.path.file_name().map(|n| PathBuf::from(n)).unwrap_or_else(|| self.path.clone())
+        self.path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.path.to_string_lossy().to_string())
     }
 
     async fn read_data(&self) -> Option<Vec<u8>> {

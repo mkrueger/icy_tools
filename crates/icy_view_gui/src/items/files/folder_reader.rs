@@ -33,14 +33,17 @@ pub fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
             };
 
             if file_type.is_dir() {
-                directories.push(Box::new(ItemFolder::new(path)));
+                directories.push(Box::new(ItemFolder::new(path.to_string_lossy().replace('\\', "/"))));
             } else if file_type.is_file() {
                 // Only handle regular files (not sockets, devices, pipes, etc.)
                 // Use from_path which extracts the extension properly
                 if let Some(FileFormat::Archive(format)) = FileFormat::from_path(&path) {
-                    files.push(Box::new(ArchiveContainer::new(Box::new(ItemFile::new(path)), format)));
+                    files.push(Box::new(ArchiveContainer::new(
+                        Box::new(ItemFile::new(path.to_string_lossy().replace('\\', "/"))),
+                        format,
+                    )));
                 } else {
-                    files.push(Box::new(ItemFile::new(path)));
+                    files.push(Box::new(ItemFile::new(path.to_string_lossy().replace('\\', "/"))));
                 }
             }
             // Skip symlinks, sockets, pipes, devices, etc.
@@ -53,7 +56,7 @@ pub fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
             let drives = get_drives();
             let mut infos: Vec<Box<dyn Item>> = Vec::with_capacity(drives.len() + directories.len());
             for drive in drives {
-                infos.push(Box::new(ItemFolder::new(drive)));
+                infos.push(Box::new(ItemFolder::new(drive.to_string_lossy().replace('\\', "/"))));
             }
             infos.append(&mut directories);
             directories = infos;
@@ -209,7 +212,12 @@ fn read_archive_folder(archive_path: &Path, internal_path: &str, format: Archive
             format!("{}/{}", normalized_path, dir_name)
         };
 
-        let folder = ArchiveFolder::new(full_internal_path, archive_path.to_path_buf(), all_files.clone(), directories.clone());
+        let folder = ArchiveFolder::new(
+            full_internal_path,
+            archive_path.to_string_lossy().replace('\\', "/"),
+            all_files.clone(),
+            directories.clone(),
+        );
         items.push(Box::new(folder));
     }
 

@@ -13,12 +13,18 @@ pub struct ItemFile {
 }
 
 impl ItemFile {
-    pub fn new(path: PathBuf) -> Self {
-        let label = get_file_name(&path).to_string();
-        let metadata = std::fs::metadata(&path).ok();
+    pub fn new(path: String) -> Self {
+        let path_buf = PathBuf::from(&path);
+        let label = get_file_name(&path_buf).to_string();
+        let metadata = std::fs::metadata(&path_buf).ok();
         let size = metadata.as_ref().and_then(|m| Some(m.len()));
         let modified = metadata.as_ref().and_then(|m| m.modified().ok());
-        Self { path, label, size, modified }
+        Self {
+            path: path_buf,
+            label,
+            size,
+            modified,
+        }
     }
 }
 
@@ -28,13 +34,13 @@ impl Item for ItemFile {
         self.label.clone()
     }
 
-    fn get_file_path(&self) -> PathBuf {
+    fn get_file_path(&self) -> String {
         // Return just the filename for navigation
-        PathBuf::from(&self.label)
+        self.label.clone()
     }
 
-    fn get_full_path(&self) -> Option<PathBuf> {
-        Some(self.path.clone())
+    fn get_full_path(&self) -> Option<String> {
+        Some(self.path.to_string_lossy().replace('\\', "/"))
     }
 
     fn get_size(&self) -> Option<u64> {

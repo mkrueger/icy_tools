@@ -93,7 +93,7 @@ impl FileBrowser {
         };
         let path = path; // Now path is the directory to navigate to
 
-        let nav_point = NavPoint::file(path.to_string_lossy().to_string());
+        let nav_point = NavPoint::file(path.to_string_lossy().replace('\\', "/"));
 
         // Build file list (no parent item - use toolbar for navigation)
         let mut files: Vec<Box<dyn Item>> = Vec::new();
@@ -186,13 +186,12 @@ impl FileBrowser {
 
         if is_container {
             // Navigate into folder (works for both regular folders and ZIPs)
-            let file_path_str = file_path.to_string_lossy();
             let new_path = if self.nav_point.path.is_empty() {
                 // At root, just use the item path
-                file_path_str.to_string()
+                file_path
             } else {
                 // Append to current path
-                format!("{}/{}", self.nav_point.path, file_path_str)
+                format!("{}/{}", self.nav_point.path, file_path)
             };
             self.nav_point.navigate_to(new_path);
             self.refresh();
@@ -328,7 +327,7 @@ impl FileBrowser {
 
     /// Navigate to a specific filesystem path
     pub fn navigate_to(&mut self, path: PathBuf) {
-        self.nav_point = NavPoint::file(path.to_string_lossy().to_string());
+        self.nav_point = NavPoint::file(path.to_string_lossy().replace('\\', "/"));
         self.refresh();
     }
 
@@ -371,10 +370,11 @@ impl FileBrowser {
     /// Select an item by its path
     /// Returns true if the item was found and selected
     pub fn select_by_path(&mut self, path: &PathBuf) -> bool {
+        let path_str = path.to_string_lossy().replace('\\', "/");
         // Find the visible index for this path
         for (visible_idx, &file_idx) in self.visible_indices.iter().enumerate() {
             if let Some(item) = self.files.get(file_idx) {
-                if &item.get_file_path() == path {
+                if item.get_file_path() == path_str {
                     self.list_view.selected_index = Some(visible_idx);
                     self.list_view.ensure_selected_visible();
                     return true;

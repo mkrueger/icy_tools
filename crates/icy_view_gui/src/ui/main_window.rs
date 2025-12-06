@@ -94,9 +94,9 @@ pub enum Message {
     /// Focus previous widget (Shift+Tab)
     FocusPrevious,
     /// Data was loaded for preview (path for display, data for content)
-    DataLoaded(PathBuf, Vec<u8>),
+    DataLoaded(String, Vec<u8>),
     /// Data loading failed for preview
-    DataLoadError(PathBuf, String),
+    DataLoadError(String, String),
     /// Animation tick for smooth scrolling
     AnimationTick,
     /// SAUCE dialog messages
@@ -160,7 +160,7 @@ pub struct MainWindow {
     /// Fullscreen mode
     pub fullscreen: bool,
     /// Currently loaded file for preview
-    pub current_file: Option<PathBuf>,
+    pub current_file: Option<String>,
     /// Preview view for ANSI files
     pub preview: PreviewView,
     /// Tile grid view for thumbnail preview
@@ -168,7 +168,7 @@ pub struct MainWindow {
     /// Folder preview tile grid (for list mode when folder is selected)
     pub folder_preview: TileGridView,
     /// Path of the folder being previewed (None means show file preview)
-    pub folder_preview_path: Option<PathBuf>,
+    pub folder_preview_path: Option<String>,
     /// Last animation tick time for delta calculation
     last_tick: Instant,
     /// SAUCE dialog (shown as modal when Some)
@@ -236,9 +236,9 @@ impl MainWindow {
         }
 
         let mut navigation_bar: NavigationBar = NavigationBar::new();
-        // Initialize path input with current path
+        // Initialize path input with current path (normalized to forward slashes)
         if let Some(path) = file_browser.current_path() {
-            navigation_bar.set_path_input(path.to_string_lossy().to_string());
+            navigation_bar.set_path_input(path.to_string_lossy().replace('\\', "/"));
         }
 
         let mut file_list_toolbar = FileListToolbar::new();
@@ -262,9 +262,10 @@ impl MainWindow {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| DEFAULT_TITLE.clone());
-            // Read the file data and create a DataLoaded message
-            let msg = std::fs::read(file_path).ok().map(|data| Message::DataLoaded(file_path.clone(), data));
-            (Some(file_path.clone()), title, msg)
+            // Read the file data and create a DataLoaded message (convert PathBuf to String)
+            let file_path_str = file_path.to_string_lossy().replace('\\', "/");
+            let msg = std::fs::read(file_path).ok().map(|data| Message::DataLoaded(file_path_str.clone(), data));
+            (Some(file_path_str), title, msg)
         } else {
             (None, DEFAULT_TITLE.clone(), None)
         };
@@ -370,7 +371,7 @@ impl MainWindow {
                             self.current_file = None;
                             // Build full path by combining browser's current path with the relative item path
                             let full_path = if let Some(current) = self.file_browser.current_path() {
-                                current.join(&new_selection)
+                                format!("{}/{}", current.to_string_lossy().replace('\\', "/"), new_selection.replace('\\', "/"))
                             } else {
                                 new_selection.clone()
                             };
@@ -385,15 +386,13 @@ impl MainWindow {
                             self.folder_preview_path = None;
                             // Build full path by combining browser's current path with the relative item path
                             let full_path = if let Some(current) = self.file_browser.current_path() {
-                                current.join(&new_selection)
+                                format!("{}/{}", current.to_string_lossy().replace('\\', "/"), new_selection.replace('\\', "/"))
                             } else {
                                 new_selection.clone()
                             };
                             self.current_file = Some(full_path.clone());
-                            self.title = new_selection
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                            // Extract filename from path
+                            self.title = new_selection.split('/').last().map(|s| s.to_string()).unwrap_or_else(|| DEFAULT_TITLE.clone());
 
                             // Read the data from the item (works for both local and virtual files)
                             if let Some(item_mut) = self.file_browser.selected_item_mut() {
@@ -481,7 +480,7 @@ impl MainWindow {
                                 .map(|d| d.home_dir().to_path_buf())
                                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
                             self.file_browser.navigate_to(home.clone());
-                            self.navigation_bar.set_path_input(home.to_string_lossy().to_string());
+                            self.navigation_bar.set_path_input(home.to_string_lossy().replace('\\', "/"));
                         }
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
@@ -543,7 +542,7 @@ impl MainWindow {
                                     // Scenario 1: Directory - navigate to it
                                     self.navigation_bar.set_16colors_mode(false);
                                     self.file_browser.navigate_to(path.clone());
-                                    self.navigation_bar.set_path_input(path.to_string_lossy().to_string());
+                                    self.navigation_bar.set_path_input(path.to_string_lossy().replace('\\', "/"));
                                     let point = self.current_history_point();
                                     self.history.navigate_to(point);
                                 } else if path.is_file() {
@@ -552,7 +551,7 @@ impl MainWindow {
                                         // Scenario 2: Archive - treat as directory, navigate into it
                                         self.navigation_bar.set_16colors_mode(false);
                                         self.file_browser.navigate_to(path.clone());
-                                        self.navigation_bar.set_path_input(path.to_string_lossy().to_string());
+                                        self.navigation_bar.set_path_input(path.to_string_lossy().replace('\\', "/"));
                                         let point = self.current_history_point();
                                         self.history.navigate_to(point);
                                     } else {
@@ -560,7 +559,7 @@ impl MainWindow {
                                         if let Some(parent) = path.parent() {
                                             self.navigation_bar.set_16colors_mode(false);
                                             self.file_browser.navigate_to(parent.to_path_buf());
-                                            self.navigation_bar.set_path_input(parent.to_string_lossy().to_string());
+                                            self.navigation_bar.set_path_input(parent.to_string_lossy().replace('\\', "/"));
 
                                             // Select the file by its name
                                             if let Some(file_name) = path.file_name() {
@@ -568,14 +567,15 @@ impl MainWindow {
                                             }
 
                                             // Load preview for the selected file
-                                            self.current_file = Some(path.clone());
+                                            let path_str = path.to_string_lossy().replace('\\', "/");
+                                            self.current_file = Some(path_str.clone());
                                             self.title = path
                                                 .file_name()
                                                 .map(|n| n.to_string_lossy().to_string())
                                                 .unwrap_or_else(|| DEFAULT_TITLE.clone());
                                             match std::fs::read(&path) {
                                                 Ok(data) => {
-                                                    return Task::done(Message::DataLoaded(path, data));
+                                                    return Task::done(Message::DataLoaded(path_str, data));
                                                 }
                                                 Err(e) => {
                                                     log::error!("Failed to read file {:?}: {}", path, e);
@@ -628,21 +628,20 @@ impl MainWindow {
                         }
 
                         // Select the item and load preview
-                        if let Some((path, _label, is_container)) = self.tile_grid.get_selected_info() {
+                        if let Some((path_buf, _label, is_container)) = self.tile_grid.get_selected_info() {
                             if !is_container {
+                                // path_buf is already a String
+                                let path = path_buf.replace('\\', "/");
                                 self.current_file = Some(path.clone());
-                                self.title = path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                self.title = path_buf.split('/').last().unwrap_or(&path_buf).to_string();
 
-                                // Read data for preview from file
-                                match std::fs::read(&path) {
+                                // Read data for preview from file (use PathBuf for fs operation)
+                                match std::fs::read(&path_buf) {
                                     Ok(data) => {
                                         return Task::done(Message::DataLoaded(path, data));
                                     }
                                     Err(e) => {
-                                        log::error!("Failed to read file {:?}: {}", path, e);
+                                        log::error!("Failed to read file {:?}: {}", path_buf, e);
                                     }
                                 }
                             }
@@ -657,9 +656,9 @@ impl MainWindow {
                                     // For 16colors, construct web path
                                     let current_path = self.file_browser.nav_point().path.clone();
                                     let new_path = if current_path.is_empty() {
-                                        item_path.to_string_lossy().to_string()
+                                        item_path.clone()
                                     } else {
-                                        format!("{}/{}", current_path, item_path.to_string_lossy())
+                                        format!("{}/{}", current_path, item_path)
                                     };
                                     self.file_browser.navigate_to_web_path(&new_path);
                                     // Update navigation bar with display path (includes leading /)
@@ -667,10 +666,11 @@ impl MainWindow {
                                 } else {
                                     // Build full path from current browser path + item name
                                     let current_path = self.file_browser.get_display_path();
-                                    let full_path = PathBuf::from(&current_path).join(&item_path);
-                                    self.file_browser.navigate_to(full_path.clone());
-                                    // Update navigation bar
-                                    self.navigation_bar.set_path_input(full_path.to_string_lossy().to_string());
+                                    let item_path_str = item_path.replace('\\', "/");
+                                    let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
+                                    self.file_browser.navigate_to(PathBuf::from(&full_path));
+                                    // Update navigation bar with normalized forward slashes
+                                    self.navigation_bar.set_path_input(full_path);
                                 }
                                 // Refresh tile grid with new items
                                 let items = self.file_browser.get_items();
@@ -683,22 +683,20 @@ impl MainWindow {
                                 self.set_view_mode(ViewMode::List);
                                 // Build full path for the file
                                 let current_path = self.file_browser.get_display_path();
-                                let full_path = PathBuf::from(&current_path).join(&item_path);
+                                let item_path_str = item_path.replace('\\', "/");
+                                let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
                                 // Select the item in the file browser
-                                self.file_browser.select_by_path(&item_path);
+                                self.file_browser.select_by_path(&PathBuf::from(&item_path));
                                 // Load preview
                                 self.current_file = Some(full_path.clone());
-                                self.title = item_path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
                                 // Read data - prefer using Item for virtual files, fall back to fs::read
                                 if let Some(item) = self.tile_grid.get_item_at(*index) {
                                     if let Some(data) = item.read_data_blocking() {
-                                        return Task::done(Message::DataLoaded(full_path, data));
+                                        return Task::done(Message::DataLoaded(full_path.clone(), data));
                                     }
                                 }
-                                match std::fs::read(&full_path) {
+                                match std::fs::read(PathBuf::from(&full_path)) {
                                     Ok(data) => {
                                         return Task::done(Message::DataLoaded(full_path, data));
                                     }
@@ -722,9 +720,9 @@ impl MainWindow {
                                         // For 16colors, construct web path
                                         let current_path = self.file_browser.nav_point().path.clone();
                                         let new_path = if current_path.is_empty() {
-                                            item_path.to_string_lossy().to_string()
+                                            item_path.clone()
                                         } else {
-                                            format!("{}/{}", current_path, item_path.to_string_lossy())
+                                            format!("{}/{}", current_path, item_path)
                                         };
                                         self.file_browser.navigate_to_web_path(&new_path);
                                         // Update navigation bar with display path (includes leading /)
@@ -732,10 +730,11 @@ impl MainWindow {
                                     } else {
                                         // Build full path from current browser path + item name
                                         let current_path = self.file_browser.get_display_path();
-                                        let full_path = PathBuf::from(&current_path).join(&item_path);
-                                        self.file_browser.navigate_to(full_path.clone());
-                                        // Update navigation bar
-                                        self.navigation_bar.set_path_input(full_path.to_string_lossy().to_string());
+                                        let item_path_str = item_path.replace('\\', "/");
+                                        let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
+                                        self.file_browser.navigate_to(PathBuf::from(&full_path));
+                                        // Update navigation bar with normalized forward slashes
+                                        self.navigation_bar.set_path_input(full_path);
                                     }
                                     // Refresh tile grid with new items
                                     let items = self.file_browser.get_items();
@@ -748,28 +747,26 @@ impl MainWindow {
                                     self.set_view_mode(ViewMode::List);
                                     // Build full path for the file
                                     let current_path = self.file_browser.get_display_path();
-                                    let full_path = PathBuf::from(&current_path).join(&item_path);
+                                    let item_path_str = item_path.replace('\\', "/");
+                                    let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
                                     // Select the item in the file browser
-                                    self.file_browser.select_by_path(&item_path);
+                                    self.file_browser.select_by_path(&PathBuf::from(&item_path));
                                     // Load preview
                                     self.current_file = Some(full_path.clone());
-                                    self.title = item_path
-                                        .file_name()
-                                        .map(|n| n.to_string_lossy().to_string())
-                                        .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                    self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
                                     // Read data - prefer using Item for virtual files, fall back to fs::read
                                     if let Some(item) = self.tile_grid.get_selected_item() {
                                         if let Some(data) = item.read_data_blocking() {
-                                            return Task::done(Message::DataLoaded(full_path, data));
+                                            return Task::done(Message::DataLoaded(full_path.clone(), data));
                                         }
                                     }
-                                    match std::fs::read(&full_path) {
+                                    match std::fs::read(PathBuf::from(&full_path)) {
                                         Ok(data) => {
                                             return Task::done(Message::DataLoaded(full_path, data));
                                         }
                                         Err(e) => {
                                             return Task::done(Message::DataLoadError(
-                                                full_path,
+                                                full_path.clone(),
                                                 fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
                                             ));
                                         }
@@ -836,13 +833,13 @@ impl MainWindow {
                     }
                 }
 
-                // Load data in preview
-                self.preview.load_data(path, data).map(Message::Preview)
+                // Load data in preview (convert String path to PathBuf for preview API)
+                self.preview.load_data(PathBuf::from(path), data).map(Message::Preview)
             }
             Message::DataLoadError(path, message) => {
                 // Set preview to error state
                 log::error!("Failed to load file {:?}: {}", path, message);
-                self.preview.set_error(path, message);
+                self.preview.set_error(PathBuf::from(path), message);
                 Task::none()
             }
             Message::Preview(msg) => {
@@ -1027,20 +1024,21 @@ impl MainWindow {
                         // Only update preview for non-container items (files)
                         if !is_container {
                             if let Some(ref preview_folder) = self.folder_preview_path {
-                                let full_path = preview_folder.join(&item_path);
+                                let item_path_str = item_path.replace('\\', "/");
+                                let full_path = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
                                 self.current_file = Some(full_path.clone());
                                 self.title = label;
 
                                 // Load preview data
                                 if let Some(item) = self.folder_preview.get_item_at(*index) {
                                     if let Some(data) = item.read_data_blocking() {
-                                        return Task::done(Message::DataLoaded(full_path, data));
+                                        return Task::done(Message::DataLoaded(full_path.clone(), data));
                                     }
                                 }
                                 // Fallback to filesystem read
-                                match std::fs::read(&full_path) {
+                                match std::fs::read(PathBuf::from(&full_path)) {
                                     Ok(data) => {
-                                        return Task::done(Message::DataLoaded(full_path, data));
+                                        return Task::done(Message::DataLoaded(full_path.clone(), data));
                                     }
                                     Err(e) => {
                                         return Task::done(Message::DataLoadError(
@@ -1068,10 +1066,10 @@ impl MainWindow {
                             if let Some(preview_folder) = self.folder_preview_path.take() {
                                 if is_web_mode {
                                     // For web mode, use path string without PathBuf operations
-                                    let preview_path_str = preview_folder.to_string_lossy();
-                                    let item_path_str = item_path.to_string_lossy();
+                                    let preview_path_str = &preview_folder;
+                                    let item_path_str = item_path.replace('\\', "/");
 
-                                    self.file_browser.navigate_to_web_path(&preview_path_str);
+                                    self.file_browser.navigate_to_web_path(preview_path_str);
                                     self.navigation_bar.set_path_input(self.file_browser.get_display_path());
 
                                     // Construct path for item
@@ -1087,57 +1085,54 @@ impl MainWindow {
                                         self.history.navigate_to(point);
                                     } else {
                                         // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&item_path);
-                                        self.current_file = Some(preview_folder.join(&item_path));
-                                        self.title = item_path
-                                            .file_name()
-                                            .map(|n| n.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
+                                        let item_path_str = item_path.replace('\\', "/");
+                                        let full_path = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
+                                        self.current_file = Some(full_path.clone());
+                                        self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
                                         // Read data from the item we captured before navigation
                                         if let Some(item) = item_for_data {
                                             if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(preview_folder.join(&item_path), data));
+                                                return Task::done(Message::DataLoaded(full_path, data));
                                             }
                                         }
                                     }
                                 } else {
                                     // File mode - use PathBuf operations
-                                    self.file_browser.navigate_to(preview_folder.clone());
-                                    self.navigation_bar.set_path_input(preview_folder.to_string_lossy().to_string());
+                                    self.file_browser.navigate_to(PathBuf::from(&preview_folder));
+                                    self.navigation_bar.set_path_input(preview_folder.clone());
 
                                     // Now construct full path for the item inside the previewed folder
-                                    let full_path = preview_folder.join(&item_path);
+                                    let item_path_str = item_path.replace('\\', "/");
+                                    let full_path_str = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
 
                                     if is_container {
                                         // Navigate into the subfolder and select first item
-                                        self.file_browser.navigate_to(full_path.clone());
-                                        self.navigation_bar.set_path_input(full_path.to_string_lossy().to_string());
+                                        self.file_browser.navigate_to(PathBuf::from(&full_path_str));
+                                        self.navigation_bar.set_path_input(full_path_str);
                                         self.file_browser.list_view.selected_index = Some(0);
                                         // Record navigation
                                         let point = self.current_history_point();
                                         self.history.navigate_to(point);
                                     } else {
                                         // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&item_path);
-                                        self.current_file = Some(full_path.clone());
-                                        self.title = item_path
-                                            .file_name()
-                                            .map(|n| n.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
+                                        self.current_file = Some(full_path_str.clone());
+                                        self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
                                         // Read data from the item we captured before navigation
                                         if let Some(item) = item_for_data {
                                             if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(full_path, data));
+                                                return Task::done(Message::DataLoaded(full_path_str, data));
                                             }
                                         }
                                         // Fallback to filesystem read
-                                        match std::fs::read(&full_path) {
+                                        match std::fs::read(PathBuf::from(&full_path_str)) {
                                             Ok(data) => {
-                                                return Task::done(Message::DataLoaded(full_path, data));
+                                                return Task::done(Message::DataLoaded(full_path_str.clone(), data));
                                             }
                                             Err(e) => {
                                                 return Task::done(Message::DataLoadError(
-                                                    full_path,
+                                                    full_path_str,
                                                     fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
                                                 ));
                                             }
@@ -1159,8 +1154,8 @@ impl MainWindow {
                             if let Some(preview_folder) = self.folder_preview_path.take() {
                                 if is_web_mode {
                                     // For web mode, use path string without PathBuf operations
-                                    let preview_path_str = preview_folder.to_string_lossy();
-                                    let item_path_str = item_path.to_string_lossy();
+                                    let preview_path_str = preview_folder;
+                                    let item_path_str = item_path.clone();
 
                                     self.file_browser.navigate_to_web_path(&preview_path_str);
                                     self.navigation_bar.set_path_input(self.file_browser.get_display_path());
@@ -1178,43 +1173,37 @@ impl MainWindow {
                                         self.history.navigate_to(point);
                                     } else {
                                         // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&item_path);
-                                        self.current_file = Some(preview_folder.join(&item_path));
-                                        self.title = item_path
-                                            .file_name()
-                                            .map(|n| n.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
+                                        self.current_file = Some(format!("{}/{}", preview_path_str, item_path_str));
+                                        self.title = item_path_str.split('/').last().unwrap_or(&item_path_str).to_string();
                                         // Read data from the item we captured before navigation
                                         if let Some(item) = item_for_data {
                                             if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(preview_folder.join(&item_path), data));
+                                                return Task::done(Message::DataLoaded(format!("{}/{}", preview_path_str, item_path_str), data));
                                             }
                                         }
                                     }
                                 } else {
                                     // File mode - use PathBuf operations
-                                    self.file_browser.navigate_to(preview_folder.clone());
-                                    self.navigation_bar.set_path_input(preview_folder.to_string_lossy().to_string());
+                                    self.file_browser.navigate_to(PathBuf::from(&preview_folder));
+                                    self.navigation_bar.set_path_input(preview_folder.clone());
 
                                     // Now construct full path for the item inside the previewed folder
-                                    let full_path = preview_folder.join(&item_path);
+                                    let full_path = format!("{}/{}", preview_folder, &item_path);
 
                                     if is_container {
                                         // Navigate into the subfolder and select first item
-                                        self.file_browser.navigate_to(full_path.clone());
-                                        self.navigation_bar.set_path_input(full_path.to_string_lossy().to_string());
+                                        self.file_browser.navigate_to(PathBuf::from(&full_path));
+                                        self.navigation_bar.set_path_input(full_path.clone());
                                         self.file_browser.list_view.selected_index = Some(0);
                                         // Record navigation
                                         let point = self.current_history_point();
                                         self.history.navigate_to(point);
                                     } else {
                                         // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&item_path);
+                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
                                         self.current_file = Some(full_path.clone());
-                                        self.title = item_path
-                                            .file_name()
-                                            .map(|n| n.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                        self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
                                         // Read data from the item we captured before navigation
                                         if let Some(item) = item_for_data {
                                             if let Some(data) = item.read_data_blocking() {
@@ -1379,7 +1368,7 @@ impl MainWindow {
                                 // For folders, show thumbnail preview
                                 self.current_file = None;
                                 let full_path = if let Some(current) = self.file_browser.current_path() {
-                                    current.join(&item_path)
+                                    format!("{}/{}", current.to_string_lossy().replace('\\', "/"), item_path.replace('\\', "/"))
                                 } else {
                                     item_path.clone()
                                 };
@@ -1389,15 +1378,12 @@ impl MainWindow {
                                 // For files, show file preview
                                 self.folder_preview_path = None;
                                 let full_path = if let Some(current) = self.file_browser.current_path() {
-                                    current.join(&item_path)
+                                    format!("{}/{}", current.to_string_lossy().replace('\\', "/"), item_path.replace('\\', "/"))
                                 } else {
                                     item_path.clone()
                                 };
                                 self.current_file = Some(full_path.clone());
-                                self.title = item_path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| DEFAULT_TITLE.clone());
+                                self.title = item_path.split('/').last().map(|s| s.to_string()).unwrap_or_else(|| DEFAULT_TITLE.clone());
 
                                 // Read and load data
                                 if let Some(item_mut) = self.file_browser.selected_item_mut() {
@@ -1608,7 +1594,7 @@ impl MainWindow {
                     let export_dir = self.options.lock().export_path();
 
                     // Get just the filename from the current file (without extension)
-                    let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("export").to_string();
+                    let file_name = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("export").to_string();
 
                     // Combine export directory with filename
                     let export_path = export_dir.join(&file_name);
@@ -1702,7 +1688,7 @@ impl MainWindow {
         for (i, item) in self.file_browser.files.iter().enumerate() {
             if !item.is_container() && !item.is_parent() {
                 // Check if it's a supported file format
-                if let Some(format) = FileFormat::from_path(&item.get_file_path()) {
+                if let Some(format) = FileFormat::from_path(&PathBuf::from(&item.get_file_path())) {
                     if format.is_supported() || format.is_image() {
                         indices.push(i);
                     }
@@ -1722,7 +1708,9 @@ impl MainWindow {
         // Check if we have preloaded data for this index
         if let Some(preloaded) = self.shuffle_mode.take_preloaded_if_matches(index) {
             log::debug!("Using preloaded data for shuffle item {}", index);
-            self.current_file = Some(preloaded.path.clone());
+            // Convert PathBuf to String
+            let path_str = preloaded.path.to_string_lossy().replace('\\', "/").to_string();
+            self.current_file = Some(path_str.clone());
 
             // Extract SAUCE info for overlay
             if let Some(sauce) = icy_sauce::SauceRecord::from_bytes(&preloaded.data).ok().flatten() {
@@ -1738,15 +1726,15 @@ impl MainWindow {
             // Start preloading the next item
             self.start_shuffle_preload();
 
-            return Task::done(Message::DataLoaded(preloaded.path, preloaded.data));
+            return Task::done(Message::DataLoaded(path_str, preloaded.data));
         }
 
         // Get the item
         let item = &self.file_browser.files[index];
         let path = if let Some(current) = self.file_browser.current_path() {
-            current.join(item.get_file_path())
+            format!("{}/{}", current.to_string_lossy().replace('\\', "/"), item.get_file_path().replace('\\', "/"))
         } else {
-            item.get_file_path()
+            item.get_file_path().replace('\\', "/")
         };
 
         self.current_file = Some(path.clone());
@@ -1798,9 +1786,9 @@ impl MainWindow {
         // Get item info for the background task
         let item = self.file_browser.files[next_index].clone_box();
         let path = if let Some(current) = self.file_browser.current_path() {
-            current.join(item.get_file_path())
+            format!("{}/{}", current.to_string_lossy().replace('\\', "/"), item.get_file_path().replace('\\', "/"))
         } else {
-            item.get_file_path()
+            item.get_file_path().replace('\\', "/")
         };
 
         // Create channel and cancellation token
@@ -1823,7 +1811,7 @@ impl MainWindow {
                     item.read_data_blocking().map(|data| {
                         super::PreloadedItem {
                             index: preload_index,
-                            path,
+                            path: PathBuf::from(&path),
                             data,
                         }
                     })
@@ -2103,11 +2091,7 @@ impl MainWindow {
         if view_mode == ViewMode::Tiles {
             // Use get_status_info which prefers hovered tile over selected
             if let Some((path, _label, is_container, sauce_info)) = self.tile_grid.get_status_info() {
-                info.file_name = Some(
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| path.to_string_lossy().to_string()),
-                );
+                info.file_name = Some(path.split('/').last().unwrap_or(&path).to_string());
                 // Try to get file size - for local files
                 let file_size = std::fs::metadata(&path).ok().map(|m| m.len());
                 info.file_size = file_size;
@@ -2116,7 +2100,7 @@ impl MainWindow {
 
                 // Check if it's an archive
                 if is_container {
-                    if let Some(FileFormat::Archive(archive_format)) = FileFormat::from_path(&path) {
+                    if let Some(FileFormat::Archive(archive_format)) = FileFormat::from_path(&PathBuf::from(&path)) {
                         let archive_name = FileFormat::Archive(archive_format).name().to_string();
                         if let Some(size) = file_size {
                             info.archive_info = Some((archive_name, size));
@@ -2128,11 +2112,7 @@ impl MainWindow {
             // In list mode with folder preview, use folder_preview like tile mode
             // This shows hovered item, or selected item if nothing is hovered
             if let Some((path, _label, is_container, sauce_info)) = self.folder_preview.get_status_info() {
-                info.file_name = Some(
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| path.to_string_lossy().to_string()),
-                );
+                info.file_name = Some(path.split('/').last().unwrap_or(&path).to_string());
                 let file_size = std::fs::metadata(&path).ok().map(|m| m.len());
                 info.file_size = file_size;
                 info.sauce_info = sauce_info;
@@ -2140,7 +2120,7 @@ impl MainWindow {
 
                 // Check if it's an archive
                 if is_container {
-                    if let Some(FileFormat::Archive(archive_format)) = FileFormat::from_path(&path) {
+                    if let Some(FileFormat::Archive(archive_format)) = FileFormat::from_path(&PathBuf::from(&path)) {
                         let archive_name = FileFormat::Archive(archive_format).name().to_string();
                         if let Some(size) = file_size {
                             info.archive_info = Some((archive_name, size));
@@ -2154,12 +2134,11 @@ impl MainWindow {
 
             if let Some(item) = self.file_browser.selected_item() {
                 let path = item.get_file_path();
-                info.file_name = Some(
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| path.to_string_lossy().to_string()),
-                );
-                info.file_size = std::fs::metadata(&path).ok().map(|m| m.len());
+                info.file_name = Some(path.split('/').last().map(|s| s.to_string()).unwrap_or_else(|| path.clone()));
+                // Try to get file size from the actual filesystem path if it exists
+                if let Some(full_path) = item.get_full_path() {
+                    info.file_size = std::fs::metadata(&full_path).ok().map(|m| m.len());
+                }
                 info.selected_count = 1;
             }
         }

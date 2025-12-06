@@ -276,7 +276,7 @@ pub trait OutputFormat: Send + Sync {
     /// This function will return an error if .
     fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::TextBuffer>;
 }
-
+ 
 lazy_static::lazy_static! {
     pub static ref FORMATS: [Box<dyn OutputFormat>; 14] = [
         Box::<ansi::Ansi>::default(),

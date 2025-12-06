@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
 use icy_engine::formats::FileFormat;
 use icy_engine_gui::ui::FileIcon;
@@ -30,8 +28,8 @@ impl Item for SixteenColorsPack {
         self.name.clone()
     }
 
-    fn get_file_path(&self) -> PathBuf {
-        self.name.clone().into()
+    fn get_file_path(&self) -> String {
+        self.name.clone()
     }
 
     fn is_container(&self) -> bool {

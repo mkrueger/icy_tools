@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
@@ -33,9 +31,9 @@ impl Item for SixteenColorsFile {
         self.filename.clone()
     }
 
-    fn get_file_path(&self) -> PathBuf {
+    fn get_file_path(&self) -> String {
         // Use location + filename to make path unique across packs
-        PathBuf::from(&self.location).join(&self.filename)
+        format!("{}/{}", self.location, self.filename)
     }
 
     fn is_virtual_file(&self) -> bool {

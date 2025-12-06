@@ -270,8 +270,13 @@ async fn get_render_input(item: &dyn Item, cancel_token: &CancellationToken) -> 
 
 /// Render a thumbnail for the given file
 /// Returns None if cancelled or format not supported
-fn render_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
-    let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+fn render_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
+    let path_buf = PathBuf::from(path);
+    let ext = path_buf
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
 
     // Use FileFormat to determine how to handle the file
     let format = FileFormat::from_extension(&ext);
@@ -298,7 +303,7 @@ fn render_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &Can
 
 /// Render a Sixel image file as thumbnail
 /// Uses icy_sixel for decoding
-fn render_sixel_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
+fn render_sixel_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
     if cancel_token.is_cancelled() {
         return None;
     }
@@ -368,7 +373,7 @@ fn render_sixel_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
 
 /// Render an image file as thumbnail
 /// Returns None if cancelled
-fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
+fn render_image_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
     if cancel_token.is_cancelled() {
         return None;
     }
@@ -442,7 +447,7 @@ fn render_image_thumbnail(path: &PathBuf, data: &[u8], label: &str, cancel_token
 
 /// Render ANSI/terminal content as thumbnail
 /// Returns None if cancelled
-fn render_ansi_thumbnail(path: &PathBuf, data: &[u8], ext: &str, label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
+fn render_ansi_thumbnail(path: &String, data: &[u8], ext: &str, label: &str, cancel_token: &CancellationToken) -> Option<ThumbnailResult> {
     if cancel_token.is_cancelled() {
         return None;
     }
@@ -494,7 +499,7 @@ fn render_ansi_thumbnail(path: &PathBuf, data: &[u8], ext: &str, label: &str, ca
 /// Render using a parser (for ANSI, etc.)
 /// Returns None if cancelled
 fn render_with_parser(
-    path: &PathBuf,
+    path: &String,
     data: &[u8],
     ext: &str,
     sauce: Option<SauceRecord>,
@@ -545,7 +550,7 @@ fn render_with_parser(
     }
 
     let parse_elapsed = parse_start.elapsed();
-    debug!("[TIMING] {} parsing: {:?}", path.display(), parse_elapsed);
+    debug!("[TIMING] {} parsing: {:?}", path, parse_elapsed);
 
     // Check cancellation before rendering
     if cancel_token.is_cancelled() {
@@ -560,18 +565,12 @@ fn render_with_parser(
     };
     let width = screen.get_width();
     let height = screen.get_height();
-    debug!(
-        "[ThumbnailLoader] {} parsed screen size: {}x{} (unicode={})",
-        path.display(),
-        width,
-        height,
-        use_unicode
-    );
+    debug!("[ThumbnailLoader] {} parsed screen size: {}x{} (unicode={})", path, width, height, use_unicode);
     let result = render_screen_to_thumbnail(path, &*screen, use_unicode, sauce, label, cancel_token);
 
     debug!(
         "[TIMING] {} total parser render ({}x{}): {:?}",
-        path.display(),
+        path,
         width,
         height,
         total_start.elapsed()
@@ -582,7 +581,7 @@ fn render_with_parser(
 /// Render using a format loader (for XBin, etc.)
 /// Returns None if format not found, Some(result) if rendered (or cancelled during render)
 fn render_with_format(
-    path: &PathBuf,
+    path: &String,
     data: &[u8],
     ext: &str,
     sauce: Option<&SauceRecord>,
@@ -615,10 +614,11 @@ fn render_with_format(
 
     // Use max_height limit for thumbnail loading
     let load_data = LoadData::new(sauce.cloned(), None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
-    match FORMATS[format_idx].load_buffer(path, data, Some(load_data)) {
+    let path_buf = PathBuf::from(path);
+    match FORMATS[format_idx].load_buffer(&path_buf, data, Some(load_data)) {
         Ok(buffer) => {
-            let buffer_load_elapsed = start.elapsed();
-            debug!("[TIMING] {} buffer load: {:?}", path.display(), buffer_load_elapsed);
+            let buffer_load_elapsed: std::time::Duration = start.elapsed();
+            debug!("[TIMING] {} buffer load: {:?}", path, buffer_load_elapsed);
 
             if cancel_token.is_cancelled() {
                 return None;
@@ -634,13 +634,7 @@ fn render_with_format(
             let screen = TextScreen { buffer, ..Default::default() };
             let result = render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token);
 
-            debug!(
-                "[TIMING] {} total format render ({}x{}): {:?}",
-                path.display(),
-                width,
-                height,
-                total_start.elapsed()
-            );
+            debug!("[TIMING] {} total format render ({}x{}): {:?}", path, width, height, total_start.elapsed());
             result
         }
         Err(_) => None,
@@ -651,7 +645,7 @@ fn render_with_format(
 /// Uses render_unicode_to_rgba for Unicode screens, render_to_rgba for others
 /// Returns None if cancelled
 fn render_screen_to_thumbnail(
-    path: &PathBuf,
+    path: &String,
     screen: &dyn Screen,
     is_unicode: bool,
     sauce: Option<SauceRecord>,
@@ -847,7 +841,7 @@ fn render_screen_to_thumbnail(
 
 /// Render a placeholder thumbnail for unsupported file types
 /// Creates an 80x25 sized placeholder image
-fn render_placeholder_thumbnail(path: &PathBuf, sauce: Option<SauceRecord>, label: &str) -> ThumbnailResult {
+fn render_placeholder_thumbnail(path: &String, sauce: Option<SauceRecord>, label: &str) -> ThumbnailResult {
     // Create an empty 80x25 screen using ANSI defaults
     let mode = ScreenMode::Vga(80, 25);
     let emulation = TerminalEmulation::Ansi;

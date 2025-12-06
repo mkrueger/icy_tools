@@ -55,7 +55,7 @@ impl NavPoint {
                 // For filesystem, just go to parent directory
                 // This works for both regular paths and ZIP paths
                 if let Some(parent) = std::path::Path::new(&self.path).parent() {
-                    let parent_str = parent.to_string_lossy().to_string();
+                    let parent_str = parent.to_string_lossy().replace('\\', "/");
                     if !parent_str.is_empty() && parent_str != self.path {
                         self.path = parent_str;
                         self.selected_item = None;

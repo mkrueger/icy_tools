@@ -9,4 +9,4 @@ pub use item_folder::ItemFolder;
 pub use path_utils::{get_file_name, get_parent_path, is_directory, path_exists};
 
 #[cfg(windows)]
-pub(crate) use path_utils::{get_drives, is_drive_root};
+pub(crate) use path_utils::get_drives;
