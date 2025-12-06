@@ -172,6 +172,7 @@ terminal-find-results = { $cur } z { $total }
 
 protocol-select-download = Vyberte protokol stahování
 protocol-select-upload = Vyberte protokol nahrávání
+file-dialog-save-download-as = Uložit stažení jako
 protocol-zmodem-description = Standardní protokol
 protocol-zmodem8k-description = 8k Zmodem
 protocol-xmodem-description = Zastaralý protokol

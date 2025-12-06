@@ -173,6 +173,7 @@ terminal-menu = Menü
 
 protocol-select-download = Download-Protokoll wählen
 protocol-select-upload = Upload-Protokoll wählen
+file-dialog-save-download-as = Download speichern unter
 protocol-zmodem-description = Der Standard
 protocol-zmodem8k-description = 8k Zmodem
 protocol-xmodem-description = Veraltetes Protokoll

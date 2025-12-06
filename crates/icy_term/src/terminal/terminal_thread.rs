@@ -1453,10 +1453,18 @@ impl TerminalThread {
             }
         }
 
-        // Copy downloaded files to the download directory
-        copy_downloaded_files(&mut transfer_state, self.download_directory.as_ref())?;
+        // Copy downloaded files to the download 
+        println!("Copying downloaded files to {:?}", self.download_directory);
+        if let Err(e) = copy_downloaded_files(&mut transfer_state, self.download_directory.as_ref()) {
+            log::error!("Failed to copy downloaded files: {}", e);
+            self.send_event(TerminalEvent::Error(
+                "File copy failed".to_string(),
+                format!("{}", e),
+            ));
+        }
 
         self.current_transfer = Some(transfer_state.clone());
+        println!("Transfer completed: {:?}", transfer_state);
         self.send_event(TerminalEvent::TransferCompleted(transfer_state));
         self.current_transfer = None;
 
@@ -1846,17 +1854,24 @@ fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Optio
     for (name, path) in &transfer_state.recieve_state.finished_files {
         let mut dest = upload_location.join(name);
 
-        let mut i = 1;
-        let new_name = PathBuf::from(name);
-        while dest.exists() {
-            if let Some(stem) = new_name.file_stem() {
-                if let Some(ext) = new_name.extension() {
-                    dest = dest.with_file_name(format!("{}.{}.{}", stem.to_string_lossy(), i, ext.to_string_lossy()));
+        if dest.exists() {
+            let new_name = PathBuf::from(name);
+            let stem = new_name.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "download".to_string());
+            let ext = new_name.extension().map(|e| e.to_string_lossy().to_string());
+
+            let mut i = 1;
+            loop {
+                let new_file_name = if let Some(ref e) = ext {
+                    format!("{}.{}.{}", stem, i, e)
                 } else {
-                    dest = dest.with_file_name(format!("{}.{}", stem.to_string_lossy(), i));
+                    format!("{}.{}", stem, i)
+                };
+                dest = upload_location.join(&new_file_name);
+                if !dest.exists() {
+                    break;
                 }
+                i += 1;
             }
-            i += 1;
         }
         std::fs::copy(&path, &dest)?;
         std::fs::remove_file(&path)?;

@@ -172,6 +172,7 @@ terminal-find-results = { $cur } / { $total }
 
 protocol-select-download = Letöltési protokoll kiválasztása
 protocol-select-upload = Feltöltési protokoll kiválasztása
+file-dialog-save-download-as = Letöltés mentése másként
 protocol-zmodem-description = Az alapértelmezett protokoll
 protocol-zmodem8k-description = 8k Zmodem
 protocol-xmodem-description = Elavult protokoll

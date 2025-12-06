@@ -1158,8 +1158,33 @@ impl MainWindow {
         if is_download {
             // Set download directory from options
             let download_path = self.settings_dialog.original_options.lock().download_path();
-            let _ = self.terminal_tx.send(TerminalCommand::SetDownloadDirectory(PathBuf::from(download_path)));
-            let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
+
+            // If protocol requires asking for download location, show file dialog
+            if protocol.ask_for_download_location {
+                let file = rfd::FileDialog::new()
+                    .set_title(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "file-dialog-save-download-as"))
+                    .set_directory(&download_path)
+                    .set_file_name("download.bin")
+                    .save_file();
+
+                if let Some(save_path) = file {
+                    // Use the parent directory as download directory
+                    if let Some(parent) = save_path.parent() {
+                        let _ = self.terminal_tx.send(TerminalCommand::SetDownloadDirectory(parent.to_path_buf()));
+                    }
+                    // Use the filename for the download
+                    let filename = save_path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
+                    let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, filename));
+                    self.state.mode = MainWindowMode::FileTransfer(is_download);
+                } else {
+                    // User cancelled - don't start download
+                    self.state.mode = MainWindowMode::ShowTerminal;
+                }
+            } else {
+                let _ = self.terminal_tx.send(TerminalCommand::SetDownloadDirectory(PathBuf::from(download_path)));
+                let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, None));
+                self.state.mode = MainWindowMode::FileTransfer(is_download);
+            }
         } else {
             let files = rfd::FileDialog::new()
                 .set_title("Select Files to Upload")

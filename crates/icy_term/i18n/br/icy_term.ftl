@@ -172,6 +172,7 @@ terminal-find-results = { $cur } de { $total }
 
 protocol-select-download = Selecionar protocolo de download
 protocol-select-upload = Selecionar protocolo de upload
+file-dialog-save-download-as = Salvar Download Como
 protocol-zmodem-description = O protocolo padrão
 protocol-zmodem8k-description = Zmodem 8k
 protocol-xmodem-description = Protocolo desatualizado
