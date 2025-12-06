@@ -14,7 +14,7 @@ use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::{
     Connection, ConnectionState, ConnectionType,
-    modem::{ModemConfiguration, ModemConnection},
+    modem::{ModemConfiguration, ModemConnection, ModemResponseType},
     protocol::{Protocol, TransferState},
     raw::RawConnection,
     serial::{Serial, SerialConnection},
@@ -218,6 +218,9 @@ pub struct TerminalThread {
     igs_effect_loop: u32,
     /// Mutable copy of all 20 IGS sound effects (can be altered at runtime)
     igs_sound_data: Vec<Vec<i16>>,
+
+    /// Modem configuration for hangup command
+    modem_config: Option<ModemConfiguration>,
 }
 
 impl TerminalThread {
@@ -255,6 +258,7 @@ impl TerminalThread {
             terminal_emulation: Arc::new(Mutex::new(icy_net::telnet::TerminalEmulation::Ansi)),
             igs_effect_loop: 5,
             igs_sound_data: Self::init_sound_data(),
+            modem_config: None,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -502,8 +506,10 @@ impl TerminalThread {
 
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
         self.baud_emulator.set_baud_rate(config.baud_emulation);
-        self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
 
+        if !matches!(config.connection_info.protocol(), ConnectionType::Modem) {
+            self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
+        }
         self.setup_auto_login(&config);
 
         let connection: Box<dyn Connection> = match config.connection_info.protocol() {
@@ -537,7 +543,66 @@ impl TerminalThread {
                 let Some(m) = &config.modem else {
                     return Err("Modem configuration is required for modem connections".into());
                 };
-                Box::new(ModemConnection::open(m.clone(), config.connection_info.host.clone()).await?)
+                let modem_config = m.clone();
+                let mut modem_conn: Box<dyn Connection> = Box::new(ModemConnection::open(modem_config.clone()).await?);
+
+                // Send init command and wait for OK
+                modem_config.init_command.send(modem_conn.as_mut()).await?;
+
+                // Wait for OK response with timeout
+                let init_timeout = Duration::from_secs(10);
+                match self
+                    .wait_for_modem_response(
+                        &mut modem_conn,
+                        &modem_config,
+                        init_timeout,
+                        &[ModemResponseType::Ok],
+                        &[ModemResponseType::Error],
+                    )
+                    .await
+                {
+                    Ok(ModemResponseType::Ok) => {}
+                    Ok(response) => {
+                        return Err(format!("Modem init failed with response: {:?}", response).into());
+                    }
+                    Err(e) => {
+                        return Err(format!("Modem init timeout or error: {}", e).into());
+                    }
+                }
+
+                // Send dial command and wait for CONNECT
+                let phone_number = config.connection_info.endpoint();
+                modem_config.dial_prefix.send(modem_conn.as_mut()).await?;
+                modem_conn.send(phone_number.as_bytes()).await?;
+                modem_config.dial_suffix.send(modem_conn.as_mut()).await?;
+
+                // Wait for CONNECT with longer timeout (60 seconds for dial)
+                let dial_timeout = Duration::from_secs(60);
+                let error_responses = [
+                    ModemResponseType::NoCarrier,
+                    ModemResponseType::Error,
+                    ModemResponseType::NoDialtone,
+                    ModemResponseType::Busy,
+                    ModemResponseType::NoAnswer,
+                ];
+                match self
+                    .wait_for_modem_response(&mut modem_conn, &modem_config, dial_timeout, &[ModemResponseType::Connect], &error_responses)
+                    .await
+                {
+                    Ok(ModemResponseType::Connect) => {}
+                    Ok(response) => {
+                        modem_config.hangup_command.send(modem_conn.as_mut()).await.ok();
+                        return Err(format!("Dial failed: {:?}", response).into());
+                    }
+                    Err(e) => {
+                        modem_config.hangup_command.send(modem_conn.as_mut()).await.ok();
+                        return Err(format!("Dial timeout or error: {}", e).into());
+                    }
+                }
+
+                // Store modem config for hangup on disconnect
+                self.modem_config = Some(modem_config);
+                modem_conn
             }
             ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), false).await?),
             ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), true).await?),
@@ -733,8 +798,15 @@ impl TerminalThread {
 
     async fn disconnect(&mut self) {
         if let Some(mut conn) = self.connection.take() {
+            // For modem connections, send hangup command before closing
+            if conn.get_connection_type() == ConnectionType::Modem {
+                if let Some(modem_config) = &self.modem_config {
+                    let _ = modem_config.hangup_command.send(conn.as_mut()).await;
+                }
+            }
             let _ = conn.shutdown().await;
         }
+        self.modem_config = None;
         {
             let mut state = self.edit_screen.lock();
             if let Some(editable) = state.as_editable() {
@@ -750,6 +822,73 @@ impl TerminalThread {
         self.auto_transfer_scanner = AutoTransferScanner::default();
         self.transfer_protocols.clear();
         self.send_event(TerminalEvent::Disconnected(None));
+    }
+
+    /// Wait for a modem response, displaying all modem output to the user.
+    /// Returns the first matching response (success or error) or an error on timeout.
+    async fn wait_for_modem_response(
+        &mut self,
+        modem_conn: &mut Box<dyn Connection>,
+        modem_config: &ModemConfiguration,
+        timeout_duration: Duration,
+        success_responses: &[ModemResponseType],
+        error_responses: &[ModemResponseType],
+    ) -> Result<ModemResponseType, Box<dyn std::error::Error + Send + Sync>> {
+        let start = Instant::now();
+        let mut response_buffer = String::new();
+        let mut read_buf = [0u8; 256];
+
+        while start.elapsed() < timeout_duration {
+            // Try to read data from modem
+            match modem_conn.try_read(&mut read_buf).await {
+                Ok(0) => {
+                    // No data available, small sleep to avoid busy loop
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Ok(n) => {
+                    let data = &read_buf[..n];
+                    // Display modem output to user
+                    self.process_data(data).await;
+
+                    // Add to response buffer for pattern matching
+                    if let Ok(text) = std::str::from_utf8(data) {
+                        response_buffer.push_str(text);
+                    } else {
+                        // Try to handle as ASCII
+                        for &byte in data {
+                            if byte.is_ascii() {
+                                response_buffer.push(byte as char);
+                            }
+                        }
+                    }
+
+                    // Check for success responses
+                    for success in success_responses {
+                        if let Some(pattern) = modem_config.modem_responses.get(success) {
+                            let pattern_str = pattern.to_string();
+                            if response_buffer.to_uppercase().contains(&pattern_str.to_uppercase()) {
+                                return Ok(success.clone());
+                            }
+                        }
+                    }
+
+                    // Check for error responses
+                    for error in error_responses {
+                        if let Some(pattern) = modem_config.modem_responses.get(error) {
+                            let pattern_str = pattern.to_string();
+                            if response_buffer.to_uppercase().contains(&pattern_str.to_uppercase()) {
+                                return Ok(error.clone());
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("Modem read error: {}", e).into());
+                }
+            }
+        }
+
+        Err("Timeout waiting for modem response".into())
     }
 
     async fn read_connection(&mut self, buffer: &mut [u8]) -> Vec<u8> {

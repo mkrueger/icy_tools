@@ -320,9 +320,7 @@ impl WindowManager {
                 // as they are handled directly by the shader's update() method
                 match &event {
                     // Window focus events are needed
-                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => {
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
+                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events: only CursorLeft and WheelScrolled are needed
                     Event::Mouse(iced::mouse::Event::CursorLeft) | Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => {
                         Some(WindowManagerMessage::Event(window_id, event))

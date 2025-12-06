@@ -114,6 +114,7 @@ dialing_directory-new_bbs = Nuovo BBS
 dialing_directory-name-placeholder = Nome BBS
 dialing_directory-filter-placeholder = Filtra nomi
 dialing_directory-address = Indirizzo
+dialing_directory-phone-number = Numero di Telefono
 dialing_directory-modem = Modem
 dialing_directory-protocol = Protocollo
 dialing_directory-user = Utente

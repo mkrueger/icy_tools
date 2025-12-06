@@ -225,6 +225,9 @@ impl DialingDirectoryState {
                     AddressFieldChange::Address(address) => {
                         addr.address = address;
                     }
+                    AddressFieldChange::ModemId(modem_id) => {
+                        addr.modem_id = modem_id;
+                    }
                     AddressFieldChange::User(user) => {
                         addr.user_name = user;
                     }
@@ -418,6 +421,7 @@ pub enum DialingDirectoryMsg {
 pub enum AddressFieldChange {
     SystemName(String),
     Address(String),
+    ModemId(String),
     User(String),
     Password(String),
     AutoLogin(String),

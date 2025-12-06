@@ -114,6 +114,7 @@ dialing_directory-new_bbs = Nový BBS
 dialing_directory-name-placeholder = Název BBS
 dialing_directory-filter-placeholder = Filtrovat názvy
 dialing_directory-address = Adresa
+dialing_directory-phone-number = Telefonní Číslo
 dialing_directory-modem = Modem
 dialing_directory-protocol = Protokol
 dialing_directory-user = Uživatel

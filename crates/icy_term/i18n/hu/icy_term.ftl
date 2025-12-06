@@ -114,6 +114,7 @@ dialing_directory-new_bbs = Új BBS
 dialing_directory-name-placeholder = BBS név
 dialing_directory-filter-placeholder = Nevek szűrése
 dialing_directory-address = Cím
+dialing_directory-phone-number = Telefonszám
 dialing_directory-modem = Modem
 dialing_directory-protocol = Protokoll
 dialing_directory-user = Felhasználó

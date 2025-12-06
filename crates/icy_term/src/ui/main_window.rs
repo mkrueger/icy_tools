@@ -225,8 +225,8 @@ impl MainWindow {
             Message::Connect(address) => {
                 let modem = if matches!(address.protocol, ConnectionType::Modem) {
                     let options = &self.settings_dialog.original_options.lock();
-                    // Find the modem in options that matches the address
-                    let modem_opt = options.modems.iter().find(|m| m.name == address.address);
+                    // Find the modem in options that matches the modem_id
+                    let modem_opt = options.modems.iter().find(|m| m.name == address.modem_id);
 
                     if let Some(modem_config) = modem_opt {
                         Some(modem_config.clone())
@@ -1749,9 +1749,7 @@ impl MainWindow {
                 // Handle global shortcuts that work in any mode
                 match event {
                     // Try command handler for global shortcuts
-                    Event::Keyboard(keyboard::Event::KeyPressed { .. }) => {
-                        self.commands.handle(event)
-                    }
+                    Event::Keyboard(keyboard::Event::KeyPressed { .. }) => self.commands.handle(event),
                     Event::Keyboard(keyboard::Event::KeyReleased {
                         key: keyboard::Key::Named(keyboard::key::Named::Shift),
                         ..

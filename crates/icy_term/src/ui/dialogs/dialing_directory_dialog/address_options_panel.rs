@@ -171,49 +171,25 @@ impl super::DialingDirectoryState {
         let server_section: Element<'_, Message> = {
             let mut server_content = column![].spacing(DIALOG_SPACING);
 
-            // Address/Modem row
+            // Address field (or phone number for modem connections)
             if addr.protocol == ConnectionType::Modem {
-                let modem_names: Vec<String> = options.modems.iter().map(|m| m.name.clone()).collect();
-                let selected_modem = modem_names.iter().position(|name| name == &addr.address);
-
-                let modem_picker = pick_list(modem_names.clone(), selected_modem.map(|idx| modem_names[idx].clone()), move |modem_name| {
-                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                        id,
-                        field: AddressFieldChange::Address(modem_name),
+                // Phone number field for modem connections
+                let phone_field = text_input("", &addr.address)
+                    .on_input(move |s| {
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::Address(s),
+                        })
                     })
-                })
-                .placeholder(fl!(crate::LANGUAGE_LOADER, "dialing_directory-select-modem"))
-                .width(Length::Fill)
-                .text_size(TEXT_SIZE_NORMAL);
+                    .padding(6)
+                    .size(TEXT_SIZE_NORMAL)
+                    .width(Length::Fill);
 
-                let modem_row = row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")), modem_picker,]
-                    .spacing(DIALOG_SPACING)
-                    .align_y(Alignment::Center);
-
-                server_content = server_content.push(modem_row);
-
-                // Show error message in a separate row if no modem is selected but address is set
-                if selected_modem.is_none() && !addr.address.is_empty() {
-                    let err_msg = if modem_names.is_empty() {
-                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-no_modem_configured")
-                    } else {
-                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-invalid_modem")
-                    };
-
-                    let error_row = row![
-                        left_label(String::new()), // Offset to align with the field
-                        text(format!("⚠ {}", err_msg))
-                            .size(TEXT_SIZE_SMALL)
-                            .style(|theme: &iced::Theme| iced::widget::text::Style {
-                                color: Some(theme.extended_palette().danger.base.color),
-                                ..Default::default()
-                            })
-                    ]
-                    .spacing(DIALOG_SPACING)
-                    .align_y(Alignment::Center);
-
-                    server_content = server_content.push(error_row);
-                }
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-phone-number")), phone_field]
+                        .spacing(DIALOG_SPACING)
+                        .align_y(Alignment::Center),
+                );
             } else {
                 let address_field = text_input("", &addr.address)
                     .on_input(move |s| {
@@ -265,6 +241,51 @@ impl super::DialingDirectoryState {
                         .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
+            }
+
+            // Modem picker (only for modem protocol, placed after protocol picker)
+            if addr.protocol == ConnectionType::Modem {
+                let modem_names: Vec<String> = options.modems.iter().map(|m| m.name.clone()).collect();
+                let selected_modem = modem_names.iter().position(|name| name == &addr.modem_id);
+
+                let modem_picker = pick_list(modem_names.clone(), selected_modem.map(|idx| modem_names[idx].clone()), move |modem_name| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::ModemId(modem_name),
+                    })
+                })
+                .placeholder(fl!(crate::LANGUAGE_LOADER, "dialing_directory-select-modem"))
+                .width(Length::Fill)
+                .text_size(TEXT_SIZE_NORMAL);
+
+                let modem_row = row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-modem")), modem_picker,]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center);
+
+                server_content = server_content.push(modem_row);
+
+                // Show error message in a separate row if no modem is selected but modem_id is set
+                if selected_modem.is_none() && !addr.modem_id.is_empty() {
+                    let err_msg = if modem_names.is_empty() {
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-no_modem_configured")
+                    } else {
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-invalid_modem")
+                    };
+
+                    let error_row = row![
+                        left_label(String::new()), // Offset to align with the field
+                        text(format!("⚠ {}", err_msg))
+                            .size(TEXT_SIZE_SMALL)
+                            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                                color: Some(theme.extended_palette().danger.base.color),
+                                ..Default::default()
+                            })
+                    ]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center);
+
+                    server_content = server_content.push(error_row);
+                }
             }
 
             const COMBO_WIDTH: f32 = 110.0;
