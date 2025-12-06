@@ -680,6 +680,34 @@ impl super::DialingDirectoryState {
             None
         };
 
+        // Options section (only for non-quick connect)
+        let options_section: Option<Element<'_, Message>> = if !is_quick {
+            let mut options_content = column![].spacing(DIALOG_SPACING);
+
+            // Mouse reporting checkbox
+            let mouse_reporting_checkbox = iced::widget::checkbox(addr.mouse_reporting_enabled)
+                .on_toggle(move |checked| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::MouseReporting(checked),
+                    })
+                })
+                .text_size(TEXT_SIZE_NORMAL);
+
+            options_content = options_content.push(
+                row![
+                    left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-mouse-reporting")),
+                    mouse_reporting_checkbox
+                ]
+                .spacing(DIALOG_SPACING)
+                .align_y(Alignment::Center),
+            );
+
+            Some(effect_box(options_content.into()).into())
+        } else {
+            None
+        };
+
         // Main content layout
         let mut content: iced::widget::Column<'_, Message> = column![header, Space::new().height(SECTION_SPACING), server_section,];
 
@@ -689,6 +717,13 @@ impl super::DialingDirectoryState {
                     .push(Space::new().height(SECTION_SPACING))
                     .push(section_header(fl!(crate::LANGUAGE_LOADER, "dialing_directory-login-settings")))
                     .push(login);
+            }
+
+            if let Some(options) = options_section {
+                content = content
+                    .push(Space::new().height(SECTION_SPACING))
+                    .push(section_header(fl!(crate::LANGUAGE_LOADER, "dialing_directory-options")))
+                    .push(options);
             }
 
             if let Some(notes) = comment_section {

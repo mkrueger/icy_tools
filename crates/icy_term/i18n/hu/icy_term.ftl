@@ -145,6 +145,8 @@ dialing_directory-add-bbs-button = BBS hozzáadása
 dialing_directory-version-warning = Ez a tárcsázási könyvtár egy újabb IcyTerm verzióval készült. Kérjük, használjon újabb verziót. A változtatások nem lesznek elmentve.
 dialing_directory-open_cache_button=Gyorsítótár könyvtár megnyitása…
 dialing_directory-xep80-module = XEP80 modul
+dialing_directory-options = Options
+dialing_directory-mouse-reporting = Enable mouse reporting
 dialing_directory-generate-tooltip = Véletlenszerű jelszó generálása
 dialing_directory-generate-disabled-tooltip= 
     Jelszó már be van állítva,

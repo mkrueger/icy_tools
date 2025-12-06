@@ -285,6 +285,7 @@ impl MainWindow {
                     auto_login_exp: address.auto_login.clone(),
                     max_scrollback_lines: options.max_scrollback_lines,
                     transfer_protocols: options.transfer_protocols.clone(),
+                    mouse_reporting_enabled: address.mouse_reporting_enabled,
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));

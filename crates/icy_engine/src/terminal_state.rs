@@ -32,18 +32,33 @@ pub enum FontSelectionState {
     Failure,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MouseState {
     pub mouse_mode: MouseMode,
     pub focus_out_event_enabled: bool,
+
+    /// Is set by icy_term based on connection settings
+    /// Not part of the ANSI standard - let users enable/disable mouse tracking
     pub mouse_tracking_enabled: bool,
     pub alternate_scroll_enabled: bool,
     pub extended_mode: ExtMouseMode,
 }
 
+impl Default for MouseState {
+    fn default() -> Self {
+        Self {
+            mouse_mode: MouseMode::default(),
+            focus_out_event_enabled: false,
+            mouse_tracking_enabled: true, // Default to enabled
+            alternate_scroll_enabled: false,
+            extended_mode: ExtMouseMode::default(),
+        }
+    }
+}
+
 impl MouseState {
     pub fn tracking_enabled(&self) -> bool {
-        self.mouse_mode != MouseMode::OFF
+        self.mouse_tracking_enabled && self.mouse_mode != MouseMode::OFF
     }
 }
 
@@ -165,7 +180,10 @@ impl TerminalState {
     }
 
     pub fn reset_mouse_mode(&mut self) {
+        // need to preserve whether mouse tracking is enabled since it's a icy_term addition
+        let enabled = self.mouse_state.mouse_tracking_enabled;
         self.mouse_state = MouseState::default();
+        self.mouse_state.mouse_tracking_enabled = enabled;
     }
 
     pub fn get_width(&self) -> i32 {

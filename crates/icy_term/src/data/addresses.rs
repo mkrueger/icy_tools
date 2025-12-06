@@ -260,6 +260,10 @@ pub struct Address {
 
     #[serde(default, skip_serializing_if = "is_zero")]
     pub downloaded_bytes: usize,
+
+    /// Enable mouse reporting to the remote system (default: true)
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub mouse_reporting_enabled: bool,
 }
 
 impl From<ConnectionInformation> for Address {
@@ -308,6 +312,7 @@ impl From<ConnectionInformation> for Address {
             uploaded_bytes: 0,
             downloaded_bytes: 0,
             baud_emulation: BaudEmulation::default(),
+            mouse_reporting_enabled: true,
             ..Default::default()
         }
     }
@@ -316,6 +321,14 @@ impl From<ConnectionInformation> for Address {
 // Helper functions for skip_serializing_if
 fn is_default_bool(b: &bool) -> bool {
     !*b // Assuming false is the default for most bool fields
+}
+
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn is_default_terminal(t: &TerminalEmulation) -> bool {

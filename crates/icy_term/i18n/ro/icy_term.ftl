@@ -154,6 +154,8 @@ dialing_directory-select-modem = Selectează Modem
 dialing_directory-login-settings = Setări autentificare
 dialing_directory-notes = Note
 dialing_directory-xep80-module = Modul XEP80
+dialing_directory-options = Options
+dialing_directory-mouse-reporting = Enable mouse reporting
 
 terminal-upload = Încărcare
 terminal-download = Descărcare

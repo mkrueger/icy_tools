@@ -163,6 +163,9 @@ pub struct ConnectionConfig {
 
     /// Transfer protocols for auto-transfer detection
     pub transfer_protocols: Vec<crate::TransferProtocol>,
+
+    /// Whether mouse reporting is enabled for this connection
+    pub mouse_reporting_enabled: bool,
 }
 
 pub struct TerminalThread {
@@ -639,6 +642,9 @@ impl TerminalThread {
             .create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
         {
             new_screen.set_scrollback_buffer_size(config.max_scrollback_lines);
+            // Set mouse tracking enabled based on connection config
+            new_screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = config.mouse_reporting_enabled;
+            println!("Mouse tracking enabled: {}", new_screen.terminal_state().mouse_state.mouse_tracking_enabled);
             let mut screen = self.edit_screen.lock();
             *screen = new_screen;
         }

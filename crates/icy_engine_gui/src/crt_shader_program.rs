@@ -58,7 +58,6 @@ impl<'a> CRTShaderProgram<'a> {
             // Read viewport and render_info for mouse coordinate calculations
             let viewport = self.term.viewport.read();
             let render_info = self.term.render_info.read();
-
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = cursor.position() {

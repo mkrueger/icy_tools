@@ -155,6 +155,8 @@ dialing_directory-select-modem = Selecciona Mòdem
 dialing_directory-login-settings = Configuració d'inici de sessió
 dialing_directory-notes = Notes
 dialing_directory-xep80-module = Mòdul XEP80
+dialing_directory-options = Options
+dialing_directory-mouse-reporting = Enable mouse reporting
 
 
 terminal-upload = Pujar

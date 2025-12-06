@@ -260,6 +260,9 @@ impl DialingDirectoryState {
                     AddressFieldChange::IsFavored(is_favored) => {
                         addr.is_favored = is_favored;
                     }
+                    AddressFieldChange::MouseReporting(enabled) => {
+                        addr.mouse_reporting_enabled = enabled;
+                    }
                 }
 
                 Task::none()
@@ -432,6 +435,7 @@ pub enum AddressFieldChange {
     Music(MusicOption),
     Comment(String),
     IsFavored(bool),
+    MouseReporting(bool),
 }
 
 impl From<DialingDirectoryMsg> for Message {

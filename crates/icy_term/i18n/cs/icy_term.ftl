@@ -154,6 +154,8 @@ dialing_directory-select-modem = Vybrat modem
 dialing_directory-login-settings = Nastavení přihlášení
 dialing_directory-notes = Poznámky
 dialing_directory-xep80-module = Modul XEP80
+dialing_directory-options = Options
+dialing_directory-mouse-reporting = Enable mouse reporting
 
 terminal-upload = Nahrát
 terminal-download = Stáhnout
