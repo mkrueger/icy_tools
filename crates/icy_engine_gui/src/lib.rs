@@ -2,6 +2,13 @@ pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
 
+pub mod commands;
+pub use commands::{
+    CommandDef, CommandSet, Hotkey, KeyCode, Modifiers, 
+    cmd, create_common_commands, 
+    load_commands_from_str, load_commands_from_file, CommandLoadError
+};
+
 pub mod render_info;
 pub use render_info::*;
 

@@ -2,8 +2,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, advanced::graphics::core::keyboard, keyboard::key::Named, widget::space, window};
+use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, advanced::graphics::core::keyboard, widget::space, window};
 
+use icy_engine_gui::commands::{CommandSet, hotkey_from_iced, create_common_commands, cmd};
 use icy_view_gui::{MainWindow, Message, Options, PreviewMessage};
 
 use crate::load_window_icon;
@@ -14,6 +15,7 @@ pub struct WindowManager {
     initial_path: Option<PathBuf>,
     auto_scroll: bool,
     bps: Option<u32>,
+    commands: CommandSet,
 }
 
 #[derive(Clone)]
@@ -66,6 +68,7 @@ impl WindowManager {
                 initial_path: None,
                 auto_scroll,
                 bps,
+                commands: create_common_commands(),
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
@@ -151,6 +154,25 @@ impl WindowManager {
             }
 
             WindowManagerMessage::Event(window_id, event) => {
+                // Handle keyboard commands via CommandSet
+                if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = &event {
+                    if let Some(hotkey) = hotkey_from_iced(key, *modifiers) {
+                        if let Some(command_id) = self.commands.match_hotkey(&hotkey) {
+                            // Map command IDs to actions
+                            return match command_id {
+                                cmd::WINDOW_NEW => Task::done(WindowManagerMessage::OpenWindow),
+                                cmd::WINDOW_CLOSE | cmd::FILE_CLOSE => Task::done(WindowManagerMessage::CloseWindow(window_id)),
+                                cmd::VIEW_ZOOM_IN => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomIn))),
+                                cmd::VIEW_ZOOM_OUT => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomOut))),
+                                cmd::VIEW_ZOOM_RESET => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomReset))),
+                                cmd::VIEW_FULLSCREEN => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::ToggleFullscreen)),
+                                _ => Task::none(), // Unhandled command
+                            };
+                        }
+                    }
+                }
+                
+                // Pass event to window for other handling
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     if let Some(msg) = window.handle_event(&event) {
                         return Task::done(WindowManagerMessage::WindowMessage(window_id, msg));
@@ -231,8 +253,8 @@ impl WindowManager {
                     }
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // Alt+Number to focus window
-                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.command() {
+                        // Alt+Number to focus window (keep this special case)
+                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
                             if let keyboard::Key::Character(s) = &key {
                                 if let Some(digit) = s.chars().next() {
                                     if digit.is_ascii_digit() {
@@ -244,50 +266,7 @@ impl WindowManager {
                             }
                         }
 
-                        // Cmd+N for new window, Cmd+W to close, Ctrl+Plus/Minus for zoom
-                        if modifiers.command() {
-                            if let keyboard::Key::Character(s) = &key {
-                                match s.to_lowercase().as_str() {
-                                    #[cfg(target_os = "macos")]
-                                    "n" => return Some(WindowManagerMessage::OpenWindow),
-                                    #[cfg(not(target_os = "macos"))]
-                                    "n" => {
-                                        if modifiers.shift() {
-                                            return Some(WindowManagerMessage::OpenWindow);
-                                        }
-                                    }
-                                    "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
-                                    // Zoom shortcuts: Ctrl+Plus/Minus/0
-                                    "+" | "=" => {
-                                        return Some(WindowManagerMessage::WindowMessage(
-                                            window_id,
-                                            Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In)),
-                                        ));
-                                    }
-                                    "-" => {
-                                        return Some(WindowManagerMessage::WindowMessage(
-                                            window_id,
-                                            Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out)),
-                                        ));
-                                    }
-                                    "0" => {
-                                        return Some(WindowManagerMessage::WindowMessage(
-                                            window_id,
-                                            Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset)),
-                                        ));
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
-                        // F11 for fullscreen
-                        if !modifiers.alt() {
-                            if let keyboard::Key::Named(Named::F11) = &key {
-                                return Some(WindowManagerMessage::WindowMessage(window_id, Message::ToggleFullscreen));
-                            }
-                        }
-
+                        // Forward all key events - command matching happens in update()
                         Some(WindowManagerMessage::Event(window_id, event))
                     }
                     Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),

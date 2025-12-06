@@ -1,0 +1,113 @@
+# Default commands shared between icy_view and icy_term
+# These are common commands that both applications use.
+# Each app can extend this set with app-specific commands.
+#
+# Format:
+#   [[commands]]
+#   id = "unique.command.id"    # Also used as i18n translation key
+#   hotkey = ["Ctrl+C"]         # Windows/Linux shortcuts (can have multiple)
+#   hotkey_mac = ["Cmd+C"]      # macOS shortcuts (optional, falls back to hotkey)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# File Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "file.open"
+hotkey = ["Ctrl+O"]
+hotkey_mac = ["Cmd+O"]
+
+[[commands]]
+id = "file.export"
+hotkey = ["Ctrl+I"]
+hotkey_mac = ["Cmd+I"]
+
+[[commands]]
+id = "file.close"
+hotkey = ["Ctrl+W"]
+hotkey_mac = ["Cmd+W"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Edit Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "edit.copy"
+hotkey = ["Ctrl+C"]
+hotkey_mac = ["Cmd+C"]
+
+[[commands]]
+id = "edit.paste"
+hotkey = ["Ctrl+V"]
+hotkey_mac = ["Cmd+V"]
+
+[[commands]]
+id = "edit.select_all"
+hotkey = ["Ctrl+A"]
+hotkey_mac = ["Cmd+A"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# View / Zoom
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "view.zoom_in"
+hotkey = ["Ctrl++", "Ctrl+="]
+hotkey_mac = ["Cmd++", "Cmd+=", "+", "="]
+
+[[commands]]
+id = "view.zoom_out"
+hotkey = ["Ctrl+-"]
+hotkey_mac = ["Cmd+-", "-"]
+
+[[commands]]
+id = "view.zoom_reset"
+hotkey = ["Ctrl+0"]
+hotkey_mac = ["Cmd+0"]
+
+[[commands]]
+id = "view.zoom_fit"
+hotkey = ["Ctrl+9"]
+hotkey_mac = ["Cmd+9"]
+
+[[commands]]
+id = "view.fullscreen"
+hotkey = ["F11", "Alt+Enter"]
+hotkey_mac = ["Cmd+Ctrl+F"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Window Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "window.new"
+hotkey = ["Ctrl+Shift+N"]
+hotkey_mac = ["Cmd+N"]
+
+[[commands]]
+id = "window.close"
+hotkey = ["Ctrl+W"]
+hotkey_mac = ["Cmd+W"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Help / Info
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "help.show"
+hotkey = ["F1"]
+hotkey_mac = ["F1", "Cmd+?"]
+
+[[commands]]
+id = "help.about"
+hotkey = []
+hotkey_mac = []
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Settings
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "settings.open"
+hotkey = ["Ctrl+,"]
+hotkey_mac = ["Cmd+,"]

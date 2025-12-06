@@ -12,6 +12,7 @@ icy_engine = { workspace = true }
 icy_parser_core = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
+toml = { workspace = true }
 rustybuzz = "0.20.1"
 ttf-parser = "0.25.1"
 tiny-skia = "0.11"

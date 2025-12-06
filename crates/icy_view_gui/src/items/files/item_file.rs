@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use icy_sauce::SauceRecord;
-use tokio_util::sync::CancellationToken;
 use std::path::PathBuf;
 use std::time::SystemTime;
+use tokio_util::sync::CancellationToken;
 
 use super::get_file_name;
 use crate::items::Item;
@@ -73,7 +73,6 @@ impl Item for ItemFile {
             modified: self.modified,
         })
     }
-
 
     /// Get SAUCE info for this item (async for file I/O)
     /// Returns the SAUCE record if the file has one

@@ -568,13 +568,7 @@ fn render_with_parser(
     debug!("[ThumbnailLoader] {} parsed screen size: {}x{} (unicode={})", path, width, height, use_unicode);
     let result = render_screen_to_thumbnail(path, &*screen, use_unicode, sauce, label, cancel_token);
 
-    debug!(
-        "[TIMING] {} total parser render ({}x{}): {:?}",
-        path,
-        width,
-        height,
-        total_start.elapsed()
-    );
+    debug!("[TIMING] {} total parser render ({}x{}): {:?}", path, width, height, total_start.elapsed());
     result
 }
 
