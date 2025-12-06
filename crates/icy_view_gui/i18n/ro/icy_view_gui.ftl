@@ -177,6 +177,7 @@ thumbnail-no-diz = fără file_id.diz
 thumbnail-unsupported = Nesuportat
 
 filter-no-items-found = Nu s-au găsit elemente.
+folder-empty = Dosarul este gol.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sistem de comenzi

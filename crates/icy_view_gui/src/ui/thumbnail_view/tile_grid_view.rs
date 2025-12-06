@@ -1412,6 +1412,27 @@ impl TileGridView {
         let bg = *self.background_color.read();
         let bg_color = iced::Color::from_rgba(bg[0], bg[1], bg[2], bg[3]);
 
+        // Check if folder is empty (no items at all), show "Folder is empty" message
+        if self.thumbnails.is_empty() {
+            use i18n_embed_fl::fl;
+            return container(
+                text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
+                    .size(14)
+                    .style(|theme: &iced::Theme| text::Style {
+                        color: Some(theme.palette().text.scale_alpha(0.5)),
+                    }),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .padding(20)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(bg_color)),
+                ..Default::default()
+            })
+            .into();
+        }
+
         // Check if filter is active but no items match
         if !self.filter.is_empty() && self.visible_indices.is_empty() {
             use i18n_embed_fl::fl;
@@ -1431,19 +1452,6 @@ impl TileGridView {
                 ..Default::default()
             })
             .into();
-        }
-
-        if self.thumbnails.is_empty() {
-            return container(text("No files to display - click grid icon to load").size(14))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(move |_theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(bg_color)),
-                    ..Default::default()
-                })
-                .into();
         }
 
         // Use responsive to get the actual width

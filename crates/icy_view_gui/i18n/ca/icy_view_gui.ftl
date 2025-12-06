@@ -177,6 +177,7 @@ thumbnail-no-diz = sense file_id.diz
 thumbnail-unsupported = No compatible
 
 filter-no-items-found = No s'han trobat elements.
+folder-empty = La carpeta està buida.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sistema de comandes

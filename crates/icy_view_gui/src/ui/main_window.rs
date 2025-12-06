@@ -32,6 +32,7 @@ use super::{
     dialogs::settings_dialog::{SettingsDialogState, SettingsMessage},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
     focus::{focus, list_focus_style},
+    is_image_file, is_sixel_file,
     options::{SortOrder, ViewMode},
     theme,
 };
@@ -1810,6 +1811,14 @@ impl MainWindow {
             // Start preloading the next item
             self.start_shuffle_preload();
 
+            // If we have a pre-decoded image, use it directly (skip re-decoding)
+            if let Some(decoded) = preloaded.decoded_image {
+                log::debug!("Using pre-decoded image for shuffle item {}", index);
+                let path_buf = PathBuf::from(&path_str);
+                let task = self.preview.load_decoded_image(path_buf, decoded.rgba, decoded.width, decoded.height);
+                return task.map(Message::Preview);
+            }
+
             return Task::done(Message::DataLoaded(path_str, preloaded.data));
         }
 
@@ -1885,6 +1894,10 @@ impl MainWindow {
 
         // Spawn background task
         let preload_index = next_index;
+        let path_buf = PathBuf::from(&path);
+        let is_image = is_image_file(&path_buf);
+        let is_sixel = is_sixel_file(&path_buf);
+
         tokio::spawn(async move {
             tokio::select! {
                 _ = cancel_clone.cancelled() => {
@@ -1893,10 +1906,46 @@ impl MainWindow {
                 }
                 result = tokio::task::spawn_blocking(move || {
                     item.read_data_blocking().map(|data| {
+                        // If it's an image, also decode it (store rgba data, handle created on use)
+                        let decoded_image = if is_image {
+                            let stripped_data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
+
+                            if is_sixel {
+                                // Use icy_sixel for Sixel files
+                                match icy_sixel::sixel_decode(&stripped_data) {
+                                    Ok((rgba, width, height)) => {
+                                        let w = width as u32;
+                                        let h = height as u32;
+                                        Some(super::DecodedImage { rgba, width: w, height: h })
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to decode Sixel during preload: {}", e);
+                                        None
+                                    }
+                                }
+                            } else {
+                                // Use image crate for other formats
+                                match image::load_from_memory(&stripped_data) {
+                                    Ok(img) => {
+                                        let rgba = img.to_rgba8();
+                                        let (width, height) = rgba.dimensions();
+                                        Some(super::DecodedImage { rgba: rgba.into_raw(), width, height })
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to decode image during preload: {}", e);
+                                        None
+                                    }
+                                }
+                            }
+                        } else {
+                            None
+                        };
+
                         super::PreloadedItem {
                             index: preload_index,
                             path: PathBuf::from(&path),
                             data,
+                            decoded_image,
                         }
                     })
                 }) => {

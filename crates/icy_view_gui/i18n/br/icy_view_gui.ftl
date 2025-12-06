@@ -177,6 +177,7 @@ thumbnail-no-diz = sem file_id.diz
 thumbnail-unsupported = Não suportado
 
 filter-no-items-found = Nenhum item encontrado.
+folder-empty = A pasta está vazia.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sistema de comandos

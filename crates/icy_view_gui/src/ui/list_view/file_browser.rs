@@ -263,10 +263,26 @@ impl FileBrowser {
     }
 
     pub fn view(&self, theme: &iced::Theme) -> Element<'_, FileBrowserMessage> {
+        use i18n_embed_fl::fl;
+        use iced::widget::text;
+
+        // If folder is empty (no files at all), show "Folder is empty" message
+        if self.files.is_empty() {
+            let empty_text = text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
+                .size(14)
+                .style(|theme: &iced::Theme| text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.5)),
+                });
+            return container(empty_text)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .padding(20)
+                .into();
+        }
+
         // If filter is active but no items match, show "No items found" message
         if !self.filter.is_empty() && self.visible_indices.is_empty() {
-            use i18n_embed_fl::fl;
-            use iced::widget::text;
             let no_items_text = text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
                 .size(14)
                 .style(|theme: &iced::Theme| text::Style {

@@ -178,6 +178,7 @@ thumbnail-no-diz = žádný file_id.diz
 thumbnail-unsupported = Nepodporovaný
 
 filter-no-items-found = Nebyly nalezeny žádné položky.
+folder-empty = Složka je prázdná.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Systém příkazů

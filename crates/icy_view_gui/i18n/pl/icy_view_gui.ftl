@@ -178,6 +178,7 @@ thumbnail-no-diz = brak file_id.diz
 thumbnail-unsupported = Nieobsługiwany
 
 filter-no-items-found = Nie znaleziono elementów.
+folder-empty = Folder jest pusty.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # System poleceń

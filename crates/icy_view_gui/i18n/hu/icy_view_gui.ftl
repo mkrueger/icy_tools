@@ -178,6 +178,7 @@ thumbnail-no-diz = nincs file_id.diz
 thumbnail-unsupported = Nem támogatott
 
 filter-no-items-found = Nem található elem.
+folder-empty = A mappa üres.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Parancsrendszer

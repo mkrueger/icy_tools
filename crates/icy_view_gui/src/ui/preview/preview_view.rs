@@ -15,7 +15,10 @@ use icy_sauce::SauceRecord;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
+use super::content_view::ContentView;
+use super::image_content_view::ImageContentView;
 use super::image_viewer::{ImageViewer, ImageViewerMessage};
+use super::terminal_content_view::TerminalContentView;
 use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
 use crate::commands::{cmd, create_icy_view_commands};
 use crate::ui::options::ScrollSpeed;
@@ -24,6 +27,28 @@ use icy_engine::formats::{FileFormat, ImageFormat};
 
 /// Counter for image load requests to handle cancellation
 static IMAGE_LOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Check if a file is an image based on extension
+pub fn is_image_file(path: &PathBuf) -> bool {
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_ascii_lowercase();
+        if let Some(format) = FileFormat::from_extension(ext_str.to_str().unwrap_or("")) {
+            return format.is_image();
+        }
+    }
+    false
+}
+
+/// Check if a file is a Sixel image
+pub fn is_sixel_file(path: &PathBuf) -> bool {
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_ascii_lowercase();
+        if let Some(format) = FileFormat::from_extension(ext_str.to_str().unwrap_or("")) {
+            return matches!(format, FileFormat::Image(ImageFormat::Sixel));
+        }
+    }
+    false
+}
 
 // Command handler for PreviewView
 command_handler!(PreviewCommands, create_icy_view_commands(), => PreviewMessage {
@@ -156,28 +181,6 @@ impl PreviewView {
         self.commands.handle(event)
     }
 
-    /// Check if a file is an image based on extension
-    fn is_image_file(path: &PathBuf) -> bool {
-        if let Some(ext) = path.extension() {
-            let ext_str = ext.to_ascii_lowercase();
-            if let Some(format) = FileFormat::from_extension(ext_str.to_str().unwrap_or("")) {
-                return format.is_image();
-            }
-        }
-        false
-    }
-
-    /// Check if a file is a Sixel image
-    fn is_sixel_file(path: &PathBuf) -> bool {
-        if let Some(ext) = path.extension() {
-            let ext_str = ext.to_ascii_lowercase();
-            if let Some(format) = FileFormat::from_extension(ext_str.to_str().unwrap_or("")) {
-                return matches!(format, FileFormat::Image(ImageFormat::Sixel));
-            }
-        }
-        false
-    }
-
     /// Load data for preview
     pub fn load_data(&mut self, path: PathBuf, data: Vec<u8>) -> Task<PreviewMessage> {
         self.current_file = Some(path.clone());
@@ -194,7 +197,7 @@ impl PreviewView {
         // Clear image viewer when loading new file
         self.image_viewer = None;
 
-        if Self::is_image_file(&path) {
+        if is_image_file(&path) {
             // Load image in background thread
             self.preview_mode = PreviewMode::Loading;
 
@@ -203,7 +206,7 @@ impl PreviewView {
             self.current_image_load_id = load_id;
 
             // Check if it's a Sixel file (needs special handling)
-            let is_sixel = Self::is_sixel_file(&path);
+            let is_sixel = is_sixel_file(&path);
 
             // Spawn background task to load image from data
             Task::perform(
@@ -254,6 +257,45 @@ impl PreviewView {
             let _ = self.command_tx.send(ViewCommand::LoadData(path, data, self.auto_scroll_enabled));
             Task::none()
         }
+    }
+
+    /// Load a pre-decoded image directly (used for preloaded shuffle items)
+    /// This skips the background decoding step since the image is already decoded
+    /// Takes raw RGBA pixel data and creates the handle immediately
+    pub fn load_decoded_image(&mut self, path: PathBuf, rgba: Vec<u8>, width: u32, height: u32) -> Task<PreviewMessage> {
+        self.current_file = Some(path);
+        self.is_loading = false;
+
+        // Reset scroll position to top when loading new file
+        self.terminal.scroll_x_to(0.0);
+        self.terminal.scroll_y_to(0.0);
+        self.terminal.sync_scrollbar_with_viewport();
+
+        // Clear image viewer when loading new file
+        self.image_viewer = None;
+
+        // Increment load counter to invalidate any pending background loads
+        self.current_image_load_id = IMAGE_LOAD_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // Create handle from rgba data
+        let handle = iced_image::Handle::from_rgba(width, height, rgba);
+
+        // Create image viewer with the pre-decoded image
+        let mut viewer = ImageViewer::new(handle.clone(), width, height);
+
+        // If auto-scroll is enabled (e.g., shuffle mode), reset scroll to top
+        if self.auto_scroll_enabled {
+            viewer.scroll_to(0.0, 0.0);
+            self.scroll_mode = ScrollMode::AutoScroll;
+        } else {
+            self.scroll_mode = ScrollMode::Off;
+        }
+
+        self.image_viewer = Some(viewer);
+        self.preview_mode = PreviewMode::Image(handle, width, height);
+
+        log::debug!("Loaded pre-decoded image {}x{}", width, height);
+        Task::none()
     }
 
     /// Set baud emulation rate
@@ -369,12 +411,41 @@ impl PreviewView {
         self.content_size
     }
 
-    /// Get maximum scroll Y using computed visible height for accuracy
-    /// This accounts for the actual rendered height rather than just viewport settings
-    /// Returns max scroll in CONTENT coordinates (consistent with scroll_y)
+    /// Execute a closure with the active content view (image or terminal)
+    /// This provides unified access to scroll operations
+    fn with_content_view<R>(&mut self, f: impl FnOnce(&mut dyn ContentView) -> R) -> R {
+        if let Some(ref mut viewer) = self.image_viewer {
+            let mut content_view = ImageContentView::new(viewer);
+            f(&mut content_view)
+        } else {
+            let mut content_view = TerminalContentView::new(&mut self.terminal);
+            f(&mut content_view)
+        }
+    }
+
+    /// Get maximum scroll Y using the active content view
     fn get_max_scroll_y(&self) -> f32 {
-        // Viewport.max_scroll_y() now uses shader-computed visible_content_height if available
-        self.terminal.viewport.read().max_scroll_y()
+        if let Some(ref viewer) = self.image_viewer {
+            viewer.viewport.max_scroll_y()
+        } else {
+            self.terminal.viewport.read().max_scroll_y()
+        }
+    }
+
+    /// Get current scroll Y position using the active content view
+    fn get_current_scroll_y(&self) -> f32 {
+        if let Some(ref viewer) = self.image_viewer {
+            viewer.viewport.scroll_y
+        } else {
+            self.terminal.viewport.read().scroll_y
+        }
+    }
+
+    /// Check if scroll has reached the bottom
+    fn is_at_bottom(&self) -> bool {
+        let max_y = self.get_max_scroll_y();
+        let current_y = self.get_current_scroll_y();
+        max_y <= 0.0 || current_y >= max_y - 1.0
     }
 
     /// Cancel any ongoing loading operation
@@ -449,9 +520,11 @@ impl PreviewView {
     pub fn enable_auto_scroll(&mut self) {
         self.auto_scroll_enabled = true;
         self.scroll_mode = ScrollMode::AutoScroll;
-        // Reset scroll position to top
-        self.terminal.scroll_y_to(0.0);
-        self.terminal.sync_scrollbar_with_viewport();
+        // Reset scroll position to top using unified API
+        self.with_content_view(|cv| {
+            cv.scroll_to(0.0, 0.0);
+            cv.sync_scrollbar();
+        });
     }
 
     /// Check if scroll has completed (reached bottom)
@@ -459,21 +532,18 @@ impl PreviewView {
         if self.is_loading {
             return false;
         }
-
-        // Check if we're at the bottom
-        let max_scroll_y = self.get_max_scroll_y();
-        let current_y = self.terminal.viewport.read().scroll_y;
-
-        // Consider scroll complete if we're at or very close to bottom
-        // or if there's no scrollable content
-        max_scroll_y <= 0.0 || current_y >= max_scroll_y - 1.0
+        self.is_at_bottom()
     }
 
     /// Get visible height in pixels (for shuffle mode overlay positioning)
     pub fn get_visible_height(&self) -> f32 {
-        let vp = self.terminal.viewport.read();
-        let bounds_height = vp.bounds_height() as f32;
-        if bounds_height > 0.0 { bounds_height } else { vp.visible_height }
+        if let Some(ref viewer) = self.image_viewer {
+            viewer.viewport.visible_height
+        } else {
+            let vp = self.terminal.viewport.read();
+            let bounds_height = vp.bounds_height() as f32;
+            if bounds_height > 0.0 { bounds_height } else { vp.visible_height }
+        }
     }
 
     /// Poll for events from view thread
@@ -496,7 +566,15 @@ impl PreviewView {
                     match result {
                         Ok((handle, width, height)) => {
                             // Create image viewer with the loaded image
-                            self.image_viewer = Some(ImageViewer::new(handle.clone(), width, height));
+                            let mut viewer = ImageViewer::new(handle.clone(), width, height);
+
+                            // If auto-scroll is enabled (e.g., shuffle mode), reset scroll to top
+                            if self.auto_scroll_enabled {
+                                viewer.scroll_to(0.0, 0.0);
+                                self.scroll_mode = ScrollMode::AutoScroll;
+                            }
+
+                            self.image_viewer = Some(viewer);
                             self.preview_mode = PreviewMode::Image(handle, width, height);
                         }
                         Err(msg) => {
@@ -546,38 +624,37 @@ impl PreviewView {
                     }
                 }
 
-                // Update terminal animations
-                self.terminal.update_animations();
-
-                // Update image viewer scrollbar animations if active
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.update_scrollbars(delta_seconds);
-                }
+                // Update animations using unified API
+                self.with_content_view(|cv| {
+                    cv.update_animations(delta_seconds);
+                });
 
                 // Update viewport size to match current buffer size
                 // This is important during baud emulation when buffer grows
                 self.terminal.update_viewport_size();
 
-                // Handle scroll mode (decided by background thread)
+                // Handle scroll mode using unified content view API
                 match self.scroll_mode {
                     ScrollMode::ClampToBottom => {
                         // Clamp to bottom during baud emulation loading
-                        // Use computed visible height for accurate max scroll calculation
                         let max_scroll_y = self.get_max_scroll_y();
-                        self.terminal.scroll_y_to(max_scroll_y);
-                        self.terminal.sync_scrollbar_with_viewport();
+                        self.with_content_view(|cv| {
+                            cv.scroll_y_to(max_scroll_y);
+                            cv.sync_scrollbar();
+                        });
                     }
                     ScrollMode::AutoScroll => {
                         // Animated scrolling after loading completes
                         let scroll_speed = self.scroll_speed.get_speed();
                         let scroll_delta = scroll_speed * delta_seconds;
-                        let current_y = self.terminal.viewport.read().scroll_y;
-                        // Use computed visible height for accurate max scroll calculation
                         let max_scroll_y = self.get_max_scroll_y();
+                        let current_y = self.get_current_scroll_y();
                         let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-                        self.terminal.scroll_y_to(new_y);
-                        self.terminal.sync_scrollbar_with_viewport();
+                        self.with_content_view(|cv| {
+                            cv.scroll_y_to(new_y);
+                            cv.sync_scrollbar();
+                        });
 
                         // Stop auto-scroll when we reach the bottom
                         if new_y >= max_scroll_y {
@@ -589,67 +666,76 @@ impl PreviewView {
                     }
                 }
 
-                // Update image viewer scrollbar animations
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.update_scrollbars(delta_seconds);
-                }
-
                 // Return any extra tasks
                 if extra_tasks.is_empty() { Task::none() } else { Task::batch(extra_tasks) }
             }
             PreviewMessage::ScrollViewport(dx, dy) => {
                 // User is scrolling manually, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_by(dx);
-                self.terminal.scroll_y_by(dy);
-                self.terminal.sync_scrollbar_with_viewport();
+                self.with_content_view(|cv| {
+                    cv.scroll_by(dx, dy);
+                    cv.sync_scrollbar();
+                });
                 Task::none()
             }
             PreviewMessage::ScrollViewportSmooth(dx, dy) => {
                 // User is scrolling with animation (PageUp/PageDown)
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_by_smooth(dx);
-                self.terminal.scroll_y_by_smooth(dy);
-                self.terminal.sync_scrollbar_with_viewport();
+                self.with_content_view(|cv| {
+                    cv.scroll_by_smooth(dx, dy);
+                    cv.sync_scrollbar();
+                });
                 Task::none()
             }
             PreviewMessage::ScrollViewportTo(x, y) => {
                 // User is scrolling manually, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_to(x);
-                self.terminal.scroll_y_to(y);
-                self.terminal.sync_scrollbar_with_viewport();
+                self.with_content_view(|cv| {
+                    cv.scroll_to(x, y);
+                    cv.sync_scrollbar();
+                });
                 Task::none()
             }
             PreviewMessage::ScrollViewportToSmooth(x, y) => {
                 // User is scrolling to absolute position with animation (Home/End)
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_to_smooth(x);
-                self.terminal.scroll_y_to_smooth(y);
-                self.terminal.sync_scrollbar_with_viewport();
+                self.with_content_view(|cv| {
+                    cv.scroll_to_smooth(x, y);
+                    cv.sync_scrollbar();
+                });
                 Task::none()
             }
             PreviewMessage::ScrollViewportYToImmediate(y) => {
                 // User is scrolling vertically via scrollbar
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_y_to(y);
-                self.terminal.sync_scrollbar_with_viewport();
+                self.with_content_view(|cv| {
+                    cv.scroll_y_to(y);
+                    cv.sync_scrollbar();
+                });
                 Task::none()
             }
             PreviewMessage::ScrollViewportXToImmediate(x) => {
                 // User is scrolling horizontally via scrollbar
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_to(x);
-                self.terminal.sync_scrollbar_with_viewport();
+                self.with_content_view(|cv| {
+                    cv.scroll_x_to(x);
+                    cv.sync_scrollbar();
+                });
                 Task::none()
             }
             PreviewMessage::ScrollbarHovered(is_hovered) => {
                 self.terminal.scrollbar.set_hovered(is_hovered);
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.scrollbar.set_hovered(is_hovered);
+                }
                 Task::none()
             }
             PreviewMessage::HScrollbarHovered(is_hovered) => {
                 // Horizontal scrollbar uses separate hover state for animation
                 self.terminal.scrollbar.set_hovered_x(is_hovered);
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.scrollbar.set_hovered_x(is_hovered);
+                }
                 Task::none()
             }
             PreviewMessage::TerminalMessage(msg) => {
@@ -657,9 +743,10 @@ impl PreviewView {
                     icy_engine_gui::Message::ScrollViewport(dx, dy) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
-                        self.terminal.scroll_x_by(dx);
-                        self.terminal.scroll_y_by(dy);
-                        self.terminal.sync_scrollbar_with_viewport();
+                        self.with_content_view(|cv| {
+                            cv.scroll_by(dx, dy);
+                            cv.sync_scrollbar();
+                        });
                     }
                     icy_engine_gui::Message::Zoom(zoom_msg) => {
                         // Handle zoom via unified ZoomMessage

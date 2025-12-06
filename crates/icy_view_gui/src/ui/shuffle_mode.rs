@@ -99,6 +99,17 @@ struct CommentLineState {
     text: String,
 }
 
+/// Decoded image data (for preloading)
+#[derive(Clone)]
+pub struct DecodedImage {
+    /// Image width
+    pub width: u32,
+    /// Image height  
+    pub height: u32,
+    /// RGBA pixel data
+    pub rgba: Vec<u8>,
+}
+
 /// Preloaded data for the next shuffle item
 pub struct PreloadedItem {
     /// Index of the preloaded item
@@ -107,6 +118,8 @@ pub struct PreloadedItem {
     pub path: PathBuf,
     /// Loaded data bytes
     pub data: Vec<u8>,
+    /// Pre-decoded image (if applicable)
+    pub decoded_image: Option<DecodedImage>,
 }
 
 /// Shuffle mode state

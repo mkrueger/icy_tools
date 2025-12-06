@@ -177,6 +177,7 @@ thumbnail-no-diz = no file_id.diz
 thumbnail-unsupported = Unsupported
 
 filter-no-items-found = No items found.
+folder-empty = Folder is empty.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Command System (generated from command IDs)
