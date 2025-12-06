@@ -104,58 +104,6 @@ sauce-value-hz={ $count } Hz
 help-title = Atajos de teclado
 help-subtitle = Referencia rápida para iCY VIEW
 
-# Categorías
-help-category-navigation = Navegación
-help-category-display = Visualización
-help-category-zoom = Zoom
-help-category-tools = Herramientas
-
-# Acciones
-help-action-navigate = Navegar
-help-action-open = Abrir/Enter
-help-action-parent = Directorio padre
-help-action-back = Atrás
-help-action-forward = Adelante
-help-action-filter = Filtrar
-help-action-auto-scroll = Desp. automático
-help-action-scroll-speed = Veloc. desplaz.
-help-action-baud-rate = Tasa de baudios
-help-action-baud-off = Baud desactivado
-help-action-sauce = Info SAUCE
-help-action-zoom-in = Acercar
-help-action-zoom-out = Alejar
-help-action-zoom-reset = Restablecer zoom
-help-action-zoom-fit = Ajustar ventana
-help-action-export = Exportar
-help-action-copy = Copiar
-help-action-external = Cmds externos
-help-action-fullscreen = Pantalla completa
-help-action-help = Ayuda
-help-action-about = Acerca de
-
-# Descripciones
-help-desc-navigate = Mover selección en la lista
-help-desc-open = Abrir archivo o entrar en directorio
-help-desc-parent = Subir un nivel
-help-desc-back = Navegar a ubicación anterior
-help-desc-forward = Navegar a ubicación siguiente
-help-desc-filter = Alternar entrada de filtro
-help-desc-auto-scroll = Activar/desactivar desplazamiento auto (vista/mosaicos)
-help-desc-scroll-speed = Velocidad de desplazamiento adelante/atrás
-help-desc-baud-rate = Tasa de baudios adelante/atrás
-help-desc-baud-off = Desactivar emulación baud
-help-desc-sauce = Mostrar metadatos SAUCE
-help-desc-zoom-in = Aumentar nivel de zoom
-help-desc-zoom-out = Disminuir nivel de zoom
-help-desc-zoom-reset = Restablecer a 100%
-help-desc-zoom-fit = Ajustar contenido a ventana
-help-desc-export = Exportar archivo como imagen
-help-desc-copy = Copiar selección
-help-desc-external = Ejecutar comandos externos (F5-F8)
-help-desc-fullscreen = Alternar pantalla completa
-help-desc-help = Mostrar este diálogo de ayuda
-help-desc-about = Mostrar diálogo Acerca de
-
 toast-auto-scroll-on=Desplazamiento automático activado
 toast-auto-scroll-off=Desplazamiento automático desactivado
 toast-scroll-slow=Velocidad de desplazamiento: lenta
@@ -214,3 +162,105 @@ welcome-tip = Consejo: Presione Ctrl+F para filtrar, o haga clic en 🌐 para na
 thumbnail-loading = Cargando...
 thumbnail-no-diz = sin file_id.diz
 thumbnail-unsupported = No soportado
+
+filter-no-items-found = No se encontraron elementos.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sistema de comandos
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categorías
+cmd-category-file = Archivo
+cmd-category-edit = Editar
+cmd-category-view = Vista
+cmd-category-navigation = Navegación
+cmd-category-window = Ventana
+cmd-category-help = Ayuda
+cmd-category-settings = Ajustes
+cmd-category-dialog = Diálogos
+cmd-category-playback = Reproducción
+cmd-category-external = Externo
+
+# Comandos de archivo
+cmd-file-open-action = Abrir
+cmd-file-open-desc = Abrir un archivo
+cmd-file-export-action = Exportar
+cmd-file-export-desc = Exportar como imagen
+cmd-file-close-action = Cerrar
+cmd-file-close-desc = Cerrar archivo actual
+
+# Comandos de edición
+cmd-edit-copy-action = Copiar
+cmd-edit-copy-desc = Copiar selección
+cmd-edit-paste-action = Pegar
+cmd-edit-paste-desc = Pegar del portapapeles
+cmd-edit-select_all-action = Seleccionar todo
+cmd-edit-select_all-desc = Seleccionar todo el contenido
+
+# Comandos de vista
+cmd-view-zoom_in-action = Acercar
+cmd-view-zoom_in-desc = Aumentar zoom
+cmd-view-zoom_out-action = Alejar
+cmd-view-zoom_out-desc = Disminuir zoom
+cmd-view-zoom_reset-action = Restablecer zoom
+cmd-view-zoom_reset-desc = Restablecer a 100%
+cmd-view-zoom_fit-action = Ajustar ventana
+cmd-view-zoom_fit-desc = Ajustar contenido a ventana
+cmd-view-fullscreen-action = Pantalla completa
+cmd-view-fullscreen-desc = Alternar pantalla completa
+
+# Comandos de navegación
+cmd-nav-back-action = Atrás
+cmd-nav-back-desc = Ir a ubicación anterior
+cmd-nav-forward-action = Adelante
+cmd-nav-forward-desc = Ir a ubicación siguiente
+cmd-nav-up-action = Directorio padre
+cmd-nav-up-desc = Subir un nivel
+
+# Comandos de ventana
+cmd-window-new-action = Nueva ventana
+cmd-window-new-desc = Abrir nueva ventana
+cmd-window-close-action = Cerrar ventana
+cmd-window-close-desc = Cerrar ventana actual
+
+# Comandos de ayuda
+cmd-help-show-action = Ayuda
+cmd-help-show-desc = Mostrar atajos
+cmd-help-about-action = Acerca de
+cmd-help-about-desc = Mostrar Acerca de
+
+# Comandos de ajustes
+cmd-settings-open-action = Ajustes
+cmd-settings-open-desc = Abrir ajustes
+
+# Comandos de diálogos
+cmd-dialog-sauce-action = Info SAUCE
+cmd-dialog-sauce-desc = Mostrar metadatos SAUCE
+cmd-dialog-export-action = Exportar
+cmd-dialog-export-desc = Exportar como imagen
+cmd-dialog-filter-action = Filtrar
+cmd-dialog-filter-desc = Alternar filtro
+
+# Comandos de reproducción
+cmd-playback-toggle_scroll-action = Desplaz. auto
+cmd-playback-toggle_scroll-desc = Activar/desactivar desplazamiento
+cmd-playback-scroll_speed-action = Velocidad +
+cmd-playback-scroll_speed-desc = Aumentar velocidad
+cmd-playback-scroll_speed_back-action = Velocidad -
+cmd-playback-scroll_speed_back-desc = Disminuir velocidad
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Aumentar baud
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Disminuir baud
+cmd-playback-baud_rate_off-action = Baud desactivado
+cmd-playback-baud_rate_off-desc = Desactivar emulación baud
+
+# Comandos externos
+cmd-external-command_0-action = Externo 1
+cmd-external-command_0-desc = Ejecutar comando 1 (F5)
+cmd-external-command_1-action = Externo 2
+cmd-external-command_1-desc = Ejecutar comando 2 (F6)
+cmd-external-command_2-action = Externo 3
+cmd-external-command_2-desc = Ejecutar comando 3 (F7)
+cmd-external-command_3-action = Externo 4
+cmd-external-command_3-desc = Ejecutar comando 4 (F8)

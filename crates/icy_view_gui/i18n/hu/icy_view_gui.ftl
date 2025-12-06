@@ -104,58 +104,6 @@ sauce-value-hz={ $count } Hz
 help-title = Billentyűparancsok
 help-subtitle = Gyors referencia az iCY VIEW-hoz
 
-# Kategóriák
-help-category-navigation = Navigáció
-help-category-display = Megjelenítés
-help-category-zoom = Nagyítás
-help-category-tools = Eszközök
-
-# Műveletek
-help-action-navigate = Navigálás
-help-action-open = Megnyitás/Enter
-help-action-parent = Szülő mappa
-help-action-back = Vissza
-help-action-forward = Előre
-help-action-filter = Szűrés
-help-action-auto-scroll = Auto görgetés
-help-action-scroll-speed = Görgetés seb.
-help-action-baud-rate = Baud sebesség
-help-action-baud-off = Baud kikapcsolva
-help-action-sauce = SAUCE info
-help-action-zoom-in = Nagyítás
-help-action-zoom-out = Kicsinyítés
-help-action-zoom-reset = Nagyítás reset
-help-action-zoom-fit = Ablakhoz illeszt
-help-action-export = Exportálás
-help-action-copy = Másolás
-help-action-external = Külső parancsok
-help-action-fullscreen = Teljes képernyő
-help-action-help = Súgó
-help-action-about = Névjegy
-
-# Leírások
-help-desc-navigate = Kijelölés mozgatása a listában
-help-desc-open = Fájl megnyitása vagy mappába lépés
-help-desc-parent = Egy szinttel feljebb
-help-desc-back = Navigálás az előző helyre
-help-desc-forward = Navigálás a következő helyre
-help-desc-filter = Szűrő mező be/ki
-help-desc-auto-scroll = Auto görgetés be/ki (előnézet/csempék)
-help-desc-scroll-speed = Görgetési sebesség előre/hátra
-help-desc-baud-rate = Baud sebesség előre/hátra
-help-desc-baud-off = Baud emuláció kikapcsolása
-help-desc-sauce = SAUCE metaadatok megjelenítése
-help-desc-zoom-in = Nagyítási szint növelése
-help-desc-zoom-out = Nagyítási szint csökkentése
-help-desc-zoom-reset = Visszaállítás 100%-ra
-help-desc-zoom-fit = Tartalom ablakhoz igazítása
-help-desc-export = Fájl exportálása képként
-help-desc-copy = Kijelölés másolása
-help-desc-external = Külső parancsok futtatása (F5-F8)
-help-desc-fullscreen = Teljes képernyő be/ki
-help-desc-help = Súgó ablak megjelenítése
-help-desc-about = Névjegy ablak megjelenítése
-
 toast-auto-scroll-on=Automatikus görgetés bekapcsolva
 toast-auto-scroll-off=Automatikus görgetés kikapcsolva
 toast-scroll-slow=Görgetési sebesség: lassú
@@ -214,3 +162,105 @@ welcome-tip = Tipp: Nyomj Ctrl+F-et a szűréshez, vagy kattints a 🌐 gombra a
 thumbnail-loading = Betöltés...
 thumbnail-no-diz = nincs file_id.diz
 thumbnail-unsupported = Nem támogatott
+
+filter-no-items-found = Nem található elem.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Parancsrendszer
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Kategóriák
+cmd-category-file = Fájl
+cmd-category-edit = Szerkesztés
+cmd-category-view = Nézet
+cmd-category-navigation = Navigáció
+cmd-category-window = Ablak
+cmd-category-help = Súgó
+cmd-category-settings = Beállítások
+cmd-category-dialog = Párbeszédek
+cmd-category-playback = Lejátszás
+cmd-category-external = Külső
+
+# Fájl parancsok
+cmd-file-open-action = Megnyitás
+cmd-file-open-desc = Fájl megnyitása
+cmd-file-export-action = Exportálás
+cmd-file-export-desc = Exportálás képként
+cmd-file-close-action = Bezárás
+cmd-file-close-desc = Aktuális fájl bezárása
+
+# Szerkesztés parancsok
+cmd-edit-copy-action = Másolás
+cmd-edit-copy-desc = Kijelölés másolása
+cmd-edit-paste-action = Beillesztés
+cmd-edit-paste-desc = Beillesztés vágólaprol
+cmd-edit-select_all-action = Mindent kijelöl
+cmd-edit-select_all-desc = Teljes tartalom kijelölése
+
+# Nézet parancsok
+cmd-view-zoom_in-action = Nagyítás
+cmd-view-zoom_in-desc = Nagyítás növelése
+cmd-view-zoom_out-action = Kicsinyítés
+cmd-view-zoom_out-desc = Nagyítás csökkentése
+cmd-view-zoom_reset-action = Nagyítás reset
+cmd-view-zoom_reset-desc = Visszaállítás 100%-ra
+cmd-view-zoom_fit-action = Ablakhoz illeszt
+cmd-view-zoom_fit-desc = Tartalom ablakhoz igazítása
+cmd-view-fullscreen-action = Teljes képernyő
+cmd-view-fullscreen-desc = Teljes képernyő be/ki
+
+# Navigáció parancsok
+cmd-nav-back-action = Vissza
+cmd-nav-back-desc = Előző helyre ugrrás
+cmd-nav-forward-action = Előre
+cmd-nav-forward-desc = Következő helyre ugrás
+cmd-nav-up-action = Szülő mappa
+cmd-nav-up-desc = Egy szinttel feljebb
+
+# Ablak parancsok
+cmd-window-new-action = Új ablak
+cmd-window-new-desc = Új ablak megnyitása
+cmd-window-close-action = Ablak bezárása
+cmd-window-close-desc = Aktuális ablak bezárása
+
+# Súgó parancsok
+cmd-help-show-action = Súgó
+cmd-help-show-desc = Gyorsbillentyűk megjelenítése
+cmd-help-about-action = Névjegy
+cmd-help-about-desc = Névjegy megjelenítése
+
+# Beállítás parancsok
+cmd-settings-open-action = Beállítások
+cmd-settings-open-desc = Beállítások megnyitása
+
+# Párbeszéd parancsok
+cmd-dialog-sauce-action = SAUCE info
+cmd-dialog-sauce-desc = SAUCE metaadatok megjelenítése
+cmd-dialog-export-action = Exportálás
+cmd-dialog-export-desc = Exportálás képként
+cmd-dialog-filter-action = Szűrés
+cmd-dialog-filter-desc = Szűrő be/ki
+
+# Lejátszás parancsok
+cmd-playback-toggle_scroll-action = Auto görgetés
+cmd-playback-toggle_scroll-desc = Görgetés be/ki
+cmd-playback-scroll_speed-action = Sebesség +
+cmd-playback-scroll_speed-desc = Sebesség növelése
+cmd-playback-scroll_speed_back-action = Sebesség -
+cmd-playback-scroll_speed_back-desc = Sebesség csökkentése
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Baud növelése
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Baud csökkentése
+cmd-playback-baud_rate_off-action = Baud ki
+cmd-playback-baud_rate_off-desc = Baud emuláció kikapcsolása
+
+# Külső parancsok
+cmd-external-command_0-action = Külső 1
+cmd-external-command_0-desc = 1. parancs futtatása (F5)
+cmd-external-command_1-action = Külső 2
+cmd-external-command_1-desc = 2. parancs futtatása (F6)
+cmd-external-command_2-action = Külső 3
+cmd-external-command_2-desc = 3. parancs futtatása (F7)
+cmd-external-command_3-action = Külső 4
+cmd-external-command_3-desc = 4. parancs futtatása (F8)

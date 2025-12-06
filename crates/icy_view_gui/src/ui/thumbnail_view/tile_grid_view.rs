@@ -21,7 +21,6 @@ use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader,
 use crate::Item;
 use crate::items::{ItemFile, ItemFolder};
 use crate::ui::options::ScrollSpeed;
-use crate::ui::theme;
 
 /// Base tile width for layout calculations (full tile including borders)
 const TILE_BASE_WIDTH: f32 = TILE_WIDTH;
@@ -427,8 +426,12 @@ impl TileGridView {
                 Arc::new(ItemFile::new(path.clone()))
             };
 
+            // Use full_path for thumbnail matching (consistent with loader)
+            // This ensures the path used for matching results is the same as in the loader
+            let thumb_path = item.get_full_path().unwrap_or_else(|| item.get_file_path());
+
             // For items with sync thumbnails (folders), load immediately to ensure correct layout
-            let mut thumb = Thumbnail::new(path.clone(), label.clone());
+            let mut thumb = Thumbnail::new(thumb_path, label.clone());
             if let Some(rgba) = item.get_sync_thumbnail() {
                 // Render label separately for GPU (don't embed in image)
                 thumb.label_rgba = render_label_tag(&label, 1);
@@ -485,13 +488,16 @@ impl TileGridView {
             if item.is_parent() {
                 continue;
             }
-            let path = item.get_file_path();
             let label = item.get_label();
             let container = item.is_container();
 
             // For items with sync thumbnails (folders), load immediately to ensure correct layout
             let item_arc: Arc<dyn Item> = Arc::from(item);
-            let mut thumb = Thumbnail::new(path, label.clone());
+
+            // Use full_path for thumbnail matching (consistent with loader)
+            // This ensures the path used for matching results is the same as in the loader
+            let thumb_path = item_arc.get_full_path().unwrap_or_else(|| item_arc.get_file_path());
+            let mut thumb = Thumbnail::new(thumb_path, label.clone());
             if let Some(rgba) = item_arc.get_sync_thumbnail() {
                 // Render label separately for GPU (don't embed in image)
                 thumb.label_rgba = render_label_tag(&label, 1);
@@ -695,8 +701,21 @@ impl TileGridView {
 
         // Limit how many we queue at once to prevent overwhelming the loader
         let max_queue = 20;
+        if !indices_to_load.is_empty() {
+            log::debug!(
+                "[TileGridView] queue_visible_range_loads: {} items to load (max {})",
+                indices_to_load.len(),
+                max_queue
+            );
+        }
         for (actual_idx, priority) in indices_to_load.into_iter().take(max_queue) {
             if let Some(item) = self.items.get(actual_idx) {
+                log::debug!(
+                    "[TileGridView] Queueing load for idx={}, path={:?}, priority={}",
+                    actual_idx,
+                    item.get_file_path(),
+                    priority
+                );
                 self.loader.load(ThumbnailRequest { item: item.clone(), priority });
                 if let Some(thumb) = self.thumbnails.get_mut(actual_idx) {
                     thumb.state = ThumbnailState::Loading {
@@ -841,40 +860,55 @@ impl TileGridView {
 
         let mut messages = Vec::new();
         while let Ok(result) = self.result_rx.try_recv() {
+            log::debug!("[TileGridView] Received thumbnail result for: {:?}", result.path);
+
             // Find the thumbnail by path - try exact match first, then filename match
             let found = self.thumbnails.iter_mut().enumerate().find(|(_, t)| t.path == result.path);
 
             let thumb_opt = if found.is_some() {
+                log::debug!("[TileGridView] Found exact path match for: {:?}", result.path);
                 found
             } else {
                 // Fallback: match by filename only (in case paths differ slightly)
                 let result_filename = &result.path;
-                self.thumbnails
+                log::debug!("[TileGridView] No exact match, trying fallback for: {:?}", result_filename);
+                let fallback = self
+                    .thumbnails
                     .iter_mut()
                     .enumerate()
-                    .find(|(_, t)| &t.path == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
+                    .find(|(_, t)| &t.path == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }));
+                fallback
             };
 
-            if let Some((idx, thumb)) = thumb_opt {
-                // For Error state without placeholder, create one with the label
-                let new_state = match &result.state {
-                    ThumbnailState::Error { message, placeholder: None } => {
-                        let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &thumb.label);
-                        ThumbnailState::Error {
-                            message: message.clone(),
-                            placeholder: Some(placeholder),
-                        }
-                    }
-                    other => other.clone(),
-                };
-                thumb.state = new_state.clone();
-                thumb.sauce_info = result.sauce_info.clone();
-                thumb.width_multiplier = result.width_multiplier;
-                thumb.label_rgba = result.label_rgba.clone();
-                // Track this thumbnail in LRU (it's now loaded)
-                self.mark_as_loaded(idx);
-                messages.push(TileGridMessage::ThumbnailReady(result.path.clone(), new_state));
+            if thumb_opt.is_none() {
+                log::warn!("[TileGridView] No thumbnail found for result path: {:?}", result.path);
+                // Debug: log first few thumbnail paths
+                let debug_paths: Vec<_> = self.thumbnails.iter().take(5).map(|t| (&t.path, std::mem::discriminant(&t.state))).collect();
+                for (i, (path, state)) in debug_paths.iter().enumerate() {
+                    log::debug!("[TileGridView]   thumbnail[{}].path = {:?}, state = {:?}", i, path, state);
+                }
+                continue;
             }
+
+            let (idx, thumb) = thumb_opt.unwrap();
+            // For Error state without placeholder, create one with the label
+            let new_state = match &result.state {
+                ThumbnailState::Error { message, placeholder: None } => {
+                    let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &thumb.label);
+                    ThumbnailState::Error {
+                        message: message.clone(),
+                        placeholder: Some(placeholder),
+                    }
+                }
+                other => other.clone(),
+            };
+            thumb.state = new_state.clone();
+            thumb.sauce_info = result.sauce_info.clone();
+            thumb.width_multiplier = result.width_multiplier;
+            thumb.label_rgba = result.label_rgba.clone();
+            // Track this thumbnail in LRU (it's now loaded)
+            self.mark_as_loaded(idx);
+            messages.push(TileGridMessage::ThumbnailReady(result.path.clone(), new_state));
         }
 
         if !messages.is_empty() {
@@ -1374,14 +1408,39 @@ impl TileGridView {
     pub fn view(&self) -> Element<'_, TileGridMessage> {
         use iced::widget::responsive;
 
+        // Read the background color for the container style
+        let bg = *self.background_color.read();
+        let bg_color = iced::Color::from_rgba(bg[0], bg[1], bg[2], bg[3]);
+
+        // Check if filter is active but no items match
+        if !self.filter.is_empty() && self.visible_indices.is_empty() {
+            use i18n_embed_fl::fl;
+            return container(
+                text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
+                    .size(14)
+                    .style(|theme: &iced::Theme| text::Style {
+                        color: Some(theme.palette().text.scale_alpha(0.5)),
+                    }),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .padding(20)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(bg_color)),
+                ..Default::default()
+            })
+            .into();
+        }
+
         if self.thumbnails.is_empty() {
             return container(text("No files to display - click grid icon to load").size(14))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(bg_color)),
                     ..Default::default()
                 })
                 .into();
@@ -1499,12 +1558,16 @@ impl TileGridView {
             background_color: self.background_color.clone(),
         };
 
+        // Read the background color for the container style
+        let bg = *self.background_color.read();
+        let bg_color = iced::Color::from_rgba(bg[0], bg[1], bg[2], bg[3]);
+
         // Build the shader widget with background color
         let shader_widget = container(shader(program).width(Length::Fill).height(Length::Fill))
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme::main_area_background(theme))),
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(bg_color)),
                 ..Default::default()
             });
 

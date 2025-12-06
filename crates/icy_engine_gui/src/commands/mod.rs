@@ -31,21 +31,21 @@
 #[macro_use]
 mod macros;
 
-mod hotkey;
 mod command_def;
-mod command_set;
 mod command_handler;
-mod toml_loader;
+mod command_set;
 mod defaults;
+mod hotkey;
 mod iced_adapter;
+mod toml_loader;
 
-pub use hotkey::{Hotkey, KeyCode, Modifiers, MouseButton, MouseBinding};
 pub use command_def::CommandDef;
-pub use command_set::CommandSet;
 pub use command_handler::CommandHandler;
-pub use toml_loader::{load_commands_from_str, load_commands_from_file, CommandLoadError};
-pub use defaults::{create_common_commands, cmd};
-pub use iced_adapter::{hotkey_from_iced, from_iced_modifiers, from_iced_key, from_iced_mouse_button, mouse_binding_from_iced, try_handle_event, IntoHotkey};
+pub use command_set::{CategoryMeta, CommandSet, HelpCommandInfo};
+pub use defaults::{cmd, create_common_commands};
+pub use hotkey::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
+pub use iced_adapter::{IntoHotkey, from_iced_key, from_iced_modifiers, from_iced_mouse_button, hotkey_from_iced, mouse_binding_from_iced, try_handle_event};
+pub use toml_loader::{CommandLoadError, load_commands_from_file, load_commands_from_str};
 
 #[cfg(test)]
 mod tests;

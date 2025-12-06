@@ -160,3 +160,105 @@ welcome-tip = Consell: Premeu Ctrl+F per filtrar, o feu clic a 🌐 per navegar 
 thumbnail-loading = Carregant...
 thumbnail-no-diz = sense file_id.diz
 thumbnail-unsupported = No compatible
+
+filter-no-items-found = No s'han trobat elements.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sistema de comandes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categories
+cmd-category-file = Fitxer
+cmd-category-edit = Edita
+cmd-category-view = Visualitza
+cmd-category-navigation = Navegació
+cmd-category-window = Finestra
+cmd-category-help = Ajuda
+cmd-category-settings = Configuració
+cmd-category-dialog = Diàlegs
+cmd-category-playback = Reproducció
+cmd-category-external = Extern
+
+# Comandes de fitxer
+cmd-file-open-action = Obre
+cmd-file-open-desc = Obre un fitxer
+cmd-file-export-action = Exporta
+cmd-file-export-desc = Exporta com a imatge
+cmd-file-close-action = Tanca
+cmd-file-close-desc = Tanca el fitxer actual
+
+# Comandes d'edició
+cmd-edit-copy-action = Copia
+cmd-edit-copy-desc = Copia la selecció
+cmd-edit-paste-action = Enganxa
+cmd-edit-paste-desc = Enganxa del porta-retalls
+cmd-edit-select_all-action = Selecciona tot
+cmd-edit-select_all-desc = Selecciona tot el contingut
+
+# Comandes de visualització
+cmd-view-zoom_in-action = Amplia
+cmd-view-zoom_in-desc = Augmenta el zoom
+cmd-view-zoom_out-action = Redueix
+cmd-view-zoom_out-desc = Redueix el zoom
+cmd-view-zoom_reset-action = Restableix zoom
+cmd-view-zoom_reset-desc = Restableix a 100%
+cmd-view-zoom_fit-action = Ajusta finestra
+cmd-view-zoom_fit-desc = Ajusta el contingut a la finestra
+cmd-view-fullscreen-action = Pantalla completa
+cmd-view-fullscreen-desc = Commuta pantalla completa
+
+# Comandes de navegació
+cmd-nav-back-action = Enrere
+cmd-nav-back-desc = Vés a la ubicació anterior
+cmd-nav-forward-action = Endavant
+cmd-nav-forward-desc = Vés a la ubicació següent
+cmd-nav-up-action = Directori pare
+cmd-nav-up-desc = Puja un nivell
+
+# Comandes de finestra
+cmd-window-new-action = Nova finestra
+cmd-window-new-desc = Obre una nova finestra
+cmd-window-close-action = Tanca finestra
+cmd-window-close-desc = Tanca la finestra actual
+
+# Comandes d'ajuda
+cmd-help-show-action = Ajuda
+cmd-help-show-desc = Mostra dreceres
+cmd-help-about-action = Quant a
+cmd-help-about-desc = Mostra Quant a
+
+# Comandes de configuració
+cmd-settings-open-action = Configuració
+cmd-settings-open-desc = Obre la configuració
+
+# Comandes de diàlegs
+cmd-dialog-sauce-action = Info SAUCE
+cmd-dialog-sauce-desc = Mostra metadades SAUCE
+cmd-dialog-export-action = Exporta
+cmd-dialog-export-desc = Exporta com a imatge
+cmd-dialog-filter-action = Filtra
+cmd-dialog-filter-desc = Commuta filtre
+
+# Comandes de reproducció
+cmd-playback-toggle_scroll-action = Desplaçament auto
+cmd-playback-toggle_scroll-desc = Commuta desplaçament
+cmd-playback-scroll_speed-action = Velocitat +
+cmd-playback-scroll_speed-desc = Augmenta velocitat
+cmd-playback-scroll_speed_back-action = Velocitat -
+cmd-playback-scroll_speed_back-desc = Redueix velocitat
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Augmenta baud
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Redueix baud
+cmd-playback-baud_rate_off-action = Baud desactivat
+cmd-playback-baud_rate_off-desc = Desactiva emulació baud
+
+# Comandes externes
+cmd-external-command_0-action = Extern 1
+cmd-external-command_0-desc = Executa comanda 1 (F5)
+cmd-external-command_1-action = Extern 2
+cmd-external-command_1-desc = Executa comanda 2 (F6)
+cmd-external-command_2-action = Extern 3
+cmd-external-command_2-desc = Executa comanda 3 (F7)
+cmd-external-command_3-action = Extern 4
+cmd-external-command_3-desc = Executa comanda 4 (F8)

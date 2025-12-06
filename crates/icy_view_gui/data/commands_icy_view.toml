@@ -6,6 +6,7 @@
 #   id = "unique.command.id"    # Also used as i18n translation key
 #   hotkey = ["Ctrl+C"]         # Windows/Linux shortcuts (can have multiple)
 #   hotkey_mac = ["Cmd+C"]      # macOS shortcuts (optional, falls back to hotkey)
+#   category = "dialog"         # Optional category for help dialog grouping
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # icy_view Dialogs
@@ -14,16 +15,19 @@
 [[commands]]
 id = "dialog.sauce"
 hotkey = ["F4"]
+category = "dialog"
 
 [[commands]]
 id = "dialog.export"
 hotkey = ["Ctrl+I"]
 hotkey_mac = ["Cmd+I"]
+category = "dialog"
 
 [[commands]]
 id = "dialog.filter"
 hotkey = ["Ctrl+F"]
 hotkey_mac = ["Cmd+F"]
+category = "dialog"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Playback Control
@@ -32,27 +36,33 @@ hotkey_mac = ["Cmd+F"]
 [[commands]]
 id = "playback.toggle_scroll"
 hotkey = ["Space"]
+category = "playback"
 
 [[commands]]
 id = "playback.scroll_speed"
 hotkey = ["F2"]
+category = "playback"
 
 [[commands]]
 id = "playback.scroll_speed_back"
 hotkey = ["Shift+F2"]
+category = "playback"
 
 [[commands]]
 id = "playback.baud_rate"
 hotkey = ["F3"]
+category = "playback"
 
 [[commands]]
 id = "playback.baud_rate_back"
 hotkey = ["Shift+F3"]
+category = "playback"
 
 [[commands]]
 id = "playback.baud_rate_off"
 hotkey = ["Ctrl+F3"]
 hotkey_mac = ["Cmd+F3"]
+category = "playback"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # External Commands
@@ -61,15 +71,19 @@ hotkey_mac = ["Cmd+F3"]
 [[commands]]
 id = "external.command_0"
 hotkey = ["F5"]
+category = "external"
 
 [[commands]]
 id = "external.command_1"
 hotkey = ["F6"]
+category = "external"
 
 [[commands]]
 id = "external.command_2"
 hotkey = ["F7"]
+category = "external"
 
 [[commands]]
 id = "external.command_3"
 hotkey = ["F8"]
+category = "external"

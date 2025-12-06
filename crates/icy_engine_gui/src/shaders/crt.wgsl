@@ -3,7 +3,7 @@ struct VertexOutput {
     @location(0) tex_coord: vec2<f32>,
 }
 
-// Match Rust layout: scalars + vec2 + scalars + padding
+// Match Rust layout: scalars + vec2 + scalars + padding + vec4
 struct Uniforms {
     time: f32,
     brightness: f32,
@@ -29,6 +29,8 @@ struct Uniforms {
     bloom_intensity: f32,
     enable_bloom: f32,
 
+    _padding: vec2<f32>,  // Padding to align background_color to 16 bytes
+    background_color: vec4<f32>,
 }
 
 struct MonitorColor {
@@ -218,7 +220,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let distorted_uv = apply_curvature(wobbled_uv);
 
     if (distorted_uv.x < 0.0 || distorted_uv.y < 0.0 || distorted_uv.x > 1.0 || distorted_uv.y > 1.0) {
-        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        return uniforms.background_color;
     }
 
     // Sample from undistorted UV for bloom (before curvature warping)

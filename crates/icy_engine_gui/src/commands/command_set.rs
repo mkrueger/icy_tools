@@ -6,15 +6,35 @@ use std::collections::HashMap;
 
 use super::{CommandDef, Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
 
+/// Category metadata for help dialog display
+pub struct CategoryMeta {
+    /// Internal category name (from CommandDef.category)
+    pub id: String,
+    /// Display icon (emoji)
+    pub icon: String,
+    /// Display order (lower = first)
+    pub order: u32,
+}
+
+impl CategoryMeta {
+    pub fn new(id: impl Into<String>, icon: impl Into<String>, order: u32) -> Self {
+        Self {
+            id: id.into(),
+            icon: icon.into(),
+            order,
+        }
+    }
+}
+
 /// A collection of commands that can match keyboard and mouse events
 #[derive(Debug, Default)]
 pub struct CommandSet {
     /// Commands indexed by their ID
     commands: HashMap<String, CommandDef>,
-    
+
     /// Lookup table: Hotkey -> command ID (for fast matching)
     hotkey_map: HashMap<Hotkey, String>,
-    
+
     /// Lookup table: MouseBinding -> command ID (for fast matching)
     mouse_map: HashMap<MouseBinding, String>,
 }
@@ -28,17 +48,17 @@ impl CommandSet {
     /// Add a command to the set
     pub fn add(&mut self, command: CommandDef) {
         let id = command.id.clone();
-        
+
         // Update hotkey lookup map
         for hotkey in command.active_hotkeys() {
             self.hotkey_map.insert(*hotkey, id.clone());
         }
-        
+
         // Update mouse binding lookup map
         for mouse in command.mouse_bindings() {
             self.mouse_map.insert(*mouse, id.clone());
         }
-        
+
         self.commands.insert(id, command);
     }
 
@@ -107,9 +127,7 @@ impl CommandSet {
     /// Override a specific command's hotkeys
     pub fn override_hotkeys(&mut self, id: &str, hotkeys: &[&str]) {
         if let Some(cmd) = self.commands.get_mut(id) {
-            let parsed: Vec<Hotkey> = hotkeys.iter()
-                .filter_map(|s| Hotkey::parse(s))
-                .collect();
+            let parsed: Vec<Hotkey> = hotkeys.iter().filter_map(|s| Hotkey::parse(s)).collect();
             cmd.override_hotkeys(parsed);
             self.rebuild_hotkey_map();
         }
@@ -138,21 +156,93 @@ impl CommandSet {
     /// Check for hotkey conflicts (same hotkey bound to multiple commands)
     pub fn find_conflicts(&self) -> Vec<(Hotkey, Vec<String>)> {
         let mut hotkey_to_commands: HashMap<Hotkey, Vec<String>> = HashMap::new();
-        
+
         for (id, cmd) in &self.commands {
             for hotkey in cmd.active_hotkeys() {
-                hotkey_to_commands
-                    .entry(*hotkey)
-                    .or_default()
-                    .push(id.clone());
+                hotkey_to_commands.entry(*hotkey).or_default().push(id.clone());
             }
         }
 
-        hotkey_to_commands
+        hotkey_to_commands.into_iter().filter(|(_, ids)| ids.len() > 1).collect()
+    }
+
+    /// Get commands grouped by category
+    ///
+    /// Returns a HashMap where keys are category names (or "" for uncategorized)
+    /// and values are vectors of CommandDef references.
+    pub fn commands_by_category(&self) -> HashMap<String, Vec<&CommandDef>> {
+        let mut result: HashMap<String, Vec<&CommandDef>> = HashMap::new();
+
+        for cmd in self.commands.values() {
+            let category = cmd.category().unwrap_or("").to_string();
+            result.entry(category).or_default().push(cmd);
+        }
+
+        result
+    }
+
+    /// Generate help data for all commands with categories
+    ///
+    /// Returns tuples of (category_id, commands) sorted by category.
+    /// The `translator` function is called with fluent keys to get localized strings.
+    ///
+    /// # Arguments
+    /// * `category_meta` - Metadata for categories (icons, order)
+    /// * `translator` - Function that translates fluent keys to localized strings
+    ///
+    /// Returns: Vec of (icon, category_name, shortcuts) tuples
+    pub fn help_categories<F>(&self, category_meta: &[CategoryMeta], translator: F) -> Vec<(String, String, Vec<HelpCommandInfo>)>
+    where
+        F: Fn(&str) -> String,
+    {
+        let by_category = self.commands_by_category();
+
+        // Build order map
+        let meta_map: HashMap<&str, &CategoryMeta> = category_meta.iter().map(|m| (m.id.as_str(), m)).collect();
+
+        // Collect and sort categories
+        let mut categories: Vec<_> = by_category
             .into_iter()
-            .filter(|(_, ids)| ids.len() > 1)
+            .filter(|(cat, _)| !cat.is_empty()) // Skip uncategorized
+            .collect();
+
+        categories.sort_by(|(a, _), (b, _)| {
+            let order_a = meta_map.get(a.as_str()).map(|m| m.order).unwrap_or(999);
+            let order_b = meta_map.get(b.as_str()).map(|m| m.order).unwrap_or(999);
+            order_a.cmp(&order_b)
+        });
+
+        // Convert to help data
+        categories
+            .into_iter()
+            .map(|(cat_id, commands)| {
+                let meta = meta_map.get(cat_id.as_str());
+                let icon = meta.map(|m| m.icon.clone()).unwrap_or_else(|| "📌".to_string());
+                let cat_key = format!("cmd-category-{}", cat_id);
+                let cat_name = translator(&cat_key);
+
+                let shortcuts: Vec<HelpCommandInfo> = commands
+                    .iter()
+                    .map(|cmd| {
+                        let keys = cmd.primary_hotkey_display().unwrap_or_default();
+                        let action = translator(&cmd.fluent_action_key());
+                        let description = translator(&cmd.fluent_desc_key());
+                        HelpCommandInfo { keys, action, description }
+                    })
+                    .collect();
+
+                (icon, cat_name, shortcuts)
+            })
             .collect()
     }
+}
+
+/// Information about a command for help display
+#[derive(Debug, Clone)]
+pub struct HelpCommandInfo {
+    pub keys: String,
+    pub action: String,
+    pub description: String,
 }
 
 /// Builder macro for creating command sets
@@ -188,26 +278,20 @@ mod tests {
 
     fn create_test_set() -> CommandSet {
         let mut set = CommandSet::new();
-        
-        set.add(CommandDef::new("copy")
-            .with_hotkey("Ctrl+C")
-            .with_hotkey_mac("Cmd+C"));
-        
-        set.add(CommandDef::new("paste")
-            .with_hotkey("Ctrl+V")
-            .with_hotkey_mac("Cmd+V"));
-        
-        set.add(CommandDef::new("zoom_in")
-            .with_hotkeys(&["Ctrl++", "Ctrl+="])
-            .with_hotkeys_mac(&["+", "Cmd+="]));
-        
+
+        set.add(CommandDef::new("copy").with_hotkey("Ctrl+C").with_hotkey_mac("Cmd+C"));
+
+        set.add(CommandDef::new("paste").with_hotkey("Ctrl+V").with_hotkey_mac("Cmd+V"));
+
+        set.add(CommandDef::new("zoom_in").with_hotkeys(&["Ctrl++", "Ctrl+="]).with_hotkeys_mac(&["+", "Cmd+="]));
+
         set
     }
 
     #[test]
     fn test_match_key() {
         let set = create_test_set();
-        
+
         // On non-Mac, Ctrl+C should match "copy"
         #[cfg(not(target_os = "macos"))]
         {
@@ -230,7 +314,7 @@ mod tests {
     #[test]
     fn test_multiple_hotkeys() {
         let set = create_test_set();
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             // Both Ctrl++ and Ctrl+= should match "zoom_in"
@@ -242,10 +326,10 @@ mod tests {
     #[test]
     fn test_get_command() {
         let set = create_test_set();
-        
+
         let copy_cmd = set.get("copy").unwrap();
         assert_eq!(copy_cmd.id, "copy");
-        
+
         assert!(set.get("nonexistent").is_none());
     }
 
@@ -253,12 +337,12 @@ mod tests {
     fn test_merge() {
         let mut set1 = CommandSet::new();
         set1.add(CommandDef::new("cmd1").with_hotkey("Ctrl+1"));
-        
+
         let mut set2 = CommandSet::new();
         set2.add(CommandDef::new("cmd2").with_hotkey("Ctrl+2"));
-        
+
         set1.merge(set2);
-        
+
         assert!(set1.get("cmd1").is_some());
         assert!(set1.get("cmd2").is_some());
         assert_eq!(set1.len(), 2);
@@ -267,15 +351,15 @@ mod tests {
     #[test]
     fn test_override_hotkeys() {
         let mut set = create_test_set();
-        
+
         // Override copy's hotkey
         set.override_hotkeys("copy", &["Ctrl+Shift+C"]);
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             // Old hotkey should no longer match
             assert!(set.match_key(KeyCode::C, Modifiers::CTRL).is_none());
-            
+
             // New hotkey should match
             assert_eq!(set.match_key(KeyCode::C, Modifiers::CTRL_SHIFT), Some("copy"));
         }
@@ -302,11 +386,11 @@ mod tests {
     #[test]
     fn test_find_conflicts() {
         let mut set = CommandSet::new();
-        
+
         // Create a conflict: two commands with the same hotkey
         set.add(CommandDef::new("cmd1").with_hotkey("Ctrl+C"));
         set.add(CommandDef::new("cmd2").with_hotkey("Ctrl+C"));
-        
+
         let conflicts = set.find_conflicts();
         // Note: Due to HashMap behavior, one command wins in the hotkey_map,
         // but find_conflicts scans all commands

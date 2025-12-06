@@ -55,7 +55,7 @@ impl<M, C: Copy> CommandHandler<M, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{cmd, create_common_commands, Hotkey};
+    use crate::commands::{Hotkey, cmd, create_common_commands};
 
     #[derive(Debug, Clone, PartialEq)]
     enum TestMessage {

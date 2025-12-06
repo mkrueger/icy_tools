@@ -118,58 +118,6 @@ sauce-value-hz={ $count } Hz
 help-title = Keyboard Shortcuts
 help-subtitle = Quick reference for iCY VIEW
 
-# Categories
-help-category-navigation = Navigation
-help-category-display = Display
-help-category-zoom = Zoom
-help-category-tools = Tools
-
-# Actions
-help-action-navigate = Navigate
-help-action-open = Open/Enter
-help-action-parent = Parent Directory
-help-action-back = Go Back
-help-action-forward = Go Forward
-help-action-filter = Filter
-help-action-auto-scroll = Auto Scroll
-help-action-scroll-speed = Scroll Speed
-help-action-baud-rate = Baud Rate
-help-action-baud-off = Baud Off
-help-action-sauce = SAUCE Info
-help-action-zoom-in = Zoom In
-help-action-zoom-out = Zoom Out
-help-action-zoom-reset = Reset Zoom
-help-action-zoom-fit = Fit to Window
-help-action-export = Export
-help-action-copy = Copy
-help-action-external = External Commands
-help-action-fullscreen = Fullscreen
-help-action-help = Help
-
-# Descriptions
-help-desc-navigate = Move selection in file list
-help-desc-open = Open file or enter directory
-help-desc-parent = Go up one directory level
-help-desc-back = Navigate to previous location
-help-desc-forward = Navigate to next location
-help-desc-filter = Toggle filter input
-help-desc-auto-scroll = Toggle automatic scrolling (preview/tiles)
-help-desc-scroll-speed = Cycle scroll speed forward/backward
-help-desc-baud-rate = Cycle baud rate forward/backward
-help-desc-baud-off = Disable baud emulation
-help-desc-sauce = Show SAUCE metadata dialog
-help-desc-zoom-in = Increase zoom level
-help-desc-zoom-out = Decrease zoom level
-help-desc-zoom-reset = Reset to 100% zoom
-help-desc-zoom-fit = Auto-fit content to window
-help-desc-export = Export file to image
-help-desc-copy = Copy selection to clipboard
-help-desc-external = Run external commands (F5-F8)
-help-desc-fullscreen = Toggle fullscreen mode
-help-desc-help = Show this help dialog
-help-action-about = About
-help-desc-about = Show about dialog
-
 toast-auto-scroll-on=Auto scroll on
 toast-auto-scroll-off=Auto scroll off
 toast-scroll-slow=Scroll speed: slow
@@ -227,3 +175,105 @@ welcome-tip = Tip: Press Ctrl+F to filter, or click 🌐 to browse 16colors.rs
 thumbnail-loading = Loading...
 thumbnail-no-diz = no file_id.diz
 thumbnail-unsupported = Unsupported
+
+filter-no-items-found = No items found.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Command System (generated from command IDs)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categories
+cmd-category-file = File
+cmd-category-edit = Edit
+cmd-category-view = View
+cmd-category-navigation = Navigation
+cmd-category-window = Window
+cmd-category-help = Help
+cmd-category-settings = Settings
+cmd-category-dialog = Dialogs
+cmd-category-playback = Playback
+cmd-category-external = External
+
+# File commands
+cmd-file-open-action = Open
+cmd-file-open-desc = Open a file
+cmd-file-export-action = Export
+cmd-file-export-desc = Export file to image
+cmd-file-close-action = Close
+cmd-file-close-desc = Close current file
+
+# Edit commands
+cmd-edit-copy-action = Copy
+cmd-edit-copy-desc = Copy selection to clipboard
+cmd-edit-paste-action = Paste
+cmd-edit-paste-desc = Paste from clipboard
+cmd-edit-select_all-action = Select All
+cmd-edit-select_all-desc = Select all content
+
+# View commands
+cmd-view-zoom_in-action = Zoom In
+cmd-view-zoom_in-desc = Increase zoom level
+cmd-view-zoom_out-action = Zoom Out
+cmd-view-zoom_out-desc = Decrease zoom level
+cmd-view-zoom_reset-action = Reset Zoom
+cmd-view-zoom_reset-desc = Reset to 100% zoom
+cmd-view-zoom_fit-action = Fit to Window
+cmd-view-zoom_fit-desc = Auto-fit content to window
+cmd-view-fullscreen-action = Fullscreen
+cmd-view-fullscreen-desc = Toggle fullscreen mode
+
+# Navigation commands
+cmd-nav-back-action = Go Back
+cmd-nav-back-desc = Navigate to previous location
+cmd-nav-forward-action = Go Forward
+cmd-nav-forward-desc = Navigate to next location
+cmd-nav-up-action = Parent Directory
+cmd-nav-up-desc = Go up one directory level
+
+# Window commands
+cmd-window-new-action = New Window
+cmd-window-new-desc = Open a new window
+cmd-window-close-action = Close Window
+cmd-window-close-desc = Close current window
+
+# Help commands
+cmd-help-show-action = Help
+cmd-help-show-desc = Show keyboard shortcuts
+cmd-help-about-action = About
+cmd-help-about-desc = Show about dialog
+
+# Settings commands
+cmd-settings-open-action = Settings
+cmd-settings-open-desc = Open settings dialog
+
+# Dialog commands (icy_view specific)
+cmd-dialog-sauce-action = SAUCE Info
+cmd-dialog-sauce-desc = Show SAUCE metadata dialog
+cmd-dialog-export-action = Export
+cmd-dialog-export-desc = Export file to image
+cmd-dialog-filter-action = Filter
+cmd-dialog-filter-desc = Toggle filter input
+
+# Playback commands (icy_view specific)
+cmd-playback-toggle_scroll-action = Auto Scroll
+cmd-playback-toggle_scroll-desc = Toggle automatic scrolling
+cmd-playback-scroll_speed-action = Scroll Speed +
+cmd-playback-scroll_speed-desc = Increase scroll speed
+cmd-playback-scroll_speed_back-action = Scroll Speed -
+cmd-playback-scroll_speed_back-desc = Decrease scroll speed
+cmd-playback-baud_rate-action = Baud Rate +
+cmd-playback-baud_rate-desc = Increase baud rate
+cmd-playback-baud_rate_back-action = Baud Rate -
+cmd-playback-baud_rate_back-desc = Decrease baud rate
+cmd-playback-baud_rate_off-action = Baud Off
+cmd-playback-baud_rate_off-desc = Disable baud emulation
+
+# External commands (icy_view specific)
+cmd-external-command_0-action = External 1
+cmd-external-command_0-desc = Run external command 1 (F5)
+cmd-external-command_1-action = External 2
+cmd-external-command_1-desc = Run external command 2 (F6)
+cmd-external-command_2-action = External 3
+cmd-external-command_2-desc = Run external command 3 (F7)
+cmd-external-command_3-action = External 4
+cmd-external-command_3-desc = Run external command 4 (F8)

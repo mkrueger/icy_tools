@@ -280,21 +280,26 @@ fn render_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &Canc
 
     // Use FileFormat to determine how to handle the file
     let format = FileFormat::from_extension(&ext);
+    log::debug!("[ThumbnailLoader] render_thumbnail: path={:?}, ext={:?}, format={:?}", path, ext, format);
 
     match format {
         Some(FileFormat::Image(ImageFormat::Sixel)) => {
+            log::debug!("[ThumbnailLoader] -> Sixel format detected");
             // Sixel files need special handling with icy_sixel
             render_sixel_thumbnail(path, data, label, cancel_token)
         }
         Some(fmt) if fmt.is_image() => {
+            log::debug!("[ThumbnailLoader] -> Image format detected: {:?}", fmt);
             // Other image files - render with image crate
             render_image_thumbnail(path, data, label, cancel_token)
         }
         Some(fmt) if fmt.is_supported() => {
+            log::debug!("[ThumbnailLoader] -> Supported ANSI format: {:?}", fmt);
             // Supported ANSI/terminal formats
             render_ansi_thumbnail(path, data, &ext, label, cancel_token)
         }
         _ => {
+            log::warn!("[ThumbnailLoader] -> Unsupported format for: {:?}, ext={:?}", path, ext);
             // Unsupported format - return None (no thumbnail)
             None
         }

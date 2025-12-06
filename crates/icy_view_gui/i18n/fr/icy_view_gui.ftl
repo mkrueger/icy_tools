@@ -104,58 +104,6 @@ sauce-value-hz={ $count } Hz
 help-title = Raccourcis clavier
 help-subtitle = Référence rapide pour iCY VIEW
 
-# Catégories
-help-category-navigation = Navigation
-help-category-display = Affichage
-help-category-zoom = Zoom
-help-category-tools = Outils
-
-# Actions
-help-action-navigate = Naviguer
-help-action-open = Ouvrir/Entrée
-help-action-parent = Répertoire parent
-help-action-back = Retour
-help-action-forward = Avancer
-help-action-filter = Filtrer
-help-action-auto-scroll = Défilement auto
-help-action-scroll-speed = Vitesse défil.
-help-action-baud-rate = Débit en bauds
-help-action-baud-off = Baud désactivé
-help-action-sauce = Info SAUCE
-help-action-zoom-in = Zoom avant
-help-action-zoom-out = Zoom arrière
-help-action-zoom-reset = Réinit. zoom
-help-action-zoom-fit = Ajuster fenêtre
-help-action-export = Exporter
-help-action-copy = Copier
-help-action-external = Cmds externes
-help-action-fullscreen = Plein écran
-help-action-help = Aide
-help-action-about = À propos
-
-# Descriptions
-help-desc-navigate = Déplacer la sélection dans la liste
-help-desc-open = Ouvrir fichier ou entrer dans répertoire
-help-desc-parent = Remonter d'un niveau
-help-desc-back = Naviguer vers l'emplacement précédent
-help-desc-forward = Naviguer vers l'emplacement suivant
-help-desc-filter = Basculer l'entrée de filtre
-help-desc-auto-scroll = Activer/désactiver défilement auto (aperçu/tuiles)
-help-desc-scroll-speed = Vitesse de défilement avant/arrière
-help-desc-baud-rate = Débit en bauds avant/arrière
-help-desc-baud-off = Désactiver l'émulation baud
-help-desc-sauce = Afficher les métadonnées SAUCE
-help-desc-zoom-in = Augmenter le niveau de zoom
-help-desc-zoom-out = Diminuer le niveau de zoom
-help-desc-zoom-reset = Réinitialiser à 100%
-help-desc-zoom-fit = Ajuster le contenu à la fenêtre
-help-desc-export = Exporter le fichier en image
-help-desc-copy = Copier la sélection
-help-desc-external = Exécuter commandes externes (F5-F8)
-help-desc-fullscreen = Basculer en plein écran
-help-desc-help = Afficher ce dialogue d'aide
-help-desc-about = Afficher le dialogue À propos
-
 toast-auto-scroll-on=Défilement automatique activé
 toast-auto-scroll-off=Défilement automatique désactivé
 toast-scroll-slow=Vitesse de défilement: lente
@@ -214,3 +162,105 @@ welcome-tip = Astuce: Appuyez sur Ctrl+F pour filtrer, ou cliquez sur 🌐 pour 
 thumbnail-loading = Chargement...
 thumbnail-no-diz = pas de file_id.diz
 thumbnail-unsupported = Non pris en charge
+
+filter-no-items-found = Aucun élément trouvé.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Système de commandes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Catégories
+cmd-category-file = Fichier
+cmd-category-edit = Édition
+cmd-category-view = Affichage
+cmd-category-navigation = Navigation
+cmd-category-window = Fenêtre
+cmd-category-help = Aide
+cmd-category-settings = Paramètres
+cmd-category-dialog = Dialogues
+cmd-category-playback = Lecture
+cmd-category-external = Externe
+
+# Commandes fichier
+cmd-file-open-action = Ouvrir
+cmd-file-open-desc = Ouvrir un fichier
+cmd-file-export-action = Exporter
+cmd-file-export-desc = Exporter en image
+cmd-file-close-action = Fermer
+cmd-file-close-desc = Fermer le fichier
+
+# Commandes édition
+cmd-edit-copy-action = Copier
+cmd-edit-copy-desc = Copier la sélection
+cmd-edit-paste-action = Coller
+cmd-edit-paste-desc = Coller du presse-papiers
+cmd-edit-select_all-action = Tout sélectionner
+cmd-edit-select_all-desc = Sélectionner tout
+
+# Commandes affichage
+cmd-view-zoom_in-action = Zoom avant
+cmd-view-zoom_in-desc = Augmenter le zoom
+cmd-view-zoom_out-action = Zoom arrière
+cmd-view-zoom_out-desc = Diminuer le zoom
+cmd-view-zoom_reset-action = Réinit. zoom
+cmd-view-zoom_reset-desc = Réinitialiser à 100%
+cmd-view-zoom_fit-action = Ajuster
+cmd-view-zoom_fit-desc = Ajuster à la fenêtre
+cmd-view-fullscreen-action = Plein écran
+cmd-view-fullscreen-desc = Basculer plein écran
+
+# Commandes navigation
+cmd-nav-back-action = Retour
+cmd-nav-back-desc = Aller à l'emplacement précédent
+cmd-nav-forward-action = Avancer
+cmd-nav-forward-desc = Aller à l'emplacement suivant
+cmd-nav-up-action = Répertoire parent
+cmd-nav-up-desc = Remonter d'un niveau
+
+# Commandes fenêtre
+cmd-window-new-action = Nouvelle fenêtre
+cmd-window-new-desc = Ouvrir une nouvelle fenêtre
+cmd-window-close-action = Fermer fenêtre
+cmd-window-close-desc = Fermer la fenêtre
+
+# Commandes aide
+cmd-help-show-action = Aide
+cmd-help-show-desc = Afficher les raccourcis
+cmd-help-about-action = À propos
+cmd-help-about-desc = Afficher À propos
+
+# Commandes paramètres
+cmd-settings-open-action = Paramètres
+cmd-settings-open-desc = Ouvrir les paramètres
+
+# Commandes dialogues
+cmd-dialog-sauce-action = Info SAUCE
+cmd-dialog-sauce-desc = Afficher métadonnées SAUCE
+cmd-dialog-export-action = Exporter
+cmd-dialog-export-desc = Exporter en image
+cmd-dialog-filter-action = Filtrer
+cmd-dialog-filter-desc = Basculer le filtre
+
+# Commandes lecture
+cmd-playback-toggle_scroll-action = Défilement auto
+cmd-playback-toggle_scroll-desc = Activer/désactiver défilement
+cmd-playback-scroll_speed-action = Vitesse +
+cmd-playback-scroll_speed-desc = Augmenter vitesse
+cmd-playback-scroll_speed_back-action = Vitesse -
+cmd-playback-scroll_speed_back-desc = Diminuer vitesse
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Augmenter baud
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Diminuer baud
+cmd-playback-baud_rate_off-action = Baud désactivé
+cmd-playback-baud_rate_off-desc = Désactiver émulation baud
+
+# Commandes externes
+cmd-external-command_0-action = Externe 1
+cmd-external-command_0-desc = Exécuter commande 1 (F5)
+cmd-external-command_1-action = Externe 2
+cmd-external-command_1-desc = Exécuter commande 2 (F6)
+cmd-external-command_2-action = Externe 3
+cmd-external-command_2-desc = Exécuter commande 3 (F7)
+cmd-external-command_3-action = Externe 4
+cmd-external-command_3-desc = Exécuter commande 4 (F8)

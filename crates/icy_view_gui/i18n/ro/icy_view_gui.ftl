@@ -160,3 +160,105 @@ welcome-tip = Sfat: Apăsați Ctrl+F pentru filtrare, sau faceți clic pe 🌐 p
 thumbnail-loading = Se încarcă...
 thumbnail-no-diz = fără file_id.diz
 thumbnail-unsupported = Nesuportat
+
+filter-no-items-found = Nu s-au găsit elemente.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sistem de comenzi
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categorii
+cmd-category-file = Fișier
+cmd-category-edit = Editare
+cmd-category-view = Vizualizare
+cmd-category-navigation = Navigare
+cmd-category-window = Fereastră
+cmd-category-help = Ajutor
+cmd-category-settings = Setări
+cmd-category-dialog = Dialoguri
+cmd-category-playback = Redare
+cmd-category-external = Extern
+
+# Comenzi fișier
+cmd-file-open-action = Deschide
+cmd-file-open-desc = Deschide un fișier
+cmd-file-export-action = Export
+cmd-file-export-desc = Export ca imagine
+cmd-file-close-action = Închide
+cmd-file-close-desc = Închide fișierul curent
+
+# Comenzi editare
+cmd-edit-copy-action = Copiază
+cmd-edit-copy-desc = Copiază selecția
+cmd-edit-paste-action = Lipește
+cmd-edit-paste-desc = Lipește din clipboard
+cmd-edit-select_all-action = Selectează tot
+cmd-edit-select_all-desc = Selectează tot conținutul
+
+# Comenzi vizualizare
+cmd-view-zoom_in-action = Mărește
+cmd-view-zoom_in-desc = Crește nivelul de zoom
+cmd-view-zoom_out-action = Micșorează
+cmd-view-zoom_out-desc = Scade nivelul de zoom
+cmd-view-zoom_reset-action = Resetează zoom
+cmd-view-zoom_reset-desc = Resetează la 100%
+cmd-view-zoom_fit-action = Potrivește
+cmd-view-zoom_fit-desc = Potrivește conținutul în fereastră
+cmd-view-fullscreen-action = Ecran complet
+cmd-view-fullscreen-desc = Comută ecran complet
+
+# Comenzi navigare
+cmd-nav-back-action = Înapoi
+cmd-nav-back-desc = Mergi la locația anterioară
+cmd-nav-forward-action = Înainte
+cmd-nav-forward-desc = Mergi la locația următoare
+cmd-nav-up-action = Director părinte
+cmd-nav-up-desc = Urcă un nivel
+
+# Comenzi fereastră
+cmd-window-new-action = Fereastră nouă
+cmd-window-new-desc = Deschide fereastră nouă
+cmd-window-close-action = Închide fereastra
+cmd-window-close-desc = Închide fereastra curentă
+
+# Comenzi ajutor
+cmd-help-show-action = Ajutor
+cmd-help-show-desc = Afișează scurtături
+cmd-help-about-action = Despre
+cmd-help-about-desc = Afișează Despre
+
+# Comenzi setări
+cmd-settings-open-action = Setări
+cmd-settings-open-desc = Deschide setări
+
+# Comenzi dialoguri
+cmd-dialog-sauce-action = Info SAUCE
+cmd-dialog-sauce-desc = Afișează metadate SAUCE
+cmd-dialog-export-action = Export
+cmd-dialog-export-desc = Export ca imagine
+cmd-dialog-filter-action = Filtrează
+cmd-dialog-filter-desc = Comută filtru
+
+# Comenzi redare
+cmd-playback-toggle_scroll-action = Derulare auto
+cmd-playback-toggle_scroll-desc = Comută derulare
+cmd-playback-scroll_speed-action = Viteză +
+cmd-playback-scroll_speed-desc = Crește viteza
+cmd-playback-scroll_speed_back-action = Viteză -
+cmd-playback-scroll_speed_back-desc = Scade viteza
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Crește baud
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Scade baud
+cmd-playback-baud_rate_off-action = Baud oprit
+cmd-playback-baud_rate_off-desc = Dezactivează emulare baud
+
+# Comenzi externe
+cmd-external-command_0-action = Extern 1
+cmd-external-command_0-desc = Rulează comanda 1 (F5)
+cmd-external-command_1-action = Extern 2
+cmd-external-command_1-desc = Rulează comanda 2 (F6)
+cmd-external-command_2-action = Extern 3
+cmd-external-command_2-desc = Rulează comanda 3 (F7)
+cmd-external-command_3-action = Extern 4
+cmd-external-command_3-desc = Rulează comanda 4 (F8)

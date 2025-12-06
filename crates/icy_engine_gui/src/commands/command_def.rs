@@ -2,23 +2,27 @@
 //!
 //! Represents a single command with its ID and platform-specific hotkeys.
 
-use serde::{Serialize, Deserialize};
 use super::{Hotkey, MouseBinding};
+use serde::{Deserialize, Serialize};
 
 /// A command definition with platform-specific hotkeys
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandDef {
     /// Unique identifier for the command (also used as i18n key)
     pub id: String,
-    
+
+    /// Category for help dialog grouping (e.g., "navigation", "zoom", "playback")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+
     /// Hotkeys for Windows/Linux
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hotkeys: Vec<Hotkey>,
-    
+
     /// Hotkeys for macOS (falls back to `hotkeys` if empty)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hotkeys_mac: Vec<Hotkey>,
-    
+
     /// Mouse button bindings (platform-independent)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     mouse_bindings: Vec<MouseBinding>,
@@ -29,6 +33,7 @@ impl CommandDef {
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
+            category: None,
             hotkeys: Vec::new(),
             hotkeys_mac: Vec::new(),
             mouse_bindings: Vec::new(),
@@ -36,17 +41,20 @@ impl CommandDef {
     }
 
     /// Create from string hotkey definitions
-    pub fn from_strings(
-        id: impl Into<String>,
-        hotkeys: &[&str],
-        hotkeys_mac: &[&str],
-    ) -> Self {
+    pub fn from_strings(id: impl Into<String>, hotkeys: &[&str], hotkeys_mac: &[&str]) -> Self {
         Self {
             id: id.into(),
+            category: None,
             hotkeys: hotkeys.iter().filter_map(|s| Hotkey::parse(s)).collect(),
             hotkeys_mac: hotkeys_mac.iter().filter_map(|s| Hotkey::parse(s)).collect(),
             mouse_bindings: Vec::new(),
         }
+    }
+
+    /// Set the category for help dialog grouping
+    pub fn with_category(mut self, category: impl Into<String>) -> Self {
+        self.category = Some(category.into());
+        self
     }
 
     /// Add a hotkey for Windows/Linux
@@ -136,6 +144,35 @@ impl CommandDef {
     pub fn override_hotkeys_mac(&mut self, hotkeys: Vec<Hotkey>) {
         self.hotkeys_mac = hotkeys;
     }
+
+    /// Get the category of this command
+    pub fn category(&self) -> Option<&str> {
+        self.category.as_deref()
+    }
+
+    /// Convert command ID to fluent key prefix
+    /// "view.zoom_in" → "cmd-view-zoom_in"
+    pub fn fluent_key_prefix(&self) -> String {
+        format!("cmd-{}", self.id.replace('.', "-"))
+    }
+
+    /// Get the fluent key for the action name
+    /// "view.zoom_in" → "cmd-view-zoom_in-action"
+    pub fn fluent_action_key(&self) -> String {
+        format!("{}-action", self.fluent_key_prefix())
+    }
+
+    /// Get the fluent key for the description
+    /// "view.zoom_in" → "cmd-view-zoom_in-desc"
+    pub fn fluent_desc_key(&self) -> String {
+        format!("{}-desc", self.fluent_key_prefix())
+    }
+
+    /// Get the fluent key for the category
+    /// Category "navigation" → "cmd-category-navigation"
+    pub fn fluent_category_key(&self) -> Option<String> {
+        self.category.as_ref().map(|cat| format!("cmd-category-{}", cat))
+    }
 }
 
 #[cfg(test)]
@@ -153,9 +190,7 @@ mod tests {
 
     #[test]
     fn test_with_hotkey() {
-        let cmd = CommandDef::new("copy")
-            .with_hotkey("Ctrl+C")
-            .with_hotkey_mac("Cmd+C");
+        let cmd = CommandDef::new("copy").with_hotkey("Ctrl+C").with_hotkey_mac("Cmd+C");
 
         assert_eq!(cmd.hotkeys.len(), 1);
         assert_eq!(cmd.hotkeys[0].key, KeyCode::C);
@@ -168,9 +203,7 @@ mod tests {
 
     #[test]
     fn test_multiple_hotkeys() {
-        let cmd = CommandDef::new("zoom_in")
-            .with_hotkeys(&["Ctrl++", "Ctrl+="])
-            .with_hotkeys_mac(&["+", "Cmd+="]);
+        let cmd = CommandDef::new("zoom_in").with_hotkeys(&["Ctrl++", "Ctrl+="]).with_hotkeys_mac(&["+", "Cmd+="]);
 
         assert_eq!(cmd.hotkeys.len(), 2);
         assert_eq!(cmd.hotkeys_mac.len(), 2);
@@ -178,11 +211,7 @@ mod tests {
 
     #[test]
     fn test_from_strings() {
-        let cmd = CommandDef::from_strings(
-            "new_window",
-            &["Ctrl+Shift+N"],
-            &["Cmd+N"],
-        );
+        let cmd = CommandDef::from_strings("new_window", &["Ctrl+Shift+N"], &["Cmd+N"]);
 
         assert_eq!(cmd.id, "new_window");
         assert_eq!(cmd.hotkeys.len(), 1);
@@ -191,8 +220,7 @@ mod tests {
 
     #[test]
     fn test_primary_hotkey() {
-        let cmd = CommandDef::new("test")
-            .with_hotkey("Ctrl+T");
+        let cmd = CommandDef::new("test").with_hotkey("Ctrl+T");
 
         let primary = cmd.primary_hotkey().unwrap();
         assert_eq!(primary.key, KeyCode::T);
@@ -201,8 +229,7 @@ mod tests {
 
     #[test]
     fn test_primary_hotkey_display() {
-        let cmd = CommandDef::new("test")
-            .with_hotkey("Ctrl+Shift+N");
+        let cmd = CommandDef::new("test").with_hotkey("Ctrl+Shift+N");
 
         assert_eq!(cmd.primary_hotkey_display(), Some("Ctrl+Shift+N".to_string()));
     }
@@ -210,8 +237,7 @@ mod tests {
     #[test]
     fn test_active_hotkeys_fallback() {
         // On non-mac, if hotkeys_mac is empty, should fall back to hotkeys
-        let cmd = CommandDef::new("test")
-            .with_hotkey("Ctrl+T");
+        let cmd = CommandDef::new("test").with_hotkey("Ctrl+T");
 
         // This test will behave differently on Mac vs other platforms
         let active = cmd.active_hotkeys();
@@ -220,17 +246,15 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip() {
-        let cmd = CommandDef::new("edit.copy")
-            .with_hotkey("Ctrl+C")
-            .with_hotkey_mac("Cmd+C");
-        
+        let cmd = CommandDef::new("edit.copy").with_hotkey("Ctrl+C").with_hotkey_mac("Cmd+C");
+
         let toml_str = toml::to_string(&cmd).unwrap();
-        
+
         // Should contain the id and hotkeys
         assert!(toml_str.contains("edit.copy"));
         assert!(toml_str.contains("Ctrl+C"));
         assert!(toml_str.contains("Cmd+C"));
-        
+
         // Deserialize back
         let parsed: CommandDef = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.id, "edit.copy");
@@ -241,9 +265,9 @@ mod tests {
     #[test]
     fn test_serde_empty_hotkeys_not_serialized() {
         let cmd = CommandDef::new("help.about");
-        
+
         let toml_str = toml::to_string(&cmd).unwrap();
-        
+
         // Empty hotkeys should not appear in output
         assert!(!toml_str.contains("hotkeys"));
         assert!(toml_str.contains("help.about"));
@@ -256,19 +280,37 @@ mod tests {
         struct CommandsFile {
             commands: Vec<CommandDef>,
         }
-        
+
         let file = CommandsFile {
-            commands: vec![
-                CommandDef::new("copy").with_hotkey("Ctrl+C"),
-                CommandDef::new("paste").with_hotkey("Ctrl+V"),
-            ],
+            commands: vec![CommandDef::new("copy").with_hotkey("Ctrl+C"), CommandDef::new("paste").with_hotkey("Ctrl+V")],
         };
-        
+
         let toml_str = toml::to_string(&file).unwrap();
         let parsed: CommandsFile = toml::from_str(&toml_str).unwrap();
-        
+
         assert_eq!(parsed.commands.len(), 2);
         assert_eq!(parsed.commands[0].id, "copy");
         assert_eq!(parsed.commands[1].id, "paste");
+    }
+
+    #[test]
+    fn test_fluent_keys() {
+        let cmd = CommandDef::new("view.zoom_in").with_category("navigation");
+
+        assert_eq!(cmd.fluent_key_prefix(), "cmd-view-zoom_in");
+        assert_eq!(cmd.fluent_action_key(), "cmd-view-zoom_in-action");
+        assert_eq!(cmd.fluent_desc_key(), "cmd-view-zoom_in-desc");
+        assert_eq!(cmd.fluent_category_key(), Some("cmd-category-navigation".to_string()));
+    }
+
+    #[test]
+    fn test_category() {
+        let cmd = CommandDef::new("file.save").with_category("file");
+
+        assert_eq!(cmd.category(), Some("file"));
+
+        let cmd_no_cat = CommandDef::new("misc.action");
+        assert_eq!(cmd_no_cat.category(), None);
+        assert_eq!(cmd_no_cat.fluent_category_key(), None);
     }
 }

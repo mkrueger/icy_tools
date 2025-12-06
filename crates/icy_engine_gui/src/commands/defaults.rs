@@ -14,8 +14,7 @@ const COMMON_COMMANDS_TOML: &str = include_str!("../../data/commands_common.toml
 ///
 /// Loads commands from the embedded `commands_common.toml` file.
 pub fn create_common_commands() -> CommandSet {
-    toml_loader::load_commands_from_str(COMMON_COMMANDS_TOML)
-        .expect("Failed to parse embedded commands_common.toml")
+    toml_loader::load_commands_from_str(COMMON_COMMANDS_TOML).expect("Failed to parse embedded commands_common.toml")
 }
 
 /// Command IDs for common commands (for type-safe access)
@@ -66,7 +65,7 @@ mod tests {
     #[test]
     fn test_common_commands_created() {
         let set = create_common_commands();
-        
+
         // Should have all the common commands
         assert!(set.get(cmd::FILE_OPEN).is_some());
         assert!(set.get(cmd::EDIT_COPY).is_some());
@@ -101,7 +100,7 @@ mod tests {
     #[test]
     fn test_f1_help() {
         let set = create_common_commands();
-        
+
         // F1 should work on all platforms
         assert_eq!(set.match_key(KeyCode::F1, Modifiers::NONE), Some(cmd::HELP_SHOW));
     }
@@ -120,9 +119,9 @@ mod tests {
     #[test]
     fn test_hotkey_display() {
         let set = create_common_commands();
-        
+
         let copy_cmd = set.get(cmd::EDIT_COPY).unwrap();
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             assert_eq!(copy_cmd.primary_hotkey_display(), Some("Ctrl+C".to_string()));

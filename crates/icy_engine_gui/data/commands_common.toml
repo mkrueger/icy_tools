@@ -7,6 +7,7 @@
 #   id = "unique.command.id"    # Also used as i18n translation key
 #   hotkey = ["Ctrl+C"]         # Windows/Linux shortcuts (can have multiple)
 #   hotkey_mac = ["Cmd+C"]      # macOS shortcuts (optional, falls back to hotkey)
+#   category = "file"           # Optional category for help dialog grouping
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # File Operations
@@ -16,16 +17,19 @@
 id = "file.open"
 hotkey = ["Ctrl+O"]
 hotkey_mac = ["Cmd+O"]
+category = "file"
 
 [[commands]]
 id = "file.export"
 hotkey = ["Ctrl+I"]
 hotkey_mac = ["Cmd+I"]
+category = "file"
 
 [[commands]]
 id = "file.close"
 hotkey = ["Ctrl+W"]
 hotkey_mac = ["Cmd+W"]
+category = "file"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Edit Operations
@@ -35,16 +39,19 @@ hotkey_mac = ["Cmd+W"]
 id = "edit.copy"
 hotkey = ["Ctrl+C"]
 hotkey_mac = ["Cmd+C"]
+category = "edit"
 
 [[commands]]
 id = "edit.paste"
 hotkey = ["Ctrl+V"]
 hotkey_mac = ["Cmd+V"]
+category = "edit"
 
 [[commands]]
 id = "edit.select_all"
 hotkey = ["Ctrl+A"]
 hotkey_mac = ["Cmd+A"]
+category = "edit"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # View / Zoom
@@ -54,26 +61,31 @@ hotkey_mac = ["Cmd+A"]
 id = "view.zoom_in"
 hotkey = ["Ctrl++", "Ctrl+="]
 hotkey_mac = ["Cmd++", "Cmd+=", "+", "="]
+category = "view"
 
 [[commands]]
 id = "view.zoom_out"
 hotkey = ["Ctrl+-"]
 hotkey_mac = ["Cmd+-", "-"]
+category = "view"
 
 [[commands]]
 id = "view.zoom_reset"
 hotkey = ["Ctrl+0"]
 hotkey_mac = ["Cmd+0"]
+category = "view"
 
 [[commands]]
 id = "view.zoom_fit"
 hotkey = ["Ctrl+9"]
 hotkey_mac = ["Cmd+9"]
+category = "view"
 
 [[commands]]
 id = "view.fullscreen"
 hotkey = ["F11", "Alt+Enter"]
 hotkey_mac = ["Cmd+Ctrl+F"]
+category = "view"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Window Operations
@@ -83,11 +95,13 @@ hotkey_mac = ["Cmd+Ctrl+F"]
 id = "window.new"
 hotkey = ["Ctrl+Shift+N"]
 hotkey_mac = ["Cmd+N"]
+category = "window"
 
 [[commands]]
 id = "window.close"
 hotkey = ["Ctrl+W"]
 hotkey_mac = ["Cmd+W"]
+category = "window"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Help / Info
@@ -97,11 +111,13 @@ hotkey_mac = ["Cmd+W"]
 id = "help.show"
 hotkey = ["F1"]
 hotkey_mac = ["F1", "Cmd+?"]
+category = "help"
 
 [[commands]]
 id = "help.about"
 hotkey = ["Alt+A"]
 hotkey_mac = ["Alt+A"]
+category = "help"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Focus Navigation
@@ -124,16 +140,19 @@ id = "nav.back"
 hotkey = ["Alt+Left"]
 hotkey_mac = ["Alt+Left", "Cmd+["]
 mouse = ["Back"]
+category = "navigation"
 
 [[commands]]
 id = "nav.forward"
 hotkey = ["Alt+Right"]
 hotkey_mac = ["Alt+Right", "Cmd+]"]
 mouse = ["Forward"]
+category = "navigation"
 
 [[commands]]
 id = "nav.up"
 hotkey = ["Alt+Up"]
+category = "navigation"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Settings
@@ -143,3 +162,4 @@ hotkey = ["Alt+Up"]
 id = "settings.open"
 hotkey = ["Ctrl+,"]
 hotkey_mac = ["Cmd+,"]
+category = "settings"

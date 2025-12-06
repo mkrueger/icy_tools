@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
 use icy_engine_gui::command_handler;
-use icy_engine_gui::commands::{create_common_commands, cmd};
+use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_view_gui::{MainWindow, Message, Options};
 
 use crate::load_window_icon;
@@ -176,7 +176,7 @@ impl WindowManager {
                 if let Some(msg) = self.commands.handle(&event, window_id) {
                     return Task::done(msg);
                 }
-                
+
                 // Pass event to window for other handling
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     if let Some(msg) = window.handle_event(&event) {

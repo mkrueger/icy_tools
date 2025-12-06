@@ -16,6 +16,8 @@ pub struct CommandToml {
     pub hotkey_mac: Vec<String>,
     #[serde(default)]
     pub mouse: Vec<String>,
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// Container for the TOML file structure
@@ -28,20 +30,11 @@ pub struct CommandsFile {
 impl CommandToml {
     /// Convert to CommandDef
     pub fn into_command_def(self) -> CommandDef {
-        let hotkeys: Vec<Hotkey> = self.hotkey
-            .iter()
-            .filter_map(|s| Hotkey::parse(s))
-            .collect();
-        
-        let hotkeys_mac: Vec<Hotkey> = self.hotkey_mac
-            .iter()
-            .filter_map(|s| Hotkey::parse(s))
-            .collect();
+        let hotkeys: Vec<Hotkey> = self.hotkey.iter().filter_map(|s| Hotkey::parse(s)).collect();
 
-        let mouse_bindings: Vec<MouseBinding> = self.mouse
-            .iter()
-            .filter_map(|s| MouseBinding::parse(s))
-            .collect();
+        let hotkeys_mac: Vec<Hotkey> = self.hotkey_mac.iter().filter_map(|s| Hotkey::parse(s)).collect();
+
+        let mouse_bindings: Vec<MouseBinding> = self.mouse.iter().filter_map(|s| MouseBinding::parse(s)).collect();
 
         let mut cmd = CommandDef::new(self.id);
         for hk in hotkeys {
@@ -52,6 +45,9 @@ impl CommandToml {
         }
         for mb in mouse_bindings {
             cmd = cmd.with_mouse(&mb.to_string());
+        }
+        if let Some(cat) = self.category {
+            cmd = cmd.with_category(&cat);
         }
         cmd
     }
@@ -65,10 +61,8 @@ impl CommandsFile {
 
     /// Load from file
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, CommandLoadError> {
-        let content = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| CommandLoadError::Io(e))?;
-        Self::from_toml(&content)
-            .map_err(|e| CommandLoadError::Parse(e))
+        let content = std::fs::read_to_string(path.as_ref()).map_err(|e| CommandLoadError::Io(e))?;
+        Self::from_toml(&content).map_err(|e| CommandLoadError::Parse(e))
     }
 
     /// Convert to CommandSet
@@ -101,8 +95,7 @@ impl std::error::Error for CommandLoadError {}
 
 /// Load commands from a TOML string
 pub fn load_commands_from_str(toml_str: &str) -> Result<CommandSet, CommandLoadError> {
-    let file = CommandsFile::from_toml(toml_str)
-        .map_err(|e| CommandLoadError::Parse(e))?;
+    let file = CommandsFile::from_toml(toml_str).map_err(|e| CommandLoadError::Parse(e))?;
     Ok(file.into_command_set())
 }
 
@@ -145,7 +138,7 @@ hotkey = []
     #[test]
     fn test_into_command_set() {
         let set = load_commands_from_str(TEST_TOML).unwrap();
-        
+
         assert_eq!(set.len(), 3);
         assert!(set.get("test.copy").is_some());
         assert!(set.get("test.zoom").is_some());
@@ -167,7 +160,7 @@ hotkey = []
     #[test]
     fn test_empty_hotkey() {
         let set = load_commands_from_str(TEST_TOML).unwrap();
-        
+
         let cmd = set.get("test.nokey").unwrap();
         assert!(cmd.primary_hotkey().is_none());
     }
@@ -177,13 +170,13 @@ hotkey = []
         // Test loading the embedded common commands
         let toml_str = include_str!("../../data/commands_common.toml");
         let set = load_commands_from_str(toml_str).unwrap();
-        
+
         // Should have all the common commands
         assert!(set.get("file.open").is_some());
         assert!(set.get("edit.copy").is_some());
         assert!(set.get("view.zoom_in").is_some());
         assert!(set.get("help.show").is_some());
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             assert_eq!(set.match_key(KeyCode::C, Modifiers::CTRL), Some("edit.copy"));

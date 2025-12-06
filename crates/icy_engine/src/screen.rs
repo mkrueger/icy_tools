@@ -269,7 +269,6 @@ pub trait EditableScreen: Screen {
                         self.set_font(0, font);
                     }
                 }
-                println!("Applied ice_colors from SAUCE: {:?}", ice_colors);
                 // Apply ice colors
                 if ice_colors {
                     *self.ice_mode_mut() = IceMode::Ice;

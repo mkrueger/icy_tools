@@ -104,58 +104,6 @@ sauce-value-hz={ $count } Hz
 help-title = Klávesové zkratky
 help-subtitle = Rychlá reference pro iCY VIEW
 
-# Kategorie
-help-category-navigation = Navigace
-help-category-display = Zobrazení
-help-category-zoom = Přiblížení
-help-category-tools = Nástroje
-
-# Akce
-help-action-navigate = Navigovat
-help-action-open = Otevřít/Enter
-help-action-parent = Nadřazená složka
-help-action-back = Zpět
-help-action-forward = Vpřed
-help-action-filter = Filtrovat
-help-action-auto-scroll = Auto posouvání
-help-action-scroll-speed = Rychl. posouv.
-help-action-baud-rate = Rychlost baud
-help-action-baud-off = Baud vypnuto
-help-action-sauce = Info SAUCE
-help-action-zoom-in = Přiblížit
-help-action-zoom-out = Oddálit
-help-action-zoom-reset = Reset přiblížení
-help-action-zoom-fit = Přizpůsobit oknu
-help-action-export = Exportovat
-help-action-copy = Kopírovat
-help-action-external = Externí příkazy
-help-action-fullscreen = Celá obrazovka
-help-action-help = Nápověda
-help-action-about = O aplikaci
-
-# Popisy
-help-desc-navigate = Přesunout výběr v seznamu
-help-desc-open = Otevřít soubor nebo vstoupit do složky
-help-desc-parent = Přejít o úroveň výš
-help-desc-back = Navigovat na předchozí umístění
-help-desc-forward = Navigovat na další umístění
-help-desc-filter = Přepnout filtr
-help-desc-auto-scroll = Zapnout/vypnout auto posouvání (náhled/dlaždice)
-help-desc-scroll-speed = Rychlost posouvání vpřed/vzad
-help-desc-baud-rate = Rychlost baud vpřed/vzad
-help-desc-baud-off = Vypnout emulaci baud
-help-desc-sauce = Zobrazit SAUCE metadata
-help-desc-zoom-in = Zvýšit úroveň přiblížení
-help-desc-zoom-out = Snížit úroveň přiblížení
-help-desc-zoom-reset = Resetovat na 100%
-help-desc-zoom-fit = Přizpůsobit obsah oknu
-help-desc-export = Exportovat soubor jako obrázek
-help-desc-copy = Kopírovat výběr
-help-desc-external = Spustit externí příkazy (F5-F8)
-help-desc-fullscreen = Přepnout celou obrazovku
-help-desc-help = Zobrazit toto okno nápovědy
-help-desc-about = Zobrazit okno O aplikaci
-
 toast-auto-scroll-on=Automatické posouvání zapnuto
 toast-auto-scroll-off=Automatické posouvání vypnuto
 toast-scroll-slow=Rychlost posouvání: pomalu
@@ -212,5 +160,107 @@ welcome-select-file = 📂 Vyberte soubor k náhledu
 welcome-tip = Tip: Stiskněte Ctrl+F pro filtrování, nebo klikněte na 🌐 pro procházení 16colors.rs
 
 thumbnail-loading = Načítání...
-thumbnail-no-diz = bez file_id.diz
-thumbnail-unsupported = Nepodporováno
+thumbnail-no-diz = žádný file_id.diz
+thumbnail-unsupported = Nepodporovaný
+
+filter-no-items-found = Nebyly nalezeny žádné položky.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Systém příkazů
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Kategorie
+cmd-category-file = Soubor
+cmd-category-edit = Úpravy
+cmd-category-view = Zobrazení
+cmd-category-navigation = Navigace
+cmd-category-window = Okno
+cmd-category-help = Nápověda
+cmd-category-settings = Nastavení
+cmd-category-dialog = Dialogy
+cmd-category-playback = Přehrávání
+cmd-category-external = Externí
+
+# Příkazy souborů
+cmd-file-open-action = Otevřít
+cmd-file-open-desc = Otevřít soubor
+cmd-file-export-action = Exportovat
+cmd-file-export-desc = Exportovat jako obrázek
+cmd-file-close-action = Zavřít
+cmd-file-close-desc = Zavřít aktuální soubor
+
+# Příkazy úprav
+cmd-edit-copy-action = Kopírovat
+cmd-edit-copy-desc = Kopírovat výběr
+cmd-edit-paste-action = Vložit
+cmd-edit-paste-desc = Vložit ze schránky
+cmd-edit-select_all-action = Vybrat vše
+cmd-edit-select_all-desc = Vybrat celý obsah
+
+# Příkazy zobrazení
+cmd-view-zoom_in-action = Přiblížit
+cmd-view-zoom_in-desc = Zvýšit přiblížení
+cmd-view-zoom_out-action = Oddálit
+cmd-view-zoom_out-desc = Snížit přiblížení
+cmd-view-zoom_reset-action = Reset přiblížení
+cmd-view-zoom_reset-desc = Resetovat na 100%
+cmd-view-zoom_fit-action = Přizpůsobit oknu
+cmd-view-zoom_fit-desc = Přizpůsobit obsah oknu
+cmd-view-fullscreen-action = Celá obrazovka
+cmd-view-fullscreen-desc = Přepnout celou obrazovku
+
+# Příkazy navigace
+cmd-nav-back-action = Zpět
+cmd-nav-back-desc = Jít na předchozí umístění
+cmd-nav-forward-action = Vpřed
+cmd-nav-forward-desc = Jít na další umístění
+cmd-nav-up-action = Nadřazená složka
+cmd-nav-up-desc = Přejít o úroveň výš
+
+# Příkazy okna
+cmd-window-new-action = Nové okno
+cmd-window-new-desc = Otevřít nové okno
+cmd-window-close-action = Zavřít okno
+cmd-window-close-desc = Zavřít aktuální okno
+
+# Příkazy nápovědy
+cmd-help-show-action = Nápověda
+cmd-help-show-desc = Zobrazit zkratky
+cmd-help-about-action = O aplikaci
+cmd-help-about-desc = Zobrazit O aplikaci
+
+# Příkazy nastavení
+cmd-settings-open-action = Nastavení
+cmd-settings-open-desc = Otevřít nastavení
+
+# Příkazy dialogů
+cmd-dialog-sauce-action = SAUCE info
+cmd-dialog-sauce-desc = Zobrazit SAUCE metadata
+cmd-dialog-export-action = Exportovat
+cmd-dialog-export-desc = Exportovat jako obrázek
+cmd-dialog-filter-action = Filtrovat
+cmd-dialog-filter-desc = Přepnout filtr
+
+# Příkazy přehrávání
+cmd-playback-toggle_scroll-action = Auto posouvání
+cmd-playback-toggle_scroll-desc = Posouvání zap/vyp
+cmd-playback-scroll_speed-action = Rychlost +
+cmd-playback-scroll_speed-desc = Zvýšit rychlost
+cmd-playback-scroll_speed_back-action = Rychlost -
+cmd-playback-scroll_speed_back-desc = Snížit rychlost
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Zvýšit baud
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Snížit baud
+cmd-playback-baud_rate_off-action = Baud vyp
+cmd-playback-baud_rate_off-desc = Vypnout emulaci baud
+
+# Externí příkazy
+cmd-external-command_0-action = Externí 1
+cmd-external-command_0-desc = Spustit příkaz 1 (F5)
+cmd-external-command_1-action = Externí 2
+cmd-external-command_1-desc = Spustit příkaz 2 (F6)
+cmd-external-command_2-action = Externí 3
+cmd-external-command_2-desc = Spustit příkaz 3 (F7)
+cmd-external-command_3-action = Externí 4
+cmd-external-command_3-desc = Spustit příkaz 4 (F8)

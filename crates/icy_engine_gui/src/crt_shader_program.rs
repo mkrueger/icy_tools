@@ -618,6 +618,7 @@ impl<'a> CRTShaderProgram<'a> {
             font_width: font_w as f32,
             font_height: font_h as f32,
             scan_lines,
+            background_color: *self.term.background_color.read(),
         }
     }
 
@@ -726,7 +727,12 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         res
     }
 
-    fn mouse_interaction(&self, state: &Self::State, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
+    fn mouse_interaction(&self, state: &Self::State, bounds: Rectangle, cursor: mouse::Cursor) -> mouse::Interaction {
+        // Only show custom cursors when mouse is over the widget
+        if !cursor.is_over(bounds) {
+            return mouse::Interaction::default();
+        }
+
         if state.hovered_link.is_some() || state.hovered_rip_field.is_some() {
             mouse::Interaction::Pointer
         } else if state.dragging {

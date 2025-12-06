@@ -131,7 +131,6 @@ pub struct CRTShaderState {
 impl CRTShaderState {
     /// Create a new CRTShaderState with blink rates based on the buffer type
     pub fn new(buffer_type: icy_engine::BufferType) -> Self {
-        println!("Creating CRTShaderState with buffer type: {:?}", buffer_type);
         Self {
             caret_blink: Blink::new(buffer_type.get_caret_blink_rate() as u128),
             character_blink: Blink::new(buffer_type.get_blink_rate() as u128),

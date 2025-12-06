@@ -3,8 +3,8 @@
 //! Parses strings like "Ctrl+Shift+N" into structured hotkey bindings.
 //! Also supports mouse button bindings like "Ctrl+Back".
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 /// Keyboard modifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
@@ -12,7 +12,7 @@ pub struct Modifiers {
     pub ctrl: bool,
     pub alt: bool,
     pub shift: bool,
-    pub cmd: bool,  // macOS Command key
+    pub cmd: bool, // macOS Command key
 }
 
 impl Modifiers {
@@ -99,14 +99,58 @@ impl fmt::Display for Modifiers {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KeyCode {
     // Letters
-    A, B, C, D, E, F, G, H, I, J, K, L, M,
-    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
 
     // Numbers
-    Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
+    Num0,
+    Num1,
+    Num2,
+    Num3,
+    Num4,
+    Num5,
+    Num6,
+    Num7,
+    Num8,
+    Num9,
 
     // Function keys
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
 
     // Special keys
     Escape,
@@ -146,7 +190,7 @@ impl KeyCode {
     /// Parse a key name string into a KeyCode
     pub fn from_str(s: &str) -> Option<Self> {
         let s = s.trim();
-        
+
         // Single character keys
         if s.len() == 1 {
             let c = s.chars().next().unwrap().to_ascii_uppercase();
@@ -243,21 +287,54 @@ impl KeyCode {
     /// Get the display name for the key
     pub fn name(&self) -> &'static str {
         match self {
-            Self::A => "A", Self::B => "B", Self::C => "C", Self::D => "D",
-            Self::E => "E", Self::F => "F", Self::G => "G", Self::H => "H",
-            Self::I => "I", Self::J => "J", Self::K => "K", Self::L => "L",
-            Self::M => "M", Self::N => "N", Self::O => "O", Self::P => "P",
-            Self::Q => "Q", Self::R => "R", Self::S => "S", Self::T => "T",
-            Self::U => "U", Self::V => "V", Self::W => "W", Self::X => "X",
-            Self::Y => "Y", Self::Z => "Z",
-            Self::Num0 => "0", Self::Num1 => "1", Self::Num2 => "2",
-            Self::Num3 => "3", Self::Num4 => "4", Self::Num5 => "5",
-            Self::Num6 => "6", Self::Num7 => "7", Self::Num8 => "8",
+            Self::A => "A",
+            Self::B => "B",
+            Self::C => "C",
+            Self::D => "D",
+            Self::E => "E",
+            Self::F => "F",
+            Self::G => "G",
+            Self::H => "H",
+            Self::I => "I",
+            Self::J => "J",
+            Self::K => "K",
+            Self::L => "L",
+            Self::M => "M",
+            Self::N => "N",
+            Self::O => "O",
+            Self::P => "P",
+            Self::Q => "Q",
+            Self::R => "R",
+            Self::S => "S",
+            Self::T => "T",
+            Self::U => "U",
+            Self::V => "V",
+            Self::W => "W",
+            Self::X => "X",
+            Self::Y => "Y",
+            Self::Z => "Z",
+            Self::Num0 => "0",
+            Self::Num1 => "1",
+            Self::Num2 => "2",
+            Self::Num3 => "3",
+            Self::Num4 => "4",
+            Self::Num5 => "5",
+            Self::Num6 => "6",
+            Self::Num7 => "7",
+            Self::Num8 => "8",
             Self::Num9 => "9",
-            Self::F1 => "F1", Self::F2 => "F2", Self::F3 => "F3",
-            Self::F4 => "F4", Self::F5 => "F5", Self::F6 => "F6",
-            Self::F7 => "F7", Self::F8 => "F8", Self::F9 => "F9",
-            Self::F10 => "F10", Self::F11 => "F11", Self::F12 => "F12",
+            Self::F1 => "F1",
+            Self::F2 => "F2",
+            Self::F3 => "F3",
+            Self::F4 => "F4",
+            Self::F5 => "F5",
+            Self::F6 => "F6",
+            Self::F7 => "F7",
+            Self::F8 => "F8",
+            Self::F9 => "F9",
+            Self::F10 => "F10",
+            Self::F11 => "F11",
+            Self::F12 => "F12",
             Self::Escape => "Escape",
             Self::Tab => "Tab",
             Self::Space => "Space",
@@ -369,9 +446,7 @@ impl<'de> Deserialize<'de> for MouseBinding {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        MouseBinding::parse(&s).ok_or_else(|| {
-            serde::de::Error::custom(format!("invalid mouse binding: '{}'", s))
-        })
+        MouseBinding::parse(&s).ok_or_else(|| serde::de::Error::custom(format!("invalid mouse binding: '{}'", s)))
     }
 }
 
@@ -394,17 +469,26 @@ impl MouseBinding {
         // Parse modifiers at the beginning (same logic as Hotkey)
         loop {
             let lower = remaining.to_lowercase();
-            
+
             if let Some(rest) = lower.strip_prefix("ctrl+").or_else(|| lower.strip_prefix("control+")) {
                 modifiers.ctrl = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
-            } else if let Some(rest) = lower.strip_prefix("alt+").or_else(|| lower.strip_prefix("opt+")).or_else(|| lower.strip_prefix("option+")) {
+            } else if let Some(rest) = lower
+                .strip_prefix("alt+")
+                .or_else(|| lower.strip_prefix("opt+"))
+                .or_else(|| lower.strip_prefix("option+"))
+            {
                 modifiers.alt = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
             } else if let Some(rest) = lower.strip_prefix("shift+") {
                 modifiers.shift = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
-            } else if let Some(rest) = lower.strip_prefix("cmd+").or_else(|| lower.strip_prefix("command+")).or_else(|| lower.strip_prefix("meta+")).or_else(|| lower.strip_prefix("super+")) {
+            } else if let Some(rest) = lower
+                .strip_prefix("cmd+")
+                .or_else(|| lower.strip_prefix("command+"))
+                .or_else(|| lower.strip_prefix("meta+"))
+                .or_else(|| lower.strip_prefix("super+"))
+            {
                 modifiers.cmd = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
             } else {
@@ -461,9 +545,7 @@ impl<'de> Deserialize<'de> for Hotkey {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Hotkey::parse(&s).ok_or_else(|| {
-            serde::de::Error::custom(format!("invalid hotkey: '{}'", s))
-        })
+        Hotkey::parse(&s).ok_or_else(|| serde::de::Error::custom(format!("invalid hotkey: '{}'", s)))
     }
 }
 
@@ -486,17 +568,26 @@ impl Hotkey {
         // Parse modifiers at the beginning (case-insensitive)
         loop {
             let lower = remaining.to_lowercase();
-            
+
             if let Some(rest) = lower.strip_prefix("ctrl+").or_else(|| lower.strip_prefix("control+")) {
                 modifiers.ctrl = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
-            } else if let Some(rest) = lower.strip_prefix("alt+").or_else(|| lower.strip_prefix("opt+")).or_else(|| lower.strip_prefix("option+")) {
+            } else if let Some(rest) = lower
+                .strip_prefix("alt+")
+                .or_else(|| lower.strip_prefix("opt+"))
+                .or_else(|| lower.strip_prefix("option+"))
+            {
                 modifiers.alt = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
             } else if let Some(rest) = lower.strip_prefix("shift+") {
                 modifiers.shift = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
-            } else if let Some(rest) = lower.strip_prefix("cmd+").or_else(|| lower.strip_prefix("command+")).or_else(|| lower.strip_prefix("meta+")).or_else(|| lower.strip_prefix("super+")) {
+            } else if let Some(rest) = lower
+                .strip_prefix("cmd+")
+                .or_else(|| lower.strip_prefix("command+"))
+                .or_else(|| lower.strip_prefix("meta+"))
+                .or_else(|| lower.strip_prefix("super+"))
+            {
                 modifiers.cmd = true;
                 remaining = &remaining[remaining.len() - rest.len()..];
             } else {
@@ -523,7 +614,7 @@ impl Hotkey {
 impl fmt::Display for Hotkey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parts = Vec::new();
-        
+
         if self.modifiers.ctrl {
             parts.push("Ctrl");
         }
@@ -537,7 +628,7 @@ impl fmt::Display for Hotkey {
             parts.push("Cmd");
         }
         parts.push(self.key.name());
-        
+
         write!(f, "{}", parts.join("+"))
     }
 }
@@ -642,14 +733,14 @@ mod hotkey_tests {
         struct Wrapper {
             hotkey: Hotkey,
         }
-        
+
         let wrapper = Wrapper {
             hotkey: Hotkey::parse("Ctrl+Shift+N").unwrap(),
         };
-        
+
         let toml_str = toml::to_string(&wrapper).unwrap();
         assert!(toml_str.contains("Ctrl+Shift+N"));
-        
+
         let parsed: Wrapper = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed, wrapper);
     }
@@ -660,17 +751,14 @@ mod hotkey_tests {
         struct Wrapper {
             hotkeys: Vec<Hotkey>,
         }
-        
+
         let wrapper = Wrapper {
-            hotkeys: vec![
-                Hotkey::parse("Ctrl+C").unwrap(),
-                Hotkey::parse("Ctrl+V").unwrap(),
-            ],
+            hotkeys: vec![Hotkey::parse("Ctrl+C").unwrap(), Hotkey::parse("Ctrl+V").unwrap()],
         };
-        
+
         let toml_str = toml::to_string(&wrapper).unwrap();
         let parsed: Wrapper = toml::from_str(&toml_str).unwrap();
-        
+
         assert_eq!(parsed, wrapper);
     }
 }

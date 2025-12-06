@@ -2,8 +2,8 @@
 //!
 //! This module bridges Iced's keyboard and mouse API with the command system.
 
-use iced::keyboard::{self, Key, Modifiers as IcedModifiers};
 use super::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
+use iced::keyboard::{self, Key, Modifiers as IcedModifiers};
 
 /// Convert Iced modifiers to our Modifiers
 ///
@@ -16,7 +16,7 @@ pub fn from_iced_modifiers(mods: IcedModifiers) -> Modifiers {
         ctrl: mods.control(),
         alt: mods.alt(),
         shift: mods.shift(),
-        cmd: mods.logo(),  // Use logo() - only true for macOS Cmd key
+        cmd: mods.logo(), // Use logo() - only true for macOS Cmd key
     }
 }
 
@@ -36,7 +36,7 @@ pub fn from_iced_key(key: &Key) -> Option<KeyCode> {
 /// Convert Iced Named key to our KeyCode
 fn from_iced_named(named: keyboard::key::Named) -> Option<KeyCode> {
     use keyboard::key::Named::*;
-    
+
     Some(match named {
         Escape => KeyCode::Escape,
         Tab => KeyCode::Tab,
@@ -100,7 +100,9 @@ pub fn mouse_binding_from_iced(button: iced::mouse::Button, modifiers: IcedModif
 /// Trait for types that can be converted to input bindings for command matching
 pub trait IntoHotkey {
     fn into_hotkey(&self) -> Option<Hotkey>;
-    fn into_mouse_binding(&self) -> Option<MouseBinding> { None }
+    fn into_mouse_binding(&self) -> Option<MouseBinding> {
+        None
+    }
 }
 
 impl IntoHotkey for Hotkey {
@@ -132,7 +134,7 @@ impl IntoHotkey for iced::Event {
             None
         }
     }
-    
+
     fn into_mouse_binding(&self) -> Option<MouseBinding> {
         if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed(button)) = self {
             // Note: For mouse events, we can't easily get keyboard modifiers from the event itself
@@ -207,7 +209,7 @@ mod tests {
         // Simulate Ctrl+C
         let key = Key::Character("c".into());
         let mods = IcedModifiers::CTRL;
-        
+
         let hotkey = hotkey_from_iced(&key, mods).unwrap();
         assert_eq!(hotkey.key, KeyCode::C);
         assert!(hotkey.modifiers.ctrl);

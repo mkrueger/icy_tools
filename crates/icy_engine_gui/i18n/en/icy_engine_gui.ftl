@@ -60,3 +60,68 @@ export-dialog-file = File:
 export-dialog-utf8-output = UTF-8 output
 export-dialog-dir-not-exist = Directory does not exist!
 export-dialog-not-directory = Path is not a directory!
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Common Command System Keys (shared between icy_view and icy_term)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categories
+cmd-category-file = File
+cmd-category-edit = Edit
+cmd-category-view = View
+cmd-category-navigation = Navigation
+cmd-category-window = Window
+cmd-category-help = Help
+cmd-category-settings = Settings
+
+# File commands
+cmd-file-open-action = Open
+cmd-file-open-desc = Open a file
+cmd-file-export-action = Export
+cmd-file-export-desc = Export file
+cmd-file-close-action = Close
+cmd-file-close-desc = Close current file
+
+# Edit commands
+cmd-edit-copy-action = Copy
+cmd-edit-copy-desc = Copy selection to clipboard
+cmd-edit-paste-action = Paste
+cmd-edit-paste-desc = Paste from clipboard
+cmd-edit-select_all-action = Select All
+cmd-edit-select_all-desc = Select all content
+
+# View commands
+cmd-view-zoom_in-action = Zoom In
+cmd-view-zoom_in-desc = Increase zoom level
+cmd-view-zoom_out-action = Zoom Out
+cmd-view-zoom_out-desc = Decrease zoom level
+cmd-view-zoom_reset-action = Reset Zoom
+cmd-view-zoom_reset-desc = Reset to 100% zoom
+cmd-view-zoom_fit-action = Fit to Window
+cmd-view-zoom_fit-desc = Auto-fit content to window
+cmd-view-fullscreen-action = Fullscreen
+cmd-view-fullscreen-desc = Toggle fullscreen mode
+
+# Navigation commands
+cmd-nav-back-action = Go Back
+cmd-nav-back-desc = Navigate to previous location
+cmd-nav-forward-action = Go Forward
+cmd-nav-forward-desc = Navigate to next location
+cmd-nav-up-action = Parent Directory
+cmd-nav-up-desc = Go up one directory level
+
+# Window commands
+cmd-window-new-action = New Window
+cmd-window-new-desc = Open a new window
+cmd-window-close-action = Close Window
+cmd-window-close-desc = Close current window
+
+# Help commands
+cmd-help-show-action = Help
+cmd-help-show-desc = Show keyboard shortcuts
+cmd-help-about-action = About
+cmd-help-about-desc = Show about dialog
+
+# Settings commands
+cmd-settings-open-action = Settings
+cmd-settings-open-desc = Open settings dialog

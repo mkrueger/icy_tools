@@ -22,6 +22,7 @@ pub struct Terminal {
     pub char_height: f32,
     pub id: widget::Id,
     pub has_focus: bool,
+    pub background_color: Arc<RwLock<[f32; 4]>>,
 }
 
 impl Terminal {
@@ -47,6 +48,7 @@ impl Terminal {
             char_height: 20.0,
             id: widget::Id::unique(),
             has_focus: false,
+            background_color: Arc::new(RwLock::new([0.1, 0.1, 0.12, 1.0])), // Default dark background
         }
     }
 
@@ -300,5 +302,16 @@ impl Terminal {
     pub fn buffer_color_to_iced(color: icy_engine::Color) -> Color {
         let (r, g, b) = color.get_rgb_f32();
         Color::from_rgb(r, g, b)
+    }
+
+    /// Set the background color for out-of-bounds areas in CRT shader
+    pub fn set_background_color(&self, color: Color) {
+        *self.background_color.write() = [color.r, color.g, color.b, color.a];
+    }
+
+    /// Get the current background color
+    pub fn get_background_color(&self) -> Color {
+        let bg = *self.background_color.read();
+        Color::from_rgba(bg[0], bg[1], bg[2], bg[3])
     }
 }

@@ -7,8 +7,7 @@ use iced::{
     widget::{Space, column, container, image as iced_image, mouse_area, row, text},
 };
 use icy_engine_gui::{
-    ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager,
-    command_handler,
+    ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager, command_handler,
     ui::{ExportDialogMessage, ExportDialogState},
     version_helper::replace_version_marker,
 };
@@ -34,6 +33,7 @@ use super::{
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
     focus::{focus, list_focus_style},
     options::{SortOrder, ViewMode},
+    theme,
 };
 
 // Include the welcome logo at compile time
@@ -1320,10 +1320,12 @@ impl MainWindow {
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
-                            // Apply current filter to tile grid
-                            let filter = self.filter_popup.get_filter().to_string();
-                            if !filter.is_empty() {
-                                self.tile_grid.apply_filter(&filter);
+                            // Apply current filter to tile grid only if popup is visible
+                            if self.filter_popup.is_visible() {
+                                let filter = self.filter_popup.get_filter().to_string();
+                                if !filter.is_empty() {
+                                    self.tile_grid.apply_filter(&filter);
+                                }
                             }
                             // Reset toolbar for slide-in behavior
                             self.file_list_toolbar.reset_for_tiles_mode();
@@ -1338,9 +1340,12 @@ impl MainWindow {
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
-                            let filter = self.filter_popup.get_filter().to_string();
-                            if !filter.is_empty() {
-                                self.tile_grid.apply_filter(&filter);
+                            // Apply current filter only if popup is visible
+                            if self.filter_popup.is_visible() {
+                                let filter = self.filter_popup.get_filter().to_string();
+                                if !filter.is_empty() {
+                                    self.tile_grid.apply_filter(&filter);
+                                }
                             }
                         }
                     }
@@ -1455,6 +1460,11 @@ impl MainWindow {
             Message::ToggleFilterPopup => {
                 if self.filter_popup.is_visible() {
                     self.filter_popup.hide();
+                    // Clear filter when closing popup
+                    self.filter_popup.clear_filter();
+                    self.file_browser.update(FileBrowserMessage::FilterChanged(String::new()));
+                    self.tile_grid.clear_filter();
+                    self.folder_preview.clear_filter();
                     Task::none()
                 } else {
                     self.filter_popup.show();
@@ -1914,10 +1924,11 @@ impl MainWindow {
         // Get current theme for passing to components
         let theme = self.theme();
 
-        // Set background color for tile grids from theme
-        let bg_color = theme.extended_palette().background.weaker.color;
+        // Set background color for tile grids and preview terminal from theme
+        let bg_color = theme::main_area_background(&theme);
         self.tile_grid.set_background_color(bg_color);
         self.folder_preview.set_background_color(bg_color);
+        self.preview.terminal.set_background_color(bg_color);
 
         // Navigation bar at top
         let current_path = self.file_browser.current_path();
@@ -2008,18 +2019,24 @@ impl MainWindow {
                         .height(Length::Fill)
                         .center_x(Length::Fill)
                         .center_y(Length::Fill)
-                        .style(|theme: &Theme| {
-                            let palette = theme.extended_palette();
-                            container::Style {
-                                background: Some(iced::Background::Color(palette.background.weaker.color)),
-                                ..Default::default()
-                            }
+                        .style(move |_theme: &Theme| container::Style {
+                            background: Some(iced::Background::Color(bg_color)),
+                            ..Default::default()
                         })
                         .into()
                 };
 
                 // Main content area (toolbar + file browser + preview)
-                row![file_list_column, preview_area].into()
+                // Use a styled container for the spacing between file list and preview
+                let spacer: Element<'_, Message> = container(text(""))
+                    .width(4.0)
+                    .height(Length::Fill)
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(iced::Background::Color(bg_color)),
+                        ..Default::default()
+                    })
+                    .into();
+                row![file_list_column, spacer, preview_area].into()
             }
             ViewMode::Tiles => {
                 // Full-width tile grid view wrapped in focusable container for keyboard handling
@@ -2346,6 +2363,11 @@ impl MainWindow {
                     if self.error_dialog.is_some() {
                         return Some(Message::CloseErrorDialog);
                     }
+                }
+
+                // Handle Escape key for closing dialogs
+                if let Key::Named(Named::Escape) = key {
+                    return Some(Message::Escape);
                 }
 
                 // View-mode dependent navigation keys

@@ -160,3 +160,105 @@ welcome-tip = Dica: Pressione Ctrl+F para filtrar, ou clique 🌐 para navegar e
 thumbnail-loading = Carregando...
 thumbnail-no-diz = sem file_id.diz
 thumbnail-unsupported = Não suportado
+
+filter-no-items-found = Nenhum item encontrado.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sistema de comandos
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categorias
+cmd-category-file = Arquivo
+cmd-category-edit = Editar
+cmd-category-view = Visualizar
+cmd-category-navigation = Navegação
+cmd-category-window = Janela
+cmd-category-help = Ajuda
+cmd-category-settings = Configurações
+cmd-category-dialog = Diálogos
+cmd-category-playback = Reprodução
+cmd-category-external = Externo
+
+# Comandos de arquivo
+cmd-file-open-action = Abrir
+cmd-file-open-desc = Abrir um arquivo
+cmd-file-export-action = Exportar
+cmd-file-export-desc = Exportar como imagem
+cmd-file-close-action = Fechar
+cmd-file-close-desc = Fechar arquivo atual
+
+# Comandos de edição
+cmd-edit-copy-action = Copiar
+cmd-edit-copy-desc = Copiar seleção
+cmd-edit-paste-action = Colar
+cmd-edit-paste-desc = Colar da área de transferência
+cmd-edit-select_all-action = Selecionar tudo
+cmd-edit-select_all-desc = Selecionar todo o conteúdo
+
+# Comandos de visualização
+cmd-view-zoom_in-action = Aumentar zoom
+cmd-view-zoom_in-desc = Aumentar nível de zoom
+cmd-view-zoom_out-action = Diminuir zoom
+cmd-view-zoom_out-desc = Diminuir nível de zoom
+cmd-view-zoom_reset-action = Redefinir zoom
+cmd-view-zoom_reset-desc = Redefinir para 100%
+cmd-view-zoom_fit-action = Ajustar janela
+cmd-view-zoom_fit-desc = Ajustar conteúdo à janela
+cmd-view-fullscreen-action = Tela cheia
+cmd-view-fullscreen-desc = Alternar tela cheia
+
+# Comandos de navegação
+cmd-nav-back-action = Voltar
+cmd-nav-back-desc = Ir para local anterior
+cmd-nav-forward-action = Avançar
+cmd-nav-forward-desc = Ir para próximo local
+cmd-nav-up-action = Diretório pai
+cmd-nav-up-desc = Subir um nível
+
+# Comandos de janela
+cmd-window-new-action = Nova janela
+cmd-window-new-desc = Abrir nova janela
+cmd-window-close-action = Fechar janela
+cmd-window-close-desc = Fechar janela atual
+
+# Comandos de ajuda
+cmd-help-show-action = Ajuda
+cmd-help-show-desc = Mostrar atalhos
+cmd-help-about-action = Sobre
+cmd-help-about-desc = Mostrar Sobre
+
+# Comandos de configurações
+cmd-settings-open-action = Configurações
+cmd-settings-open-desc = Abrir configurações
+
+# Comandos de diálogos
+cmd-dialog-sauce-action = Info SAUCE
+cmd-dialog-sauce-desc = Mostrar metadados SAUCE
+cmd-dialog-export-action = Exportar
+cmd-dialog-export-desc = Exportar como imagem
+cmd-dialog-filter-action = Filtrar
+cmd-dialog-filter-desc = Alternar filtro
+
+# Comandos de reprodução
+cmd-playback-toggle_scroll-action = Rolagem auto
+cmd-playback-toggle_scroll-desc = Alternar rolagem
+cmd-playback-scroll_speed-action = Velocidade +
+cmd-playback-scroll_speed-desc = Aumentar velocidade
+cmd-playback-scroll_speed_back-action = Velocidade -
+cmd-playback-scroll_speed_back-desc = Diminuir velocidade
+cmd-playback-baud_rate-action = Baud +
+cmd-playback-baud_rate-desc = Aumentar baud
+cmd-playback-baud_rate_back-action = Baud -
+cmd-playback-baud_rate_back-desc = Diminuir baud
+cmd-playback-baud_rate_off-action = Baud desligado
+cmd-playback-baud_rate_off-desc = Desativar emulação baud
+
+# Comandos externos
+cmd-external-command_0-action = Externo 1
+cmd-external-command_0-desc = Executar comando 1 (F5)
+cmd-external-command_1-action = Externo 2
+cmd-external-command_1-desc = Executar comando 2 (F6)
+cmd-external-command_2-action = Externo 3
+cmd-external-command_2-desc = Executar comando 3 (F7)
+cmd-external-command_3-action = Externo 4
+cmd-external-command_3-desc = Executar comando 4 (F8)

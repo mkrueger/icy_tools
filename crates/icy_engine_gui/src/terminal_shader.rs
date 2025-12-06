@@ -9,7 +9,7 @@ use iced::widget::shader;
 /// Maximum texture dimension supported by most GPUs
 const MAX_TEXTURE_DIMENSION: u32 = 8192;
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Clone, Copy)]
 struct CRTUniforms {
     time: f32,
@@ -37,6 +37,9 @@ struct CRTUniforms {
     bloom_radius: f32,
     bloom_intensity: f32,
     enable_bloom: f32,
+
+    _padding: [f32; 2], // Padding to align background_color to 16 bytes
+    background_color: [f32; 4],
 }
 
 // Define your shader primitive - store rendered data, not references
@@ -56,6 +59,8 @@ pub struct TerminalShader {
     pub font_width: f32,
     pub font_height: f32,
     pub scan_lines: bool,
+    // Background color for out-of-bounds areas
+    pub background_color: [f32; 4],
 }
 
 // Add per-instance resources struct
@@ -510,6 +515,8 @@ impl shader::Primitive for TerminalShader {
                 0.0
             },
             enable_bloom: if self.monitor_settings.use_bloom { 1.0 } else { 0.0 },
+            _padding: [0.0; 2],
+            background_color: self.background_color,
         };
 
         // Write to this instance's uniform buffers

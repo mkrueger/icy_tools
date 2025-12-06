@@ -263,6 +263,23 @@ impl FileBrowser {
     }
 
     pub fn view(&self, theme: &iced::Theme) -> Element<'_, FileBrowserMessage> {
+        // If filter is active but no items match, show "No items found" message
+        if !self.filter.is_empty() && self.visible_indices.is_empty() {
+            use i18n_embed_fl::fl;
+            use iced::widget::text;
+            let no_items_text = text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
+                .size(14)
+                .style(|theme: &iced::Theme| text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.5)),
+                });
+            return container(no_items_text)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .padding(20)
+                .into();
+        }
+
         // Use the custom file list view with files and visible indices
         use super::file_list_shader::FileListThemeColors;
         let theme_colors = FileListThemeColors::from_theme(theme);

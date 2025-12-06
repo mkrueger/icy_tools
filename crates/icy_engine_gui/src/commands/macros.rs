@@ -60,9 +60,18 @@ macro_rules! command_handler {
             }
 
             fn handle<H: $crate::commands::IntoHotkey>(&self, event: H, $ctx: $ctx_ty) -> Option<$msg_ty> {
-                let hotkey = event.into_hotkey()?;
-                let cmd_id = self.commands.match_hotkey(&hotkey)?;
-                $( if cmd_id == $cmd { return Some($msg); } )*
+                // Try hotkey (keyboard) match first
+                if let Some(hotkey) = event.into_hotkey() {
+                    if let Some(cmd_id) = self.commands.match_hotkey(&hotkey) {
+                        $( if cmd_id == $cmd { return Some($msg); } )*
+                    }
+                }
+                // Try mouse binding match
+                if let Some(mouse_binding) = event.into_mouse_binding() {
+                    if let Some(cmd_id) = self.commands.match_mouse_binding(&mouse_binding) {
+                        $( if cmd_id == $cmd { return Some($msg); } )*
+                    }
+                }
                 None
             }
 
@@ -91,9 +100,18 @@ macro_rules! command_handler {
             }
 
             fn handle<H: $crate::commands::IntoHotkey>(&self, event: H, ( $( $ctx ),+ ): ( $( $ctx_ty ),+ )) -> Option<$msg_ty> {
-                let hotkey = event.into_hotkey()?;
-                let cmd_id = self.commands.match_hotkey(&hotkey)?;
-                $( if cmd_id == $cmd { return Some($msg); } )*
+                // Try hotkey (keyboard) match first
+                if let Some(hotkey) = event.into_hotkey() {
+                    if let Some(cmd_id) = self.commands.match_hotkey(&hotkey) {
+                        $( if cmd_id == $cmd { return Some($msg); } )*
+                    }
+                }
+                // Try mouse binding match
+                if let Some(mouse_binding) = event.into_mouse_binding() {
+                    if let Some(cmd_id) = self.commands.match_mouse_binding(&mouse_binding) {
+                        $( if cmd_id == $cmd { return Some($msg); } )*
+                    }
+                }
                 None
             }
 
@@ -122,9 +140,18 @@ macro_rules! command_handler {
             }
 
             fn handle<H: $crate::commands::IntoHotkey>(&self, event: H) -> Option<$msg_ty> {
-                let hotkey = event.into_hotkey()?;
-                let cmd_id = self.commands.match_hotkey(&hotkey)?;
-                $( if cmd_id == $cmd { return Some($msg); } )*
+                // Try hotkey (keyboard) match first
+                if let Some(hotkey) = event.into_hotkey() {
+                    if let Some(cmd_id) = self.commands.match_hotkey(&hotkey) {
+                        $( if cmd_id == $cmd { return Some($msg); } )*
+                    }
+                }
+                // Try mouse binding match
+                if let Some(mouse_binding) = event.into_mouse_binding() {
+                    if let Some(cmd_id) = self.commands.match_mouse_binding(&mouse_binding) {
+                        $( if cmd_id == $cmd { return Some($msg); } )*
+                    }
+                }
                 None
             }
 
@@ -169,7 +196,7 @@ macro_rules! command_handlers {
             None
         }
     };
-    
+
     // Pattern: pub fn name(params) -> Option<Type> { mappings }
     (
         pub fn $name:ident( $( $param:ident : $ptype:ty ),* $(,)? ) -> Option<$ret:ty> {
@@ -207,7 +234,7 @@ macro_rules! handle_command {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::{cmd, create_common_commands, Hotkey};
+    use crate::commands::{Hotkey, cmd, create_common_commands};
 
     #[derive(Debug, Clone, PartialEq)]
     enum TestMessage {
@@ -248,7 +275,7 @@ mod tests {
     #[test]
     fn test_window_handler() {
         let window_id = 42u32;
-        
+
         assert_eq!(window_handler(cmd::WINDOW_NEW, window_id), Some(TestMessage::Open));
         assert_eq!(window_handler(cmd::WINDOW_CLOSE, window_id), Some(TestMessage::Close(42)));
         assert_eq!(window_handler(cmd::VIEW_ZOOM_IN, window_id), Some(TestMessage::ZoomIn(42)));
@@ -257,10 +284,7 @@ mod tests {
 
     #[test]
     fn test_multi_param_handler() {
-        assert_eq!(
-            multi_param_handler(cmd::WINDOW_NEW, 1, 100, 200),
-            Some(TestMessage::Move(1, 100, 200))
-        );
+        assert_eq!(multi_param_handler(cmd::WINDOW_NEW, 1, 100, 200), Some(TestMessage::Move(1, 100, 200)));
     }
 
     #[test]
@@ -295,7 +319,7 @@ mod tests {
     }
 
     // Tests for command_handler! macro (struct generation)
-    
+
     command_handler!(SingleParamCommands, create_common_commands(), window_id: u32 => TestMessage {
         cmd::WINDOW_NEW => TestMessage::Open,
         cmd::WINDOW_CLOSE => TestMessage::Close(window_id),
@@ -312,10 +336,10 @@ mod tests {
     #[test]
     fn test_command_handler_single_param() {
         let handler = SingleParamCommands::new();
-        
+
         let hotkey = Hotkey::parse("Ctrl+Shift+N").unwrap();
         assert_eq!(handler.handle(&hotkey, 42), Some(TestMessage::Open));
-        
+
         let hotkey = Hotkey::parse("Ctrl+W").unwrap();
         assert_eq!(handler.handle(&hotkey, 42), Some(TestMessage::Close(42)));
     }
@@ -323,7 +347,7 @@ mod tests {
     #[test]
     fn test_command_handler_tuple_param() {
         let handler = TupleParamCommands::new();
-        
+
         let hotkey = Hotkey::parse("Ctrl+Shift+N").unwrap();
         assert_eq!(handler.handle(&hotkey, (42, 10)), Some(TestMessage::Move(42, 10, 0)));
     }
@@ -331,7 +355,7 @@ mod tests {
     #[test]
     fn test_command_handler_no_param() {
         let handler = NoParamCommands::new();
-        
+
         let hotkey = Hotkey::parse("Ctrl+O").unwrap();
         assert_eq!(handler.handle(&hotkey), Some(TestMessage::Open));
     }

@@ -30,6 +30,7 @@ command_handler!(PreviewCommands, create_icy_view_commands(), => PreviewMessage 
     cmd::VIEW_ZOOM_IN => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In),
     cmd::VIEW_ZOOM_OUT => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out),
     cmd::VIEW_ZOOM_RESET => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset),
+    cmd::VIEW_ZOOM_FIT => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::AutoFit),
 });
 
 /// Preview mode - either terminal or image

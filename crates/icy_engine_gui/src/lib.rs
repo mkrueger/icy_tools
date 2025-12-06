@@ -4,9 +4,7 @@ pub use terminal::*;
 
 pub mod commands;
 pub use commands::{
-    CommandDef, CommandSet, Hotkey, KeyCode, Modifiers, 
-    cmd, create_common_commands, 
-    load_commands_from_str, load_commands_from_file, CommandLoadError
+    CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers, cmd, create_common_commands, load_commands_from_file, load_commands_from_str,
 };
 
 pub mod render_info;

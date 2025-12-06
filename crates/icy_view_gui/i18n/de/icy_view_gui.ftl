@@ -118,58 +118,6 @@ sauce-value-hz={ $count } Hz
 help-title = Tastaturkürzel
 help-subtitle = Schnellreferenz für iCY VIEW
 
-# Kategorien
-help-category-navigation = Navigation
-help-category-display = Anzeige
-help-category-zoom = Zoom
-help-category-tools = Werkzeuge
-
-# Aktionen
-help-action-navigate = Navigieren
-help-action-open = Öffnen/Enter
-help-action-parent = Übergeordnetes Verz.
-help-action-back = Zurück
-help-action-forward = Vorwärts
-help-action-filter = Filter
-help-action-auto-scroll = Auto-Scroll
-help-action-scroll-speed = Scroll-Geschw.
-help-action-baud-rate = Baudrate
-help-action-baud-off = Baud aus
-help-action-sauce = SAUCE-Info
-help-action-zoom-in = Vergrößern
-help-action-zoom-out = Verkleinern
-help-action-zoom-reset = Zoom zurücksetzen
-help-action-zoom-fit = Einpassen
-help-action-export = Exportieren
-help-action-copy = Kopieren
-help-action-external = Externe Befehle
-help-action-fullscreen = Vollbild
-help-action-help = Hilfe
-
-# Beschreibungen
-help-desc-navigate = Auswahl in Dateiliste bewegen
-help-desc-open = Datei öffnen oder Verzeichnis betreten
-help-desc-parent = Eine Ebene nach oben
-help-desc-back = Zum vorherigen Ort navigieren
-help-desc-forward = Zum nächsten Ort navigieren
-help-desc-filter = Filtereingabe umschalten
-help-desc-auto-scroll = Automatisches Scrollen an/aus (Vorschau/Kacheln)
-help-desc-scroll-speed = Scrollgeschw. vorwärts/rückwärts
-help-desc-baud-rate = Baudrate vorwärts/rückwärts
-help-desc-baud-off = Baud-Emulation deaktivieren
-help-desc-sauce = SAUCE-Metadaten-Dialog anzeigen
-help-desc-zoom-in = Zoomstufe erhöhen
-help-desc-zoom-out = Zoomstufe verringern
-help-desc-zoom-reset = Auf 100% Zoom zurücksetzen
-help-desc-zoom-fit = Inhalt an Fenster anpassen
-help-desc-export = Datei als Bild exportieren
-help-desc-copy = Auswahl in Zwischenablage kopieren
-help-desc-external = Externe Befehle ausführen (F5-F8)
-help-desc-fullscreen = Vollbildmodus umschalten
-help-desc-help = Diesen Hilfe-Dialog anzeigen
-help-action-about = Über
-help-desc-about = Über-Dialog anzeigen
-
 toast-auto-scroll-on=Automatisches Scrollen an
 toast-auto-scroll-off=Automatisches Scrollen aus
 toast-scroll-slow=Scrollgeschwindigkeit: langsam
@@ -227,3 +175,105 @@ welcome-tip = Tipp: Ctrl+F zum Filtern, oder 🌐 klicken um 16colors.rs zu durc
 thumbnail-loading = Lade...
 thumbnail-no-diz = Keine file_id.diz
 thumbnail-unsupported = Nicht unterstützt
+
+filter-no-items-found = Keine Einträge gefunden.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Command System (aus Command-IDs generiert)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Kategorien
+cmd-category-file = Datei
+cmd-category-edit = Bearbeiten
+cmd-category-view = Ansicht
+cmd-category-navigation = Navigation
+cmd-category-window = Fenster
+cmd-category-help = Hilfe
+cmd-category-settings = Einstellungen
+cmd-category-dialog = Dialoge
+cmd-category-playback = Wiedergabe
+cmd-category-external = Extern
+
+# Datei-Befehle
+cmd-file-open-action = Öffnen
+cmd-file-open-desc = Eine Datei öffnen
+cmd-file-export-action = Exportieren
+cmd-file-export-desc = Datei als Bild exportieren
+cmd-file-close-action = Schließen
+cmd-file-close-desc = Aktuelle Datei schließen
+
+# Bearbeiten-Befehle
+cmd-edit-copy-action = Kopieren
+cmd-edit-copy-desc = Auswahl in die Zwischenablage kopieren
+cmd-edit-paste-action = Einfügen
+cmd-edit-paste-desc = Aus der Zwischenablage einfügen
+cmd-edit-select_all-action = Alles auswählen
+cmd-edit-select_all-desc = Gesamten Inhalt auswählen
+
+# Ansicht-Befehle
+cmd-view-zoom_in-action = Vergrößern
+cmd-view-zoom_in-desc = Zoomstufe erhöhen
+cmd-view-zoom_out-action = Verkleinern
+cmd-view-zoom_out-desc = Zoomstufe verringern
+cmd-view-zoom_reset-action = Zoom zurücksetzen
+cmd-view-zoom_reset-desc = Auf 100% Zoom zurücksetzen
+cmd-view-zoom_fit-action = An Fenster anpassen
+cmd-view-zoom_fit-desc = Inhalt automatisch an Fenster anpassen
+cmd-view-fullscreen-action = Vollbild
+cmd-view-fullscreen-desc = Vollbildmodus umschalten
+
+# Navigations-Befehle
+cmd-nav-back-action = Zurück
+cmd-nav-back-desc = Zum vorherigen Ort navigieren
+cmd-nav-forward-action = Vorwärts
+cmd-nav-forward-desc = Zum nächsten Ort navigieren
+cmd-nav-up-action = Übergeordnetes Verzeichnis
+cmd-nav-up-desc = Eine Verzeichnisebene nach oben
+
+# Fenster-Befehle
+cmd-window-new-action = Neues Fenster
+cmd-window-new-desc = Ein neues Fenster öffnen
+cmd-window-close-action = Fenster schließen
+cmd-window-close-desc = Aktuelles Fenster schließen
+
+# Hilfe-Befehle
+cmd-help-show-action = Hilfe
+cmd-help-show-desc = Tastenkürzel anzeigen
+cmd-help-about-action = Über
+cmd-help-about-desc = Info-Dialog anzeigen
+
+# Einstellungs-Befehle
+cmd-settings-open-action = Einstellungen
+cmd-settings-open-desc = Einstellungs-Dialog öffnen
+
+# Dialog-Befehle (icy_view spezifisch)
+cmd-dialog-sauce-action = SAUCE-Info
+cmd-dialog-sauce-desc = SAUCE-Metadaten anzeigen
+cmd-dialog-export-action = Exportieren
+cmd-dialog-export-desc = Datei als Bild exportieren
+cmd-dialog-filter-action = Filtern
+cmd-dialog-filter-desc = Filtereingabe umschalten
+
+# Wiedergabe-Befehle (icy_view spezifisch)
+cmd-playback-toggle_scroll-action = Auto-Scroll
+cmd-playback-toggle_scroll-desc = Automatisches Scrollen umschalten
+cmd-playback-scroll_speed-action = Scroll-Geschw. +
+cmd-playback-scroll_speed-desc = Scroll-Geschwindigkeit erhöhen
+cmd-playback-scroll_speed_back-action = Scroll-Geschw. -
+cmd-playback-scroll_speed_back-desc = Scroll-Geschwindigkeit verringern
+cmd-playback-baud_rate-action = Baudrate +
+cmd-playback-baud_rate-desc = Baudrate erhöhen
+cmd-playback-baud_rate_back-action = Baudrate -
+cmd-playback-baud_rate_back-desc = Baudrate verringern
+cmd-playback-baud_rate_off-action = Baud aus
+cmd-playback-baud_rate_off-desc = Baud-Emulation deaktivieren
+
+# Externe Befehle (icy_view spezifisch)
+cmd-external-command_0-action = Extern 1
+cmd-external-command_0-desc = Externen Befehl 1 ausführen (F5)
+cmd-external-command_1-action = Extern 2
+cmd-external-command_1-desc = Externen Befehl 2 ausführen (F6)
+cmd-external-command_2-action = Extern 3
+cmd-external-command_2-desc = Externen Befehl 3 ausführen (F7)
+cmd-external-command_3-action = Extern 4
+cmd-external-command_3-desc = Externen Befehl 4 ausführen (F8)

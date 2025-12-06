@@ -20,16 +20,6 @@ impl TextBuffer {
         let px_width = rect.get_width() * font_size.width;
         let px_height = rect.get_height() * font_size.height;
 
-        println!(
-            "[render_to_rgba] rect={}x{} font={}x{} px={}x{}",
-            rect.get_width(),
-            rect.get_height(),
-            font_size.width,
-            font_size.height,
-            px_width,
-            px_height
-        );
-
         // Check for overflow before allocation
         let total_pixels = (px_width as u64).checked_mul(px_height as u64);
         if total_pixels.is_none() || total_pixels.unwrap() > 100_000_000 {
