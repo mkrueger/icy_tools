@@ -501,7 +501,11 @@ impl ViewThread {
                 if let Some(sauce) = &repaired_sauce_opt {
                     let mut screen = self.screen.lock();
                     if let Some(editable) = screen.as_editable() {
+                        let height = editable.get_height();
                         editable.apply_sauce(sauce);
+                        // preserve height otherwise the "baud rate"
+                        // emulation may not work correctly
+                        editable.set_height(height);
                     }
                 }
 
