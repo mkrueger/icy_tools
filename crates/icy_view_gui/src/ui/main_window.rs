@@ -649,6 +649,15 @@ impl MainWindow {
                     NavigationBarMessage::OpenSettings => {
                         return self.update(Message::ShowSettings);
                     }
+                    NavigationBarMessage::OpenReleasesPage => {
+                        let url = format!(
+                            "https://github.com/mkrueger/icy_tools/releases/tag/IcyView{}",
+                            crate::LATEST_VERSION.to_string()
+                        );
+                        if let Err(e) = open::that(&url) {
+                            eprintln!("Failed to open release link: {}", e);
+                        }
+                    }
                 }
                 Task::none()
             }

@@ -15,6 +15,8 @@ menu-item-settings=Nastavení
 
 menu-upgrade_version=Aktualizovat na { $version }
 
+update-available=Dostupná aktualizace: { $version }
+
 tooltip-refresh=Obnovit
 tooltip-reset-filter-button=Resetovat filtr
 tooltip-back=Zpět

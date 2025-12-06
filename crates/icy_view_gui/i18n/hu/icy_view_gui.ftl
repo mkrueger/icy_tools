@@ -15,6 +15,8 @@ menu-item-settings=Beállítások
 
 menu-upgrade_version=Frissítés erre: { $version }
 
+update-available=Frissítés elérhető: { $version }
+
 tooltip-refresh=Frissítés
 tooltip-reset-filter-button=Szűrő visszaállítása
 tooltip-back=Vissza

@@ -15,6 +15,8 @@ menu-item-settings=Einstellungen
 
 menu-upgrade_version=Neue Version { $version }
 
+update-available=Update verfügbar: { $version }
+
 tooltip-refresh=Neu laden
 tooltip-reset-filter-button=Filter zurücksetzen
 tooltip-back=Zurück

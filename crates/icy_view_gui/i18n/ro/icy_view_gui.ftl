@@ -15,6 +15,8 @@ menu-item-settings=Setări
 
 menu-upgrade_version=Actualizează la { $version }
 
+update-available=Actualizare disponibilă: { $version }
+
 tooltip-refresh=Reîmprospătează
 tooltip-reset-filter-button=Resetează filtrul
 tooltip-back=Înapoi

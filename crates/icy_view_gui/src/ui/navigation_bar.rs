@@ -12,6 +12,7 @@ use super::options::ViewMode;
 use crate::LANGUAGE_LOADER;
 use crate::commands::{cmd, create_icy_view_commands};
 use crate::items::ProviderType;
+use crate::{LATEST_VERSION, VERSION};
 
 /// A point in navigation history
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +59,8 @@ pub enum NavigationBarMessage {
     PathSubmitted,
     /// Open settings dialog
     OpenSettings,
+    /// Open the releases page for update
+    OpenReleasesPage,
 }
 
 // Command handler for NavigationBar
@@ -280,7 +283,10 @@ impl NavigationBar {
             tooltip::Position::Bottom,
         );
 
-        let content = row![
+        // Update available link (only shown if newer version exists)
+        let update_available = *VERSION < *LATEST_VERSION;
+
+        let mut content = row![
             back_btn,
             forward_btn,
             refresh_btn,
@@ -288,12 +294,24 @@ impl NavigationBar {
             Space::new().width(8),
             path_input,
             Space::new().width(8),
-            filter_btn,
-            settings_btn,
         ]
         .spacing(2)
         .padding(6)
         .align_y(iced::Alignment::Center);
+
+        // Add update link if available
+        if update_available {
+            let update_text = fl!(LANGUAGE_LOADER, "update-available", version = LATEST_VERSION.to_string());
+            let update_btn = button(text(update_text).size(12))
+                .padding([4, 8])
+                .style(update_link_style)
+                .on_press(NavigationBarMessage::OpenReleasesPage);
+            content = content.push(update_btn);
+            content = content.push(Space::new().width(8));
+        }
+
+        content = content.push(filter_btn);
+        content = content.push(settings_btn);
 
         container(content)
             .width(Length::Fill)
@@ -391,5 +409,28 @@ fn path_input_style(theme: &iced::Theme, status: text_input::Status, is_valid: b
         placeholder: palette.background.base.text.scale_alpha(0.5),
         value: palette.background.base.text,
         selection: palette.primary.weak.color.scale_alpha(0.5),
+    }
+}
+
+/// Style for the update available link button
+fn update_link_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
+    // Use the same info blue color as icy_term: Color::from_rgb(0.2, 0.6, 1.0)
+    let info_color = iced::Color::from_rgb(0.2, 0.6, 1.0);
+
+    let (bg, text_color) = match status {
+        button::Status::Active => (iced::Color::TRANSPARENT, info_color),
+        button::Status::Hovered => (iced::Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1), info_color),
+        button::Status::Pressed => (iced::Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15), info_color),
+        button::Status::Disabled => (iced::Color::TRANSPARENT, info_color.scale_alpha(0.3)),
+    };
+    button::Style {
+        background: Some(iced::Background::Color(bg)),
+        text_color,
+        border: iced::Border {
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
+            radius: 4.0.into(),
+        },
+        ..Default::default()
     }
 }
