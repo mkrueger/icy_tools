@@ -1906,10 +1906,10 @@ impl MainWindow {
                                 match key {
                                     Key::Named(Named::ArrowUp) => Some(Message::Preview(PreviewMessage::ScrollViewport(0.0, -50.0))),
                                     Key::Named(Named::ArrowDown) => Some(Message::Preview(PreviewMessage::ScrollViewport(0.0, 50.0))),
-                                    Key::Named(Named::PageUp) => Some(Message::Preview(PreviewMessage::ScrollViewport(0.0, -400.0))),
-                                    Key::Named(Named::PageDown) => Some(Message::Preview(PreviewMessage::ScrollViewport(0.0, 400.0))),
-                                    Key::Named(Named::Home) => Some(Message::Preview(PreviewMessage::ScrollViewportTo(0.0, 0.0))),
-                                    Key::Named(Named::End) => Some(Message::Preview(PreviewMessage::ScrollViewportTo(0.0, f32::MAX))),
+                                    Key::Named(Named::PageUp) => Some(Message::Preview(PreviewMessage::ScrollViewportSmooth(0.0, -400.0))),
+                                    Key::Named(Named::PageDown) => Some(Message::Preview(PreviewMessage::ScrollViewportSmooth(0.0, 400.0))),
+                                    Key::Named(Named::Home) => Some(Message::Preview(PreviewMessage::ScrollViewportToSmooth(0.0, 0.0))),
+                                    Key::Named(Named::End) => Some(Message::Preview(PreviewMessage::ScrollViewportToSmooth(0.0, f32::MAX))),
                                     _ => None,
                                 }
                             } else {

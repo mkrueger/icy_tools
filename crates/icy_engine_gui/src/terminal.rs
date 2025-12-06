@@ -121,6 +121,18 @@ impl Terminal {
         vp.scroll_y_by(dy);
     }
 
+    /// Scroll X by delta with smooth animation (for PageUp/PageDown)
+    pub fn scroll_x_by_smooth(&mut self, dx: f32) {
+        let mut vp = self.viewport.write();
+        vp.scroll_x_by_smooth(dx);
+    }
+
+    /// Scroll Y by delta with smooth animation (for PageUp/PageDown)
+    pub fn scroll_y_by_smooth(&mut self, dy: f32) {
+        let mut vp = self.viewport.write();
+        vp.scroll_y_by_smooth(dy);
+    }
+
     /// Scroll X to position with proper clamping (position in content coordinates)
     pub fn scroll_x_to(&mut self, x: f32) {
         let mut vp = self.viewport.write();
@@ -133,16 +145,16 @@ impl Terminal {
         vp.scroll_y_to(y);
     }
 
-    /// Scroll X to position immediately with proper clamping (position in content coordinates)
-    pub fn scroll_x_to_immediate(&mut self, x: f32) {
+    /// Scroll X to position with smooth animation (for Home/End/PageUp/PageDown)
+    pub fn scroll_x_to_smooth(&mut self, x: f32) {
         let mut vp = self.viewport.write();
-        vp.scroll_x_to_immediate(x);
+        vp.scroll_x_to_smooth(x);
     }
 
-    /// Scroll Y to position immediately with proper clamping (position in content coordinates)
-    pub fn scroll_y_to_immediate(&mut self, y: f32) {
+    /// Scroll Y to position with smooth animation (for Home/End/PageUp/PageDown)
+    pub fn scroll_y_to_smooth(&mut self, y: f32) {
         let mut vp = self.viewport.write();
-        vp.scroll_y_to_immediate(y);
+        vp.scroll_y_to_smooth(y);
     }
 
     /// Update animations for both viewport and scrollbar
@@ -187,8 +199,8 @@ impl Terminal {
                 // max_scroll is now in content coordinates
                 let visible_content_height = resolution.height as f32 / vp.zoom;
                 let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
-                vp.scroll_x_to_immediate(0.0);
-                vp.scroll_y_to_immediate(max_scroll_y);
+                vp.scroll_x_to(0.0);
+                vp.scroll_y_to(max_scroll_y);
                 // Clamp with the correct visible size
                 vp.clamp_scroll_with_size(resolution.width as f32, resolution.height as f32);
             }

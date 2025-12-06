@@ -2,7 +2,7 @@
 //! Provides similar UX to the Terminal view for a consistent experience
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use iced::advanced::image::Renderer as ImageRenderer;
 use iced::advanced::layout::{self, Layout};
@@ -11,8 +11,7 @@ use iced::advanced::widget::{self, Widget};
 use iced::mouse::ScrollDelta;
 use iced::widget::{container, image as iced_image, stack};
 use iced::{Element, Event, Length, Rectangle, Size, Theme, mouse};
-use icy_engine_gui::{HorizontalScrollbarOverlay, ScrollbarInfo, ScrollbarOverlay};
-use parking_lot::RwLock;
+use icy_engine_gui::{HorizontalScrollbarOverlay, ScrollbarInfo, ScrollbarOverlay, ScrollbarState, Viewport};
 
 /// Minimum zoom level (25%)
 pub const MIN_ZOOM: f32 = 0.25;
@@ -20,22 +19,25 @@ pub const MIN_ZOOM: f32 = 0.25;
 pub const MAX_ZOOM: f32 = 8.0;
 /// Zoom step for each zoom in/out action (25%)
 pub const ZOOM_STEP: f32 = 0.25;
-/// Scrollbar fade timing
-const SCROLLBAR_FADE_DELAY: f32 = 1.5;
-const SCROLLBAR_FADE_SPEED: f32 = 3.0;
 /// Arrow key scroll step in pixels
 const ARROW_SCROLL_STEP: f32 = 50.0;
+/// Page scroll factor (percentage of viewport)
+const PAGE_SCROLL_FACTOR: f32 = 0.9;
 
 /// Messages from the image viewer
 #[derive(Debug, Clone)]
 pub enum ImageViewerMessage {
-    /// Scroll by delta
+    /// Scroll by delta (direct, no animation - for mouse wheel)
     Scroll(f32, f32),
-    /// Scroll to absolute position in pixels
+    /// Scroll by delta with smooth animation (for PageUp/PageDown)
+    ScrollSmooth(f32, f32),
+    /// Scroll to absolute position (direct, no animation)
     ScrollTo(f32, f32),
-    /// Scroll vertical to absolute position in pixels
+    /// Scroll to absolute position with smooth animation (for Home/End)
+    ScrollToSmooth(f32, f32),
+    /// Scroll vertical to absolute position in pixels (scrollbar)
     ScrollYTo(f32),
-    /// Scroll horizontal to absolute position in pixels
+    /// Scroll horizontal to absolute position in pixels (scrollbar)
     ScrollXTo(f32),
     /// Zoom in
     ZoomIn,
@@ -77,16 +79,10 @@ pub struct ImageViewer {
     image_size: (u32, u32),
     /// Current zoom level (1.0 = 100%)
     zoom: f32,
-    /// Scroll offset in zoomed pixels
-    scroll_offset: (f32, f32),
-    /// Last known viewport size (shared with widget for updates during render)
-    viewport_size: Arc<RwLock<(f32, f32)>>,
-    /// Scrollbar visibility (0.0 = hidden, 1.0 = visible)
-    scrollbar_visibility_v: f32,
-    scrollbar_visibility_h: f32,
-    /// Time since last scroll activity (separate for each scrollbar)
-    scrollbar_idle_time_v: f32,
-    scrollbar_idle_time_h: f32,
+    /// Viewport for scroll management (uses Viewport from icy_engine_gui)
+    pub viewport: Viewport,
+    /// Scrollbar state (uses ScrollbarState from icy_engine_gui)
+    pub scrollbar: ScrollbarState,
     /// Vertical scrollbar hover state
     pub vscrollbar_hover_state: Arc<AtomicBool>,
     /// Horizontal scrollbar hover state
@@ -96,16 +92,15 @@ pub struct ImageViewer {
 impl ImageViewer {
     /// Create a new image viewer
     pub fn new(handle: iced_image::Handle, width: u32, height: u32) -> Self {
+        let mut viewport = Viewport::default();
+        viewport.set_content_size(width as f32, height as f32);
+
         Self {
             handle,
             image_size: (width, height),
             zoom: 1.0,
-            scroll_offset: (0.0, 0.0),
-            viewport_size: Arc::new(RwLock::new((800.0, 600.0))),
-            scrollbar_visibility_v: 0.0,
-            scrollbar_visibility_h: 0.0,
-            scrollbar_idle_time_v: 0.0,
-            scrollbar_idle_time_h: 0.0,
+            viewport,
+            scrollbar: ScrollbarState::new(),
             vscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
         }
@@ -115,9 +110,11 @@ impl ImageViewer {
     pub fn set_image(&mut self, handle: iced_image::Handle, width: u32, height: u32) {
         self.handle = handle;
         self.image_size = (width, height);
-        self.scroll_offset = (0.0, 0.0);
-        // Auto-fit when loading new image
         self.zoom = 1.0;
+        // Reset viewport for new image
+        self.viewport.scroll_x_to(0.0);
+        self.viewport.scroll_y_to(0.0);
+        self.update_content_size();
     }
 
     /// Get current zoom level
@@ -125,9 +122,10 @@ impl ImageViewer {
         self.zoom
     }
 
-    /// Get current viewport size
-    fn get_viewport_size(&self) -> (f32, f32) {
-        *self.viewport_size.read()
+    /// Update content size based on zoom
+    fn update_content_size(&mut self) {
+        let zoomed = self.zoomed_size();
+        self.viewport.set_content_size(zoomed.0, zoomed.1);
     }
 
     /// Set zoom level
@@ -137,36 +135,40 @@ impl ImageViewer {
 
         // Adjust scroll to keep center point stable
         if old_zoom != self.zoom {
-            let vp = self.get_viewport_size();
             let ratio = self.zoom / old_zoom;
-            let center_x = self.scroll_offset.0 + vp.0 / 2.0;
-            let center_y = self.scroll_offset.1 + vp.1 / 2.0;
-            self.scroll_offset.0 = center_x * ratio - vp.0 / 2.0;
-            self.scroll_offset.1 = center_y * ratio - vp.1 / 2.0;
-            self.clamp_scroll();
+            let center_x = self.viewport.scroll_x + self.viewport.visible_width / 2.0;
+            let center_y = self.viewport.scroll_y + self.viewport.visible_height / 2.0;
+            let new_x = center_x * ratio - self.viewport.visible_width / 2.0;
+            let new_y = center_y * ratio - self.viewport.visible_height / 2.0;
+
+            self.update_content_size();
+            self.viewport.scroll_x_to(new_x);
+            self.viewport.scroll_y_to(new_y);
         }
+        self.scrollbar.mark_interaction(true);
     }
 
     /// Zoom in
     pub fn zoom_in(&mut self) {
         self.set_zoom(self.zoom + ZOOM_STEP);
-        self.show_scrollbars();
     }
 
     /// Zoom out
     pub fn zoom_out(&mut self) {
         self.set_zoom(self.zoom - ZOOM_STEP);
-        self.show_scrollbars();
     }
 
     /// Zoom to fit viewport
     pub fn zoom_fit(&mut self) {
-        let vp = self.get_viewport_size();
-        if vp.0 > 0.0 && vp.1 > 0.0 {
-            let scale_x = vp.0 / self.image_size.0 as f32;
-            let scale_y = vp.1 / self.image_size.1 as f32;
+        let vp_w = self.viewport.visible_width;
+        let vp_h = self.viewport.visible_height;
+        if vp_w > 0.0 && vp_h > 0.0 {
+            let scale_x = vp_w / self.image_size.0 as f32;
+            let scale_y = vp_h / self.image_size.1 as f32;
             self.zoom = scale_x.min(scale_y).clamp(MIN_ZOOM, MAX_ZOOM);
-            self.scroll_offset = (0.0, 0.0);
+            self.update_content_size();
+            self.viewport.scroll_x_to(0.0);
+            self.viewport.scroll_y_to(0.0);
         }
     }
 
@@ -180,218 +182,165 @@ impl ImageViewer {
         (self.image_size.0 as f32 * self.zoom, self.image_size.1 as f32 * self.zoom)
     }
 
-    /// Get maximum scroll offsets
-    fn max_scroll(&self) -> (f32, f32) {
-        let zoomed = self.zoomed_size();
-        let vp = self.get_viewport_size();
-        ((zoomed.0 - vp.0).max(0.0), (zoomed.1 - vp.1).max(0.0))
-    }
-
-    /// Clamp scroll offset to valid range
-    fn clamp_scroll(&mut self) {
-        let max = self.max_scroll();
-        self.scroll_offset.0 = self.scroll_offset.0.clamp(0.0, max.0);
-        self.scroll_offset.1 = self.scroll_offset.1.clamp(0.0, max.1);
-    }
-
-    /// Scroll by delta (in screen pixels)
+    /// Scroll by delta (direct, no animation - for mouse wheel/arrows)
     pub fn scroll(&mut self, dx: f32, dy: f32) {
-        self.scroll_offset.0 += dx;
-        self.scroll_offset.1 += dy;
-        self.clamp_scroll();
-        // Show only the scrollbar(s) that are actually scrolling
         if dx.abs() > 0.01 {
-            self.show_hscrollbar();
+            self.viewport.scroll_x_by(dx);
         }
         if dy.abs() > 0.01 {
-            self.show_vscrollbar();
+            self.viewport.scroll_y_by(dy);
         }
+        self.sync_scrollbar();
     }
 
-    /// Scroll to absolute position in pixels
+    /// Scroll by delta with smooth animation (for PageUp/PageDown)
+    pub fn scroll_smooth(&mut self, dx: f32, dy: f32) {
+        if dx.abs() > 0.01 {
+            self.viewport.scroll_x_by_smooth(dx);
+        }
+        if dy.abs() > 0.01 {
+            self.viewport.scroll_y_by_smooth(dy);
+        }
+        self.sync_scrollbar();
+    }
+
+    /// Scroll to absolute position (direct, no animation)
     pub fn scroll_to(&mut self, x: f32, y: f32) {
-        self.scroll_offset.0 = x;
-        self.scroll_offset.1 = y;
-        self.clamp_scroll();
-        self.show_scrollbars();
+        self.viewport.scroll_x_to(x);
+        self.viewport.scroll_y_to(y);
+        self.sync_scrollbar();
     }
 
-    /// Scroll vertical to absolute position in pixels
+    /// Scroll to absolute position with smooth animation (for Home/End)
+    pub fn scroll_to_smooth(&mut self, x: f32, y: f32) {
+        self.viewport.scroll_x_to_smooth(x);
+        self.viewport.scroll_y_to_smooth(y);
+        self.sync_scrollbar();
+    }
+
+    /// Scroll vertical to absolute position (scrollbar)
     pub fn scroll_y_to(&mut self, y: f32) {
-        self.scroll_offset.1 = y;
-        self.clamp_scroll();
-        self.show_vscrollbar();
+        self.viewport.scroll_y_to(y);
+        self.sync_scrollbar();
     }
 
-    /// Scroll horizontal to absolute position in pixels
+    /// Scroll horizontal to absolute position (scrollbar)
     pub fn scroll_x_to(&mut self, x: f32) {
-        self.scroll_offset.0 = x;
-        self.clamp_scroll();
-        self.show_hscrollbar();
+        self.viewport.scroll_x_to(x);
+        self.sync_scrollbar();
     }
 
-    /// Scroll to home (top-left)
+    /// Synchronize scrollbar with viewport
+    fn sync_scrollbar(&mut self) {
+        let max_x = self.viewport.max_scroll_x();
+        let max_y = self.viewport.max_scroll_y();
+
+        if max_y > 0.0 {
+            self.scrollbar.set_scroll_position(self.viewport.scroll_y / max_y);
+            self.scrollbar.mark_interaction(true);
+        }
+        if max_x > 0.0 {
+            self.scrollbar.set_scroll_position_x(self.viewport.scroll_x / max_x);
+            self.scrollbar.mark_interaction_x(true);
+        }
+    }
+
+    /// Scroll to home (top-left) with animation
     pub fn scroll_home(&mut self) {
-        self.scroll_offset = (0.0, 0.0);
-        self.show_scrollbars();
+        self.scroll_to_smooth(0.0, 0.0);
     }
 
-    /// Scroll to end (bottom-right)
+    /// Scroll to end (bottom-right) with animation
     pub fn scroll_end(&mut self) {
-        let max = self.max_scroll();
-        self.scroll_offset = (max.0, max.1);
-        self.show_scrollbars();
+        let max_x = self.viewport.max_scroll_x();
+        let max_y = self.viewport.max_scroll_y();
+        self.scroll_to_smooth(max_x, max_y);
     }
 
-    /// Scroll page up
+    /// Scroll page up with animation
     pub fn scroll_page_up(&mut self) {
-        let vp = self.get_viewport_size();
-        self.scroll_offset.1 -= vp.1 * 0.9;
-        self.clamp_scroll();
-        self.show_vscrollbar();
+        let page_height = self.viewport.visible_height * PAGE_SCROLL_FACTOR;
+        self.scroll_smooth(0.0, -page_height);
     }
 
-    /// Scroll page down
+    /// Scroll page down with animation
     pub fn scroll_page_down(&mut self) {
-        let vp = self.get_viewport_size();
-        self.scroll_offset.1 += vp.1 * 0.9;
-        self.clamp_scroll();
-        self.show_vscrollbar();
+        let page_height = self.viewport.visible_height * PAGE_SCROLL_FACTOR;
+        self.scroll_smooth(0.0, page_height);
     }
 
-    /// Scroll arrow up
+    /// Scroll arrow up (direct)
     pub fn scroll_arrow_up(&mut self) {
-        self.scroll_offset.1 -= ARROW_SCROLL_STEP;
-        self.clamp_scroll();
-        self.show_vscrollbar();
+        self.scroll(0.0, -ARROW_SCROLL_STEP);
     }
 
-    /// Scroll arrow down
+    /// Scroll arrow down (direct)
     pub fn scroll_arrow_down(&mut self) {
-        self.scroll_offset.1 += ARROW_SCROLL_STEP;
-        self.clamp_scroll();
-        self.show_vscrollbar();
+        self.scroll(0.0, ARROW_SCROLL_STEP);
     }
 
-    /// Scroll arrow left
+    /// Scroll arrow left (direct)
     pub fn scroll_arrow_left(&mut self) {
-        self.scroll_offset.0 -= ARROW_SCROLL_STEP;
-        self.clamp_scroll();
-        self.show_hscrollbar();
+        self.scroll(-ARROW_SCROLL_STEP, 0.0);
     }
 
-    /// Scroll arrow right
+    /// Scroll arrow right (direct)
     pub fn scroll_arrow_right(&mut self) {
-        self.scroll_offset.0 += ARROW_SCROLL_STEP;
-        self.clamp_scroll();
-        self.show_hscrollbar();
+        self.scroll(ARROW_SCROLL_STEP, 0.0);
     }
 
-    /// Show scrollbars (reset fade timer)
-    fn show_scrollbars(&mut self) {
-        self.show_vscrollbar();
-        self.show_hscrollbar();
-    }
+    /// Update animations (viewport smooth scroll + scrollbar fade)
+    pub fn update_scrollbars(&mut self, _dt: f32) {
+        // Update viewport smooth scroll animation
+        self.viewport.update_animation();
 
-    /// Show vertical scrollbar
-    fn show_vscrollbar(&mut self) {
-        self.scrollbar_idle_time_v = 0.0;
-        self.scrollbar_visibility_v = 1.0;
-    }
+        // Sync scrollbar position after animation update
+        self.sync_scrollbar();
 
-    /// Show horizontal scrollbar
-    fn show_hscrollbar(&mut self) {
-        self.scrollbar_idle_time_h = 0.0;
-        self.scrollbar_visibility_h = 1.0;
-    }
-
-    /// Update scrollbar fade animation
-    pub fn update_scrollbars(&mut self, dt: f32) {
-        let is_hovering_v = self.vscrollbar_hover_state.load(Ordering::Relaxed);
-        let is_hovering_h = self.hscrollbar_hover_state.load(Ordering::Relaxed);
-
-        // Update vertical scrollbar
-        if is_hovering_v {
-            self.scrollbar_idle_time_v = 0.0;
-            self.scrollbar_visibility_v = 1.0;
-        } else {
-            self.scrollbar_idle_time_v += dt;
-            if self.scrollbar_idle_time_v > SCROLLBAR_FADE_DELAY {
-                let fade = (self.scrollbar_idle_time_v - SCROLLBAR_FADE_DELAY) * SCROLLBAR_FADE_SPEED;
-                self.scrollbar_visibility_v = (1.0 - fade).max(0.0);
-            }
-        }
-
-        // Update horizontal scrollbar
-        if is_hovering_h {
-            self.scrollbar_idle_time_h = 0.0;
-            self.scrollbar_visibility_h = 1.0;
-        } else {
-            self.scrollbar_idle_time_h += dt;
-            if self.scrollbar_idle_time_h > SCROLLBAR_FADE_DELAY {
-                let fade = (self.scrollbar_idle_time_h - SCROLLBAR_FADE_DELAY) * SCROLLBAR_FADE_SPEED;
-                self.scrollbar_visibility_h = (1.0 - fade).max(0.0);
-            }
-        }
+        // Update scrollbar fade animation
+        self.scrollbar.update_animation();
     }
 
     /// Set viewport size
     pub fn set_viewport_size(&mut self, width: f32, height: f32) {
-        let current = self.get_viewport_size();
-        if (current.0 - width).abs() > 1.0 || (current.1 - height).abs() > 1.0 {
-            *self.viewport_size.write() = (width, height);
-            self.clamp_scroll();
-        }
+        self.viewport.set_visible_size(width, height);
+        self.update_content_size();
     }
 
-    /// Check if the image viewer needs animation updates (for scrollbar fade)
+    /// Check if the image viewer needs animation updates
     pub fn needs_animation(&self) -> bool {
-        // Need animation if scrollbars are visible or fading
-        let is_hovering_v = self.vscrollbar_hover_state.load(Ordering::Relaxed);
-        let is_hovering_h = self.hscrollbar_hover_state.load(Ordering::Relaxed);
-
-        let fade_duration = SCROLLBAR_FADE_DELAY + 1.0 / SCROLLBAR_FADE_SPEED;
-
-        // Animation needed if:
-        // - Scrollbars are still visible (fading out)
-        // - User is hovering (keep visible)
-        // - Within fade delay period
-        is_hovering_v
-            || is_hovering_h
-            || self.scrollbar_visibility_v > 0.0
-            || self.scrollbar_visibility_h > 0.0
-            || self.scrollbar_idle_time_v < fade_duration
-            || self.scrollbar_idle_time_h < fade_duration
+        self.viewport.is_animating() || self.scrollbar.needs_animation()
     }
 
     /// Get scrollbar info for rendering scrollbars
     pub fn scrollbar_info(&self) -> ScrollbarInfo {
         let zoomed = self.zoomed_size();
-        let max = self.max_scroll();
-        let vp = self.get_viewport_size();
+        let vp_w = self.viewport.visible_width;
+        let vp_h = self.viewport.visible_height;
 
-        let needs_vscrollbar = zoomed.1 > vp.1;
-        let needs_hscrollbar = zoomed.0 > vp.0;
+        let needs_vscrollbar = zoomed.1 > vp_h;
+        let needs_hscrollbar = zoomed.0 > vp_w;
 
-        let height_ratio = if zoomed.1 > 0.0 { (vp.1 / zoomed.1).min(1.0) } else { 1.0 };
+        let height_ratio = if zoomed.1 > 0.0 { (vp_h / zoomed.1).min(1.0) } else { 1.0 };
+        let width_ratio = if zoomed.0 > 0.0 { (vp_w / zoomed.0).min(1.0) } else { 1.0 };
 
-        let width_ratio = if zoomed.0 > 0.0 { (vp.0 / zoomed.0).min(1.0) } else { 1.0 };
+        let max_x = self.viewport.max_scroll_x();
+        let max_y = self.viewport.max_scroll_y();
 
-        let scroll_position_v = if max.1 > 0.0 { self.scroll_offset.1 / max.1 } else { 0.0 };
-
-        let scroll_position_h = if max.0 > 0.0 { self.scroll_offset.0 / max.0 } else { 0.0 };
+        let scroll_position_v = if max_y > 0.0 { self.viewport.scroll_y / max_y } else { 0.0 };
+        let scroll_position_h = if max_x > 0.0 { self.viewport.scroll_x / max_x } else { 0.0 };
 
         ScrollbarInfo {
             needs_vscrollbar,
             needs_hscrollbar,
-            visibility_v: self.scrollbar_visibility_v,
-            visibility_h: self.scrollbar_visibility_h,
+            visibility_v: self.scrollbar.visibility,
+            visibility_h: self.scrollbar.visibility_x,
             scroll_position_v,
             scroll_position_h,
             height_ratio,
             width_ratio,
-            max_scroll_y: max.1,
-            max_scroll_x: max.0,
+            max_scroll_y: max_y,
+            max_scroll_x: max_x,
         }
     }
 
@@ -399,7 +348,9 @@ impl ImageViewer {
     pub fn update(&mut self, message: ImageViewerMessage) {
         match message {
             ImageViewerMessage::Scroll(dx, dy) => self.scroll(dx, dy),
+            ImageViewerMessage::ScrollSmooth(dx, dy) => self.scroll_smooth(dx, dy),
             ImageViewerMessage::ScrollTo(x, y) => self.scroll_to(x, y),
+            ImageViewerMessage::ScrollToSmooth(x, y) => self.scroll_to_smooth(x, y),
             ImageViewerMessage::ScrollYTo(y) => self.scroll_y_to(y),
             ImageViewerMessage::ScrollXTo(x) => self.scroll_x_to(x),
             ImageViewerMessage::ZoomIn => self.zoom_in(),
@@ -408,10 +359,10 @@ impl ImageViewer {
             ImageViewerMessage::Zoom100 => self.zoom_100(),
             ImageViewerMessage::SetZoom(z) => self.set_zoom(z),
             ImageViewerMessage::VScrollbarHovered(h) => {
-                self.vscrollbar_hover_state.store(h, Ordering::Relaxed);
+                self.scrollbar.set_hovered(h);
             }
             ImageViewerMessage::HScrollbarHovered(h) => {
-                self.hscrollbar_hover_state.store(h, Ordering::Relaxed);
+                self.scrollbar.set_hovered_x(h);
             }
             ImageViewerMessage::Home => self.scroll_home(),
             ImageViewerMessage::End => self.scroll_end(),
@@ -431,8 +382,7 @@ impl ImageViewer {
             self.handle.clone(),
             self.image_size,
             self.zoom,
-            self.scroll_offset,
-            self.viewport_size.clone(),
+            (self.viewport.scroll_x, self.viewport.scroll_y),
             on_message.clone(),
         )
         .into();
@@ -493,7 +443,6 @@ struct ImageViewWidget<Message> {
     image_size: (u32, u32),
     zoom: f32,
     scroll_offset: (f32, f32),
-    viewport_size: Arc<RwLock<(f32, f32)>>,
     on_message: Box<dyn Fn(ImageViewerMessage) -> Message>,
 }
 
@@ -503,7 +452,6 @@ impl<Message> ImageViewWidget<Message> {
         image_size: (u32, u32),
         zoom: f32,
         scroll_offset: (f32, f32),
-        viewport_size: Arc<RwLock<(f32, f32)>>,
         on_message: impl Fn(ImageViewerMessage) -> Message + 'static,
     ) -> Self {
         Self {
@@ -511,17 +459,12 @@ impl<Message> ImageViewWidget<Message> {
             image_size,
             zoom,
             scroll_offset,
-            viewport_size,
             on_message: Box::new(on_message),
         }
     }
 
     fn zoomed_size(&self) -> (f32, f32) {
         (self.image_size.0 as f32 * self.zoom, self.image_size.1 as f32 * self.zoom)
-    }
-
-    fn get_viewport_size(&self) -> (f32, f32) {
-        *self.viewport_size.read()
     }
 }
 
@@ -532,8 +475,6 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
 
     fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &iced::Renderer, limits: &layout::Limits) -> layout::Node {
         let size = limits.max();
-        // Update shared viewport size
-        *self.viewport_size.write() = (size.width, size.height);
         layout::Node::new(size)
     }
 
@@ -630,7 +571,7 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
                         return;
                     }
 
-                    // Normal scroll
+                    // Normal scroll (direct, no animation)
                     let (dx, dy) = match delta {
                         ScrollDelta::Lines { x, y } => (*x * 50.0, *y * 50.0),
                         ScrollDelta::Pixels { x, y } => (*x, *y),

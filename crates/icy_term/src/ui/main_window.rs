@@ -800,11 +800,11 @@ impl MainWindow {
                 // Scroll both axes
                 let mut vp = self.terminal_window.terminal.viewport.write();
                 if smooth {
+                    vp.scroll_x_to_smooth(x);
+                    vp.scroll_y_to_smooth(y);
+                } else {
                     vp.scroll_x_to(x);
                     vp.scroll_y_to(y);
-                } else {
-                    vp.scroll_x_to_immediate(x);
-                    vp.scroll_y_to_immediate(y);
                 }
                 drop(vp);
                 self.terminal_window.terminal.sync_scrollbar_with_viewport();
@@ -813,14 +813,14 @@ impl MainWindow {
 
             Message::ScrollViewportYToImmediate(y) => {
                 // Vertical scrollbar: only change Y, keep X unchanged
-                self.terminal_window.terminal.scroll_y_to_immediate(y);
+                self.terminal_window.terminal.scroll_y_to(y);
                 self.terminal_window.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
 
             Message::ScrollViewportXToImmediate(x) => {
                 // Horizontal scrollbar: only change X, keep Y unchanged
-                self.terminal_window.terminal.scroll_x_to_immediate(x);
+                self.terminal_window.terminal.scroll_x_to(x);
                 self.terminal_window.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }

@@ -12,7 +12,7 @@ use iced::widget::{container, shader, stack, text};
 use iced::{Color, Element, Length, Point, Rectangle, Shadow};
 use tokio::sync::mpsc;
 
-use icy_engine_gui::{ScrollbarOverlay, ScrollbarState, Viewport};
+use icy_engine_gui::{ScrollbarOverlay, Viewport};
 
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
@@ -181,12 +181,10 @@ pub struct TileGridView {
     is_container: Vec<bool>,
     /// Computed layout (RefCell for interior mutability in view())
     pub layout: RefCell<Vec<LayoutTile>>,
-    /// Total content height
-    content_height: RefCell<f32>,
-    /// Available width (for layout calculation)
-    available_width: RefCell<f32>,
-    /// Viewport for smooth scrolling
-    viewport: Viewport,
+    /// Viewport for smooth scrolling (includes scrollbar state and content dimensions)
+    viewport: RefCell<Viewport>,
+    /// Last layout width (to detect when recalculation is needed, RefCell for interior mutability in view())
+    last_layout_width: RefCell<f32>,
     /// Currently selected tile index
     pub selected_index: Option<usize>,
     /// Thumbnail loader
@@ -203,8 +201,6 @@ pub struct TileGridView {
     pub shader_state: TileShaderState,
     /// Shared hover state - updated by shader, read by click handler
     pub shared_hovered_tile: Arc<Mutex<Option<u64>>>,
-    /// Scrollbar state (animations, hover, drag)
-    scrollbar: ScrollbarState,
     /// Shared hover state for scrollbar overlay
     scrollbar_hover_state: Arc<AtomicBool>,
     /// Last known cursor position (for click handling)
@@ -241,9 +237,7 @@ impl TileGridView {
     pub fn new() -> Self {
         let (loader, result_rx) = ThumbnailLoader::spawn();
 
-        let mut viewport = Viewport::default();
-        // Smooth scroll animation speed (higher = faster animation)
-        viewport.scroll_animation_speed = 15.0;
+        let viewport = Viewport::default();
 
         Self {
             thumbnails: Vec::new(),
@@ -251,9 +245,8 @@ impl TileGridView {
             items: Vec::new(),
             is_container: Vec::new(),
             layout: RefCell::new(Vec::new()),
-            content_height: RefCell::new(0.0),
-            available_width: RefCell::new(0.0),
-            viewport,
+            viewport: RefCell::new(viewport),
+            last_layout_width: RefCell::new(0.0),
             selected_index: None,
             loader,
             result_rx,
@@ -262,7 +255,6 @@ impl TileGridView {
             blink_timer: 0.0,
             shader_state: TileShaderState::default(),
             shared_hovered_tile: Arc::new(Mutex::new(None)),
-            scrollbar: ScrollbarState::new(),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             last_cursor_position: None,
             last_bounds: RefCell::new(Rectangle::new(Point::ORIGIN, iced::Size::new(800.0, 600.0))),
@@ -285,53 +277,42 @@ impl TileGridView {
         *self.background_color.write() = [color.r, color.g, color.b, color.a];
     }
 
-    /// Get max scroll offset
-    fn max_scroll(&self) -> f32 {
-        self.viewport.max_scroll_y()
-    }
-
-    /// Scroll by a delta amount (with smooth animation)
+    /// Scroll by a delta amount (no animation - for mouse wheel)
     pub fn scroll_by(&mut self, delta: f32) {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
-        self.viewport.scroll_y_by(-delta);
+        self.viewport.borrow_mut().scroll_y_by(-delta);
     }
 
-    /// Scroll by a delta amount immediately (no animation)
-    pub fn scroll_by_immediate(&mut self, delta: f32) {
+    /// Scroll by a delta amount with smooth animation (for PageUp/PageDown)
+    pub fn scroll_by_smooth(&mut self, delta: f32) {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
-        let new_y = self.viewport.scroll_y - delta;
-        self.viewport.scroll_y_to_immediate(new_y);
+        self.viewport.borrow_mut().scroll_y_by_smooth(-delta);
     }
 
-    /// Scroll to position with smooth animation
+    /// Scroll to position with smooth animation (for Home/End/PageUp/PageDown)
+    pub fn scroll_to_smooth(&mut self, y: f32) {
+        // User is scrolling manually, stop auto-scroll
+        self.auto_scroll_active = false;
+        self.viewport.borrow_mut().scroll_y_to_smooth(y);
+    }
+
+    /// Scroll to position immediately (no animation)
     pub fn scroll_to(&mut self, y: f32) {
         // User is scrolling manually, stop auto-scroll
         self.auto_scroll_active = false;
-        self.viewport.scroll_y_to(y);
-    }
-
-    /// Scroll to position immediately
-    pub fn scroll_to_immediate(&mut self, y: f32) {
-        // User is scrolling manually, stop auto-scroll
-        self.auto_scroll_active = false;
-        self.viewport.scroll_y_to_immediate(y);
+        self.viewport.borrow_mut().scroll_y_to(y);
     }
 
     /// Get current scroll position
     pub fn scroll_y(&self) -> f32 {
-        self.viewport.scroll_y
-    }
-
-    /// Get the maximum scroll position
-    pub fn max_scroll_y(&self) -> f32 {
-        self.viewport.max_scroll_y()
+        self.viewport.borrow().scroll_y
     }
 
     /// Check if content is scrollable (has more content than visible area)
     pub fn is_scrollable(&self) -> bool {
-        self.viewport.max_scroll_y() > 0.0
+        self.viewport.borrow().is_scrollable_y()
     }
 
     /// Start auto-scroll mode
@@ -371,9 +352,12 @@ impl TileGridView {
         self.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
 
         // Force layout recalculation
-        *self.available_width.borrow_mut() = 0.0;
-        self.viewport.scroll_x_to_immediate(0.0);
-        self.viewport.scroll_y_to_immediate(0.0);
+        *self.last_layout_width.borrow_mut() = 0.0;
+        {
+            let mut vp = self.viewport.borrow_mut();
+            vp.scroll_x_to(0.0);
+            vp.scroll_y_to(0.0);
+        }
         self.cache.clear();
     }
 
@@ -426,10 +410,13 @@ impl TileGridView {
         self.loaded_lru.clear();
         self.last_viewport_top = 0.0;
         // Reset scroll position to prevent invalid viewport coordinates
-        self.viewport.scroll_x_to_immediate(0.0);
-        self.viewport.scroll_y_to_immediate(0.0);
-        // Reset available_width to force recalculation on first view()
-        *self.available_width.borrow_mut() = 0.0;
+        {
+            let mut vp = self.viewport.borrow_mut();
+            vp.scroll_x_to(0.0);
+            vp.scroll_y_to(0.0);
+        }
+        // Reset last_layout_width to force recalculation on first view()
+        *self.last_layout_width.borrow_mut() = 0.0;
 
         // Create thumbnails for each item - also create Item objects for unified handling
         for (path, label, container) in item_infos {
@@ -484,10 +471,13 @@ impl TileGridView {
         self.loaded_lru.clear();
         self.last_viewport_top = 0.0;
         // Reset scroll position to prevent invalid viewport coordinates
-        self.viewport.scroll_x_to_immediate(0.0);
-        self.viewport.scroll_y_to_immediate(0.0);
-        // Reset available_width to force recalculation on first view()
-        *self.available_width.borrow_mut() = 0.0;
+        {
+            let mut vp = self.viewport.borrow_mut();
+            vp.scroll_x_to(0.0);
+            vp.scroll_y_to(0.0);
+        }
+        // Reset last_layout_width to force recalculation on first view()
+        *self.last_layout_width.borrow_mut() = 0.0;
 
         // Create thumbnails for each item, skipping parent directory
         for item in items_list {
@@ -548,9 +538,12 @@ impl TileGridView {
         self.filter.clear();
         self.loaded_lru.clear();
         self.last_viewport_top = 0.0;
-        self.viewport.scroll_x_to_immediate(0.0);
-        self.viewport.scroll_y_to_immediate(0.0);
-        *self.available_width.borrow_mut() = 0.0;
+        {
+            let mut vp = self.viewport.borrow_mut();
+            vp.scroll_x_to(0.0);
+            vp.scroll_y_to(0.0);
+        }
+        *self.last_layout_width.borrow_mut() = 0.0;
         self.cache.clear();
 
         // Create oneshot channel for result
@@ -725,7 +718,7 @@ impl TileGridView {
         if let Some(thumb) = self.thumbnails.get(index) {
             if matches!(thumb.state, ThumbnailState::Pending { .. } | ThumbnailState::Loading { .. }) {
                 let priority = if let Some(tile) = self.layout.borrow().get(index) {
-                    (tile.y - self.viewport.scroll_y).abs() as u32
+                    (tile.y - self.viewport.borrow().scroll_y).abs() as u32
                 } else {
                     1000
                 };
@@ -745,18 +738,18 @@ impl TileGridView {
     /// Uses a masonry/bin-packing algorithm - each tile goes to the shortest column
     /// Only includes visible (non-filtered) items
     pub fn recalculate_layout(&self, width: f32) {
-        let current_available = *self.available_width.borrow();
+        let current_width = *self.last_layout_width.borrow();
         let layout_empty = self.layout.borrow().is_empty();
-        let diff = (width - current_available).abs();
+        let diff = (width - current_width).abs();
 
         if diff < 1.0 && !layout_empty {
             return; // No significant change
         }
-        *self.available_width.borrow_mut() = width;
+        *self.last_layout_width.borrow_mut() = width;
         self.layout.borrow_mut().clear();
 
         if self.visible_indices.is_empty() || width < 100.0 {
-            *self.content_height.borrow_mut() = 0.0;
+            self.viewport.borrow_mut().set_content_size(width, 0.0);
             return;
         }
 
@@ -815,7 +808,8 @@ impl TileGridView {
             });
         }
 
-        *self.content_height.borrow_mut() = masonry_result.content_height;
+        // Update viewport content size
+        self.viewport.borrow_mut().set_content_size(width, masonry_result.content_height);
         self.cache.clear();
     }
 
@@ -886,8 +880,8 @@ impl TileGridView {
         if !messages.is_empty() {
             self.cache.clear();
             // Recalculate layout since heights may have changed
-            let width = *self.available_width.borrow();
-            *self.available_width.borrow_mut() = 0.0; // Force recalc
+            let width = *self.last_layout_width.borrow();
+            *self.last_layout_width.borrow_mut() = 0.0; // Force recalc
             self.recalculate_layout(width);
         }
 
@@ -898,16 +892,15 @@ impl TileGridView {
     pub fn tick(&mut self, delta_seconds: f32) {
         self.blink_timer += delta_seconds;
 
-        // Update scrollbar animation
-        self.scrollbar.update_animation();
-
-        // Update smooth scroll animation
-        self.viewport.update_animation();
+        // Update viewport animation (includes scrollbar animation)
+        self.viewport.borrow_mut().update_animation();
 
         // Queue visible range loads on every tick (lazy loading)
         // This ensures thumbnails get loaded even when view() is called with &self
-        let viewport_top = self.viewport.scroll_y;
-        let viewport_height = self.viewport.visible_height;
+        let (viewport_top, viewport_height) = {
+            let vp = self.viewport.borrow();
+            (vp.scroll_y, vp.visible_height)
+        };
         if viewport_height > 0.0 {
             self.queue_visible_range_loads(viewport_top, viewport_height);
         }
@@ -916,11 +909,13 @@ impl TileGridView {
         if self.auto_scroll_active {
             let scroll_speed = self.scroll_speed.get_speed();
             let scroll_delta = scroll_speed * delta_seconds;
-            let current_y = self.viewport.scroll_y;
-            let max_scroll_y = self.viewport.max_scroll_y();
+            let (current_y, max_scroll_y) = {
+                let vp = self.viewport.borrow();
+                (vp.scroll_y, vp.max_scroll_y())
+            };
             let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-            self.viewport.scroll_y_to_immediate(new_y);
+            self.viewport.borrow_mut().scroll_y_to(new_y);
 
             // Stop auto-scroll when we reach the bottom
             if new_y >= max_scroll_y {
@@ -960,29 +955,26 @@ impl TileGridView {
         });
 
         // Or if any thumbnails have blinking/animated content
-        // Or if scrollbar needs animation updates
-        // Or if viewport is animating (smooth scroll)
+        // Or if viewport needs animation (includes scroll and scrollbar)
         // Or if auto-scroll is active
         // Or if we're waiting for async subitems to load
-        has_loading_or_missing
-            || self.has_animated()
-            || self.scrollbar.needs_animation()
-            || self.viewport.is_animating()
-            || self.auto_scroll_active
-            || self.subitems_rx.is_some()
+        has_loading_or_missing || self.has_animated() || self.viewport.borrow().needs_animation() || self.auto_scroll_active || self.subitems_rx.is_some()
     }
 
     // ==================== Keyboard Navigation ====================
 
     /// Ensure the selected tile is visible, scrolling immediately if not
-    fn ensure_visible_immediate(&mut self, index: usize) {
+    fn ensure_visible(&mut self, index: usize) {
         let layout = self.layout.borrow();
         let Some(tile) = layout.get(index) else { return };
 
         let tile_top = tile.y;
         let tile_bottom = tile.y + tile.height;
-        let visible_top = self.viewport.scroll_y;
-        let visible_bottom = visible_top + self.viewport.visible_height;
+        let (visible_top, visible_height) = {
+            let vp = self.viewport.borrow();
+            (vp.scroll_y, vp.visible_height)
+        };
+        let visible_bottom = visible_top + visible_height;
 
         // Small margin so tile isn't right at edge
         let margin = 8.0;
@@ -991,11 +983,12 @@ impl TileGridView {
 
         if tile_top < visible_top + margin {
             // Tile is above viewport - scroll up immediately
-            self.scroll_to_immediate((tile_top - margin).max(0.0));
+            self.scroll_to((tile_top - margin).max(0.0));
         } else if tile_bottom > visible_bottom - margin {
             // Tile is below viewport - scroll down immediately
-            let target = tile_bottom + margin - self.viewport.visible_height;
-            self.scroll_to_immediate(target.min(self.max_scroll()));
+            let target = tile_bottom + margin - visible_height;
+            let max_scroll = self.viewport.borrow().max_scroll_y();
+            self.scroll_to(target.min(max_scroll));
         }
         // If tile is already visible, don't scroll at all
     }
@@ -1146,14 +1139,14 @@ impl TileGridView {
             Some(current) => {
                 if let Some(new_index) = self.find_tile_above(current) {
                     self.selected_index = Some(new_index);
-                    self.ensure_visible_immediate(new_index);
+                    self.ensure_visible(new_index);
                 }
                 // If no tile above, don't change selection or scroll
             }
             None => {
                 let first = self.visible_indices.first().copied().unwrap_or(0);
                 self.selected_index = Some(first);
-                self.ensure_visible_immediate(first);
+                self.ensure_visible(first);
             }
         }
     }
@@ -1168,14 +1161,14 @@ impl TileGridView {
             Some(current) => {
                 if let Some(new_index) = self.find_tile_below(current) {
                     self.selected_index = Some(new_index);
-                    self.ensure_visible_immediate(new_index);
+                    self.ensure_visible(new_index);
                 }
                 // If no tile below, don't change selection or scroll
             }
             None => {
                 let first = self.visible_indices.first().copied().unwrap_or(0);
                 self.selected_index = Some(first);
-                self.ensure_visible_immediate(first);
+                self.ensure_visible(first);
             }
         }
     }
@@ -1190,14 +1183,14 @@ impl TileGridView {
             Some(current) => {
                 if let Some(new_index) = self.find_tile_left(current) {
                     self.selected_index = Some(new_index);
-                    self.ensure_visible_immediate(new_index);
+                    self.ensure_visible(new_index);
                 }
                 // If no tile to the left, don't change selection or scroll
             }
             None => {
                 let first = self.visible_indices.first().copied().unwrap_or(0);
                 self.selected_index = Some(first);
-                self.ensure_visible_immediate(first);
+                self.ensure_visible(first);
             }
         }
     }
@@ -1212,14 +1205,14 @@ impl TileGridView {
             Some(current) => {
                 if let Some(new_index) = self.find_tile_right(current) {
                     self.selected_index = Some(new_index);
-                    self.ensure_visible_immediate(new_index);
+                    self.ensure_visible(new_index);
                 }
                 // If no tile to the right, don't change selection or scroll
             }
             None => {
                 let first = self.visible_indices.first().copied().unwrap_or(0);
                 self.selected_index = Some(first);
-                self.ensure_visible_immediate(first);
+                self.ensure_visible(first);
             }
         }
     }
@@ -1227,21 +1220,21 @@ impl TileGridView {
     /// Page up - scroll viewport up by one page (no selection change)
     fn page_up(&mut self) {
         // Use last_bounds.height as it's more reliably updated than viewport.visible_height
-        let visible_height = self.last_bounds.borrow().height.max(self.viewport.visible_height);
+        let visible_height = self.last_bounds.borrow().height.max(self.viewport.borrow().visible_height);
         // Scroll up by nearly a full page (leave some overlap for context)
         let page_height = (visible_height - 50.0).max(100.0);
-        self.scroll_by(page_height);
-        self.scrollbar.mark_interaction(true);
+        self.scroll_by_smooth(page_height);
+        self.viewport.borrow_mut().scrollbar.mark_interaction(true);
     }
 
     /// Page down - scroll viewport down by one page (no selection change)
     fn page_down(&mut self) {
         // Use last_bounds.height as it's more reliably updated than viewport.visible_height
-        let visible_height = self.last_bounds.borrow().height.max(self.viewport.visible_height);
+        let visible_height = self.last_bounds.borrow().height.max(self.viewport.borrow().visible_height);
         // Scroll down by nearly a full page (leave some overlap for context)
         let page_height = (visible_height - 50.0).max(100.0);
-        self.scroll_by(-page_height);
-        self.scrollbar.mark_interaction(true);
+        self.scroll_by_smooth(-page_height);
+        self.viewport.borrow_mut().scrollbar.mark_interaction(true);
     }
 
     /// Go to first tile with smooth scroll
@@ -1253,7 +1246,7 @@ impl TileGridView {
         let first = self.visible_indices.first().copied().unwrap_or(0);
         self.selected_index = Some(first);
         // Smooth scroll to top
-        self.scroll_to(0.0);
+        self.scroll_to_smooth(0.0);
     }
 
     /// Go to last tile with smooth scroll
@@ -1265,7 +1258,8 @@ impl TileGridView {
         let last = self.visible_indices.last().copied().unwrap_or(0);
         self.selected_index = Some(last);
         // Smooth scroll to bottom
-        self.scroll_to(self.max_scroll());
+        let max_scroll = self.viewport.borrow().max_scroll_y();
+        self.scroll_to_smooth(max_scroll);
     }
 
     /// Get the number of thumbnails
@@ -1298,7 +1292,7 @@ impl TileGridView {
         for (i, thumb) in self.thumbnails.iter().enumerate() {
             if thumb.label == label {
                 self.selected_index = Some(i);
-                self.ensure_visible_immediate(i);
+                self.ensure_visible(i);
                 return true;
             }
         }
@@ -1307,7 +1301,7 @@ impl TileGridView {
 
     /// Get the current viewport height
     pub fn get_viewport_height(&self) -> f32 {
-        self.viewport.visible_height
+        self.viewport.borrow().visible_height
     }
 
     /// Get the selected item (if any)
@@ -1356,9 +1350,10 @@ impl TileGridView {
         self.recalculate_layout(width);
 
         // Sync viewport with content dimensions
-        let content_height = *self.content_height.borrow();
-        self.viewport.set_visible_size(width, height);
-        self.viewport.set_content_size(width, content_height);
+        {
+            let mut vp = self.viewport.borrow_mut();
+            vp.set_visible_size(width, height);
+        }
 
         // Update bounds
         {
@@ -1369,7 +1364,7 @@ impl TileGridView {
 
         // Lazy loading: always queue thumbnails for the visible range
         // The queue_visible_range_loads method is efficient and won't re-queue already loading items
-        let viewport_top = self.viewport.scroll_y;
+        let viewport_top = self.viewport.borrow().scroll_y;
         self.queue_visible_range_loads(viewport_top, height);
 
         self.view_shader_with_size(width, height)
@@ -1418,6 +1413,7 @@ impl TileGridView {
         // Build tile textures from thumbnails - only process visible tiles
         let mut tiles = Vec::with_capacity(self.visible_indices.len().min(50)); // Pre-allocate for visible tiles
         let layout = self.layout.borrow();
+        let scroll_offset = self.viewport.borrow().scroll_y;
 
         // Iterate over layout tiles (which only contain visible/filtered items)
         for (layout_idx, layout_tile) in layout.iter().enumerate() {
@@ -1429,7 +1425,6 @@ impl TileGridView {
             let (x, y, tile_width, total_tile_height) = (layout_tile.x, layout_tile.y, layout_tile.width, layout_tile.height);
 
             // Early visibility check - skip tiles outside viewport
-            let scroll_offset = self.viewport.scroll_y;
             let tile_top = y - scroll_offset;
             let tile_bottom = tile_top + total_tile_height;
             if tile_bottom < 0.0 || tile_top > height {
@@ -1487,12 +1482,16 @@ impl TileGridView {
         }
         drop(layout); // Release borrow before creating program
 
-        let content_height = *self.content_height.borrow();
+        let vp = self.viewport.borrow();
+        let content_height = vp.content_height;
+        let scroll_y = vp.scroll_y;
+        let scrollbar_visibility = vp.scrollbar.visibility;
+        drop(vp);
 
         // Create shader primitive
         let program = TileShaderProgramWrapper {
             tiles,
-            scroll_y: self.viewport.scroll_y,
+            scroll_y,
             content_height,
             _viewport_height: height,
             _selected_tile_id: self.selected_index.and_then(|i| self.tile_ids.get(i).copied()),
@@ -1510,19 +1509,14 @@ impl TileGridView {
             });
 
         // Create overlay scrollbar if content is taller than viewport
-        // Use content_height from RefCell directly since viewport may not be synced yet
         let max_scroll = (content_height - height).max(0.0);
         if max_scroll > 0.0 {
             // Calculate scroll ratio and height ratio for scrollbar
-            let scroll_ratio = if max_scroll > 0.0 {
-                (self.viewport.scroll_y / max_scroll).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
+            let scroll_ratio = if max_scroll > 0.0 { (scroll_y / max_scroll).clamp(0.0, 1.0) } else { 0.0 };
             let height_ratio = (height / content_height).clamp(0.0, 1.0);
 
             let scrollbar_overlay = ScrollbarOverlay::new(
-                self.scrollbar.visibility,
+                scrollbar_visibility,
                 scroll_ratio,
                 height_ratio,
                 max_scroll,
@@ -1564,10 +1558,12 @@ impl TileGridView {
             TileGridMessage::Scrolled(delta) => {
                 self.scroll_by(delta);
                 // Mark scrollbar interaction for visibility
-                self.scrollbar.mark_interaction(true);
+                self.viewport.borrow_mut().scrollbar.mark_interaction(true);
                 // Queue loading for newly visible items
-                let scroll = self.viewport.scroll_y;
-                let vh = self.viewport.visible_height;
+                let (scroll, vh) = {
+                    let vp = self.viewport.borrow();
+                    (vp.scroll_y, vp.visible_height)
+                };
                 self.queue_visible_loads(scroll, vh);
                 false
             }
@@ -1581,26 +1577,32 @@ impl TileGridView {
             }
             TileGridMessage::WidthChanged(width) => {
                 self.recalculate_layout(width);
-                self.viewport.clamp_scroll();
+                self.viewport.borrow_mut().clamp_scroll();
                 false
             }
             TileGridMessage::ScrollbarScroll(_x, y) => {
                 // y is absolute scroll position
-                self.scroll_to_immediate(y.clamp(0.0, self.max_scroll()));
-                self.scrollbar.mark_interaction(true);
-                // Sync scrollbar position
-                let max_scroll = self.max_scroll();
-                if max_scroll > 0.0 {
-                    self.scrollbar.set_scroll_position(self.viewport.scroll_y / max_scroll);
+                let max_scroll = self.viewport.borrow().max_scroll_y();
+                self.scroll_to(y.clamp(0.0, max_scroll));
+                {
+                    let mut vp = self.viewport.borrow_mut();
+                    vp.scrollbar.mark_interaction(true);
+                    // Sync scrollbar position
+                    if max_scroll > 0.0 {
+                        let scroll_y = vp.scroll_y;
+                        vp.scrollbar.set_scroll_position(scroll_y / max_scroll);
+                    }
                 }
                 // Queue loading for newly visible items
-                let scroll = self.viewport.scroll_y;
-                let vh = self.viewport.visible_height;
+                let (scroll, vh) = {
+                    let vp = self.viewport.borrow();
+                    (vp.scroll_y, vp.visible_height)
+                };
                 self.queue_visible_loads(scroll, vh);
                 false
             }
             TileGridMessage::ScrollbarHover(hovered) => {
-                self.scrollbar.set_hovered(hovered);
+                self.viewport.borrow_mut().scrollbar.set_hovered(hovered);
                 false
             }
             TileGridMessage::SelectPrevious => {
@@ -1642,17 +1644,14 @@ impl TileGridView {
     /// Handle mouse events for scroll wheel and hover
     pub fn handle_mouse_event(&mut self, event: &iced::Event, bounds: Rectangle, cursor_position: Option<Point>) -> bool {
         // Update viewport size and bounds
-        self.viewport.set_visible_size(bounds.width, bounds.height);
+        {
+            let mut vp = self.viewport.borrow_mut();
+            vp.set_visible_size(bounds.width, bounds.height);
+        }
         *self.last_bounds.borrow_mut() = bounds;
 
-        // Sync content height from RefCell to viewport (layout updates the RefCell)
-        let content_height = *self.content_height.borrow();
-        if (self.viewport.content_height - content_height).abs() > 1.0 {
-            self.viewport.set_content_size(bounds.width, content_height);
-        }
-
         // Track if viewport changed due to resize
-        let scroll_changed = self.viewport.is_animating();
+        let scroll_changed = self.viewport.borrow().is_animating();
 
         // Update last cursor position
         if let Some(pos) = cursor_position {
@@ -1669,12 +1668,15 @@ impl TileGridView {
                             iced::mouse::ScrollDelta::Pixels { y, .. } => *y,
                         };
                         self.scroll_by(scroll_delta);
-                        // Mark interaction for scrollbar visibility
-                        self.scrollbar.mark_interaction(true);
-                        // Sync scrollbar position
-                        let max_scroll = self.max_scroll();
-                        if max_scroll > 0.0 {
-                            self.scrollbar.set_scroll_position(self.viewport.scroll_y / max_scroll);
+                        // Mark interaction for scrollbar visibility and sync position
+                        {
+                            let mut vp = self.viewport.borrow_mut();
+                            vp.scrollbar.mark_interaction(true);
+                            let max_scroll = vp.max_scroll_y();
+                            if max_scroll > 0.0 {
+                                let scroll_y = vp.scroll_y;
+                                vp.scrollbar.set_scroll_position(scroll_y / max_scroll);
+                            }
                         }
                         return true;
                     }
@@ -1686,7 +1688,7 @@ impl TileGridView {
                     if bounds.contains(pos) {
                         // Calculate position relative to widget
                         let rel_x = pos.x - bounds.x;
-                        let rel_y = pos.y - bounds.y + self.viewport.scroll_y;
+                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y;
 
                         // Find which tile is under the cursor
                         let mut found_tile = None;
@@ -1732,7 +1734,7 @@ impl TileGridView {
                     if bounds.contains(pos) {
                         // Calculate position relative to widget
                         let rel_x = pos.x - bounds.x;
-                        let rel_y = pos.y - bounds.y + self.viewport.scroll_y;
+                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y;
 
                         // Find which tile is under the cursor
                         let layout = self.layout.borrow();

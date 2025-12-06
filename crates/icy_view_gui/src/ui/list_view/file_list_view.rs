@@ -103,10 +103,7 @@ impl Default for FileListView {
 
 impl FileListView {
     pub fn new() -> Self {
-        let mut viewport = Viewport::default();
-        // Smooth scroll animation speed
-        // At 60fps (delta_time=0.016), this gives lerp_factor of ~0.25 = 25% per frame
-        viewport.scroll_animation_speed = 15.0;
+        let viewport = Viewport::default();
 
         Self {
             viewport,
@@ -175,10 +172,10 @@ impl FileListView {
 
         if item_top < visible_top {
             // Scroll up to show item (immediate, no animation)
-            self.viewport.scroll_y_to_immediate(item_top);
+            self.viewport.scroll_y_to(item_top);
         } else if item_bottom > visible_bottom {
             // Scroll down to show item (immediate, no animation)
-            self.viewport.scroll_y_to_immediate(item_bottom - self.viewport.visible_height);
+            self.viewport.scroll_y_to(item_bottom - self.viewport.visible_height);
         }
     }
 
@@ -229,7 +226,7 @@ impl FileListView {
                 false
             }
             FileListViewMessage::ScrollTo(_, y) => {
-                self.viewport.scroll_y_to_immediate(y);
+                self.viewport.scroll_y_to(y);
                 self.update_scrollbar_position();
                 self.invalidate_visual();
                 false
@@ -278,11 +275,8 @@ impl FileListView {
                         Some(i) => i.saturating_sub(visible_items.max(1)),
                         None => 0,
                     });
-                    if let Some(idx) = self.selected_index {
-                        self.ensure_visible(idx);
-                    }
-                    // Also scroll viewport
-                    self.viewport.scroll_y_by(-(self.viewport.visible_height - ITEM_HEIGHT));
+                    // Viewport-based scrolling with smooth animation
+                    self.viewport.scroll_y_by_smooth(-(self.viewport.visible_height - ITEM_HEIGHT));
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }
@@ -295,11 +289,8 @@ impl FileListView {
                         Some(i) => (i + visible_items.max(1)).min(item_count - 1),
                         None => (visible_items.max(1) - 1).min(item_count - 1),
                     });
-                    if let Some(idx) = self.selected_index {
-                        self.ensure_visible(idx);
-                    }
-                    // Also scroll viewport
-                    self.viewport.scroll_y_by(self.viewport.visible_height - ITEM_HEIGHT);
+                    // Viewport-based scrolling with smooth animation
+                    self.viewport.scroll_y_by_smooth(self.viewport.visible_height - ITEM_HEIGHT);
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }
@@ -308,7 +299,7 @@ impl FileListView {
             FileListViewMessage::Home => {
                 if item_count > 0 {
                     self.selected_index = Some(0);
-                    self.viewport.scroll_y_to(0.0);
+                    self.viewport.scroll_y_to_smooth(0.0);
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }
@@ -318,7 +309,7 @@ impl FileListView {
                 if item_count > 0 {
                     self.selected_index = Some(item_count - 1);
                     let max_scroll = self.viewport.max_scroll_y();
-                    self.viewport.scroll_y_to(max_scroll);
+                    self.viewport.scroll_y_to_smooth(max_scroll);
                     self.update_scrollbar_position();
                     self.invalidate_visual();
                 }

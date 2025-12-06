@@ -47,10 +47,14 @@ pub enum PreviewMessage {
     AnimationTick(f32),
     /// Reset animation timer (to prevent jumps when starting auto-scroll)
     ResetAnimationTimer,
-    /// Scroll viewport
+    /// Scroll viewport (direct, no animation - for mouse wheel)
     ScrollViewport(f32, f32),
-    /// Scroll viewport to absolute position
+    /// Scroll viewport with smooth animation (for PageUp/PageDown)
+    ScrollViewportSmooth(f32, f32),
+    /// Scroll viewport to absolute position (direct, no animation)
     ScrollViewportTo(f32, f32),
+    /// Scroll viewport to absolute position with smooth animation (for Home/End)
+    ScrollViewportToSmooth(f32, f32),
     /// Scroll vertical only to absolute Y position immediately
     ScrollViewportYToImmediate(f32),
     /// Scroll horizontal only to absolute X position immediately
@@ -168,8 +172,8 @@ impl PreviewView {
         self.is_loading = true;
 
         // Reset scroll position to top when loading new file
-        self.terminal.scroll_x_to_immediate(0.0);
-        self.terminal.scroll_y_to_immediate(0.0);
+        self.terminal.scroll_x_to(0.0);
+        self.terminal.scroll_y_to(0.0);
         self.terminal.sync_scrollbar_with_viewport();
 
         // Reset scroll mode (background thread will set it)
@@ -434,7 +438,7 @@ impl PreviewView {
         self.auto_scroll_enabled = true;
         self.scroll_mode = ScrollMode::AutoScroll;
         // Reset scroll position to top
-        self.terminal.scroll_y_to_immediate(0.0);
+        self.terminal.scroll_y_to(0.0);
         self.terminal.sync_scrollbar_with_viewport();
     }
 
@@ -548,7 +552,7 @@ impl PreviewView {
                         // Clamp to bottom during baud emulation loading
                         // Use computed visible height for accurate max scroll calculation
                         let max_scroll_y = self.get_max_scroll_y();
-                        self.terminal.scroll_y_to_immediate(max_scroll_y);
+                        self.terminal.scroll_y_to(max_scroll_y);
                         self.terminal.sync_scrollbar_with_viewport();
                     }
                     ScrollMode::AutoScroll => {
@@ -560,7 +564,7 @@ impl PreviewView {
                         let max_scroll_y = self.get_max_scroll_y();
                         let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-                        self.terminal.scroll_y_to_immediate(new_y);
+                        self.terminal.scroll_y_to(new_y);
                         self.terminal.sync_scrollbar_with_viewport();
 
                         // Stop auto-scroll when we reach the bottom
@@ -589,6 +593,14 @@ impl PreviewView {
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
+            PreviewMessage::ScrollViewportSmooth(dx, dy) => {
+                // User is scrolling with animation (PageUp/PageDown)
+                self.scroll_mode = ScrollMode::Off;
+                self.terminal.scroll_x_by_smooth(dx);
+                self.terminal.scroll_y_by_smooth(dy);
+                self.terminal.sync_scrollbar_with_viewport();
+                Task::none()
+            }
             PreviewMessage::ScrollViewportTo(x, y) => {
                 // User is scrolling manually, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
@@ -597,17 +609,25 @@ impl PreviewView {
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
+            PreviewMessage::ScrollViewportToSmooth(x, y) => {
+                // User is scrolling to absolute position with animation (Home/End)
+                self.scroll_mode = ScrollMode::Off;
+                self.terminal.scroll_x_to_smooth(x);
+                self.terminal.scroll_y_to_smooth(y);
+                self.terminal.sync_scrollbar_with_viewport();
+                Task::none()
+            }
             PreviewMessage::ScrollViewportYToImmediate(y) => {
                 // User is scrolling vertically via scrollbar
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_y_to_immediate(y);
+                self.terminal.scroll_y_to(y);
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }
             PreviewMessage::ScrollViewportXToImmediate(x) => {
                 // User is scrolling horizontally via scrollbar
                 self.scroll_mode = ScrollMode::Off;
-                self.terminal.scroll_x_to_immediate(x);
+                self.terminal.scroll_x_to(x);
                 self.terminal.sync_scrollbar_with_viewport();
                 Task::none()
             }

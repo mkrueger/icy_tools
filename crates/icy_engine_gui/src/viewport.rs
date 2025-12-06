@@ -3,6 +3,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Instant;
 
+use crate::ScrollbarState;
+
+/// Default scroll animation speed (units per second for interpolation)
+pub const DEFAULT_SCROLL_ANIMATION_SPEED: f32 = 15.0;
+
+/// Default animation tick interval in milliseconds (~60fps)
+pub const ANIMATION_TICK_MS: u64 = 16;
+
 /// Viewport for managing screen view transformations
 /// Handles scrolling, zooming, and coordinate transformations
 ///
@@ -48,6 +56,10 @@ pub struct Viewport {
     /// Visible content width in content pixels (computed by shader)
     /// Stored as f32 bits for atomic access
     pub computed_visible_width: Arc<AtomicU32>,
+
+    /// Scrollbar state (animations, hover, drag) - integrated for convenience
+    /// Scrollbar and viewport are always used together
+    pub scrollbar: ScrollbarState,
 }
 
 impl Default for Viewport {
@@ -62,13 +74,14 @@ impl Default for Viewport {
             content_height: 600.0,
             target_scroll_x: 0.0,
             target_scroll_y: 0.0,
-            scroll_animation_speed: 10.0,
+            scroll_animation_speed: DEFAULT_SCROLL_ANIMATION_SPEED,
             last_update: None,
             changed: AtomicBool::new(false),
             bounds_height: Arc::new(AtomicU32::new(0)),
             bounds_width: Arc::new(AtomicU32::new(0)),
             computed_visible_height: Arc::new(AtomicU32::new(0)),
             computed_visible_width: Arc::new(AtomicU32::new(0)),
+            scrollbar: ScrollbarState::new(),
         }
     }
 }
@@ -144,6 +157,16 @@ impl Viewport {
         (self.content_height - self.visible_content_height()).max(0.0)
     }
 
+    /// Check if content is scrollable vertically (has more content than visible area)
+    pub fn is_scrollable_y(&self) -> bool {
+        self.max_scroll_y() > 0.0
+    }
+
+    /// Check if content is scrollable horizontally (has more content than visible area)
+    pub fn is_scrollable_x(&self) -> bool {
+        self.max_scroll_x() > 0.0
+    }
+
     /// Get bounds height in logical pixels
     pub fn bounds_height(&self) -> u32 {
         self.bounds_height.load(Ordering::Relaxed)
@@ -190,7 +213,7 @@ impl Viewport {
         self.scroll_x += delta;
         self.target_scroll_x = self.scroll_x;
         self.clamp_scroll();
-        self.last_update = Some(Instant::now());
+        self.changed.store(true, Ordering::Relaxed);
     }
 
     /// Scroll Y by delta (for mouse wheel, trackpad) - delta is in content pixels
@@ -198,43 +221,60 @@ impl Viewport {
         self.scroll_y += delta;
         self.target_scroll_y = self.scroll_y;
         self.clamp_scroll();
+        self.changed.store(true, Ordering::Relaxed);
+    }
+
+    /// Scroll X by delta with smooth animation (for PageUp/PageDown)
+    pub fn scroll_x_by_smooth(&mut self, delta: f32) {
+        self.target_scroll_x += delta;
+        self.clamp_scroll();
         self.last_update = Some(Instant::now());
     }
 
-    /// Set scroll X position directly
+    /// Scroll Y by delta with smooth animation (for PageUp/PageDown)
+    pub fn scroll_y_by_smooth(&mut self, delta: f32) {
+        self.target_scroll_y += delta;
+        self.clamp_scroll();
+        self.last_update = Some(Instant::now());
+    }
+
+    /// Set scroll X position directly (no animation)
     pub fn scroll_x_to(&mut self, x: f32) {
-        self.target_scroll_x = x;
-        self.clamp_scroll();
-        self.last_update = Some(Instant::now());
-    }
-
-    /// Set scroll Y position directly
-    pub fn scroll_y_to(&mut self, y: f32) {
-        self.target_scroll_y = y;
-        self.clamp_scroll();
-        self.last_update = Some(Instant::now());
-    }
-
-    /// Set scroll X position immediately without animaiont
-    pub fn scroll_x_to_immediate(&mut self, x: f32) {
         self.scroll_x = x;
         self.target_scroll_x = x;
         self.clamp_scroll();
         self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Set scroll Y position immediately without animation
-    pub fn scroll_y_to_immediate(&mut self, y: f32) {
+    /// Set scroll Y position directly (no animation)
+    pub fn scroll_y_to(&mut self, y: f32) {
         self.scroll_y = y;
         self.target_scroll_y = y;
         self.clamp_scroll();
         self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Update smooth scrolling animation
+    /// Set scroll X position with smooth animation (for Home/End/PageUp/PageDown)
+    pub fn scroll_x_to_smooth(&mut self, x: f32) {
+        self.target_scroll_x = x;
+        self.clamp_scroll();
+        self.last_update = Some(Instant::now());
+    }
+
+    /// Set scroll Y position with smooth animation (for Home/End/PageUp/PageDown)
+    pub fn scroll_y_to_smooth(&mut self, y: f32) {
+        self.target_scroll_y = y;
+        self.clamp_scroll();
+        self.last_update = Some(Instant::now());
+    }
+
+    /// Update smooth scrolling animation AND scrollbar animation
     /// Returns true if the viewport changed and a redraw is needed
     pub fn update_animation(&mut self) {
-        // Early return if not animating
+        // Update scrollbar animation
+        self.scrollbar.update_animation();
+
+        // Early return if not animating scroll
         if !self.is_animating() {
             return;
         }
@@ -248,12 +288,13 @@ impl Viewport {
         self.last_update = Some(now);
         let mut changed = false;
 
-        // Interpolation factor based on delta_time
-        // scroll_animation_speed is now in units/second
-        let lerp_factor = (self.scroll_animation_speed * delta_time).min(1.0);
+        // Ease-out cubic interpolation for smoother, more natural feel
+        // t approaches 1 over time, ease_factor provides deceleration
+        let t = (self.scroll_animation_speed * delta_time).min(1.0);
+        let ease_factor = 1.0 - (1.0 - t).powi(3); // Cubic ease-out
 
         if (self.scroll_x - self.target_scroll_x).abs() > 0.5 {
-            self.scroll_x += (self.target_scroll_x - self.scroll_x) * lerp_factor;
+            self.scroll_x += (self.target_scroll_x - self.scroll_x) * ease_factor;
             changed = true;
         } else if self.scroll_x != self.target_scroll_x {
             self.scroll_x = self.target_scroll_x;
@@ -261,7 +302,7 @@ impl Viewport {
         }
 
         if (self.scroll_y - self.target_scroll_y).abs() > 0.5 {
-            self.scroll_y += (self.target_scroll_y - self.scroll_y) * lerp_factor;
+            self.scroll_y += (self.target_scroll_y - self.scroll_y) * ease_factor;
             changed = true;
         } else if self.scroll_y != self.target_scroll_y {
             self.scroll_y = self.target_scroll_y;
@@ -270,12 +311,31 @@ impl Viewport {
 
         if changed {
             self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
+            // Sync scrollbar position when scroll changes
+            self.sync_scrollbar_position();
         }
     }
 
-    /// Check if viewport is currently animating
+    /// Sync scrollbar position with current scroll position
+    pub fn sync_scrollbar_position(&mut self) {
+        let max_y = self.max_scroll_y();
+        if max_y > 0.0 {
+            self.scrollbar.set_scroll_position(self.scroll_y / max_y);
+        }
+        let max_x = self.max_scroll_x();
+        if max_x > 0.0 {
+            self.scrollbar.set_scroll_position_x(self.scroll_x / max_x);
+        }
+    }
+
+    /// Check if viewport is currently animating scroll position
     pub fn is_animating(&self) -> bool {
         (self.scroll_x - self.target_scroll_x).abs() > 0.5 || (self.scroll_y - self.target_scroll_y).abs() > 0.5
+    }
+
+    /// Check if any animation is needed (scroll or scrollbar)
+    pub fn needs_animation(&self) -> bool {
+        self.is_animating() || self.scrollbar.needs_animation()
     }
 
     /// Update viewport size

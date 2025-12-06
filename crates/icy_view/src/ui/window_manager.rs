@@ -280,8 +280,8 @@ impl WindowManager {
                     _ => None,
                 }
             }),
-            // important for updating slow blinking
-            iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::AnimationTick),
+            // important for updating slow blinking and smooth scroll animations
+            iced::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick),
         ];
 
         // Add animation tick subscription when any window needs animation
