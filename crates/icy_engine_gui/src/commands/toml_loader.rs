@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::{CommandDef, CommandSet, Hotkey};
+use super::{CommandDef, CommandSet, Hotkey, MouseBinding};
 
 /// Raw command definition as it appears in TOML
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -14,6 +14,8 @@ pub struct CommandToml {
     pub hotkey: Vec<String>,
     #[serde(default)]
     pub hotkey_mac: Vec<String>,
+    #[serde(default)]
+    pub mouse: Vec<String>,
 }
 
 /// Container for the TOML file structure
@@ -36,12 +38,20 @@ impl CommandToml {
             .filter_map(|s| Hotkey::parse(s))
             .collect();
 
+        let mouse_bindings: Vec<MouseBinding> = self.mouse
+            .iter()
+            .filter_map(|s| MouseBinding::parse(s))
+            .collect();
+
         let mut cmd = CommandDef::new(self.id);
         for hk in hotkeys {
             cmd = cmd.with_hotkey(&hk.to_string());
         }
         for hk in hotkeys_mac {
             cmd = cmd.with_hotkey_mac(&hk.to_string());
+        }
+        for mb in mouse_bindings {
+            cmd = cmd.with_mouse(&mb.to_string());
         }
         cmd
     }

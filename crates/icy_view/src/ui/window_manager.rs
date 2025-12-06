@@ -2,12 +2,23 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, advanced::graphics::core::keyboard, widget::space, window};
+use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
-use icy_engine_gui::commands::{CommandSet, hotkey_from_iced, create_common_commands, cmd};
-use icy_view_gui::{MainWindow, Message, Options, PreviewMessage};
+use icy_engine_gui::command_handler;
+use icy_engine_gui::commands::{create_common_commands, cmd};
+use icy_view_gui::{MainWindow, Message, Options};
 
 use crate::load_window_icon;
+
+// Generate the WindowCommands struct with handle() method
+// Note: Zoom/Fullscreen commands are handled at MainWindow level, not here
+command_handler!(WindowCommands, create_common_commands(), _window_id: window::Id => WindowManagerMessage {
+    cmd::WINDOW_NEW => WindowManagerMessage::OpenWindow,
+    cmd::WINDOW_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
+    cmd::FILE_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
+    cmd::FOCUS_NEXT => WindowManagerMessage::FocusNext,
+    cmd::FOCUS_PREVIOUS => WindowManagerMessage::FocusPrevious,
+});
 
 pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
@@ -15,7 +26,7 @@ pub struct WindowManager {
     initial_path: Option<PathBuf>,
     auto_scroll: bool,
     bps: Option<u32>,
-    commands: CommandSet,
+    commands: WindowCommands,
 }
 
 #[derive(Clone)]
@@ -24,6 +35,8 @@ pub enum WindowManagerMessage {
     CloseWindow(window::Id),
     WindowOpened(window::Id),
     FocusWindow(usize),
+    FocusNext,
+    FocusPrevious,
     WindowClosed(window::Id),
     WindowMessage(window::Id, Message),
     _TitleChanged(window::Id, String),
@@ -38,6 +51,8 @@ impl std::fmt::Debug for WindowManagerMessage {
             Self::CloseWindow(id) => f.debug_tuple("CloseWindow").field(id).finish(),
             Self::WindowOpened(id) => f.debug_tuple("WindowOpened").field(id).finish(),
             Self::FocusWindow(idx) => f.debug_tuple("FocusWindow").field(idx).finish(),
+            Self::FocusNext => write!(f, "FocusNext"),
+            Self::FocusPrevious => write!(f, "FocusPrevious"),
             Self::WindowClosed(id) => f.debug_tuple("WindowClosed").field(id).finish(),
             Self::WindowMessage(id, _) => f.debug_tuple("WindowMessage").field(id).field(&"...").finish(),
             Self::_TitleChanged(id, title) => f.debug_tuple("TitleChanged").field(id).field(title).finish(),
@@ -68,7 +83,7 @@ impl WindowManager {
                 initial_path: None,
                 auto_scroll,
                 bps,
-                commands: create_common_commands(),
+                commands: WindowCommands::new(),
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
@@ -127,6 +142,9 @@ impl WindowManager {
 
             WindowManagerMessage::CloseWindow(id) => window::close(id),
 
+            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
+            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
+
             WindowManagerMessage::WindowOpened(id) => {
                 let (window, initial_message) =
                     MainWindow::new(self.find_next_id(), self.initial_path.take(), self.options.clone(), self.auto_scroll, self.bps);
@@ -154,22 +172,9 @@ impl WindowManager {
             }
 
             WindowManagerMessage::Event(window_id, event) => {
-                // Handle keyboard commands via CommandSet
-                if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = &event {
-                    if let Some(hotkey) = hotkey_from_iced(key, *modifiers) {
-                        if let Some(command_id) = self.commands.match_hotkey(&hotkey) {
-                            // Map command IDs to actions
-                            return match command_id {
-                                cmd::WINDOW_NEW => Task::done(WindowManagerMessage::OpenWindow),
-                                cmd::WINDOW_CLOSE | cmd::FILE_CLOSE => Task::done(WindowManagerMessage::CloseWindow(window_id)),
-                                cmd::VIEW_ZOOM_IN => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomIn))),
-                                cmd::VIEW_ZOOM_OUT => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomOut))),
-                                cmd::VIEW_ZOOM_RESET => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomReset))),
-                                cmd::VIEW_FULLSCREEN => Task::done(WindowManagerMessage::WindowMessage(window_id, Message::ToggleFullscreen)),
-                                _ => Task::none(), // Unhandled command
-                            };
-                        }
-                    }
+                // Handle keyboard commands
+                if let Some(msg) = self.commands.handle(&event, window_id) {
+                    return Task::done(msg);
                 }
                 
                 // Pass event to window for other handling

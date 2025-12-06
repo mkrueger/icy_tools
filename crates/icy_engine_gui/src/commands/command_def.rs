@@ -3,7 +3,7 @@
 //! Represents a single command with its ID and platform-specific hotkeys.
 
 use serde::{Serialize, Deserialize};
-use super::Hotkey;
+use super::{Hotkey, MouseBinding};
 
 /// A command definition with platform-specific hotkeys
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,10 @@ pub struct CommandDef {
     /// Hotkeys for macOS (falls back to `hotkeys` if empty)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hotkeys_mac: Vec<Hotkey>,
+    
+    /// Mouse button bindings (platform-independent)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    mouse_bindings: Vec<MouseBinding>,
 }
 
 impl CommandDef {
@@ -27,6 +31,7 @@ impl CommandDef {
             id: id.into(),
             hotkeys: Vec::new(),
             hotkeys_mac: Vec::new(),
+            mouse_bindings: Vec::new(),
         }
     }
 
@@ -40,6 +45,7 @@ impl CommandDef {
             id: id.into(),
             hotkeys: hotkeys.iter().filter_map(|s| Hotkey::parse(s)).collect(),
             hotkeys_mac: hotkeys_mac.iter().filter_map(|s| Hotkey::parse(s)).collect(),
+            mouse_bindings: Vec::new(),
         }
     }
 
@@ -96,6 +102,19 @@ impl CommandDef {
     /// Get all hotkeys (macOS)
     pub fn hotkeys_mac(&self) -> &[Hotkey] {
         &self.hotkeys_mac
+    }
+
+    /// Get mouse bindings
+    pub fn mouse_bindings(&self) -> &[MouseBinding] {
+        &self.mouse_bindings
+    }
+
+    /// Add a mouse binding
+    pub fn with_mouse(mut self, binding: &str) -> Self {
+        if let Some(mb) = MouseBinding::parse(binding) {
+            self.mouse_bindings.push(mb);
+        }
+        self
     }
 
     /// Get the primary hotkey for display (platform-specific)

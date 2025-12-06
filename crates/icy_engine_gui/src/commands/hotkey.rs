@@ -1,6 +1,7 @@
 //! Hotkey parsing and representation
 //!
 //! Parses strings like "Ctrl+Shift+N" into structured hotkey bindings.
+//! Also supports mouse button bindings like "Ctrl+Back".
 
 use std::fmt;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
@@ -291,6 +292,147 @@ impl KeyCode {
 impl fmt::Display for KeyCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name())
+    }
+}
+
+/// Represents a mouse button
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Back,
+    Forward,
+    Other(u16),
+}
+
+impl MouseButton {
+    /// Parse a mouse button name string
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            "middle" => Some(Self::Middle),
+            "back" => Some(Self::Back),
+            "forward" => Some(Self::Forward),
+            _ => {
+                // Try parsing "other(N)" format
+                let s = s.to_lowercase();
+                s.strip_prefix("other(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .and_then(|n| n.parse().ok())
+                    .map(Self::Other)
+            }
+        }
+    }
+
+    /// Get the display name for the button
+    pub fn name(&self) -> String {
+        match self {
+            Self::Left => "Left".to_string(),
+            Self::Right => "Right".to_string(),
+            Self::Middle => "Middle".to_string(),
+            Self::Back => "Back".to_string(),
+            Self::Forward => "Forward".to_string(),
+            Self::Other(n) => format!("Other({})", n),
+        }
+    }
+}
+
+impl fmt::Display for MouseButton {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+/// A complete mouse binding (modifiers + button)
+///
+/// Serializes to/from a string like "Ctrl+Back"
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MouseBinding {
+    pub button: MouseButton,
+    pub modifiers: Modifiers,
+}
+
+impl Serialize for MouseBinding {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for MouseBinding {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        MouseBinding::parse(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!("invalid mouse binding: '{}'", s))
+        })
+    }
+}
+
+impl MouseBinding {
+    /// Create a new mouse binding
+    pub fn new(button: MouseButton, modifiers: Modifiers) -> Self {
+        Self { button, modifiers }
+    }
+
+    /// Parse a mouse binding string like "Ctrl+Back" or "Forward"
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+
+        let mut modifiers = Modifiers::default();
+        let mut remaining = s;
+
+        // Parse modifiers at the beginning (same logic as Hotkey)
+        loop {
+            let lower = remaining.to_lowercase();
+            
+            if let Some(rest) = lower.strip_prefix("ctrl+").or_else(|| lower.strip_prefix("control+")) {
+                modifiers.ctrl = true;
+                remaining = &remaining[remaining.len() - rest.len()..];
+            } else if let Some(rest) = lower.strip_prefix("alt+").or_else(|| lower.strip_prefix("opt+")).or_else(|| lower.strip_prefix("option+")) {
+                modifiers.alt = true;
+                remaining = &remaining[remaining.len() - rest.len()..];
+            } else if let Some(rest) = lower.strip_prefix("shift+") {
+                modifiers.shift = true;
+                remaining = &remaining[remaining.len() - rest.len()..];
+            } else if let Some(rest) = lower.strip_prefix("cmd+").or_else(|| lower.strip_prefix("command+")).or_else(|| lower.strip_prefix("meta+")).or_else(|| lower.strip_prefix("super+")) {
+                modifiers.cmd = true;
+                remaining = &remaining[remaining.len() - rest.len()..];
+            } else {
+                break;
+            }
+        }
+
+        if remaining.is_empty() {
+            return None;
+        }
+
+        let button = MouseButton::from_str(remaining)?;
+        Some(Self { button, modifiers })
+    }
+
+    /// Check if this binding matches the given button and modifiers
+    pub fn matches(&self, button: MouseButton, modifiers: Modifiers) -> bool {
+        self.button == button && self.modifiers == modifiers
+    }
+}
+
+impl fmt::Display for MouseBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.modifiers.any() {
+            write!(f, "{}+{}", self.modifiers, self.button)
+        } else {
+            write!(f, "{}", self.button)
+        }
     }
 }
 

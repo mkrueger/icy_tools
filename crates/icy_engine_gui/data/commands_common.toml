@@ -100,8 +100,40 @@ hotkey_mac = ["F1", "Cmd+?"]
 
 [[commands]]
 id = "help.about"
-hotkey = []
-hotkey_mac = []
+hotkey = ["Alt+A"]
+hotkey_mac = ["Alt+A"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Focus Navigation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "focus.next"
+hotkey = ["Tab"]
+
+[[commands]]
+id = "focus.previous"
+hotkey = ["Shift+Tab"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Navigation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "nav.back"
+hotkey = ["Alt+Left"]
+hotkey_mac = ["Alt+Left", "Cmd+["]
+mouse = ["Back"]
+
+[[commands]]
+id = "nav.forward"
+hotkey = ["Alt+Right"]
+hotkey_mac = ["Alt+Right", "Cmd+]"]
+mouse = ["Forward"]
+
+[[commands]]
+id = "nav.up"
+hotkey = ["Alt+Up"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Settings

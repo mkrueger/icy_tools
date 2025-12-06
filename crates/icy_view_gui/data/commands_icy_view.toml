@@ -1,0 +1,75 @@
+# icy_view specific commands
+# These commands are only used by icy_view, not shared with other apps.
+#
+# Format:
+#   [[commands]]
+#   id = "unique.command.id"    # Also used as i18n translation key
+#   hotkey = ["Ctrl+C"]         # Windows/Linux shortcuts (can have multiple)
+#   hotkey_mac = ["Cmd+C"]      # macOS shortcuts (optional, falls back to hotkey)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# icy_view Dialogs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "dialog.sauce"
+hotkey = ["F4"]
+
+[[commands]]
+id = "dialog.export"
+hotkey = ["Ctrl+I"]
+hotkey_mac = ["Cmd+I"]
+
+[[commands]]
+id = "dialog.filter"
+hotkey = ["Ctrl+F"]
+hotkey_mac = ["Cmd+F"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Playback Control
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "playback.toggle_scroll"
+hotkey = ["Space"]
+
+[[commands]]
+id = "playback.scroll_speed"
+hotkey = ["F2"]
+
+[[commands]]
+id = "playback.scroll_speed_back"
+hotkey = ["Shift+F2"]
+
+[[commands]]
+id = "playback.baud_rate"
+hotkey = ["F3"]
+
+[[commands]]
+id = "playback.baud_rate_back"
+hotkey = ["Shift+F3"]
+
+[[commands]]
+id = "playback.baud_rate_off"
+hotkey = ["Ctrl+F3"]
+hotkey_mac = ["Cmd+F3"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# External Commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "external.command_0"
+hotkey = ["F5"]
+
+[[commands]]
+id = "external.command_1"
+hotkey = ["F6"]
+
+[[commands]]
+id = "external.command_2"
+hotkey = ["F7"]
+
+[[commands]]
+id = "external.command_3"
+hotkey = ["F8"]

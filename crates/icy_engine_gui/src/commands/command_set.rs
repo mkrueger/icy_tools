@@ -1,12 +1,12 @@
 //! Command Set
 //!
-//! A collection of command definitions that can match keyboard events.
+//! A collection of command definitions that can match keyboard and mouse events.
 
 use std::collections::HashMap;
 
-use super::{CommandDef, Hotkey, KeyCode, Modifiers};
+use super::{CommandDef, Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
 
-/// A collection of commands that can match keyboard events
+/// A collection of commands that can match keyboard and mouse events
 #[derive(Debug, Default)]
 pub struct CommandSet {
     /// Commands indexed by their ID
@@ -14,6 +14,9 @@ pub struct CommandSet {
     
     /// Lookup table: Hotkey -> command ID (for fast matching)
     hotkey_map: HashMap<Hotkey, String>,
+    
+    /// Lookup table: MouseBinding -> command ID (for fast matching)
+    mouse_map: HashMap<MouseBinding, String>,
 }
 
 impl CommandSet {
@@ -29,6 +32,11 @@ impl CommandSet {
         // Update hotkey lookup map
         for hotkey in command.active_hotkeys() {
             self.hotkey_map.insert(*hotkey, id.clone());
+        }
+        
+        // Update mouse binding lookup map
+        for mouse in command.mouse_bindings() {
+            self.mouse_map.insert(*mouse, id.clone());
         }
         
         self.commands.insert(id, command);
@@ -59,7 +67,19 @@ impl CommandSet {
 
     /// Match a hotkey and return the command ID if found
     pub fn match_hotkey(&self, hotkey: &Hotkey) -> Option<&str> {
+        println!("Matching hotkey: {:?}={}", hotkey, self.hotkey_map.get(hotkey).is_some());
         self.hotkey_map.get(hotkey).map(|s| s.as_str())
+    }
+
+    /// Match a mouse event and return the command ID if found
+    pub fn match_mouse(&self, button: MouseButton, modifiers: Modifiers) -> Option<&str> {
+        let binding = MouseBinding::new(button, modifiers);
+        self.mouse_map.get(&binding).map(|s| s.as_str())
+    }
+
+    /// Match a mouse binding and return the command ID if found
+    pub fn match_mouse_binding(&self, binding: &MouseBinding) -> Option<&str> {
+        self.mouse_map.get(binding).map(|s| s.as_str())
     }
 
     /// Merge another command set into this one
@@ -70,12 +90,16 @@ impl CommandSet {
         }
     }
 
-    /// Rebuild the hotkey lookup map (call after modifying commands)
+    /// Rebuild the hotkey and mouse lookup maps (call after modifying commands)
     pub fn rebuild_hotkey_map(&mut self) {
         self.hotkey_map.clear();
+        self.mouse_map.clear();
         for (id, cmd) in &self.commands {
             for hotkey in cmd.active_hotkeys() {
                 self.hotkey_map.insert(*hotkey, id.clone());
+            }
+            for mouse in cmd.mouse_bindings() {
+                self.mouse_map.insert(*mouse, id.clone());
             }
         }
     }

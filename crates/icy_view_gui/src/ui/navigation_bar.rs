@@ -2,13 +2,15 @@ use std::path::PathBuf;
 
 use i18n_embed_fl::fl;
 use iced::{
-    Element, Length,
+    Element, Event, Length,
     widget::{Space, button, container, row, text, text_input, tooltip},
 };
+use icy_engine_gui::command_handler;
 
 use super::icons::{arrow_back_icon, arrow_forward_icon, language_icon, refresh_icon, search_icon, settings_icon};
 use super::options::ViewMode;
 use crate::LANGUAGE_LOADER;
+use crate::commands::{cmd, create_icy_view_commands};
 use crate::items::ProviderType;
 
 /// A point in navigation history
@@ -57,6 +59,13 @@ pub enum NavigationBarMessage {
     /// Open settings dialog
     OpenSettings,
 }
+
+// Command handler for NavigationBar
+command_handler!(NavigationCommands, create_icy_view_commands(), => NavigationBarMessage {
+    cmd::NAV_BACK => NavigationBarMessage::Back,
+    cmd::NAV_FORWARD => NavigationBarMessage::Forward,
+    cmd::NAV_UP => NavigationBarMessage::Up,
+});
 
 /// Navigation history
 pub struct NavigationHistory {
@@ -148,6 +157,8 @@ impl Default for NavigationHistory {
 
 /// Navigation bar widget
 pub struct NavigationBar {
+    /// Command handler for navigation shortcuts
+    commands: NavigationCommands,
     /// Whether we're currently browsing 16colors.rs
     pub is_16colors_mode: bool,
     /// Editable path input
@@ -159,10 +170,16 @@ pub struct NavigationBar {
 impl NavigationBar {
     pub fn new() -> Self {
         Self {
+            commands: NavigationCommands::new(),
             is_16colors_mode: false,
             path_input: String::new(),
             is_path_valid: true,
         }
+    }
+
+    /// Handle an event and return the corresponding message if it matches a command
+    pub fn handle_event(&self, event: &Event) -> Option<NavigationBarMessage> {
+        self.commands.handle(event)
     }
 
     pub fn set_16colors_mode(&mut self, enabled: bool) {

@@ -1,6 +1,8 @@
+pub mod commands;
 pub mod items;
 pub mod ui;
 
+pub use commands::*;
 pub use items::*;
 pub use ui::*;
 

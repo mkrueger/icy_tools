@@ -41,6 +41,15 @@ pub mod cmd {
     pub const WINDOW_NEW: &str = "window.new";
     pub const WINDOW_CLOSE: &str = "window.close";
 
+    // Focus Navigation
+    pub const FOCUS_NEXT: &str = "focus.next";
+    pub const FOCUS_PREVIOUS: &str = "focus.previous";
+
+    // Navigation
+    pub const NAV_BACK: &str = "nav.back";
+    pub const NAV_FORWARD: &str = "nav.forward";
+    pub const NAV_UP: &str = "nav.up";
+
     // Help
     pub const HELP_SHOW: &str = "help.show";
     pub const HELP_ABOUT: &str = "help.about";

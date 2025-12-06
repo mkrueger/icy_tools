@@ -3,12 +3,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use i18n_embed_fl::fl;
+use iced::Event;
 use iced::{
     Alignment, Element, Length, Task,
     widget::{Space, column, container, image as iced_image, stack, text},
 };
 use icy_engine::{Screen, Size, TextScreen};
-use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
+use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView, command_handler};
 use icy_parser_core::BaudEmulation;
 use icy_sauce::SauceRecord;
 use parking_lot::Mutex;
@@ -16,12 +17,20 @@ use tokio::sync::mpsc;
 
 use super::image_viewer::{ImageViewer, ImageViewerMessage};
 use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
+use crate::commands::{cmd, create_icy_view_commands};
 use crate::ui::options::ScrollSpeed;
 use crate::ui::theme;
 use icy_engine::formats::{FileFormat, ImageFormat};
 
 /// Counter for image load requests to handle cancellation
 static IMAGE_LOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+// Command handler for PreviewView
+command_handler!(PreviewCommands, create_icy_view_commands(), => PreviewMessage {
+    cmd::VIEW_ZOOM_IN => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In),
+    cmd::VIEW_ZOOM_OUT => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out),
+    cmd::VIEW_ZOOM_RESET => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset),
+});
 
 /// Preview mode - either terminal or image
 #[derive(Debug, Clone)]
@@ -75,6 +84,8 @@ pub enum PreviewMessage {
 
 /// Preview view for displaying ANSI files and images
 pub struct PreviewView {
+    /// Command handler for preview shortcuts
+    commands: PreviewCommands,
     /// Terminal widget for rendering
     pub terminal: Terminal,
     /// Command sender to view thread
@@ -120,6 +131,7 @@ impl PreviewView {
         let (command_tx, event_rx) = create_view_thread(screen);
 
         Self {
+            commands: PreviewCommands::new(),
             terminal,
             command_tx,
             event_rx: Arc::new(Mutex::new(event_rx)),
@@ -136,6 +148,11 @@ impl PreviewView {
             scroll_speed: ScrollSpeed::Medium,
             image_viewer: None,
         }
+    }
+
+    /// Handle an event and return the corresponding message if it matches a command
+    pub fn handle_event(&self, event: &Event) -> Option<PreviewMessage> {
+        self.commands.handle(event)
     }
 
     /// Check if a file is an image based on extension

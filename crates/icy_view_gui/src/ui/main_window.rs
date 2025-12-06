@@ -2,12 +2,13 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use i18n_embed_fl::fl;
 use iced::{
-    Element, Event, Length, Rectangle, Task, Theme,
+    Element, Event, Length, Task, Theme,
     keyboard::{Key, key::Named},
     widget::{Space, column, container, image as iced_image, mouse_area, row, text},
 };
 use icy_engine_gui::{
     ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager,
+    command_handler,
     ui::{ExportDialogMessage, ExportDialogState},
     version_helper::replace_version_marker,
 };
@@ -17,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     DEFAULT_TITLE, Item, VERSION,
+    commands::{cmd, create_icy_view_commands},
     items::{ProviderType, SixteenColorsProvider, SixteenColorsRoot},
 };
 use icy_engine::formats::FileFormat;
@@ -36,6 +38,24 @@ use super::{
 
 // Include the welcome logo at compile time
 const WELCOME_LOGO: &[u8] = include_bytes!("../../data/welcome.xb");
+
+// Command handler for MainWindow keyboard shortcuts
+command_handler!(MainWindowCommands, create_icy_view_commands(), => Message {
+    // View
+    cmd::VIEW_FULLSCREEN => Message::ToggleFullscreen,
+    // Dialogs
+    cmd::HELP_SHOW => Message::ShowHelp,
+    cmd::HELP_ABOUT => Message::ShowAbout,
+    cmd::DIALOG_EXPORT => Message::ShowExportDialog,
+    cmd::DIALOG_FILTER => Message::ToggleFilterPopup,
+    // Edit
+    cmd::EDIT_COPY => Message::Copy,
+    // External commands
+    cmd::EXTERNAL_COMMAND_0 => Message::ExecuteExternalCommand(0),
+    cmd::EXTERNAL_COMMAND_1 => Message::ExecuteExternalCommand(1),
+    cmd::EXTERNAL_COMMAND_2 => Message::ExecuteExternalCommand(2),
+    cmd::EXTERNAL_COMMAND_3 => Message::ExecuteExternalCommand(3),
+});
 
 /// Static welcome logo image handle
 static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
@@ -89,10 +109,6 @@ pub enum Message {
     ToggleFullscreen,
     /// Escape key pressed
     Escape,
-    /// Focus next widget (Tab)
-    FocusNext,
-    /// Focus previous widget (Shift+Tab)
-    FocusPrevious,
     /// Data was loaded for preview (path for display, data for content)
     DataLoaded(String, Vec<u8>),
     /// Data loading failed for preview
@@ -149,6 +165,8 @@ pub struct MainWindow {
     pub file_browser: FileBrowser,
     /// Navigation bar
     pub navigation_bar: NavigationBar,
+    /// Status bar
+    status_bar: StatusBar,
     /// Navigation history
     pub history: NavigationHistory,
     /// File list toolbar
@@ -157,6 +175,8 @@ pub struct MainWindow {
     pub filter_popup: FilterPopup,
     /// Options
     pub options: Arc<Mutex<Options>>,
+    /// Command handler for keyboard shortcuts
+    commands: MainWindowCommands,
     /// Fullscreen mode
     pub fullscreen: bool,
     /// Currently loaded file for preview
@@ -282,10 +302,12 @@ impl MainWindow {
                 title,
                 file_browser,
                 navigation_bar,
+                status_bar: StatusBar::new(),
                 history,
                 file_list_toolbar,
                 filter_popup: FilterPopup::new(),
                 options,
+                commands: MainWindowCommands::new(),
                 fullscreen: false,
                 current_file,
                 preview,
@@ -844,8 +866,6 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::FocusNext => iced::widget::operation::focus_next(),
-            Message::FocusPrevious => iced::widget::operation::focus_previous(),
             Message::DataLoaded(path, data) => {
                 // Reset timer when loading new file to prevent animation jumps
                 self.last_tick = Instant::now();
@@ -2266,108 +2286,40 @@ impl MainWindow {
     }
 
     pub fn handle_event(&mut self, event: &Event) -> Option<Message> {
-        // Handle mouse back/forward buttons (Button 4 = Back, Button 5 = Forward)
-        if let Event::Mouse(iced::mouse::Event::ButtonPressed(button)) = event {
-            match button {
-                iced::mouse::Button::Back => return Some(Message::Navigation(NavigationBarMessage::Back)),
-                iced::mouse::Button::Forward => return Some(Message::Navigation(NavigationBarMessage::Forward)),
-                _ => {}
-            }
+        // Try the command handler first for both keyboard and mouse events
+        if let Some(msg) = self.commands.handle(event) {
+            return Some(msg);
+        }
+
+        // Delegate to component handlers
+        if let Some(msg) = self.preview.handle_event(event) {
+            return Some(Message::Preview(msg));
+        }
+        if let Some(msg) = self.navigation_bar.handle_event(event) {
+            return Some(Message::Navigation(msg));
+        }
+        if let Some(msg) = self.status_bar.handle_event(event) {
+            return Some(Message::StatusBar(msg));
         }
 
         // In tile mode, forward mouse events to the tile grid for scroll handling
         if self.view_mode() == ViewMode::Tiles {
-            // Estimate bounds: x=0, y=nav_bar_height (~40px), width from tile_grid, height from viewport
-            // The tile grid takes the full width and height below the nav bar and above the status bar
-            let nav_bar_height = 40.0;
-            let bounds = Rectangle {
-                x: 0.0,
-                y: nav_bar_height,
-                width: self.tile_grid.get_bounds_width().max(800.0),
-                height: self.tile_grid.get_viewport_height().max(400.0),
-            };
-
-            // Get cursor position from event if available
-            let cursor_position = match event {
-                Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(*position),
-                Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => self.tile_grid.last_cursor_position,
-                _ => None,
-            };
-
-            // Handle scroll wheel, cursor tracking, and click/double-click
-            if self.tile_grid.handle_mouse_event(event, bounds, cursor_position) {
-                // Check if a double-click was detected
-                if self.tile_grid.take_pending_double_click() {
-                    return Some(Message::TileGrid(TileGridMessage::OpenSelected));
-                }
-                // Check if a click happened (selection changed)
-                if let Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) = event {
-                    if let Some(index) = self.tile_grid.selected_index {
-                        return Some(Message::TileGrid(TileGridMessage::TileClicked(index)));
-                    }
-                }
-                // Tile grid handled the event, request redraw
-                return Some(Message::TileGrid(TileGridMessage::AnimationTick));
+            if let Some(msg) = self.tile_grid.handle_event(event, 0.0, 40.0) {
+                return Some(Message::TileGrid(msg));
             }
         }
 
         // Handle folder preview mouse events in list mode
         if self.view_mode() == ViewMode::List && self.folder_preview_path.is_some() {
-            // Estimate bounds: folder preview is on the right side after the file browser (300px)
-            let nav_bar_height = 40.0;
-            let file_browser_width = 300.0;
-            let bounds = Rectangle {
-                x: file_browser_width,
-                y: nav_bar_height,
-                width: self.folder_preview.get_bounds_width().max(500.0),
-                height: self.folder_preview.get_viewport_height().max(400.0),
-            };
-
-            // Get cursor position from event if available
-            let cursor_position = match event {
-                Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(*position),
-                Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => self.folder_preview.last_cursor_position,
-                _ => None,
-            };
-
-            // Handle scroll wheel, cursor tracking, and click/double-click
-            if self.folder_preview.handle_mouse_event(event, bounds, cursor_position) {
-                // Check if a double-click was detected
-                if self.folder_preview.take_pending_double_click() {
-                    return Some(Message::FolderPreview(TileGridMessage::OpenSelected));
-                }
-                // Check if a click happened (selection changed)
-                if let Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) = event {
-                    if let Some(index) = self.folder_preview.selected_index {
-                        return Some(Message::FolderPreview(TileGridMessage::TileClicked(index)));
-                    }
-                }
-                return Some(Message::FolderPreview(TileGridMessage::AnimationTick));
+            if let Some(msg) = self.folder_preview.handle_event(event, 300.0, 40.0) {
+                return Some(Message::FolderPreview(msg));
             }
         }
 
         match event {
-            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                // Alt+Left = Back, Alt+Right = Forward, Alt+Up = Parent, Alt+A = About
-                if modifiers.alt() {
-                    match key {
-                        Key::Named(Named::ArrowLeft) => return Some(Message::Navigation(NavigationBarMessage::Back)),
-                        Key::Named(Named::ArrowRight) => return Some(Message::Navigation(NavigationBarMessage::Forward)),
-                        Key::Named(Named::ArrowUp) => return Some(Message::Navigation(NavigationBarMessage::Up)),
-                        Key::Character(c) if c.as_str().eq_ignore_ascii_case("a") => return Some(Message::ShowAbout),
-                        _ => {}
-                    }
-                }
-
-                // Tab cycles through focusable controls using iced's focus system
-                if let Key::Named(Named::Tab) = key {
-                    if modifiers.shift() {
-                        return Some(Message::FocusPrevious);
-                    } else {
-                        return Some(Message::FocusNext);
-                    }
-                }
-
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
+                // Context-dependent keys that can't be in command handler
+                // Space: shuffle mode or auto-scroll toggle
                 if let Key::Named(Named::Space) = key {
                     if self.shuffle_mode.is_active {
                         return Some(Message::ShuffleNext);
@@ -2393,72 +2345,6 @@ impl MainWindow {
                     // Error dialog: Enter = Close
                     if self.error_dialog.is_some() {
                         return Some(Message::CloseErrorDialog);
-                    }
-                }
-
-                // Common keys (not view-mode dependent)
-                match key {
-                    Key::Named(Named::Escape) => return Some(Message::Escape),
-                    Key::Named(Named::F1) => return Some(Message::ShowHelp),
-                    Key::Named(Named::F2) => {
-                        if modifiers.shift() {
-                            return Some(Message::StatusBar(StatusBarMessage::CycleScrollSpeedBackward));
-                        } else {
-                            return Some(Message::StatusBar(StatusBarMessage::CycleScrollSpeed));
-                        }
-                    }
-                    Key::Named(Named::F3) => {
-                        if modifiers.command() {
-                            // Cmd/Ctrl+F3: Set baud rate to max (Off/0)
-                            return Some(Message::StatusBar(StatusBarMessage::SetBaudRateOff));
-                        } else if modifiers.shift() {
-                            // Shift+F3: Cycle baud rate backward
-                            return Some(Message::StatusBar(StatusBarMessage::CycleBaudRateBackward));
-                        } else {
-                            // F3: Cycle baud rate forward
-                            return Some(Message::StatusBar(StatusBarMessage::CycleBaudRate));
-                        }
-                    }
-                    Key::Named(Named::F4) => {
-                        // F4: Show SAUCE dialog
-                        return Some(Message::StatusBar(StatusBarMessage::ShowSauceInfo));
-                    }
-                    Key::Named(Named::F5) => return Some(Message::ExecuteExternalCommand(0)),
-                    Key::Named(Named::F6) => return Some(Message::ExecuteExternalCommand(1)),
-                    Key::Named(Named::F7) => return Some(Message::ExecuteExternalCommand(2)),
-                    Key::Named(Named::F8) => return Some(Message::ExecuteExternalCommand(3)),
-                    Key::Named(Named::F11) => return Some(Message::ToggleFullscreen),
-                    _ => {}
-                }
-                println!("Key pressed: {:?} with modifiers {:?}", key, modifiers);
-                // Cmd/Ctrl shortcuts: I=Export, C=Copy, F=Filter, =/+=Zoom in, -=Zoom out, 0/Backspace=Reset zoom
-                if modifiers.command() {
-                    // Cmd/Ctrl+Backspace for zoom reset
-                    if let Key::Named(Named::Backspace) = key {
-                        return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset)));
-                    }
-                    if let Key::Character(c) = key {
-                        if c.as_str().eq_ignore_ascii_case("f") {
-                            return Some(Message::ToggleFilterPopup);
-                        }
-                        if c.as_str().eq_ignore_ascii_case("i") {
-                            return Some(Message::ShowExportDialog);
-                        }
-                        if c.as_str().eq_ignore_ascii_case("c") {
-                            return Some(Message::Copy);
-                        }
-                        // Cmd/Ctrl+= or Cmd/Ctrl++ for zoom in
-                        if c.as_str() == "=" || c.as_str() == "+" {
-                            return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In)));
-                        }
-                        // Cmd/Ctrl+- for zoom out
-                        if c.as_str() == "-" {
-                            return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out)));
-                        }
-                        // Cmd/Ctrl+0 for zoom reset
-                        if c.as_str() == "0" {
-                            return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset)));
-                        }
                     }
                 }
 

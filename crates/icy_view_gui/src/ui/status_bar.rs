@@ -2,13 +2,15 @@ use std::path::PathBuf;
 
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Border, Color, Element, Length, Theme,
+    Alignment, Border, Color, Element, Event, Length, Theme,
     widget::{Space, button, container, row, text},
 };
+use icy_engine_gui::command_handler;
 use icy_parser_core::BaudEmulation;
 use icy_sauce::{Capabilities, SauceRecord};
 
 use crate::LANGUAGE_LOADER;
+use crate::commands::{cmd, create_icy_view_commands};
 
 /// SAUCE field colors - different for light and dark themes
 struct SauceColors {
@@ -67,6 +69,16 @@ pub enum StatusBarMessage {
     /// Show SAUCE dialog
     ShowSauceInfo,
 }
+
+// Command handler for StatusBar
+command_handler!(StatusBarCommands, create_icy_view_commands(), => StatusBarMessage {
+    cmd::DIALOG_SAUCE => StatusBarMessage::ShowSauceInfo,
+    cmd::PLAYBACK_SCROLL_SPEED => StatusBarMessage::CycleScrollSpeed,
+    cmd::PLAYBACK_SCROLL_SPEED_BACK => StatusBarMessage::CycleScrollSpeedBackward,
+    cmd::PLAYBACK_BAUD_RATE => StatusBarMessage::CycleBaudRate,
+    cmd::PLAYBACK_BAUD_RATE_BACK => StatusBarMessage::CycleBaudRateBackward,
+    cmd::PLAYBACK_BAUD_RATE_OFF => StatusBarMessage::SetBaudRateOff,
+});
 
 /// Status bar
 #[derive(Clone, Default)]
@@ -182,8 +194,24 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-/// Status bar widget (no state needed, just render)
-pub struct StatusBar;
+/// Status bar widget
+pub struct StatusBar {
+    /// Command handler for status bar shortcuts
+    commands: StatusBarCommands,
+}
+
+impl StatusBar {
+    pub fn new() -> Self {
+        Self {
+            commands: StatusBarCommands::new(),
+        }
+    }
+
+    /// Handle an event and return the corresponding message if it matches a command
+    pub fn handle_event(&self, event: &Event) -> Option<StatusBarMessage> {
+        self.commands.handle(event)
+    }
+}
 
 /// Format sauce capabilities info (excluding size which is shown from real buffer)
 fn format_sauce_info(sauce: &SauceRecord) -> String {

@@ -1,17 +1,22 @@
-//! Adapter to convert Iced keyboard events to our Hotkey system
+//! Adapter to convert Iced keyboard and mouse events to our command system
 //!
-//! This module bridges Iced's keyboard API with the command system.
+//! This module bridges Iced's keyboard and mouse API with the command system.
 
 use iced::keyboard::{self, Key, Modifiers as IcedModifiers};
-use super::{Hotkey, KeyCode, Modifiers};
+use super::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
 
 /// Convert Iced modifiers to our Modifiers
+///
+/// Note: We use `logo()` instead of `command()` because Iced's `command()`
+/// returns true for Ctrl on Linux/Windows (for cross-platform shortcuts).
+/// We handle platform differences via separate hotkey/hotkey_mac definitions,
+/// so we only want the actual macOS Command key (Super/Logo key).
 pub fn from_iced_modifiers(mods: IcedModifiers) -> Modifiers {
     Modifiers {
         ctrl: mods.control(),
         alt: mods.alt(),
         shift: mods.shift(),
-        cmd: mods.command(),
+        cmd: mods.logo(),  // Use logo() - only true for macOS Cmd key
     }
 }
 
@@ -71,6 +76,102 @@ pub fn hotkey_from_iced(key: &Key, modifiers: IcedModifiers) -> Option<Hotkey> {
     let key_code = from_iced_key(key)?;
     let mods = from_iced_modifiers(modifiers);
     Some(Hotkey::new(key_code, mods))
+}
+
+/// Convert Iced mouse button to our MouseButton
+pub fn from_iced_mouse_button(button: iced::mouse::Button) -> MouseButton {
+    match button {
+        iced::mouse::Button::Left => MouseButton::Left,
+        iced::mouse::Button::Right => MouseButton::Right,
+        iced::mouse::Button::Middle => MouseButton::Middle,
+        iced::mouse::Button::Back => MouseButton::Back,
+        iced::mouse::Button::Forward => MouseButton::Forward,
+        iced::mouse::Button::Other(n) => MouseButton::Other(n),
+    }
+}
+
+/// Create a MouseBinding from an Iced mouse button event
+pub fn mouse_binding_from_iced(button: iced::mouse::Button, modifiers: IcedModifiers) -> MouseBinding {
+    let btn = from_iced_mouse_button(button);
+    let mods = from_iced_modifiers(modifiers);
+    MouseBinding::new(btn, mods)
+}
+
+/// Trait for types that can be converted to input bindings for command matching
+pub trait IntoHotkey {
+    fn into_hotkey(&self) -> Option<Hotkey>;
+    fn into_mouse_binding(&self) -> Option<MouseBinding> { None }
+}
+
+impl IntoHotkey for Hotkey {
+    fn into_hotkey(&self) -> Option<Hotkey> {
+        Some(*self)
+    }
+}
+
+impl IntoHotkey for &Hotkey {
+    fn into_hotkey(&self) -> Option<Hotkey> {
+        Some(**self)
+    }
+}
+
+impl IntoHotkey for MouseBinding {
+    fn into_hotkey(&self) -> Option<Hotkey> {
+        None
+    }
+    fn into_mouse_binding(&self) -> Option<MouseBinding> {
+        Some(*self)
+    }
+}
+
+impl IntoHotkey for iced::Event {
+    fn into_hotkey(&self) -> Option<Hotkey> {
+        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = self {
+            hotkey_from_iced(key, *modifiers)
+        } else {
+            None
+        }
+    }
+    
+    fn into_mouse_binding(&self) -> Option<MouseBinding> {
+        if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed(button)) = self {
+            // Note: For mouse events, we can't easily get keyboard modifiers from the event itself
+            // In practice, the application should track modifier state separately if needed
+            Some(MouseBinding::new(from_iced_mouse_button(*button), Modifiers::NONE))
+        } else {
+            None
+        }
+    }
+}
+
+impl IntoHotkey for &iced::Event {
+    fn into_hotkey(&self) -> Option<Hotkey> {
+        (*self).into_hotkey()
+    }
+    fn into_mouse_binding(&self) -> Option<MouseBinding> {
+        (*self).into_mouse_binding()
+    }
+}
+
+/// Try to handle an event by matching it against a command set.
+///
+/// This function accepts an Iced Event, Hotkey, or MouseBinding.
+/// Checks both keyboard hotkeys and mouse bindings.
+/// Returns the command ID if a matching command is found.
+pub fn try_handle_event<'a, H: IntoHotkey>(commands: &'a super::CommandSet, event: H) -> Option<&'a str> {
+    // Try keyboard first
+    if let Some(hotkey) = event.into_hotkey() {
+        if let Some(cmd) = commands.match_hotkey(&hotkey) {
+            return Some(cmd);
+        }
+    }
+    // Try mouse
+    if let Some(mouse) = event.into_mouse_binding() {
+        if let Some(cmd) = commands.match_mouse_binding(&mouse) {
+            return Some(cmd);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

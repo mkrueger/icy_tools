@@ -1641,6 +1641,48 @@ impl TileGridView {
         }
     }
 
+    /// Handle all events for the tile grid view.
+    /// Returns Some(message) if the event was handled and produced a message.
+    ///
+    /// # Arguments
+    /// * `event` - The iced event to handle
+    /// * `x_offset` - X offset of this component (e.g. file browser width for folder preview)
+    /// * `y_offset` - Y offset of this component (e.g. navigation bar height)
+    pub fn handle_event(&mut self, event: &iced::Event, x_offset: f32, y_offset: f32) -> Option<TileGridMessage> {
+        // Calculate bounds for this component
+        let bounds = Rectangle {
+            x: x_offset,
+            y: y_offset,
+            width: self.get_bounds_width().max(if x_offset > 0.0 { 500.0 } else { 800.0 }),
+            height: self.get_viewport_height().max(400.0),
+        };
+
+        // Get cursor position from event if available
+        let cursor_position = match event {
+            iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(*position),
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => self.last_cursor_position,
+            _ => None,
+        };
+
+        // Handle scroll wheel, cursor tracking, and click/double-click
+        if self.handle_mouse_event(event, bounds, cursor_position) {
+            // Check if a double-click was detected
+            if self.take_pending_double_click() {
+                return Some(TileGridMessage::OpenSelected);
+            }
+            // Check if a click happened (selection changed)
+            if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) = event {
+                if let Some(index) = self.selected_index {
+                    return Some(TileGridMessage::TileClicked(index));
+                }
+            }
+            // Tile grid handled the event, request redraw
+            return Some(TileGridMessage::AnimationTick);
+        }
+
+        None
+    }
+
     /// Handle mouse events for scroll wheel and hover
     pub fn handle_mouse_event(&mut self, event: &iced::Event, bounds: Rectangle, cursor_position: Option<Point>) -> bool {
         // Update viewport size and bounds
