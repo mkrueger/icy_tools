@@ -1453,14 +1453,11 @@ impl TerminalThread {
             }
         }
 
-        // Copy downloaded files to the download 
+        // Copy downloaded files to the download
         println!("Copying downloaded files to {:?}", self.download_directory);
         if let Err(e) = copy_downloaded_files(&mut transfer_state, self.download_directory.as_ref()) {
             log::error!("Failed to copy downloaded files: {}", e);
-            self.send_event(TerminalEvent::Error(
-                "File copy failed".to_string(),
-                format!("{}", e),
-            ));
+            self.send_event(TerminalEvent::Error("File copy failed".to_string(), format!("{}", e)));
         }
 
         self.current_transfer = Some(transfer_state.clone());
@@ -1856,7 +1853,10 @@ fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Optio
 
         if dest.exists() {
             let new_name = PathBuf::from(name);
-            let stem = new_name.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "download".to_string());
+            let stem = new_name
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "download".to_string());
             let ext = new_name.extension().map(|e| e.to_string_lossy().to_string());
 
             let mut i = 1;

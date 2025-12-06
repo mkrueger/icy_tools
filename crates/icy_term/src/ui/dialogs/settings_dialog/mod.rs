@@ -142,6 +142,12 @@ impl SettingsDialogState {
                     SettingsCategory::Keybinds => {
                         // self.temp_options.reset_keybindings();
                     }
+                    SettingsCategory::Protocols => {
+                        let mut options = self.temp_options.lock();
+                        options.transfer_protocols = crate::data::default_protocols();
+                        drop(options);
+                        self.selected_protocol_index = 0;
+                    }
                     _ => {}
                 }
                 None
@@ -487,6 +493,17 @@ impl SettingsDialogState {
                 let options = self.temp_options.lock();
                 let is_default = options.download_path.is_empty() && options.capture_path.is_empty();
                 drop(options);
+                Some(icy_engine_gui::ui::restore_defaults_button(
+                    !is_default,
+                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
+                ))
+            }
+            SettingsCategory::Protocols => {
+                let options = self.temp_options.lock();
+                let current_protocols = options.transfer_protocols.clone();
+                drop(options);
+                let default_protocols = crate::data::default_protocols();
+                let is_default = current_protocols == default_protocols;
                 Some(icy_engine_gui::ui::restore_defaults_button(
                     !is_default,
                     crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
