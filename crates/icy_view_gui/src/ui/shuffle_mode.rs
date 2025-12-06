@@ -233,12 +233,15 @@ impl ShuffleMode {
             return None;
         }
 
-        // Cancel current preload since we're moving on
-        self.cancel_preload();
+        // NOTE: Don't cancel preload here! The preloaded item is for the NEXT item,
+        // which becomes the current item after we advance. The caller will use
+        // take_preloaded_if_matches() to get the preloaded data if it matches.
 
         self.current_position += 1;
         if self.current_position >= self.item_indices.len() {
-            // Reshuffle and start over
+            // Reshuffle and start over - now we DO need to cancel preload
+            // because the preloaded item was for the old "next" position
+            self.cancel_preload();
             fastrand::shuffle(&mut self.item_indices);
             self.current_position = 0;
         }
