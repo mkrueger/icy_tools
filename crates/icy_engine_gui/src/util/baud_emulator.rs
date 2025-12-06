@@ -1,73 +1,60 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use icy_parser_core::BaudEmulation;
 
+const BITS_PER_BYTE: u32 = 10; // 8 data + 1 start + 1 stop bit
+
+/// Baud rate emulator that controls how many bytes can be processed
+/// based on elapsed time, simulating serial line speeds.
 #[derive(Clone, Debug)]
 pub struct BaudEmulator {
     pub baud_emulation: BaudEmulation,
-    last_byte_time: Instant,
-    bytes_per_second: f64,
-    buffer: Vec<u8>,
+    /// Baud rate in bits per second (0 = no limit)
+    baud_rate: u32,
+    /// Last time bytes were sent
+    last_send_time: Instant,
 }
 
 impl BaudEmulator {
     pub fn new() -> Self {
         Self {
             baud_emulation: BaudEmulation::Off,
-            last_byte_time: Instant::now(),
-            bytes_per_second: 0.0,
-            buffer: Vec::new(),
+            baud_rate: 0,
+            last_send_time: Instant::now(),
         }
     }
 
     pub fn set_baud_rate(&mut self, baud: BaudEmulation) {
-        self.bytes_per_second = match baud {
-            BaudEmulation::Off => 0.0,                     // No limit
-            BaudEmulation::Rate(bps) => bps as f64 / 10.0, // Convert bits to bytes (8 data + 1 start + 1 stop bit)
-        };
+        self.baud_rate = baud.get_baud_rate();
         self.baud_emulation = baud;
+        self.last_send_time = Instant::now();
     }
 
-    pub fn emulate(&mut self, data: Vec<u8>) -> Vec<u8> {
-        if self.bytes_per_second == 0.0 {
-            // No emulation, return all data immediately
-            return data;
+    /// Calculate how many bytes can be sent based on elapsed time.
+    /// Returns the number of bytes that should be processed from the input data.
+    ///
+    /// Usage: Process `data[..bytes_to_process]` and call this again for remaining data.
+    pub fn calculate_bytes_to_send(&mut self, available_bytes: usize) -> usize {
+        // No emulation - process all immediately
+        if self.baud_rate == 0 {
+            return available_bytes;
         }
 
-        // Add to buffer
-        self.buffer.extend_from_slice(&data);
-
-        // Calculate how many bytes we can send based on elapsed time
         let now = Instant::now();
-        let elapsed = now.duration_since(self.last_byte_time);
-        let elapsed_secs = elapsed.as_secs_f64();
+        let bytes_per_sec = self.baud_rate / BITS_PER_BYTE;
+        let elapsed_ms = now.duration_since(self.last_send_time).as_millis() as u32;
+        let bytes_allowed = (bytes_per_sec.saturating_mul(elapsed_ms)) / 1000;
 
-        let bytes_allowed = (elapsed_secs * self.bytes_per_second) as usize;
+        let bytes_to_send = (bytes_allowed as usize).min(available_bytes);
 
-        if bytes_allowed == 0 {
-            // Not enough time has passed to send any bytes
-            return Vec::new();
-        }
-
-        // Take the allowed bytes from the buffer
-        let bytes_to_send = bytes_allowed.min(self.buffer.len());
-        let result: Vec<u8> = self.buffer.drain(..bytes_to_send).collect();
-
-        // Update the last byte time based on how many bytes we sent
         if bytes_to_send > 0 {
-            let time_consumed = Duration::from_secs_f64(bytes_to_send as f64 / self.bytes_per_second);
-            self.last_byte_time = self.last_byte_time + time_consumed;
+            self.last_send_time = now;
         }
 
-        result
-    }
-
-    pub fn has_buffered_data(&self) -> bool {
-        !self.buffer.is_empty()
+        bytes_to_send
     }
 
     pub fn reset(&mut self) {
-        self.buffer.clear();
-        self.last_byte_time = Instant::now();
+        self.last_send_time = Instant::now();
     }
 }

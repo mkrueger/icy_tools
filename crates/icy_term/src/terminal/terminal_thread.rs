@@ -288,6 +288,8 @@ impl TerminalThread {
 
     async fn run(&mut self) {
         let mut read_buffer = vec![0u8; 64 * 1024];
+        let mut pending_data: Vec<u8> = Vec::new();
+        let mut pending_offset: usize = 0;
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(16)); // ~60fps
         let mut poll_interval = 0;
         loop {
@@ -302,12 +304,22 @@ impl TerminalThread {
                     // Check if script finished
                     self.check_script_finished();
 
-                    // Process any buffered data from baud emulation first
-                    if self.baud_emulator.has_buffered_data() {
-                        let data = self.baud_emulator.emulate(Vec::new());
-                        if !data.is_empty() {
-                            self.write_to_capture(&data).await;
-                            self.process_data(&data).await;
+                    // Process pending data with baud emulation
+                    if pending_offset < pending_data.len() {
+                        let remaining = pending_data.len() - pending_offset;
+                        let bytes_to_send = self.baud_emulator.calculate_bytes_to_send(remaining);
+                        if bytes_to_send > 0 {
+                            let end = pending_offset + bytes_to_send;
+                            let chunk = &pending_data[pending_offset..end];
+                            self.write_to_capture(chunk).await;
+                            self.process_data(chunk).await;
+                            pending_offset = end;
+
+                            // Clear buffer when fully processed
+                            if pending_offset >= pending_data.len() {
+                                pending_data.clear();
+                                pending_offset = 0;
+                            }
                         }
                     }
 
@@ -363,7 +375,12 @@ impl TerminalThread {
                             poll_interval += 1;
                         }
 
-                        let _ = self.read_connection(&mut read_buffer).await;
+                        // Read new data and add to pending buffer
+                        if let Some(new_data) = self.read_connection_raw(&mut read_buffer).await {
+                            if !new_data.is_empty() {
+                                pending_data.extend_from_slice(&new_data);
+                            }
+                        }
                     }
                 }
             }
@@ -897,29 +914,21 @@ impl TerminalThread {
         Err("Timeout waiting for modem response".into())
     }
 
-    async fn read_connection(&mut self, buffer: &mut [u8]) -> Vec<u8> {
+    /// Read raw data from connection without processing or baud emulation
+    async fn read_connection_raw(&mut self, buffer: &mut [u8]) -> Option<Vec<u8>> {
         if let Some(conn) = &mut self.connection {
             match conn.try_read(buffer).await {
-                Ok(0) => Vec::new(),
-                Ok(size) => {
-                    let mut data = buffer[..size].to_vec();
-                    // Apply baud emulation if enabled
-                    data = self.baud_emulator.emulate(data);
-                    if !data.is_empty() {
-                        self.write_to_capture(&data).await;
-                        self.process_data(&data).await;
-                    }
-                    data
-                }
+                Ok(0) => None,
+                Ok(size) => Some(buffer[..size].to_vec()),
                 Err(e) => {
                     error!("Connection read error: {e}");
                     self.disconnect().await;
                     self.process_data(format!("\n\r{}", e).as_bytes()).await;
-                    Vec::new()
+                    None
                 }
             }
         } else {
-            Vec::new()
+            None
         }
     }
 

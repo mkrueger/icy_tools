@@ -1146,11 +1146,87 @@ pub trait CommandParser: Send {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink);
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum BaudEmulation {
     #[default]
     Off,
     Rate(u32),
+}
+
+impl serde::Serialize for BaudEmulation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            BaudEmulation::Off => serializer.serialize_str("Off"),
+            BaudEmulation::Rate(rate) => serializer.serialize_u32(*rate),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BaudEmulation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BaudEmulationVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for BaudEmulationVisitor {
+            type Value = BaudEmulation;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("\"Off\", a baud rate number, or legacy format like \"Rate(9600)\"")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "Off" | "off" | "OFF" => Ok(BaudEmulation::Off),
+                    s if s.starts_with("Rate(") && s.ends_with(')') => {
+                        // Parse legacy format: "Rate(9600)"
+                        let num_str = &s[5..s.len() - 1];
+                        num_str
+                            .parse::<u32>()
+                            .map(BaudEmulation::Rate)
+                            .map_err(|_| E::custom(format!("invalid baud rate in Rate(): {}", num_str)))
+                    }
+                    s => {
+                        // Try to parse as a number string
+                        s.parse::<u32>()
+                            .map(|rate| if rate == 0 { BaudEmulation::Off } else { BaudEmulation::Rate(rate) })
+                            .map_err(|_| E::custom(format!("invalid baud emulation value: {}", s)))
+                    }
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if value == 0 {
+                    Ok(BaudEmulation::Off)
+                } else {
+                    Ok(BaudEmulation::Rate(value as u32))
+                }
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if value <= 0 {
+                    Ok(BaudEmulation::Off)
+                } else {
+                    Ok(BaudEmulation::Rate(value as u32))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(BaudEmulationVisitor)
+    }
 }
 
 impl Display for BaudEmulation {

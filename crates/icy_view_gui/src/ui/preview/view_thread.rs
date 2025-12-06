@@ -724,18 +724,23 @@ impl ViewThread {
         };
 
         let chunk = if load.file_position < load.file_data.len() {
-            let remaining = &load.file_data[load.file_position..];
-            let actual_chunk_size = remaining.len().min(chunk_size);
-            let chunk = remaining[..actual_chunk_size].to_vec();
-            load.file_position += actual_chunk_size;
+            let remaining = load.file_data.len() - load.file_position;
+            let actual_chunk_size = remaining.min(chunk_size);
 
-            if self.baud_emulator.baud_emulation == BaudEmulation::Off {
-                chunk
+            // Apply baud emulation to determine how many bytes we can actually send
+            let bytes_to_send = if self.baud_emulator.baud_emulation == BaudEmulation::Off {
+                actual_chunk_size
             } else {
-                self.baud_emulator.emulate(chunk)
+                self.baud_emulator.calculate_bytes_to_send(actual_chunk_size)
+            };
+
+            if bytes_to_send == 0 {
+                return; // Not enough time has passed, wait for next tick
             }
-        } else if self.baud_emulator.has_buffered_data() {
-            self.baud_emulator.emulate(Vec::new())
+
+            let chunk = load.file_data[load.file_position..load.file_position + bytes_to_send].to_vec();
+            load.file_position += bytes_to_send;
+            chunk
         } else {
             load.is_playing = false;
             let auto_scroll = load.auto_scroll_enabled;
