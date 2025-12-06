@@ -441,9 +441,9 @@ impl FileListView {
             width,
             theme_colors,
             filter,
-            sauce_info.map(|s| s.title.as_str()),
-            sauce_info.map(|s| s.author.as_str()),
-            sauce_info.map(|s| s.group.as_str()),
+            sauce_info.map(|s| &*s.title),
+            sauce_info.map(|s| &*s.author),
+            sauce_info.map(|s| &*s.group),
         );
         let rgba_arc = Arc::new(rgba);
 

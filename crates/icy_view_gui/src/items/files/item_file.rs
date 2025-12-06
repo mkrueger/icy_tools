@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use icy_sauce::SauceRecord;
+use tokio_util::sync::CancellationToken;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -70,5 +72,16 @@ impl Item for ItemFile {
             size: self.size,
             modified: self.modified,
         })
+    }
+
+
+    /// Get SAUCE info for this item (async for file I/O)
+    /// Returns the SAUCE record if the file has one
+    async fn get_sauce_info(&self, _cancel_token: &CancellationToken) -> Option<SauceRecord> {
+        // Default implementation reads data and extracts SAUCE
+        if let Some(data) = self.read_data().await {
+            return SauceRecord::from_bytes(&data).ok().flatten();
+        }
+        None
     }
 }

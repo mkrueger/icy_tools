@@ -320,6 +320,8 @@ impl MainWindow {
                 // Update history if path changed - use display_path for both local and web paths
                 let new_display_path = self.file_browser.get_display_path();
                 if old_display_path != new_display_path {
+                    // Reset SAUCE loader for new directory
+                    self.reset_sauce_loader_for_navigation();
                     // Record the navigation as a new history point
                     let point = self.current_history_point();
                     self.history.navigate_to(point);
@@ -430,6 +432,8 @@ impl MainWindow {
                         self.history.navigate_to(current_point);
 
                         self.file_browser.update(FileBrowserMessage::ParentFolder);
+                        // Reset SAUCE loader after navigation (so new files are available)
+                        self.reset_sauce_loader_for_navigation();
                         // Update path input with the new display path
                         let display_path = self.file_browser.get_display_path();
                         self.navigation_bar.set_path_input(display_path);
@@ -443,6 +447,8 @@ impl MainWindow {
                         self.preview.cancel_loading();
 
                         self.file_browser.update(FileBrowserMessage::Refresh);
+                        // Reset SAUCE loader after refresh (directory contents may have changed)
+                        self.reset_sauce_loader_for_navigation();
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
@@ -482,6 +488,8 @@ impl MainWindow {
                             self.file_browser.navigate_to(home.clone());
                             self.navigation_bar.set_path_input(home.to_string_lossy().replace('\\', "/"));
                         }
+                        // Reset SAUCE loader after navigation
+                        self.reset_sauce_loader_for_navigation();
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
@@ -527,6 +535,8 @@ impl MainWindow {
                                 // Navigate to 16colors
                                 self.navigation_bar.set_16colors_mode(true);
                                 self.file_browser.navigate_to_web_path(web_path);
+                                // Reset SAUCE loader after navigation
+                                self.reset_sauce_loader_for_navigation();
                                 // Update path input to reflect the navigated path
                                 let display = self.file_browser.get_display_path();
                                 self.navigation_bar.set_path_input(display);
@@ -542,6 +552,8 @@ impl MainWindow {
                                     // Scenario 1: Directory - navigate to it
                                     self.navigation_bar.set_16colors_mode(false);
                                     self.file_browser.navigate_to(path.clone());
+                                    // Reset SAUCE loader after navigation
+                                    self.reset_sauce_loader_for_navigation();
                                     self.navigation_bar.set_path_input(path.to_string_lossy().replace('\\', "/"));
                                     let point = self.current_history_point();
                                     self.history.navigate_to(point);
@@ -551,6 +563,8 @@ impl MainWindow {
                                         // Scenario 2: Archive - treat as directory, navigate into it
                                         self.navigation_bar.set_16colors_mode(false);
                                         self.file_browser.navigate_to(path.clone());
+                                        // Reset SAUCE loader after navigation
+                                        self.reset_sauce_loader_for_navigation();
                                         self.navigation_bar.set_path_input(path.to_string_lossy().replace('\\', "/"));
                                         let point = self.current_history_point();
                                         self.history.navigate_to(point);
@@ -559,6 +573,8 @@ impl MainWindow {
                                         if let Some(parent) = path.parent() {
                                             self.navigation_bar.set_16colors_mode(false);
                                             self.file_browser.navigate_to(parent.to_path_buf());
+                                            // Reset SAUCE loader after navigation
+                                            self.reset_sauce_loader_for_navigation();
                                             self.navigation_bar.set_path_input(parent.to_string_lossy().replace('\\', "/"));
 
                                             // Select the file by its name
@@ -1681,6 +1697,25 @@ impl MainWindow {
         }
     }
 
+    /// Reset the SAUCE loader when navigating to a new directory
+    /// Cancels pending loads, clears cache, resets the loader, and restarts loading if SAUCE mode is on
+    fn reset_sauce_loader_for_navigation(&mut self) {
+        // Cancel any pending SAUCE loads
+        if let Some(ref loader) = self.sauce_loader {
+            loader.cancel_all();
+        }
+        // Clear the SAUCE cache (via FileBrowser's shared reference)
+        self.file_browser.clear_sauce_cache();
+        // Reset the loader for new loads
+        if let Some(ref mut loader) = self.sauce_loader {
+            loader.reset();
+        }
+        // Restart SAUCE loading if SAUCE mode is enabled
+        if self.sauce_mode() {
+            self.start_sauce_loading();
+        }
+    }
+
     /// Collect all displayable files from current container for shuffle mode
     /// Collect indices of all displayable items for shuffle mode
     fn collect_shuffle_indices(&self) -> Vec<usize> {
@@ -2460,6 +2495,9 @@ impl MainWindow {
         self.preview.cancel_loading();
         self.current_file = None;
         self.folder_preview_path = None;
+
+        // Reset SAUCE loader for new directory
+        self.reset_sauce_loader_for_navigation();
 
         // 1. Switch provider if needed
         let is_web = point.provider == ProviderType::Web;

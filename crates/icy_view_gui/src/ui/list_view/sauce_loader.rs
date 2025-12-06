@@ -2,49 +2,42 @@
 //!
 //! This module provides async loading of SAUCE information for files in the list view.
 //! Similar to the thumbnail loader, it uses background tasks to avoid blocking the UI.
-//! Uses string interning for memory efficiency since author/group names are often repeated.
+//! Uses Arc<str> for zero-cost cloning of SAUCE strings.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::debug;
 use parking_lot::RwLock;
-use string_interner::DefaultSymbol;
-use string_interner::backend::StringBackend;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::Item;
 
-/// Type alias for our string interner
-type SauceInterner = string_interner::StringInterner<StringBackend<DefaultSymbol>>;
-
-/// Interned SAUCE information - uses symbols instead of strings for memory efficiency
-#[derive(Clone, Copy, Debug, Default)]
-pub struct InternedSauceInfo {
-    /// Title symbol (None if empty)
-    pub title: Option<DefaultSymbol>,
-    /// Author symbol (None if empty)
-    pub author: Option<DefaultSymbol>,
-    /// Group symbol (None if empty)
-    pub group: Option<DefaultSymbol>,
-}
-
-/// Extracted SAUCE information that is Send + Sync (for external use)
+/// Cached SAUCE information using Arc<str> for zero-cost cloning
 #[derive(Clone, Debug, Default)]
 pub struct SauceInfo {
-    /// Title from SAUCE record
-    pub title: String,
-    /// Author from SAUCE record
-    pub author: String,
-    /// Group from SAUCE record
-    pub group: String,
+    /// Title from SAUCE record (empty Arc<str> if none)
+    pub title: Arc<str>,
+    /// Author from SAUCE record (empty Arc<str> if none)
+    pub author: Arc<str>,
+    /// Group from SAUCE record (empty Arc<str> if none)
+    pub group: Arc<str>,
 }
 
 impl SauceInfo {
     /// Check if this SAUCE info has any content
     pub fn is_empty(&self) -> bool {
         self.title.is_empty() && self.author.is_empty() && self.group.is_empty()
+    }
+
+    /// Create from string slices
+    pub fn new(title: &str, author: &str, group: &str) -> Self {
+        Self {
+            title: Arc::from(title),
+            author: Arc::from(author),
+            group: Arc::from(group),
+        }
     }
 }
 
@@ -63,12 +56,10 @@ pub struct SauceRequest {
     pub item: Arc<dyn Item>,
 }
 
-/// Cache for SAUCE information with string interning
+/// Cache for SAUCE information using Arc<str> for zero-cost cloning
 pub struct SauceCache {
-    /// String interner for deduplicating strings
-    interner: SauceInterner,
-    /// Cached SAUCE info (path -> InternedSauceInfo or None if no SAUCE)
-    cache: HashMap<String, Option<InternedSauceInfo>>,
+    /// Cached SAUCE info (path -> SauceInfo or None if no SAUCE)
+    cache: HashMap<String, Option<SauceInfo>>,
     /// Paths that are currently being loaded
     pending: std::collections::HashSet<String>,
 }
@@ -76,34 +67,17 @@ pub struct SauceCache {
 impl SauceCache {
     pub fn new() -> Self {
         Self {
-            interner: SauceInterner::default(),
             cache: HashMap::new(),
             pending: std::collections::HashSet::new(),
         }
     }
 
-    /// Intern a string, returning None if the string is empty
-    fn intern_if_not_empty(&mut self, s: &str) -> Option<DefaultSymbol> {
-        if s.is_empty() { None } else { Some(self.interner.get_or_intern(s)) }
-    }
-
-    /// Resolve a symbol to a string
-    pub fn resolve(&self, symbol: DefaultSymbol) -> Option<&str> {
-        self.interner.resolve(symbol)
-    }
-
-    /// Get cached SAUCE info for a path and resolve to SauceInfo
+    /// Get cached SAUCE info for a path - zero-cost clone via Arc<str>
     pub fn get(&self, path: &String) -> Option<Option<SauceInfo>> {
-        self.cache.get(path).map(|opt| {
-            opt.map(|interned| SauceInfo {
-                title: interned.title.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
-                author: interned.author.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
-                group: interned.group.and_then(|s| self.resolve(s)).unwrap_or("").to_string(),
-            })
-        })
+        self.cache.get(path).cloned()
     }
 
-    /// Check if a path has cached SAUCE info (without resolving)
+    /// Check if a path has cached SAUCE info
     pub fn contains(&self, path: &String) -> bool {
         self.cache.contains_key(path)
     }
@@ -121,25 +95,18 @@ impl SauceCache {
     /// Store SAUCE result and remove from pending
     pub fn store(&mut self, path: String, sauce: Option<SauceInfo>) {
         self.pending.remove(&path);
-        let interned = sauce.map(|info| InternedSauceInfo {
-            title: self.intern_if_not_empty(&info.title),
-            author: self.intern_if_not_empty(&info.author),
-            group: self.intern_if_not_empty(&info.group),
-        });
-        self.cache.insert(path, interned);
+        self.cache.insert(path, sauce);
     }
 
     /// Clear all cached data
     pub fn clear(&mut self) {
         self.cache.clear();
         self.pending.clear();
-        // Note: We don't clear the interner - symbols from previous sessions
-        // will be reused if the same strings appear again
     }
 
     /// Get statistics about the cache
-    pub fn stats(&self) -> (usize, usize) {
-        (self.cache.len(), self.interner.len())
+    pub fn stats(&self) -> usize {
+        self.cache.len()
     }
 }
 
@@ -234,12 +201,8 @@ impl SauceLoader {
                 return;
             }
 
-            // Extract relevant fields into SauceInfo
-            let sauce_info = sauce_record.map(|record| SauceInfo {
-                title: record.title().to_string(),
-                author: record.author().to_string(),
-                group: record.group().to_string(),
-            });
+            // Extract relevant fields into SauceInfo using Arc<str> for zero-cost cloning
+            let sauce_info = sauce_record.map(|record| SauceInfo::new(&record.title().to_string(), &record.author().to_string(), &record.group().to_string()));
 
             // Store in cache
             cache.write().store(path.clone(), sauce_info.clone());

@@ -428,6 +428,13 @@ impl FileBrowser {
         self.sauce_cache = Some(cache);
     }
 
+    /// Clear the SAUCE cache (called when directory changes)
+    pub fn clear_sauce_cache(&self) {
+        if let Some(ref cache) = self.sauce_cache {
+            cache.write().clear();
+        }
+    }
+
     /// Re-sort the files according to the current sort order
     fn resort_files(&mut self) {
         sort_items(&mut self.files, self.sort_order);
