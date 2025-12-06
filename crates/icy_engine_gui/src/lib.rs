@@ -32,6 +32,9 @@ pub use terminal_view::*;
 // Re-export mouse event types from icy_engine
 pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
 
+// Re-export ScrollDelta for ZoomMessage
+pub use iced::mouse::ScrollDelta;
+
 pub mod key_map;
 pub mod settings;
 
@@ -235,6 +238,82 @@ impl ScalingMode {
             }
         }
     }
+
+    /// Apply a zoom message and return the new scaling mode
+    /// This is the central zoom handling logic for all applications
+    pub fn apply_zoom(&self, msg: ZoomMessage, current_zoom: f32, use_integer_scaling: bool) -> ScalingMode {
+        match msg {
+            ZoomMessage::In => {
+                let new_zoom = Self::zoom_in(current_zoom, use_integer_scaling);
+                ScalingMode::Manual(new_zoom)
+            }
+            ZoomMessage::Out => {
+                let new_zoom = Self::zoom_out(current_zoom, use_integer_scaling);
+                ScalingMode::Manual(new_zoom)
+            }
+            ZoomMessage::Reset => ScalingMode::Manual(1.0),
+            ZoomMessage::AutoFit => ScalingMode::Auto,
+            ZoomMessage::Set(zoom) => ScalingMode::Manual(Self::clamp_zoom(zoom)),
+            ZoomMessage::Wheel(delta) => {
+                // Extract y-axis delta and determine zoom behavior
+                let (y_delta, is_smooth) = match delta {
+                    ScrollDelta::Lines { y, .. } => {
+                        // Discrete scroll wheel - use sign for step-based zoom
+                        let sign = if y > 0.0 {
+                            1.0
+                        } else if y < 0.0 {
+                            -1.0
+                        } else {
+                            0.0
+                        };
+                        (sign, false)
+                    }
+                    ScrollDelta::Pixels { y, .. } => {
+                        // Pixel-based scroll (macOS trackpad) - smooth zooming
+                        (y / 200.0, true)
+                    }
+                };
+
+                if y_delta == 0.0 {
+                    return *self; // No change
+                }
+
+                let new_zoom = if is_smooth {
+                    // Smooth scroll - apply delta directly
+                    Self::clamp_zoom(current_zoom + y_delta)
+                } else {
+                    // Discrete scroll wheel - use step-based zoom
+                    if y_delta > 0.0 {
+                        Self::zoom_in(current_zoom, use_integer_scaling)
+                    } else {
+                        Self::zoom_out(current_zoom, use_integer_scaling)
+                    }
+                };
+                ScalingMode::Manual(new_zoom)
+            }
+        }
+    }
+}
+
+/// Unified zoom message for all icy_tools applications
+/// Used by ScalingMode::apply_zoom() for consistent zoom handling
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ZoomMessage {
+    /// Zoom in by one step (respects integer scaling if enabled)
+    In,
+    /// Zoom out by one step (respects integer scaling if enabled)
+    Out,
+    /// Reset zoom to 100% (1:1 pixel mapping)
+    Reset,
+    /// Auto-fit content to viewport
+    AutoFit,
+    /// Set specific zoom level (1.0 = 100%)
+    Set(f32),
+    /// Mouse wheel zoom (raw delta from Cmd/Ctrl+scroll)
+    /// Positive delta = zoom in, negative = zoom out
+    /// |delta| >= 1.0: discrete scroll wheel (use step-based zoom)
+    /// |delta| < 1.0: smooth trackpad (apply delta directly)
+    Wheel(ScrollDelta),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

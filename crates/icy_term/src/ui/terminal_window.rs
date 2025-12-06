@@ -71,13 +71,7 @@ impl TerminalWindow {
             icy_engine_gui::Message::RipCommand(clear_screen, cmd) => Message::RipCommand(clear_screen, cmd),
             icy_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
             icy_engine_gui::Message::ScrollViewport(dx, dy) => Message::ScrollViewport(dx, dy),
-            icy_engine_gui::Message::ZoomWheel(delta) => {
-                if delta > 0.0 {
-                    Message::ZoomIn
-                } else {
-                    Message::ZoomOut
-                }
-            }
+            icy_engine_gui::Message::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
             icy_engine_gui::Message::StartSelection(sel) => Message::StartSelection(sel),
             icy_engine_gui::Message::UpdateSelection(pos) => Message::UpdateSelection(pos),
             icy_engine_gui::Message::EndSelection => Message::EndSelection,

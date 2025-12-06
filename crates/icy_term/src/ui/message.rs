@@ -106,9 +106,6 @@ pub enum Message {
         ansi_music: MusicOption,
     },
 
-    // Zoom
-    ZoomIn,
-    ZoomOut,
-    ZoomReset,
-    ZoomAutoFit,
+    // Zoom (unified)
+    Zoom(icy_engine_gui::ZoomMessage),
 }

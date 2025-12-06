@@ -11,14 +11,8 @@ use iced::advanced::widget::{self, Widget};
 use iced::mouse::ScrollDelta;
 use iced::widget::{container, image as iced_image, stack};
 use iced::{Element, Event, Length, Rectangle, Size, Theme, mouse};
-use icy_engine_gui::{HorizontalScrollbarOverlay, ScrollbarInfo, ScrollbarOverlay, ScrollbarState, Viewport};
+use icy_engine_gui::{HorizontalScrollbarOverlay, ScalingMode, ScrollbarInfo, ScrollbarOverlay, ScrollbarState, Viewport, ZoomMessage};
 
-/// Minimum zoom level (25%)
-pub const MIN_ZOOM: f32 = 0.25;
-/// Maximum zoom level (800%)
-pub const MAX_ZOOM: f32 = 8.0;
-/// Zoom step for each zoom in/out action (25%)
-pub const ZOOM_STEP: f32 = 0.25;
 /// Arrow key scroll step in pixels
 const ARROW_SCROLL_STEP: f32 = 50.0;
 /// Page scroll factor (percentage of viewport)
@@ -39,16 +33,8 @@ pub enum ImageViewerMessage {
     ScrollYTo(f32),
     /// Scroll horizontal to absolute position in pixels (scrollbar)
     ScrollXTo(f32),
-    /// Zoom in
-    ZoomIn,
-    /// Zoom out
-    ZoomOut,
-    /// Zoom to fit
-    ZoomFit,
-    /// Zoom to 100%
-    Zoom100,
-    /// Set specific zoom level
-    SetZoom(f32),
+    /// Unified zoom message
+    Zoom(ZoomMessage),
     /// Vertical scrollbar hover state changed
     VScrollbarHovered(bool),
     /// Horizontal scrollbar hover state changed
@@ -131,7 +117,7 @@ impl ImageViewer {
     /// Set zoom level
     pub fn set_zoom(&mut self, zoom: f32) {
         let old_zoom = self.zoom;
-        self.zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+        self.zoom = ScalingMode::clamp_zoom(zoom);
 
         // Adjust scroll to keep center point stable
         if old_zoom != self.zoom {
@@ -150,12 +136,12 @@ impl ImageViewer {
 
     /// Zoom in
     pub fn zoom_in(&mut self) {
-        self.set_zoom(self.zoom + ZOOM_STEP);
+        self.set_zoom(ScalingMode::zoom_in(self.zoom, false));
     }
 
     /// Zoom out
     pub fn zoom_out(&mut self) {
-        self.set_zoom(self.zoom - ZOOM_STEP);
+        self.set_zoom(ScalingMode::zoom_out(self.zoom, false));
     }
 
     /// Zoom to fit viewport
@@ -165,7 +151,7 @@ impl ImageViewer {
         if vp_w > 0.0 && vp_h > 0.0 {
             let scale_x = vp_w / self.image_size.0 as f32;
             let scale_y = vp_h / self.image_size.1 as f32;
-            self.zoom = scale_x.min(scale_y).clamp(MIN_ZOOM, MAX_ZOOM);
+            self.zoom = ScalingMode::clamp_zoom(scale_x.min(scale_y));
             self.update_content_size();
             self.viewport.scroll_x_to(0.0);
             self.viewport.scroll_y_to(0.0);
@@ -353,11 +339,40 @@ impl ImageViewer {
             ImageViewerMessage::ScrollToSmooth(x, y) => self.scroll_to_smooth(x, y),
             ImageViewerMessage::ScrollYTo(y) => self.scroll_y_to(y),
             ImageViewerMessage::ScrollXTo(x) => self.scroll_x_to(x),
-            ImageViewerMessage::ZoomIn => self.zoom_in(),
-            ImageViewerMessage::ZoomOut => self.zoom_out(),
-            ImageViewerMessage::ZoomFit => self.zoom_fit(),
-            ImageViewerMessage::Zoom100 => self.zoom_100(),
-            ImageViewerMessage::SetZoom(z) => self.set_zoom(z),
+            ImageViewerMessage::Zoom(zoom_msg) => {
+                match zoom_msg {
+                    ZoomMessage::In => self.zoom_in(),
+                    ZoomMessage::Out => self.zoom_out(),
+                    ZoomMessage::Reset => self.zoom_100(),
+                    ZoomMessage::AutoFit => self.zoom_fit(),
+                    ZoomMessage::Set(z) => self.set_zoom(z),
+                    ZoomMessage::Wheel(delta) => {
+                        // Extract y-axis delta and determine zoom behavior
+                        let (y_delta, is_smooth) = match delta {
+                            ScrollDelta::Lines { y, .. } => {
+                                let sign = if y > 0.0 {
+                                    1.0
+                                } else if y < 0.0 {
+                                    -1.0
+                                } else {
+                                    0.0
+                                };
+                                (sign, false)
+                            }
+                            ScrollDelta::Pixels { y, .. } => (y / 200.0, true),
+                        };
+                        if y_delta != 0.0 {
+                            if is_smooth {
+                                self.set_zoom(self.zoom + y_delta)
+                            } else if y_delta > 0.0 {
+                                self.zoom_in()
+                            } else {
+                                self.zoom_out()
+                            }
+                        }
+                    }
+                }
+            }
             ImageViewerMessage::VScrollbarHovered(h) => {
                 self.scrollbar.set_hovered(h);
             }
@@ -556,18 +571,11 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         match event {
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 if cursor.is_over(bounds) {
-                    // Check if Ctrl is held for zooming
-                    let ctrl_pressed = icy_engine_gui::is_ctrl_pressed();
-                    if ctrl_pressed {
-                        let zoom_delta = match delta {
-                            ScrollDelta::Lines { y, .. } => *y,
-                            ScrollDelta::Pixels { y, .. } => *y / 100.0,
-                        };
-                        if zoom_delta > 0.0 {
-                            shell.publish((self.on_message)(ImageViewerMessage::ZoomIn));
-                        } else if zoom_delta < 0.0 {
-                            shell.publish((self.on_message)(ImageViewerMessage::ZoomOut));
-                        }
+                    // Check if Cmd/Ctrl is held for zooming (Cmd on macOS, Ctrl on Windows/Linux)
+                    let command_pressed = icy_engine_gui::is_command_pressed();
+                    if command_pressed {
+                        // Pass the scroll delta directly to ZoomMessage::Wheel
+                        shell.publish((self.on_message)(ImageViewerMessage::Zoom(ZoomMessage::Wheel(*delta))));
                         return;
                     }
 

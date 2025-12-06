@@ -34,6 +34,11 @@ impl HelpDialog {
                         fl!(LANGUAGE_LOADER, "help-desc-parent"),
                     ),
                     HelpShortcut::new(
+                        if is_macos() { "⌥ ↑".to_string() } else { "Alt+↑".to_string() },
+                        fl!(LANGUAGE_LOADER, "help-action-parent"),
+                        fl!(LANGUAGE_LOADER, "help-desc-parent"),
+                    ),
+                    HelpShortcut::new(
                         if is_macos() { "⌥ ←".to_string() } else { "Alt+←".to_string() },
                         fl!(LANGUAGE_LOADER, "help-action-back"),
                         fl!(LANGUAGE_LOADER, "help-desc-back"),

@@ -34,11 +34,12 @@ impl<'a> CRTShaderProgram<'a> {
                     let ctrl = mods.control();
                     let alt = mods.alt();
                     let shift = mods.shift();
+                    let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
                     state.alt_pressed = alt;
                     state.ctrl_pressed = ctrl;
                     state.shift_pressed = shift;
                     // Also store globally for cross-widget access
-                    crate::set_global_modifiers(ctrl, alt, shift);
+                    crate::set_global_modifiers(ctrl, alt, shift, command);
                 }
                 _ => {}
             }
@@ -321,16 +322,13 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::WheelScrolled { delta } => {
-                    // Check if Ctrl is held for zooming - use global state as it survives widget resets
-                    let ctrl_pressed = crate::is_ctrl_pressed();
-                    if ctrl_pressed {
-                        let zoom_delta = match delta {
-                            mouse::ScrollDelta::Lines { y, .. } => *y,
-                            mouse::ScrollDelta::Pixels { y, .. } => *y / 100.0,
-                        };
-                        if zoom_delta != 0.0 {
-                            return Some(iced::widget::Action::publish(Message::ZoomWheel(zoom_delta)));
-                        }
+                    // Check if Cmd/Ctrl is held for zooming - use global state as it survives widget resets
+                    // Uses is_command_pressed() which returns Cmd on macOS, Ctrl on Windows/Linux
+                    let command_pressed = crate::is_command_pressed();
+                    if command_pressed {
+                        // Pass the scroll delta directly to ZoomMessage::Wheel
+                        // The apply_zoom method will handle discrete vs smooth scroll
+                        return Some(iced::widget::Action::publish(Message::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     } else if mouse_tracking_enabled {
                         // Send wheel events as button press events
                         if let Some(ref ms) = mouse_state {

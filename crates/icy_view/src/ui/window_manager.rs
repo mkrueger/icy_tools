@@ -224,14 +224,15 @@ impl WindowManager {
                         let ctrl = mods.control();
                         let alt = mods.alt();
                         let shift = mods.shift();
+                        let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
                         // Also store globally for cross-widget access
-                        icy_engine_gui::set_global_modifiers(ctrl, alt, shift);
+                        icy_engine_gui::set_global_modifiers(ctrl, alt, shift, command);
                         None
                     }
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Alt+Number to focus window
-                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
+                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.command() {
                             if let keyboard::Key::Character(s) = &key {
                                 if let Some(digit) = s.chars().next() {
                                     if digit.is_ascii_digit() {
@@ -257,9 +258,24 @@ impl WindowManager {
                                     }
                                     "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
                                     // Zoom shortcuts: Ctrl+Plus/Minus/0
-                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomIn))),
-                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomOut))),
-                                    "0" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Preview(PreviewMessage::ZoomReset))),
+                                    "+" | "=" => {
+                                        return Some(WindowManagerMessage::WindowMessage(
+                                            window_id,
+                                            Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In)),
+                                        ));
+                                    }
+                                    "-" => {
+                                        return Some(WindowManagerMessage::WindowMessage(
+                                            window_id,
+                                            Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out)),
+                                        ));
+                                    }
+                                    "0" => {
+                                        return Some(WindowManagerMessage::WindowMessage(
+                                            window_id,
+                                            Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset)),
+                                        ));
+                                    }
                                     _ => {}
                                 }
                             }

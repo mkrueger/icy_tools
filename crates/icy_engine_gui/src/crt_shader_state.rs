@@ -19,12 +19,17 @@ pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 static GLOBAL_CTRL_PRESSED: AtomicBool = AtomicBool::new(false);
 static GLOBAL_ALT_PRESSED: AtomicBool = AtomicBool::new(false);
 static GLOBAL_SHIFT_PRESSED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_COMMAND_PRESSED: AtomicBool = AtomicBool::new(false);
 
 /// Set global modifier state (called from keyboard events)
-pub fn set_global_modifiers(ctrl: bool, alt: bool, shift: bool) {
+/// `command` should be true when the platform "command" key is pressed:
+/// - macOS: Command (⌘) key
+/// - Windows/Linux: Ctrl key
+pub fn set_global_modifiers(ctrl: bool, alt: bool, shift: bool, command: bool) {
     GLOBAL_CTRL_PRESSED.store(ctrl, Ordering::Relaxed);
     GLOBAL_ALT_PRESSED.store(alt, Ordering::Relaxed);
     GLOBAL_SHIFT_PRESSED.store(shift, Ordering::Relaxed);
+    GLOBAL_COMMAND_PRESSED.store(command, Ordering::Relaxed);
 }
 
 /// Get global Ctrl state
@@ -40,6 +45,12 @@ pub fn is_alt_pressed() -> bool {
 /// Get global Shift state
 pub fn is_shift_pressed() -> bool {
     GLOBAL_SHIFT_PRESSED.load(Ordering::Relaxed)
+}
+
+/// Get global Command state (Cmd on macOS, Ctrl on Windows/Linux)
+/// Use this for cross-platform shortcuts like Cmd/Ctrl+C, Cmd/Ctrl+scroll for zoom
+pub fn is_command_pressed() -> bool {
+    GLOBAL_COMMAND_PRESSED.load(Ordering::Relaxed)
 }
 
 /// Cached screen info for mouse mapping calculations and cache invalidation

@@ -1066,35 +1066,16 @@ impl MainWindow {
                 Task::none()
             }
 
-            // Zoom controls
-            Message::ZoomIn => {
+            // Unified zoom control
+            Message::Zoom(zoom_msg) => {
                 let mut opts = self.settings_dialog.original_options.lock();
                 let use_integer = opts.monitor_settings.use_integer_scaling;
                 let current_zoom = self.terminal_window.terminal.get_zoom();
-                let new_zoom = icy_engine_gui::ScalingMode::zoom_in(current_zoom, use_integer);
-                self.terminal_window.terminal.set_zoom(new_zoom);
-                opts.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
-                Task::none()
-            }
-
-            Message::ZoomOut => {
-                let mut opts = self.settings_dialog.original_options.lock();
-                let use_integer = opts.monitor_settings.use_integer_scaling;
-                let current_zoom = self.terminal_window.terminal.get_zoom();
-                let new_zoom = icy_engine_gui::ScalingMode::zoom_out(current_zoom, use_integer);
-                self.terminal_window.terminal.set_zoom(new_zoom);
-                opts.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
-                Task::none()
-            }
-
-            Message::ZoomReset => {
-                self.terminal_window.terminal.zoom_reset();
-                self.settings_dialog.original_options.lock().monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(1.0);
-                Task::none()
-            }
-
-            Message::ZoomAutoFit => {
-                self.settings_dialog.original_options.lock().monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Auto;
+                let new_scaling = opts.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                if let icy_engine_gui::ScalingMode::Manual(z) = new_scaling {
+                    self.terminal_window.terminal.set_zoom(z);
+                }
+                opts.monitor_settings.scaling_mode = new_scaling;
                 Task::none()
             }
         }

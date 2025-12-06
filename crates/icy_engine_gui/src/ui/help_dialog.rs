@@ -322,9 +322,9 @@ pub fn help_dialog<'a, Message: Clone + 'static>(
 }
 
 /// Returns the modifier symbol for the current platform
-/// Returns "⌘" on macOS, "Alt" on other platforms
+/// Returns "⌘" on macOS, "Ctrl" on other platforms
 pub fn platform_mod_symbol() -> &'static str {
-    if cfg!(target_os = "macos") { "⌘" } else { "Alt" }
+    if cfg!(target_os = "macos") { "⌘" } else { "Ctrl" }
 }
 
 /// Returns true if running on macOS

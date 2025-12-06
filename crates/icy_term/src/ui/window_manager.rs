@@ -341,13 +341,21 @@ impl WindowManager {
                                     }
                                     "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
                                     // Zoom shortcuts: Ctrl+Plus/Minus/0/Backspace
-                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomIn)),
-                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomOut)),
-                                    "0" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomReset)),
+                                    "+" | "=" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Zoom(icy_engine_gui::ZoomMessage::In))),
+                                    "-" => return Some(WindowManagerMessage::WindowMessage(window_id, Message::Zoom(icy_engine_gui::ZoomMessage::Out))),
+                                    "0" => {
+                                        return Some(WindowManagerMessage::WindowMessage(
+                                            window_id,
+                                            Message::Zoom(icy_engine_gui::ZoomMessage::Reset),
+                                        ));
+                                    }
                                     _ => {}
                                 },
                                 keyboard::Key::Named(Named::Backspace) => {
-                                    return Some(WindowManagerMessage::WindowMessage(window_id, Message::ZoomAutoFit));
+                                    return Some(WindowManagerMessage::WindowMessage(
+                                        window_id,
+                                        Message::Zoom(icy_engine_gui::ZoomMessage::AutoFit),
+                                    ));
                                 }
                                 _ => {}
                             }

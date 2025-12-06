@@ -327,6 +327,8 @@ impl MainWindow {
                     self.history.navigate_to(point);
                     // Update path input to show current display path
                     self.navigation_bar.set_path_input(new_display_path.clone());
+                    // Update can_go_up state for toolbar
+                    self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                     // Also update tile grid when directory changes
                     if self.view_mode() == ViewMode::Tiles {
                         let items = self.file_browser.get_items();
@@ -437,6 +439,8 @@ impl MainWindow {
                         // Update path input with the new display path
                         let display_path = self.file_browser.get_display_path();
                         self.navigation_bar.set_path_input(display_path);
+                        // Update can_go_up state for toolbar
+                        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
@@ -449,6 +453,8 @@ impl MainWindow {
                         self.file_browser.update(FileBrowserMessage::Refresh);
                         // Reset SAUCE loader after refresh (directory contents may have changed)
                         self.reset_sauce_loader_for_navigation();
+                        // Update can_go_up state for toolbar
+                        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
@@ -490,6 +496,8 @@ impl MainWindow {
                         }
                         // Reset SAUCE loader after navigation
                         self.reset_sauce_loader_for_navigation();
+                        // Update can_go_up state for toolbar
+                        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
@@ -608,6 +616,8 @@ impl MainWindow {
                                 self.navigation_bar.set_path_valid(false);
                             }
                         }
+                        // Update can_go_up state for toolbar after any navigation
+                        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
@@ -691,6 +701,8 @@ impl MainWindow {
                                 // Refresh tile grid with new items
                                 let items = self.file_browser.get_items();
                                 self.tile_grid.set_items_from_items(items);
+                                // Update can_go_up state for toolbar
+                                self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                                 // Record navigation
                                 let point = self.current_history_point();
                                 self.history.navigate_to(point);
@@ -755,6 +767,8 @@ impl MainWindow {
                                     // Refresh tile grid with new items
                                     let items = self.file_browser.get_items();
                                     self.tile_grid.set_items_from_items(items);
+                                    // Update can_go_up state for toolbar
+                                    self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                                     // Record navigation
                                     let point = self.current_history_point();
                                     self.history.navigate_to(point);
@@ -864,8 +878,11 @@ impl MainWindow {
                     self.last_tick = Instant::now();
                     return Task::none();
                 }
-                // Check if this is a terminal message that might change zoom
-                let is_zoom_change = matches!(&msg, PreviewMessage::TerminalMessage(icy_engine_gui::Message::ZoomWheel(_)));
+                // Check if this is a zoom change message
+                let is_zoom_change = matches!(
+                    &msg,
+                    PreviewMessage::TerminalMessage(icy_engine_gui::Message::Zoom(_)) | PreviewMessage::Zoom(_)
+                );
                 let result = self.preview.update(msg).map(Message::Preview);
                 // Sync scaling_mode from preview to options after zoom changes
                 if is_zoom_change {
@@ -2331,11 +2348,12 @@ impl MainWindow {
 
         match event {
             Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                // Alt+Left = Back, Alt+Right = Forward, Alt+A = About
+                // Alt+Left = Back, Alt+Right = Forward, Alt+Up = Parent, Alt+A = About
                 if modifiers.alt() {
                     match key {
                         Key::Named(Named::ArrowLeft) => return Some(Message::Navigation(NavigationBarMessage::Back)),
                         Key::Named(Named::ArrowRight) => return Some(Message::Navigation(NavigationBarMessage::Forward)),
+                        Key::Named(Named::ArrowUp) => return Some(Message::Navigation(NavigationBarMessage::Up)),
                         Key::Character(c) if c.as_str().eq_ignore_ascii_case("a") => return Some(Message::ShowAbout),
                         _ => {}
                     }
@@ -2390,8 +2408,8 @@ impl MainWindow {
                         }
                     }
                     Key::Named(Named::F3) => {
-                        if modifiers.control() {
-                            // Ctrl+F3: Set baud rate to max (Off/0)
+                        if modifiers.command() {
+                            // Cmd/Ctrl+F3: Set baud rate to max (Off/0)
                             return Some(Message::StatusBar(StatusBarMessage::SetBaudRateOff));
                         } else if modifiers.shift() {
                             // Shift+F3: Cycle baud rate backward
@@ -2412,12 +2430,12 @@ impl MainWindow {
                     Key::Named(Named::F11) => return Some(Message::ToggleFullscreen),
                     _ => {}
                 }
-
-                // Ctrl+I: Show export dialog, Ctrl+C: Copy, Ctrl+F: Filter, Ctrl+=/+: Zoom in, Ctrl+-: Zoom out, Ctrl+Backspace/0: Reset zoom
-                if modifiers.control() {
-                    // Ctrl+Backspace for zoom reset
+                println!("Key pressed: {:?} with modifiers {:?}", key, modifiers);
+                // Cmd/Ctrl shortcuts: I=Export, C=Copy, F=Filter, =/+=Zoom in, -=Zoom out, 0/Backspace=Reset zoom
+                if modifiers.command() {
+                    // Cmd/Ctrl+Backspace for zoom reset
                     if let Key::Named(Named::Backspace) = key {
-                        return Some(Message::Preview(PreviewMessage::ZoomReset));
+                        return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset)));
                     }
                     if let Key::Character(c) = key {
                         if c.as_str().eq_ignore_ascii_case("f") {
@@ -2429,40 +2447,17 @@ impl MainWindow {
                         if c.as_str().eq_ignore_ascii_case("c") {
                             return Some(Message::Copy);
                         }
-                        // Ctrl+= or Ctrl++ for zoom in
+                        // Cmd/Ctrl+= or Cmd/Ctrl++ for zoom in
                         if c.as_str() == "=" || c.as_str() == "+" {
-                            return Some(Message::Preview(PreviewMessage::ZoomIn));
+                            return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In)));
                         }
-                        // Ctrl+- for zoom out
+                        // Cmd/Ctrl+- for zoom out
                         if c.as_str() == "-" {
-                            return Some(Message::Preview(PreviewMessage::ZoomOut));
+                            return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out)));
                         }
-                        // Ctrl+0 for zoom reset
+                        // Cmd/Ctrl+0 for zoom reset
                         if c.as_str() == "0" {
-                            return Some(Message::Preview(PreviewMessage::ZoomReset));
-                        }
-                    }
-                }
-
-                // macOS: Cmd+C for copy, Cmd+=/+/-/0/Backspace: Zoom
-                #[cfg(target_os = "macos")]
-                if modifiers.logo() {
-                    // Cmd+Backspace for zoom reset
-                    if let Key::Named(Named::Backspace) = key {
-                        return Some(Message::Preview(PreviewMessage::ZoomReset));
-                    }
-                    if let Key::Character(c) = key {
-                        if c.as_str().eq_ignore_ascii_case("c") {
-                            return Some(Message::Copy);
-                        }
-                        if c.as_str() == "=" || c.as_str() == "+" {
-                            return Some(Message::Preview(PreviewMessage::ZoomIn));
-                        }
-                        if c.as_str() == "-" {
-                            return Some(Message::Preview(PreviewMessage::ZoomOut));
-                        }
-                        if c.as_str() == "0" {
-                            return Some(Message::Preview(PreviewMessage::ZoomReset));
+                            return Some(Message::Preview(PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset)));
                         }
                     }
                 }
@@ -2525,18 +2520,21 @@ impl MainWindow {
         // 3. Update navigation bar
         self.navigation_bar.set_path_input(self.file_browser.get_display_path());
 
-        // 4. Switch view mode if needed
+        // 4. Update can_go_up state for toolbar
+        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
+
+        // 5. Switch view mode if needed
         if self.view_mode() != point.view_mode {
             self.set_view_mode(point.view_mode);
         }
 
-        // 5. Update tile grid if in tile mode
+        // 6. Update tile grid if in tile mode
         if self.view_mode() == ViewMode::Tiles {
             let items = self.file_browser.get_items();
             self.tile_grid.set_items_from_items(items);
         }
 
-        // 6. Select the item if specified
+        // 7. Select the item if specified
         if let Some(ref item_name) = point.selected_item {
             if self.view_mode() == ViewMode::Tiles {
                 self.tile_grid.select_by_label(item_name);

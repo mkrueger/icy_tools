@@ -69,14 +69,8 @@ pub enum PreviewMessage {
     ImageLoaded(u64, Result<(iced_image::Handle, u32, u32), String>),
     /// Image viewer message
     ImageViewerMessage(ImageViewerMessage),
-    /// Zoom in (increase zoom level)
-    ZoomIn,
-    /// Zoom out (decrease zoom level)
-    ZoomOut,
-    /// Reset zoom to 100%
-    ZoomReset,
-    /// Zoom to fit
-    ZoomFit,
+    /// Unified zoom message
+    Zoom(icy_engine_gui::ZoomMessage),
 }
 
 /// Preview view for displaying ANSI files and images
@@ -649,17 +643,14 @@ impl PreviewView {
                         self.terminal.scroll_y_by(dy);
                         self.terminal.sync_scrollbar_with_viewport();
                     }
-                    icy_engine_gui::Message::ZoomWheel(delta) => {
-                        // Handle Ctrl+wheel zoom
-                        let use_integer = self.monitor_settings.use_integer_scaling;
+                    icy_engine_gui::Message::Zoom(zoom_msg) => {
+                        // Handle zoom via unified ZoomMessage
                         let current_zoom = self.terminal.get_zoom();
-                        let new_zoom = if delta > 0.0 {
-                            icy_engine_gui::ScalingMode::zoom_in(current_zoom, use_integer)
-                        } else {
-                            icy_engine_gui::ScalingMode::zoom_out(current_zoom, use_integer)
-                        };
-                        self.terminal.set_zoom(new_zoom);
-                        self.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(new_zoom);
+                        let use_integer = self.monitor_settings.use_integer_scaling;
+                        self.monitor_settings.scaling_mode = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                        if let icy_engine_gui::ScalingMode::Manual(z) = self.monitor_settings.scaling_mode {
+                            self.terminal.set_zoom(z);
+                        }
                     }
                     icy_engine_gui::Message::StartSelection(sel) => {
                         // Selection coordinates already include scroll offset from map_mouse_to_cell
@@ -691,35 +682,30 @@ impl PreviewView {
                 }
                 Task::none()
             }
-            PreviewMessage::ZoomIn => {
+            PreviewMessage::Zoom(zoom_msg) => {
+                // Unified zoom handling for both terminal and image viewer
+                let use_integer = self.monitor_settings.use_integer_scaling;
                 if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.zoom_in();
+                    // Apply zoom to image viewer
+                    let current_zoom = viewer.zoom();
+                    let new_scaling = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                    match new_scaling {
+                        icy_engine_gui::ScalingMode::Auto => viewer.zoom_fit(),
+                        icy_engine_gui::ScalingMode::Manual(z) => viewer.set_zoom(z),
+                    }
+                    self.monitor_settings.scaling_mode = new_scaling;
                 } else {
-                    self.terminal.zoom_in();
-                }
-                Task::none()
-            }
-            PreviewMessage::ZoomOut => {
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.zoom_out();
-                } else {
-                    self.terminal.zoom_out();
-                }
-                Task::none()
-            }
-            PreviewMessage::ZoomReset => {
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.zoom_100();
-                } else {
-                    self.terminal.zoom_reset();
-                }
-                Task::none()
-            }
-            PreviewMessage::ZoomFit => {
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.zoom_fit();
-                } else {
-                    self.terminal.zoom_auto_fit(self.monitor_settings.use_integer_scaling);
+                    // Apply zoom to terminal
+                    let current_zoom = self.terminal.get_zoom();
+                    self.monitor_settings.scaling_mode = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                    match self.monitor_settings.scaling_mode {
+                        icy_engine_gui::ScalingMode::Auto => {
+                            self.terminal.zoom_auto_fit(use_integer);
+                        }
+                        icy_engine_gui::ScalingMode::Manual(z) => {
+                            self.terminal.set_zoom(z);
+                        }
+                    }
                 }
                 Task::none()
             }

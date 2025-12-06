@@ -1,5 +1,5 @@
 #![allow(static_mut_refs)]
-use crate::{MonitorSettings, Terminal, create_crt_shader};
+use crate::{MonitorSettings, Terminal, ZoomMessage, create_crt_shader};
 use iced::Element;
 use icy_engine::{MouseEvent, Position, Selection};
 
@@ -14,8 +14,8 @@ pub enum Message {
     SendMouseEvent(MouseEvent),
     ScrollViewport(f32, f32), // dx, dy in pixels
 
-    /// Zoom in/out via mouse wheel (delta: positive = zoom in, negative = zoom out)
-    ZoomWheel(f32),
+    /// Zoom message (unified zoom handling)
+    Zoom(ZoomMessage),
 
     // Selection messages
     StartSelection(Selection),
