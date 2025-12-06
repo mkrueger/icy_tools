@@ -25,6 +25,20 @@ tooltip-view-mode-list=Przełącz na widok listy
 tooltip-view-mode-tiles=Przełącz na widok kafelków
 tooltip-browse-16colors=Przeglądaj 16colors.rs
 tooltip-settings=Ustawienia
+tooltip-sort-name-asc=Sortuj według nazwy (A-Z)
+tooltip-sort-name-desc=Sortuj według nazwy (Z-A)
+tooltip-sort-size-asc=Sortuj według rozmiaru (najmniejsze najpierw)
+tooltip-sort-size-desc=Sortuj według rozmiaru (największe najpierw)
+tooltip-sort-date-asc=Sortuj według daty (najstarsze najpierw)
+tooltip-sort-date-desc=Sortuj według daty (najnowsze najpierw)
+tooltip-sauce-mode-on=Pokaż informacje SAUCE
+tooltip-sauce-mode-off=Ukryj informacje SAUCE
+tooltip-shuffle-mode=Tryb losowy (pokaz slajdów)
+
+header-name=Nazwa
+header-title=Tytuł
+header-author=Autor
+header-group=Grupa
 
 statusbar-items={ $count } elementów
 statusbar-ready=Gotowy

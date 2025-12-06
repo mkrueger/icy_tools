@@ -485,7 +485,7 @@ impl MainWindow {
                     NavigationBarMessage::OpenFilter => {
                         // Toggle filter popup
                         if self.filter_popup.is_visible() {
-                            self.filter_popup.hide();
+                            self.close_filter_popup();
                             return Task::none();
                         } else {
                             self.filter_popup.show();
@@ -860,7 +860,7 @@ impl MainWindow {
                 } else if self.sauce_dialog.is_some() {
                     self.sauce_dialog = None;
                 } else if self.filter_popup.is_visible() {
-                    self.filter_popup.hide();
+                    self.close_filter_popup();
                 } else if self.fullscreen {
                     self.fullscreen = false;
                 }
@@ -1459,12 +1459,7 @@ impl MainWindow {
             }
             Message::ToggleFilterPopup => {
                 if self.filter_popup.is_visible() {
-                    self.filter_popup.hide();
-                    // Clear filter when closing popup
-                    self.filter_popup.clear_filter();
-                    self.file_browser.update(FileBrowserMessage::FilterChanged(String::new()));
-                    self.tile_grid.clear_filter();
-                    self.folder_preview.clear_filter();
+                    self.close_filter_popup();
                     Task::none()
                 } else {
                     self.filter_popup.show();
@@ -1730,6 +1725,13 @@ impl MainWindow {
         }
     }
 
+    fn close_filter_popup(&mut self) {
+        self.filter_popup.hide();
+        self.filter_popup.clear_filter();
+        self.file_browser.update(FileBrowserMessage::FilterChanged(String::new()));
+        self.tile_grid.clear_filter();
+        self.folder_preview.clear_filter();
+    }
     /// Start loading SAUCE info for all visible files
     fn start_sauce_loading(&self) {
         if let Some(ref loader) = self.sauce_loader {

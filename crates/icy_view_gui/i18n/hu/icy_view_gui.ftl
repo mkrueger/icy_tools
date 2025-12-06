@@ -25,6 +25,20 @@ tooltip-view-mode-list=Váltás listanézetre
 tooltip-view-mode-tiles=Váltás csempézett nézetre
 tooltip-browse-16colors=16colors.rs böngészése
 tooltip-settings=Beállítások
+tooltip-sort-name-asc=Rendezés név szerint (A-Z)
+tooltip-sort-name-desc=Rendezés név szerint (Z-A)
+tooltip-sort-size-asc=Rendezés méret szerint (legkisebb elöl)
+tooltip-sort-size-desc=Rendezés méret szerint (legnagyobb elöl)
+tooltip-sort-date-asc=Rendezés dátum szerint (legrégebbi elöl)
+tooltip-sort-date-desc=Rendezés dátum szerint (legújabb elöl)
+tooltip-sauce-mode-on=SAUCE információk megjelenítése
+tooltip-sauce-mode-off=SAUCE információk elrejtése
+tooltip-shuffle-mode=Véletlenszerű mód (diavetítés)
+
+header-name=Név
+header-title=Cím
+header-author=Szerző
+header-group=Csoport
 
 statusbar-items={ $count } elem
 statusbar-ready=Kész

@@ -25,6 +25,20 @@ tooltip-view-mode-list=Comută la vizualizare listă
 tooltip-view-mode-tiles=Comută la vizualizare grilă
 tooltip-browse-16colors=Navighează 16colors.rs
 tooltip-settings=Setări
+tooltip-sort-name-asc=Sortare după nume (A-Z)
+tooltip-sort-name-desc=Sortare după nume (Z-A)
+tooltip-sort-size-asc=Sortare după dimensiune (mai mic întâi)
+tooltip-sort-size-desc=Sortare după dimensiune (mai mare întâi)
+tooltip-sort-date-asc=Sortare după dată (mai vechi întâi)
+tooltip-sort-date-desc=Sortare după dată (mai recent întâi)
+tooltip-sauce-mode-on=Afișează informații SAUCE
+tooltip-sauce-mode-off=Ascunde informații SAUCE
+tooltip-shuffle-mode=Mod aleatoriu (prezentare)
+
+header-name=Nume
+header-title=Titlu
+header-author=Autor
+header-group=Grup
 
 statusbar-items={ $count } elemente
 statusbar-ready=Pregătit
@@ -101,6 +115,7 @@ sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
 help-title = Ajutor
+help-subtitle = Referință rapidă pentru iCY VIEW
 
 toast-auto-scroll-on=Derulare automată activată
 toast-auto-scroll-off=Derulare automată dezactivată

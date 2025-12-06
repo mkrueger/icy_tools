@@ -25,6 +25,20 @@ tooltip-view-mode-list=Passa alla vista elenco
 tooltip-view-mode-tiles=Passa alla vista griglia
 tooltip-browse-16colors=Sfoglia 16colors.rs
 tooltip-settings=Impostazioni
+tooltip-sort-name-asc=Ordina per nome (A-Z)
+tooltip-sort-name-desc=Ordina per nome (Z-A)
+tooltip-sort-size-asc=Ordina per dimensione (più piccolo prima)
+tooltip-sort-size-desc=Ordina per dimensione (più grande prima)
+tooltip-sort-date-asc=Ordina per data (più vecchio prima)
+tooltip-sort-date-desc=Ordina per data (più recente prima)
+tooltip-sauce-mode-on=Mostra informazioni SAUCE
+tooltip-sauce-mode-off=Nascondi informazioni SAUCE
+tooltip-shuffle-mode=Modalità casuale (presentazione)
+
+header-name=Nome
+header-title=Titolo
+header-author=Autore
+header-group=Gruppo
 
 statusbar-items={ $count } elementi
 statusbar-ready=Pronto

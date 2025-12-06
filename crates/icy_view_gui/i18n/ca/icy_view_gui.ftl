@@ -25,6 +25,20 @@ tooltip-view-mode-list=Canviar a vista de llista
 tooltip-view-mode-tiles=Canviar a vista de rajoles
 tooltip-browse-16colors=Navegar 16colors.rs
 tooltip-settings=Configuració
+tooltip-sort-name-asc=Ordenar per nom (A-Z)
+tooltip-sort-name-desc=Ordenar per nom (Z-A)
+tooltip-sort-size-asc=Ordenar per mida (més petit primer)
+tooltip-sort-size-desc=Ordenar per mida (més gran primer)
+tooltip-sort-date-asc=Ordenar per data (més antic primer)
+tooltip-sort-date-desc=Ordenar per data (més recent primer)
+tooltip-sauce-mode-on=Mostrar informació SAUCE
+tooltip-sauce-mode-off=Amagar informació SAUCE
+tooltip-shuffle-mode=Mode aleatori (presentació)
+
+header-name=Nom
+header-title=Títol
+header-author=Autor
+header-group=Grup
 
 statusbar-items={ $count } elements
 statusbar-ready=Preparat
@@ -101,6 +115,7 @@ sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
 help-title = Ajuda
+help-subtitle = Referència ràpida per iCY VIEW
 
 toast-auto-scroll-on=Desplaçament automàtic activat
 toast-auto-scroll-off=Desplaçament automàtic desactivat

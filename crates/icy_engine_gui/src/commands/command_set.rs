@@ -87,7 +87,6 @@ impl CommandSet {
 
     /// Match a hotkey and return the command ID if found
     pub fn match_hotkey(&self, hotkey: &Hotkey) -> Option<&str> {
-        println!("Matching hotkey: {:?}={}", hotkey, self.hotkey_map.get(hotkey).is_some());
         self.hotkey_map.get(hotkey).map(|s| s.as_str())
     }
 

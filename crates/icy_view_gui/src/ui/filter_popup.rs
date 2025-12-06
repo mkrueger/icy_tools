@@ -90,7 +90,8 @@ impl FilterPopup {
             }
             FilterPopupMessage::Close => {
                 self.visible = false;
-                None
+                self.filter.clear();
+                Some(String::new()) // Return empty filter to clear the filter in file browser
             }
         }
     }

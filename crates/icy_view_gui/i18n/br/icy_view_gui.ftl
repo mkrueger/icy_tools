@@ -25,6 +25,20 @@ tooltip-view-mode-list=Mudar para visualização em lista
 tooltip-view-mode-tiles=Mudar para visualização em blocos
 tooltip-browse-16colors=Navegar 16colors.rs
 tooltip-settings=Configurações
+tooltip-sort-name-asc=Ordenar por nome (A-Z)
+tooltip-sort-name-desc=Ordenar por nome (Z-A)
+tooltip-sort-size-asc=Ordenar por tamanho (menor primeiro)
+tooltip-sort-size-desc=Ordenar por tamanho (maior primeiro)
+tooltip-sort-date-asc=Ordenar por data (mais antigo primeiro)
+tooltip-sort-date-desc=Ordenar por data (mais recente primeiro)
+tooltip-sauce-mode-on=Mostrar informações SAUCE
+tooltip-sauce-mode-off=Ocultar informações SAUCE
+tooltip-shuffle-mode=Modo aleatório (apresentação)
+
+header-name=Nome
+header-title=Título
+header-author=Autor
+header-group=Grupo
 
 statusbar-items={ $count } itens
 statusbar-ready=Pronto
@@ -101,6 +115,7 @@ sauce-value-bpp={ $count }bpp
 sauce-value-hz={ $count } Hz
 
 help-title = Ajuda
+help-subtitle = Referência rápida para iCY VIEW
 
 toast-auto-scroll-on=Rolagem automática ativada
 toast-auto-scroll-off=Rolagem automática desativada

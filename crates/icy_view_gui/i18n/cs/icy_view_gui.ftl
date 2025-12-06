@@ -25,6 +25,20 @@ tooltip-view-mode-list=Přepnout na zobrazení seznamu
 tooltip-view-mode-tiles=Přepnout na zobrazení dlaždic
 tooltip-browse-16colors=Procházet 16colors.rs
 tooltip-settings=Nastavení
+tooltip-sort-name-asc=Seřadit podle názvu (A-Z)
+tooltip-sort-name-desc=Seřadit podle názvu (Z-A)
+tooltip-sort-size-asc=Seřadit podle velikosti (nejmenší první)
+tooltip-sort-size-desc=Seřadit podle velikosti (největší první)
+tooltip-sort-date-asc=Seřadit podle data (nejstarší první)
+tooltip-sort-date-desc=Seřadit podle data (nejnovější první)
+tooltip-sauce-mode-on=Zobrazit informace SAUCE
+tooltip-sauce-mode-off=Skrýt informace SAUCE
+tooltip-shuffle-mode=Náhodný režim (prezentace)
+
+header-name=Název
+header-title=Titul
+header-author=Autor
+header-group=Skupina
 
 statusbar-items={ $count } položek
 statusbar-ready=Připraveno

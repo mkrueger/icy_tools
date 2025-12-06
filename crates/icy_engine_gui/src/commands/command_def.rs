@@ -178,7 +178,7 @@ impl CommandDef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{KeyCode, Modifiers};
+    use crate::commands::KeyCode;
 
     #[test]
     fn test_new_command() {
