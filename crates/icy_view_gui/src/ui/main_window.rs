@@ -214,6 +214,8 @@ pub struct MainWindow {
     sauce_loader: Option<SauceLoader>,
     /// Receiver for SAUCE load results
     sauce_rx: Option<tokio::sync::mpsc::UnboundedReceiver<SauceResult>>,
+    /// Whether SAUCE loading has been initialized for the current directory
+    sauce_loading_initialized: bool,
     /// Shuffle mode state
     shuffle_mode: super::ShuffleMode,
 }
@@ -329,6 +331,7 @@ impl MainWindow {
                 toasts: Vec::new(),
                 sauce_loader: Some(sauce_loader),
                 sauce_rx: Some(sauce_rx),
+                sauce_loading_initialized: false,
                 shuffle_mode: super::ShuffleMode::new(),
             },
             initial_message,
@@ -1366,9 +1369,11 @@ impl MainWindow {
 
                         if new_mode {
                             // SAUCE mode enabled - start loading SAUCE info for visible items
+                            self.sauce_loading_initialized = true;
                             self.start_sauce_loading();
                         } else {
-                            // SAUCE mode disabled - cancel pending loads
+                            // SAUCE mode disabled - cancel pending loads and reset flag
+                            self.sauce_loading_initialized = false;
                             if let Some(ref loader) = self.sauce_loader {
                                 loader.cancel_all();
                             }
@@ -1589,10 +1594,21 @@ impl MainWindow {
 
                 // Poll SAUCE loader results if in SAUCE mode
                 if self.sauce_mode() {
+                    // Start SAUCE loading if not yet initialized (e.g., app started with SAUCE mode on)
+                    if !self.sauce_loading_initialized {
+                        self.sauce_loading_initialized = true;
+                        self.start_sauce_loading();
+                    }
+
+                    // Process all pending SAUCE results in this tick
+                    // Only invalidate once after processing all results to avoid cache thrashing
                     if let Some(ref mut rx) = self.sauce_rx {
+                        let mut received_any = false;
                         while let Ok(result) = rx.try_recv() {
-                            // SAUCE result received - invalidate the list view to show new data
-                            log::debug!("SAUCE loaded for {:?}: {:?}", result.path, result.sauce);
+                            received_any = true;
+                        }
+                        if received_any {
+                            // Invalidate list view once after processing all SAUCE results
                             self.file_browser.list_view.invalidate();
                         }
                     }
@@ -1791,7 +1807,11 @@ impl MainWindow {
         }
         // Restart SAUCE loading if SAUCE mode is enabled
         if self.sauce_mode() {
+            self.sauce_loading_initialized = true;
             self.start_sauce_loading();
+        } else {
+            // Reset flag so it will be re-initialized if SAUCE mode is enabled later
+            self.sauce_loading_initialized = false;
         }
     }
 

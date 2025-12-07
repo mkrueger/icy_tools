@@ -779,15 +779,20 @@ pub fn render_list_item_with_sauce(
     }
 
     // Render SAUCE columns (Title, Author, Group) - no ellipsis, smaller font, colored like status bar
+    // Show "-" in gray when SAUCE was loaded but the field is empty
     if let Some(title) = sauce_title {
         if !title.is_empty() {
             render_sauce_column(&mut rgba, title, SAUCE_NAME_WIDTH, theme_colors.sauce_title_color);
+        } else {
+            render_sauce_column(&mut rgba, "-", SAUCE_NAME_WIDTH, theme_colors.sauce_empty_color);
         }
     }
 
     if let Some(author) = sauce_author {
         if !author.is_empty() {
             render_sauce_column(&mut rgba, author, SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH, theme_colors.sauce_author_color);
+        } else {
+            render_sauce_column(&mut rgba, "-", SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH, theme_colors.sauce_empty_color);
         }
     }
 
@@ -798,6 +803,13 @@ pub fn render_list_item_with_sauce(
                 group,
                 SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH + SAUCE_AUTHOR_WIDTH,
                 theme_colors.sauce_group_color,
+            );
+        } else {
+            render_sauce_column(
+                &mut rgba,
+                "-",
+                SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH + SAUCE_AUTHOR_WIDTH,
+                theme_colors.sauce_empty_color,
             );
         }
     }
@@ -841,6 +853,8 @@ pub struct FileListThemeColors {
     pub sauce_title_color: [u8; 4],
     pub sauce_author_color: [u8; 4],
     pub sauce_group_color: [u8; 4],
+    /// Color for empty SAUCE fields (shows "-" placeholder)
+    pub sauce_empty_color: [u8; 4],
 }
 
 impl Default for FileListThemeColors {
@@ -861,6 +875,7 @@ impl Default for FileListThemeColors {
             sauce_title_color: [230, 230, 153, 255],  // Yellow (0.9, 0.9, 0.6)
             sauce_author_color: [153, 230, 153, 255], // Green (0.6, 0.9, 0.6)
             sauce_group_color: [153, 204, 230, 255],  // Blue (0.6, 0.8, 0.9)
+            sauce_empty_color: [100, 100, 100, 255],  // Gray for empty fields
         }
     }
 }
@@ -894,6 +909,7 @@ impl FileListThemeColors {
                 sauce_title_color: [230, 230, 153, 255],  // Yellow (0.9, 0.9, 0.6)
                 sauce_author_color: [153, 230, 153, 255], // Green (0.6, 0.9, 0.6)
                 sauce_group_color: [153, 204, 230, 255],  // Blue (0.6, 0.8, 0.9)
+                sauce_empty_color: [100, 100, 100, 255],  // Gray for empty fields
             }
         } else {
             Self {
@@ -908,9 +924,10 @@ impl FileListThemeColors {
                 highlight_color: [200, 150, 0, 255],      // Darker yellow for light theme
                 icon_color,
                 // SAUCE colors (matching status bar)
-                sauce_title_color: [153, 128, 0, 255], // Dark yellow (0.6, 0.5, 0.0)
-                sauce_author_color: [0, 128, 0, 255],  // Dark green (0.0, 0.5, 0.0)
-                sauce_group_color: [0, 102, 153, 255], // Dark blue (0.0, 0.4, 0.6)
+                sauce_title_color: [153, 128, 0, 255],   // Dark yellow (0.6, 0.5, 0.0)
+                sauce_author_color: [0, 128, 0, 255],    // Dark green (0.0, 0.5, 0.0)
+                sauce_group_color: [0, 102, 153, 255],   // Dark blue (0.0, 0.4, 0.6)
+                sauce_empty_color: [140, 140, 140, 255], // Gray for empty fields
             }
         }
     }
