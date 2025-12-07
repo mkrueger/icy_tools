@@ -1,6 +1,6 @@
 [package]
 name = "icy_draw"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2024"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 description = "A drawing program for ANSI & ASCII art and other text-based art forms."
@@ -10,55 +10,50 @@ repository = "https://github.com/mkrueger/icy_tools"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = { workspace = true }
-egui = { workspace = true }
-egui_extras = { workspace = true }
-egui_glow = { workspace = true }
-egui-modal = { workspace = true }
-glow = { workspace = true }
-egui_file = { workspace = true }
-egui_tiles = "0.14.0"
-egui-bind = { workspace = true }
-egui-notify = { workspace = true }
-log = { workspace = true }
-log4rs = "1.4.0"
-open = { workspace = true }
-dark-light = "2.0.0"
-zip = { workspace = true }
-notify = { workspace = true }
-gifski = { version="1.32.0", features=["gifsicle"], default-features = false}
-imgref = "1.11.0"
-rgb = "0.8.50"
-thiserror = { workspace = true }
-anyhow = { workspace = true }
+# UI Framework - iced based
+iced = { workspace = true }
+# iced_aw = { workspace = true } # TODO: Re-enable when version conflicts are resolved
 
+# Logging
+log = { workspace = true }
+flexi_logger = { workspace = true }
+
+# CLI
 clap = { workspace = true }
 github_release_check = "0.2.1"
 
+# Core icy_* crates
 icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
 icy_view_gui = { workspace = true }
 icy_sauce = { workspace = true }
 codepages = { workspace = true }
 
-bstr = { workspace = true }
-
-egui_code_editor = "0.2.20"
-mlua = { version = "0.10.3", features = ["lua54", "vendored"] }
-regex = { workspace = true }
-
-walkdir = { workspace = true }
+# Serialization
 serde = { workspace = true }
 serde_json = "1.0.145"
-lazy_static = { workspace = true }
-directories = { workspace = true }
-image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
-semver = { workspace = true }
 
+# i18n
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
+
+# Utilities
+lazy_static = { workspace = true }
+directories = { workspace = true }
+semver = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+parking_lot = { workspace = true }
+image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
+
+# File handling
+walkdir = { workspace = true }
+zip = { workspace = true }
+notify = { workspace = true }
+
+# Clipboard
 clipboard-rs = { workspace = true }
 
 [features]

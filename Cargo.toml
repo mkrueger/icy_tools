@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-#	"crates/icy_draw", 
+	"crates/icy_draw", 
 	"crates/icy_engine",
 	"crates/icy_engine_gui",
 	"crates/icy_engine_edit",
@@ -34,6 +34,7 @@ unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
 retrofont =  { git = "https://github.com/mkrueger/retrofont" }
 
 #icy_view_gui = { path = "crates/icy_view_gui" }
+icy_view_gui = { path = "crates/icy_view_gui" }
 icy_engine_gui = { path = "crates/icy_engine_gui" } 
 icy_engine_edit = { path = "crates/icy_engin_edit" }
 
@@ -86,7 +87,7 @@ resvg = "0.45"
 ab_glyph = "0.2"
 
 iced = "0.14.0-dev"
-#iced_aw = { git = "https://github.com/iced-rs/iced_aw.git" }
+iced_aw = { git = "https://github.com/mkrueger/iced_aw" }
 
 versions = "7.0.0"
 github_release_check = "0.2.1"

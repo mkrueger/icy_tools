@@ -1,0 +1,168 @@
+# Commands specific to icy_draw
+# These extend the common commands from icy_engine_gui.
+#
+# Format:
+#   [[commands]]
+#   id = "unique.command.id"    # Also used as i18n translation key
+#   hotkey = ["Ctrl+C"]         # Windows/Linux shortcuts
+#   hotkey_mac = ["Cmd+C"]      # macOS shortcuts (optional)
+#   category = "file"           # Category for help dialog grouping
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# File Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "file.new"
+hotkey = ["Ctrl+N"]
+hotkey_mac = ["Cmd+N"]
+category = "file"
+
+[[commands]]
+id = "file.save"
+hotkey = ["Ctrl+S"]
+hotkey_mac = ["Cmd+S"]
+category = "file"
+
+[[commands]]
+id = "file.save_as"
+hotkey = ["Ctrl+Shift+S"]
+hotkey_mac = ["Cmd+Shift+S"]
+category = "file"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Edit Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "edit.undo"
+hotkey = ["Ctrl+Z"]
+hotkey_mac = ["Cmd+Z"]
+category = "edit"
+
+[[commands]]
+id = "edit.redo"
+hotkey = ["Ctrl+Y", "Ctrl+Shift+Z"]
+hotkey_mac = ["Cmd+Shift+Z"]
+category = "edit"
+
+[[commands]]
+id = "edit.cut"
+hotkey = ["Ctrl+X"]
+hotkey_mac = ["Cmd+X"]
+category = "edit"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Selection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "select.none"
+hotkey = ["Ctrl+D"]
+hotkey_mac = ["Cmd+D"]
+category = "selection"
+
+[[commands]]
+id = "select.inverse"
+hotkey = ["Ctrl+Shift+I"]
+hotkey_mac = ["Cmd+Shift+I"]
+category = "selection"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tools
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "tool.draw"
+hotkey = ["D"]
+category = "tools"
+
+[[commands]]
+id = "tool.line"
+hotkey = ["L"]
+category = "tools"
+
+[[commands]]
+id = "tool.rectangle"
+hotkey = ["R"]
+category = "tools"
+
+[[commands]]
+id = "tool.ellipse"
+hotkey = ["E"]
+category = "tools"
+
+[[commands]]
+id = "tool.fill"
+hotkey = ["F"]
+category = "tools"
+
+[[commands]]
+id = "tool.text"
+hotkey = ["T"]
+category = "tools"
+
+[[commands]]
+id = "tool.erase"
+hotkey = ["X"]
+category = "tools"
+
+[[commands]]
+id = "tool.pickup"
+hotkey = ["I"]
+category = "tools"
+
+[[commands]]
+id = "tool.select"
+hotkey = ["S"]
+category = "tools"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Layers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "layer.new"
+hotkey = ["Ctrl+Shift+N"]
+hotkey_mac = ["Cmd+Shift+N"]
+category = "layers"
+
+[[commands]]
+id = "layer.delete"
+hotkey = ["Delete"]
+hotkey_mac = ["Backspace"]
+category = "layers"
+
+[[commands]]
+id = "layer.merge_down"
+hotkey = ["Ctrl+E"]
+hotkey_mac = ["Cmd+E"]
+category = "layers"
+
+[[commands]]
+id = "layer.flatten"
+hotkey = ["Ctrl+Shift+E"]
+hotkey_mac = ["Cmd+Shift+E"]
+category = "layers"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# View
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "view.grid"
+hotkey = ["Ctrl+'"]
+hotkey_mac = ["Cmd+'"]
+category = "view"
+
+[[commands]]
+id = "view.rulers"
+hotkey = ["Ctrl+R"]
+hotkey_mac = ["Cmd+R"]
+category = "view"
+
+[[commands]]
+id = "view.guides"
+hotkey = ["Ctrl+;"]
+hotkey_mac = ["Cmd+;"]
+category = "view"

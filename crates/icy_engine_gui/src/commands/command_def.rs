@@ -26,6 +26,21 @@ pub struct CommandDef {
     /// Mouse button bindings (platform-independent)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     mouse_bindings: Vec<MouseBinding>,
+
+    // =========================================================================
+    // Localized strings (populated by translate() method)
+    // =========================================================================
+    /// Localized action name for help dialog (e.g., "Zoom In")
+    #[serde(skip)]
+    pub label_action: String,
+
+    /// Localized description for help dialog (e.g., "Increase the zoom level")
+    #[serde(skip)]
+    pub label_description: String,
+
+    /// Localized menu label (e.g., "Zoom In…" with ellipsis for dialogs)
+    #[serde(skip)]
+    pub label_menu: String,
 }
 
 impl CommandDef {
@@ -37,6 +52,9 @@ impl CommandDef {
             hotkeys: Vec::new(),
             hotkeys_mac: Vec::new(),
             mouse_bindings: Vec::new(),
+            label_action: String::new(),
+            label_description: String::new(),
+            label_menu: String::new(),
         }
     }
 
@@ -48,6 +66,9 @@ impl CommandDef {
             hotkeys: hotkeys.iter().filter_map(|s| Hotkey::parse(s)).collect(),
             hotkeys_mac: hotkeys_mac.iter().filter_map(|s| Hotkey::parse(s)).collect(),
             mouse_bindings: Vec::new(),
+            label_action: String::new(),
+            label_description: String::new(),
+            label_menu: String::new(),
         }
     }
 
@@ -172,6 +193,54 @@ impl CommandDef {
     /// Category "navigation" → "cmd-category-navigation"
     pub fn fluent_category_key(&self) -> Option<String> {
         self.category.as_ref().map(|cat| format!("cmd-category-{}", cat))
+    }
+
+    /// Get the fluent key for the menu label
+    /// "view.zoom_in" → "cmd-view-zoom_in-menu"
+    pub fn fluent_menu_key(&self) -> String {
+        format!("{}-menu", self.fluent_key_prefix())
+    }
+
+    /// Translate all label fields using the provided translator function.
+    /// 
+    /// The translator should return the translated string for a fluent key,
+    /// or the key itself if no translation is found.
+    /// 
+    /// # Arguments
+    /// * `translator` - Function that takes a fluent key and returns the translation
+    /// 
+    /// # Example
+    /// ```ignore
+    /// cmd.translate(|key| fl!(LANGUAGE_LOADER, key));
+    /// ```
+    pub fn translate<F>(&mut self, translator: F)
+    where
+        F: Fn(&str) -> String,
+    {
+        self.label_action = translator(&self.fluent_action_key());
+        self.label_description = translator(&self.fluent_desc_key());
+        
+        // Menu label is optional - if not found, fall back to action label
+        let menu_key = self.fluent_menu_key();
+        let menu_translation = translator(&menu_key);
+        
+        // If the translation returns the key itself, it means no translation was found
+        // In that case, fall back to the action label
+        if menu_translation == menu_key || menu_translation.is_empty() {
+            self.label_menu = self.label_action.clone();
+        } else {
+            self.label_menu = menu_translation;
+        }
+    }
+
+    /// Get menu label with hotkey appended (if any)
+    /// Returns something like "Open…\tCtrl+O"
+    pub fn menu_label_with_hotkey(&self) -> String {
+        if let Some(hotkey) = self.primary_hotkey_display() {
+            format!("{}\t{}", self.label_menu, hotkey)
+        } else {
+            self.label_menu.clone()
+        }
     }
 }
 

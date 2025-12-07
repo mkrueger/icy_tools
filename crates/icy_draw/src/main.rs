@@ -1,41 +1,31 @@
-#![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
-#![warn(clippy::all, rust_2018_idioms)]
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-#![allow(static_mut_refs)]
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::struct_excessive_bools,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_lossless
+)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
 
-mod model;
-mod paint;
-mod plugins;
-mod ui;
-mod util;
-
-use log::LevelFilter;
-use log4rs::{
-    append::{
-        console::{ConsoleAppender, Target},
-        file::FileAppender,
-    },
-    config::{Appender, Config, Root},
-    encode::pattern::PatternEncoder,
-    filter::threshold::ThresholdFilter,
-};
-
-use i18n_embed::{
-    DesktopLanguageRequester,
-    fluent::{FluentLanguageLoader, fluent_language_loader},
-};
-use rust_embed::RustEmbed;
+use clap::Parser;
+use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
+use iced::Settings;
+use lazy_static::lazy_static;
 use semver::Version;
-pub use ui::*;
 
-lazy_static::lazy_static! {
-    static ref VERSION: Version = Version::parse( env!("CARGO_PKG_VERSION")).unwrap();
-    static ref DEFAULT_TITLE: String = format!("iCY DRAW {}", *crate::VERSION);
+mod ui;
+use ui::WindowManager;
+
+lazy_static! {
+    static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
 }
 
-lazy_static::lazy_static! {
+lazy_static! {
     static ref LATEST_VERSION: Version = {
         let github = github_release_check::GitHub::new().unwrap();
         if let Ok(ver) = github.get_all_versions("mkrueger/icy_tools") {
@@ -47,117 +37,98 @@ lazy_static::lazy_static! {
         }
         VERSION.clone()
     };
-
-    static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
 }
 
-#[derive(RustEmbed)]
-#[folder = "i18n"] // path to the compiled localization resources
+#[derive(rust_embed::RustEmbed)]
+#[folder = "i18n"]
+#[allow(dead_code)]
 struct Localizations;
 
 use once_cell::sync::Lazy;
-static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
-    let loader = fluent_language_loader!();
-    let requested_languages = DesktopLanguageRequester::requested_languages();
+
+#[allow(dead_code)]
+static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
+    let loader = i18n_embed::fluent::fluent_language_loader!();
+    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
     let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
     loader
 });
-use clap::Parser;
+
+#[macro_export]
+macro_rules! fl {
+    ($message_id:literal) => {{
+        i18n_embed_fl::fl!($crate::LANGUAGE_LOADER, $message_id)
+    }};
+    ($message_id:literal, $($args:expr),* $(,)?) => {{
+        i18n_embed_fl::fl!($crate::LANGUAGE_LOADER, $message_id, $($args),*)
+    }};
+}
 
 #[derive(Parser, Debug)]
-pub struct Cli {
+#[command(version, about = "A drawing program for ANSI & ASCII art", long_about = None)]
+pub struct Args {
+    /// Path to file to open
+    #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
 }
 
-// When compiling natively:
-#[cfg(not(target_arch = "wasm32"))]
-fn main() {
-    use std::fs;
-
-    let args = Cli::parse();
-
-    use eframe::icon_data::from_png_bytes;
-
-    use crate::plugins::Plugin;
-    let mut native_options = eframe::NativeOptions {
-        multisampling: 0,
-        renderer: eframe::Renderer::Glow,
-        ..Default::default()
-    };
-    let icon_data = from_png_bytes(include_bytes!("../build/linux/256x256.png")).unwrap();
-    native_options.viewport = native_options.viewport.with_inner_size(egui::vec2(1284. + 8., 839.)).with_icon(icon_data);
-
-    if let Ok(log_file) = Settings::get_log_file() {
-        // delete log file when it is too big
-        if let Ok(data) = fs::metadata(&log_file) {
-            if data.len() > 1024 * 256 {
-                fs::remove_file(&log_file).unwrap();
-            }
+fn get_log_dir() -> Option<PathBuf> {
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_draw") {
+        let dir = proj_dirs.config_dir().to_path_buf();
+        if !dir.exists() {
+            std::fs::create_dir_all(&dir).ok()?;
         }
+        return Some(dir);
+    }
+    None
+}
 
-        let level = log::LevelFilter::Info;
+fn main() {
+    let args = Args::parse();
 
-        // Build a stderr logger.
-        let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
-
-        // Logging to log file.
-        let logfile = FileAppender::builder()
-            // Pattern: https://docs.rs/log4rs/*/log4rs/encode/pattern/index.html
-            .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
-            .build(log_file)
-            .unwrap();
-
-        let config = Config::builder()
-            .appender(Appender::builder().build("logfile", Box::new(logfile)))
-            .appender(
-                Appender::builder()
-                    .filter(Box::new(ThresholdFilter::new(level)))
-                    .build("stderr", Box::new(stderr)),
-            )
-            .build(Root::builder().appender("logfile").appender("stderr").build(LevelFilter::Info))
-            .unwrap();
-
-        // Use this to change log levels at runtime.
-        // This means you can change the default log level to trace
-        // if you are trying to debug an issue and need more logs on then turn it off
-        // once you are done.
-        let _handle = log4rs::init_config(config);
+    if let Some(log_dir) = get_log_dir() {
+        let _logger = Logger::try_with_env_or_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error")
+            .unwrap()
+            .log_to_file(FileSpec::default().directory(&log_dir).basename("icy_draw").suffix("log").suppress_timestamp())
+            .rotate(Criterion::Size(64 * 1024), Naming::Numbers, Cleanup::KeepLogFiles(3))
+            .create_symlink(log_dir.join("icy_draw.log"))
+            .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
+            .start();
     } else {
         eprintln!("Failed to create log file");
     }
 
-    unsafe {
-        SETTINGS.character_sets = CharacterSets::default();
-    }
-    if let Ok(settings_file) = Settings::get_settings_file() {
-        if settings_file.exists() {
-            match Settings::load(&settings_file) {
-                Ok(settings) => unsafe {
-                    SETTINGS = settings;
-                },
-                Err(err) => {
-                    log::error!("Error loading settings: {}", err);
-                }
-            }
-        }
-    }
     log::info!("Starting iCY DRAW {}", *VERSION);
-    Plugin::read_plugin_directory();
-    if let Err(err) = eframe::run_native(
-        &DEFAULT_TITLE,
-        native_options,
-        Box::new(|cc| {
-            let mut window = MainWindow::new(cc);
-            if let Some(mut path) = args.path {
-                if path.is_relative() {
-                    path = std::env::current_dir().unwrap().join(path);
-                }
-                window.open_file(&path, false, None);
+
+    iced::daemon(
+        move || {
+            if let Some(ref path) = args.path {
+                WindowManager::with_path(path.clone())
+            } else {
+                WindowManager::new()
             }
-            Ok(Box::new(window))
-        }),
-    ) {
-        log::error!("Error returned by run_native: {}", err);
-    }
-    log::info!("shutting down.");
+        },
+        WindowManager::update,
+        WindowManager::view,
+    )
+    .settings(Settings {
+        vsync: true,
+        antialiasing: true,
+        ..Default::default()
+    })
+    .theme(WindowManager::theme)
+    .subscription(WindowManager::subscription)
+    .title(WindowManager::title)
+    .run()
+    .expect("Failed to run application");
+
+    log::info!("Shutting down.");
+}
+
+fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+    let img = image::load_from_memory(png_bytes)?;
+    let rgba = img.to_rgba8();
+    let w = img.width();
+    let h = img.height();
+    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
 }
