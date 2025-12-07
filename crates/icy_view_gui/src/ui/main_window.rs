@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     DEFAULT_TITLE, Item, VERSION,
     commands::{cmd, create_icy_view_commands},
-    items::{ProviderType, SixteenColorsProvider, SixteenColorsRoot},
+    items::{ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
 };
 use icy_engine::formats::FileFormat;
 
@@ -152,6 +152,10 @@ pub enum Message {
     CloseAbout,
     /// Open a hyperlink
     OpenLink(String),
+    /// Shuffle item load error - try next item
+    ShuffleLoadError(usize),
+    /// 16colors subitems loaded
+    SixteenColorsSubitemsLoaded(Vec<Box<dyn Item>>),
     /// No-op message (for ignored events)
     None,
 }
@@ -421,13 +425,9 @@ impl MainWindow {
                             // Extract filename from path
                             self.title = new_selection.split('/').last().map(|s| s.to_string()).unwrap_or_else(|| DEFAULT_TITLE.clone());
 
-                            // Read the data from the item (works for both local and virtual files)
-                            if let Some(item_mut) = self.file_browser.selected_item_mut() {
-                                if let Some(data) = item_mut.read_data_blocking() {
-                                    return Task::done(Message::DataLoaded(full_path, data));
-                                } else {
-                                    return Task::done(Message::DataLoadError(full_path.clone(), fl!(crate::LANGUAGE_LOADER, "error-read-file-data")));
-                                }
+                            // Read the data from the item asynchronously (works for both local and virtual files)
+                            if let Some(item) = self.file_browser.selected_item() {
+                                return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                             }
                         }
                     }
@@ -438,12 +438,12 @@ impl MainWindow {
                 match nav_msg {
                     NavigationBarMessage::Back => {
                         if let Some(point) = self.history.go_back() {
-                            self.navigate_to_history_point(&point);
+                            return self.navigate_to_history_point(&point);
                         }
                     }
                     NavigationBarMessage::Forward => {
                         if let Some(point) = self.history.go_forward() {
-                            self.navigate_to_history_point(&point);
+                            return self.navigate_to_history_point(&point);
                         }
                     }
                     NavigationBarMessage::Up => {
@@ -502,13 +502,14 @@ impl MainWindow {
                         let now_16colors = !self.navigation_bar.is_16colors_mode;
                         self.navigation_bar.set_16colors_mode(now_16colors);
                         if now_16colors {
-                            // Switch to 16colors root
+                            // Switch to 16colors root - load asynchronously
                             let root = SixteenColorsRoot::new();
                             let root_box: Box<dyn crate::Item> = Box::new(root);
                             let cancel_token = CancellationToken::new();
-                            let items = root_box.get_subitems_blocking(&cancel_token).unwrap_or_default();
-                            self.file_browser.set_16colors_mode(items);
                             self.navigation_bar.set_path_input("/".to_string());
+                            return load_subitems(root_box, cancel_token, |result| {
+                                Message::SixteenColorsSubitemsLoaded(result.unwrap_or_default())
+                            });
                         } else {
                             // Switch back to home
                             let home = directories::UserDirs::new()
@@ -750,23 +751,24 @@ impl MainWindow {
                                 // Load preview
                                 self.current_file = Some(full_path.clone());
                                 self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                // Read data - prefer using Item for virtual files, fall back to fs::read
+                                // Read data asynchronously - prefer using Item for virtual files
                                 if let Some(item) = self.tile_grid.get_item_at(*index) {
-                                    if let Some(data) = item.read_data_blocking() {
-                                        return Task::done(Message::DataLoaded(full_path.clone(), data));
-                                    }
+                                    return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                                 }
-                                match std::fs::read(PathBuf::from(&full_path)) {
-                                    Ok(data) => {
-                                        return Task::done(Message::DataLoaded(full_path, data));
-                                    }
-                                    Err(e) => {
-                                        return Task::done(Message::DataLoadError(
-                                            full_path,
-                                            fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
-                                        ));
-                                    }
-                                }
+                                // Fall back to fs::read for local files
+                                let path_clone = full_path.clone();
+                                return Task::perform(
+                                    async move {
+                                        tokio::fs::read(&path_clone)
+                                            .await
+                                            .map(|data| (path_clone.clone(), data))
+                                            .map_err(|e| (path_clone, e.to_string()))
+                                    },
+                                    |result| match result {
+                                        Ok((path, data)) => Message::DataLoaded(path, data),
+                                        Err((path, err)) => Message::DataLoadError(path, err),
+                                    },
+                                );
                             }
                         }
                     }
@@ -816,23 +818,24 @@ impl MainWindow {
                                     // Load preview
                                     self.current_file = Some(full_path.clone());
                                     self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                    // Read data - prefer using Item for virtual files, fall back to fs::read
+                                    // Read data asynchronously - prefer using Item for virtual files
                                     if let Some(item) = self.tile_grid.get_selected_item() {
-                                        if let Some(data) = item.read_data_blocking() {
-                                            return Task::done(Message::DataLoaded(full_path.clone(), data));
-                                        }
+                                        return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                                     }
-                                    match std::fs::read(PathBuf::from(&full_path)) {
-                                        Ok(data) => {
-                                            return Task::done(Message::DataLoaded(full_path, data));
-                                        }
-                                        Err(e) => {
-                                            return Task::done(Message::DataLoadError(
-                                                full_path.clone(),
-                                                fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
-                                            ));
-                                        }
-                                    }
+                                    // Fall back to async fs::read for local files
+                                    let path_clone = full_path.clone();
+                                    return Task::perform(
+                                        async move {
+                                            tokio::fs::read(&path_clone)
+                                                .await
+                                                .map(|data| (path_clone.clone(), data))
+                                                .map_err(|e| (path_clone, e.to_string()))
+                                        },
+                                        |result| match result {
+                                            Ok((path, data)) => Message::DataLoaded(path, data),
+                                            Err((path, err)) => Message::DataLoadError(path, err),
+                                        },
+                                    );
                                 }
                             }
                         }
@@ -1092,24 +1095,24 @@ impl MainWindow {
                                 self.current_file = Some(full_path.clone());
                                 self.title = label;
 
-                                // Load preview data
+                                // Load preview data asynchronously
                                 if let Some(item) = self.folder_preview.get_item_at(*index) {
-                                    if let Some(data) = item.read_data_blocking() {
-                                        return Task::done(Message::DataLoaded(full_path.clone(), data));
-                                    }
+                                    return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                                 }
-                                // Fallback to filesystem read
-                                match std::fs::read(PathBuf::from(&full_path)) {
-                                    Ok(data) => {
-                                        return Task::done(Message::DataLoaded(full_path.clone(), data));
-                                    }
-                                    Err(e) => {
-                                        return Task::done(Message::DataLoadError(
-                                            full_path,
-                                            fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
-                                        ));
-                                    }
-                                }
+                                // Fallback to async filesystem read
+                                let path_clone = full_path.clone();
+                                return Task::perform(
+                                    async move {
+                                        tokio::fs::read(&path_clone)
+                                            .await
+                                            .map(|data| (path_clone.clone(), data))
+                                            .map_err(|e| (path_clone, e.to_string()))
+                                    },
+                                    |result| match result {
+                                        Ok((path, data)) => Message::DataLoaded(path, data),
+                                        Err((path, err)) => Message::DataLoadError(path, err),
+                                    },
+                                );
                             }
                         }
                     }
@@ -1153,11 +1156,9 @@ impl MainWindow {
                                         let full_path = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
                                         self.current_file = Some(full_path.clone());
                                         self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                        // Read data from the item we captured before navigation
+                                        // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
-                                            if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(full_path, data));
-                                            }
+                                            return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                                         }
                                     }
                                 } else {
@@ -1182,24 +1183,24 @@ impl MainWindow {
                                         self.file_browser.select_by_path(&PathBuf::from(&item_path));
                                         self.current_file = Some(full_path_str.clone());
                                         self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                        // Read data from the item we captured before navigation
+                                        // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
-                                            if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(full_path_str, data));
-                                            }
+                                            return crate::items::load_item_data(item.clone_box(), full_path_str, Message::DataLoaded, Message::DataLoadError);
                                         }
-                                        // Fallback to filesystem read
-                                        match std::fs::read(PathBuf::from(&full_path_str)) {
-                                            Ok(data) => {
-                                                return Task::done(Message::DataLoaded(full_path_str.clone(), data));
-                                            }
-                                            Err(e) => {
-                                                return Task::done(Message::DataLoadError(
-                                                    full_path_str,
-                                                    fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
-                                                ));
-                                            }
-                                        }
+                                        // Fallback to async filesystem read
+                                        let path_clone = full_path_str.clone();
+                                        return Task::perform(
+                                            async move {
+                                                tokio::fs::read(&path_clone)
+                                                    .await
+                                                    .map(|data| (path_clone.clone(), data))
+                                                    .map_err(|e| (path_clone, e.to_string()))
+                                            },
+                                            |result| match result {
+                                                Ok((path, data)) => Message::DataLoaded(path, data),
+                                                Err((path, err)) => Message::DataLoadError(path, err),
+                                            },
+                                        );
                                     }
                                 }
                             }
@@ -1237,13 +1238,12 @@ impl MainWindow {
                                     } else {
                                         // Select the file in the browser and preview it
                                         self.file_browser.select_by_path(&PathBuf::from(&item_path));
-                                        self.current_file = Some(format!("{}/{}", preview_path_str, item_path_str));
+                                        let full_path = format!("{}/{}", preview_path_str, item_path_str);
+                                        self.current_file = Some(full_path.clone());
                                         self.title = item_path_str.split('/').last().unwrap_or(&item_path_str).to_string();
-                                        // Read data from the item we captured before navigation
+                                        // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
-                                            if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(format!("{}/{}", preview_path_str, item_path_str), data));
-                                            }
+                                            return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                                         }
                                     }
                                 } else {
@@ -1267,24 +1267,24 @@ impl MainWindow {
                                         self.file_browser.select_by_path(&PathBuf::from(&item_path));
                                         self.current_file = Some(full_path.clone());
                                         self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                        // Read data from the item we captured before navigation
+                                        // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
-                                            if let Some(data) = item.read_data_blocking() {
-                                                return Task::done(Message::DataLoaded(full_path, data));
-                                            }
+                                            return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
                                         }
-                                        // Fallback to filesystem read
-                                        match std::fs::read(&full_path) {
-                                            Ok(data) => {
-                                                return Task::done(Message::DataLoaded(full_path, data));
-                                            }
-                                            Err(e) => {
-                                                return Task::done(Message::DataLoadError(
-                                                    full_path,
-                                                    fl!(crate::LANGUAGE_LOADER, "error-read-file", error = e.to_string()),
-                                                ));
-                                            }
-                                        }
+                                        // Fallback to async filesystem read
+                                        let path_clone = full_path.clone();
+                                        return Task::perform(
+                                            async move {
+                                                tokio::fs::read(&path_clone)
+                                                    .await
+                                                    .map(|data| (path_clone.clone(), data))
+                                                    .map_err(|e| (path_clone, e.to_string()))
+                                            },
+                                            |result| match result {
+                                                Ok((path, data)) => Message::DataLoaded(path, data),
+                                                Err((path, err)) => Message::DataLoadError(path, err),
+                                            },
+                                        );
                                     }
                                 }
                             }
@@ -1453,14 +1453,13 @@ impl MainWindow {
                                 self.current_file = Some(full_path.clone());
                                 self.title = item_path.split('/').last().map(|s| s.to_string()).unwrap_or_else(|| DEFAULT_TITLE.clone());
 
-                                // Read and load data
-                                if let Some(item_mut) = self.file_browser.selected_item_mut() {
-                                    if let Some(data) = item_mut.read_data_blocking() {
-                                        return Task::done(Message::DataLoaded(full_path, data));
-                                    } else {
-                                        return Task::done(Message::DataLoadError(full_path.clone(), fl!(crate::LANGUAGE_LOADER, "error-read-file-data")));
-                                    }
-                                }
+                                // Read and load data asynchronously
+                                return load_item_data(
+                                    item.clone_box(),
+                                    full_path,
+                                    |path, data| Message::DataLoaded(path, data),
+                                    |path, err| Message::DataLoadError(path, err),
+                                );
                             }
                         }
                     }
@@ -1516,6 +1515,27 @@ impl MainWindow {
             Message::OpenLink(url) => {
                 if let Err(e) = open::that(&url) {
                     log::error!("Failed to open URL {}: {}", url, e);
+                }
+                Task::none()
+            }
+            Message::ShuffleLoadError(failed_index) => {
+                log::debug!("Shuffle load failed for index {}, trying next item", failed_index);
+                // Try next item in shuffle sequence
+                if let Some(next_index) = self.shuffle_mode.next_item() {
+                    return self.load_shuffle_item(next_index);
+                }
+                Task::none()
+            }
+            Message::SixteenColorsSubitemsLoaded(items) => {
+                // 16colors root items loaded, set them in file browser
+                self.file_browser.set_16colors_mode(items);
+                // Reset SAUCE loader after navigation
+                self.reset_sauce_loader_for_navigation();
+                // Update can_go_up state for toolbar
+                self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
+                if self.view_mode() == ViewMode::Tiles {
+                    let items = self.file_browser.get_items();
+                    self.tile_grid.set_items_from_items(items);
                 }
                 Task::none()
             }
@@ -1831,42 +1851,30 @@ impl MainWindow {
             return Task::done(Message::DataLoaded(path_str, preloaded.data));
         }
 
-        // Get the item
-        let item = &self.file_browser.files[index];
+        // Get the item info we need before borrowing self mutably
+        let item_clone = self.file_browser.files[index].clone_box();
         let path = if let Some(current) = self.file_browser.current_path() {
-            format!("{}/{}", current.to_string_lossy().replace('\\', "/"), item.get_file_path().replace('\\', "/"))
+            format!(
+                "{}/{}",
+                current.to_string_lossy().replace('\\', "/"),
+                item_clone.get_file_path().replace('\\', "/")
+            )
         } else {
-            item.get_file_path().replace('\\', "/")
+            item_clone.get_file_path().replace('\\', "/")
         };
 
         self.current_file = Some(path.clone());
 
-        // Use the data model's read_data_blocking - works for both local and virtual files
-        // We need to get mutable access, so we'll index again
-        if let Some(data) = self.file_browser.files[index].read_data_blocking() {
-            // Extract SAUCE info for overlay
-            if let Some(sauce) = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten() {
-                let comments: Vec<String> = sauce.comments().iter().map(|s| s.to_string()).collect();
-                self.shuffle_mode.set_sauce_info(
-                    Some(sauce.title().to_string()),
-                    Some(sauce.author().to_string()),
-                    Some(sauce.group().to_string()),
-                    comments,
-                );
-            }
+        // Start preloading the next item (do this before async load to maximize parallelism)
+        self.start_shuffle_preload();
 
-            // Start preloading the next item
-            self.start_shuffle_preload();
-
-            return Task::done(Message::DataLoaded(path, data));
-        }
-        log::debug!("read_data_blocking returned None for shuffle item {:?}, trying next", path);
-        // Try next item
-        if let Some(next_index) = self.shuffle_mode.next_item() {
-            return self.load_shuffle_item(next_index);
-        }
-
-        Task::none()
+        // Load data asynchronously - SAUCE extraction happens in Message::DataLoaded handler
+        load_item_data(
+            item_clone,
+            path,
+            |path, data| Message::DataLoaded(path, data),
+            move |_path, _err| Message::ShuffleLoadError(index),
+        )
     }
 
     /// Start preloading the next shuffle item in background
@@ -1913,8 +1921,8 @@ impl MainWindow {
                     log::debug!("Shuffle preload cancelled for index {}", preload_index);
                     let _ = tx.send(None);
                 }
-                result = tokio::task::spawn_blocking(move || {
-                    item.read_data_blocking().map(|data| {
+                data_opt = item.read_data() => {
+                    let preloaded = data_opt.map(|data| {
                         // If it's an image, also decode it (store rgba data, handle created on use)
                         let decoded_image = if is_image {
                             let stripped_data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
@@ -1956,18 +1964,9 @@ impl MainWindow {
                             data,
                             decoded_image,
                         }
-                    })
-                }) => {
-                    match result {
-                        Ok(preloaded) => {
-                            log::debug!("Shuffle preload completed for index {}", preload_index);
-                            let _ = tx.send(preloaded);
-                        }
-                        Err(e) => {
-                            log::error!("Shuffle preload task failed: {}", e);
-                            let _ = tx.send(None);
-                        }
-                    }
+                    });
+                    log::debug!("Shuffle preload completed for index {}", preload_index);
+                    let _ = tx.send(preloaded);
                 }
             }
         });
@@ -2453,7 +2452,7 @@ impl MainWindow {
     }
 
     /// Navigate to a history point - restores provider, path, mode, and selection
-    fn navigate_to_history_point(&mut self, point: &HistoryPoint) {
+    fn navigate_to_history_point(&mut self, point: &HistoryPoint) -> Task<Message> {
         // Cancel any ongoing loading operation
         self.preview.cancel_loading();
         self.current_file = None;
@@ -2464,16 +2463,10 @@ impl MainWindow {
 
         // 1. Switch provider if needed
         let is_web = point.provider == ProviderType::Web;
+        let need_16colors_load = self.navigation_bar.is_16colors_mode != is_web && is_web;
+
         if self.navigation_bar.is_16colors_mode != is_web {
             self.navigation_bar.set_16colors_mode(is_web);
-            if is_web {
-                // Switch to 16colors mode - get root items via get_subitems_blocking
-                let root: Box<dyn crate::Item> = Box::new(SixteenColorsRoot::new());
-                let cancel_token = CancellationToken::new();
-                if let Some(items) = root.get_subitems_blocking(&cancel_token) {
-                    self.file_browser.set_16colors_mode(items);
-                }
-            }
         }
 
         // 2. Navigate to the path
@@ -2510,6 +2503,15 @@ impl MainWindow {
                 self.file_browser.select_by_label(item_name);
             }
         }
+
+        // If switching to 16colors mode, we need to load root items async
+        if need_16colors_load {
+            let root: Box<dyn crate::Item> = Box::new(SixteenColorsRoot::new());
+            let cancel_token = CancellationToken::new();
+            return load_subitems(root, cancel_token, |result| Message::SixteenColorsSubitemsLoaded(result.unwrap_or_default()));
+        }
+
+        Task::none()
     }
 
     /// View for shuffle mode - fullscreen preview with SAUCE info overlay

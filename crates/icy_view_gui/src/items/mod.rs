@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use iced::Task;
 use icy_sauce::SauceRecord;
 
 mod archive;
@@ -16,19 +17,7 @@ use crate::ui::thumbnail_view::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER
 use async_trait::async_trait;
 use icy_engine::{AttributedChar, Position, Rectangle, RenderOptions, Selection, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
 pub use icy_engine_gui::ui::FileIcon;
-use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;
-
-/// Global Tokio runtime for blocking operations
-/// This avoids creating/dropping runtimes repeatedly which can cause issues
-static BLOCKING_RUNTIME: Lazy<tokio::runtime::Runtime> = Lazy::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("item-blocking")
-        .enable_all()
-        .build()
-        .expect("Failed to create blocking runtime")
-});
 
 /// Create a new shared 16colors cache
 pub fn create_shared_cache() -> SharedSixteenColorsCache {
@@ -193,6 +182,12 @@ pub trait Item: Send + Sync {
     fn clone_box(&self) -> Box<dyn Item>;
 }
 
+impl Clone for Box<dyn Item> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 /// Get the FileIcon for a given path based on its extension
 pub fn get_file_icon_for_path(path: &Path) -> FileIcon {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -226,18 +221,45 @@ impl dyn Item {
             true
         }
     }
+}
 
-    /// Synchronous wrapper for get_subitems - blocks on async
-    /// Use this only in non-async contexts
-    pub fn get_subitems_blocking(&self, cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
-        BLOCKING_RUNTIME.block_on(self.get_subitems(cancel_token))
-    }
+/// Result type for async item data loading
+pub type ItemDataResult = Result<(String, Vec<u8>), (String, String)>;
 
-    /// Synchronous wrapper for read_data - blocks on async
-    /// Use this only in non-async contexts
-    pub fn read_data_blocking(&self) -> Option<Vec<u8>> {
-        BLOCKING_RUNTIME.block_on(self.read_data())
-    }
+/// Result type for async subitems loading  
+pub type SubitemsResult = Option<Vec<Box<dyn Item>>>;
+
+/// Load item data asynchronously using Iced's Task system.
+/// Returns a Task that resolves to either (path, data) or (path, error_message).
+pub fn load_item_data<M>(
+    item: Box<dyn Item>,
+    path: String,
+    on_success: impl FnOnce(String, Vec<u8>) -> M + Send + 'static,
+    on_error: impl FnOnce(String, String) -> M + Send + 'static,
+) -> Task<M>
+where
+    M: Send + 'static,
+{
+    Task::perform(
+        async move {
+            match item.read_data().await {
+                Some(data) => Ok((path, data)),
+                None => Err((path.clone(), "Failed to read data".to_string())),
+            }
+        },
+        move |result| match result {
+            Ok((path, data)) => on_success(path, data),
+            Err((path, err)) => on_error(path, err),
+        },
+    )
+}
+
+/// Load subitems asynchronously using Iced's Task system.
+pub fn load_subitems<M>(item: Box<dyn Item>, cancel_token: CancellationToken, on_complete: impl FnOnce(SubitemsResult) -> M + Send + 'static) -> Task<M>
+where
+    M: Send + 'static,
+{
+    Task::perform(async move { item.get_subitems(&cancel_token).await }, on_complete)
 }
 
 pub fn sort_folder(directories: &mut Vec<Box<dyn Item>>) {

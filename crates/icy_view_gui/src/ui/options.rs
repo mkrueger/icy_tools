@@ -2,6 +2,8 @@ use icy_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
+use futures::executor::block_on;
+
 const SCROLL_SPEED: [f32; 3] = [80.0, 160.0, 320.0];
 
 /// Sort order for file listing
@@ -279,7 +281,9 @@ impl Options {
         // Virtual file - need to copy to temp directory
         // For virtual files we need to clone the item to read data
         let item_clone = item.clone_box();
-        let data = item_clone.read_data_blocking()?;
+        // Use block_on for this synchronous context - this is acceptable as external
+        // command execution already involves blocking operations
+        let data = block_on(item_clone.read_data())?;
         let file_name = PathBuf::from(&item.get_file_path()).file_name()?.to_string_lossy().to_string();
 
         // Create session-specific temp directory
