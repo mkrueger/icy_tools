@@ -1,4 +1,4 @@
-undo-add_layer=Aggiungi livello
+icy_engine_editundo-add_layer=Aggiungi livello
 undo-remove_layer=Rimuovi livello
 undo-raise_layer=Alza livello
 undo-lower_layer=Abbassa livello

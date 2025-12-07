@@ -18,7 +18,7 @@ impl EditState {
         self.current_layer = idx;
         Ok(())
     }
-
+    //
     pub fn remove_layer(&mut self, layer: usize) -> EngineResult<()> {
         if layer >= self.buffer.layers.len() {
             return Err(anyhow::anyhow!("Invalid layer index: {layer}"));
@@ -164,7 +164,7 @@ impl EditState {
 
                 let ch_below = merge_layer.get_char(pos);
                 if ch_below.is_visible()
-                    && (ch.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR || ch.attribute.background_color == TextAttribute::TRANSPARENT_COLOR)
+                    && (ch.attribute.get_foreground() == TextAttribute::TRANSPARENT_COLOR || ch.attribute.get_background() == TextAttribute::TRANSPARENT_COLOR)
                 {
                     ch = self.buffer.make_solid_color(ch, ch_below);
                 }
@@ -225,7 +225,7 @@ impl EditState {
 
         let base_layer = &mut self.buffer.layers[layer_idx - 1];
         let area = layer.get_rectangle() + base_layer.get_offset();
-        let old_layer = Layer::from_layer(base_layer, area);
+        let old_layer = crate::layer_from_area(base_layer, area);
 
         for x in 0..layer.get_width() as u32 {
             for y in 0..layer.get_height() as u32 {
@@ -240,7 +240,7 @@ impl EditState {
             }
         }
 
-        let new_layer = Layer::from_layer(base_layer, area);
+        let new_layer = crate::layer_from_area(base_layer, area);
         let op = super::undo_operations::UndoLayerChange::new(layer_idx - 1, area.start, old_layer, new_layer);
         self.push_plain_undo(Box::new(op))
     }
@@ -281,7 +281,7 @@ impl EditState {
                 start: Position::new(0, 0),
                 size: layer.get_size(),
             };
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
 
             for x in 0..layer.get_width() as u32 {
                 for y in 0..layer.get_height() as u32 {
@@ -292,7 +292,7 @@ impl EditState {
                     }
                 }
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(layer_idx, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {

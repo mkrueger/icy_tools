@@ -525,7 +525,7 @@ impl UndoOperation for UndoLayerChange {
             if layer.get_size() == self.old_chars.get_size() {
                 layer.lines = self.old_chars.lines.clone();
             } else {
-                layer.stamp(self.pos, &self.old_chars);
+                crate::stamp_layer(layer, self.pos, &self.old_chars);
             }
             Ok(())
         } else {
@@ -538,7 +538,7 @@ impl UndoOperation for UndoLayerChange {
             if layer.get_size() == self.new_chars.get_size() {
                 layer.lines = self.new_chars.lines.clone();
             } else {
-                layer.stamp(self.pos, &self.new_chars);
+                crate::stamp_layer(layer, self.pos, &self.new_chars);
             }
             Ok(())
         } else {
@@ -1241,12 +1241,12 @@ impl UndoOperation for SwitchPalettte {
 
 #[derive(Default)]
 pub struct SetSauceData {
-    new: icy_sauce::MetaData,
-    old: icy_sauce::MetaData,
+    new: crate::SauceMetaData,
+    old: crate::SauceMetaData,
 }
 
 impl SetSauceData {
-    pub fn new(new: icy_sauce::MetaData, old: icy_sauce::MetaData) -> Self {
+    pub fn new(new: crate::SauceMetaData, old: crate::SauceMetaData) -> Self {
         Self { new, old }
     }
 }
@@ -1257,12 +1257,12 @@ impl UndoOperation for SetSauceData {
     }
 
     fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.get_buffer_mut().set_sauce_meta(self.old.clone());
+        edit_state.set_sauce_meta(self.old.clone());
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.get_buffer_mut().set_sauce_meta(self.new.clone());
+        edit_state.set_sauce_meta(self.new.clone());
         Ok(())
     }
 }

@@ -17,19 +17,7 @@ mod font_operations;
 mod selection_operations;
 mod tag_operations;
 
-use crate::{Caret, EngineResult, Layer, Selection, SelectionMask, TextBuffer, TextPane, clipboard, overlay_mask::OverlayMask};
-
-#[derive(RustEmbed)]
-#[folder = "i18n"] // path to the compiled localization resources
-struct Localizations;
-
-use once_cell::sync::Lazy;
-static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
-    let loader = fluent_language_loader!();
-    let requested_languages = DesktopLanguageRequester::requested_languages();
-    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
-    loader
-});
+use crate::{Caret, EngineResult, Layer, SauceMetaData, Selection, SelectionMask, TextBuffer, TextPane, clipboard, overlay_mask::OverlayMask};
 
 pub struct EditState {
     buffer: TextBuffer,
@@ -50,8 +38,8 @@ pub struct EditState {
     pub is_palette_dirty: bool,
     is_buffer_dirty: bool,
 
-    pub scrollback_buffer: Option<TextBuffer>,
-    pub scrollback_offset: usize,
+    /// SAUCE metadata for the file (title, author, group, comments)
+    sauce_meta: SauceMetaData,
 }
 
 pub struct AtomicUndoGuard {
@@ -120,104 +108,12 @@ impl Default for EditState {
             tool_overlay_mask,
             is_palette_dirty: false,
             is_buffer_dirty: false,
-
-            scrollback_buffer: None,
-            scrollback_offset: 0,
+            sauce_meta: SauceMetaData::default(),
         }
     }
 }
 
 impl EditState {
-    pub fn get_max_scrollback_offset(&self) -> usize {
-        self.buffer.scrollback_lines.len()
-    }
-    pub fn set_scroll_position(&mut self, line: usize) {
-        self.scrollback_offset = line;
-        if line == 0 {
-            self.scrollback_buffer = None;
-            return;
-        }
-
-        // Create a new buffer with same settings as current buffer
-        let mut scroll_buffer = TextBuffer::new(self.buffer.get_size());
-
-        // Copy buffer settings
-        scroll_buffer.set_font_table(self.buffer.get_font_table());
-        scroll_buffer.terminal_state.is_terminal_buffer = self.buffer.terminal_state.is_terminal_buffer;
-        scroll_buffer.terminal_state = self.buffer.terminal_state.clone();
-        scroll_buffer.buffer_type = self.buffer.buffer_type;
-        scroll_buffer.palette = self.buffer.palette.clone();
-
-        let viewport_height = self.buffer.terminal_state.get_height();
-        let total_scrollback_lines = self.buffer.scrollback_lines.len();
-
-        // Calculate which lines to show
-        // line = 0 means bottom (no scroll)
-        // line = total_scrollback_lines means top of scrollback
-        let start_line = total_scrollback_lines.saturating_sub(line);
-        let end_line = (start_line + viewport_height as usize).min(total_scrollback_lines + self.buffer.layers[0].lines.len());
-
-        // Clear the default layer and resize if needed
-        scroll_buffer.layers.clear();
-        scroll_buffer.layers.push(Layer::new("scrollback_view".to_string(), self.buffer.get_size()));
-
-        let mut y = 0;
-
-        // Copy lines from scrollback buffer
-        for i in start_line..total_scrollback_lines.min(end_line) {
-            if let Some(scrollback_line) = self.buffer.scrollback_lines.get(i) {
-                if y < viewport_height {
-                    // Copy the line to the scroll buffer
-                    if y >= scroll_buffer.layers[0].lines.len() as i32 {
-                        scroll_buffer.layers[0].lines.push(scrollback_line.clone());
-                    } else {
-                        scroll_buffer.layers[0].lines[y as usize] = scrollback_line.clone();
-                    }
-                    y += 1;
-                }
-            }
-        }
-
-        // If we haven't filled the viewport, add lines from the current buffer
-        let remaining_lines = viewport_height - y;
-        if remaining_lines > 0 && start_line < total_scrollback_lines {
-            // We're showing a mix of scrollback and current buffer
-            for i in 0..remaining_lines.min(self.buffer.layers[0].lines.len() as i32) {
-                if y < viewport_height {
-                    if let Some(current_line) = self.buffer.layers[0].lines.get(i as usize) {
-                        if y >= scroll_buffer.layers[0].lines.len() as i32 {
-                            scroll_buffer.layers[0].lines.push(current_line.clone());
-                        } else {
-                            scroll_buffer.layers[0].lines[y as usize] = current_line.clone();
-                        }
-                        y += 1;
-                    }
-                }
-            }
-        } else if start_line >= total_scrollback_lines {
-            // We're only showing current buffer (scrolled to bottom area)
-            let current_start = line.saturating_sub(total_scrollback_lines);
-            for i in current_start..(current_start + viewport_height as usize).min(self.buffer.layers[0].lines.len()) {
-                if let Some(current_line) = self.buffer.layers[0].lines.get(i) {
-                    if y >= scroll_buffer.layers[0].lines.len() as i32 {
-                        scroll_buffer.layers[0].lines.push(current_line.clone());
-                    } else {
-                        scroll_buffer.layers[0].lines[y as usize] = current_line.clone();
-                    }
-                    y += 1;
-                }
-            }
-        }
-
-        scroll_buffer.update_hyperlinks();
-        self.scrollback_buffer = Some(scroll_buffer);
-    }
-
-    pub fn clear_scrollback_buffer(&mut self) {
-        self.buffer.scrollback_lines.clear();
-        self.set_scroll_position(0);
-    }
-
     pub fn from_buffer(buffer: TextBuffer) -> Self {
         let mut selection_mask = SelectionMask::default();
         selection_mask.set_size(buffer.get_size());
@@ -250,14 +146,6 @@ impl EditState {
         &mut self.tool_overlay_mask
     }
 
-    pub fn get_display_buffer(&self) -> &TextBuffer {
-        if let Some(ref scrollback) = self.scrollback_buffer {
-            scrollback
-        } else {
-            &self.buffer
-        }
-    }
-
     pub fn get_buffer(&self) -> &TextBuffer {
         &self.buffer
     }
@@ -278,6 +166,21 @@ impl EditState {
         self.is_buffer_dirty = false;
     }
 
+    /// Get a reference to the SAUCE metadata
+    pub fn get_sauce_meta(&self) -> &SauceMetaData {
+        &self.sauce_meta
+    }
+
+    /// Get a mutable reference to the SAUCE metadata
+    pub fn get_sauce_meta_mut(&mut self) -> &mut SauceMetaData {
+        &mut self.sauce_meta
+    }
+
+    /// Set the SAUCE metadata
+    pub fn set_sauce_meta(&mut self, sauce_meta: SauceMetaData) {
+        self.sauce_meta = sauce_meta;
+    }
+
     pub fn get_cur_layer(&self) -> Option<&Layer> {
         if let Ok(layer) = self.get_current_layer() {
             self.buffer.layers.get(layer)
@@ -288,7 +191,7 @@ impl EditState {
 
     pub fn get_cur_display_layer(&self) -> Option<&Layer> {
         if let Ok(layer) = self.get_current_layer() {
-            self.get_display_buffer().layers.get(layer)
+            self.buffer.layers.get(layer)
         } else {
             None
         }

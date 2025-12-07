@@ -7,7 +7,7 @@ use std::{
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, EngineResult, Layer, Position, Rectangle, Selection, TextPane};
+use crate::{AttributedChar, EngineResult, Position, Rectangle, Selection, TextPane};
 
 use super::{EditState, EditorError};
 
@@ -26,7 +26,7 @@ impl EditState {
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.get_rectangle());
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
             for y in area.y_range() {
                 let mut removed_chars = 0;
                 let len = area.get_width();
@@ -49,7 +49,7 @@ impl EditState {
                     layer.set_char(Position::new(x, y), ch);
                 }
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -63,7 +63,7 @@ impl EditState {
         self.justify_left()?;
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.get_rectangle());
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
 
             for y in area.y_range() {
                 let mut removed_chars = 0;
@@ -89,7 +89,7 @@ impl EditState {
                     layer.set_char((x, y), ch);
                 }
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -102,7 +102,7 @@ impl EditState {
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.get_rectangle());
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
 
             for y in area.y_range() {
                 let mut removed_chars = 0;
@@ -127,7 +127,7 @@ impl EditState {
                     layer.set_char((x, y), ch);
                 }
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -146,7 +146,7 @@ impl EditState {
 
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.get_rectangle());
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
             let max = area.get_width() / 2;
 
             for y in area.y_range() {
@@ -162,7 +162,7 @@ impl EditState {
                     layer.set_char(pos2, pos1ch);
                 }
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -182,7 +182,7 @@ impl EditState {
 
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.get_rectangle());
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
             let max = area.get_height() / 2;
 
             for x in area.x_range() {
@@ -197,7 +197,7 @@ impl EditState {
                     layer.set_char(pos2, pos1ch);
                 }
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -289,7 +289,7 @@ impl EditState {
                 return self.push_undo_action(Box::new(op));
             }
 
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
 
             let mut saved_line = Vec::new();
 
@@ -309,7 +309,7 @@ impl EditState {
                 let line_above = &mut layer.lines[y as usize - 1];
                 line_above.chars.splice(area.left() as usize..area.left() as usize, chars);
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -329,7 +329,7 @@ impl EditState {
                 let op = super::undo_operations::UndoScrollWholeLayerDown::new(self.get_current_layer()?);
                 return self.push_undo_action(Box::new(op));
             }
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
 
             let mut saved_line = Vec::new();
 
@@ -349,7 +349,7 @@ impl EditState {
                 let line_below = &mut layer.lines[y as usize + 1];
                 line_below.chars.splice(area.left() as usize..area.left() as usize, chars);
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -365,7 +365,7 @@ impl EditState {
             if area.is_empty() {
                 return Ok(());
             }
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
             for y in area.y_range() {
                 let line = &mut layer.lines[y as usize];
                 if line.chars.len() < area.right() as usize {
@@ -374,7 +374,7 @@ impl EditState {
                 let ch = line.chars.remove(area.left() as usize);
                 line.chars.insert(area.right() as usize - 1, ch);
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
@@ -390,7 +390,7 @@ impl EditState {
             if area.is_empty() {
                 return Ok(());
             }
-            let old_layer = Layer::from_layer(layer, area);
+            let old_layer = crate::layer_from_area(layer, area);
             for y in area.y_range() {
                 let line = &mut layer.lines[y as usize];
                 if line.chars.len() < area.right() as usize {
@@ -399,7 +399,7 @@ impl EditState {
                 let ch = line.chars.remove(area.right() as usize - 1);
                 line.chars.insert(area.left() as usize, ch);
             }
-            let new_layer = Layer::from_layer(layer, area);
+            let new_layer = crate::layer_from_area(layer, area);
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
