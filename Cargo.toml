@@ -86,8 +86,8 @@ cascada = "0.3.0"
 resvg = "0.45"
 ab_glyph = "0.2"
 
-iced = "0.14.0-dev"
-iced_aw = { git = "https://github.com/mkrueger/iced_aw" }
+iced = { git = "https://github.com/iced-rs/iced.git", branch = "master" }
+iced_aw = { git = "https://github.com/mkrueger/iced_aw.git" }
 
 versions = "7.0.0"
 github_release_check = "0.2.1"
@@ -105,7 +105,3 @@ strip = true        # Strip symbols from binary*
 inherits = "release"
 debug = true
 strip = false
-
-[patch.crates-io]
-iced.git = "https://github.com/iced-rs/iced.git"
-iced_aw.git = "https://github.com/iced-rs/iced_aw.git"

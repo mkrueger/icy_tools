@@ -12,7 +12,6 @@ jamjam = { git ="https://github.com/mkrueger/icy_board" }
 #jamjam = { path ="../../../icy_board/crates/jamjam" }
 
 iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
-# iced_aw = { workspace = true, features = ["menu"]  }
 
 tokio = { workspace = true }
 serde = { workspace = true }

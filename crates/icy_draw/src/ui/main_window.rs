@@ -12,7 +12,7 @@ use iced::{
     widget::{column, container, text},
 };
 
-use super::{SharedOptions, menu::MenuBuilder};
+use super::{SharedOptions, menu::MenuBarState};
 
 /// The editing mode of a window
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,9 +133,6 @@ pub enum Message {
     // Mode switching
     SwitchMode(EditMode),
 
-    // Menu
-    MenuAction(String),
-
     // Internal
     Tick,
 }
@@ -155,8 +152,8 @@ pub struct MainWindow {
     /// Shared options
     options: Arc<Mutex<SharedOptions>>,
 
-    /// Menu builder for this window
-    menu_builder: MenuBuilder,
+    /// Menu bar state (tracks expanded menus)
+    menu_state: MenuBarState,
 
     /// Is the document modified?
     is_modified: bool,
@@ -181,7 +178,7 @@ impl MainWindow {
             file_path: path,
             mode_state,
             options,
-            menu_builder: MenuBuilder::new(),
+            menu_state: MenuBarState::new(),
             is_modified: false,
         }
     }
@@ -271,18 +268,13 @@ impl MainWindow {
                 };
                 Task::none()
             }
-            Message::MenuAction(action) => {
-                log::info!("Menu action: {}", action);
-                // TODO: Route menu actions to appropriate handlers
-                Task::none()
-            }
             Message::Tick => Task::none(),
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         // Build the UI based on current mode
-        let menu_bar = self.menu_builder.build();
+        let menu_bar = self.menu_state.view();
 
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(_state) => self.view_ansi_editor(),

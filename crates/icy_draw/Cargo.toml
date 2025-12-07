@@ -12,7 +12,7 @@ repository = "https://github.com/mkrueger/icy_tools"
 [dependencies]
 # UI Framework - iced based
 iced = { workspace = true }
-# iced_aw = { workspace = true } # TODO: Re-enable when version conflicts are resolved
+iced_aw = { workspace = true }
 
 # Logging
 log = { workspace = true }

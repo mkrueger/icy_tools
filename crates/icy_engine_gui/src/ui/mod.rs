@@ -17,6 +17,9 @@ pub use export_dialog::*;
 mod help_dialog;
 pub use help_dialog::*;
 
+pub mod menu;
+pub use menu::{Menu, MenuBar, MenuItem};
+
 pub mod version_helper;
 
 // Button styling

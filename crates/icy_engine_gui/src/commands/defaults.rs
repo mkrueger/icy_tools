@@ -166,4 +166,33 @@ mod tests {
             assert_eq!(cmd::HELP_SHOW.primary_hotkey_display(), Some("F1".to_string()), "HELP_SHOW should have F1");
         }
     }
+
+    #[test]
+    fn test_cmd_static_labels() {
+        // Test that cmd:: statics have translated labels
+        assert!(
+            !cmd::FILE_NEW.label_action.is_empty(),
+            "FILE_NEW.label_action should not be empty, got: '{}'",
+            cmd::FILE_NEW.label_action
+        );
+        assert!(
+            !cmd::FILE_NEW.label_menu.is_empty(),
+            "FILE_NEW.label_menu should not be empty, got: '{}'",
+            cmd::FILE_NEW.label_menu
+        );
+        assert!(!cmd::EDIT_COPY.label_action.is_empty(), "EDIT_COPY.label_action should not be empty");
+
+        // Test that clone preserves labels
+        let cloned = cmd::FILE_NEW.clone();
+        assert!(
+            !cloned.label_action.is_empty(),
+            "Cloned FILE_NEW.label_action should not be empty, got: '{}'",
+            cloned.label_action
+        );
+        assert!(
+            !cloned.label_menu.is_empty(),
+            "Cloned FILE_NEW.label_menu should not be empty, got: '{}'",
+            cloned.label_menu
+        );
+    }
 }

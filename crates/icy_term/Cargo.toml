@@ -15,7 +15,6 @@ icy_parser_core = { workspace = true }
 mlua = { workspace = true }
 iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 
-# iced_aw = { workspace = true, features = ["menu"]  }
 clap-i18n-richformatter = { workspace = true }
 image = { workspace = true }
 tokio = { workspace = true }
