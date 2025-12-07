@@ -7,7 +7,10 @@ use std::{path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{Element, Event, Task, Theme, widget::{column, container, text}};
+use iced::{
+    Element, Event, Task, Theme,
+    widget::{column, container, text},
+};
 
 use super::{SharedOptions, menu::MenuBuilder};
 
@@ -113,7 +116,7 @@ pub enum Message {
     SaveFile,
     SaveFileAs,
     CloseFile,
-    
+
     // Edit operations
     Undo,
     Redo,
@@ -121,18 +124,18 @@ pub enum Message {
     Copy,
     Paste,
     SelectAll,
-    
+
     // View operations
     ZoomIn,
     ZoomOut,
     ZoomReset,
-    
+
     // Mode switching
     SwitchMode(EditMode),
-    
+
     // Menu
     MenuAction(String),
-    
+
     // Internal
     Tick,
 }
@@ -142,19 +145,19 @@ pub enum Message {
 pub struct MainWindow {
     /// Window ID (1-based, for Alt+N switching)
     pub id: usize,
-    
+
     /// Current file path (if saved)
     pub file_path: Option<PathBuf>,
-    
+
     /// Current editing mode and state
     mode_state: ModeState,
-    
+
     /// Shared options
     options: Arc<Mutex<SharedOptions>>,
-    
+
     /// Menu builder for this window
     menu_builder: MenuBuilder,
-    
+
     /// Is the document modified?
     is_modified: bool,
 }
@@ -185,14 +188,15 @@ impl MainWindow {
 
     pub fn title(&self) -> String {
         let mode = self.mode_state.mode();
-        let file_name = self.file_path
+        let file_name = self
+            .file_path
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("Untitled");
-        
+
         let modified = if self.is_modified { " •" } else { "" };
-        
+
         format!("{}{} - iCY DRAW [{}]", file_name, modified, mode)
     }
 
@@ -272,66 +276,45 @@ impl MainWindow {
                 // TODO: Route menu actions to appropriate handlers
                 Task::none()
             }
-            Message::Tick => {
-                Task::none()
-            }
+            Message::Tick => Task::none(),
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         // Build the UI based on current mode
         let menu_bar = self.menu_builder.build();
-        
+
         let content: Element<'_, Message> = match &self.mode_state {
-            ModeState::Ansi(_state) => {
-                self.view_ansi_editor()
-            }
-            ModeState::BitFont(_state) => {
-                self.view_bitfont_editor()
-            }
-            ModeState::CharFont(_state) => {
-                self.view_charfont_editor()
-            }
+            ModeState::Ansi(_state) => self.view_ansi_editor(),
+            ModeState::BitFont(_state) => self.view_bitfont_editor(),
+            ModeState::CharFont(_state) => self.view_charfont_editor(),
         };
 
-        column![
-            menu_bar,
-            content,
-        ]
-        .into()
+        column![menu_bar, content,].into()
     }
 
     fn view_ansi_editor(&self) -> Element<'_, Message> {
         // TODO: Implement ANSI editor view
-        container(
-            text("ANSI Editor - Coming Soon")
-                .size(24)
-        )
-        .center_x(iced::Length::Fill)
-        .center_y(iced::Length::Fill)
-        .into()
+        container(text("ANSI Editor - Coming Soon").size(24))
+            .center_x(iced::Length::Fill)
+            .center_y(iced::Length::Fill)
+            .into()
     }
 
     fn view_bitfont_editor(&self) -> Element<'_, Message> {
         // TODO: Implement BitFont editor view
-        container(
-            text("BitFont Editor - Coming Soon")
-                .size(24)
-        )
-        .center_x(iced::Length::Fill)
-        .center_y(iced::Length::Fill)
-        .into()
+        container(text("BitFont Editor - Coming Soon").size(24))
+            .center_x(iced::Length::Fill)
+            .center_y(iced::Length::Fill)
+            .into()
     }
 
     fn view_charfont_editor(&self) -> Element<'_, Message> {
         // TODO: Implement CharFont editor view
-        container(
-            text("CharFont (TDF) Editor - Coming Soon")
-                .size(24)
-        )
-        .center_x(iced::Length::Fill)
-        .center_y(iced::Length::Fill)
-        .into()
+        container(text("CharFont (TDF) Editor - Coming Soon").size(24))
+            .center_x(iced::Length::Fill)
+            .center_y(iced::Length::Fill)
+            .into()
     }
 
     /// Handle events passed from the window manager

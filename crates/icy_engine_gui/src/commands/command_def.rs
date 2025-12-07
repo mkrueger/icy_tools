@@ -16,11 +16,11 @@ pub struct CommandDef {
     pub category: Option<String>,
 
     /// Hotkeys for Windows/Linux
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, alias = "hotkey", skip_serializing_if = "Vec::is_empty")]
     hotkeys: Vec<Hotkey>,
 
     /// Hotkeys for macOS (falls back to `hotkeys` if empty)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, alias = "hotkey_mac", skip_serializing_if = "Vec::is_empty")]
     hotkeys_mac: Vec<Hotkey>,
 
     /// Mouse button bindings (platform-independent)
@@ -202,13 +202,13 @@ impl CommandDef {
     }
 
     /// Translate all label fields using the provided translator function.
-    /// 
+    ///
     /// The translator should return the translated string for a fluent key,
     /// or the key itself if no translation is found.
-    /// 
+    ///
     /// # Arguments
     /// * `translator` - Function that takes a fluent key and returns the translation
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// cmd.translate(|key| fl!(LANGUAGE_LOADER, key));
@@ -219,18 +219,9 @@ impl CommandDef {
     {
         self.label_action = translator(&self.fluent_action_key());
         self.label_description = translator(&self.fluent_desc_key());
-        
-        // Menu label is optional - if not found, fall back to action label
-        let menu_key = self.fluent_menu_key();
-        let menu_translation = translator(&menu_key);
-        
-        // If the translation returns the key itself, it means no translation was found
-        // In that case, fall back to the action label
-        if menu_translation == menu_key || menu_translation.is_empty() {
-            self.label_menu = self.label_action.clone();
-        } else {
-            self.label_menu = menu_translation;
-        }
+
+        // Menu label: use action label as fallback (no separate menu translation needed)
+        self.label_menu = self.label_action.clone();
     }
 
     /// Get menu label with hotkey appended (if any)
@@ -370,6 +361,22 @@ mod tests {
         assert_eq!(cmd.fluent_action_key(), "cmd-view-zoom_in-action");
         assert_eq!(cmd.fluent_desc_key(), "cmd-view-zoom_in-desc");
         assert_eq!(cmd.fluent_category_key(), Some("cmd-category-navigation".to_string()));
+    }
+
+    #[test]
+    fn test_serde_hotkey_alias() {
+        // Test that 'hotkey' (singular) is correctly deserialized as 'hotkeys'
+        let toml_str = r#"
+id = "edit.copy"
+hotkey = ["Ctrl+C"]
+hotkey_mac = ["Cmd+C"]
+category = "edit"
+"#;
+        let cmd: CommandDef = toml::from_str(toml_str).unwrap();
+        assert_eq!(cmd.id, "edit.copy");
+        assert_eq!(cmd.hotkeys().len(), 1, "hotkeys should be populated from 'hotkey' field");
+        assert_eq!(cmd.hotkeys_mac().len(), 1, "hotkeys_mac should be populated from 'hotkey_mac' field");
+        assert_eq!(cmd.primary_hotkey_display(), Some("Ctrl+C".to_string()));
     }
 
     #[test]

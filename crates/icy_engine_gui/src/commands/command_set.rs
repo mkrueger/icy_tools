@@ -234,6 +234,21 @@ impl CommandSet {
             })
             .collect()
     }
+
+    /// Translate all commands in the set using the provided translator function
+    ///
+    /// This calls `translate()` on each command to populate the localized label fields.
+    ///
+    /// # Arguments
+    /// * `translator` - Function that translates fluent keys to localized strings
+    pub fn translate_all<F>(&mut self, translator: F)
+    where
+        F: Fn(&str) -> String,
+    {
+        for cmd in self.commands.values_mut() {
+            cmd.translate(&translator);
+        }
+    }
 }
 
 /// Information about a command for help display

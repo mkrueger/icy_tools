@@ -50,3 +50,123 @@ dialog-yes-button = Sì
 dialog-no-button = No
 dialog-close-button = Chiudi
 dialog-delete-button = Elimina
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Chiavi del sistema di comandi comuni
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Categorie
+cmd-category-file = File
+cmd-category-edit = Modifica
+cmd-category-view = Visualizza
+cmd-category-navigation = Navigazione
+cmd-category-window = Finestra
+cmd-category-help = Aiuto
+cmd-category-settings = Impostazioni
+cmd-category-general = Generale
+
+# Categorie aggiuntive per icy_term e altre app
+cmd-category-connection = Connessione
+cmd-category-login = Autenticazione
+cmd-category-transfer = Trasferimento File
+cmd-category-terminal = Terminale
+cmd-category-capture = Cattura
+cmd-category-script = Script
+cmd-category-app = Applicazione
+
+# Categorie aggiuntive per icy_view
+cmd-category-playback = Riproduzione
+cmd-category-dialog = Finestre di dialogo
+cmd-category-external = Strumenti Esterni
+
+# Comandi file
+cmd-file-new-action = Nuovo
+cmd-file-new-desc = Crea un nuovo file
+cmd-file-new-menu = Nuovo…
+cmd-file-open-action = Apri
+cmd-file-open-desc = Apri un file
+cmd-file-open-menu = Apri…
+cmd-file-save-action = Salva
+cmd-file-save-desc = Salva il file
+cmd-file-save-menu = Salva
+cmd-file-save_as-action = Salva come
+cmd-file-save_as-desc = Salva con un nuovo nome
+cmd-file-save_as-menu = Salva come…
+cmd-file-export-action = Esporta
+cmd-file-export-desc = Esporta il file
+cmd-file-export-menu = Esporta…
+cmd-file-close-action = Chiudi
+cmd-file-close-desc = Chiudi il file corrente
+cmd-file-close-menu = Chiudi
+
+# Comandi modifica
+cmd-edit-undo-action = Annulla
+cmd-edit-undo-desc = Annulla l'ultima azione
+cmd-edit-undo-menu = Annulla
+cmd-edit-redo-action = Ripeti
+cmd-edit-redo-desc = Ripeti l'ultima azione annullata
+cmd-edit-redo-menu = Ripeti
+cmd-edit-cut-action = Taglia
+cmd-edit-cut-desc = Taglia la selezione
+cmd-edit-cut-menu = Taglia
+cmd-edit-copy-action = Copia
+cmd-edit-copy-desc = Copia la selezione
+cmd-edit-copy-menu = Copia
+cmd-edit-paste-action = Incolla
+cmd-edit-paste-desc = Incolla dagli appunti
+cmd-edit-paste-menu = Incolla
+cmd-edit-delete-action = Elimina
+cmd-edit-delete-desc = Elimina la selezione
+cmd-edit-delete-menu = Elimina
+cmd-edit-select_all-action = Seleziona tutto
+cmd-edit-select_all-desc = Seleziona tutto il contenuto
+cmd-edit-select_all-menu = Seleziona tutto
+
+# Comandi visualizzazione
+cmd-view-zoom_in-action = Aumenta zoom
+cmd-view-zoom_in-desc = Aumenta il livello di zoom
+cmd-view-zoom_in-menu = Aumenta zoom
+cmd-view-zoom_out-action = Diminuisci zoom
+cmd-view-zoom_out-desc = Diminuisci il livello di zoom
+cmd-view-zoom_out-menu = Diminuisci zoom
+cmd-view-zoom_reset-action = Reimposta zoom
+cmd-view-zoom_reset-desc = Reimposta al 100%
+cmd-view-zoom_reset-menu = Reimposta zoom
+cmd-view-zoom_fit-action = Adatta alla finestra
+cmd-view-zoom_fit-desc = Adatta automaticamente alla finestra
+cmd-view-zoom_fit-menu = Adatta dimensione
+cmd-view-fullscreen-action = Schermo intero
+cmd-view-fullscreen-desc = Attiva/disattiva schermo intero
+cmd-view-fullscreen-menu = Schermo intero
+
+# Comandi navigazione
+cmd-nav-back-action = Indietro
+cmd-nav-back-desc = Vai alla posizione precedente
+cmd-nav-back-menu = Indietro
+cmd-nav-forward-action = Avanti
+cmd-nav-forward-desc = Vai alla posizione successiva
+cmd-nav-forward-menu = Avanti
+cmd-nav-up-action = Cartella superiore
+cmd-nav-up-desc = Sali di un livello
+cmd-nav-up-menu = Su
+
+# Comandi finestra
+cmd-window-new-action = Nuova finestra
+cmd-window-new-desc = Apri una nuova finestra
+cmd-window-new-menu = Nuova finestra
+cmd-window-close-action = Chiudi finestra
+cmd-window-close-desc = Chiudi la finestra corrente
+cmd-window-close-menu = Chiudi finestra
+
+# Comandi aiuto
+cmd-help-show-action = Aiuto
+cmd-help-show-desc = Mostra scorciatoie da tastiera
+cmd-help-show-menu = Scorciatoie da tastiera
+cmd-help-about-action = Informazioni
+cmd-help-about-desc = Mostra la finestra Informazioni
+cmd-help-about-menu = Informazioni
+
+# Comandi impostazioni
+cmd-settings-open-action = Impostazioni
+cmd-settings-open-desc = Apri le impostazioni
+cmd-settings-open-menu = Impostazioni…

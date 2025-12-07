@@ -4,49 +4,10 @@ use iced::{
 };
 
 use super::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button};
-use crate::ButtonType;
+use crate::{ButtonType, commands::CommandDef};
 
-/// A keyboard shortcut entry
-#[derive(Clone)]
-pub struct HelpShortcut {
-    /// Key combination (e.g., "Alt D", "Ctrl+Shift+N")
-    pub keys: String,
-    /// Short action name
-    pub action: String,
-    /// Longer description
-    pub description: String,
-}
-
-impl HelpShortcut {
-    pub fn new(keys: impl Into<String>, action: impl Into<String>, description: impl Into<String>) -> Self {
-        Self {
-            keys: keys.into(),
-            action: action.into(),
-            description: description.into(),
-        }
-    }
-}
-
-/// A category of shortcuts
-#[derive(Clone)]
-pub struct HelpCategory {
-    /// Emoji or icon for the category
-    pub icon: String,
-    /// Category name
-    pub name: String,
-    /// Shortcuts in this category
-    pub shortcuts: Vec<HelpShortcut>,
-}
-
-impl HelpCategory {
-    pub fn new(icon: impl Into<String>, name: impl Into<String>, shortcuts: Vec<HelpShortcut>) -> Self {
-        Self {
-            icon: icon.into(),
-            name: name.into(),
-            shortcuts,
-        }
-    }
-}
+/// Category translation function type
+pub type CategoryTranslator = Box<dyn Fn(&str) -> String>;
 
 /// Configuration for the help dialog
 pub struct HelpDialogConfig {
@@ -56,8 +17,10 @@ pub struct HelpDialogConfig {
     pub subtitle: String,
     /// Icon for the title (emoji)
     pub title_icon: String,
-    /// Categories with shortcuts
-    pub categories: Vec<HelpCategory>,
+    /// Commands to display
+    pub commands: Vec<CommandDef>,
+    /// Function to translate category keys to display names
+    category_translator: Option<CategoryTranslator>,
 }
 
 impl HelpDialogConfig {
@@ -66,7 +29,8 @@ impl HelpDialogConfig {
             title: title.into(),
             subtitle: subtitle.into(),
             title_icon: "⌨".to_string(),
-            categories: Vec::new(),
+            commands: Vec::new(),
+            category_translator: None,
         }
     }
 
@@ -75,9 +39,34 @@ impl HelpDialogConfig {
         self
     }
 
-    pub fn with_categories(mut self, categories: Vec<HelpCategory>) -> Self {
-        self.categories = categories;
+    pub fn with_commands(mut self, commands: Vec<CommandDef>) -> Self {
+        self.commands = commands;
         self
+    }
+
+    /// Set a translator function for category names
+    /// The function receives the category key (e.g., "connection") and should return
+    /// the translated name (e.g., "Connection")
+    pub fn with_category_translator<F>(mut self, translator: F) -> Self
+    where
+        F: Fn(&str) -> String + 'static,
+    {
+        self.category_translator = Some(Box::new(translator));
+        self
+    }
+
+    /// Translate a category key to its display name
+    fn translate_category(&self, key: &str) -> String {
+        if let Some(translator) = &self.category_translator {
+            translator(key)
+        } else {
+            // Default: capitalize first letter
+            let mut chars = key.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+            }
+        }
     }
 }
 
@@ -142,16 +131,12 @@ fn key_group<Message: 'static + Clone>(keys: &str) -> Element<'static, Message> 
 }
 
 /// Create a category header
-fn category_header<Message: 'static>(icon: &str, name: &str) -> container::Container<'static, Message> {
+fn category_header<Message: 'static>(name: &str) -> container::Container<'static, Message> {
     container(
-        row![
-            text(icon.to_owned()).size(16),
-            Space::new().width(8),
-            text(name.to_owned()).size(16).style(|theme: &Theme| text::Style {
-                color: Some(theme.palette().text),
-                ..Default::default()
-            }),
-        ]
+        row![text(name.to_owned()).size(16).style(|theme: &Theme| text::Style {
+            color: Some(theme.palette().text),
+            ..Default::default()
+        }),]
         .align_y(Alignment::Center),
     )
     .padding(Padding::from([10, 24]))
@@ -206,18 +191,26 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
         left: 30.0,
     });
 
+    // Group commands by category
+    let mut categories: std::collections::BTreeMap<String, Vec<&CommandDef>> = std::collections::BTreeMap::new();
+    for cmd in &config.commands {
+        let category = cmd.category.clone().unwrap_or_else(|| "general".to_string());
+        categories.entry(category).or_default().push(cmd);
+    }
+
     // Build scrollable content
     let mut content = column![].spacing(0);
 
-    for (cat_index, cat) in config.categories.iter().enumerate() {
-        let header = category_header::<Message>(&cat.icon, &cat.name);
+    for (cat_index, (category_key, commands)) in categories.iter().enumerate() {
+        let category_name = config.translate_category(category_key);
+        let header = category_header::<Message>(&category_name);
         content = content.push(header.width(Length::Fill));
 
-        for (row_index, sc) in cat.shortcuts.iter().enumerate() {
+        for (row_index, cmd) in commands.iter().enumerate() {
             let shaded = (cat_index + row_index) % 2 == 0;
-            let keys = sc.keys.clone();
-            let action = sc.action.clone();
-            let desc = sc.description.clone();
+            let keys = cmd.primary_hotkey_display().unwrap_or_default();
+            let action = cmd.label_menu.clone();
+            let desc = cmd.label_description.clone();
 
             let shortcut_row = container(
                 row![

@@ -400,3 +400,81 @@ terminal-info-dialog-shape-tooltip-block = Full character cell cursor
 terminal-info-dialog-shape-tooltip-underline = Thin line at bottom of cell
 terminal-info-dialog-shape-tooltip-bar = Vertical bar between characters
 terminal-info-dialog-apply-button = Apply
+
+# Command translations
+# Format: cmd-{command.id}-{action|desc|menu}
+
+# Connection commands
+cmd-connection-dialing_directory-action = Dialing Directory
+cmd-connection-dialing_directory-desc = Open the dialing directory to manage and connect to BBS systems
+cmd-connection-dialing_directory-menu = Dialing Directory
+
+cmd-connection-hangup-action = Hangup
+cmd-connection-hangup-desc = Disconnect from the current connection
+cmd-connection-hangup-menu = Hangup
+
+cmd-connection-serial-action = Serial Port
+cmd-connection-serial-desc = Connect via serial port
+cmd-connection-serial-menu = Serial Port
+
+# Login commands
+cmd-login-send_all-action = Auto Login
+cmd-login-send_all-desc = Send username and password automatically
+cmd-login-send_all-menu = Auto Login
+
+cmd-login-send_user-action = Send Username
+cmd-login-send_user-desc = Send the configured username
+cmd-login-send_user-menu = Send Username
+
+cmd-login-send_password-action = Send Password
+cmd-login-send_password-desc = Send the configured password
+cmd-login-send_password-menu = Send Password
+
+# Transfer commands
+cmd-transfer-upload-action = Upload
+cmd-transfer-upload-desc = Upload files to the remote system
+cmd-transfer-upload-menu = Upload
+
+cmd-transfer-download-action = Download
+cmd-transfer-download-desc = Download files from the remote system
+cmd-transfer-download-menu = Download
+
+# Terminal commands
+cmd-terminal-clear-action = Clear Screen
+cmd-terminal-clear-desc = Clear the terminal screen
+cmd-terminal-clear-menu = Clear Screen
+
+cmd-terminal-scrollback-action = Scrollback
+cmd-terminal-scrollback-desc = View scrollback buffer
+cmd-terminal-scrollback-menu = Scrollback
+
+cmd-terminal-find-action = Find
+cmd-terminal-find-desc = Search in terminal content
+cmd-terminal-find-menu = Find
+
+# Capture commands
+cmd-capture-start-action = Capture Session
+cmd-capture-start-desc = Start or stop session capture
+cmd-capture-start-menu = Capture Session
+
+cmd-capture-export-action = Export Screen
+cmd-capture-export-desc = Export the current screen content
+cmd-capture-export-menu = Export Screen
+
+# Script commands
+cmd-script-run-action = Run Script
+cmd-script-run-desc = Run an automation script
+cmd-script-run-menu = Run Script
+
+# Application commands
+cmd-app-settings-action = Settings
+cmd-app-settings-desc = Open application settings
+cmd-app-settings-menu = Settings
+
+cmd-app-quit-action = Quit
+cmd-app-quit-desc = Exit the application
+cmd-app-quit-menu = Quit
+
+cmd-app-about-action = About
+cmd-app-about-desc = Show about dialog
+cmd-app-about-menu = About

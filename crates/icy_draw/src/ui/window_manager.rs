@@ -64,13 +64,14 @@ impl WindowManager {
         let (_, open) = window::open(settings);
 
         let options = SharedOptions::load();
+        let commands = WindowCommands::new();
 
         (
             Self {
                 windows: BTreeMap::new(),
                 options: Arc::new(Mutex::new(options)),
                 initial_path: None,
-                commands: WindowCommands::new(),
+                commands,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
@@ -89,13 +90,7 @@ impl WindowManager {
 
         self.windows
             .get(&window)
-            .map(|w| {
-                if w.id < 10 {
-                    format!("{} - ⌘{}", w.title(), w.id)
-                } else {
-                    w.title()
-                }
-            })
+            .map(|w| if w.id < 10 { format!("{} - ⌘{}", w.title(), w.id) } else { w.title() })
             .unwrap_or_default()
     }
 
@@ -190,28 +185,15 @@ impl WindowManager {
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
                     // Window focus events
-                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => {
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
+                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events
-                    Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => {
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
-                    Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => {
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
-                    Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => {
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
+                    Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(_) => None,
                     // Keyboard events
                     Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) => {
-                        icy_engine_gui::set_global_modifiers(
-                            mods.control(),
-                            mods.alt(),
-                            mods.shift(),
-                            mods.command(),
-                        );
+                        icy_engine_gui::set_global_modifiers(mods.control(), mods.alt(), mods.shift(), mods.command());
                         None
                     }
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {

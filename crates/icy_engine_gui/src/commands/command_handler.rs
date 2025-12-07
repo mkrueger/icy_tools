@@ -55,7 +55,7 @@ impl<M, C: Copy> CommandHandler<M, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{Hotkey, cmd, create_common_commands};
+    use crate::commands::{Hotkey, cmd, create_common_commands, macros::CommandId};
 
     #[derive(Debug, Clone, PartialEq)]
     enum TestMessage {
@@ -64,10 +64,12 @@ mod tests {
     }
 
     fn test_handler(cmd_id: &str, window_id: u32) -> Option<TestMessage> {
-        match cmd_id {
-            cmd::WINDOW_NEW => Some(TestMessage::Open),
-            cmd::WINDOW_CLOSE => Some(TestMessage::Close(window_id)),
-            _ => None,
+        if cmd_id == cmd::WINDOW_NEW.command_id() {
+            Some(TestMessage::Open)
+        } else if cmd_id == cmd::WINDOW_CLOSE.command_id() {
+            Some(TestMessage::Close(window_id))
+        } else {
+            None
         }
     }
 

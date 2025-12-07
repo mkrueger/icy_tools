@@ -17,60 +17,80 @@ pub fn create_common_commands() -> CommandSet {
     toml_loader::load_commands_from_str(COMMON_COMMANDS_TOML).expect("Failed to parse embedded commands_common.toml")
 }
 
-/// Command IDs for common commands (for type-safe access)
+/// Command definitions for common commands
+///
+/// Each command is a `LazyLock<CommandDef>` that lazily loads:
+/// - Hotkeys from the embedded TOML
+/// - Translations from the LANGUAGE_LOADER
 pub mod cmd {
-    // File
-    pub const FILE_OPEN: &str = "file.open";
-    pub const FILE_EXPORT: &str = "file.export";
-    pub const FILE_CLOSE: &str = "file.close";
+    use crate::define_commands;
 
-    // Edit
-    pub const EDIT_COPY: &str = "edit.copy";
-    pub const EDIT_PASTE: &str = "edit.paste";
-    pub const EDIT_SELECT_ALL: &str = "edit.select_all";
+    const TOML: &str = include_str!("../../data/commands_common.toml");
 
-    // View
-    pub const VIEW_ZOOM_IN: &str = "view.zoom_in";
-    pub const VIEW_ZOOM_OUT: &str = "view.zoom_out";
-    pub const VIEW_ZOOM_RESET: &str = "view.zoom_reset";
-    pub const VIEW_ZOOM_FIT: &str = "view.zoom_fit";
-    pub const VIEW_FULLSCREEN: &str = "view.fullscreen";
+    define_commands! {
+        loader: crate::LANGUAGE_LOADER,
+        commands: TOML,
 
-    // Window
-    pub const WINDOW_NEW: &str = "window.new";
-    pub const WINDOW_CLOSE: &str = "window.close";
+        // File
+        FILE_NEW = "file.new",
+        FILE_OPEN = "file.open",
+        FILE_SAVE = "file.save",
+        FILE_SAVE_AS = "file.save_as",
+        FILE_EXPORT = "file.export",
+        FILE_CLOSE = "file.close",
 
-    // Focus Navigation
-    pub const FOCUS_NEXT: &str = "focus.next";
-    pub const FOCUS_PREVIOUS: &str = "focus.previous";
+        // Edit
+        EDIT_UNDO = "edit.undo",
+        EDIT_REDO = "edit.redo",
+        EDIT_CUT = "edit.cut",
+        EDIT_COPY = "edit.copy",
+        EDIT_PASTE = "edit.paste",
+        EDIT_DELETE = "edit.delete",
+        EDIT_SELECT_ALL = "edit.select_all",
 
-    // Navigation
-    pub const NAV_BACK: &str = "nav.back";
-    pub const NAV_FORWARD: &str = "nav.forward";
-    pub const NAV_UP: &str = "nav.up";
+        // View
+        VIEW_ZOOM_IN = "view.zoom_in",
+        VIEW_ZOOM_OUT = "view.zoom_out",
+        VIEW_ZOOM_RESET = "view.zoom_reset",
+        VIEW_ZOOM_FIT = "view.zoom_fit",
+        VIEW_FULLSCREEN = "view.fullscreen",
 
-    // Help
-    pub const HELP_SHOW: &str = "help.show";
-    pub const HELP_ABOUT: &str = "help.about";
+        // Window
+        WINDOW_NEW = "window.new",
+        WINDOW_CLOSE = "window.close",
 
-    // Settings
-    pub const SETTINGS_OPEN: &str = "settings.open";
+        // Focus Navigation
+        FOCUS_NEXT = "focus.next",
+        FOCUS_PREVIOUS = "focus.previous",
+
+        // Navigation
+        NAV_BACK = "nav.back",
+        NAV_FORWARD = "nav.forward",
+        NAV_UP = "nav.up",
+
+        // Help
+        HELP_SHOW = "help.show",
+        HELP_ABOUT = "help.about",
+
+        // Settings
+        SETTINGS_OPEN = "settings.open",
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{KeyCode, Modifiers};
+    use crate::commands::{KeyCode, Modifiers, macros::CommandId};
 
     #[test]
     fn test_common_commands_created() {
         let set = create_common_commands();
 
         // Should have all the common commands
-        assert!(set.get(cmd::FILE_OPEN).is_some());
-        assert!(set.get(cmd::EDIT_COPY).is_some());
-        assert!(set.get(cmd::VIEW_ZOOM_IN).is_some());
-        assert!(set.get(cmd::HELP_SHOW).is_some());
+        assert!(set.get(cmd::FILE_OPEN.command_id()).is_some());
+        assert!(set.get(cmd::EDIT_COPY.command_id()).is_some());
+        assert!(set.get(cmd::VIEW_ZOOM_IN.command_id()).is_some());
+        assert!(set.get(cmd::HELP_SHOW.command_id()).is_some());
     }
 
     #[test]
@@ -79,10 +99,10 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         {
-            assert_eq!(set.match_key(KeyCode::Plus, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_IN));
-            assert_eq!(set.match_key(KeyCode::Equals, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_IN));
-            assert_eq!(set.match_key(KeyCode::Minus, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_OUT));
-            assert_eq!(set.match_key(KeyCode::Num0, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_RESET));
+            assert_eq!(set.match_key(KeyCode::Plus, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_IN.command_id()));
+            assert_eq!(set.match_key(KeyCode::Equals, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_IN.command_id()));
+            assert_eq!(set.match_key(KeyCode::Minus, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_OUT.command_id()));
+            assert_eq!(set.match_key(KeyCode::Num0, Modifiers::CTRL), Some(cmd::VIEW_ZOOM_RESET.command_id()));
         }
     }
 
@@ -92,8 +112,8 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         {
-            assert_eq!(set.match_key(KeyCode::C, Modifiers::CTRL), Some(cmd::EDIT_COPY));
-            assert_eq!(set.match_key(KeyCode::V, Modifiers::CTRL), Some(cmd::EDIT_PASTE));
+            assert_eq!(set.match_key(KeyCode::C, Modifiers::CTRL), Some(cmd::EDIT_COPY.command_id()));
+            assert_eq!(set.match_key(KeyCode::V, Modifiers::CTRL), Some(cmd::EDIT_PASTE.command_id()));
         }
     }
 
@@ -102,7 +122,7 @@ mod tests {
         let set = create_common_commands();
 
         // F1 should work on all platforms
-        assert_eq!(set.match_key(KeyCode::F1, Modifiers::NONE), Some(cmd::HELP_SHOW));
+        assert_eq!(set.match_key(KeyCode::F1, Modifiers::NONE), Some(cmd::HELP_SHOW.command_id()));
     }
 
     #[test]
@@ -111,8 +131,8 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         {
-            assert_eq!(set.match_key(KeyCode::F11, Modifiers::NONE), Some(cmd::VIEW_FULLSCREEN));
-            assert_eq!(set.match_key(KeyCode::Enter, Modifiers::ALT), Some(cmd::VIEW_FULLSCREEN));
+            assert_eq!(set.match_key(KeyCode::F11, Modifiers::NONE), Some(cmd::VIEW_FULLSCREEN.command_id()));
+            assert_eq!(set.match_key(KeyCode::Enter, Modifiers::ALT), Some(cmd::VIEW_FULLSCREEN.command_id()));
         }
     }
 
@@ -120,11 +140,30 @@ mod tests {
     fn test_hotkey_display() {
         let set = create_common_commands();
 
-        let copy_cmd = set.get(cmd::EDIT_COPY).unwrap();
+        let copy_cmd = set.get(cmd::EDIT_COPY.command_id()).unwrap();
 
         #[cfg(not(target_os = "macos"))]
         {
             assert_eq!(copy_cmd.primary_hotkey_display(), Some("Ctrl+C".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_cmd_static_hotkey_display() {
+        // Test that cmd:: statics directly have hotkeys (not via CommandSet lookup)
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                cmd::EDIT_COPY.primary_hotkey_display(),
+                Some("Ctrl+C".to_string()),
+                "EDIT_COPY should have Ctrl+C"
+            );
+            assert_eq!(
+                cmd::VIEW_ZOOM_IN.primary_hotkey_display(),
+                Some("Ctrl++".to_string()),
+                "VIEW_ZOOM_IN should have Ctrl++"
+            );
+            assert_eq!(cmd::HELP_SHOW.primary_hotkey_display(), Some("F1".to_string()), "HELP_SHOW should have F1");
         }
     }
 }

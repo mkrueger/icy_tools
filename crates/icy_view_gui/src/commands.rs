@@ -18,46 +18,60 @@ pub fn create_icy_view_commands() -> CommandSet {
     commands
 }
 
-/// Command IDs specific to icy_view
+/// Command definitions for icy_view
+///
+/// Each command is a `LazyLock<CommandDef>` that lazily loads:
+/// - Hotkeys from the embedded TOML
+/// - Translations from the LANGUAGE_LOADER
 pub mod cmd {
-    // Re-export common commands
+    use icy_engine_gui::define_commands;
+
+    // Re-export common commands from icy_engine_gui
     pub use icy_engine_gui::commands::cmd::*;
 
-    // icy_view specific dialogs
-    pub const DIALOG_SAUCE: &str = "dialog.sauce";
-    pub const DIALOG_EXPORT: &str = "dialog.export";
-    pub const DIALOG_FILTER: &str = "dialog.filter";
+    const TOML: &str = include_str!("../data/commands_icy_view.toml");
 
-    // Playback
-    pub const PLAYBACK_TOGGLE_SCROLL: &str = "playback.toggle_scroll";
-    pub const PLAYBACK_SCROLL_SPEED: &str = "playback.scroll_speed";
-    pub const PLAYBACK_SCROLL_SPEED_BACK: &str = "playback.scroll_speed_back";
-    pub const PLAYBACK_BAUD_RATE: &str = "playback.baud_rate";
-    pub const PLAYBACK_BAUD_RATE_BACK: &str = "playback.baud_rate_back";
-    pub const PLAYBACK_BAUD_RATE_OFF: &str = "playback.baud_rate_off";
+    define_commands! {
+        loader: crate::LANGUAGE_LOADER,
+        commands: TOML,
 
-    // External Commands
-    pub const EXTERNAL_COMMAND_0: &str = "external.command_0";
-    pub const EXTERNAL_COMMAND_1: &str = "external.command_1";
-    pub const EXTERNAL_COMMAND_2: &str = "external.command_2";
-    pub const EXTERNAL_COMMAND_3: &str = "external.command_3";
+        // Dialogs
+        DIALOG_SAUCE = "dialog.sauce",
+        DIALOG_EXPORT = "dialog.export",
+        DIALOG_FILTER = "dialog.filter",
+
+        // Playback
+        PLAYBACK_TOGGLE_SCROLL = "playback.toggle_scroll",
+        PLAYBACK_SCROLL_SPEED = "playback.scroll_speed",
+        PLAYBACK_SCROLL_SPEED_BACK = "playback.scroll_speed_back",
+        PLAYBACK_BAUD_RATE = "playback.baud_rate",
+        PLAYBACK_BAUD_RATE_BACK = "playback.baud_rate_back",
+        PLAYBACK_BAUD_RATE_OFF = "playback.baud_rate_off",
+
+        // External Commands
+        EXTERNAL_COMMAND_0 = "external.command_0",
+        EXTERNAL_COMMAND_1 = "external.command_1",
+        EXTERNAL_COMMAND_2 = "external.command_2",
+        EXTERNAL_COMMAND_3 = "external.command_3",
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use icy_engine_gui::commands::macros::CommandId;
 
     #[test]
     fn test_icy_view_commands_created() {
         let set = create_icy_view_commands();
 
         // Should have common commands
-        assert!(set.get(cmd::FILE_OPEN).is_some());
-        assert!(set.get(cmd::VIEW_ZOOM_IN).is_some());
+        assert!(set.get(cmd::FILE_OPEN.command_id()).is_some());
+        assert!(set.get(cmd::VIEW_ZOOM_IN.command_id()).is_some());
 
         // Should have icy_view specific commands
-        assert!(set.get(cmd::DIALOG_SAUCE).is_some());
-        assert!(set.get(cmd::PLAYBACK_BAUD_RATE).is_some());
-        assert!(set.get(cmd::EXTERNAL_COMMAND_0).is_some());
+        assert!(set.get(cmd::DIALOG_SAUCE.command_id()).is_some());
+        assert!(set.get(cmd::PLAYBACK_BAUD_RATE.command_id()).is_some());
+        assert!(set.get(cmd::EXTERNAL_COMMAND_0.command_id()).is_some());
     }
 }

@@ -398,3 +398,81 @@ help-desc-smart-paste = Einfügen, oder falls Auswahl existiert, zuerst kopieren
 # Falls du die Einstellungen/Aktionsnamen konsolidieren willst, könntest du auch:
 # help-action-settings = { menu-item-settings }
 # help-desc-settings bereits definiert.
+
+# Command translations
+# Format: cmd-{command.id}-{action|desc|menu}
+
+# Connection commands
+cmd-connection-dialing_directory-action = Telefonbuch
+cmd-connection-dialing_directory-desc = Telefonbuch öffnen um BBS-Systeme zu verwalten und zu verbinden
+cmd-connection-dialing_directory-menu = Telefonbuch
+
+cmd-connection-hangup-action = Auflegen
+cmd-connection-hangup-desc = Aktuelle Verbindung trennen
+cmd-connection-hangup-menu = Auflegen
+
+cmd-connection-serial-action = Serieller Port
+cmd-connection-serial-desc = Über serielle Schnittstelle verbinden
+cmd-connection-serial-menu = Serieller Port
+
+# Login commands
+cmd-login-send_all-action = Auto-Login
+cmd-login-send_all-desc = Benutzername und Passwort automatisch senden
+cmd-login-send_all-menu = Auto-Login
+
+cmd-login-send_user-action = Benutzername senden
+cmd-login-send_user-desc = Den konfigurierten Benutzernamen senden
+cmd-login-send_user-menu = Benutzername senden
+
+cmd-login-send_password-action = Passwort senden
+cmd-login-send_password-desc = Das konfigurierte Passwort senden
+cmd-login-send_password-menu = Passwort senden
+
+# Transfer commands
+cmd-transfer-upload-action = Hochladen
+cmd-transfer-upload-desc = Dateien zum entfernten System hochladen
+cmd-transfer-upload-menu = Hochladen
+
+cmd-transfer-download-action = Herunterladen
+cmd-transfer-download-desc = Dateien vom entfernten System herunterladen
+cmd-transfer-download-menu = Herunterladen
+
+# Terminal commands
+cmd-terminal-clear-action = Bildschirm löschen
+cmd-terminal-clear-desc = Terminal-Bildschirm löschen
+cmd-terminal-clear-menu = Bildschirm löschen
+
+cmd-terminal-scrollback-action = Verlaufspuffer
+cmd-terminal-scrollback-desc = Verlaufspuffer anzeigen
+cmd-terminal-scrollback-menu = Verlaufspuffer
+
+cmd-terminal-find-action = Suchen
+cmd-terminal-find-desc = Im Terminal-Inhalt suchen
+cmd-terminal-find-menu = Suchen
+
+# Capture commands
+cmd-capture-start-action = Sitzung aufzeichnen
+cmd-capture-start-desc = Sitzungsaufzeichnung starten oder stoppen
+cmd-capture-start-menu = Sitzung aufzeichnen
+
+cmd-capture-export-action = Bildschirm exportieren
+cmd-capture-export-desc = Aktuellen Bildschirminhalt exportieren
+cmd-capture-export-menu = Bildschirm exportieren
+
+# Script commands
+cmd-script-run-action = Skript ausführen
+cmd-script-run-desc = Ein Automatisierungsskript ausführen
+cmd-script-run-menu = Skript ausführen
+
+# Application commands
+cmd-app-settings-action = Einstellungen
+cmd-app-settings-desc = Anwendungseinstellungen öffnen
+cmd-app-settings-menu = Einstellungen
+
+cmd-app-quit-action = Beenden
+cmd-app-quit-desc = Anwendung beenden
+cmd-app-quit-menu = Beenden
+
+cmd-app-about-action = Über
+cmd-app-about-desc = Info-Dialog anzeigen
+cmd-app-about-menu = Über
